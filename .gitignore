@@ -44,3 +44,4 @@ pnpm-debug.log*
 .serena/
 docs/
 .ace-tool/
+.sisyphus/
