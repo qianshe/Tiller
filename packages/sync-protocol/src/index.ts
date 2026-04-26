@@ -5,6 +5,7 @@ import type {
   FileDiffSummary,
   PermissionDecision,
   PermissionRequest,
+  SessionResumeInfo,
   SessionStatus,
   SessionSummary,
   WorkspaceSummary,
@@ -14,6 +15,11 @@ export type ClientToDaemon =
   | {
       type: "workspace.list";
       requestId: string;
+    }
+  | {
+      type: "workspace.save";
+      requestId: string;
+      workspace: WorkspaceSummary;
     }
   | {
       type: "agent.list";
@@ -27,13 +33,37 @@ export type ClientToDaemon =
   | {
       type: "agent.save";
       requestId: string;
-      provider: Pick<AcpAgentProvider, "id" | "name" | "kind" | "command" | "args" | "env" | "cwd" | "installHint" | "initializeTimeoutMs">;
+      provider: Pick<AcpAgentProvider, "id" | "name" | "kind" | "command" | "args" | "env" | "cwd" | "installHint" | "initializeTimeoutMs" | "defaultAgent">;
     }
   | {
       type: "session.create";
       requestId: string;
       workspaceId: string;
       agentId: string;
+    }
+  | {
+      type: "session.list";
+      requestId: string;
+    }
+  | {
+      type: "session.messages.list";
+      requestId: string;
+      sessionId: string;
+    }
+  | {
+      type: "session.artifacts.get";
+      requestId: string;
+      sessionId: string;
+    }
+  | {
+      type: "session.resume.check";
+      requestId: string;
+      sessionId: string;
+    }
+  | {
+      type: "session.resume.start";
+      requestId: string;
+      sessionId: string;
     }
   | {
       type: "session.prompt";
@@ -51,6 +81,16 @@ export type ClientToDaemon =
       type: "session.cancel";
       requestId: string;
       sessionId: string;
+    }
+  | {
+      type: "device.pair";
+      requestId: string;
+      pairingCode: string;
+    }
+  | {
+      type: "device.auth";
+      requestId: string;
+      token: string;
     };
 
 export type DaemonToClient =
@@ -58,6 +98,13 @@ export type DaemonToClient =
       type: "workspace.list.result";
       requestId: string;
       workspaces: WorkspaceSummary[];
+    }
+  | {
+      type: "workspace.save.result";
+      requestId: string;
+      ok: boolean;
+      workspaceId: string;
+      message: string;
     }
   | {
       type: "agent.list.result";
@@ -82,6 +129,38 @@ export type DaemonToClient =
       type: "session.created";
       requestId: string;
       session: SessionSummary;
+    }
+  | {
+      type: "session.list.result";
+      requestId: string;
+      sessions: SessionSummary[];
+    }
+  | {
+      type: "session.messages.list.result";
+      requestId: string;
+      sessionId: string;
+      messages: AgentMessage[];
+    }
+  | {
+      type: "session.artifacts.result";
+      requestId: string;
+      sessionId: string;
+      outputs: CommandChunk[];
+      diffs: FileDiffSummary[];
+    }
+  | {
+      type: "session.resume.result";
+      requestId: string;
+      sessionId: string;
+      resume: SessionResumeInfo;
+    }
+  | {
+      type: "session.resume.start.result";
+      requestId: string;
+      sessionId: string;
+      ok: boolean;
+      resume: SessionResumeInfo;
+      message: string;
     }
   | {
       type: "session.status";
@@ -115,6 +194,19 @@ export type DaemonToClient =
       type: "diff.update";
       sessionId: string;
       files: FileDiffSummary[];
+    }
+  | {
+      type: "device.pair.result";
+      requestId: string;
+      ok: boolean;
+      token?: string;
+      message: string;
+    }
+  | {
+      type: "device.auth.result";
+      requestId: string;
+      ok: boolean;
+      message: string;
     }
   | {
       type: "error";

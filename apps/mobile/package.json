@@ -1,0 +1,9 @@
+{
+  "name": "@tiller/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reserved workspace for the future Tiller mobile client.",
+  "scripts": {
+    "typecheck": "node -e \"console.log('mobile placeholder: no runtime yet')\""
+  }
+}

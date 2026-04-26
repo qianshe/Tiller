@@ -12,38 +12,6 @@ export type TillerConfig = {
   };
 };
 
-export function getMockWorkspaces(): WorkspaceSummary[] {
-  return [
-    {
-      id: "mock-workspace",
-      name: "Tiller Demo Workspace",
-      path: "D:/projects/demo-workspace",
-    },
-  ];
-}
-
-export function getMockProviders(): AcpAgentProvider[] {
-  return [
-    {
-      id: "mock-agent",
-      name: "Mock ACP Agent",
-      kind: "custom",
-      command: "mock-agent",
-      args: ["--demo"],
-      transport: "stdio",
-      protocol: "acp",
-      installHint: "Built-in development mock provider for validating the Tiller UI loop.",
-      capabilities: {
-        streaming: true,
-        permissionRequests: true,
-        fileDiffs: true,
-        commandOutput: true,
-        cancellation: true,
-      },
-    },
-  ];
-}
-
 export function resolveProviderById(id: string, providers: AcpAgentProvider[]) {
   return providers.find((provider) => provider.id === id);
 }
@@ -82,7 +50,7 @@ export function getConfiguredProviders(configPath = getDefaultConfigPath()) {
 }
 
 export function listAvailableProviders(configPath = getDefaultConfigPath()) {
-  return [...getConfiguredProviders(configPath), ...getMockProviders()];
+  return getConfiguredProviders(configPath);
 }
 
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {
@@ -107,5 +75,24 @@ export function saveProviderToConfig(provider: AcpAgentProvider, configPath = ge
   };
 }
 
-// TODO(real-acp): add stronger schema validation before persisting arbitrary provider shapes.
-// TODO(real-acp): preserve future provider quirks and richer capability metadata when config editing expands.
+export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextWorkspaces = [...(current.workspaces ?? []).filter((item) => item.id !== workspace.id), workspace];
+
+  const nextConfig: TillerConfig = {
+    workspaces: nextWorkspaces,
+    agents: current.agents ?? [],
+    daemon: current.daemon ?? {
+      host: "127.0.0.1",
+      port: 47631,
+    },
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    workspace,
+  };
+}

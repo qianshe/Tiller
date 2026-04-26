@@ -1,6 +1,8 @@
 export type AgentTransport = "stdio";
 export type AcpProviderKind = "native-acp" | "adapter-acp" | "custom";
 export type SessionStatus = "starting" | "running" | "waiting_for_permission" | "idle" | "error" | "cancelled";
+export type RuntimeResumeMode = "none" | "same-process" | "reconnect";
+export type SessionResumeState = "history-only" | "resume-available" | "resume-unavailable";
 
 export type AgentCapabilities = {
   streaming?: boolean;
@@ -8,6 +10,7 @@ export type AgentCapabilities = {
   fileDiffs?: boolean;
   commandOutput?: boolean;
   sessionResume?: boolean;
+  resumeMode?: RuntimeResumeMode;
   cancellation?: boolean;
   imageInput?: boolean;
 };
@@ -22,6 +25,7 @@ export type AcpAgentProvider = {
   env?: Record<string, string>;
   cwd?: string;
   initializeTimeoutMs?: number;
+  defaultAgent?: string;
   transport: AgentTransport;
   protocol: "acp";
   installHint?: string;
@@ -34,6 +38,16 @@ export type WorkspaceSummary = {
   path: string;
 };
 
+export type SessionResumeInfo = {
+  mode: RuntimeResumeMode;
+  state: SessionResumeState;
+  reason: string;
+  checkedAt: string;
+  providerId?: string;
+  runtimeSessionId?: string;
+  lastSeenAt?: string;
+};
+
 export type SessionSummary = {
   id: string;
   workspaceId: string;
@@ -42,11 +56,15 @@ export type SessionSummary = {
   agentName: string;
   status: SessionStatus;
   createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  lastMessagePreview?: string;
+  resume?: SessionResumeInfo;
 };
 
 export type AgentMessage = {
   id: string;
-  role: "assistant" | "system";
+  role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
 };

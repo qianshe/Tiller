@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
+    "dev": "pnpm run clean-port && tsx watch src/index.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -12,10 +14,12 @@
     "@tiller/agent-registry": "workspace:*",
     "@tiller/shared": "workspace:*",
     "@tiller/sync-protocol": "workspace:*",
+    "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
