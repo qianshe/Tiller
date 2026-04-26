@@ -1,0 +1,14 @@
+{
+  "name": "tiller",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev": "concurrently -n web,daemon -c cyan,magenta \"pnpm --filter @tiller/web dev\" \"pnpm --filter @tiller/daemon dev\"",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  }
+}
