@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Daemon runtime
+*.pid
+daemon.*.log
+web.*.log
+root.*.log
+
+# Test coverage
+coverage/
+
+# Lock files (uncomment if needed)
+# pnpm-lock.yaml
+
+# Debug
+npm-debug.log*
+pnpm-debug.log*
+.serena/
+docs/
