@@ -1,8 +1,8 @@
 # Tiller
 
-> Tiller — a mobile control plane for any ACP-compatible coding agent.
+> Tiller is a command deck for your ACP coding-agent fleet.
 
-Tiller 是一个面向任意 ACP 兼容 Coding Agent 的移动端控制台。
+Tiller 是你的 ACP Coding Agent 舰队指挥甲板。
 
 ## 它解决什么问题
 
@@ -13,45 +13,61 @@ Tiller 关注的不是“跟 AI 聊天”，而是“远程控制 Coding Agent �
 - Agent 卡在权限审批上，任务停住了
 - 你想在手机端恢复、推进、取消或审查开发任务
 
-所以 Tiller 是 **控制面（control plane）**，不是 Bot Hub。
+所以 Tiller 是 **Command Deck（指挥甲板）**，不是 Bot Hub。
+
+品牌隐喻保持轻量：
+
+```text
+Commander
+  ↓
+Command Deck
+  ↓
+Fleet
+  ↓
+Helm Node A
+     ├── Crew: opencode acp
+     └── Crew: codex-acp
+```
+
+对应关系：Deck = Web/App，Fleet = 多 Helm 集合，Helm = 单机 host process，Crew = ACP Agent，Mission = Session/Task，Logbook = event / command output，Beacon = relay / notification channel。
 
 ## 为什么是 ACP-first
 
 Tiller 不硬编码 Codex、Claude、Gemini、OpenCode 或任何特定 Agent。
 
 ```text
-Mobile / Web Client
+Command Deck (Web / Mobile)
     ↓
 Tiller Sync Protocol
     ↓
-Tiller Daemon
+Tiller Helm
     ↓
 ACP Client Runtime
     ↓
-ACP-compatible Agent Process
+ACP-compatible Crew Process
 ```
 
 - **ACP**：Agent 协议层
-- **Tiller Sync**：Web / 移动端 与 daemon 的同步协议层
+- **Tiller Sync**：Command Deck 与 Helm 的同步协议层
 
 ## 当前 MVP 范围
 
 当前仓库实现的是 **真实 ACP 本地闭环优先**：
 
 ```text
-Web Client → localhost Daemon → ACP Agent Runtime
+Command Deck → localhost Helm → ACP Crew Runtime
 ```
 
 包含：
 
 - pnpm monorepo skeleton
-- `apps/web`：Vite + React，移动优先控制台
-- `apps/daemon`：Node.js + ws
+- `apps/deck`：Vite + React，Command Deck
+- `apps/helm`：Node.js + ws，Helm host process
 - `packages/shared`：共享类型
-- `packages/sync-protocol`：Web ↔ daemon 协议
+- `packages/sync-protocol`：Deck ↔ Helm 协议
 - `packages/agent-registry`：provider 配置与本地加载
 - `packages/acp-runtime`：ACP session runtime 与事件归一化
-- real session / permission request / command output / diff summary 的统一 UI 入口
+- real mission / permission request / logbook / diff summary 的统一 UI 入口
 
 ## 本地开发
 
@@ -68,30 +84,30 @@ pnpm dev
 ```
 
 - Web: [http://127.0.0.1:5173](http://127.0.0.1:5173)
-- Daemon WebSocket: `ws://127.0.0.1:47631`
-- 运行期 daemon 日志：`D:/myProject/tools/Tiller/logs/daemon.log`
+- Helm WebSocket: `ws://127.0.0.1:47631`
+- 运行期 Helm 日志：`D:/myProject/tools/Tiller/logs/daemon.log`
 
 ### 第一次连接 / 配对
 
-当前 daemon 启动后会在终端里打印：
+当前 Helm 启动后会在终端里打印：
 
 - 6 位 pairing code
 - 一段可扫码的本地 QR code
 
 第一次打开 Web UI 时，先做这一步：
 
-1. 在 daemon 终端里查看 6 位 pairing code
+1. 在 Helm 终端里查看 6 位 pairing code
 2. 在 Web 的 **设备配对** 区输入 pairing code
-3. 配对成功后，浏览器会保存 daemon token
+3. 配对成功后，浏览器会保存 Helm token
 4. 之后同一浏览器会自动 `device.auth`
 
-如果你清除了浏览器本地存储，或 daemon 重启后 pairing token 失效，就重新输入 pairing code 即可。
+如果你清除了浏览器本地存储，或 Helm 重启后 pairing token 失效，就重新输入 pairing code 即可。
 
 ### 日志约定
 
 - 仓库内统一使用 `D:/myProject/tools/Tiller/logs/` 存放本地调试日志
-- daemon 启动、监听失败、未处理异常等会自动追加到 `logs/daemon.log`
-- ACP connection test 与 real session 运行日志会自动写到 `logs/acp/`
+- Helm 启动、监听失败、未处理异常等会自动追加到 `logs/daemon.log`
+- ACP connection test 与 real mission 运行日志会自动写到 `logs/acp/`
 - 手动重定向出来的调试日志也建议统一写到 `logs/` 下，避免散落在仓库根目录
 
 当前默认约定示例：
@@ -103,14 +119,14 @@ pnpm dev
 ### 验证 happy path
 
 1. 打开 Web 页面
-2. 先完成 daemon 配对
+2. 先完成 Helm 配对
 3. 确认显示 `connected`
-4. 点击 `Create session`
+4. 点击 `Create Mission`
 5. 等状态进入 `idle / running / waiting`
-6. 输入 prompt 并发送
+6. 输入 order / prompt 并发送
 7. 观察真实流式输出
 8. 如 agent 发出权限卡片，则点击 `Allow once` 或 `Deny`
-9. 观察 command output、diff summary 和最终状态
+9. 观察 Logbook、diff summary 和最终状态
 
 > 注意：是否真的出现权限卡片，还取决于 ACP Agent 自己的权限策略。
 > 以 OpenCode 为例，只有当对应工具权限被配置成 `ask` 时，才会弹审批；如果当前权限默认是 `allow`，那 Tiller UI 不出现权限卡片并不一定是前端故障。
@@ -119,8 +135,8 @@ pnpm dev
 
 如果你想专门验证 Tiller 的权限卡片链路，建议按这个顺序手动测试：
 
-1. 先确认 Web 已完成 daemon 配对，并且能正常 `Create session`
-2. 先发一个普通 prompt，确认 `agent.message` 正常返回
+1. 先确认 Web 已完成 Helm 配对，并且能正常 `Create Mission`
+2. 先发一个普通 prompt，确认 `Crew message` / `agent.message` 正常返回
 3. 再发一个更明确要求工具执行的 prompt，例如：
    - `请先运行 pwd（或等价命令）确认当前工作目录，再告诉我结果`
    - `请列出当前工作区根目录文件名，再总结目录结构`
@@ -134,8 +150,8 @@ pnpm dev
 ```text
 tiller/
   apps/
-    web/
-    daemon/
+    deck/
+    helm/
   packages/
     shared/
     sync-protocol/
@@ -182,7 +198,7 @@ tiller/
 
 ## 怎么接入 ACP（以 OpenCode 为例）
 
-Tiller 的接入方式不是硬编码某个 Agent，而是让 daemon 读取 provider 配置，然后按统一插槽启动一个 **ACP-compatible process**。
+Tiller 的接入方式不是硬编码某个 Agent，而是让 Helm 读取 provider 配置，然后按统一插槽启动一个 **ACP-compatible process**。
 
 以 OpenCode 为例：
 
@@ -201,7 +217,7 @@ Tiller 的接入方式不是硬编码某个 Agent，而是让 daemon 读取 prov
 
 未来真实接入路径会是：
 
-1. daemon 读取 `~/.tiller/config.json`
+1. Helm 读取 `~/.tiller/config.json`
 2. `agent-registry` 解析 provider
 3. `acp-runtime` 用 `command + args + env + cwd` 启动进程
 4. 通过 stdio 完成 ACP initialize / request / notification
@@ -215,7 +231,7 @@ Tiller 的接入方式不是硬编码某个 Agent，而是让 daemon 读取 prov
 
 MVP 默认保持保守：
 
-- daemon 仅监听 `127.0.0.1`
+- Helm 仅监听 `127.0.0.1`
 - workspace 走 allowlist 思路
 - 不默认静默批准危险操作
 - 日志避免记录敏感代码细节
@@ -228,31 +244,47 @@ MVP 默认保持保守：
 - `v0.4` 远程访问、认证、E2EE 设计
 - `v0.5` preset / adapter / quirks layer
 
-## Session persistence
+## Mission persistence / reconnect model
 
-当前已经补上最小闭环：
+Tiller 把 Mission 的“重连/恢复”拆成两层，避免把 UI history 误当成 ACP runtime resume：
 
-- session summary 会持久化到 `~/.tiller/sessions.json`
-- 每个 session 的消息流会持久化到 `~/.tiller/session-messages/<sessionId>.json`
-- 每个 session 的 command output / diff snapshot 会持久化到 `~/.tiller/session-artifacts/<sessionId>.json`
-- provider-aware reconnect descriptor 会持久化到 `~/.tiller/session-runtimes.json`
-- Web 会在连接后加载最近 session 列表，并在打开 session 时回放持久化消息历史
-- Web 会在打开 session 时回放持久化 command output 与最新 diff snapshot
-- Web 会为每个 session 显示 runtime resume 状态：`History only` / `Resume available` / `Resume unavailable`
+### A. Command Deck ↔ Helm 重连
 
-当前**仍未实现**的边界：
+这是手机断网、锁屏、WebSocket 断开后的常见路径。只要 Helm 和 ACP Crew 进程仍然存活：
 
-- daemon 重启后的真实 ACP runtime resume
-- provider-specific `session.resume.start` 真正握手（当前仅有 same-process skeleton）
-- 断线后重新附着到仍在运行的外部 agent 进程
-- command output / diff 历史的完整持久化
-- 不同 ACP 实现下的 resume 兼容层
+- session summary 持久化到 `~/.tiller/sessions.json`
+- 每个 session 的消息流持久化到 `~/.tiller/session-messages/<sessionId>.json`
+- 每个 session 的 command output / diff snapshot 持久化到 `~/.tiller/session-artifacts/<sessionId>.json`
+- Web 重新连接后请求 `session.list`，再读取消息与 artifacts
+- Helm 对仍在内存中的 active mission 返回 `restoreMethod: "client-reconnect"`
 
-也就是说：
+这属于 Tiller Sync Protocol 职责，不需要 ACP `session/load`。
 
-> 现在能恢复“记录/history”，还不能恢复“活的 runtime 执行现场”。
+### B. Helm ↔ ACP Crew 恢复
 
-## Provider 策略
+只有 Helm/Crew 也重启或 runtime 丢失时，才进入 ACP 层恢复。Tiller 会保存 provider-aware runtime descriptor 到 `~/.tiller/session-runtimes.json`，包含 ACP 原生 `runtimeSessionId` 与能力快照：
+
+- `sessionLoad`: agent 支持 ACP `session/load`，通常期望恢复并回放历史
+- `sessionResume`: agent 支持 ACP `session/resume`，恢复上下文但不返回旧消息
+- `sessionList`: agent 支持列出 agent 侧 sessions
+
+恢复策略：
+
+1. 如果 Mission 仍在当前 Helm 进程中：走 `client-reconnect`
+2. 如果有 `runtimeSessionId` 且 agent 支持 `session/load`：优先调用 ACP `session/load`
+3. 否则如果支持 `session/resume`：调用 ACP `session/resume`
+4. 都不支持时：只恢复 Tiller UI history，不能假装 agent 上下文已恢复
+
+当前**仍需真实联调**的边界：
+
+- 不同 ACP 实现对 initialize capability 字段的差异
+- `session/load` 历史回放事件与本地消息去重
+- `session/resume` 恢复后首条 prompt 的上下文连续性
+- 外部 Crew 进程存活但 Helm 重启时的重新附着策略
+
+Helm 终端会输出低噪声调试日志：连接/断开、认证、`session.list/create`、runtime id、capability、`resume.check/start`、状态变更与错误；完整日志仍写入 `logs/daemon.log`。
+
+## Crew Provider 策略
 
 Tiller 提供的是标准 ACP 插槽：
 

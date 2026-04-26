@@ -1,16 +1,16 @@
 # Tiller Mobile Placeholder
 
-This directory is reserved for the future native/mobile client.
+This directory is reserved for the future native/mobile Command Deck.
 
 ## Goal
-- Keep the mobile app as a separate delivery surface from `D:/myProject/tools/Tiller/apps/web`
+- Keep the mobile app as a separate delivery surface from `D:/myProject/tools/Tiller/apps/deck`
 - Reuse Tiller sync protocol and shared domain types
 - Preserve room for React Native / Expo or another mobile stack decision later
 
 ## Planned contents
 - app shell / navigation
-- session inbox and approval flows
-- session detail optimized for handheld review
+- mission inbox and approval flows
+- mission detail optimized for handheld review
 - push / reconnect groundwork (future)
 
 ## Current status

@@ -64,6 +64,7 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.createdAt === "string" &&
     typeof candidate.updatedAt === "string" &&
     typeof candidate.messageCount === "number" &&
+    (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
     (typeof candidate.lastMessagePreview === "string" || typeof candidate.lastMessagePreview === "undefined") &&
     (typeof candidate.resume === "undefined" || isSessionResumeInfo(candidate.resume))
   );

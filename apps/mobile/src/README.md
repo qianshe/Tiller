@@ -1,10 +1,10 @@
 # Mobile Source Placeholder
 
-Future source root for the native/mobile client.
+Future source root for the native/mobile Command Deck.
 
 Suggested first screens:
-- session inbox
+- mission inbox
 - pending approvals
-- session detail
+- mission detail
 - workspace selector
 - settings / device pairing

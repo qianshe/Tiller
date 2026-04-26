@@ -15,7 +15,38 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  apps/daemon:
+  apps/deck:
+    dependencies:
+      '@tiller/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@tiller/sync-protocol':
+        specifier: workspace:*
+        version: link:../../packages/sync-protocol
+      react:
+        specifier: ^19.2.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.5(react@19.2.5)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.2
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.2.2
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: ^5.1.0
+        version: 5.2.0(vite@7.3.2(@types/node@24.12.2)(tsx@4.21.0))
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.12
+        version: 7.3.2(@types/node@24.12.2)(tsx@4.21.0)
+
+  apps/helm:
     dependencies:
       '@tiller/acp-runtime':
         specifier: workspace:*
@@ -52,36 +83,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  apps/web:
-    dependencies:
-      '@tiller/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      '@tiller/sync-protocol':
-        specifier: workspace:*
-        version: link:../../packages/sync-protocol
-      react:
-        specifier: ^19.2.0
-        version: 19.2.5
-      react-dom:
-        specifier: ^19.2.0
-        version: 19.2.5(react@19.2.5)
-    devDependencies:
-      '@types/react':
-        specifier: ^19.2.2
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.2.2
-        version: 19.2.3(@types/react@19.2.14)
-      '@vitejs/plugin-react':
-        specifier: ^5.1.0
-        version: 5.2.0(vite@7.3.2(@types/node@24.12.2)(tsx@4.21.0))
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: ^7.1.12
-        version: 7.3.2(@types/node@24.12.2)(tsx@4.21.0)
+  apps/mobile: {}
 
   packages/acp-runtime:
     dependencies:

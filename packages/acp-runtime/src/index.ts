@@ -49,11 +49,23 @@ export type SessionRuntimeEvent =
       code?: string;
     };
 
+export type AcpSessionRestoreStrategy = "load" | "resume";
+
 export type AcpRuntimeOptions = {
   sessionId: string;
   workspace: WorkspaceSummary;
   agent: AcpAgentProvider;
+  restore?: {
+    runtimeSessionId: string;
+    strategy: AcpSessionRestoreStrategy;
+  };
   onEvent: (event: SessionRuntimeEvent) => void;
+};
+
+export type DetectedAcpSessionCapabilities = {
+  sessionLoad?: boolean;
+  sessionResume?: boolean;
+  sessionList?: boolean;
 };
 
 export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
@@ -371,7 +383,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
   options.onEvent({ type: "status", status: "starting", message: "Launching ACP session" });
 
-  await sendRequest({
+  const initializeResult = await sendRequest<any>({
     jsonrpc: "2.0",
     id: "tiller-init",
     method: "initialize",
@@ -384,11 +396,32 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       clientInfo: { name: "tiller-daemon", version: "0.1.0" },
     },
   });
+  const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
 
-  const sessionResult = await sendRequest<{ sessionId?: string; id?: string }>(
-    buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent),
-  );
-  sessionToken = sessionResult.sessionId ?? sessionResult.id ?? options.sessionId;
+  if (options.restore) {
+    if (options.restore.strategy === "load") {
+      if (!sessionCapabilities.sessionLoad) {
+        throw new Error("ACP agent does not advertise session/load capability.");
+      }
+      const loadResult = await sendRequest<{ sessionId?: string; id?: string }>(
+        buildSessionLoadRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
+      );
+      sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
+    } else {
+      if (!sessionCapabilities.sessionResume) {
+        throw new Error("ACP agent does not advertise session.resume capability.");
+      }
+      const resumeResult = await sendRequest<{ sessionId?: string; id?: string }>(
+        buildSessionResumeRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
+      );
+      sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
+    }
+  } else {
+    const sessionResult = await sendRequest<{ sessionId?: string; id?: string }>(
+      buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent),
+    );
+    sessionToken = resolveRuntimeSessionId(sessionResult, options.sessionId);
+  }
 
   options.onEvent({ type: "status", status: "idle", message: "ACP session ready" });
 
@@ -452,11 +485,17 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   };
 
   return {
+    runtimeSessionId: sessionToken,
+    sessionCapabilities,
     prompt,
     respondPermission,
     cancel,
     supportsPermissionResponses: true,
   };
+}
+
+export function resolveRuntimeSessionId(sessionResult: { sessionId?: string; id?: string } | null | undefined, fallbackSessionId: string) {
+  return sessionResult?.sessionId ?? sessionResult?.id ?? fallbackSessionId;
 }
 
 export function buildSessionNewRequest(id: string, cwd: string, agent?: string) {
@@ -465,6 +504,34 @@ export function buildSessionNewRequest(id: string, cwd: string, agent?: string) 
     id,
     method: "session/new",
     params: {
+      cwd,
+      mcpServers: [],
+      ...(agent ? { agent } : {}),
+    },
+  };
+}
+
+export function buildSessionLoadRequest(id: string, sessionId: string, cwd: string, agent?: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/load",
+    params: {
+      sessionId,
+      cwd,
+      mcpServers: [],
+      ...(agent ? { agent } : {}),
+    },
+  };
+}
+
+export function buildSessionResumeRequest(id: string, sessionId: string, cwd: string, agent?: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/resume",
+    params: {
+      sessionId,
       cwd,
       mcpServers: [],
       ...(agent ? { agent } : {}),
@@ -482,6 +549,36 @@ export function buildSessionPromptRequest(id: string, sessionId: string, text: s
       prompt: [{ type: "text", text }],
       ...(agent ? { agent } : {}),
     },
+  };
+}
+
+export function resolveSessionCapabilities(initializeResult: any, provider?: AcpAgentProvider): DetectedAcpSessionCapabilities {
+  const capabilities = initializeResult?.capabilities ?? initializeResult?.agentCapabilities ?? initializeResult?.sessionCapabilities ?? {};
+  const nestedSession = capabilities.session ?? capabilities.sessions ?? initializeResult?.sessionCapabilities ?? {};
+  const providerCapabilities = provider?.capabilities ?? {};
+
+  return {
+    sessionLoad: Boolean(
+      providerCapabilities.sessionLoad ??
+        capabilities.loadSession ??
+        capabilities.sessionLoad ??
+        nestedSession.load ??
+        nestedSession.loadSession,
+    ),
+    sessionResume: Boolean(
+      providerCapabilities.sessionResume ??
+        capabilities.resumeSession ??
+        capabilities.sessionResume ??
+        nestedSession.resume ??
+        nestedSession.resumeSession,
+    ),
+    sessionList: Boolean(
+      providerCapabilities.sessionList ??
+        capabilities.listSessions ??
+        capabilities.sessionList ??
+        nestedSession.list ??
+        nestedSession.listSessions,
+    ),
   };
 }
 

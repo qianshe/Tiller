@@ -1,12 +1,16 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { RuntimeResumeMode } from "@tiller/shared";
-
 export type StoredSessionRuntimeDescriptor = {
+  /** Tiller-local session id. */
   sessionId: string;
   providerId: string;
-  resumeMode: RuntimeResumeMode;
+  /** ACP-native session id returned by session/new, used for session/load or session/resume. */
   runtimeSessionId?: string;
+  capabilities?: {
+    sessionLoad?: boolean;
+    sessionResume?: boolean;
+    sessionList?: boolean;
+  };
   lastSeenAt: string;
   state: "resumeable" | "stale" | "lost";
 };
@@ -57,13 +61,22 @@ function isStoredSessionRuntimeDescriptor(value: unknown): value is StoredSessio
   return (
     typeof candidate.sessionId === "string" &&
     typeof candidate.providerId === "string" &&
-    isResumeMode(candidate.resumeMode) &&
     (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
+    isCapabilities(candidate.capabilities) &&
     typeof candidate.lastSeenAt === "string" &&
     (candidate.state === "resumeable" || candidate.state === "stale" || candidate.state === "lost")
   );
 }
 
-function isResumeMode(value: unknown): value is RuntimeResumeMode {
-  return value === "none" || value === "same-process" || value === "reconnect";
+function isCapabilities(value: unknown) {
+  if (typeof value === "undefined") {
+    return true;
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return ["sessionLoad", "sessionResume", "sessionList"].every(
+    (key) => typeof candidate[key] === "boolean" || typeof candidate[key] === "undefined",
+  );
 }

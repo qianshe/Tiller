@@ -1,5 +1,5 @@
 {
-  "name": "@tiller/daemon",
+  "name": "@tiller/helm",
   "version": "0.1.0",
   "private": true,
   "type": "module",

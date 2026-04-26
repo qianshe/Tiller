@@ -9,7 +9,13 @@ export type AgentCapabilities = {
   permissionRequests?: boolean;
   fileDiffs?: boolean;
   commandOutput?: boolean;
+  /** ACP session/load support: restores context and replays history via session/update. */
+  sessionLoad?: boolean;
+  /** ACP session/resume support: restores context without replaying old messages. */
   sessionResume?: boolean;
+  /** ACP session/list support: discovers agent-side sessions. */
+  sessionList?: boolean;
+  /** @deprecated Use sessionLoad/sessionResume/sessionList. */
   resumeMode?: RuntimeResumeMode;
   cancellation?: boolean;
   imageInput?: boolean;
@@ -38,6 +44,8 @@ export type WorkspaceSummary = {
   path: string;
 };
 
+export type SessionRestoreMethod = "client-reconnect" | "session/load" | "session/resume" | "ui-history";
+
 export type SessionResumeInfo = {
   mode: RuntimeResumeMode;
   state: SessionResumeState;
@@ -45,6 +53,7 @@ export type SessionResumeInfo = {
   checkedAt: string;
   providerId?: string;
   runtimeSessionId?: string;
+  restoreMethod?: SessionRestoreMethod;
   lastSeenAt?: string;
 };
 
@@ -58,6 +67,7 @@ export type SessionSummary = {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  runtimeSessionId?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
 };

@@ -30,8 +30,8 @@ test("session runtime store persists reconnect descriptors", async () => {
     store.upsert({
       sessionId: "session-1",
       providerId: "agent-opencode",
-      resumeMode: "reconnect",
       runtimeSessionId: "runtime-1",
+      capabilities: { sessionLoad: true, sessionResume: true },
       lastSeenAt: "2026-04-26T12:30:00.000Z",
       state: "resumeable",
     });
@@ -40,8 +40,9 @@ test("session runtime store persists reconnect descriptors", async () => {
     const descriptor = reloadedStore.get("session-1");
 
     assert.ok(descriptor);
-    assert.equal(descriptor?.resumeMode, "reconnect");
     assert.equal(descriptor?.runtimeSessionId, "runtime-1");
+    assert.equal(descriptor?.capabilities?.sessionLoad, true);
+    assert.equal(descriptor?.capabilities?.sessionResume, true);
     assert.equal(reloadedStore.list().length, 1);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });

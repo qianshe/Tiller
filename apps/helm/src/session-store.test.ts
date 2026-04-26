@@ -36,6 +36,7 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
       createdAt: "2026-04-26T10:00:00.000Z",
       updatedAt: "2026-04-26T10:02:00.000Z",
       messageCount: 1,
+      runtimeSessionId: "acp-session-1",
       lastMessagePreview: "first response",
       resume: {
         mode: "same-process",
@@ -72,6 +73,7 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
       status: "waiting_for_permission",
       updatedAt: "2026-04-26T12:00:00.000Z",
       messageCount: 3,
+      runtimeSessionId: "acp-session-1",
       lastMessagePreview: "permission needed",
       resume: {
         mode: "same-process",
@@ -90,6 +92,7 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
     assert.equal(summaries[0]?.status, "waiting_for_permission");
     assert.equal(summaries[0]?.messageCount, 3);
     assert.equal(summaries[0]?.lastMessagePreview, "permission needed");
+    assert.equal(summaries[0]?.runtimeSessionId, "acp-session-1");
     assert.equal(summaries[0]?.resume?.state, "resume-available");
     assert.equal(summaries[1]?.id, "session-2");
     assert.equal(summaries[1]?.resume?.state, "history-only");

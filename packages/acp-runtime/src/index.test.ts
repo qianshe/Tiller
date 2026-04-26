@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSessionLoadRequest,
   buildSessionNewRequest,
   buildSessionPromptRequest,
+  buildSessionResumeRequest,
   mapSessionUpdateNotification,
+  resolveRuntimeSessionId,
+  resolveSessionCapabilities,
 } from "./index";
 
 test("buildSessionNewRequest uses ACP session/new shape", () => {
@@ -16,6 +20,51 @@ test("buildSessionNewRequest uses ACP session/new shape", () => {
       mcpServers: [],
     },
   });
+});
+
+
+
+test("buildSessionLoadRequest uses ACP session/load shape", () => {
+  assert.deepEqual(buildSessionLoadRequest("req-load", "sess_123", "D:/myProject/tools/Tiller"), {
+    jsonrpc: "2.0",
+    id: "req-load",
+    method: "session/load",
+    params: {
+      sessionId: "sess_123",
+      cwd: "D:/myProject/tools/Tiller",
+      mcpServers: [],
+    },
+  });
+});
+
+test("buildSessionResumeRequest uses ACP session/resume shape", () => {
+  assert.deepEqual(buildSessionResumeRequest("req-resume", "sess_123", "D:/myProject/tools/Tiller"), {
+    jsonrpc: "2.0",
+    id: "req-resume",
+    method: "session/resume",
+    params: {
+      sessionId: "sess_123",
+      cwd: "D:/myProject/tools/Tiller",
+      mcpServers: [],
+    },
+  });
+});
+
+test("resolveSessionCapabilities reads initialize and provider capability hints", () => {
+  assert.deepEqual(
+    resolveSessionCapabilities({ capabilities: { session: { load: true, resume: true, list: true } } }),
+    { sessionLoad: true, sessionResume: true, sessionList: true },
+  );
+  assert.deepEqual(
+    resolveSessionCapabilities({}, { id: "agent", name: "Agent", command: "agent", transport: "stdio", protocol: "acp", capabilities: { sessionResume: true } }),
+    { sessionLoad: false, sessionResume: true, sessionList: false },
+  );
+});
+
+test("resolveRuntimeSessionId prefers ACP native ids before fallback", () => {
+  assert.equal(resolveRuntimeSessionId({ sessionId: "acp-session-1", id: "legacy-id" }, "tiller-session"), "acp-session-1");
+  assert.equal(resolveRuntimeSessionId({ id: "legacy-id" }, "tiller-session"), "legacy-id");
+  assert.equal(resolveRuntimeSessionId({}, "tiller-session"), "tiller-session");
 });
 
 test("buildSessionPromptRequest wraps text as ACP prompt content", () => {

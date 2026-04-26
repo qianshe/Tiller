@@ -22,7 +22,7 @@ import type { ClientToDaemon, DaemonToClient } from "@tiller/sync-protocol";
 import type { AcpAgentProvider, AgentMessage, PermissionRequest, SessionResumeInfo, SessionSummary, WorkspaceSummary } from "@tiller/shared";
 import { createSessionArtifactStore } from "./session-artifact-store";
 import { createSessionMessageStore } from "./session-message-store";
-import { createSessionRuntimeStore } from "./session-runtime-store";
+import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./session-runtime-store";
 import { createSessionStore } from "./session-store";
 
 // Tiller verification ping by Antigravity 🐾
@@ -82,7 +82,10 @@ function showPairingCode() {
 const server = new WebSocketServer({ host: HOST, port: PORT });
 
 server.on("connection", (socket) => {
+  logInfo("[tiller-daemon] client connected");
+
   socket.on("close", () => {
+    logInfo("[tiller-daemon] client disconnected");
     if (pairedSocket === socket) {
       pairedSocket = null;
     }
@@ -120,6 +123,7 @@ server.on("connection", (socket) => {
 
           authenticated = true;
           pairedSocket = socket;
+          logInfo("[tiller-daemon] Device authenticated with saved token ✓");
           clearTimeout(authTimeout);
           socket.removeAllListeners("message");
           socket.on("message", (raw2) => {
@@ -252,6 +256,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       });
       return;
     case "session.list":
+      logInfo(`[tiller-daemon] session.list count=${sessionStore.list().length}`);
       emit(socket, {
         type: "session.list.result",
         requestId: payload.requestId,
@@ -278,6 +283,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     }
     case "session.resume.check": {
+      logInfo(`[tiller-daemon] session.resume.check session=${payload.sessionId}`);
       const summary = sessionStore.list().find((item) => item.id === payload.sessionId);
       if (!summary) {
         emit(socket, {
@@ -299,29 +305,16 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     }
     case "session.resume.start": {
-      const summary = sessionStore.list().find((item) => item.id === payload.sessionId);
-      if (!summary) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          sessionId: payload.sessionId,
-          message: "Session not found",
-        });
-        return;
-      }
-
-      const hydrated = hydrateSessionSummary(summary);
-      const resume = hydrated.resume ?? buildResumeInfo(hydrated, resolveProviderById(hydrated.agentId, agents));
+      logInfo(`[tiller-daemon] session.resume.start session=${payload.sessionId}`);
+      const result = await startSessionResume(payload.sessionId);
+      logInfo(`[tiller-daemon] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
       emit(socket, {
         type: "session.resume.start.result",
         requestId: payload.requestId,
         sessionId: payload.sessionId,
-        ok: resume.state === "resume-available",
-        resume,
-        message:
-          resume.state === "resume-available"
-            ? "Session is already attached to the current daemon process."
-            : resume.reason,
+        ok: result.ok,
+        resume: result.resume,
+        message: result.message,
       });
       return;
     }
@@ -391,6 +384,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
 
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
+      logInfo(`[tiller-daemon] session.create requested session=${sessionId} workspace=${workspace.id} agent=${agent.id}`);
       const summary: SessionSummary = {
         id: sessionId,
         workspaceId: workspace.id,
@@ -433,15 +427,28 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           onEvent: (event) => handleRuntimeEvent(socket, sessionId, event),
         });
 
+        const summaryWithRuntime = hydrateSessionSummary({
+          ...summary,
+          runtimeSessionId: runtime.runtimeSessionId,
+        });
+        logInfo(
+          `[tiller-daemon] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
+        );
         const record: SessionRecord = {
-          summary,
+          summary: summaryWithRuntime,
           agent,
           workspace,
           runtime,
         };
 
         sessions.set(sessionId, record);
-        updateSessionSummary(sessionId, (current) => current);
+        sessionStore.upsert(summaryWithRuntime);
+        persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
+        emit(socket, {
+          type: "session.created",
+          requestId: payload.requestId,
+          session: summaryWithRuntime,
+        });
       } catch (error) {
         emit(socket, {
           type: "error",
@@ -551,6 +558,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
 function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: SessionRuntimeEvent) {
   switch (event.type) {
     case "status":
+      logInfo(`[tiller-daemon] session.status session=${sessionId} status=${event.status}${event.message ? ` message=${event.message}` : ""}`);
       updateSessionSummary(sessionId, (current) => ({
         ...current,
         status: event.status,
@@ -609,6 +617,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
       });
       return;
     case "error":
+      logError(`[tiller-daemon] session.error session=${sessionId} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
       persistSessionMessage(sessionId, {
         id: `${sessionId}-system-${Date.now()}`,
         role: "system",
@@ -651,7 +660,7 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
     record.summary = next;
   }
   sessionStore.upsert(next);
-  persistRuntimeDescriptor(next, record?.agent ?? resolveProviderById(next.agentId, agents));
+  persistRuntimeDescriptor(next, record?.agent ?? resolveProviderById(next.agentId, agents), record?.runtime.sessionCapabilities);
 }
 
 function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
@@ -664,68 +673,167 @@ function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
 }
 
 function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {
-  const mode = resolveResumeMode(agent);
-  const active = sessions.has(summary.id);
-  const checkedAt = new Date().toISOString();
+  const activeRecord = sessions.get(summary.id);
   const descriptor = sessionRuntimeStore.get(summary.id);
+  const checkedAt = new Date().toISOString();
+  const runtimeSessionId = summary.runtimeSessionId ?? activeRecord?.runtime.runtimeSessionId ?? descriptor?.runtimeSessionId;
+  const capabilities = resolveSessionRestoreCapabilities(agent, descriptor, activeRecord?.runtime.sessionCapabilities);
 
-  if (mode === "none") {
+  if (activeRecord) {
     return {
-      mode,
-      state: "history-only",
-      reason: "This provider does not declare runtime resume support.",
-      checkedAt,
-      providerId: summary.agentId,
-      lastSeenAt: summary.updatedAt,
-    };
-  }
-
-  if (active && mode === "same-process") {
-    return {
-      mode,
+      mode: "same-process",
       state: "resume-available",
-      reason: "The session is still attached to the current daemon process.",
+      reason: "Client can reconnect to the still-running daemon session; ACP restore is not required.",
       checkedAt,
       providerId: summary.agentId,
-      runtimeSessionId: summary.id,
+      runtimeSessionId,
+      restoreMethod: "client-reconnect",
       lastSeenAt: summary.updatedAt,
     };
   }
 
+  if (runtimeSessionId && (capabilities.sessionLoad || capabilities.sessionResume)) {
     return {
-      mode,
-      state: "resume-unavailable",
-      reason:
-        mode === "same-process"
-          ? "History is restored, but this session cannot be resumed after daemon restart."
-          : descriptor
-            ? "Reconnect descriptor is preserved, but provider-specific reconnect is not implemented yet."
-            : "This provider declares external resume capability, but no reconnect descriptor is available yet.",
+      mode: "reconnect",
+      state: "resume-available",
+      reason: capabilities.sessionLoad
+        ? "ACP agent advertises session/load; daemon can try agent-side restore and history replay."
+        : "ACP agent advertises session.resume; daemon can try context restore without replaying old messages.",
       checkedAt,
       providerId: summary.agentId,
+      runtimeSessionId,
+      restoreMethod: capabilities.sessionLoad ? "session/load" : "session/resume",
       lastSeenAt: summary.updatedAt,
     };
+  }
+
+  return {
+    mode: "none",
+    state: "history-only",
+    reason: "ACP agent restore is unavailable; Tiller can only restore UI history recorded by the daemon.",
+    checkedAt,
+    providerId: summary.agentId,
+    runtimeSessionId,
+    restoreMethod: "ui-history",
+    lastSeenAt: summary.updatedAt,
+  };
+}
+
+function resolveSessionRestoreCapabilities(
+  agent: AcpAgentProvider | undefined,
+  descriptor?: StoredSessionRuntimeDescriptor | null,
+  runtimeCapabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+) {
+  return {
+    sessionLoad: Boolean(runtimeCapabilities?.sessionLoad ?? descriptor?.capabilities?.sessionLoad ?? agent?.capabilities?.sessionLoad),
+    sessionResume: Boolean(runtimeCapabilities?.sessionResume ?? descriptor?.capabilities?.sessionResume ?? agent?.capabilities?.sessionResume),
+    sessionList: Boolean(runtimeCapabilities?.sessionList ?? descriptor?.capabilities?.sessionList ?? agent?.capabilities?.sessionList),
+  };
 }
 
 function resolveResumeMode(agent: AcpAgentProvider | undefined) {
-  if (agent?.capabilities?.resumeMode) {
-    return agent.capabilities.resumeMode;
+  if (agent?.capabilities?.sessionLoad || agent?.capabilities?.sessionResume) {
+    return "reconnect";
   }
 
-  return agent?.capabilities?.sessionResume ? "same-process" : "none";
+  return agent?.capabilities?.resumeMode ?? "none";
 }
 
-function persistRuntimeDescriptor(summary: SessionSummary, agent: AcpAgentProvider | undefined) {
-  const resumeMode = resolveResumeMode(agent);
-  if (resumeMode === "none") {
+async function startSessionResume(sessionId: string) {
+  const activeRecord = sessions.get(sessionId);
+  if (activeRecord) {
+    const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
+    logInfo(`[tiller-daemon] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
+    return {
+      ok: true,
+      resume,
+      message: "Client reconnected to the still-running daemon session; no ACP restore was needed.",
+    };
+  }
+
+  const summary = sessionStore.list().find((item) => item.id === sessionId);
+  if (!summary) {
+    const now = new Date().toISOString();
+    return {
+      ok: false,
+      resume: {
+        mode: "none" as const,
+        state: "resume-unavailable" as const,
+        reason: "Session not found.",
+        checkedAt: now,
+      },
+      message: "Session not found.",
+    };
+  }
+
+  const agent = resolveProviderById(summary.agentId, agents);
+  const workspace = workspaces.find((item) => item.id === summary.workspaceId);
+  const resume = buildResumeInfo(summary, agent);
+  if (!agent || !workspace || !resume.runtimeSessionId || (resume.restoreMethod !== "session/load" && resume.restoreMethod !== "session/resume")) {
+    return {
+      ok: false,
+      resume,
+      message: resume.reason,
+    };
+  }
+
+  try {
+    logInfo(`[tiller-daemon] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
+    const runtime = await createAcpRuntime({
+      sessionId,
+      workspace,
+      agent,
+      restore: {
+        runtimeSessionId: resume.runtimeSessionId,
+        strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
+      },
+      onEvent: (event) => handleRuntimeEvent(pairedSocket!, sessionId, event),
+    });
+    const restoredSummary = hydrateSessionSummary({
+      ...summary,
+      runtimeSessionId: runtime.runtimeSessionId,
+      status: "idle",
+      updatedAt: new Date().toISOString(),
+    });
+    sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
+    sessionStore.upsert(restoredSummary);
+    persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
+    logInfo(`[tiller-daemon] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
+    return {
+      ok: true,
+      resume: buildResumeInfo(restoredSummary, agent),
+      message: `ACP ${resume.restoreMethod} completed for this session.`,
+    };
+  } catch (error) {
+    logError(`[tiller-daemon] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
+    return {
+      ok: false,
+      resume: {
+        ...resume,
+        state: "resume-unavailable" as const,
+        reason: error instanceof Error ? error.message : "ACP restore failed.",
+        checkedAt: new Date().toISOString(),
+      },
+      message: error instanceof Error ? error.message : "ACP restore failed.",
+    };
+  }
+}
+
+function persistRuntimeDescriptor(
+  summary: SessionSummary,
+  agent: AcpAgentProvider | undefined,
+  capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+) {
+  const resolvedCapabilities = resolveSessionRestoreCapabilities(agent, sessionRuntimeStore.get(summary.id), capabilities);
+  if (!summary.runtimeSessionId && !resolvedCapabilities.sessionLoad && !resolvedCapabilities.sessionResume && !resolvedCapabilities.sessionList) {
     return;
   }
 
   sessionRuntimeStore.upsert({
     sessionId: summary.id,
     providerId: summary.agentId,
-    resumeMode,
-    runtimeSessionId: summary.id,
+    runtimeSessionId: summary.runtimeSessionId,
+    capabilities: resolvedCapabilities,
     lastSeenAt: summary.updatedAt,
     state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
   });
@@ -769,6 +877,8 @@ type SessionRecord = {
   agent: AcpAgentProvider;
   workspace: WorkspaceSummary;
   runtime: {
+    runtimeSessionId: string;
+    sessionCapabilities?: StoredSessionRuntimeDescriptor["capabilities"];
     prompt: (text: string) => void;
     respondPermission: (requestId: string, decision: "allow" | "deny") => void;
     cancel: () => void;
