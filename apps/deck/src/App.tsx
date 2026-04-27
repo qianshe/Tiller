@@ -257,13 +257,9 @@ export function App() {
 
   const copy = UI_COPY[locale];
 
-  const resolvedSessions = useMemo(
-    () => sessions.map((session) => alignSessionProject(session, projects)),
-    [projects, sessions],
-  );
   const activeSession = useMemo(
-    () => resolvedSessions.find((session) => session.id === activeSessionId) ?? null,
-    [activeSessionId, resolvedSessions],
+    () => sessions.find((session) => session.id === activeSessionId) ?? null,
+    [activeSessionId, sessions],
   );
   const draftProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -288,12 +284,12 @@ export function App() {
     return agents.filter((agent) => allowedAgentIds.includes(agent.id));
   }, [agents, draftProject?.allowedAgentIds]);
   const projectSessions = useMemo(
-    () => resolvedSessions.filter((session) => !selectedProjectId || session.projectId === selectedProjectId),
-    [resolvedSessions, selectedProjectId],
+    () => sessions.filter((session) => !selectedProjectId || session.projectId === selectedProjectId),
+    [selectedProjectId, sessions],
   );
   const sessionCountsByProject = useMemo(
-    () => resolvedSessions.reduce<Record<string, number>>((counts, session) => ({ ...counts, [session.projectId]: (counts[session.projectId] ?? 0) + 1 }), {}),
-    [resolvedSessions],
+    () => sessions.reduce<Record<string, number>>((counts, session) => ({ ...counts, [session.projectId]: (counts[session.projectId] ?? 0) + 1 }), {}),
+    [sessions],
   );
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
@@ -323,15 +319,15 @@ export function App() {
   function selectProject(projectId: string) {
     setSelectedProjectId(projectId);
     setActiveSessionId((current) => {
-      if (current && resolvedSessions.some((session) => session.id === current && session.projectId === projectId)) {
+      if (current && sessions.some((session) => session.id === current && session.projectId === projectId)) {
         return current;
       }
-      return resolvedSessions.find((session) => session.projectId === projectId)?.id ?? null;
+      return sessions.find((session) => session.projectId === projectId)?.id ?? null;
     });
   }
 
   function openSession(sessionId: string) {
-    const session = resolvedSessions.find((item) => item.id === sessionId);
+    const session = sessions.find((item) => item.id === sessionId);
     if (!session) {
       return;
     }
@@ -1054,7 +1050,7 @@ export function App() {
   const showPairingCard = connection === "connected" && pairingState !== "paired";
 
   function renderOverview() {
-    const recentSessions = resolvedSessions.slice(0, 5);
+    const recentSessions = sessions.slice(0, 5);
     return (
       <section className="workspace-single">
         <header className="hero card hero-panel">
@@ -1617,33 +1613,6 @@ function splitArgs(value: string) {
     .split(" ")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function alignSessionProject(session: SessionSummary, projects: ProjectSummary[]) {
-  const exactProject = projects.find((project) => project.id === session.projectId);
-  if (exactProject) {
-    if (session.projectName === exactProject.name) {
-      return session;
-    }
-    return {
-      ...session,
-      projectName: exactProject.name,
-      helmId: session.helmId === exactProject.helmId ? session.helmId : exactProject.helmId,
-    };
-  }
-
-  const matchedProject = projects.find((project) => project.name === session.projectName)
-    ?? projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
-  if (!matchedProject) {
-    return session;
-  }
-
-  return {
-    ...session,
-    projectId: matchedProject.id,
-    projectName: matchedProject.name,
-    helmId: matchedProject.helmId,
-  };
 }
 
 function resolveSessionTitle(session: SessionSummary) {
