@@ -1,6 +1,5 @@
 import { WebSocketServer, type WebSocket } from "ws";
 import qrcode from "qrcode-terminal";
-import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +21,7 @@ import {
   testAcpConnection,
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
-import type { ClientToDaemon, DaemonToClient } from "@tiller/sync-protocol";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
   AgentMessage,
@@ -32,20 +31,23 @@ import type {
   SessionReasoningEffort,
   SessionResumeInfo,
   SessionSummary,
+  TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
+import { createAuthenticatedSocketRegistry } from "./authenticated-socket-registry";
 import { createSessionArtifactStore } from "./session-artifact-store";
 import { createSessionMessageStore } from "./session-message-store";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./session-runtime-store";
 import { createSessionStore } from "./session-store";
 import { resolveSessionCleanupOutcome } from "./session-cleanup";
+import { createTrustedDeviceStore } from "./trusted-device-store";
 
 // Tiller verification ping by Antigravity 🐾
 const HOST = "127.0.0.1";
 const PORT = 47631;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const LOGS_DIR = resolve(REPO_ROOT, "logs");
-const DAEMON_LOG_FILE = resolve(LOGS_DIR, "daemon.log");
+const HELM_LOG_FILE = resolve(LOGS_DIR, "helm.log");
 
 mkdirSync(LOGS_DIR, { recursive: true });
 
@@ -54,10 +56,15 @@ const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
 const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
 const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
+const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
 const sessionStore = createSessionStore(sessionHistoryPath);
 const sessionMessageStore = createSessionMessageStore(sessionMessagesPath);
 const sessionArtifactStore = createSessionArtifactStore(sessionArtifactsPath);
 const sessionRuntimeStore = createSessionRuntimeStore(sessionRuntimesPath);
+const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
+const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
+const socketIds = new WeakMap<WebSocket, string>();
+let nextSocketSequence = 0;
 const configStub = loadTillerConfigStub(configPath);
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
@@ -67,8 +74,6 @@ const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 
 // --- Device pairing state ---
-let pairedToken: string | null = null;
-let pairedSocket: WebSocket | null = null;
 let pairingCode: string | null = null;
 
 function generatePairingCode(): string {
@@ -80,17 +85,13 @@ function generatePairingCode(): string {
   return code;
 }
 
-function generateSessionToken(): string {
-  return randomBytes(32).toString("hex");
-}
-
 function showPairingCode() {
   if (!pairingCode) {
     pairingCode = generatePairingCode();
   }
   const pairUrl = `ws://${HOST}:${PORT}?pair=${pairingCode}`;
-  console.log(`[tiller-daemon] Pairing code: ${pairingCode}`);
-  console.log("[tiller-daemon] Scan QR code or enter pairing code to connect:");
+  console.log(`[tiller-helm] Pairing code: ${pairingCode}`);
+  console.log("[tiller-helm] Scan QR code or enter pairing code to connect:");
   qrcode.generate(pairUrl, { small: true }, (qr: string) => {
     console.log(qr);
   });
@@ -99,118 +100,121 @@ function showPairingCode() {
 const server = new WebSocketServer({ host: HOST, port: PORT });
 
 server.on("connection", (socket) => {
-  logInfo("[tiller-daemon] client connected");
+  logInfo("[tiller-helm] client connected");
 
   socket.on("close", () => {
-    logInfo("[tiller-daemon] client disconnected");
-    if (pairedSocket === socket) {
-      pairedSocket = null;
-    }
+    logInfo("[tiller-helm] client disconnected");
+    authenticatedSockets.remove(getSocketId(socket));
   });
 
-  if (pairedToken) {
-    let authenticated = false;
+  beginAuthenticationFlow(socket);
+});
 
-    const authTimeout = setTimeout(() => {
-      if (!authenticated) {
-        emit(socket, { type: "error", message: "Authentication timeout. Send device.auth within 5 seconds." });
-        socket.close();
-      }
-    }, 5000);
-
-    socket.on("message", (raw) => {
-      if (authenticated) {
-        return;
-      }
-
-      try {
-        const payload = JSON.parse(String(raw)) as ClientToDaemon;
-        if (payload.type === "device.auth" && payload.token === pairedToken) {
-          if (pairedSocket && pairedSocket !== socket && pairedSocket.readyState === 1) {
-            clearTimeout(authTimeout);
-            emit(socket, {
-              type: "device.auth.result",
-              requestId: payload.requestId,
-              ok: false,
-              message: "Daemon already paired. Restart to reset.",
-            });
-            socket.close();
-            return;
-          }
-
-          authenticated = true;
-          pairedSocket = socket;
-          logInfo("[tiller-daemon] Device authenticated with saved token ✓");
-          clearTimeout(authTimeout);
-          socket.removeAllListeners("message");
-          socket.on("message", (raw2) => {
-            try {
-              void handleMessage(socket, JSON.parse(String(raw2)) as ClientToDaemon);
-            } catch (error) {
-              emit(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
-            }
-          });
-          emit(socket, { type: "device.auth.result", requestId: payload.requestId, ok: true, message: "Authenticated" });
-        } else {
-          clearTimeout(authTimeout);
-          if (payload.type === "device.auth") {
-            emit(socket, {
-              type: "device.auth.result",
-              requestId: payload.requestId,
-              ok: false,
-              message: "Not authenticated or wrong token. Restart daemon to reset.",
-            });
-          } else {
-            emit(socket, { type: "error", message: "Not authenticated or wrong token. Restart daemon to reset." });
-          }
-          socket.close();
-        }
-      } catch {
-        clearTimeout(authTimeout);
-        socket.close();
-      }
-    });
-    return;
-  }
-
+function beginAuthenticationFlow(socket: WebSocket) {
   if (!pairingCode) {
     showPairingCode();
   }
 
+  let authenticated = false;
+  const authTimeout = setTimeout(() => {
+    if (!authenticated) {
+      reply(socket, { type: "error", message: "Authentication timeout. Send device.auth or device.pair within 5 seconds." });
+      socket.close();
+    }
+  }, 5000);
+
   socket.on("message", (raw) => {
+    if (authenticated) {
+      return;
+    }
+
     try {
-      const payload = JSON.parse(String(raw)) as ClientToDaemon;
-      if (payload.type === "device.pair") {
-        handlePairing(socket, payload);
+      const payload = JSON.parse(String(raw)) as ClientToHelm;
+      if (payload.type === "device.auth") {
+        const result = trustedDeviceStore.authenticate({ deviceId: payload.deviceId, token: payload.token });
+        clearTimeout(authTimeout);
+        if (!result.ok) {
+          showPairingCode();
+          reply(socket, {
+            type: "device.auth.result",
+            requestId: payload.requestId,
+            ok: false,
+            requiresPairing: result.requiresPairing,
+            message: result.message,
+          });
+          socket.close();
+          return;
+        }
+
+        authenticated = true;
+        authenticateSocket(socket, payload.deviceId);
+        logInfo(`[tiller-helm] Trusted device authenticated device=${payload.deviceId} ✓`);
+        reply(socket, {
+          type: "device.auth.result",
+          requestId: payload.requestId,
+          ok: true,
+          trustedUntil: result.trustedUntil,
+          message: result.message,
+        });
         return;
       }
-      emit(socket, { type: "error", message: "Daemon not paired yet. Send device.pair first." });
+
+      if (payload.type === "device.pair") {
+        handlePairing(socket, payload);
+        authenticated = true;
+        clearTimeout(authTimeout);
+        return;
+      }
+
+      clearTimeout(authTimeout);
+      reply(socket, { type: "error", message: "Helm not authenticated yet. Send device.auth or device.pair first." });
+      socket.close();
     } catch (error) {
-      emit(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      clearTimeout(authTimeout);
+      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      socket.close();
     }
   });
-});
+}
 
+function authenticateSocket(socket: WebSocket, deviceId: string) {
+  const socketId = getSocketId(socket);
+  authenticatedSockets.add({
+    socketId,
+    socket,
+    deviceId,
+    authenticatedAt: new Date().toISOString(),
+    lastSeenAt: new Date().toISOString(),
+  });
+  socket.removeAllListeners("message");
+  socket.on("message", (raw) => {
+    try {
+      void handleMessage(socket, JSON.parse(String(raw)) as ClientToHelm);
+    } catch (error) {
+      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+    }
+  });
+}
 server.on("listening", () => {
-  logInfo(`[tiller-daemon] listening on ws://${HOST}:${PORT}`);
-  logInfo(`[tiller-daemon] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
+  logInfo(`[tiller-helm] listening on ws://${HOST}:${PORT}`);
+  logInfo(`[tiller-helm] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
 });
 
 server.on("error", (error) => {
-  logError(`[tiller-daemon] server error: ${error.message}`);
+  logError(`[tiller-helm] server error: ${error.message}`);
 });
 
 process.on("uncaughtException", (error) => {
-  logError(`[tiller-daemon] uncaught exception: ${error.stack ?? error.message}`);
+  logError(`[tiller-helm] uncaught exception: ${error.stack ?? error.message}`);
 });
 
 process.on("unhandledRejection", (reason) => {
-  logError(`[tiller-daemon] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  logError(`[tiller-helm] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
 });
 
-function handlePairing(socket: WebSocket, payload: { type: "device.pair"; requestId: string; pairingCode: string }) {
+function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type: "device.pair" }>) {
   if (!pairingCode || payload.pairingCode.toUpperCase() !== pairingCode) {
-    emit(socket, {
+    reply(socket, {
       type: "device.pair.result",
       requestId: payload.requestId,
       ok: false,
@@ -219,30 +223,27 @@ function handlePairing(socket: WebSocket, payload: { type: "device.pair"; reques
     return;
   }
 
-  pairedToken = generateSessionToken();
-  pairedSocket = socket;
-  pairingCode = null;
-  logInfo("[tiller-daemon] Device paired ✓");
-
-  socket.removeAllListeners("message");
-  socket.on("message", (raw) => {
-    try {
-      void handleMessage(socket, JSON.parse(String(raw)) as ClientToDaemon);
-    } catch (error) {
-      emit(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
-    }
+  const issued = trustedDeviceStore.issue({
+    deviceId: payload.deviceId,
+    deviceName: payload.deviceName,
+    clientKind: payload.clientKind,
   });
+  pairingCode = null;
+  authenticateSocket(socket, payload.deviceId);
+  logInfo(`[tiller-helm] Device paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
 
-  emit(socket, {
+  reply(socket, {
     type: "device.pair.result",
     requestId: payload.requestId,
     ok: true,
-    token: pairedToken,
+    token: issued.token,
+    trustedUntil: issued.record.expiresAt,
+    deviceName: issued.record.deviceName,
     message: "Device paired successfully.",
   });
 }
 
-async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
+async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
   switch (payload.type) {
     case "helm.list":
       helms = loadAvailableHelms();
@@ -252,6 +253,39 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
         helms,
       });
       return;
+    case "device.list":
+      emit(socket, {
+        type: "device.list.result",
+        requestId: payload.requestId,
+        devices: trustedDeviceStore.list().map(toTrustedDeviceSummary),
+      });
+      return;
+    case "device.revoke": {
+      const revoked = trustedDeviceStore.revoke(payload.deviceId);
+      const revokedSockets = authenticatedSockets.listForDevice(payload.deviceId);
+      const requesterRevoked = revokedSockets.some((record) => record.socket === socket);
+      for (const record of revokedSockets) {
+        authenticatedSockets.remove(record.socketId);
+        emit(record.socket, {
+          type: "device.revoke.result",
+          requestId: payload.requestId,
+          ok: revoked,
+          deviceId: payload.deviceId,
+          message: revoked ? "This trusted device was revoked. Pair again to reconnect." : "Trusted device not found.",
+        });
+        record.socket.close();
+      }
+      if (!requesterRevoked) {
+        emit(socket, {
+          type: "device.revoke.result",
+          requestId: payload.requestId,
+          ok: revoked,
+          deviceId: payload.deviceId,
+          message: revoked ? "Trusted device revoked." : "Trusted device not found.",
+        });
+      }
+      return;
+    }
     case "project.list":
       projects = loadAvailableProjects();
       emit(socket, {
@@ -291,7 +325,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     case "session.list": {
       const normalizedSessions = sessionStore.list().map(migrateStoredSessionSummary);
-      logInfo(`[tiller-daemon] session.list count=${normalizedSessions.length}`);
+      logInfo(`[tiller-helm] session.list count=${normalizedSessions.length}`);
       emit(socket, {
         type: "session.list.result",
         requestId: payload.requestId,
@@ -319,7 +353,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     }
     case "session.resume.check": {
-      logInfo(`[tiller-daemon] session.resume.check session=${payload.sessionId}`);
+      logInfo(`[tiller-helm] session.resume.check session=${payload.sessionId}`);
       const summary = sessionStore.list().find((item) => item.id === payload.sessionId);
       if (!summary) {
         emit(socket, {
@@ -341,9 +375,9 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     }
     case "session.resume.start": {
-      logInfo(`[tiller-daemon] session.resume.start session=${payload.sessionId}`);
+      logInfo(`[tiller-helm] session.resume.start session=${payload.sessionId}`);
       const result = await startSessionResume(payload.sessionId);
-      logInfo(`[tiller-daemon] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
+      logInfo(`[tiller-helm] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
       emit(socket, {
         type: "session.resume.start.result",
         requestId: payload.requestId,
@@ -447,7 +481,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
       logInfo(
-        `[tiller-daemon] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`,
+        `[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`,
       );
       const summaryBase: SessionSummary = {
         id: sessionId,
@@ -472,7 +506,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       sessionStore.upsert(summary);
       persistRuntimeDescriptor(summary, agent);
 
-      emit(socket, {
+      broadcastAuthenticated({
         type: "session.created",
         requestId: payload.requestId,
         session: summary,
@@ -487,7 +521,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
             model: summary.model,
             reasoningEffort: summary.reasoningEffort,
           },
-          onEvent: (event) => handleRuntimeEvent(socket, sessionId, event),
+          onEvent: (event) => handleRuntimeEvent(sessionId, event),
         });
 
         const summaryWithRuntime = hydrateSessionSummary({
@@ -496,8 +530,9 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           runtimeSessionId: runtime.runtimeSessionId,
         });
+        const capabilitiesJson = JSON.stringify(runtime.sessionCapabilities ?? {});
         logInfo(
-          `[tiller-daemon] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
+          `[tiller-helm] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${capabilitiesJson}`,
         );
         const record: SessionRecord = {
           summary: summaryWithRuntime,
@@ -509,7 +544,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
         sessions.set(sessionId, record);
         sessionStore.upsert(summaryWithRuntime);
         persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
-        emit(socket, {
+        broadcastAuthenticated({
           type: "session.created",
           requestId: payload.requestId,
           session: summaryWithRuntime,
@@ -522,7 +557,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           message: error instanceof Error ? error.message : "Failed to create session runtime",
         });
         logError(
-          `[tiller-daemon] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`,
+          `[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`,
         );
         updateSessionSummary(sessionId, (current) => ({
           ...current,
@@ -530,7 +565,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           updatedAt: new Date().toISOString(),
           lastMessagePreview: "Session startup failed",
         }));
-        emit(socket, {
+        broadcastAuthenticated({
           type: "session.status",
           sessionId,
           status: "error",
@@ -590,7 +625,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
         reasoningEffort: nextReasoning,
         updatedAt: new Date().toISOString(),
       });
-      emit(socket, {
+      broadcastAuthenticated({
         type: "session.updated",
         requestId: payload.requestId,
         session: next,
@@ -630,7 +665,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       }
 
       permissionIndex.delete(payload.permissionRequestId);
-      emit(socket, {
+      broadcastAuthenticated({
         type: "permission.resolved",
         sessionId: permission.sessionId,
         permissionRequestId: payload.permissionRequestId,
@@ -675,7 +710,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       deleteLocalSessionData(summary.id);
 
       const remoteResult = resolveSessionCleanupOutcome(summary, provider);
-      emit(socket, {
+      broadcastAuthenticated({
         type: "session.cleanup.result",
         requestId: payload.requestId,
         result: {
@@ -694,20 +729,20 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
   }
 }
 
-function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: SessionRuntimeEvent) {
+function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
   if (!sessions.has(sessionId) && !sessionStore.list().some((item) => item.id === sessionId)) {
     return;
   }
 
   switch (event.type) {
     case "status":
-      logInfo(`[tiller-daemon] session.status session=${sessionId} status=${event.status}${event.message ? ` message=${event.message}` : ""}`);
+      logInfo(`[tiller-helm] session.status session=${sessionId} status=${event.status}${event.message ? ` message=${event.message}` : ""}`);
       updateSessionSummary(sessionId, (current) => ({
         ...current,
         status: event.status,
         updatedAt: new Date().toISOString(),
       }));
-      emit(socket, {
+      broadcastAuthenticated({
         type: "session.status",
         sessionId,
         status: event.status,
@@ -722,7 +757,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
         messageCount: current.messageCount + 1,
         lastMessagePreview: event.message.text.slice(0, 160),
       }));
-      emit(socket, {
+      broadcastAuthenticated({
         type: "agent.message",
         sessionId,
         message: event.message,
@@ -736,7 +771,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
         lastMessagePreview: event.request.reason,
       }));
       permissionIndex.set(event.request.id, { sessionId, request: event.request });
-      emit(socket, {
+      broadcastAuthenticated({
         type: "permission.request",
         sessionId,
         permissionRequest: event.request,
@@ -744,7 +779,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
       return;
     case "command-output":
       sessionArtifactStore.appendOutput(sessionId, event.chunk);
-      emit(socket, {
+      broadcastAuthenticated({
         type: "command.output",
         sessionId,
         commandId: event.chunk.commandId,
@@ -753,7 +788,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
       return;
     case "diff-update":
       sessionArtifactStore.replaceDiffs(sessionId, event.files);
-      emit(socket, {
+      broadcastAuthenticated({
         type: "diff.update",
         sessionId,
         files: event.files,
@@ -766,10 +801,16 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
         reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
+      broadcastAuthenticated({
+        type: "session.config.options",
+        sessionId,
+        state: event.state,
+        options: event.options,
+      });
       if (!updated) {
         return;
       }
-      emit(socket, {
+      broadcastAuthenticated({
         type: "session.updated",
         requestId: `session-config-${Date.now()}`,
         session: hydrateSessionSummary(updated),
@@ -777,7 +818,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
       return;
     }
     case "error":
-      logError(`[tiller-daemon] session.error session=${sessionId} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
+      logError(`[tiller-helm] session.error session=${sessionId} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
       persistSessionMessage(sessionId, {
         id: `${sessionId}-system-${Date.now()}`,
         role: "system",
@@ -790,7 +831,7 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
         updatedAt: new Date().toISOString(),
         lastMessagePreview: event.message.slice(0, 160),
       }));
-      emit(socket, {
+      broadcastAuthenticated({
         type: "error",
         sessionId,
         message: event.message,
@@ -897,7 +938,7 @@ function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | unde
     return {
       mode: "same-process",
       state: "resume-available",
-      reason: "Client can reconnect to the still-running daemon session; ACP restore is not required.",
+      reason: "Client can reconnect to the still-running Helm session; ACP restore is not required.",
       checkedAt,
       providerId: summary.agentId,
       runtimeSessionId,
@@ -911,8 +952,8 @@ function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | unde
       mode: "reconnect",
       state: "resume-available",
       reason: capabilities.sessionLoad
-        ? "ACP agent advertises session/load; daemon can try agent-side restore and history replay."
-        : "ACP agent advertises session.resume; daemon can try context restore without replaying old messages.",
+        ? "ACP agent advertises session/load; Helm can try agent-side restore and history replay."
+        : "ACP agent advertises session.resume; Helm can try context restore without replaying old messages.",
       checkedAt,
       providerId: summary.agentId,
       runtimeSessionId,
@@ -924,7 +965,7 @@ function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | unde
   return {
     mode: "none",
     state: "history-only",
-    reason: "ACP agent restore is unavailable; Tiller can only restore UI history recorded by the daemon.",
+    reason: "ACP agent restore is unavailable; Tiller can only restore UI history recorded by Helm.",
     checkedAt,
     providerId: summary.agentId,
     runtimeSessionId,
@@ -957,11 +998,11 @@ async function startSessionResume(sessionId: string) {
   const activeRecord = sessions.get(sessionId);
   if (activeRecord) {
     const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
-    logInfo(`[tiller-daemon] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
+    logInfo(`[tiller-helm] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
     return {
       ok: true,
       resume,
-      message: "Client reconnected to the still-running daemon session; no ACP restore was needed.",
+      message: "Client reconnected to the still-running Helm session; no ACP restore was needed.",
     };
   }
 
@@ -992,7 +1033,7 @@ async function startSessionResume(sessionId: string) {
   }
 
   try {
-    logInfo(`[tiller-daemon] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
+    logInfo(`[tiller-helm] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
     const runtime = await createAcpRuntime({
       sessionId,
       workspace,
@@ -1005,7 +1046,7 @@ async function startSessionResume(sessionId: string) {
         runtimeSessionId: resume.runtimeSessionId,
         strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
       },
-      onEvent: (event) => handleRuntimeEvent(pairedSocket!, sessionId, event),
+      onEvent: (event) => handleRuntimeEvent(sessionId, event),
     });
     const restoredSummary = hydrateSessionSummary({
       ...summary,
@@ -1018,14 +1059,14 @@ async function startSessionResume(sessionId: string) {
     sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
     sessionStore.upsert(restoredSummary);
     persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-    logInfo(`[tiller-daemon] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
+    logInfo(`[tiller-helm] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
     return {
       ok: true,
       resume: buildResumeInfo(restoredSummary, agent),
       message: `ACP ${resume.restoreMethod} completed for this session.`,
     };
   } catch (error) {
-    logError(`[tiller-daemon] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
+    logError(`[tiller-helm] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
     return {
       ok: false,
       resume: {
@@ -1061,8 +1102,43 @@ function persistRuntimeDescriptor(
   });
 }
 
-function emit(socket: WebSocket, payload: DaemonToClient) {
+function emit(socket: WebSocket, payload: HelmToClient) {
+  if (socket.readyState !== 1) {
+    return;
+  }
   socket.send(JSON.stringify(payload));
+}
+
+function toTrustedDeviceSummary(record: ReturnType<typeof trustedDeviceStore.list>[number]): TrustedDeviceSummary {
+  return {
+    deviceId: record.deviceId,
+    deviceName: record.deviceName,
+    clientKind: record.clientKind,
+    createdAt: record.createdAt,
+    lastSeenAt: record.lastSeenAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+function reply(socket: WebSocket, payload: HelmToClient) {
+  emit(socket, payload);
+}
+
+function broadcastAuthenticated(payload: HelmToClient) {
+  for (const record of authenticatedSockets.listAll()) {
+    emit(record.socket, payload);
+  }
+}
+
+function getSocketId(socket: WebSocket) {
+  const existing = socketIds.get(socket);
+  if (existing) {
+    return existing;
+  }
+  nextSocketSequence += 1;
+  const next = `socket-${nextSocketSequence}`;
+  socketIds.set(socket, next);
+  return next;
 }
 
 function loadAvailableHelms() {
@@ -1129,7 +1205,7 @@ function logError(message: string) {
 }
 
 function writeLogLine(level: "INFO" | "ERROR", message: string) {
-  appendFileSync(DAEMON_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
+  appendFileSync(HELM_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
 }
 
 type SessionRecord = {

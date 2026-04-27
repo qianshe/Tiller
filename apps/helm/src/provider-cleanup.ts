@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { AcpAgentProvider } from "@tiller/shared";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 
@@ -9,6 +11,56 @@ export type ProviderCleanupPlan =
 type CleanupExecutor = {
   exec?: (command: string, args: string[]) => string;
 };
+
+export function quoteWindowsCommandLine(command: string, args: string[]) {
+  return [command, ...args].map(quoteWindowsArg).join(" ");
+}
+
+function quoteWindowsArg(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function resolveWindowsCommand(command: string) {
+  try {
+    const resolved = execFileSync("where.exe", [command], { encoding: "utf8" }).split(/\r?\n/u).find(Boolean)?.trim() ?? command;
+    if (!resolved.includes(".") && existsSync(`${resolved}.cmd`)) {
+      return `${resolved}.cmd`;
+    }
+    return resolved;
+  } catch {
+    return command;
+  }
+}
+
+function runWindowsCleanupCommand(command: string, args: string[]) {
+  const resolvedCommand = resolveWindowsCommand(command);
+  if (resolvedCommand.toLowerCase().endsWith(".cmd")) {
+    const cmdContent = readFileSync(resolvedCommand, "utf8");
+    const scriptMatch = cmdContent.match(/"%_prog%"\s+"([^"]+)"\s+%\*/u);
+    if (scriptMatch) {
+      const scriptPath = scriptMatch[1].replace(/%dp0%/giu, dirname(resolvedCommand));
+      return String(execFileSync("node", [resolve(scriptPath), ...args], { encoding: "utf8" }));
+    }
+  }
+
+  return String(execFileSync(resolvedCommand, args, { encoding: "utf8" }));
+}
+
+function isCommandNotFound(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function runCleanupCommand(command: string, args: string[]) {
+  try {
+    return String(execFileSync(command, args, { encoding: "utf8" }));
+  } catch (error) {
+    if (process.platform !== "win32" || !isCommandNotFound(error)) {
+      throw error;
+    }
+
+    return runWindowsCleanupCommand(command, args);
+  }
+}
 
 export function resolveProviderCleanupPlan(provider: AcpAgentProvider, runtimeSessionId: string): ProviderCleanupPlan {
   if (provider.command === "opencode") {
@@ -47,7 +99,7 @@ export function executeProviderCleanup(provider: AcpAgentProvider, runtimeSessio
     };
   }
 
-  const run = executor.exec ?? ((command: string, args: string[]) => String(execFileSync(command, args, { encoding: "utf8" })));
+  const run = executor.exec ?? runCleanupCommand;
 
   try {
     run(plan.command, plan.args);

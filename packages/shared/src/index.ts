@@ -85,8 +85,41 @@ export type SessionResumeInfo = {
 };
 
 export type SessionReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type TrustedClientKind = "web" | "app";
+
+export type TrustedDeviceAuthPayload = {
+  deviceId: string;
+  deviceName?: string;
+  clientKind?: TrustedClientKind;
+};
+
+export type TrustedDeviceResult = {
+  trustedUntil?: string;
+  requiresPairing?: boolean;
+};
+
+export type TrustedDeviceSummary = {
+  deviceId: string;
+  deviceName: string;
+  clientKind: TrustedClientKind;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+};
 export type SessionConfigApplyMode = "none" | "startup" | "runtime";
 export type SessionConfigModelFormat = "model" | "provider/model";
+
+export type SessionConfigOptionValue = string | boolean;
+
+export type SessionConfigOption = {
+  id: string;
+  name?: string;
+  category?: string;
+  currentValue?: SessionConfigOptionValue;
+  selectedValue?: SessionConfigOptionValue;
+  value?: SessionConfigOptionValue;
+  options?: Array<{ value: SessionConfigOptionValue; label?: string; name?: string }>;
+};
 
 export type SessionConfigSupport = {
   model: SessionConfigApplyMode;

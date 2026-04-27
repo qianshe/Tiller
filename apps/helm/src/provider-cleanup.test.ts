@@ -91,3 +91,12 @@ test("executeProviderCleanup keeps Codex ACP as unsupported without invoking exe
   assert.equal(invoked, false);
   assert.equal(result.kind, "unsupported");
 });
+
+test("quoteWindowsCommandLine quotes OpenCode cleanup args for cmd fallback", async () => {
+  const mod = await import("./provider-cleanup.js");
+
+  assert.equal(
+    mod.quoteWindowsCommandLine("opencode", ["session", "delete", "ses 789", "--pure"]),
+    '"opencode" "session" "delete" "ses 789" "--pure"',
+  );
+});

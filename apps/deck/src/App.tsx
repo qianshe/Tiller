@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from "react";
-import type { ClientToDaemon, DaemonToClient } from "@tiller/sync-protocol";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
   AcpAgentProvider,
@@ -10,11 +10,18 @@ import type {
   PermissionDecision,
   PermissionRequest,
   ProjectSummary,
+  SessionConfigOption,
   SessionReasoningEffort,
   SessionStatus,
   SessionSummary,
+  TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
+import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "./hybrid-connection";
+import { buildEnhancedPrompt, type PromptEnhancerPreferences } from "./prompt-enhancer";
+import { readDeckSnapshot, writeDeckSnapshot } from "./snapshot-cache";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./session-state";
+import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "./trusted-device-cache";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "./ui";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
@@ -23,6 +30,9 @@ const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
 const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
 const DAEMON_PROFILE_STORAGE_KEY = "tiller.daemon-profiles";
+const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
+const DECK_DEVICE_NAME = "Tiller Deck";
+const DEFAULT_PROMPT = "";
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -128,6 +138,49 @@ type AgentDraft = {
   args: string;
 };
 
+type DeckLanguage = "zh-CN" | "en-US";
+type DeckTheme = "system" | "light" | "dark";
+
+type TechnicalPanelPreferences = {
+  logbookDefaultOpen: boolean;
+  diffDefaultOpen: boolean;
+  showSessionRuntimeMeta: boolean;
+  showPermissionWorkspace: boolean;
+  showOrderHints: boolean;
+  showConnectionDebug: boolean;
+};
+
+type DeckPreferences = {
+  language: DeckLanguage;
+  theme: DeckTheme;
+  reduceMotion: boolean;
+  technicalPanels: TechnicalPanelPreferences;
+  promptEnhancer: PromptEnhancerPreferences;
+};
+
+const DEFAULT_PROMPT_ENHANCER_INSTRUCTION = "你是 Tiller Deck 的协作型 Coding Agent。先理解目标、约束和风险，再给出可执行方案；涉及代码时遵循最小改动、可验证、可回滚。";
+const DEFAULT_PROMPT_MODEL_PROFILE = "模型偏好：遵循当前 Mission 的 Model / Reasoning 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
+const DEFAULT_PROMPT_RESPONSE_CONTRACT = "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
+
+const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
+  language: "zh-CN",
+  theme: "system",
+  reduceMotion: false,
+  technicalPanels: {
+    logbookDefaultOpen: false,
+    diffDefaultOpen: false,
+    showSessionRuntimeMeta: true,
+    showPermissionWorkspace: true,
+    showOrderHints: true,
+    showConnectionDebug: false,
+  },
+  promptEnhancer: {
+    enabled: true,
+    instruction: DEFAULT_PROMPT_ENHANCER_INSTRUCTION,
+    modelProfile: DEFAULT_PROMPT_MODEL_PROFILE,
+    responseContract: DEFAULT_PROMPT_RESPONSE_CONTRACT,
+  },
+};
 
 type DaemonProfile = {
   id: string;
@@ -154,27 +207,47 @@ type AppView = "overview" | "sessions" | "agents" | "settings";
 
 const VIEW_PATHS: Record<AppView, string> = {
   overview: "/",
-  sessions: "/sessions",
+  sessions: "/mission",
   agents: "/agents",
   settings: "/settings",
+};
+
+const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
+  "zh-CN": {
+    overview: "总览",
+    sessions: "Mission",
+    agents: "Fleet",
+    settings: "设置",
+  },
+  "en-US": {
+    overview: "Overview",
+    sessions: "Mission",
+    agents: "Fleet",
+    settings: "Settings",
+  },
 };
 
 function TopNav({
   activeView,
   onNavigate,
   connection,
+  language,
 }: {
   activeView: AppView;
   onNavigate: (view: AppView) => void;
   connection: "connecting" | "connected" | "disconnected";
+  language: DeckLanguage;
 }) {
+  const labels = NAV_LABELS[language];
   const items: { id: AppView; label: string }[] = [
-    { id: "overview", label: "总览" },
-    { id: "sessions", label: "Mission" },
-    { id: "agents", label: "Crew" },
-    { id: "settings", label: "设置" },
+    { id: "overview", label: labels.overview },
+    { id: "sessions", label: labels.sessions },
+    { id: "agents", label: labels.agents },
+    { id: "settings", label: labels.settings },
   ];
-  const statusLabel = connection === "connected" ? "已连接" : connection === "connecting" ? "连接中" : "已断开";
+  const statusLabel = language === "en-US"
+    ? connection === "connected" ? "Connected" : connection === "connecting" ? "Connecting" : "Disconnected"
+    : connection === "connected" ? "已连接" : connection === "connecting" ? "连接中" : "已断开";
 
   return (
     <header className="top-nav card">
@@ -207,7 +280,10 @@ export function App() {
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
-  const pendingPromptRef = useRef<string | null>(null);
+  const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
+  const initialPreferences = useMemo(() => readDeckPreferences(), []);
+  const deckDeviceId = useMemo(() => getOrCreateDeviceId(window.localStorage), []);
+  const autoConnectAttemptRef = useRef<string | null>(null);
 
   const locale: Locale = "zh-CN";
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("disconnected");
@@ -215,8 +291,8 @@ export function App() {
   const [pairingCodeInput, setPairingCodeInput] = useState("");
   const [pairingFeedback, setPairingFeedback] = useState("");
   const [connectFeedback, setConnectFeedback] = useState("");
-  const [daemonHost, setDaemonHost] = useState(DEFAULT_DAEMON_HOST);
-  const [daemonPort, setDaemonPort] = useState(DEFAULT_DAEMON_PORT);
+  const [daemonHost, setDaemonHost] = useState(() => window.localStorage.getItem(DAEMON_HOST_KEY) ?? DEFAULT_DAEMON_HOST);
+  const [daemonPort, setDaemonPort] = useState(() => window.localStorage.getItem(DAEMON_PORT_KEY) ?? DEFAULT_DAEMON_PORT);
   const [debugTrace, setDebugTrace] = useState<DebugTrace>({
     connectClicks: 0,
     pairClicks: 0,
@@ -233,7 +309,9 @@ export function App() {
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>({});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>({});
-  const [prompt, setPrompt] = useState("请审查当前登录流程，并提出最小且安全的重构方案。");
+  const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
+  const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
+  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
@@ -251,9 +329,17 @@ export function App() {
   });
   const [draftSaveMessage, setDraftSaveMessage] = useState<string>("草稿未保存");
   const [configSaveMessage, setConfigSaveMessage] = useState<string>("尚未写入 Helm 配置");
-  const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>([]);
+  const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>(() => readDaemonProfiles());
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
+  const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
+    readTrustedDeviceCache(
+      window.localStorage,
+      window.localStorage.getItem(DAEMON_HOST_KEY) ?? DEFAULT_DAEMON_HOST,
+      window.localStorage.getItem(DAEMON_PORT_KEY) ?? DEFAULT_DAEMON_PORT,
+    ),
+  );
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDeviceSummary[]>([]);
 
   const copy = UI_COPY[locale];
 
@@ -294,19 +380,19 @@ export function App() {
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
+  const draftAgent = agents.find((agent) => agent.id === (activeSession?.agentId ?? selectedAgentId)) ?? null;
   const draftModel = activeSession ? activeSession.model ?? MODEL_OPTIONS[0] : selectedModel;
   const draftReasoningEffort = activeSession ? activeSession.reasoningEffort ?? "medium" : selectedReasoningEffort;
+  const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
   const draftConfigHint = resolveSessionConfigHint(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
   const draftModelPlaceholder = resolveModelInputPlaceholder(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
+  const draftConfigOptions = resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId);
+  const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions);
   const daemonInventory = daemonProfiles.map((profile) =>
     formatDaemonProfileLine(profile, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT, connection, locale),
   );
-  const viewLabels: Record<AppView, string> = {
-    overview: "总览",
-    sessions: "Mission",
-    agents: "Crew",
-    settings: "设置",
-  };
+  const activeProfileId = `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  const viewLabels = NAV_LABELS[deckPreferences.language];
 
   function navigateToView(view: AppView) {
     const nextPath = VIEW_PATHS[view];
@@ -369,9 +455,7 @@ export function App() {
       return;
     }
     const defaultWorkspaceId = draftProject.defaultWorkspaceId;
-    const nextWorkspaceId = defaultWorkspaceId && filteredWorkspaces.some((workspace) => workspace.id === defaultWorkspaceId)
-      ? defaultWorkspaceId
-      : filteredWorkspaces[0]?.id;
+    const nextWorkspaceId = resolveDraftSelectionId(selectedWorkspaceId, filteredWorkspaces, defaultWorkspaceId);
     if (nextWorkspaceId && nextWorkspaceId !== selectedWorkspaceId) {
       setSelectedWorkspaceId(nextWorkspaceId);
     }
@@ -382,9 +466,7 @@ export function App() {
       return;
     }
     const defaultProjectAgentId = draftProject.defaultAgentId;
-    const fallbackAgentId = defaultProjectAgentId && filteredAgents.some((agent) => agent.id === defaultProjectAgentId)
-      ? defaultProjectAgentId
-      : defaultAgentId(filteredAgents);
+    const fallbackAgentId = resolveDraftSelectionId(selectedAgentId, filteredAgents, defaultProjectAgentId ?? defaultAgentId(filteredAgents));
     if (fallbackAgentId && fallbackAgentId !== selectedAgentId) {
       setSelectedAgentId(fallbackAgentId);
     }
@@ -421,8 +503,116 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  function connectToDaemon(event?: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (window.location.pathname.replace(/\/+$/g, "") === "/sessions") {
+      window.history.replaceState({}, "", VIEW_PATHS.sessions);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(DECK_PREFERENCES_STORAGE_KEY, JSON.stringify(deckPreferences));
+    document.documentElement.dataset.deckTheme = deckPreferences.theme;
+    document.documentElement.dataset.deckReduceMotion = String(deckPreferences.reduceMotion);
+  }, [deckPreferences]);
+
+  useEffect(() => {
+    setTrustedDevice(readTrustedDeviceCache(window.localStorage, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT));
+    setTrustedDevices([]);
+  }, [daemonHost, daemonPort]);
+
+  useEffect(() => {
+    const snapshot = readDeckSnapshot(window.localStorage, activeProfileId);
+    if (!snapshot) {
+      return;
+    }
+    setProjects(snapshot.projects);
+    setSessions(snapshot.sessions);
+    setWorkspaces(snapshot.workspaces);
+    setAgents(snapshot.agents);
+    setStatuses(createSessionStatusMap(snapshot.sessions));
+    setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
+  }, [activeProfileId]);
+
+  useEffect(() => {
+    if (pairingState !== "paired") {
+      return;
+    }
+    writeDeckSnapshot(window.localStorage, {
+      profileId: activeProfileId,
+      cachedAt: new Date().toISOString(),
+      projects,
+      sessions,
+      workspaces,
+      agents,
+    });
+  }, [activeProfileId, agents, pairingState, projects, sessions, workspaces]);
+
+  useEffect(() => {
+    if (!trustedDevice?.token) {
+      return;
+    }
+    if (!shouldAttemptSilentReconnect({
+      connection,
+      tokenPresent: true,
+      host: daemonHost,
+      port: daemonPort,
+    })) {
+      return;
+    }
+    const attemptKey = `silent:${activeProfileId}`;
+    if (autoConnectAttemptRef.current === attemptKey) {
+      return;
+    }
+    autoConnectAttemptRef.current = attemptKey;
+    connectToDaemon(undefined, { preserveState: true, auto: true });
+  }, [activeProfileId, connection, daemonHost, daemonPort, trustedDevice?.token]);
+
+  useEffect(() => {
+    if (!trustedDevice?.token || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
+      return;
+    }
+    const attemptKey = `live:${activeView}:${activeProfileId}`;
+    if (autoConnectAttemptRef.current === attemptKey) {
+      return;
+    }
+    autoConnectAttemptRef.current = attemptKey;
+    connectToDaemon(undefined, { preserveState: true, auto: true });
+  }, [activeProfileId, activeView, connection, trustedDevice?.token]);
+
+  function updateDeckPreference<K extends keyof DeckPreferences>(key: K, value: DeckPreferences[K]) {
+    setDeckPreferences((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateTechnicalPanelPreference<K extends keyof TechnicalPanelPreferences>(key: K, value: TechnicalPanelPreferences[K]) {
+    setDeckPreferences((current) => ({
+      ...current,
+      technicalPanels: { ...current.technicalPanels, [key]: value },
+    }));
+  }
+
+  function updatePromptEnhancerPreference<K extends keyof PromptEnhancerPreferences>(key: K, value: PromptEnhancerPreferences[K]) {
+    setDeckPreferences((current) => ({
+      ...current,
+      promptEnhancer: { ...current.promptEnhancer, [key]: value },
+    }));
+  }
+
+  function resetDeckPreferences() {
+    setDeckPreferences(DEFAULT_DECK_PREFERENCES);
+  }
+
+  function requestInitialSync(socket: WebSocket) {
+    dispatch(socket, { type: "helm.list", requestId: nextRequestId(requestCounter) });
+    dispatch(socket, { type: "project.list", requestId: nextRequestId(requestCounter) });
+    dispatch(socket, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
+    dispatch(socket, { type: "agent.list", requestId: nextRequestId(requestCounter) });
+    dispatch(socket, { type: "session.list", requestId: nextRequestId(requestCounter) });
+    dispatch(socket, { type: "device.list", requestId: nextRequestId(requestCounter) });
+  }
+
+  function connectToDaemon(event?: FormEvent<HTMLFormElement>, options?: { preserveState?: boolean; auto?: boolean }) {
     event?.preventDefault();
+    const preserveState = options?.preserveState ?? false;
     const host = daemonHost.trim() || DEFAULT_DAEMON_HOST;
     const port = daemonPort.trim() || DEFAULT_DAEMON_PORT;
     const wsUrl = `ws://${host}:${port}`;
@@ -430,6 +620,20 @@ export function App() {
     window.localStorage.setItem(DAEMON_HOST_KEY, host);
     window.localStorage.setItem(DAEMON_PORT_KEY, port);
     socketRef.current?.close();
+    if (!preserveState) {
+      setSessions([]);
+      setStatuses({});
+      setMessages({});
+      setPermissionRequests({});
+      setOutputs({});
+      setDiffs({});
+      setSessionConfigOptions({});
+      setTrustedDevices([]);
+      setActiveSessionId(null);
+      setSelectedProjectId(null);
+      setResumeFeedback("");
+      setCleanupFeedback(null);
+    }
     setDebugTrace((current) => ({ ...current, connectClicks: current.connectClicks + 1 }));
     setConnection("connecting");
     setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
@@ -443,9 +647,10 @@ export function App() {
     socket.addEventListener("open", () => {
       setConnection("connected");
       setConnectFeedback(`已连接到 ${wsUrl}`);
-      const token = window.localStorage.getItem(daemonTokenStorageKey(host, port));
-      if (token) {
-        dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), token });
+      const cache = readTrustedDeviceCache(window.localStorage, host, port);
+      if (cache?.token) {
+        setTrustedDevice(cache);
+        dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
         setPairingState("waiting");
         setPairingFeedback("正在使用已保存令牌认证...");
         return;
@@ -468,16 +673,18 @@ export function App() {
     socket.addEventListener("error", () => {
       setConnection("disconnected");
       setConnectFeedback(`连接 ${wsUrl} 失败`);
-      setPairingState("idle");
+      if (!options?.auto) {
+        setPairingState("idle");
+      }
     });
 
     socket.addEventListener("message", (event) => {
-      const payload = JSON.parse(String(event.data)) as DaemonToClient;
+      const payload = JSON.parse(String(event.data)) as HelmToClient;
       handleServerEvent(payload);
     });
   }
 
-  function dispatch(socket: WebSocket, payload: ClientToDaemon) {
+  function dispatch(socket: WebSocket, payload: ClientToHelm) {
     socket.send(JSON.stringify(payload));
     setDebugTrace((current) => ({
       ...current,
@@ -486,19 +693,28 @@ export function App() {
     }));
   }
 
-  function handleServerEvent(payload: DaemonToClient) {
+  function handleServerEvent(payload: HelmToClient) {
     switch (payload.type) {
       case "device.pair.result":
         if (payload.ok && payload.token) {
-          window.localStorage.setItem(daemonTokenStorageKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT), payload.token);
+          const nextCache: TrustedDeviceCache = {
+            deviceId: deckDeviceId,
+            token: payload.token,
+            trustedUntil: payload.trustedUntil,
+            lastAuthenticatedAt: new Date().toISOString(),
+          };
+          writeTrustedDeviceCache(
+            window.localStorage,
+            daemonHost.trim() || DEFAULT_DAEMON_HOST,
+            daemonPort.trim() || DEFAULT_DAEMON_PORT,
+            nextCache,
+          );
+          setTrustedDevice(nextCache);
+          autoConnectAttemptRef.current = null;
           setPairingFeedback(payload.message);
           setPairingState("paired");
           if (socketRef.current) {
-            dispatch(socketRef.current, { type: "helm.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
+            requestInitialSync(socketRef.current);
           }
         } else {
           setPairingFeedback(payload.message);
@@ -507,18 +723,57 @@ export function App() {
         return;
       case "device.auth.result":
         if (payload.ok) {
+          const existing = readTrustedDeviceCache(
+            window.localStorage,
+            daemonHost.trim() || DEFAULT_DAEMON_HOST,
+            daemonPort.trim() || DEFAULT_DAEMON_PORT,
+          );
+          if (existing) {
+            const nextCache: TrustedDeviceCache = {
+              ...existing,
+              trustedUntil: payload.trustedUntil ?? existing.trustedUntil,
+              lastAuthenticatedAt: new Date().toISOString(),
+            };
+            writeTrustedDeviceCache(
+              window.localStorage,
+              daemonHost.trim() || DEFAULT_DAEMON_HOST,
+              daemonPort.trim() || DEFAULT_DAEMON_PORT,
+              nextCache,
+            );
+            setTrustedDevice(nextCache);
+          }
+          autoConnectAttemptRef.current = null;
           setPairingFeedback(payload.message);
           setPairingState("paired");
           if (socketRef.current) {
-            dispatch(socketRef.current, { type: "helm.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
-            dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
+            requestInitialSync(socketRef.current);
           }
         } else {
-          window.localStorage.removeItem(daemonTokenStorageKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT));
+          clearTrustedDeviceCache(
+            window.localStorage,
+            daemonHost.trim() || DEFAULT_DAEMON_HOST,
+            daemonPort.trim() || DEFAULT_DAEMON_PORT,
+          );
+          setTrustedDevice(null);
+          setTrustedDevices([]);
           setPairingFeedback(payload.message);
+          setPairingState(payload.requiresPairing ? "input" : "rejected");
+        }
+        return;
+      case "device.list.result":
+        setTrustedDevices(payload.devices);
+        return;
+      case "device.revoke.result":
+        setTrustedDevices((current) => current.filter((device) => device.deviceId !== payload.deviceId));
+        setPairingFeedback(payload.message);
+        if (payload.ok && payload.deviceId === deckDeviceId) {
+          clearTrustedDeviceCache(
+            window.localStorage,
+            daemonHost.trim() || DEFAULT_DAEMON_HOST,
+            daemonPort.trim() || DEFAULT_DAEMON_PORT,
+          );
+          setTrustedDevice(null);
+          setConnectFeedback("当前设备已被撤销，请重新连接并输入配对码。");
           setPairingState("input");
         }
         return;
@@ -553,12 +808,12 @@ export function App() {
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
             pendingPromptRef.current = null;
-            appendUserMessage(payload.session.id, pendingPrompt);
+            appendUserMessage(payload.session.id, pendingPrompt.raw);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
-              text: pendingPrompt,
+              text: pendingPrompt.enhanced,
             });
           }
         }
@@ -566,13 +821,30 @@ export function App() {
       case "session.updated":
         setSessions((current) => upsertSessionSummary(current, payload.session));
         return;
+      case "session.config.options":
+        setSessionConfigOptions((current) => ({ ...current, [payload.sessionId]: payload.options }));
+        setSessions((current) =>
+          current.map((session) =>
+            session.id === payload.sessionId
+              ? {
+                  ...session,
+                  model: payload.state.model ?? session.model,
+                  reasoningEffort: payload.state.reasoningEffort ?? session.reasoningEffort,
+                  updatedAt: new Date().toISOString(),
+                }
+              : session,
+          ),
+        );
+        return;
       case "session.list.result":
-        setSessions((current) => mergeSessionSummaries(current, payload.sessions));
-        setStatuses((current) => ({
-          ...Object.fromEntries(payload.sessions.map((session) => [session.id, session.status] as const)),
-          ...current,
-        }));
-        setActiveSessionId((current) => current ?? payload.sessions[0]?.id ?? null);
+        setSessions(payload.sessions);
+        setStatuses(createSessionStatusMap(payload.sessions));
+        setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
+        setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
+        setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
+        setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
+        setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
+        setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
         return;
       case "session.messages.list.result":
         setMessages((current) => ({
@@ -623,6 +895,7 @@ export function App() {
         setPermissionRequests((current) => removeSessionRecord(current, payload.result.sessionId));
         setOutputs((current) => removeSessionRecord(current, payload.result.sessionId));
         setDiffs((current) => removeSessionRecord(current, payload.result.sessionId));
+        setSessionConfigOptions((current) => removeSessionRecord(current, payload.result.sessionId));
         setActiveSessionId((current) => (current === payload.result.sessionId ? null : current));
         return;
       case "session.status":
@@ -728,7 +1001,7 @@ export function App() {
     }));
   }
 
-  function createSession(initialPrompt?: string) {
+  function createSession(initialPrompt?: { raw: string; enhanced: string }) {
     const projectId = selectedProjectId || projects[0]?.id;
     const workspaceId = selectedWorkspaceId || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
@@ -806,8 +1079,21 @@ export function App() {
     const nextProfiles = [...daemonProfiles.filter((item) => item.id !== profile.id), profile];
     setDaemonProfiles(nextProfiles);
     setDaemonProfileName(name);
-    setDaemonProfileMessage(`已保存 Daemon：${name}`);
+    setDaemonProfileMessage(`已保存 Helm：${name}`);
     window.localStorage.setItem(DAEMON_PROFILE_STORAGE_KEY, JSON.stringify(nextProfiles));
+  }
+
+  function revokeTrustedDevice(deviceId: string) {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      setPairingFeedback("请先连接 Helm 后再管理受信设备。");
+      return;
+    }
+
+    dispatch(socketRef.current, {
+      type: "device.revoke",
+      requestId: nextRequestId(requestCounter),
+      deviceId,
+    });
   }
 
   function applyDaemonProfile(profile: DaemonProfile) {
@@ -824,8 +1110,10 @@ export function App() {
       return;
     }
 
+    const enhancedPrompt = buildEnhancedPrompt(nextPrompt, deckPreferences.promptEnhancer);
+
     if (!activeSessionId) {
-      if (createSession(nextPrompt)) {
+      if (createSession({ raw: nextPrompt, enhanced: enhancedPrompt })) {
         setPrompt("");
       }
       return;
@@ -837,7 +1125,7 @@ export function App() {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      text: nextPrompt,
+      text: enhancedPrompt,
     });
   }
 
@@ -911,6 +1199,9 @@ export function App() {
       type: "device.pair",
       requestId: nextRequestId(requestCounter),
       pairingCode: normalizedCode,
+      deviceId: deckDeviceId,
+      deviceName: DECK_DEVICE_NAME,
+      clientKind: "web",
     });
     setPairingState("waiting");
   }
@@ -986,14 +1277,14 @@ export function App() {
             </form>
 
             <div className="note-box compact-note">
-              <strong>多 Daemon 预设</strong>
+              <strong>多 Helm 预设</strong>
               <label>
                 <span>预设名称</span>
-                <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="工作室 Daemon" />
+                <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="工作室 Helm" />
               </label>
               <div className="section-actions">
                 <button className="secondary" type="button" onClick={saveDaemonProfile}>
-                  保存当前 Daemon
+                  保存当前 Helm
                 </button>
               </div>
               {daemonProfiles.length ? (
@@ -1005,7 +1296,7 @@ export function App() {
                   ))}
                 </div>
               ) : (
-                <p className="muted compact">还没有保存的 Daemon 预设。</p>
+                <p className="muted compact">还没有保存的 Helm 预设。</p>
               )}
               {daemonProfileMessage ? <p className="subtle compact">{daemonProfileMessage}</p> : null}
             </div>
@@ -1033,13 +1324,15 @@ export function App() {
           <p>{showConnectionCard ? connectFeedback : pairingFeedback}</p>
         </div>
 
-        <div className="note-box compact-note">
-          <strong>{copy.pairingDebug}</strong>
-          <p>
-            连接次数={debugTrace.connectClicks} · 配对次数={debugTrace.pairClicks} · 请求数={debugTrace.requestsSent}
-          </p>
-          <p className="muted compact">最近请求类型={debugTrace.lastRequestType}</p>
-        </div>
+        {deckPreferences.technicalPanels.showConnectionDebug ? (
+          <div className="note-box compact-note">
+            <strong>{copy.pairingDebug}</strong>
+            <p>
+              连接次数={debugTrace.connectClicks} · 配对次数={debugTrace.pairClicks} · 请求数={debugTrace.requestsSent}
+            </p>
+            <p className="muted compact">最近请求类型={debugTrace.lastRequestType}</p>
+          </div>
+        ) : null}
 
         {pairingState === "rejected" && <p className="error-text">配对失败，请检查配对码后重试。</p>}
       </section>
@@ -1203,21 +1496,23 @@ export function App() {
                           <strong>{resolveSessionTitle(session)}</strong>
                           <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
                         </span>
-                        <span>{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
-                        <span>{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "provider-default"}`}</span>
+                        <span className="session-nav-meta">{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
+                        <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "provider-default"}`}</span>
                       </button>
-                      <button
-                        type="button"
-                        className="session-inline-action"
-                        aria-label={`清理 ${resolveSessionTitle(session)}`}
-                        title="清理 Mission"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          cleanupSession(session.id);
-                        }}
-                      >
-                        ×
-                      </button>
+                      <div className="session-nav-actions">
+                        <button
+                          type="button"
+                          className="session-inline-action"
+                          aria-label={`清理 ${resolveSessionTitle(session)}`}
+                          title="清理 Mission"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            cleanupSession(session.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -1234,9 +1529,13 @@ export function App() {
                       <div>
                         <h2>{resolveSessionTitle(activeSession)}</h2>
                         <p className="muted compact">{activeSession.projectName} · {activeSession.workspaceName} · {activeStatus}</p>
-                        <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                        <p className="subtle compact">ACP：{activeSession.agentName} · Model：{activeSession.model ?? "provider-default"} · Reasoning：{activeSession.reasoningEffort ?? "medium"}</p>
-                        <p className="subtle compact">ACP Mission ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
+                        {deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
+                          <>
+                            <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
+                            <p className="subtle compact">ACP：{activeSession.agentName} · Model：{activeSession.model ?? "provider-default"} · Reasoning：{activeSession.reasoningEffort ?? "medium"}</p>
+                            <p className="subtle compact">ACP Mission ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
+                          </>
+                        ) : null}
                         {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                         {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
                       </div>
@@ -1252,7 +1551,7 @@ export function App() {
                           <p className="eyebrow">{copy.permissionRequest}</p>
                           <strong>{pendingPermission.command}</strong>
                           <p className="muted compact">{pendingPermission.reason}</p>
-                          <p className="subtle compact">{pendingPermission.workspacePath}</p>
+                          {deckPreferences.technicalPanels.showPermissionWorkspace ? <p className="subtle compact">{pendingPermission.workspacePath}</p> : null}
                         </div>
                         <div className="permission-actions">
                           <button className="primary" type="button" onClick={() => respondToPermission("allow")}>{copy.allowOnce}</button>
@@ -1263,11 +1562,11 @@ export function App() {
 
                     {renderPlainMessages(messages[activeSession.id] ?? [])}
 
-                    <details className="chat-collapsible">
+                    <details className="chat-collapsible" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
                       <summary>{copy.commandOutput}</summary>
                       <CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} />
                     </details>
-                    <details className="chat-collapsible">
+                    <details className="chat-collapsible" open={deckPreferences.technicalPanels.diffDefaultOpen}>
                       <summary>{copy.diffSummary}</summary>
                       <DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} />
                     </details>
@@ -1313,7 +1612,7 @@ export function App() {
                       placeholder={draftModelPlaceholder}
                     />
                     <datalist id="session-model-options">
-                      {resolveModelOptions(draftModel).map((model) => (
+                      {draftModelOptions.map((model) => (
                         <option key={model} value={model} />
                       ))}
                     </datalist>
@@ -1334,13 +1633,44 @@ export function App() {
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder={activeSession ? "向当前 Mission 下达 Order；Model / Reasoning 可继续调整，ACP 已锁定" : "输入第一条 Order，发送后自动创建 Mission"}
+                    placeholder={draftPromptPlaceholder}
                   />
                   <button className="primary" type="submit" disabled={!canSend}>发送</button>
-                  <p className="order-editor-hint">左栏按 Project 管理 Mission；ACP 在会话成立后锁定，Model / Reasoning 作为当前 session 配置可继续调整。{draftConfigHint}</p>
+                  {deckPreferences.technicalPanels.showOrderHints ? (
+                    <p className="order-editor-hint">左栏按 Project 管理 Mission；ACP 在会话成立后锁定，Model / Reasoning 作为当前 session 配置可继续调整。{draftConfigHint}</p>
+                  ) : null}
                 </form>
               </div>
             </div>
+
+            <aside className="mission-inspector" aria-label="Mission inspector">
+              <section className="inspector-section">
+                <p className="eyebrow">Context</p>
+                <h3>{activeSession ? resolveSessionTitle(activeSession) : "Draft Mission"}</h3>
+                <p className="subtle compact">{draftProject?.name ?? "No Project"} · {activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "No Workspace"}</p>
+                <div className="inspector-pills">
+                  <span>{activeSession ? activeStatus : "Draft"}</span>
+                  <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "No Crew"}</span>
+                </div>
+              </section>
+
+              <section className="inspector-section">
+                <p className="eyebrow">Model</p>
+                <h3>{draftModel}</h3>
+                <p className="subtle compact">Reasoning · {draftReasoningEffort}</p>
+                <p className="subtle compact">候选模型 {draftModelOptions.length} 个；若 ACP 返回 configOptions，会优先显示 provider 的真实模型列表。</p>
+              </section>
+
+              <section className="inspector-section inspector-scroll">
+                <p className="eyebrow">Changes</p>
+                <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
+              </section>
+
+              <section className="inspector-section inspector-scroll">
+                <p className="eyebrow">Logbook</p>
+                <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
+              </section>
+            </aside>
           </>
         )}
       </section>
@@ -1369,7 +1699,7 @@ export function App() {
               <h3>{copy.addAgentDraft}</h3>
               <div className="section-actions">
                 <button className="secondary" type="submit">本地保存草稿</button>
-                <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Daemon 配置</button>
+                <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Helm 配置</button>
               </div>
             </div>
 
@@ -1394,39 +1724,266 @@ export function App() {
         </section>
 
         <section className="note-box compact-note">
-          <strong>Daemon 管理功能即将推出。</strong>
-          <p className="muted compact">后续会在这里管理多 Daemon 生命周期、健康检查与切换策略。</p>
+          <strong>Helm 管理功能即将推出。</strong>
+          <p className="muted compact">后续会在这里管理多 Helm 生命周期、健康检查与切换策略。</p>
         </section>
       </section>
     );
   }
 
   function renderSettings() {
+    const settingsCopy = deckPreferences.language === "en-US"
+      ? {
+          title: "Settings",
+          subtitle: "Configure Deck theme, language, technical panels, and prompt enhancement. All options are stored locally in this browser.",
+          reset: "Reset defaults",
+          languageEyebrow: "Language",
+          languageLabel: "Interface language",
+          languageHelp: "Switches navigation and core Settings copy; ACP Crew domain terms keep their original names.",
+          themeEyebrow: "Theme",
+          themeLabel: "Deck theme",
+          themeSystem: "System",
+          themeLight: "Light",
+          themeDark: "Dark",
+          themeHelp: "Theme only affects this Deck and is not written to Helm or Crew config.",
+          motionEyebrow: "Motion",
+          reduceMotion: "Reduce transition animations",
+          technicalEyebrow: "Technical panel controls",
+          technicalTitle: "Choose which diagnostic details are visible by default",
+          logbookOpen: "Open Logbook by default",
+          diffOpen: "Open diff summary by default",
+          runtimeMeta: "Show Session runtime metadata",
+          permissionWorkspace: "Show permission request workspace path",
+          orderHints: "Show composer configuration hints",
+          connectionDebug: "Show connection/pairing debug echo",
+          enhancerEyebrow: "Prompt enhancement",
+          enhancerTitle: "Wrap casual chat as a standard prompt",
+          enhancerEnabled: "Enable before send",
+          enhancerHelp: "Enhancement is prepended before sending to ACP; the chat window still shows your original input and nothing is written to Helm/backend config.",
+          instructionLabel: "Enhanced prompt textbox · Role and goal",
+          modelLabel: "Model config position · Reasoning preference",
+          contractLabel: "Output contract",
+          saveEyebrow: "Saved state",
+          browserTitle: "Current browser",
+          saveStatus: "Frontend preferences are auto-saved; backend, provider, and Helm-level settings still belong to the concrete Helm / Crew.",
+          devicesEyebrow: "Trusted devices",
+          devicesTitle: "7-day remembered Deck / App devices",
+          devicesHelp: "Each trusted device is scoped to this Helm profile. Revoking a device forces it to pair again on that device.",
+          devicesEmpty: "No trusted devices yet.",
+          currentDevice: "Current device",
+          revoke: "Revoke",
+          clientKindWeb: "Web",
+          clientKindApp: "App",
+          lastSeen: "Last seen",
+          expiresAt: "Expires",
+        }
+      : {
+          title: "设置",
+          subtitle: "配置 Deck 语言、主题、技术面板与提示词增强；所有选项只保存在浏览器本地。",
+          reset: "重置默认",
+          languageEyebrow: "语言 / Language",
+          languageLabel: "界面语言",
+          languageHelp: "用于切换导航与 Settings 基础文案；ACP Crew 领域术语保持原名。",
+          themeEyebrow: "主题切换",
+          themeLabel: "Deck 主题",
+          themeSystem: "跟随系统",
+          themeLight: "浅色",
+          themeDark: "深色",
+          themeHelp: "主题只影响当前 Deck，不会写入 Helm 或 Crew 配置。",
+          motionEyebrow: "动效",
+          reduceMotion: "减少过渡动画",
+          technicalEyebrow: "技术面板控制",
+          technicalTitle: "决定哪些诊断信息默认展示",
+          logbookOpen: "默认展开 Logbook",
+          diffOpen: "默认展开变更摘要",
+          runtimeMeta: "显示 Session runtime 元信息",
+          permissionWorkspace: "显示权限请求工作区路径",
+          orderHints: "显示发送区配置提示",
+          connectionDebug: "显示连接/配对调试回显",
+          enhancerEyebrow: "提示词增强",
+          enhancerTitle: "把普通对话包装成标准提示词",
+          enhancerEnabled: "发送前启用",
+          enhancerHelp: "增强内容会在发送到 ACP 前拼接；聊天窗口仍显示你的原始输入，不会写入 Helm 或后端配置。",
+          instructionLabel: "增强提示词文本框 · 角色与目标",
+          modelLabel: "模型配置位置 · 推理偏好",
+          contractLabel: "输出契约",
+          saveEyebrow: "保存状态",
+          browserTitle: "当前浏览器",
+          saveStatus: "前端偏好会自动保存；后端、provider、Helm 级配置仍在具体 Helm / Crew 中管理。",
+          devicesEyebrow: "受信设备",
+          devicesTitle: "当前 Helm 记住的 7 天设备",
+          devicesHelp: "每个受信设备都只属于当前 Helm profile。撤销后，该设备下次必须重新配对。",
+          devicesEmpty: "当前还没有受信设备。",
+          currentDevice: "当前设备",
+          revoke: "撤销",
+          clientKindWeb: "网页",
+          clientKindApp: "App",
+          lastSeen: "最近认证",
+          expiresAt: "信任到期",
+        };
+
     return (
       <section className="workspace-single">
         <section className="card surface-card stack-gap">
           <div className="section-head section-head-soft">
             <div>
-              <h2>设置</h2>
-              <p className="muted compact">这里保留偏好设置，不再混放 Daemon 管理。</p>
+              <h2>{settingsCopy.title}</h2>
+              <p className="muted compact">{settingsCopy.subtitle}</p>
             </div>
+            <button className="secondary" type="button" onClick={resetDeckPreferences}>{settingsCopy.reset}</button>
           </div>
 
-          <div className="settings-grid">
+          <div className="settings-grid settings-form">
             <section className="note-box settings-card">
-              <p className="eyebrow">语言</p>
-              <h3>简体中文</h3>
-              <p className="muted compact">当前版本主界面固定使用中文；后续可在这里加入多语言切换。</p>
+              <p className="eyebrow">{settingsCopy.languageEyebrow}</p>
+              <label>
+                <span>{settingsCopy.languageLabel}</span>
+                <select
+                  aria-label={settingsCopy.languageLabel}
+                  value={deckPreferences.language}
+                  onChange={(event) => updateDeckPreference("language", event.target.value as DeckLanguage)}
+                >
+                  <option value="zh-CN">中文</option>
+                  <option value="en-US">English</option>
+                </select>
+              </label>
+              <p className="settings-help">{settingsCopy.languageHelp}</p>
             </section>
+
             <section className="note-box settings-card">
-              <p className="eyebrow">样式</p>
-              <h3>浅色玻璃态</h3>
-              <p className="muted compact">当前使用浅色、圆角、柔和阴影风格；后续可扩展深色模式和紧凑模式。</p>
+              <p className="eyebrow">{settingsCopy.themeEyebrow}</p>
+              <label>
+                <span>{settingsCopy.themeLabel}</span>
+                <select
+                  value={deckPreferences.theme}
+                  onChange={(event) => updateDeckPreference("theme", event.target.value as DeckTheme)}
+                >
+                  <option value="system">{settingsCopy.themeSystem}</option>
+                  <option value="light">{settingsCopy.themeLight}</option>
+                  <option value="dark">{settingsCopy.themeDark}</option>
+                </select>
+              </label>
+              <p className="settings-help">{settingsCopy.themeHelp}</p>
             </section>
+
             <section className="note-box settings-card">
-              <p className="eyebrow">显示密度</p>
-              <h3>标准</h3>
-              <p className="muted compact">会话列表和详情区域使用标准间距，便于移动端阅读。</p>
+              <p className="eyebrow">{settingsCopy.motionEyebrow}</p>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={deckPreferences.reduceMotion}
+                  onChange={(event) => updateDeckPreference("reduceMotion", event.target.checked)}
+                />
+                <span>{settingsCopy.reduceMotion}</span>
+              </label>
+            </section>
+
+            <section className="note-box settings-card settings-card-full">
+              <p className="eyebrow">{settingsCopy.technicalEyebrow}</p>
+              <h3>{settingsCopy.technicalTitle}</h3>
+              <div className="settings-control-grid">
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.logbookDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("logbookDefaultOpen", event.target.checked)} />
+                  <span>{settingsCopy.logbookOpen}</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.diffDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("diffDefaultOpen", event.target.checked)} />
+                  <span>{settingsCopy.diffOpen}</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.showSessionRuntimeMeta} onChange={(event) => updateTechnicalPanelPreference("showSessionRuntimeMeta", event.target.checked)} />
+                  <span>{settingsCopy.runtimeMeta}</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.showPermissionWorkspace} onChange={(event) => updateTechnicalPanelPreference("showPermissionWorkspace", event.target.checked)} />
+                  <span>{settingsCopy.permissionWorkspace}</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.showOrderHints} onChange={(event) => updateTechnicalPanelPreference("showOrderHints", event.target.checked)} />
+                  <span>{settingsCopy.orderHints}</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={deckPreferences.technicalPanels.showConnectionDebug} onChange={(event) => updateTechnicalPanelPreference("showConnectionDebug", event.target.checked)} />
+                  <span>{settingsCopy.connectionDebug}</span>
+                </label>
+              </div>
+            </section>
+
+            <section className="note-box settings-card settings-card-full prompt-enhancer-card">
+              <div className="settings-card-head">
+                <div>
+                  <p className="eyebrow">{settingsCopy.enhancerEyebrow}</p>
+                  <h3>{settingsCopy.enhancerTitle}</h3>
+                </div>
+                <label className="toggle-row toggle-row-inline">
+                  <input type="checkbox" checked={deckPreferences.promptEnhancer.enabled} onChange={(event) => updatePromptEnhancerPreference("enabled", event.target.checked)} />
+                  <span>{settingsCopy.enhancerEnabled}</span>
+                </label>
+              </div>
+              <p className="settings-help">{settingsCopy.enhancerHelp}</p>
+              <div className="prompt-enhancer-grid">
+                <label className="settings-card-full">
+                  <span>{settingsCopy.instructionLabel}</span>
+                  <textarea value={deckPreferences.promptEnhancer.instruction} onChange={(event) => updatePromptEnhancerPreference("instruction", event.target.value)} placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION} />
+                </label>
+                <label>
+                  <span>{settingsCopy.modelLabel}</span>
+                  <textarea value={deckPreferences.promptEnhancer.modelProfile} onChange={(event) => updatePromptEnhancerPreference("modelProfile", event.target.value)} placeholder={DEFAULT_PROMPT_MODEL_PROFILE} />
+                </label>
+                <label>
+                  <span>{settingsCopy.contractLabel}</span>
+                  <textarea value={deckPreferences.promptEnhancer.responseContract} onChange={(event) => updatePromptEnhancerPreference("responseContract", event.target.value)} placeholder={DEFAULT_PROMPT_RESPONSE_CONTRACT} />
+                </label>
+              </div>
+            </section>
+
+            <section className="note-box settings-card settings-card-wide">
+              <p className="eyebrow">{settingsCopy.saveEyebrow}</p>
+              <h3>{settingsCopy.browserTitle}</h3>
+              <p className="settings-status">{settingsCopy.saveStatus}</p>
+            </section>
+
+            <section className="note-box settings-card settings-card-full">
+              <div className="settings-card-head">
+                <div>
+                  <p className="eyebrow">{settingsCopy.devicesEyebrow}</p>
+                  <h3>{settingsCopy.devicesTitle}</h3>
+                </div>
+              </div>
+              <p className="settings-help">{settingsCopy.devicesHelp}</p>
+              {trustedDevices.length ? (
+                <div className="trusted-device-list">
+                  {trustedDevices.map((device) => {
+                    const isCurrentDevice = device.deviceId === deckDeviceId;
+                    return (
+                      <article key={device.deviceId} className={isCurrentDevice ? "trusted-device-row trusted-device-row-current" : "trusted-device-row"}>
+                        <div className="trusted-device-icon" aria-hidden="true">
+                          {device.clientKind === "app" ? "▣" : "⌁"}
+                        </div>
+                        <div className="trusted-device-copy">
+                          <div className="trusted-device-title-row">
+                            <strong>{device.deviceName}</strong>
+                            <span className="status-chip subtle-chip">{device.clientKind === "app" ? settingsCopy.clientKindApp : settingsCopy.clientKindWeb}</span>
+                            {isCurrentDevice ? <span className="status-chip">{settingsCopy.currentDevice}</span> : null}
+                          </div>
+                          <p className="subtle compact device-mono">{device.deviceId}</p>
+                          <div className="trusted-device-meta-grid">
+                            <span>{settingsCopy.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
+                            <span>{settingsCopy.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
+                          </div>
+                        </div>
+                        <div className="trusted-device-actions">
+                          <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId)}>
+                            {settingsCopy.revoke}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state">{settingsCopy.devicesEmpty}</div>
+              )}
             </section>
           </div>
         </section>
@@ -1435,8 +1992,8 @@ export function App() {
   }
 
   return (
-    <main className="shell">
-      <TopNav activeView={activeView} onNavigate={navigateToView} connection={connection} />
+    <main className={`shell view-${activeView} theme-${deckPreferences.theme} ${deckPreferences.reduceMotion ? "motion-reduced" : ""}`}>
+      <TopNav activeView={activeView} onNavigate={navigateToView} connection={connection} language={deckPreferences.language} />
       <div className="page-content stack-gap">
         {activeView === "overview" && renderOverview()}
         {activeView === "sessions" && renderSessions()}
@@ -1449,6 +2006,9 @@ export function App() {
 
 function resolveViewFromPath(pathname: string): AppView {
   const normalized = pathname.replace(/\/+$/g, "") || "/";
+  if (normalized === "/sessions") {
+    return "sessions";
+  }
   const matched = (Object.entries(VIEW_PATHS) as Array<[AppView, string]>).find(([, path]) => path === normalized);
   return matched?.[0] ?? "overview";
 }
@@ -1463,7 +2023,7 @@ function removeSessionRecord<T>(records: Record<string, T>, sessionId: string) {
   return rest;
 }
 
-function resolveCleanupFeedback(result: Extract<DaemonToClient, { type: "session.cleanup.result" }>['result']): CleanupFeedback {
+function resolveCleanupFeedback(result: Extract<HelmToClient, { type: "session.cleanup.result" }>['result']): CleanupFeedback {
   if (result.remoteDeleted) {
     return { tone: "success", message: result.message };
   }
@@ -1521,10 +2081,6 @@ function mergeCommandHistory(current: CommandChunk[], incoming: CommandChunk[]) 
   return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
 }
 
-function mergeSessionSummaries(current: SessionSummary[], incoming: SessionSummary[]) {
-  return incoming.reduce((items, summary) => upsertSessionSummary(items, summary), current);
-}
-
 function upsertSessionSummary(current: SessionSummary[], incoming: SessionSummary) {
   return [...current.filter((session) => session.id !== incoming.id), incoming].sort(
     (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
@@ -1547,9 +2103,6 @@ function formatResumeLabel(resume: SessionSummary["resume"], locale: Locale) {
   }
 }
 
-function daemonTokenStorageKey(host: string, port: string) {
-  return `tiller.session-token.${host}.${port}`;
-}
 
 function formatDaemonProfileLine(
   profile: DaemonProfile,
@@ -1604,6 +2157,54 @@ function readDaemonProfiles(): DaemonProfile[] {
   }
 }
 
+function readDeckPreferences(): DeckPreferences {
+  try {
+    const raw = window.localStorage.getItem(DECK_PREFERENCES_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const technicalPanels = isRecord(parsed.technicalPanels) ? parsed.technicalPanels : {};
+    const promptEnhancer = isRecord(parsed.promptEnhancer) ? parsed.promptEnhancer : {};
+    const legacyTechnicalPanelsOpen = parsed.showTechnicalPanels === true;
+
+    return {
+      language: isDeckLanguage(parsed.language) ? parsed.language : DEFAULT_DECK_PREFERENCES.language,
+      theme: isDeckTheme(parsed.theme) ? parsed.theme : DEFAULT_DECK_PREFERENCES.theme,
+      reduceMotion: parsed.reduceMotion === true,
+      technicalPanels: {
+        logbookDefaultOpen: typeof technicalPanels.logbookDefaultOpen === "boolean" ? technicalPanels.logbookDefaultOpen : legacyTechnicalPanelsOpen,
+        diffDefaultOpen: typeof technicalPanels.diffDefaultOpen === "boolean" ? technicalPanels.diffDefaultOpen : legacyTechnicalPanelsOpen,
+        showSessionRuntimeMeta: typeof technicalPanels.showSessionRuntimeMeta === "boolean" ? technicalPanels.showSessionRuntimeMeta : DEFAULT_DECK_PREFERENCES.technicalPanels.showSessionRuntimeMeta,
+        showPermissionWorkspace: typeof technicalPanels.showPermissionWorkspace === "boolean" ? technicalPanels.showPermissionWorkspace : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorkspace,
+        showOrderHints: typeof technicalPanels.showOrderHints === "boolean" ? technicalPanels.showOrderHints : DEFAULT_DECK_PREFERENCES.technicalPanels.showOrderHints,
+        showConnectionDebug: typeof technicalPanels.showConnectionDebug === "boolean" ? technicalPanels.showConnectionDebug : DEFAULT_DECK_PREFERENCES.technicalPanels.showConnectionDebug,
+      },
+      promptEnhancer: {
+        enabled: typeof promptEnhancer.enabled === "boolean" ? promptEnhancer.enabled : DEFAULT_DECK_PREFERENCES.promptEnhancer.enabled,
+        instruction: readPreferenceText(promptEnhancer.instruction, DEFAULT_PROMPT_ENHANCER_INSTRUCTION),
+        modelProfile: readPreferenceText(promptEnhancer.modelProfile, DEFAULT_PROMPT_MODEL_PROFILE),
+        responseContract: readPreferenceText(promptEnhancer.responseContract, DEFAULT_PROMPT_RESPONSE_CONTRACT),
+      },
+    };
+  } catch {
+    return DEFAULT_DECK_PREFERENCES;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isDeckLanguage(value: unknown): value is DeckLanguage {
+  return value === "zh-CN" || value === "en-US";
+}
+
+function isDeckTheme(value: unknown): value is DeckTheme {
+  return value === "system" || value === "light" || value === "dark";
+}
+
+function readPreferenceText(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "custom-agent";
 }
@@ -1617,19 +2218,29 @@ function splitArgs(value: string) {
 
 function resolveSessionTitle(session: SessionSummary) {
   const preview = session.lastMessagePreview?.trim();
-  if (preview) {
-    return preview.split(/\r?\n/u)[0]?.slice(0, 36) ?? preview;
+  if (preview && /[A-Za-z0-9一-鿿]/u.test(preview)) {
+    return preview.replaceAll("`r", " ").replaceAll("`n", " ").slice(0, 36);
   }
 
   return `${session.projectName} Mission`;
 }
 
-function resolveModelOptions(currentModel?: string) {
-  const options = [...MODEL_OPTIONS];
-  if (currentModel && !options.includes(currentModel as (typeof MODEL_OPTIONS)[number])) {
-    return [currentModel, ...options];
+function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = []) {
+  return Array.from(new Set([...resolveModelOptionsFromConfig(currentModel, configOptions), ...MODEL_OPTIONS]));
+}
+
+function resolveDraftConfigOptions(
+  activeSession: SessionSummary | null,
+  sessions: SessionSummary[],
+  sessionConfigOptions: Record<string, SessionConfigOption[]>,
+  selectedAgentId?: string | null,
+) {
+  if (activeSession) {
+    return sessionConfigOptions[activeSession.id] ?? [];
   }
-  return options;
+
+  const cachedSession = sessions.find((session) => session.agentId === selectedAgentId && (sessionConfigOptions[session.id]?.length ?? 0) > 0);
+  return cachedSession ? sessionConfigOptions[cachedSession.id] ?? [] : [];
 }
 
 function normalizeModelSelection(model: string | undefined) {
@@ -1707,6 +2318,24 @@ function formatSessionTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDeviceTime(value: string) {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+
+  return new Date(parsed).toLocaleString(deckLocale(), {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function deckLocale() {
+  return document.documentElement.lang || "zh-CN";
 }
 
 

@@ -224,7 +224,7 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
           terminal: false,
         },
         clientInfo: {
-          name: "tiller-daemon",
+          name: "tiller-helm",
           version: "0.1.0",
         },
       },
@@ -429,7 +429,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
       },
-      clientInfo: { name: "tiller-daemon", version: "0.1.0" },
+      clientInfo: { name: "tiller-helm", version: "0.1.0" },
     },
   });
   const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
@@ -878,16 +878,11 @@ const CODEX_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
 const OPENCODE_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
   id: "opencode",
   matches: (command) => /^opencode(?:\.exe)?$/iu.test(command),
-  applyLaunchArgs: (args, sessionConfig) => {
-    if (!sessionConfig?.model) {
-      return args;
-    }
-
-    const filteredArgs = args.filter((value, index, list) => {
+  applyLaunchArgs: (args) => {
+    return args.filter((value, index, list) => {
       const previous = list[index - 1];
       return value !== "-m" && value !== "--model" && previous !== "-m" && previous !== "--model" && !value.startsWith("--model=");
     });
-    return ["-m", sessionConfig.model, ...filteredArgs];
   },
   applyEnv: (sessionConfig) => {
     const configOverride = buildOpenCodeConfigOverride(sessionConfig);
@@ -1246,6 +1241,7 @@ function sanitizeLogToken(value: string) {
 
 // TODO(real-acp): introduce createAcpRuntime(provider, workspace) using stdio JSON-RPC notifications beyond initialize.
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
+
 
 
 

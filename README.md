@@ -99,7 +99,7 @@ pnpm dev
 
 - Web: [http://127.0.0.1:5173](http://127.0.0.1:5173)
 - Helm WebSocket: `ws://127.0.0.1:47631`
-- 运行期 Helm 日志：`D:/myProject/tools/Tiller/logs/daemon.log`
+- 运行期 Helm 日志：`D:/myProject/tools/Tiller/logs/helm.log`
 
 ### 第一次连接 / 配对
 
@@ -112,21 +112,52 @@ pnpm dev
 
 1. 在 Helm 终端里查看 6 位 pairing code
 2. 在 Web 的 **设备配对** 区输入 pairing code
-3. 配对成功后，浏览器会保存 Helm token
-4. 之后同一浏览器会自动 `device.auth`
+3. 配对成功后，Deck 会在当前浏览器保存：
+   - 稳定 `deviceId`
+   - 当前 Helm 的 trusted device token
+4. Helm 会把这台设备登记到本地 trusted device registry，并给它 **7 天滑动续期**
+5. 之后同一设备在 7 天内再次打开 Deck，会自动 `device.auth`
 
-如果你清除了浏览器本地存储，或 Helm 重启后 pairing token 失效，就重新输入 pairing code 即可。
+### Trusted Device Authentication
+
+- 第一次连接仍然需要 pairing code
+- Helm 会按设备维度记住 Web / App，而不是只记住一次性内存 token
+- 每次 `device.auth` 成功，都会把设备有效期顺延 7 天
+- 如果某台设备连续 7 天没有使用，下一次连接必须重新配对
+- Helm 重启后仍能识别 trusted devices；新设备首次连接仍需重新认证
+
+### Hybrid Reconnect
+
+- Deck 刷新后会先恢复最近一次成功同步的本地 snapshot cache
+- 如果当前 Helm 的 trusted token 仍有效，Deck 会在后台静默尝试恢复 websocket 连接
+- `Mission` / `Crew` 视图需要实时数据；进入这些页面时，Deck 会自动确保 live connection
+- 如果 Helm 暂时离线，Overview 仍可先展示缓存，不需要刷新后立刻手动重连
+
+如果你清除了浏览器本地存储、设备超过 7 天未使用，或 Helm 侧设备信任记录已失效，就重新输入 pairing code 即可。
+
+### 受信设备管理
+
+- 进入 **Settings** 页面后，Deck 会请求当前 Helm 的受信设备列表
+- 列表会显示：
+  - `deviceName`
+  - 设备类型（Web / App）
+  - `deviceId`
+  - 最近认证时间
+  - 信任到期时间
+- 点击 **撤销** 后，Helm 会删除对应 trusted device record
+- 如果撤销的是“当前设备”，这个浏览器里的 token 会被清掉，并在下一次连接时要求重新配对
+- 这个列表是 **按 Helm profile 隔离** 的；切换到另一个 Helm，只会看到它自己的受信设备
 
 ### 日志约定
 
 - 仓库内统一使用 `D:/myProject/tools/Tiller/logs/` 存放本地调试日志
-- Helm 启动、监听失败、未处理异常等会自动追加到 `logs/daemon.log`
+- Helm 启动、监听失败、未处理异常等会自动追加到 `logs/helm.log`
 - ACP connection test 与 real mission 运行日志会自动写到 `logs/acp/`
 - 手动重定向出来的调试日志也建议统一写到 `logs/` 下，避免散落在仓库根目录
 
 当前默认约定示例：
 
-- `logs/daemon.log`
+- `logs/helm.log`
 - `logs/acp/connection-test-opencode.log`
 - `logs/acp/session-session-1712345678901.log`
 
@@ -316,7 +347,7 @@ Tiller 把 Mission 的“重连/恢复”拆成两层，避免把 UI history 误
 - `session/resume` 恢复后首条 prompt 的上下文连续性
 - 外部 Crew 进程存活但 Helm 重启时的重新附着策略
 
-Helm 终端会输出低噪声调试日志：连接/断开、认证、`session.list/create`、runtime id、capability、`resume.check/start`、状态变更与错误；完整日志仍写入 `logs/daemon.log`。
+Helm 终端会输出低噪声调试日志：连接/断开、认证、`session.list/create`、runtime id、capability、`resume.check/start`、状态变更与错误；完整日志仍写入 `logs/helm.log`。
 
 ## Crew Provider 策略
 

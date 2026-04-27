@@ -8,14 +8,17 @@ import type {
   PermissionRequest,
   ProjectSummary,
   SessionCleanupResult,
+  SessionConfigOption,
   SessionReasoningEffort,
   SessionResumeInfo,
   SessionStatus,
   SessionSummary,
+  TrustedClientKind,
+  TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
 
-export type ClientToDaemon =
+export type ClientToHelm =
   | {
       type: "helm.list";
       requestId: string;
@@ -110,17 +113,30 @@ export type ClientToDaemon =
       sessionId: string;
     }
   | {
+      type: "device.list";
+      requestId: string;
+    }
+  | {
+      type: "device.revoke";
+      requestId: string;
+      deviceId: string;
+    }
+  | {
       type: "device.pair";
       requestId: string;
       pairingCode: string;
+      deviceId: string;
+      deviceName: string;
+      clientKind: TrustedClientKind;
     }
   | {
       type: "device.auth";
       requestId: string;
+      deviceId: string;
       token: string;
     };
 
-export type DaemonToClient =
+export type HelmToClient =
   | {
       type: "helm.list.result";
       requestId: string;
@@ -210,6 +226,12 @@ export type DaemonToClient =
       session: SessionSummary;
     }
   | {
+      type: "session.config.options";
+      sessionId: string;
+      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      options: SessionConfigOption[];
+    }
+  | {
       type: "session.status";
       sessionId: string;
       status: SessionStatus;
@@ -247,12 +269,28 @@ export type DaemonToClient =
       requestId: string;
       ok: boolean;
       token?: string;
+      trustedUntil?: string;
+      deviceName?: string;
       message: string;
     }
   | {
       type: "device.auth.result";
       requestId: string;
       ok: boolean;
+      trustedUntil?: string;
+      requiresPairing?: boolean;
+      message: string;
+    }
+  | {
+      type: "device.list.result";
+      requestId: string;
+      devices: TrustedDeviceSummary[];
+    }
+  | {
+      type: "device.revoke.result";
+      requestId: string;
+      ok: boolean;
+      deviceId: string;
       message: string;
     }
   | {

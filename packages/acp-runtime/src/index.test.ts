@@ -94,17 +94,17 @@ test("applySessionLaunchOverrides appends codex model and reasoning config flags
   );
 });
 
-test("applySessionLaunchOverrides prepends OpenCode model overrides before the acp subcommand", () => {
+test("applySessionLaunchOverrides leaves OpenCode ACP args unchanged because model config is passed through env", () => {
   assert.deepEqual(
     applySessionLaunchOverrides("opencode", ["acp", "--pure"], { model: "openai/gpt-5.4", reasoningEffort: "high" }),
-    ["-m", "openai/gpt-5.4", "acp", "--pure"],
+    ["acp", "--pure"],
   );
 });
 
-test("applySessionLaunchOverrides replaces existing OpenCode model flags", () => {
+test("applySessionLaunchOverrides strips stale OpenCode model flags from ACP args", () => {
   assert.deepEqual(
     applySessionLaunchOverrides("opencode", ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], { model: "openai/gpt-5.4-mini" }),
-    ["-m", "openai/gpt-5.4-mini", "acp", "--pure"],
+    ["acp", "--pure"],
   );
 });
 
