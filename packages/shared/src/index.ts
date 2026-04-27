@@ -4,11 +4,21 @@ export type SessionStatus = "starting" | "running" | "waiting_for_permission" | 
 export type RuntimeResumeMode = "none" | "same-process" | "reconnect";
 export type SessionResumeState = "history-only" | "resume-available" | "resume-unavailable";
 
+export type SessionCleanupResult = {
+  sessionId: string;
+  localDeleted: boolean;
+  remoteDeleted: boolean;
+  remoteDeletionAttempted: boolean;
+  providerId?: string;
+  message: string;
+};
+
 export type AgentCapabilities = {
   streaming?: boolean;
   permissionRequests?: boolean;
   fileDiffs?: boolean;
   commandOutput?: boolean;
+  sessionConfig?: Partial<SessionConfigSupport>;
   /** ACP session/load support: restores context and replays history via session/update. */
   sessionLoad?: boolean;
   /** ACP session/resume support: restores context without replaying old messages. */
@@ -44,6 +54,23 @@ export type WorkspaceSummary = {
   path: string;
 };
 
+export type HelmSummary = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+};
+
+export type ProjectSummary = {
+  id: string;
+  name: string;
+  helmId: string;
+  workspaceIds?: string[];
+  allowedAgentIds?: string[];
+  defaultWorkspaceId?: string;
+  defaultAgentId?: string;
+};
+
 export type SessionRestoreMethod = "client-reconnect" | "session/load" | "session/resume" | "ui-history";
 
 export type SessionResumeInfo = {
@@ -57,12 +84,48 @@ export type SessionResumeInfo = {
   lastSeenAt?: string;
 };
 
+export type SessionReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type SessionConfigApplyMode = "none" | "startup" | "runtime";
+export type SessionConfigModelFormat = "model" | "provider/model";
+
+export type SessionConfigSupport = {
+  model: SessionConfigApplyMode;
+  reasoningEffort: SessionConfigApplyMode;
+  modelFormat?: SessionConfigModelFormat;
+};
+
+export function resolveSessionConfigSupport(provider?: Pick<AcpAgentProvider, "command" | "capabilities"> | null): SessionConfigSupport {
+  const declared = provider?.capabilities?.sessionConfig;
+  if (declared?.model || declared?.reasoningEffort || declared?.modelFormat) {
+    return {
+      model: declared.model ?? "none",
+      reasoningEffort: declared.reasoningEffort ?? "none",
+      modelFormat: declared.modelFormat,
+    };
+  }
+
+  if (provider?.command === "codex-acp") {
+    return { model: "startup", reasoningEffort: "startup", modelFormat: "model" };
+  }
+
+  if (provider?.command === "opencode") {
+    return { model: "startup", reasoningEffort: "none", modelFormat: "provider/model" };
+  }
+
+  return { model: "none", reasoningEffort: "none" };
+}
+
 export type SessionSummary = {
   id: string;
+  projectId: string;
+  projectName: string;
+  helmId: string;
   workspaceId: string;
   workspaceName: string;
   agentId: string;
   agentName: string;
+  model?: string;
+  reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;

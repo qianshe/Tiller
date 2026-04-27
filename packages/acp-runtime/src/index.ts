@@ -9,12 +9,18 @@ import type {
   FileDiffSummary,
   PermissionDecision,
   PermissionRequest,
+  SessionReasoningEffort,
   SessionStatus,
   WorkspaceSummary,
 } from "@tiller/shared";
 
 const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
 const ACP_EARLY_STDERR_FAILURE = /failed to start server|eaddrinuse|address already in use/i;
+
+export type ProviderCleanupResult =
+  | { kind: "unsupported"; providerId: string; message: string }
+  | { kind: "remote-deleted"; providerId: string; message: string }
+  | { kind: "remote-delete-failed"; providerId: string; message: string };
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const LOGS_DIR = resolve(REPO_ROOT, "logs");
 const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
@@ -44,6 +50,11 @@ export type SessionRuntimeEvent =
       files: FileDiffSummary[];
     }
   | {
+      type: "config-options";
+      state: AcpSessionConfigState;
+      options: AcpSessionConfigOption[];
+    }
+  | {
       type: "error";
       message: string;
       code?: string;
@@ -55,6 +66,10 @@ export type AcpRuntimeOptions = {
   sessionId: string;
   workspace: WorkspaceSummary;
   agent: AcpAgentProvider;
+  sessionConfig?: {
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+  };
   restore?: {
     runtimeSessionId: string;
     strategy: AcpSessionRestoreStrategy;
@@ -66,6 +81,23 @@ export type DetectedAcpSessionCapabilities = {
   sessionLoad?: boolean;
   sessionResume?: boolean;
   sessionList?: boolean;
+};
+
+export type AcpSessionConfigOptionValue = string | boolean;
+
+export type AcpSessionConfigOption = {
+  id: string;
+  name?: string;
+  category?: string;
+  currentValue?: AcpSessionConfigOptionValue;
+  selectedValue?: AcpSessionConfigOptionValue;
+  value?: AcpSessionConfigOptionValue;
+  options?: Array<{ value: AcpSessionConfigOptionValue; label?: string; name?: string }>;
+};
+
+export type AcpSessionConfigState = {
+  model?: string;
+  reasoningEffort?: SessionReasoningEffort;
 };
 
 export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
@@ -203,13 +235,14 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
 }
 
 export async function createAcpRuntime(options: AcpRuntimeOptions) {
-  const launchSpec = resolveLaunchSpec(options.agent.command, options.agent.args ?? []);
+  const launchSpec = resolveLaunchSpec(options.agent.command, options.agent.args ?? [], options.sessionConfig);
   const launchCwd = existsSync(options.agent.cwd ?? "") ? options.agent.cwd! : existsSync(options.workspace.path) ? options.workspace.path : process.cwd();
-  const childEnv = { ...process.env, ...options.agent.env };
+  const sessionEnvOverrides = resolveSessionEnvOverrides(options.agent.command, options.sessionConfig);
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...options.agent.env, ...sessionEnvOverrides };
   delete childEnv.NODE_OPTIONS;
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
-  const preferredAgent = normalizePreferredAgentId(options.agent.defaultAgent);
+  const preferredAgent = resolvePreferredAgentId(options.agent);
   const logFile = resolve(ACP_LOGS_DIR, `session-${sanitizeLogToken(options.sessionId)}.log`);
 
   writeLogLine(
@@ -334,6 +367,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
     const mapped = mapSessionUpdateNotification(payload);
     if (mapped && mapped.sessionId === sessionToken) {
+      if (mapped.event.type === "config-options") {
+        currentConfigOptions = mapped.event.options;
+      }
       writeProtocolLog(logFile, "stdout", payload);
       options.onEvent(mapped.event);
     }
@@ -397,32 +433,43 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     },
   });
   const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
+  let currentConfigOptions: AcpSessionConfigOption[] = [];
 
   if (options.restore) {
     if (options.restore.strategy === "load") {
       if (!sessionCapabilities.sessionLoad) {
         throw new Error("ACP agent does not advertise session/load capability.");
       }
-      const loadResult = await sendRequest<{ sessionId?: string; id?: string }>(
+      const loadResult = await sendRequest<any>(
         buildSessionLoadRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
       );
       sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
+      currentConfigOptions = extractSessionConfigOptions(loadResult);
     } else {
       if (!sessionCapabilities.sessionResume) {
         throw new Error("ACP agent does not advertise session.resume capability.");
       }
-      const resumeResult = await sendRequest<{ sessionId?: string; id?: string }>(
+      const resumeResult = await sendRequest<any>(
         buildSessionResumeRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
       );
       sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
+      currentConfigOptions = extractSessionConfigOptions(resumeResult);
     }
   } else {
-    const sessionResult = await sendRequest<{ sessionId?: string; id?: string }>(
+    const sessionResult = await sendRequest<any>(
       buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent),
     );
     sessionToken = resolveRuntimeSessionId(sessionResult, options.sessionId);
+    currentConfigOptions = extractSessionConfigOptions(sessionResult);
   }
 
+  if (currentConfigOptions.length) {
+    options.onEvent({
+      type: "config-options",
+      state: resolveSessionConfigState(currentConfigOptions),
+      options: currentConfigOptions,
+    });
+  }
   options.onEvent({ type: "status", status: "idle", message: "ACP session ready" });
 
   const prompt = async (text: string) => {
@@ -437,6 +484,50 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       });
       options.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
     }
+  };
+
+  const configure = async (nextConfig: { model?: string; reasoningEffort?: SessionReasoningEffort }) => {
+    let runtimeApplied = false;
+
+    const applyOption = async (category: "model" | "thought_level", value: string | undefined) => {
+      if (!value) {
+        return;
+      }
+
+      const optionId = findSessionConfigOptionId(currentConfigOptions, category);
+      if (!optionId) {
+        return;
+      }
+
+      const result = await sendRequest<any>({
+        jsonrpc: "2.0",
+        id: nextRpcId(),
+        method: "session/set_config_option",
+        params: {
+          sessionId: sessionToken,
+          optionId,
+          value,
+        },
+      }, 15_000);
+      const nextOptions = extractSessionConfigOptions(result);
+      if (nextOptions.length) {
+        currentConfigOptions = nextOptions;
+        options.onEvent({
+          type: "config-options",
+          state: resolveSessionConfigState(currentConfigOptions),
+          options: currentConfigOptions,
+        });
+      }
+      runtimeApplied = true;
+    };
+
+    await applyOption("model", nextConfig.model);
+    await applyOption("thought_level", nextConfig.reasoningEffort);
+
+    return {
+      runtimeApplied,
+      state: resolveSessionConfigState(currentConfigOptions),
+    };
   };
 
   const respondPermission = (requestId: string, decision: PermissionDecision) => {
@@ -487,7 +578,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   return {
     runtimeSessionId: sessionToken,
     sessionCapabilities,
+    sessionConfigState: resolveSessionConfigState(currentConfigOptions),
     prompt,
+    configure,
     respondPermission,
     cancel,
     supportsPermissionResponses: true,
@@ -611,6 +704,18 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
     };
   }
 
+  const configOptions = extractSessionConfigOptions(update);
+  if (configOptions.length && updateType === "config_option_update") {
+    return {
+      sessionId,
+      event: {
+        type: "config-options",
+        state: resolveSessionConfigState(configOptions),
+        options: configOptions,
+      },
+    };
+  }
+
   const permissionRequest = extractPermissionRequest(sessionId, updateType, update);
   if (permissionRequest) {
     return {
@@ -659,28 +764,201 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
   return null;
 }
 
-function resolveLaunchSpec(command: string, args: string[]) {
+function extractSessionConfigOptions(payload: any): AcpSessionConfigOption[] {
+  const rawOptions = Array.isArray(payload?.configOptions)
+    ? payload.configOptions
+    : Array.isArray(payload?.sessionConfig?.configOptions)
+      ? payload.sessionConfig.configOptions
+      : Array.isArray(payload?.update?.configOptions)
+        ? payload.update.configOptions
+        : [];
+
+  return rawOptions
+    .filter((option: any) => option && typeof option.id === "string")
+    .map((option: any) => ({
+      id: String(option.id),
+      name: typeof option.name === "string" ? option.name : undefined,
+      category: typeof option.category === "string" ? option.category : undefined,
+      currentValue: option.currentValue,
+      selectedValue: option.selectedValue,
+      value: option.value,
+      options: Array.isArray(option.options)
+        ? option.options.map((item: any) => ({
+            value: item?.value,
+            label: typeof item?.label === "string" ? item.label : typeof item?.name === "string" ? item.name : undefined,
+            name: typeof item?.name === "string" ? item.name : undefined,
+          }))
+        : undefined,
+    }));
+}
+
+function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {
+  const state: AcpSessionConfigState = {};
+  const modelValue = readSessionConfigValue(configOptions, "model");
+  if (typeof modelValue === "string" && modelValue) {
+    state.model = modelValue;
+  }
+
+  const reasoningValue = readSessionConfigValue(configOptions, "thought_level");
+  if (typeof reasoningValue === "string" && reasoningValue) {
+    state.reasoningEffort = reasoningValue as SessionReasoningEffort;
+  }
+
+  return state;
+}
+
+function readSessionConfigValue(configOptions: AcpSessionConfigOption[], category: string) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === category);
+  return option?.currentValue ?? option?.selectedValue ?? option?.value;
+}
+
+function findSessionConfigOptionId(configOptions: AcpSessionConfigOption[], category: string) {
+  return configOptions.find((item) => item.category?.toLowerCase() === category)?.id;
+}
+
+function resolveLaunchSpec(
+  command: string,
+  args: string[],
+  sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort },
+) {
+  const runtimeArgs = applySessionLaunchOverrides(command, args, sessionConfig);
   if (process.platform !== "win32") {
-    return { command, args };
+    return { command, args: runtimeArgs };
   }
 
   const resolvedCommand = resolveWindowsCommand(command);
   if (!resolvedCommand.toLowerCase().endsWith(".cmd")) {
-    return { command: resolvedCommand, args };
+    return { command: resolvedCommand, args: runtimeArgs };
   }
 
   const cmdContent = readFileSync(resolvedCommand, "utf8");
   const scriptMatch = cmdContent.match(/"%_prog%"\s+"([^"]+)"\s+%\*/u);
   if (!scriptMatch) {
-    return { command: resolvedCommand, args };
+    return { command: resolvedCommand, args: runtimeArgs };
   }
 
   const scriptPath = scriptMatch[1].replace(/%dp0%?/giu, dirname(resolvedCommand).replace(/\\/g, "/"));
   const localNode = join(dirname(resolvedCommand), "node.exe");
   return {
     command: existsSync(localNode) ? localNode : process.execPath,
-    args: [scriptPath, ...args],
+    args: [scriptPath, ...runtimeArgs],
   };
+}
+
+type SessionConfigAdapter = {
+  id: string;
+  matches: (command: string) => boolean;
+  applyLaunchArgs: (args: string[], sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort }) => string[];
+  applyEnv: (sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort }) => NodeJS.ProcessEnv;
+};
+
+const DEFAULT_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
+  id: "default",
+  matches: () => true,
+  applyLaunchArgs: (args) => args,
+  applyEnv: () => ({}),
+};
+
+const CODEX_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
+  id: "codex-acp",
+  matches: (command) => /^codex-acp(?:\.exe)?$/iu.test(command),
+  applyLaunchArgs: (args, sessionConfig) => {
+    const nextArgs = [...args];
+    if (sessionConfig?.model) {
+      nextArgs.push("-c", `model=${JSON.stringify(sessionConfig.model)}`);
+    }
+    if (sessionConfig?.reasoningEffort) {
+      nextArgs.push("-c", `model_reasoning_effort=${JSON.stringify(sessionConfig.reasoningEffort)}`);
+    }
+    return nextArgs;
+  },
+  applyEnv: () => ({}),
+};
+
+const OPENCODE_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
+  id: "opencode",
+  matches: (command) => /^opencode(?:\.exe)?$/iu.test(command),
+  applyLaunchArgs: (args, sessionConfig) => {
+    if (!sessionConfig?.model) {
+      return args;
+    }
+
+    const filteredArgs = args.filter((value, index, list) => {
+      const previous = list[index - 1];
+      return value !== "-m" && value !== "--model" && previous !== "-m" && previous !== "--model" && !value.startsWith("--model=");
+    });
+    return ["-m", sessionConfig.model, ...filteredArgs];
+  },
+  applyEnv: (sessionConfig) => {
+    const configOverride = buildOpenCodeConfigOverride(sessionConfig);
+    if (!configOverride) {
+      return {};
+    }
+
+    return {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(configOverride),
+    };
+  },
+};
+
+const SESSION_CONFIG_ADAPTERS: SessionConfigAdapter[] = [
+  CODEX_SESSION_CONFIG_ADAPTER,
+  OPENCODE_SESSION_CONFIG_ADAPTER,
+  DEFAULT_SESSION_CONFIG_ADAPTER,
+];
+
+function resolveSessionConfigAdapter(command: string) {
+  return SESSION_CONFIG_ADAPTERS.find((adapter) => adapter.matches(command)) ?? DEFAULT_SESSION_CONFIG_ADAPTER;
+}
+
+export function applySessionLaunchOverrides(
+  command: string,
+  args: string[],
+  sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort },
+) {
+  return resolveSessionConfigAdapter(command).applyLaunchArgs(args, sessionConfig);
+}
+
+export function resolveSessionEnvOverrides(
+  command: string,
+  sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort },
+): NodeJS.ProcessEnv {
+  return resolveSessionConfigAdapter(command).applyEnv(sessionConfig);
+}
+
+export function buildOpenCodeConfigOverride(sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort }) {
+  if (!sessionConfig?.model && !sessionConfig?.reasoningEffort) {
+    return null;
+  }
+
+  const nextConfig: Record<string, unknown> = {};
+  if (sessionConfig?.model) {
+    nextConfig.model = sessionConfig.model;
+  }
+
+  if (!sessionConfig?.reasoningEffort || !sessionConfig.model || !sessionConfig.model.includes("/")) {
+    return Object.keys(nextConfig).length ? nextConfig : null;
+  }
+
+  const [providerId, ...modelParts] = sessionConfig.model.split("/");
+  const modelId = modelParts.join("/");
+  if (!providerId || !modelId) {
+    return Object.keys(nextConfig).length ? nextConfig : null;
+  }
+
+  nextConfig.provider = {
+    [providerId]: {
+      models: {
+        [modelId]: {
+          options: {
+            reasoningEffort: sessionConfig.reasoningEffort,
+          },
+        },
+      },
+    },
+  };
+
+  return nextConfig;
 }
 
 function resolveWindowsCommand(command: string) {
@@ -730,6 +1008,10 @@ function formatAcpError(error: { message?: string; data?: unknown }) {
         : null;
 
   return detail ? `${error?.message ?? "ACP request failed"}: ${detail}` : error?.message ?? "ACP request failed";
+}
+
+export function resolvePreferredAgentId(provider: Pick<AcpAgentProvider, "defaultAgent">) {
+  return normalizePreferredAgentId(provider.defaultAgent);
 }
 
 function normalizePreferredAgentId(agent: string | undefined) {
@@ -931,9 +1213,43 @@ function writeLogLine(logFile: string, stream: string, message: string) {
   appendFileSync(logFile, `${new Date().toISOString()} [${stream}] ${message}\n`, "utf8");
 }
 
+export function normalizeProviderCleanupResult(result: ProviderCleanupResult) {
+  switch (result.kind) {
+    case "remote-deleted":
+      return {
+        remoteDeleted: true,
+        remoteDeletionAttempted: true,
+        providerId: result.providerId,
+        message: result.message,
+      };
+    case "remote-delete-failed":
+      return {
+        remoteDeleted: false,
+        remoteDeletionAttempted: true,
+        providerId: result.providerId,
+        message: result.message,
+      };
+    case "unsupported":
+    default:
+      return {
+        remoteDeleted: false,
+        remoteDeletionAttempted: false,
+        providerId: result.providerId,
+        message: result.message,
+      };
+  }
+}
+
 function sanitizeLogToken(value: string) {
   return value.replace(/[^a-z0-9._-]+/giu, "-");
 }
 
 // TODO(real-acp): introduce createAcpRuntime(provider, workspace) using stdio JSON-RPC notifications beyond initialize.
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
+
+
+
+
+
+
+

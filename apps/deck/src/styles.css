@@ -784,6 +784,28 @@ textarea:focus,
   margin-top: 12px;
 }
 
+.cleanup-feedback {
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.cleanup-success {
+  color: #0d5f2a;
+  background: rgba(52, 199, 89, 0.14);
+}
+
+.cleanup-warning {
+  color: #8a5600;
+  background: rgba(255, 176, 0, 0.16);
+}
+
+.cleanup-info {
+  color: #004493;
+  background: rgba(0, 112, 235, 0.1);
+}
+
 @media (max-width: 860px) {
   .top-nav {
     position: static;
@@ -1212,4 +1234,214 @@ textarea:focus,
   .mission-order-editor {
     grid-template-columns: 1fr;
   }
+}
+
+
+.sidebar-section {
+  display: grid;
+  gap: 10px;
+}
+
+.project-switcher {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(118, 125, 150, 0.16);
+}
+
+.session-switcher {
+  padding-top: 14px;
+}
+
+.sidebar-heading-block {
+  align-items: flex-start;
+}
+
+.project-nav-list {
+  display: grid;
+  gap: 8px;
+}
+
+.project-nav-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  text-align: left;
+  background: transparent;
+  color: #1a1c1d;
+  border: 1px solid transparent;
+}
+
+.project-nav-item span {
+  color: #667085;
+  font-size: 0.82rem;
+}
+
+.project-nav-item:hover {
+  background: rgba(216, 226, 255, 0.56);
+}
+
+.project-nav-item.active {
+  border-color: rgba(0, 88, 188, 0.28);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(26, 28, 29, 0.06);
+}
+
+.session-nav-card {
+  position: relative;
+}
+
+.session-nav-card.active .chat-session-item {
+  border-color: rgba(0, 88, 188, 0.28);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(26, 28, 29, 0.06);
+}
+
+.session-nav-button {
+  padding-right: 42px;
+}
+
+.session-nav-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.session-nav-time {
+  color: #667085;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.session-inline-action {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(118, 125, 150, 0.12);
+  color: #667085;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.session-nav-card:hover .session-inline-action,
+.session-nav-card.active .session-inline-action {
+  opacity: 1;
+}
+
+.session-inline-action:hover {
+  background: rgba(186, 26, 26, 0.12);
+  color: #ba1a1a;
+}
+
+.sidebar-empty {
+  min-height: 72px;
+}
+
+.draft-toolbar {
+  gap: 14px;
+}
+
+.draft-toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.draft-toolbar-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 860px) {
+  .draft-toolbar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Zed-like compact sidebar polish */
+.chat-session-sidebar {
+  gap: 0;
+}
+
+.sidebar-section {
+  padding-inline: 12px;
+}
+
+.project-switcher,
+.session-switcher {
+  border-bottom: 1px solid rgba(118, 125, 150, 0.12);
+}
+
+.project-nav-list {
+  gap: 4px;
+}
+
+.project-nav-item,
+.chat-session-item {
+  border-radius: 10px;
+}
+
+.project-nav-item {
+  position: relative;
+  padding: 10px 12px 10px 14px;
+}
+
+.project-nav-item::before,
+.session-nav-card.active .chat-session-item::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 999px;
+  background: #2f6fed;
+}
+
+.project-nav-item.active,
+.session-nav-card.active .chat-session-item {
+  box-shadow: inset 0 0 0 1px rgba(47, 111, 237, 0.12);
+}
+
+.chat-session-item {
+  position: relative;
+  padding: 10px 12px;
+  min-height: 68px;
+}
+
+.session-nav-title-row strong,
+.project-nav-item strong {
+  font-size: 0.95rem;
+}
+
+.session-nav-button span,
+.project-nav-item span {
+  line-height: 1.35;
+}
+
+.session-inline-action {
+  top: 10px;
+  right: 8px;
+}
+
+.draft-toolbar {
+  position: sticky;
+  bottom: 0;
+  padding-top: 14px;
+  background: linear-gradient(180deg, rgba(248, 249, 252, 0.72) 0%, rgba(248, 249, 252, 0.96) 18%, #f8f9fc 100%);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(118, 125, 150, 0.12);
+}
+
+.draft-toolbar-grid label span {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #667085;
 }

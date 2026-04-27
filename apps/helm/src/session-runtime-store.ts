@@ -1,8 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 export type StoredSessionRuntimeDescriptor = {
   /** Tiller-local session id. */
   sessionId: string;
+  projectId?: string;
+  helmId?: string;
   providerId: string;
   /** ACP-native session id returned by session/new, used for session/load or session/resume. */
   runtimeSessionId?: string;
@@ -30,6 +32,10 @@ export function createSessionRuntimeStore(filePath: string) {
       persistRuntimeDescriptors(filePath, descriptors);
       return descriptor;
     },
+    remove(sessionId: string) {
+      descriptors = descriptors.filter((item) => item.sessionId !== sessionId);
+      persistOrDeleteRuntimeDescriptors(filePath, descriptors);
+    },
   };
 }
 
@@ -48,6 +54,18 @@ function persistRuntimeDescriptors(filePath: string, descriptors: StoredSessionR
   writeFileSync(filePath, JSON.stringify(descriptors, null, 2), "utf8");
 }
 
+function persistOrDeleteRuntimeDescriptors(filePath: string, descriptors: StoredSessionRuntimeDescriptor[]) {
+  if (!descriptors.length) {
+    try {
+      unlinkSync(filePath);
+    } catch {
+      // ignore missing file
+    }
+    return;
+  }
+  persistRuntimeDescriptors(filePath, descriptors);
+}
+
 function upsertRuntimeDescriptor(current: StoredSessionRuntimeDescriptor[], descriptor: StoredSessionRuntimeDescriptor) {
   return [descriptor, ...current.filter((item) => item.sessionId !== descriptor.sessionId)];
 }
@@ -60,6 +78,8 @@ function isStoredSessionRuntimeDescriptor(value: unknown): value is StoredSessio
   const candidate = value as Record<string, unknown>;
   return (
     typeof candidate.sessionId === "string" &&
+    (typeof candidate.projectId === "string" || typeof candidate.projectId === "undefined") &&
+    (typeof candidate.helmId === "string" || typeof candidate.helmId === "undefined") &&
     typeof candidate.providerId === "string" &&
     (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
     isCapabilities(candidate.capabilities) &&

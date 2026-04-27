@@ -31,6 +31,20 @@ Helm Node A
 
 对应关系：Deck = Web/App，Fleet = 多 Helm 集合，Helm = 单机 host process，Crew = ACP Agent，Mission = Session/Task，Logbook = event / command output，Beacon = relay / notification channel。
 
+### 当前会话绑定模型
+
+当前 Deck 创建 Mission 的选择链路为：
+
+```text
+Project -> Helm -> Workspace -> ACP Agent -> runtimeSessionId
+```
+
+- **Project**：业务归属对象；一个 Project 绑定一个 Helm
+- **Helm**：服务器/宿主节点；一个 Helm 可承载多个 Project
+- **Workspace**：Project 下的执行目录 / cwd
+- **ACP Agent**：归属于 Helm，Project 仅约束 allowed/default agent
+- **runtimeSessionId**：ACP 返回的真实会话身份；一旦出现即锁定绑定关系
+
 ## 为什么是 ACP-first
 
 Tiller 不硬编码 Codex、Claude、Gemini、OpenCode 或任何特定 Agent。
@@ -121,12 +135,13 @@ pnpm dev
 1. 打开 Web 页面
 2. 先完成 Helm 配对
 3. 确认显示 `connected`
-4. 点击 `Create Mission`
-5. 等状态进入 `idle / running / waiting`
-6. 输入 order / prompt 并发送
-7. 观察真实流式输出
-8. 如 agent 发出权限卡片，则点击 `Allow once` 或 `Deny`
-9. 观察 Logbook、diff summary 和最终状态
+4. 在 Mission 页依次选择 `Project -> Workspace -> Crew`
+5. 点击 `Create Mission` 或直接发送第一条 Order
+6. 等状态进入 `idle / running / waiting`
+7. 输入 order / prompt 并发送
+8. 观察真实流式输出
+9. 如 agent 发出权限卡片，则点击 `Allow once` 或 `Deny`
+10. 观察 Logbook、diff summary 和最终状态
 
 > 注意：是否真的出现权限卡片，还取决于 ACP Agent 自己的权限策略。
 > 以 OpenCode 为例，只有当对应工具权限被配置成 `ask` 时，才会弹审批；如果当前权限默认是 `allow`，那 Tiller UI 不出现权限卡片并不一定是前端故障。
@@ -226,6 +241,25 @@ Tiller 的接入方式不是硬编码某个 Agent，而是让 Helm 读取 provid
 当前仓库已经具备真实 ACP provider slot；如果某个 provider 在插件态下存在 agent 语义兼容问题，可先用可工作的纯净命令（例如 `opencode acp --pure`）验证主链路。
 
 如果后续需要快速验证一个外部 ACP adapter / wrapper，推荐把 **adapter 原型** 用 Python 编写；但 **Tiller 核心仓库本身仍保持 TypeScript + pnpm monorepo**，不改变当前架构边界。
+
+## Session config / capability matrix
+
+Tiller 现在把 `Model / Reasoning` 能力拆成三层，尽量复用标准 ACP，再兜底 provider 特化：
+
+1. **ACP-native path**：如果 agent 在 `session/new` / `session/load` / `session/resume` 返回 `configOptions`，或后续通过 `config_option_update` 推送配置变化，Tiller 会优先走标准 ACP `session/set_config_option`。
+2. **Provider adapter path**：如果 agent 没暴露标准 `configOptions`，就走 `acp-runtime` 里的 provider adapter：
+   - `codex-acp`：通过 `-c model=...` / `-c model_reasoning_effort=...`
+   - `opencode`：通过 `-m provider/model` + `OPENCODE_CONFIG_CONTENT`
+3. **Stored-only fallback**：如果既没有标准 ACP config option，也没有 provider adapter，Tiller 仍会把配置保存在 session summary 中，等待后续 provider 支持。
+
+当前推荐的分层职责：
+
+- `shared`：定义通用 session-config 语义与 `SessionConfigSupport`
+- `agent-registry`：给 provider 注入 `capabilities.sessionConfig`
+- `acp-runtime`：维护 `SessionConfigAdapter` 映射和 ACP-native bridge
+- `deck`：消费通用能力，不直接绑定某个 provider 的命令细节
+
+这条路径参考了 ACP 官方文档里对 `configOptions` / `session/set_config_option` 的约定，以及 Zed 对 ACP `session config options` 的通用 UI/adapter 处理思路。
 
 ## 安全提醒
 

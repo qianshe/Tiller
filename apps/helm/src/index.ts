@@ -6,9 +6,13 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getDefaultConfigPath,
+  listAvailableHelms as listConfiguredHelms,
+  listAvailableProjects as listConfiguredProjects,
   listAvailableProviders,
   loadTillerConfigStub,
   readTillerConfig,
+  resolveHelmById,
+  resolveProjectById,
   resolveProviderById,
   saveProviderToConfig,
   saveWorkspaceToConfig,
@@ -19,11 +23,22 @@ import {
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import type { ClientToDaemon, DaemonToClient } from "@tiller/sync-protocol";
-import type { AcpAgentProvider, AgentMessage, PermissionRequest, SessionResumeInfo, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+import type {
+  AcpAgentProvider,
+  AgentMessage,
+  HelmSummary,
+  PermissionRequest,
+  ProjectSummary,
+  SessionReasoningEffort,
+  SessionResumeInfo,
+  SessionSummary,
+  WorkspaceSummary,
+} from "@tiller/shared";
 import { createSessionArtifactStore } from "./session-artifact-store";
 import { createSessionMessageStore } from "./session-message-store";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./session-runtime-store";
 import { createSessionStore } from "./session-store";
+import { resolveSessionCleanupOutcome } from "./session-cleanup";
 
 // Tiller verification ping by Antigravity 🐾
 const HOST = "127.0.0.1";
@@ -44,8 +59,10 @@ const sessionMessageStore = createSessionMessageStore(sessionMessagesPath);
 const sessionArtifactStore = createSessionArtifactStore(sessionArtifactsPath);
 const sessionRuntimeStore = createSessionRuntimeStore(sessionRuntimesPath);
 const configStub = loadTillerConfigStub(configPath);
+let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
 let agents = listAvailableProviders(configPath);
+let projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 
@@ -227,6 +244,22 @@ function handlePairing(socket: WebSocket, payload: { type: "device.pair"; reques
 
 async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
   switch (payload.type) {
+    case "helm.list":
+      helms = loadAvailableHelms();
+      emit(socket, {
+        type: "helm.list.result",
+        requestId: payload.requestId,
+        helms,
+      });
+      return;
+    case "project.list":
+      projects = loadAvailableProjects();
+      emit(socket, {
+        type: "project.list.result",
+        requestId: payload.requestId,
+        projects,
+      });
+      return;
     case "workspace.list":
       workspaces = loadAvailableWorkspaces();
       emit(socket, {
@@ -238,6 +271,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
     case "workspace.save": {
       const result = saveWorkspaceToConfig(payload.workspace, configPath);
       workspaces = loadAvailableWorkspaces();
+      projects = loadAvailableProjects();
       emit(socket, {
         type: "workspace.save.result",
         requestId: payload.requestId,
@@ -255,14 +289,16 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
         agents,
       });
       return;
-    case "session.list":
-      logInfo(`[tiller-daemon] session.list count=${sessionStore.list().length}`);
+    case "session.list": {
+      const normalizedSessions = sessionStore.list().map(migrateStoredSessionSummary);
+      logInfo(`[tiller-daemon] session.list count=${normalizedSessions.length}`);
       emit(socket, {
         type: "session.list.result",
         requestId: payload.requestId,
-        sessions: sessionStore.list().map(hydrateSessionSummary),
+        sessions: normalizedSessions,
       });
       return;
+    }
     case "session.messages.list":
       emit(socket, {
         type: "session.messages.list.result",
@@ -336,6 +372,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
 
       const result = saveProviderToConfig(provider, configPath);
       agents = listAvailableProviders(configPath);
+      projects = loadAvailableProjects();
       emit(socket, {
         type: "agent.save.result",
         requestId: payload.requestId,
@@ -370,45 +407,67 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       return;
     }
     case "session.create": {
+      helms = loadAvailableHelms();
+      workspaces = loadAvailableWorkspaces();
+      agents = listAvailableProviders(configPath);
+      projects = loadAvailableProjects();
+
+      const project = resolveProjectById(payload.projectId, projects);
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);
       const agent = resolveProviderById(payload.agentId, agents);
+      const helm = project ? resolveHelmById(project.helmId, helms) : undefined;
 
-      if (!workspace || !agent) {
+      if (!project || !workspace || !agent || !helm) {
         emit(socket, {
           type: "error",
           requestId: payload.requestId,
-          message: "Workspace or agent not found",
+          message: "Project, helm, workspace, or agent not found",
+        });
+        return;
+      }
+
+      if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
+        emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: "Workspace does not belong to the selected project",
+        });
+        return;
+      }
+
+      if (project.allowedAgentIds?.length && !project.allowedAgentIds.includes(agent.id)) {
+        emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: "ACP agent is not allowed for the selected project",
         });
         return;
       }
 
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
-      logInfo(`[tiller-daemon] session.create requested session=${sessionId} workspace=${workspace.id} agent=${agent.id}`);
-      const summary: SessionSummary = {
+      logInfo(
+        `[tiller-daemon] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`,
+      );
+      const summaryBase: SessionSummary = {
         id: sessionId,
+        projectId: project.id,
+        projectName: project.name,
+        helmId: helm.id,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         agentId: agent.id,
         agentName: agent.name,
+        model: payload.model,
+        reasoningEffort: payload.reasoningEffort,
         status: "starting",
         createdAt,
         updatedAt: createdAt,
         messageCount: 0,
-        resume: buildResumeInfo(
-          {
-            id: sessionId,
-            workspaceId: workspace.id,
-            workspaceName: workspace.name,
-            agentId: agent.id,
-            agentName: agent.name,
-            status: "starting",
-            createdAt,
-            updatedAt: createdAt,
-            messageCount: 0,
-          },
-          agent,
-        ),
+      };
+      const summary: SessionSummary = {
+        ...summaryBase,
+        resume: buildResumeInfo(summaryBase, agent),
       };
       sessionStore.upsert(summary);
       persistRuntimeDescriptor(summary, agent);
@@ -424,11 +483,17 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           sessionId,
           workspace,
           agent,
+          sessionConfig: {
+            model: summary.model,
+            reasoningEffort: summary.reasoningEffort,
+          },
           onEvent: (event) => handleRuntimeEvent(socket, sessionId, event),
         });
 
         const summaryWithRuntime = hydrateSessionSummary({
           ...summary,
+          model: runtime.sessionConfigState?.model ?? summary.model,
+          reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           runtimeSessionId: runtime.runtimeSessionId,
         });
         logInfo(
@@ -457,7 +522,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
           message: error instanceof Error ? error.message : "Failed to create session runtime",
         });
         logError(
-          `[tiller-daemon] session.create failed for agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`,
+          `[tiller-daemon] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`,
         );
         updateSessionSummary(sessionId, (current) => ({
           ...current,
@@ -492,6 +557,44 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
         timestamp: new Date().toISOString(),
       });
       record.runtime.prompt(payload.text);
+      return;
+    }
+    case "session.configure": {
+      const current = sessions.get(payload.sessionId)?.summary ?? sessionStore.list().find((item) => item.id === payload.sessionId);
+      if (!current) {
+        emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: "Session not found",
+        });
+        return;
+      }
+
+      const activeRecord = sessions.get(payload.sessionId);
+      const runtimeResult = activeRecord
+        ? await activeRecord.runtime.configure({ model: payload.model, reasoningEffort: payload.reasoningEffort })
+        : null;
+      const nextModel = runtimeResult?.state.model ?? payload.model;
+      const nextReasoning = runtimeResult?.state.reasoningEffort ?? payload.reasoningEffort;
+
+      updateSessionSummary(payload.sessionId, (summary) => ({
+        ...summary,
+        model: nextModel,
+        reasoningEffort: nextReasoning,
+        updatedAt: new Date().toISOString(),
+      }));
+
+      const next = hydrateSessionSummary({
+        ...current,
+        model: nextModel,
+        reasoningEffort: nextReasoning,
+        updatedAt: new Date().toISOString(),
+      });
+      emit(socket, {
+        type: "session.updated",
+        requestId: payload.requestId,
+        session: next,
+      });
       return;
     }
     case "permission.respond": {
@@ -550,12 +653,52 @@ async function handleMessage(socket: WebSocket, payload: ClientToDaemon) {
       record.runtime.cancel();
       return;
     }
+    case "session.cleanup": {
+      const record = sessions.get(payload.sessionId);
+      const summary = record?.summary ?? sessionStore.list().find((item) => item.id === payload.sessionId);
+      if (!summary) {
+        emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: "Session not found",
+        });
+        return;
+      }
+
+      const provider = record?.agent ?? resolveProviderById(summary.agentId, agents);
+      if (record) {
+        sessions.delete(summary.id);
+        record.runtime.cancel();
+      }
+
+      clearPermissionRequestsForSession(summary.id);
+      deleteLocalSessionData(summary.id);
+
+      const remoteResult = resolveSessionCleanupOutcome(summary, provider);
+      emit(socket, {
+        type: "session.cleanup.result",
+        requestId: payload.requestId,
+        result: {
+          sessionId: summary.id,
+          localDeleted: true,
+          remoteDeleted: remoteResult.remoteDeleted,
+          remoteDeletionAttempted: remoteResult.remoteDeletionAttempted,
+          providerId: remoteResult.providerId,
+          message: remoteResult.message,
+        },
+      });
+      return;
+    }
     default:
       return;
   }
 }
 
 function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: SessionRuntimeEvent) {
+  if (!sessions.has(sessionId) && !sessionStore.list().some((item) => item.id === sessionId)) {
+    return;
+  }
+
   switch (event.type) {
     case "status":
       logInfo(`[tiller-daemon] session.status session=${sessionId} status=${event.status}${event.message ? ` message=${event.message}` : ""}`);
@@ -616,6 +759,23 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
         files: event.files,
       });
       return;
+    case "config-options": {
+      const updated = updateSessionSummary(sessionId, (current) => ({
+        ...current,
+        model: event.state.model ?? current.model,
+        reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
+        updatedAt: new Date().toISOString(),
+      }));
+      if (!updated) {
+        return;
+      }
+      emit(socket, {
+        type: "session.updated",
+        requestId: `session-config-${Date.now()}`,
+        session: hydrateSessionSummary(updated),
+      });
+      return;
+    }
     case "error":
       logError(`[tiller-daemon] session.error session=${sessionId} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
       persistSessionMessage(sessionId, {
@@ -642,6 +802,21 @@ function handleRuntimeEvent(socket: WebSocket, sessionId: string, event: Session
   }
 }
 
+function clearPermissionRequestsForSession(sessionId: string) {
+  for (const [requestId, permission] of permissionIndex.entries()) {
+    if (permission.sessionId === sessionId) {
+      permissionIndex.delete(requestId);
+    }
+  }
+}
+
+function deleteLocalSessionData(sessionId: string) {
+  sessionStore.remove(sessionId);
+  sessionMessageStore.remove(sessionId);
+  sessionArtifactStore.remove(sessionId);
+  sessionRuntimeStore.remove(sessionId);
+}
+
 function persistSessionMessage(sessionId: string, message: AgentMessage) {
   sessionMessageStore.append(sessionId, message);
 }
@@ -651,7 +826,7 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
   const persistedSummary = sessionStore.list().find((item) => item.id === sessionId);
   const base = activeSummary ?? persistedSummary;
   if (!base) {
-    return;
+    return undefined;
   }
 
   const next = hydrateSessionSummary(mutate(base));
@@ -661,14 +836,53 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
   }
   sessionStore.upsert(next);
   persistRuntimeDescriptor(next, record?.agent ?? resolveProviderById(next.agentId, agents), record?.runtime.sessionCapabilities);
+  return next;
 }
 
 function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
+  const aligned = alignSessionProjectBinding(summary);
   const record = sessions.get(summary.id);
-  const agent = record?.agent ?? resolveProviderById(summary.agentId, agents);
+  const agent = record?.agent ?? resolveProviderById(aligned.agentId, agents);
+  return {
+    ...aligned,
+    resume: buildResumeInfo(aligned, agent),
+  };
+}
+
+function migrateStoredSessionSummary(summary: SessionSummary) {
+  const hydrated = hydrateSessionSummary(summary);
+  if (
+    hydrated.projectId !== summary.projectId ||
+    hydrated.projectName !== summary.projectName ||
+    hydrated.helmId !== summary.helmId
+  ) {
+    sessionStore.upsert(hydrated);
+  }
+  return hydrated;
+}
+
+function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
+  const exactProject = resolveProjectById(summary.projectId, projects);
+  if (exactProject) {
+    return {
+      ...summary,
+      projectName: exactProject.name,
+      helmId: exactProject.helmId,
+    };
+  }
+
+  const matchedProject =
+    projects.find((project) => project.name === summary.projectName) ??
+    projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+  if (!matchedProject) {
+    return summary;
+  }
+
   return {
     ...summary,
-    resume: buildResumeInfo(summary, agent),
+    projectId: matchedProject.id,
+    projectName: matchedProject.name,
+    helmId: matchedProject.helmId,
   };
 }
 
@@ -783,6 +997,10 @@ async function startSessionResume(sessionId: string) {
       sessionId,
       workspace,
       agent,
+      sessionConfig: {
+        model: summary.model,
+        reasoningEffort: summary.reasoningEffort,
+      },
       restore: {
         runtimeSessionId: resume.runtimeSessionId,
         strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
@@ -791,6 +1009,8 @@ async function startSessionResume(sessionId: string) {
     });
     const restoredSummary = hydrateSessionSummary({
       ...summary,
+      model: runtime.sessionConfigState?.model ?? summary.model,
+      reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
       runtimeSessionId: runtime.runtimeSessionId,
       status: "idle",
       updatedAt: new Date().toISOString(),
@@ -831,6 +1051,8 @@ function persistRuntimeDescriptor(
 
   sessionRuntimeStore.upsert({
     sessionId: summary.id,
+    projectId: summary.projectId,
+    helmId: summary.helmId,
     providerId: summary.agentId,
     runtimeSessionId: summary.runtimeSessionId,
     capabilities: resolvedCapabilities,
@@ -841,6 +1063,22 @@ function persistRuntimeDescriptor(
 
 function emit(socket: WebSocket, payload: DaemonToClient) {
   socket.send(JSON.stringify(payload));
+}
+
+function loadAvailableHelms() {
+  const configuredHelms = listConfiguredHelms(configPath);
+  if (configuredHelms.length) {
+    return configuredHelms;
+  }
+
+  return [
+    {
+      id: "local-helm",
+      name: "Local Helm",
+      host: HOST,
+      port: PORT,
+    },
+  ] satisfies HelmSummary[];
 }
 
 function loadAvailableWorkspaces() {
@@ -856,6 +1094,28 @@ function loadAvailableWorkspaces() {
       path: REPO_ROOT.replace(/\\/g, "/"),
     },
   ];
+}
+
+function loadAvailableProjects() {
+  const configuredProjects = listConfiguredProjects(configPath);
+  if (configuredProjects.length) {
+    return configuredProjects;
+  }
+
+  const fallbackHelm = loadAvailableHelms()[0];
+  const fallbackWorkspaces = loadAvailableWorkspaces();
+  const fallbackAgents = listAvailableProviders(configPath);
+  return [
+    {
+      id: "current-project",
+      name: basename(REPO_ROOT),
+      helmId: fallbackHelm.id,
+      workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
+      allowedAgentIds: fallbackAgents.map((agent) => agent.id),
+      defaultWorkspaceId: fallbackWorkspaces[0]?.id,
+      defaultAgentId: fallbackAgents[0]?.id,
+    },
+  ] satisfies ProjectSummary[];
 }
 
 function logInfo(message: string) {
@@ -879,7 +1139,15 @@ type SessionRecord = {
   runtime: {
     runtimeSessionId: string;
     sessionCapabilities?: StoredSessionRuntimeDescriptor["capabilities"];
+    sessionConfigState?: {
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
+    };
     prompt: (text: string) => void;
+    configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
+      runtimeApplied: boolean;
+      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+    }>;
     respondPermission: (requestId: string, decision: "allow" | "deny") => void;
     cancel: () => void;
     supportsPermissionResponses: boolean;

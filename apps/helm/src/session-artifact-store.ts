@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CommandChunk, FileDiffSummary } from "@tiller/shared";
 
@@ -29,6 +29,13 @@ export function createSessionArtifactStore(rootDir: string) {
     },
     get(sessionId: string) {
       return getSessionArtifacts(rootDir, sessionId);
+    },
+    remove(sessionId: string) {
+      try {
+        unlinkSync(getSessionArtifactFilePath(rootDir, sessionId));
+      } catch {
+        // ignore missing file
+      }
     },
   };
 }

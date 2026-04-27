@@ -3,8 +3,12 @@ import type {
   AgentMessage,
   CommandChunk,
   FileDiffSummary,
+  HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectSummary,
+  SessionCleanupResult,
+  SessionReasoningEffort,
   SessionResumeInfo,
   SessionStatus,
   SessionSummary,
@@ -12,6 +16,14 @@ import type {
 } from "@tiller/shared";
 
 export type ClientToDaemon =
+  | {
+      type: "helm.list";
+      requestId: string;
+    }
+  | {
+      type: "project.list";
+      requestId: string;
+    }
   | {
       type: "workspace.list";
       requestId: string;
@@ -38,8 +50,11 @@ export type ClientToDaemon =
   | {
       type: "session.create";
       requestId: string;
+      projectId: string;
       workspaceId: string;
       agentId: string;
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
     }
   | {
       type: "session.list";
@@ -72,6 +87,13 @@ export type ClientToDaemon =
       text: string;
     }
   | {
+      type: "session.configure";
+      requestId: string;
+      sessionId: string;
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
+    }
+  | {
       type: "permission.respond";
       requestId: string;
       permissionRequestId: string;
@@ -79,6 +101,11 @@ export type ClientToDaemon =
     }
   | {
       type: "session.cancel";
+      requestId: string;
+      sessionId: string;
+    }
+  | {
+      type: "session.cleanup";
       requestId: string;
       sessionId: string;
     }
@@ -94,6 +121,16 @@ export type ClientToDaemon =
     };
 
 export type DaemonToClient =
+  | {
+      type: "helm.list.result";
+      requestId: string;
+      helms: HelmSummary[];
+    }
+  | {
+      type: "project.list.result";
+      requestId: string;
+      projects: ProjectSummary[];
+    }
   | {
       type: "workspace.list.result";
       requestId: string;
@@ -161,6 +198,16 @@ export type DaemonToClient =
       ok: boolean;
       resume: SessionResumeInfo;
       message: string;
+    }
+  | {
+      type: "session.cleanup.result";
+      requestId: string;
+      result: SessionCleanupResult;
+    }
+  | {
+      type: "session.updated";
+      requestId: string;
+      session: SessionSummary;
     }
   | {
       type: "session.status";

@@ -10,6 +10,7 @@ test("session message store appends messages per session and reloads them from d
     createSessionMessageStore: (rootDir: string) => {
       append: (sessionId: string, message: AgentMessage) => AgentMessage[];
       list: (sessionId: string) => AgentMessage[];
+      remove: (sessionId: string) => void;
     };
   } = null;
 
@@ -49,6 +50,36 @@ test("session message store appends messages per session and reloads them from d
     assert.deepEqual(sessionMessages[0], first);
     assert.deepEqual(sessionMessages[1], second);
     assert.deepEqual(unrelatedMessages, []);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store removes only the targeted session history", async () => {
+  const mod = await import("./session-message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-message-store-delete-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "msg-1",
+      role: "user",
+      text: "keep? no",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-2", {
+      id: "msg-2",
+      role: "assistant",
+      text: "keep me",
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+
+    store.remove("session-1");
+
+    const reloadedStore = mod.createSessionMessageStore(tempRoot);
+    assert.deepEqual(reloadedStore.list("session-1"), []);
+    assert.equal(reloadedStore.list("session-2").length, 1);
+    assert.equal(reloadedStore.list("session-2")[0]?.id, "msg-2");
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }

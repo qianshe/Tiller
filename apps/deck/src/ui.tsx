@@ -27,10 +27,10 @@ export function StatCard({ label, value, meta }: { label: string; value: string;
   );
 }
 
-export function InfoList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+export function InfoList({ title, items, empty }: { title?: string; items: string[]; empty: string }) {
   return (
     <div>
-      <h3>{title}</h3>
+      {title ? <h3>{title}</h3> : null}
       {items.length ? (
         <ul className="info-list">
           {items.map((item) => (

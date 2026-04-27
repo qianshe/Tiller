@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from "react";
 import type { ClientToDaemon, DaemonToClient } from "@tiller/sync-protocol";
+import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
   AcpAgentProvider,
   AgentMessage,
   CommandChunk,
   FileDiffSummary,
+  HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectSummary,
+  SessionReasoningEffort,
   SessionStatus,
   SessionSummary,
   WorkspaceSummary,
@@ -19,6 +23,23 @@ const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
 const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
 const DAEMON_PROFILE_STORAGE_KEY = "tiller.daemon-profiles";
+const MODEL_OPTIONS = [
+  "provider-default",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.2",
+  "openai/gpt-5.4",
+  "openai/gpt-5.4-mini",
+  "openai/gpt-5.2",
+  "anthropic/claude-sonnet-4",
+] as const;
+const REASONING_OPTIONS: Array<{ value: SessionReasoningEffort; label: string }> = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "XHigh" },
+];
 const UI_COPY = {
   "zh-CN": {
     localeLabel: "中文",
@@ -68,6 +89,7 @@ const UI_COPY = {
     sessionDetail: "Mission 详情",
     noActiveSession: "还没有活跃 Mission。",
     cancelSession: "取消 Mission",
+    cleanupSession: "清理 Mission",
     promptPlaceholder: "向当前 Mission 下达指令",
     sendPrompt: "发送提示词",
     agentStream: "Crew 消息流",
@@ -121,6 +143,11 @@ type DebugTrace = {
   pairClicks: number;
   requestsSent: number;
   lastRequestType: string;
+};
+
+type CleanupFeedback = {
+  tone: "success" | "warning" | "info";
+  message: string;
 };
 
 type AppView = "overview" | "sessions" | "agents" | "settings";
@@ -196,7 +223,9 @@ export function App() {
     requestsSent: 0,
     lastRequestType: "none",
   });
+  const [helms, setHelms] = useState<HelmSummary[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [agents, setAgents] = useState<AcpAgentProvider[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
@@ -206,10 +235,14 @@ export function App() {
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>({});
   const [prompt, setPrompt] = useState("请审查当前登录流程，并提出最小且安全的重构方案。");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>(MODEL_OPTIONS[0]);
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
+  const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -224,22 +257,51 @@ export function App() {
 
   const copy = UI_COPY[locale];
 
+  const resolvedSessions = useMemo(
+    () => sessions.map((session) => alignSessionProject(session, projects)),
+    [projects, sessions],
+  );
   const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId) ?? null,
-    [activeSessionId, sessions],
+    () => resolvedSessions.find((session) => session.id === activeSessionId) ?? null,
+    [activeSessionId, resolvedSessions],
+  );
+  const draftProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  );
+  const activeHelm = useMemo(() => {
+    const helmId = activeSession?.helmId ?? draftProject?.helmId;
+    return helms.find((helm) => helm.id === helmId) ?? null;
+  }, [activeSession?.helmId, draftProject?.helmId, helms]);
+  const filteredWorkspaces = useMemo(() => {
+    const workspaceIds = draftProject?.workspaceIds;
+    if (!workspaceIds?.length) {
+      return workspaces;
+    }
+    return workspaces.filter((workspace) => workspaceIds.includes(workspace.id));
+  }, [draftProject?.workspaceIds, workspaces]);
+  const filteredAgents = useMemo(() => {
+    const allowedAgentIds = draftProject?.allowedAgentIds;
+    if (!allowedAgentIds?.length) {
+      return agents;
+    }
+    return agents.filter((agent) => allowedAgentIds.includes(agent.id));
+  }, [agents, draftProject?.allowedAgentIds]);
+  const projectSessions = useMemo(
+    () => resolvedSessions.filter((session) => !selectedProjectId || session.projectId === selectedProjectId),
+    [resolvedSessions, selectedProjectId],
+  );
+  const sessionCountsByProject = useMemo(
+    () => resolvedSessions.reduce<Record<string, number>>((counts, session) => ({ ...counts, [session.projectId]: (counts[session.projectId] ?? 0) + 1 }), {}),
+    [resolvedSessions],
   );
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
-  const filteredSessions = useMemo(
-    () =>
-      sessions.filter((session) => {
-        const workspaceMatch = !selectedWorkspaceId || session.workspaceId === selectedWorkspaceId;
-        const agentMatch = !selectedAgentId || session.agentId === selectedAgentId;
-        return workspaceMatch && agentMatch;
-      }),
-    [selectedAgentId, selectedWorkspaceId, sessions],
-  );
+  const draftModel = activeSession ? activeSession.model ?? MODEL_OPTIONS[0] : selectedModel;
+  const draftReasoningEffort = activeSession ? activeSession.reasoningEffort ?? "medium" : selectedReasoningEffort;
+  const draftConfigHint = resolveSessionConfigHint(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
+  const draftModelPlaceholder = resolveModelInputPlaceholder(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
   const daemonInventory = daemonProfiles.map((profile) =>
     formatDaemonProfileLine(profile, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT, connection, locale),
   );
@@ -258,54 +320,79 @@ export function App() {
     setActiveView(view);
   }
 
-  useEffect(() => {
-    const savedDraft = window.localStorage.getItem(AGENT_DRAFT_STORAGE_KEY);
-    const savedHost = window.localStorage.getItem(DAEMON_HOST_KEY);
-    const savedPort = window.localStorage.getItem(DAEMON_PORT_KEY);
-    const savedProfiles = readDaemonProfiles();
-    if (savedHost) {
-      setDaemonHost(savedHost);
-    }
-    if (savedPort) {
-      setDaemonPort(savedPort);
-    }
-    setDaemonProfiles(savedProfiles);
-    if (savedProfiles[0]) {
-      setDaemonProfileName(savedProfiles[0].name);
-    }
-    if (savedDraft) {
-      try {
-        setAgentDraft(JSON.parse(savedDraft) as AgentDraft);
-        setDraftSaveMessage(copy.draftLoaded);
-      } catch {
-        setDraftSaveMessage(copy.draftParseFailed);
+  function selectProject(projectId: string) {
+    setSelectedProjectId(projectId);
+    setActiveSessionId((current) => {
+      if (current && resolvedSessions.some((session) => session.id === current && session.projectId === projectId)) {
+        return current;
       }
+      return resolvedSessions.find((session) => session.projectId === projectId)?.id ?? null;
+    });
+  }
+
+  function openSession(sessionId: string) {
+    const session = resolvedSessions.find((item) => item.id === sessionId);
+    if (!session) {
+      return;
     }
-    setConnectFeedback(copy.connectFeedbackIdle);
-    setPairingFeedback(copy.pairingFeedbackIdle);
-  }, [copy.draftLoaded, copy.draftParseFailed, copy.connectFeedbackIdle, copy.pairingFeedbackIdle]);
+
+    setSelectedProjectId(session.projectId);
+    setActiveSessionId(sessionId);
+  }
+
+  function updateSessionDraftPreferences(next: { model?: string; reasoningEffort?: SessionReasoningEffort }) {
+    if (activeSession && socketRef.current) {
+      dispatch(socketRef.current, {
+        type: "session.configure",
+        requestId: nextRequestId(requestCounter),
+        sessionId: activeSession.id,
+        model: normalizeModelSelection(next.model ?? activeSession.model ?? draftModel),
+        reasoningEffort: next.reasoningEffort ?? activeSession.reasoningEffort ?? selectedReasoningEffort,
+      });
+      return;
+    }
+
+    if (typeof next.model === "string") {
+      setSelectedModel(next.model);
+    }
+    if (next.reasoningEffort) {
+      setSelectedReasoningEffort(next.reasoningEffort);
+    }
+  }
+
+  const agentLocked = Boolean(activeSession?.runtimeSessionId ?? activeSession?.resume?.runtimeSessionId);
 
   useEffect(() => {
-    if (!selectedWorkspaceId && workspaces.length) {
-      setSelectedWorkspaceId(workspaces[0].id);
+    if (!selectedProjectId && projects.length) {
+      setSelectedProjectId(projects[0].id);
     }
-  }, [selectedWorkspaceId, workspaces]);
+  }, [projects, selectedProjectId]);
 
   useEffect(() => {
-    if (!selectedAgentId && agents.length) {
-      setSelectedAgentId(defaultAgentId(agents));
+    if (!draftProject) {
+      return;
     }
-  }, [agents, selectedAgentId]);
+    const defaultWorkspaceId = draftProject.defaultWorkspaceId;
+    const nextWorkspaceId = defaultWorkspaceId && filteredWorkspaces.some((workspace) => workspace.id === defaultWorkspaceId)
+      ? defaultWorkspaceId
+      : filteredWorkspaces[0]?.id;
+    if (nextWorkspaceId && nextWorkspaceId !== selectedWorkspaceId) {
+      setSelectedWorkspaceId(nextWorkspaceId);
+    }
+  }, [draftProject, filteredWorkspaces, selectedWorkspaceId]);
 
   useEffect(() => {
-    setResumeFeedback("");
-  }, [activeSessionId]);
-
-  useEffect(() => {
-    if (pairingState === "input" && pairingCodeInput.length === 6) {
-      sendPairingRequest();
+    if (!draftProject) {
+      return;
     }
-  }, [pairingCodeInput, pairingState]);
+    const defaultProjectAgentId = draftProject.defaultAgentId;
+    const fallbackAgentId = defaultProjectAgentId && filteredAgents.some((agent) => agent.id === defaultProjectAgentId)
+      ? defaultProjectAgentId
+      : defaultAgentId(filteredAgents);
+    if (fallbackAgentId && fallbackAgentId !== selectedAgentId) {
+      setSelectedAgentId(fallbackAgentId);
+    }
+  }, [draftProject, filteredAgents, selectedAgentId]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -411,6 +498,8 @@ export function App() {
           setPairingFeedback(payload.message);
           setPairingState("paired");
           if (socketRef.current) {
+            dispatch(socketRef.current, { type: "helm.list", requestId: nextRequestId(requestCounter) });
+            dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
@@ -425,6 +514,8 @@ export function App() {
           setPairingFeedback(payload.message);
           setPairingState("paired");
           if (socketRef.current) {
+            dispatch(socketRef.current, { type: "helm.list", requestId: nextRequestId(requestCounter) });
+            dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
             dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
@@ -434,6 +525,12 @@ export function App() {
           setPairingFeedback(payload.message);
           setPairingState("input");
         }
+        return;
+      case "helm.list.result":
+        setHelms(payload.helms);
+        return;
+      case "project.list.result":
+        setProjects(payload.projects);
         return;
       case "workspace.list.result":
         setWorkspaces(payload.workspaces);
@@ -448,23 +545,30 @@ export function App() {
         setConfigSaveMessage(payload.message);
         if (socketRef.current) {
           dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
+          dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
         }
         return;
       case "session.created":
         setSessions((current) => upsertSessionSummary(current, payload.session));
         setStatuses((current) => ({ ...current, [payload.session.id]: payload.session.status }));
-        setActiveSessionId(payload.session.id);
-        if (pendingPromptRef.current && socketRef.current) {
-          const pendingPrompt = pendingPromptRef.current;
-          pendingPromptRef.current = null;
-          appendUserMessage(payload.session.id, pendingPrompt);
-          dispatch(socketRef.current, {
-            type: "session.prompt",
-            requestId: nextRequestId(requestCounter),
-            sessionId: payload.session.id,
-            text: pendingPrompt,
-          });
+        setSelectedProjectId(payload.session.projectId);
+        if (payload.session.runtimeSessionId) {
+          setActiveSessionId(payload.session.id);
+          if (pendingPromptRef.current && socketRef.current) {
+            const pendingPrompt = pendingPromptRef.current;
+            pendingPromptRef.current = null;
+            appendUserMessage(payload.session.id, pendingPrompt);
+            dispatch(socketRef.current, {
+              type: "session.prompt",
+              requestId: nextRequestId(requestCounter),
+              sessionId: payload.session.id,
+              text: pendingPrompt,
+            });
+          }
         }
+        return;
+      case "session.updated":
+        setSessions((current) => upsertSessionSummary(current, payload.session));
         return;
       case "session.list.result":
         setSessions((current) => mergeSessionSummaries(current, payload.sessions));
@@ -513,6 +617,17 @@ export function App() {
               : session,
           ),
         );
+        return;
+      case "session.cleanup.result":
+        setCleanupFeedback(resolveCleanupFeedback(payload.result));
+        setResumeFeedback("");
+        setSessions((current) => current.filter((session) => session.id !== payload.result.sessionId));
+        setStatuses((current) => removeSessionRecord(current, payload.result.sessionId));
+        setMessages((current) => removeSessionRecord(current, payload.result.sessionId));
+        setPermissionRequests((current) => removeSessionRecord(current, payload.result.sessionId));
+        setOutputs((current) => removeSessionRecord(current, payload.result.sessionId));
+        setDiffs((current) => removeSessionRecord(current, payload.result.sessionId));
+        setActiveSessionId((current) => (current === payload.result.sessionId ? null : current));
         return;
       case "session.status":
         setStatuses((current) => ({ ...current, [payload.sessionId]: payload.status }));
@@ -618,9 +733,10 @@ export function App() {
   }
 
   function createSession(initialPrompt?: string) {
-    const workspaceId = selectedWorkspaceId || workspaces[0]?.id;
-    const agentId = selectedAgentId || agents[0]?.id;
-    if (!workspaceId || !agentId || !socketRef.current) {
+    const projectId = selectedProjectId || projects[0]?.id;
+    const workspaceId = selectedWorkspaceId || filteredWorkspaces[0]?.id;
+    const agentId = selectedAgentId || filteredAgents[0]?.id;
+    if (!projectId || !workspaceId || !agentId || !socketRef.current) {
       return false;
     }
 
@@ -628,16 +744,19 @@ export function App() {
     dispatch(socketRef.current, {
       type: "session.create",
       requestId: nextRequestId(requestCounter),
+      projectId,
       workspaceId,
       agentId,
+      model: normalizeModelSelection(selectedModel),
+      reasoningEffort: selectedReasoningEffort,
     });
     navigateToView("sessions");
     return true;
   }
 
   function testAgent() {
-    const agentId = selectedAgentId || agents[0]?.id;
-    const agent = agents.find((item) => item.id === agentId);
+    const agentId = selectedAgentId || filteredAgents[0]?.id;
+    const agent = filteredAgents.find((item) => item.id === agentId) ?? agents.find((item) => item.id === agentId);
     if (!agent || !socketRef.current) {
       return;
     }
@@ -830,6 +949,24 @@ export function App() {
     });
   }
 
+  function cleanupSession(targetSessionId = activeSessionId) {
+    if (!targetSessionId || !socketRef.current) {
+      return;
+    }
+
+    const confirmed = window.confirm("将清理当前 Mission 的本地记录；若该 Mission 由 Tiller 创建且 provider 支持，也会尝试删除远端 ACP session。确认继续吗？");
+    if (!confirmed) {
+      return;
+    }
+
+    setCleanupFeedback({ tone: "info", message: "正在清理当前 Mission..." });
+    dispatch(socketRef.current, {
+      type: "session.cleanup",
+      requestId: nextRequestId(requestCounter),
+      sessionId: targetSessionId,
+    });
+  }
+
   function renderConnectionPanel() {
     return (
       <section className="card pairing-card">
@@ -917,17 +1054,18 @@ export function App() {
   const showPairingCard = connection === "connected" && pairingState !== "paired";
 
   function renderOverview() {
-    const recentSessions = sessions.slice(0, 5);
+    const recentSessions = resolvedSessions.slice(0, 5);
     return (
       <section className="workspace-single">
         <header className="hero card hero-panel">
           <div>
             <p className="eyebrow">ACP Coding Agent 舰队指挥甲板</p>
-            <h1>Tiller</h1>
+            <h1>Tiller Deck</h1>
             <p className="muted hero-copy">Tiller 是你的 ACP Coding Agent 舰队指挥甲板：调度 Mission、审批权限、追踪 Logbook 与文件变更。</p>
           </div>
           <div className="hero-metrics overview-stats">
-            <StatCard label="工作区" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
+            <StatCard label="Project" value={String(projects.length)} meta={projects[0]?.name ?? "暂无 Project"} />
+            <StatCard label="Workspace" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
             <StatCard label="Crew" value={String(agents.length)} meta={agents[0]?.name ?? copy.noAgents} />
             <StatCard label="活跃 Mission" value={String(sessions.length)} meta={activeStatus} />
           </div>
@@ -937,11 +1075,21 @@ export function App() {
           <section className="card surface-card stack-gap">
             <div className="section-head section-head-soft">
               <div>
+                <h2>Project 列表</h2>
+                <p className="muted compact">只读展示当前 Deck 可见的 Project 及其绑定 Helm。</p>
+              </div>
+            </div>
+            <InfoList items={projects.map((project) => `${project.name} · ${helms.find((helm) => helm.id === project.helmId)?.name ?? project.helmId}`)} empty="暂无 Project" />
+          </section>
+
+          <section className="card surface-card stack-gap">
+            <div className="section-head section-head-soft">
+              <div>
                 <h2>工作区列表</h2>
                 <p className="muted compact">只读展示当前 Helm 暴露的 Workspace。</p>
               </div>
             </div>
-            <InfoList title="工作区" items={workspaces.map((workspace) => `${workspace.name} · ${workspace.path}`)} empty={copy.noWorkspaces} />
+            <InfoList items={workspaces.map((workspace) => `${workspace.name} · ${workspace.path}`)} empty={copy.noWorkspaces} />
           </section>
 
           <section className="card surface-card stack-gap">
@@ -951,7 +1099,7 @@ export function App() {
                 <p className="muted compact">只读展示当前可用的 ACP Crew。</p>
               </div>
             </div>
-            <InfoList title="Agent" items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
+            <InfoList items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
           </section>
         </div>
 
@@ -967,8 +1115,8 @@ export function App() {
               {recentSessions.map((session) => (
                 <article key={session.id} className="session-item session-history-item read-only-item">
                   <span className="session-item-main">
-                    <strong>{session.workspaceName}</strong>
-                    <span className="subtle">{session.agentName} · {formatSessionTime(session.updatedAt)}</span>
+                    <strong>{session.projectName}</strong>
+                    <span className="subtle">{session.workspaceName} · {session.agentName} · {formatSessionTime(session.updatedAt)}</span>
                     <span className="subtle">{session.lastMessagePreview ?? "暂无消息预览"}</span>
                   </span>
                   <span className="session-history-meta">
@@ -1004,7 +1152,7 @@ export function App() {
   }
 
   function renderSessions() {
-    const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedWorkspaceId && selectedAgentId)));
+    const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
     return (
       <section className="card surface-card chat-layout chat-layout-sidebar">
         {pairingState !== "paired" ? (
@@ -1015,28 +1163,71 @@ export function App() {
         ) : (
           <>
             <aside className="chat-session-sidebar" aria-label="Mission 列表">
-              <div className="section-head section-head-soft">
-                <div>
-                  <h2>Mission</h2>
-                  <p className="muted compact">左侧选择历史 Mission，或新建 Mission。</p>
+              <div className="sidebar-section project-switcher">
+                <div className="section-head section-head-soft sidebar-heading-block">
+                  <div>
+                    <h2>Project</h2>
+                    <p className="muted compact">先选 Project，再进入该 Project 下的 Mission。</p>
+                  </div>
+                </div>
+                <div className="project-nav-list">
+                  {projects.map((project) => {
+                    const selected = project.id === selectedProjectId;
+                    return (
+                      <button
+                        key={project.id}
+                        type="button"
+                        className={`project-nav-item ${selected ? "active" : ""}`}
+                        onClick={() => selectProject(project.id)}
+                      >
+                        <strong>{project.name}</strong>
+                        <span>{sessionCountsByProject[project.id] ?? 0} Mission</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <button type="button" className={`chat-session-item ${!activeSessionId ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
-                <strong>新 Mission</strong>
-                <span>选择 Workspace 和 Crew 后发送</span>
-              </button>
-              {filteredSessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className={`chat-session-item ${session.id === activeSessionId ? "active" : ""}`}
-                  onClick={() => setActiveSessionId(session.id)}
-                >
-                  <strong>{session.workspaceName}</strong>
-                  <span>{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
-                  <span>{session.lastMessagePreview ?? "暂无消息预览"}</span>
+
+              <div className="sidebar-section session-switcher">
+                <div className="section-head section-head-soft sidebar-heading-block">
+                  <div>
+                    <h2>Mission</h2>
+                    <p className="muted compact">当前 Project：{draftProject?.name ?? "未选择"}</p>
+                  </div>
+                </div>
+                <button type="button" className={`chat-session-item ${!activeSession ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
+                  <strong>新 Mission</strong>
+                  <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择 Project"}</span>
                 </button>
-              ))}
+                {projectSessions.length ? (
+                  projectSessions.map((session) => (
+                    <div key={session.id} className={`session-nav-card ${session.id === activeSessionId ? "active" : ""}`}>
+                      <button type="button" className="chat-session-item session-nav-button" onClick={() => openSession(session.id)}>
+                        <span className="session-nav-title-row">
+                          <strong>{resolveSessionTitle(session)}</strong>
+                          <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
+                        </span>
+                        <span>{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
+                        <span>{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "provider-default"}`}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="session-inline-action"
+                        aria-label={`清理 ${resolveSessionTitle(session)}`}
+                        title="清理 Mission"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          cleanupSession(session.id);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state sidebar-empty">这个 Project 还没有 Mission。</div>
+                )}
+              </div>
             </aside>
 
             <div className="chat-conversation">
@@ -1045,9 +1236,12 @@ export function App() {
                   <>
                     <div className="section-head section-head-soft chat-session-head">
                       <div>
-                        <h2>{activeSession.workspaceName}</h2>
-                        <p className="muted compact">{activeSession.agentName} · {activeStatus} · {activeResumeLabel}</p>
+                        <h2>{resolveSessionTitle(activeSession)}</h2>
+                        <p className="muted compact">{activeSession.projectName} · {activeSession.workspaceName} · {activeStatus}</p>
+                        <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
+                        <p className="subtle compact">ACP：{activeSession.agentName} · Model：{activeSession.model ?? "provider-default"} · Reasoning：{activeSession.reasoningEffort ?? "medium"}</p>
                         <p className="subtle compact">ACP Mission ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
+                        {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                         {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
                       </div>
                       <div className="section-actions">
@@ -1085,27 +1279,57 @@ export function App() {
                 ) : (
                   <div className="chat-empty">
                     <p className="eyebrow">新 Mission</p>
-                    <h2>选择 Workspace 和 Crew，然后从底部输入框下达第一条指令。</h2>
-                    <p className="muted">发送后会自动创建 Mission，并把当前指令转发给 Crew。</p>
+                    <h2>{draftProject ? `在 ${draftProject.name} 下创建新的 Mission` : "先在左侧选择一个 Project"}</h2>
+                    <p className="muted">左侧上半是 Project，下半是该 Project 的 Mission。底部草稿栏里锁定 ACP，可继续调整 Model / Reasoning。</p>
+                    {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
               </div>
 
-              <div className="chat-input-area">
-                <div className="chat-selectors">
+              <div className="chat-input-area draft-toolbar">
+                <div className="draft-toolbar-grid">
+                  <label>
+                    <span>Project</span>
+                    <input value={draftProject?.name ?? "未选择 Project"} readOnly />
+                  </label>
                   <label>
                     <span>{copy.selectedWorkspace}</span>
-                    <select value={selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)} disabled={Boolean(activeSession)}>
-                      {workspaces.map((workspace) => (
+                    <select value={activeSession?.workspaceId ?? selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)} disabled={Boolean(activeSession)}>
+                      {filteredWorkspaces.map((workspace) => (
                         <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
                       ))}
                     </select>
                   </label>
                   <label>
                     <span>{copy.selectedAgent}</span>
-                    <select value={selectedAgentId ?? ""} onChange={(event) => setSelectedAgentId(event.target.value)} disabled={Boolean(activeSession)}>
-                      {agents.map((agent) => (
+                    <select value={activeSession?.agentId ?? selectedAgentId ?? ""} onChange={(event) => setSelectedAgentId(event.target.value)} disabled={agentLocked}>
+                      {filteredAgents.map((agent) => (
                         <option key={agent.id} value={agent.id}>{agent.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Model</span>
+                    <input
+                      list="session-model-options"
+                      value={draftModel}
+                      onChange={(event) => updateSessionDraftPreferences({ model: event.target.value })}
+                      placeholder={draftModelPlaceholder}
+                    />
+                    <datalist id="session-model-options">
+                      {resolveModelOptions(draftModel).map((model) => (
+                        <option key={model} value={model} />
+                      ))}
+                    </datalist>
+                  </label>
+                  <label>
+                    <span>Reasoning</span>
+                    <select
+                      value={draftReasoningEffort}
+                      onChange={(event) => updateSessionDraftPreferences({ reasoningEffort: event.target.value as SessionReasoningEffort })}
+                    >
+                      {REASONING_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
                   </label>
@@ -1114,10 +1338,10 @@ export function App() {
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder={activeSession ? "向当前 Mission 下达 Order；可逐步补上下文" : "输入第一条 Order，发送后自动创建 Mission"}
+                    placeholder={activeSession ? "向当前 Mission 下达 Order；Model / Reasoning 可继续调整，ACP 已锁定" : "输入第一条 Order，发送后自动创建 Mission"}
                   />
                   <button className="primary" type="submit" disabled={!canSend}>发送</button>
-                  <p className="order-editor-hint">Zed-style：Mission 线程常驻左侧，Order 编辑器固定底部；后续可扩展 @context 与 /commands。</p>
+                  <p className="order-editor-hint">左栏按 Project 管理 Mission；ACP 在会话成立后锁定，Model / Reasoning 作为当前 session 配置可继续调整。{draftConfigHint}</p>
                 </form>
               </div>
             </div>
@@ -1236,6 +1460,23 @@ function resolveViewFromPath(pathname: string): AppView {
 function nextRequestId(counter: MutableRefObject<number>) {
   counter.current += 1;
   return `req-${counter.current}`;
+}
+
+function removeSessionRecord<T>(records: Record<string, T>, sessionId: string) {
+  const { [sessionId]: _removed, ...rest } = records;
+  return rest;
+}
+
+function resolveCleanupFeedback(result: Extract<DaemonToClient, { type: "session.cleanup.result" }>['result']): CleanupFeedback {
+  if (result.remoteDeleted) {
+    return { tone: "success", message: result.message };
+  }
+
+  if (result.remoteDeletionAttempted) {
+    return { tone: "warning", message: result.message };
+  }
+
+  return { tone: "info", message: result.message };
 }
 
 function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
@@ -1378,8 +1619,111 @@ function splitArgs(value: string) {
     .filter(Boolean);
 }
 
+function alignSessionProject(session: SessionSummary, projects: ProjectSummary[]) {
+  const exactProject = projects.find((project) => project.id === session.projectId);
+  if (exactProject) {
+    if (session.projectName === exactProject.name) {
+      return session;
+    }
+    return {
+      ...session,
+      projectName: exactProject.name,
+      helmId: session.helmId === exactProject.helmId ? session.helmId : exactProject.helmId,
+    };
+  }
+
+  const matchedProject = projects.find((project) => project.name === session.projectName)
+    ?? projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
+  if (!matchedProject) {
+    return session;
+  }
+
+  return {
+    ...session,
+    projectId: matchedProject.id,
+    projectName: matchedProject.name,
+    helmId: matchedProject.helmId,
+  };
+}
+
+function resolveSessionTitle(session: SessionSummary) {
+  const preview = session.lastMessagePreview?.trim();
+  if (preview) {
+    return preview.split(/\r?\n/u)[0]?.slice(0, 36) ?? preview;
+  }
+
+  return `${session.projectName} Mission`;
+}
+
+function resolveModelOptions(currentModel?: string) {
+  const options = [...MODEL_OPTIONS];
+  if (currentModel && !options.includes(currentModel as (typeof MODEL_OPTIONS)[number])) {
+    return [currentModel, ...options];
+  }
+  return options;
+}
+
+function normalizeModelSelection(model: string | undefined) {
+  return model && model !== "provider-default" ? model : undefined;
+}
+
 function defaultAgentId(agents: AcpAgentProvider[]) {
   return agents[0]?.id ?? null;
+}
+
+function formatRelativeTime(value: string) {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+
+  const diffMinutes = Math.max(1, Math.round((Date.now() - parsed) / 60000));
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays}d`;
+}
+
+function resolveSessionConfigHint(
+  activeSession: SessionSummary | null,
+  agents: AcpAgentProvider[],
+  draftAgentId?: string | null,
+) {
+  const provider = agents.find((agent) => agent.id === (activeSession?.agentId ?? draftAgentId));
+  const support = resolveSessionConfigSupport(provider);
+
+  if (support.model === "startup" && support.reasoningEffort === "startup") {
+    return activeSession
+      ? " 该 provider 会在下次 runtime 启动/恢复时应用 Model 与 Reasoning 覆盖。"
+      : " 该 provider 的新会话会直接写入 Model / Reasoning。";
+  }
+
+  if (support.model === "startup" && support.reasoningEffort === "none") {
+    return activeSession
+      ? " 该 provider 会在下次 runtime 启动/恢复时应用 Model 覆盖；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仍只保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。"
+      : " 该 provider 的新会话支持写入 Model；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仅保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。";
+  }
+
+  return activeSession
+    ? " 当前 provider 暂未暴露通用的运行时 Model/Reasoning 热切换接口，Tiller 会先保存为 session 配置。"
+    : " 新会话会尽量把这些配置带入 provider。";
+}
+
+function resolveModelInputPlaceholder(
+  activeSession: SessionSummary | null,
+  agents: AcpAgentProvider[],
+  draftAgentId?: string | null,
+) {
+  const provider = agents.find((agent) => agent.id === (activeSession?.agentId ?? draftAgentId));
+  const support = resolveSessionConfigSupport(provider);
+  return support.modelFormat === "provider/model" ? "provider-default 或 openai/gpt-5.4" : "provider-default 或 gpt-5.4";
 }
 
 function formatSessionTime(value: string) {

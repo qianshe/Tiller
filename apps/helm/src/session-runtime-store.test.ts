@@ -11,6 +11,7 @@ test("session runtime store persists reconnect descriptors", async () => {
       list: () => StoredSessionRuntimeDescriptor[];
       get: (sessionId: string) => StoredSessionRuntimeDescriptor | null;
       upsert: (descriptor: StoredSessionRuntimeDescriptor) => StoredSessionRuntimeDescriptor;
+      remove: (sessionId: string) => void;
     };
   } = null;
 
@@ -43,6 +44,39 @@ test("session runtime store persists reconnect descriptors", async () => {
     assert.equal(descriptor?.runtimeSessionId, "runtime-1");
     assert.equal(descriptor?.capabilities?.sessionLoad, true);
     assert.equal(descriptor?.capabilities?.sessionResume, true);
+    assert.equal(reloadedStore.list().length, 1);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session runtime store removes only the targeted descriptor", async () => {
+  const mod = await import("./session-runtime-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-runtime-store-delete-"));
+
+  try {
+    const filePath = join(tempRoot, "session-runtimes.json");
+    const store = mod.createSessionRuntimeStore(filePath);
+    store.upsert({
+      sessionId: "session-1",
+      providerId: "opencode",
+      runtimeSessionId: "runtime-1",
+      lastSeenAt: "2026-04-27T08:10:00.000Z",
+      state: "resumeable",
+    });
+    store.upsert({
+      sessionId: "session-2",
+      providerId: "codex",
+      runtimeSessionId: "runtime-2",
+      lastSeenAt: "2026-04-27T08:10:01.000Z",
+      state: "resumeable",
+    });
+
+    store.remove("session-1");
+
+    const reloadedStore = mod.createSessionRuntimeStore(filePath);
+    assert.equal(reloadedStore.get("session-1"), null);
+    assert.equal(reloadedStore.get("session-2")?.runtimeSessionId, "runtime-2");
     assert.equal(reloadedStore.list().length, 1);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });

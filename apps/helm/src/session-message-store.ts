@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentMessage } from "@tiller/shared";
 
@@ -12,6 +12,13 @@ export function createSessionMessageStore(rootDir: string) {
     },
     list(sessionId: string) {
       return listSessionMessages(rootDir, sessionId);
+    },
+    remove(sessionId: string) {
+      try {
+        unlinkSync(getSessionMessageFilePath(rootDir, sessionId));
+      } catch {
+        // ignore missing file
+      }
     },
   };
 }

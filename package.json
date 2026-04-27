@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.28.1",
   "scripts": {
-    "dev": "concurrently -n web,daemon -c cyan,magenta \"pnpm --filter @tiller/web dev\" \"pnpm --filter @tiller/daemon dev\"",
+    "dev": "concurrently -n deck,helm -c cyan,magenta \"pnpm --filter @tiller/deck dev\" \"pnpm --filter @tiller/helm dev\"",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

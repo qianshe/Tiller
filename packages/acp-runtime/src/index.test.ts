@@ -1,11 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applySessionLaunchOverrides,
+  buildOpenCodeConfigOverride,
   buildSessionLoadRequest,
   buildSessionNewRequest,
   buildSessionPromptRequest,
   buildSessionResumeRequest,
+  resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
+  normalizeProviderCleanupResult,
+  resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
 } from "./index";
@@ -21,8 +26,6 @@ test("buildSessionNewRequest uses ACP session/new shape", () => {
     },
   });
 });
-
-
 
 test("buildSessionLoadRequest uses ACP session/load shape", () => {
   assert.deepEqual(buildSessionLoadRequest("req-load", "sess_123", "D:/myProject/tools/Tiller"), {
@@ -61,6 +64,11 @@ test("resolveSessionCapabilities reads initialize and provider capability hints"
   );
 });
 
+test("resolvePreferredAgentId normalizes configured display agents", () => {
+  assert.equal(resolvePreferredAgentId({ defaultAgent: "Sisyphus - Ultraworker" }), "sisyphus");
+  assert.equal(resolvePreferredAgentId({ defaultAgent: undefined }), undefined);
+});
+
 test("resolveRuntimeSessionId prefers ACP native ids before fallback", () => {
   assert.equal(resolveRuntimeSessionId({ sessionId: "acp-session-1", id: "legacy-id" }, "tiller-session"), "acp-session-1");
   assert.equal(resolveRuntimeSessionId({ id: "legacy-id" }, "tiller-session"), "legacy-id");
@@ -76,6 +84,67 @@ test("buildSessionPromptRequest wraps text as ACP prompt content", () => {
       sessionId: "sess_123",
       prompt: [{ type: "text", text: "你好" }],
     },
+  });
+});
+
+test("applySessionLaunchOverrides appends codex model and reasoning config flags", () => {
+  assert.deepEqual(
+    applySessionLaunchOverrides("codex-acp", ["-c", 'model="gpt-5.4"'], { model: "gpt-5.4-mini", reasoningEffort: "high" }),
+    ["-c", 'model="gpt-5.4"', "-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"'],
+  );
+});
+
+test("applySessionLaunchOverrides prepends OpenCode model overrides before the acp subcommand", () => {
+  assert.deepEqual(
+    applySessionLaunchOverrides("opencode", ["acp", "--pure"], { model: "openai/gpt-5.4", reasoningEffort: "high" }),
+    ["-m", "openai/gpt-5.4", "acp", "--pure"],
+  );
+});
+
+test("applySessionLaunchOverrides replaces existing OpenCode model flags", () => {
+  assert.deepEqual(
+    applySessionLaunchOverrides("opencode", ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], { model: "openai/gpt-5.4-mini" }),
+    ["-m", "openai/gpt-5.4-mini", "acp", "--pure"],
+  );
+});
+
+test("applySessionLaunchOverrides leaves unsupported providers unchanged", () => {
+  assert.deepEqual(applySessionLaunchOverrides("custom-agent", ["serve"], { model: "gpt-5.4", reasoningEffort: "high" }), ["serve"]);
+});
+
+test("buildOpenCodeConfigOverride emits inline config content for model and reasoning", () => {
+  assert.deepEqual(buildOpenCodeConfigOverride({ model: "openai/gpt-5.4", reasoningEffort: "high" }), {
+    model: "openai/gpt-5.4",
+    provider: {
+      openai: {
+        models: {
+          "gpt-5.4": {
+            options: {
+              reasoningEffort: "high",
+            },
+          },
+        },
+      },
+    },
+  });
+});
+
+test("resolveSessionEnvOverrides emits OPENCODE_CONFIG_CONTENT for OpenCode sessions", () => {
+  assert.deepEqual(resolveSessionEnvOverrides("opencode", { model: "openai/gpt-5.4", reasoningEffort: "high" }), {
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      model: "openai/gpt-5.4",
+      provider: {
+        openai: {
+          models: {
+            "gpt-5.4": {
+              options: {
+                reasoningEffort: "high",
+              },
+            },
+          },
+        },
+      },
+    }),
   });
 });
 
@@ -103,6 +172,31 @@ test("mapSessionUpdateNotification maps agent text chunks into Tiller message ev
   assert.equal(mapped.event.message.role, "assistant");
   assert.equal(mapped.event.message.text, "你好，我正在分析这个项目。");
   assert.match(mapped.event.message.timestamp, /\d{4}-\d{2}-\d{2}T/);
+});
+
+test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_cfg",
+      update: {
+        type: "config_option_update",
+        configOptions: [
+          { id: "model", category: "model", currentValue: "openai/gpt-5.4" },
+          { id: "thought", category: "thought_level", currentValue: "high" },
+        ],
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "config-options");
+  if (mapped?.event.type !== "config-options") {
+    throw new Error("Expected config-options event");
+  }
+  assert.equal(mapped.event.state.model, "openai/gpt-5.4");
+  assert.equal(mapped.event.state.reasoningEffort, "high");
 });
 
 test("mapSessionUpdateNotification maps inferred permission requests", () => {
@@ -181,4 +275,20 @@ test("mapSessionUpdateNotification maps inferred diff summaries", () => {
   }
   assert.equal(mapped.event.files[0]?.path, "apps/web/src/App.tsx");
   assert.equal(mapped.event.files[0]?.additions, 12);
+});
+
+test("normalizeProviderCleanupResult preserves unsupported provider responses", () => {
+  assert.deepEqual(
+    normalizeProviderCleanupResult({
+      kind: "unsupported",
+      providerId: "codex",
+      message: "Codex ACP does not expose remote session deletion yet.",
+    }),
+    {
+      remoteDeleted: false,
+      remoteDeletionAttempted: false,
+      providerId: "codex",
+      message: "Codex ACP does not expose remote session deletion yet.",
+    },
+  );
 });
