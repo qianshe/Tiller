@@ -26,6 +26,11 @@ export type PromptEnhancerContext = {
   sessionSummary?: string | null;
 };
 
+export type PromptEnhancerModelOption = {
+  id: string;
+  ownedBy: string;
+};
+
 type FetchLike = typeof fetch;
 
 
@@ -158,7 +163,7 @@ export async function listPromptEnhancerModels(llm: PromptEnhancerLlmConfig, fet
   }
 
   const data = await response.json();
-  return extractModelIds(data);
+  return extractModelOptions(data);
 }
 
 function resolveChatCompletionsUrl(baseUrl: string) {
@@ -174,28 +179,39 @@ function resolveModelsUrl(baseUrl: string) {
   return `${base}/models`;
 }
 
-function extractModelIds(data: unknown) {
+function extractModelOptions(data: unknown): PromptEnhancerModelOption[] {
   if (Array.isArray(data)) {
-    return data.map(readModelId).filter(Boolean);
+    return data.map(readModelOption).filter((model): model is PromptEnhancerModelOption => Boolean(model));
   }
   if (!data || typeof data !== "object") {
     return [];
   }
   const record = data as { data?: unknown; models?: unknown };
   const list = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : [];
-  return list.map(readModelId).filter(Boolean);
+  return list.map(readModelOption).filter((model): model is PromptEnhancerModelOption => Boolean(model));
 }
 
-function readModelId(value: unknown) {
+function readModelOption(value: unknown): PromptEnhancerModelOption | null {
   if (typeof value === "string") {
-    return value.trim();
+    const id = value.trim();
+    return id ? { id, ownedBy: "default" } : null;
   }
   if (!value || typeof value !== "object") {
-    return "";
+    return null;
   }
-  const record = value as { id?: unknown; model?: unknown; name?: unknown };
-  const id = record.id ?? record.model ?? record.name;
-  return typeof id === "string" ? id.trim() : "";
+  const record = value as { id?: unknown; model?: unknown; name?: unknown; owned_by?: unknown; ownedBy?: unknown; owner?: unknown };
+  const id = readString(record.id ?? record.model ?? record.name);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    ownedBy: readString(record.owned_by ?? record.ownedBy ?? record.owner) || "default",
+  };
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function resolveApiBaseUrl(baseUrl: string) {

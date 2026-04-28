@@ -122,12 +122,12 @@ test("listPromptEnhancerModels calls the OpenAI-compatible models endpoint", asy
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
-    return new Response(JSON.stringify({ data: [{ id: "gpt-a" }, { id: "gpt-b" }] }), { status: 200 });
+    return new Response(JSON.stringify({ data: [{ id: "gpt-a", owned_by: "openai" }, { id: "gpt-b", owned_by: "local" }] }), { status: 200 });
   }) as typeof fetch;
 
   const models = await listPromptEnhancerModels(basePreferences.llm, fetcher);
 
-  assert.deepEqual(models, ["gpt-a", "gpt-b"]);
+  assert.deepEqual(models, [{ id: "gpt-a", ownedBy: "openai" }, { id: "gpt-b", ownedBy: "local" }]);
   assert.equal(calls[0]?.url, "https://example.test/v1/models");
   assert.equal((calls[0]?.init.headers as Record<string, string>).Authorization, "Bearer secret");
 });
@@ -166,5 +166,5 @@ test("listPromptEnhancerModels reads non-OpenAI model payload shapes", async () 
 
   const models = await listPromptEnhancerModels(basePreferences.llm, fetcher);
 
-  assert.deepEqual(models, ["local-model", "raw-model"]);
+  assert.deepEqual(models, [{ id: "local-model", ownedBy: "default" }, { id: "raw-model", ownedBy: "default" }]);
 });

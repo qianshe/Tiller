@@ -23,7 +23,7 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "./hybrid-connection";
-import { buildEnhancedPrompt, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerPreferences } from "./prompt-enhancer";
+import { buildEnhancedPrompt, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "./prompt-enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "./snapshot-cache";
 import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./session-state";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "./trusted-device-cache";
@@ -169,7 +169,29 @@ const DEFAULT_PROMPT_ENHANCER_INSTRUCTION = "你是 Tiller Deck 的协作型 Cod
 const DEFAULT_PROMPT_MODEL_PROFILE = "模型偏好：遵循当前任务的 模型 / 推理 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
 const DEFAULT_PROMPT_RESPONSE_CONTRACT = "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
 const OLD_PROMPT_LLM_SYSTEM_PROMPT = "你是提示词增强器。把用户草稿改写为清晰、可执行、可验证的 coding-agent 提示词；保留用户意图，不要直接回答任务。";
-const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = '你是一个 coding-agent 提示词增强器。\n\n你的任务是把用户的原始草稿改写成清晰、可执行、可验证的 Markdown 提示词，用于驱动代码代理完成开发任务。\n\n你必须保留用户的真实意图，不要改变任务目标，不要擅自扩大范围，不要替用户做技术决策，除非用户草稿中已经明确表达。\n\n你可以根据上下文补充必要的结构，例如目标、背景、约束、执行步骤、验收标准、验证方式、注意事项和交付要求，但只在有帮助时添加。\n\n你应该让增强后的提示词具备以下特征：\n- 面向 coding agent，而不是面向普通聊天助手\n- 任务边界清楚\n- 优先使用项目内已有代码、约定和上下文\n- 鼓励先阅读相关文件再修改\n- 鼓励小步修改，避免无关重构\n- 鼓励给出可验证的完成标准\n- 鼓励运行测试、类型检查、lint 或最小可行验证\n- 对不确定信息提出需要确认的问题，而不是臆造\n- 不暴露或重复无关的运行时、工具、会话细节\n\n你不能直接回答用户草稿中的开发任务本身。\n你只能输出增强后的 Prompt。\n不要输出解释。\n不要使用 Markdown 代码围栏。';
+const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = `你是一个 coding-agent 提示词增强器。
+
+你的任务是把用户的原始草稿改写成清晰、可执行、可验证的 Markdown 提示词，用于驱动代码代理完成开发任务。
+
+你必须保留用户的真实意图，不要改变任务目标，不要擅自扩大范围，不要替用户做技术决策，除非用户草稿中已经明确表达。
+
+你可以根据上下文补充必要的结构，例如目标、背景、约束、执行步骤、验收标准、验证方式、注意事项和交付要求，但只在有帮助时添加。
+
+你应该让增强后的提示词具备以下特征：
+- 面向 coding agent，而不是面向普通聊天助手
+- 任务边界清楚
+- 优先使用项目内已有代码、约定和上下文
+- 鼓励先阅读相关文件再修改
+- 鼓励小步修改，避免无关重构
+- 鼓励给出可验证的完成标准
+- 鼓励运行测试、类型检查、lint 或最小可行验证
+- 对不确定信息提出需要确认的问题，而不是臆造
+- 不暴露或重复无关的运行时、工具、会话细节
+
+你不能直接回答用户草稿中的开发任务本身。
+你只能输出增强后的 Prompt。
+不要输出解释。
+不要使用 Markdown 代码围栏。`;
 const OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
   "You are improving a user's draft into a clear coding-agent prompt.",
   "Project summary:",
@@ -179,7 +201,76 @@ const OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
   "User draft:",
   "{{userPrompt}}",
 ].join("\n");
-const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = "Rewrite the user's draft into a direct, repo-aware Markdown prompt for an autonomous coding agent.\n\nUse the project/session context only to clarify the task. Preserve the user's intent exactly. Do not answer or implement the task yourself.\n\nInputs:\n- Project summary: {{projectSummary}}\n- Session summary: {{sessionSummary}}\n- User draft: {{userPrompt}}\n\nOutput only the enhanced prompt, without Markdown code fences.\n\nThe enhanced prompt should:\n- Be written as instructions to a coding agent working in the current repository.\n- Make the task concrete, scoped, and verifiable.\n- Encourage the agent to inspect the codebase before editing.\n- Encourage the agent to follow existing conventions, naming, architecture, tests, and style.\n- Prefer minimal, targeted changes over broad rewrites.\n- Separate facts from assumptions.\n- Include goals, constraints, acceptance criteria, and verification steps when useful.\n- Ask clarifying questions only when the task cannot be safely executed without them.\n- Avoid invented details, fake file paths, fake APIs, or unsupported assumptions.\n- Avoid irrelevant runtime/tool/session details.\n- Avoid explaining that the prompt was enhanced.\n\nUse this structure when applicable:\n\n# Objective\n\nState the user’s intended outcome clearly.\n\n# Relevant Context\n\nInclude only context that helps the coding agent complete the task.\n\n# Goals\n\nList the expected outcomes.\n\n# Scope\n\nDefine what is included and what is out of scope.\n\n# Constraints\n\nList important limits, compatibility requirements, user preferences, or things the agent must avoid.\n\n# Instructions\n\nGive direct execution guidance:\n1. Inspect the relevant parts of the repository before making changes.\n2. Identify existing patterns, APIs, tests, and conventions related to the task.\n3. Make the smallest safe change that satisfies the objective.\n4. Avoid unrelated refactors, formatting churn, dependency changes, or behavior changes.\n5. Update or add tests only where they directly verify the requested behavior.\n6. Keep user-facing behavior, compatibility, and existing contracts intact unless the user explicitly requested otherwise.\n\n# Acceptance Criteria\n\nList measurable conditions that indicate the task is complete.\n\n# Verification\n\nList concrete checks the agent should run or explain if unavailable.\n\n# Questions / Assumptions\n\nInclude this section only if the draft is ambiguous or missing critical information.\nState assumptions explicitly and keep them minimal.\n\nReturn only the final enhanced Markdown prompt.";
+const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Rewrite the user's draft into a direct, repo-aware Markdown prompt for an autonomous coding agent.
+
+Use the project/session context only to clarify the task. Preserve the user's intent exactly. Do not answer or implement the task yourself.
+
+Inputs:
+- Project summary: {{projectSummary}}
+- Session summary: {{sessionSummary}}
+- User draft: {{userPrompt}}
+
+Output only the enhanced prompt, without Markdown code fences.
+
+The enhanced prompt should:
+- Be written as instructions to a coding agent working in the current repository.
+- Make the task concrete, scoped, and verifiable.
+- Encourage the agent to inspect the codebase before editing.
+- Encourage the agent to follow existing conventions, naming, architecture, tests, and style.
+- Prefer minimal, targeted changes over broad rewrites.
+- Separate facts from assumptions.
+- Include goals, constraints, acceptance criteria, and verification steps when useful.
+- Ask clarifying questions only when the task cannot be safely executed without them.
+- Avoid invented details, fake file paths, fake APIs, or unsupported assumptions.
+- Avoid irrelevant runtime/tool/session details.
+- Avoid explaining that the prompt was enhanced.
+
+Use this structure when applicable:
+
+# Objective
+
+State the user?s intended outcome clearly.
+
+# Relevant Context
+
+Include only context that helps the coding agent complete the task.
+
+# Goals
+
+List the expected outcomes.
+
+# Scope
+
+Define what is included and what is out of scope.
+
+# Constraints
+
+List important limits, compatibility requirements, user preferences, or things the agent must avoid.
+
+# Instructions
+
+Give direct execution guidance:
+1. Inspect the relevant parts of the repository before making changes.
+2. Identify existing patterns, APIs, tests, and conventions related to the task.
+3. Make the smallest safe change that satisfies the objective.
+4. Avoid unrelated refactors, formatting churn, dependency changes, or behavior changes.
+5. Update or add tests only where they directly verify the requested behavior.
+6. Keep user-facing behavior, compatibility, and existing contracts intact unless the user explicitly requested otherwise.
+
+# Acceptance Criteria
+
+List measurable conditions that indicate the task is complete.
+
+# Verification
+
+List concrete checks the agent should run or explain if unavailable.
+
+# Questions / Assumptions
+
+Include this section only if the draft is ambiguous or missing critical information.
+State assumptions explicitly and keep them minimal.
+
+Return only the final enhanced Markdown prompt.`;
 
 const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
@@ -252,10 +343,10 @@ const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
     settings: "设置",
   },
   "en-US": {
-    overview: "Overview",
-    sessions: "Mission",
-    agents: "Fleet",
-    settings: "Settings",
+    overview: "总览",
+    sessions: "任务",
+    agents: "舰队",
+    settings: "设置",
   },
 };
 
@@ -277,9 +368,6 @@ function TopNav({
     { id: "agents", label: labels.agents },
     { id: "settings", label: labels.settings },
   ];
-  const statusLabel = language === "en-US"
-    ? connection === "connected" ? "Connected" : connection === "connecting" ? "Connecting" : "Disconnected"
-    : connection === "connected" ? "已连接" : connection === "connecting" ? "连接中" : "已断开";
 
   return (
     <header className="top-nav card">
@@ -299,10 +387,32 @@ function TopNav({
           </button>
         ))}
       </nav>
-      <div className={`status-pill status-${connection}`}>
-        <span className="dot" />
-        {statusLabel}
-      </div>
+      <button className={`admiral-avatar admiral-${connection}`} type="button" aria-label="党徽状态标识">
+        <svg viewBox="0 0 64 64" role="img" aria-hidden="true">
+          <defs>
+            <radialGradient id="emblem-black" cx="28" cy="22" r="38" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#151515" />
+              <stop offset="1" stopColor="#000000" />
+            </radialGradient>
+            <linearGradient id="emblem-gold" x1="12" x2="52" y1="8" y2="58" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#fde68a" />
+              <stop offset="0.34" stopColor="#facc15" />
+              <stop offset="1" stopColor="#d97706" />
+            </linearGradient>
+          </defs>
+          <circle cx="32" cy="32" r="30" fill="url(#emblem-black)" />
+          <text
+            x="31.4"
+            y="56"
+            fill="url(#emblem-gold)"
+            fontFamily="'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Arial Unicode MS', sans-serif"
+            fontSize="57"
+            fontWeight="900"
+            textAnchor="middle"
+          >☭</text>
+          <circle cx="32" cy="32" r="29" fill="none" stroke="rgba(250, 204, 21, 0.44)" strokeWidth="1.4" />
+        </svg>
+      </button>
     </header>
   );
 }
@@ -412,19 +522,116 @@ function findCodeLanguage(node: ReactNode): string | undefined {
   return undefined;
 }
 
+
+type MissionVisualFixture = {
+  helms: HelmSummary[];
+  workspaces: WorkspaceSummary[];
+  projects: ProjectSummary[];
+  agents: AcpAgentProvider[];
+  sessions: SessionSummary[];
+  statuses: Record<string, SessionStatus>;
+  messages: Record<string, AgentMessage[]>;
+  outputs: Record<string, CommandChunk[]>;
+  toolCalls: Record<string, AgentToolCall[]>;
+  diffs: Record<string, FileDiffSummary[]>;
+  activeSessionId: string;
+  selectedProjectId: string;
+  selectedWorkspaceId: string;
+  selectedAgentId: string;
+};
+
+function shouldUseMissionVisualFixture() {
+  return import.meta.env.DEV && new URLSearchParams(window.location.search).get("visual") === "mission";
+}
+
+function createMissionVisualFixture(): MissionVisualFixture {
+  const now = new Date().toISOString();
+  const helmId = "visual-helm";
+  const projectId = "visual-project";
+  const workspaceId = "visual-workspace";
+  const agentId = "visual-codex";
+  const sessionId = "visual-session";
+  const session: SessionSummary = {
+    id: sessionId,
+    projectId,
+    projectName: "Tiller",
+    helmId,
+    workspaceId,
+    workspaceName: "Tiller",
+    agentId,
+    agentName: "Codex",
+    model: "gpt-5.5",
+    reasoningEffort: "medium",
+    status: "running",
+    createdAt: now,
+    updatedAt: now,
+    messageCount: 4,
+    runtimeSessionId: "visual-acp-session",
+    lastMessagePreview: "按 Zed 风格微调 任务页布局。",
+  };
+
+  return {
+    helms: [{ id: helmId, name: "Local Helm", host: DEFAULT_DAEMON_HOST, port: Number(DEFAULT_DAEMON_PORT) }],
+    workspaces: [{ id: workspaceId, name: "Tiller", path: "D:/myProject/tools/Tiller" }],
+    projects: [{ id: projectId, name: "Tiller", helmId, workspaceIds: [workspaceId], allowedAgentIds: [agentId], defaultWorkspaceId: workspaceId, defaultAgentId: agentId }],
+    agents: [{ id: agentId, name: "Codex", command: "codex-acp", args: ["-c", "model=gpt-5.5"], transport: "stdio", protocol: "acp" }],
+    sessions: [session],
+    statuses: { [sessionId]: "running" },
+    activeSessionId: sessionId,
+    selectedProjectId: projectId,
+    selectedWorkspaceId: workspaceId,
+    selectedAgentId: agentId,
+    messages: {
+      [sessionId]: [
+        { id: "visual-user-1", role: "user", text: `# ??????
+
+?? Zed ? Agent Panel ???? ????`, timestamp: now },
+        { id: "visual-assistant-1", role: "assistant", text: `## ??/??
+
+?? ?????? Zed-like ?????
+
+- ????? / ?? rail
+- ????????
+- ???sticky composer
+- ?????? inspector`, timestamp: now },
+      ],
+    },
+    outputs: {
+      [sessionId]: [
+        { id: "visual-output-1", commandId: "visual-command-1", text: `pnpm --filter @tiller/deck build
+? built in 2.0s`, stream: "stdout", timestamp: now },
+      ],
+    },
+    toolCalls: {
+      [sessionId]: [
+        { id: "visual-tool-1", kind: "terminal", title: "pnpm --filter @tiller/deck build", status: "completed", commandId: "visual-command-1", output: "✓ built in 2.0s", stream: "stdout", timestamp: now, updatedAt: now },
+      ],
+    },
+    diffs: {
+      [sessionId]: [
+        { path: "apps/deck/src/App.tsx", status: "modified", additions: 44, deletions: 18 },
+        { path: "apps/deck/src/styles.css", status: "modified", additions: 134, deletions: 0 },
+      ],
+    },
+  };
+}
+
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
+  const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
+  const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
+  const missionVisualFixture = useMemo(() => missionVisualMode ? createMissionVisualFixture() : null, [missionVisualMode]);
   const deckDeviceId = useMemo(() => getOrCreateDeviceId(window.localStorage), []);
   const autoConnectAttemptRef = useRef<string | null>(null);
 
   const locale: Locale = "zh-CN";
-  const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("disconnected");
-  const [pairingState, setPairingState] = useState<"idle" | "waiting" | "input" | "paired" | "rejected">("idle");
+  const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">(missionVisualFixture ? "connected" : "disconnected");
+  const [pairingState, setPairingState] = useState<"idle" | "waiting" | "input" | "paired" | "rejected">(missionVisualFixture ? "paired" : "idle");
   const [pairingCodeInput, setPairingCodeInput] = useState("");
   const [pairingFeedback, setPairingFeedback] = useState("");
   const [connectFeedback, setConnectFeedback] = useState("");
@@ -436,28 +643,30 @@ export function App() {
     requestsSent: 0,
     lastRequestType: "none",
   });
-  const [helms, setHelms] = useState<HelmSummary[]>([]);
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [agents, setAgents] = useState<AcpAgentProvider[]>([]);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
-  const [messages, setMessages] = useState<Record<string, AgentMessage[]>>({});
+  const [helms, setHelms] = useState<HelmSummary[]>(missionVisualFixture?.helms ?? []);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>(missionVisualFixture?.workspaces ?? []);
+  const [projects, setProjects] = useState<ProjectSummary[]>(missionVisualFixture?.projects ?? []);
+  const [agents, setAgents] = useState<AcpAgentProvider[]>(missionVisualFixture?.agents ?? []);
+  const [sessions, setSessions] = useState<SessionSummary[]>(missionVisualFixture?.sessions ?? []);
+  const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
+  const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
-  const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>({});
-  const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>({});
-  const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>({});
+  const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
+  const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
+  const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
-  const [promptEnhancerModels, setPromptEnhancerModels] = useState<string[]>([]);
+  const [promptEnhancerModels, setPromptEnhancerModels] = useState<PromptEnhancerModelOption[]>([]);
+  const [promptEnhancerModelFilter, setPromptEnhancerModelFilter] = useState("");
+  const [promptEnhancerModelPickerOpen, setPromptEnhancerModelPickerOpen] = useState(false);
   const [promptEnhancerBusy, setPromptEnhancerBusy] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>(MODEL_OPTIONS[0]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(missionVisualFixture?.activeSessionId ?? null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(missionVisualFixture?.selectedProjectId ?? null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
+  const [selectedModel, setSelectedModel] = useState<string>(missionVisualFixture?.sessions[0]?.model ?? MODEL_OPTIONS[0]);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
@@ -663,6 +872,33 @@ export function App() {
   }, [deckPreferences]);
 
   useEffect(() => {
+    if (!promptEnhancerModelPickerOpen) {
+      return;
+    }
+
+    function closePromptModelPicker(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && promptModelPickerRef.current?.contains(target)) {
+        return;
+      }
+      setPromptEnhancerModelPickerOpen(false);
+    }
+
+    function closePromptModelPickerWithKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPromptEnhancerModelPickerOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closePromptModelPicker);
+    document.addEventListener("keydown", closePromptModelPickerWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", closePromptModelPicker);
+      document.removeEventListener("keydown", closePromptModelPickerWithKeyboard);
+    };
+  }, [promptEnhancerModelPickerOpen]);
+
+  useEffect(() => {
     window.localStorage.setItem(MISSION_PANEL_PAGES_STORAGE_KEY, JSON.stringify(customMissionPanelPages));
   }, [customMissionPanelPages]);
 
@@ -672,6 +908,9 @@ export function App() {
   }, [daemonHost, daemonPort]);
 
   useEffect(() => {
+    if (missionVisualMode) {
+      return;
+    }
     const snapshot = readDeckSnapshot(window.localStorage, activeProfileId);
     if (!snapshot) {
       return;
@@ -682,10 +921,10 @@ export function App() {
     setAgents(snapshot.agents);
     setStatuses(createSessionStatusMap(snapshot.sessions));
     setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
-  }, [activeProfileId]);
+  }, [activeProfileId, missionVisualMode]);
 
   useEffect(() => {
-    if (pairingState !== "paired") {
+    if (missionVisualMode || pairingState !== "paired") {
       return;
     }
     writeDeckSnapshot(window.localStorage, {
@@ -699,7 +938,7 @@ export function App() {
   }, [activeProfileId, agents, pairingState, projects, sessions, workspaces]);
 
   useEffect(() => {
-    if (!trustedDevice?.token) {
+    if (missionVisualMode || !trustedDevice?.token) {
       return;
     }
     if (!shouldAttemptSilentReconnect({
@@ -716,10 +955,10 @@ export function App() {
     }
     autoConnectAttemptRef.current = attemptKey;
     connectToDaemon(undefined, { preserveState: true, auto: true });
-  }, [activeProfileId, connection, daemonHost, daemonPort, trustedDevice?.token]);
+  }, [activeProfileId, connection, daemonHost, daemonPort, missionVisualMode, trustedDevice?.token]);
 
   useEffect(() => {
-    if (!trustedDevice?.token || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
+    if (missionVisualMode || !trustedDevice?.token || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
       return;
     }
     const attemptKey = `live:${activeView}:${activeProfileId}`;
@@ -728,7 +967,7 @@ export function App() {
     }
     autoConnectAttemptRef.current = attemptKey;
     connectToDaemon(undefined, { preserveState: true, auto: true });
-  }, [activeProfileId, activeView, connection, trustedDevice?.token]);
+  }, [activeProfileId, activeView, connection, missionVisualMode, trustedDevice?.token]);
 
   function updateDeckPreference<K extends keyof DeckPreferences>(key: K, value: DeckPreferences[K]) {
     setDeckPreferences((current) => ({ ...current, [key]: value }));
@@ -788,16 +1027,31 @@ export function App() {
 
   async function refreshPromptEnhancerModels() {
     setPromptEnhancerBusy(true);
+    setPromptEnhancerModelPickerOpen(true);
     setPromptEnhancerStatus("正在获取模型列表...");
     try {
       const models = await listPromptEnhancerModels(deckPreferences.promptEnhancer.llm);
       setPromptEnhancerModels(models);
-      setPromptEnhancerStatus(models.length ? `已获取 ${models.length} 个模型。` : "模型接口可用，但没有返回模型。");
+      const ownerCount = new Set(models.map((model) => model.ownedBy)).size;
+      setPromptEnhancerStatus(models.length ? `已获取 ${models.length} 个模型，来自 ${ownerCount} 个 owner。` : "模型接口可用，但没有返回模型。");
     } catch (error) {
       setPromptEnhancerStatus(error instanceof Error ? error.message : "获取模型失败");
     } finally {
       setPromptEnhancerBusy(false);
     }
+  }
+
+  function updatePromptEnhancerModelInput(value: string) {
+    updatePromptEnhancerLlmPreference("model", value);
+    setPromptEnhancerModelFilter(value);
+    setPromptEnhancerModelPickerOpen(true);
+  }
+
+  function selectPromptEnhancerModel(model: PromptEnhancerModelOption) {
+    updatePromptEnhancerLlmPreference("model", model.id);
+    setPromptEnhancerModelFilter("");
+    setPromptEnhancerModelPickerOpen(false);
+    setPromptEnhancerStatus(`已选择 ${model.id}（${model.ownedBy}）。`);
   }
 
   async function enhancePromptDraft() {
@@ -1945,64 +2199,68 @@ export function App() {
               </div>
 
               <div className="chat-input-area draft-toolbar">
-                <div className="draft-toolbar-grid">
-                  <label>
-                    <span>项目</span>
-                    <input value={draftProject?.name ?? "未选择项目"} readOnly />
-                  </label>
-                  <label>
-                    <span>{copy.selectedWorkspace}</span>
-                    <select value={activeSession?.workspaceId ?? selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)} disabled={Boolean(activeSession)}>
-                      {filteredWorkspaces.map((workspace) => (
-                        <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{copy.selectedAgent}</span>
-                    <select value={activeSession?.agentId ?? selectedAgentId ?? ""} onChange={(event) => setSelectedAgentId(event.target.value)} disabled={agentLocked}>
-                      {filteredAgents.map((agent) => (
-                        <option key={agent.id} value={agent.id}>{agent.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>模型</span>
-                    <input
-                      list="session-model-options"
-                      value={draftModel}
-                      onChange={(event) => updateSessionDraftPreferences({ model: event.target.value })}
-                      placeholder={draftModelPlaceholder}
-                    />
-                    <datalist id="session-model-options">
-                      {draftModelOptions.map((model) => (
-                        <option key={model} value={model} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label>
-                    <span>推理</span>
-                    <select
-                      value={draftReasoningEffort}
-                      onChange={(event) => updateSessionDraftPreferences({ reasoningEffort: event.target.value as SessionReasoningEffort })}
-                    >
-                      {REASONING_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                {!activeSession ? (
+                  <div className="draft-toolbar-grid">
+                    <label>
+                      <span>é¡¹ç®</span>
+                      <input value={draftProject?.name ?? "æªéæ©é¡¹ç®"} readOnly />
+                    </label>
+                    <label>
+                      <span>{copy.selectedWorkspace}</span>
+                      <select value={selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)}>
+                        {filteredWorkspaces.map((workspace) => (
+                          <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{copy.selectedAgent}</span>
+                      <select value={selectedAgentId ?? ""} onChange={(event) => setSelectedAgentId(event.target.value)} disabled={agentLocked}>
+                        {filteredAgents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     placeholder={draftPromptPlaceholder}
                   />
-                  <div className="mission-composer-actions">
-                    {deckPreferences.promptEnhancer.enabled ? (
-                      <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>增强</button>
-                    ) : null}
-                    <button className="primary" type="submit" disabled={!canSend}>发送</button>
+                  <div className="mission-composer-sidecar">
+                    <div className="mission-composer-config" aria-label="当前任务模型配置">
+                      <label>
+                        <span>模型</span>
+                        <select
+                          value={draftModel}
+                          onChange={(event) => updateSessionDraftPreferences({ model: event.target.value })}
+                          title={draftModelPlaceholder}
+                        >
+                          {Array.from(new Set([draftModel, ...draftModelOptions].filter(Boolean))).map((model) => (
+                            <option key={model} value={model}>{model}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>推理</span>
+                        <select
+                          value={draftReasoningEffort}
+                          onChange={(event) => updateSessionDraftPreferences({ reasoningEffort: event.target.value as SessionReasoningEffort })}
+                        >
+                          {REASONING_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mission-composer-actions">
+                      {deckPreferences.promptEnhancer.enabled ? (
+                        <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>增强</button>
+                      ) : null}
+                      <button className="primary" type="submit" disabled={!canSend}>发送</button>
+                    </div>
                   </div>
                   {deckPreferences.technicalPanels.showOrderHints ? (
                     <p className="order-editor-hint">左栏按 项目管理任务；ACP 在会话成立后锁定，模型 / 推理 作为当前 session 配置可继续调整。{draftConfigHint}</p>
@@ -2125,35 +2383,54 @@ export function App() {
           </div>
         ) : null}
 
-        <section className="card surface-card stack-gap fleet-panel">
-          <div className="section-head section-head-soft">
+        <section className="card surface-card stack-gap fleet-panel fleet-command-panel">
+          <div className="section-head section-head-soft fleet-title-row">
             <div>
               <h2>舰队</h2>
-              <p className="muted compact">Fleet 收纳多个 Helm；点击 Helm 后查看项目、ACP 舰员与配置入口。</p>
             </div>
-            <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
           </div>
 
-          <section className="note-box compact-note fleet-card fleet-helm-card-list">
-            <div className="section-head section-head-soft">
+          <div className="fleet-overview-grid">
+            <section className="note-box compact-note fleet-card fleet-summary-card">
               <div>
-                <strong>Helm 节点</strong>
-                <p className="muted compact">只显示名称和地址，点击即可选中。</p>
+                <p className="eyebrow">Fleet</p>
+                <h3>舰队</h3>
+                <p className="muted compact">Fleet 收纳多个 Helm；点击 Helm 后查看项目、ACP 舰员与配置入口。</p>
               </div>
-            </div>
-            <div className="helm-card-grid" aria-label="Fleet Helm 节点">
-              {helmCards.map((helm) => (
-                <article className={`helm-node-card ${selectedHelm.key === helm.key ? "active" : ""}`} key={helm.key}>
-                  <button className="helm-node-main" type="button" onClick={() => setSelectedHelmKey(helm.key)} aria-pressed={selectedHelm.key === helm.key}>
-                    <strong>{helm.name}</strong>
-                    <span className="muted compact">{helm.host}:{helm.port}</span>
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
+              <div className="fleet-summary-metrics">
+                <div className="fleet-summary-metric">
+                  <span>Helm</span>
+                  <strong>{helmCards.length}</strong>
+                </div>
+                <div className="fleet-summary-metric">
+                  <span>当前 Helm</span>
+                  <strong>{selectedHelm.name}</strong>
+                </div>
+              </div>
+            </section>
 
-          <section className="note-box compact-note fleet-card helm-detail-panel">
+            <section className="note-box compact-note fleet-card fleet-helm-card-list">
+              <div className="section-head section-head-soft fleet-card-heading">
+                <div>
+                  <strong>Helm 节点</strong>
+                  <p className="muted compact">只显示名称和地址，点击即可选中。</p>
+                </div>
+                <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
+              </div>
+              <div className="helm-card-grid" aria-label="Fleet Helm 节点">
+                {helmCards.map((helm) => (
+                  <article className={`helm-node-card ${selectedHelm.key === helm.key ? "active" : ""}`} key={helm.key}>
+                    <button className="helm-node-main" type="button" onClick={() => setSelectedHelmKey(helm.key)} aria-pressed={selectedHelm.key === helm.key}>
+                      <strong>{helm.name}</strong>
+                      <span className="muted compact">{helm.host}:{helm.port}</span>
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <section className="note-box compact-note fleet-card helm-detail-panel helm-detail-panel-expanded">
             <div className="section-head section-head-soft">
               <div>
                 <strong>{selectedHelm.name}</strong>
@@ -2167,61 +2444,76 @@ export function App() {
               </div>
             </div>
 
-            <div className="helm-detail-grid">
+            <div className="helm-detail-grid helm-inventory-grid">
               <InfoList title="项目列表" items={selectedHelmIsCurrent ? projects.map((project) => project.name) : []} empty={selectedHelmIsCurrent ? "当前 Helm 暂无项目" : "请先连接该 Helm 后加载项目"} />
               <InfoList title="ACP 舰员" items={selectedHelmIsCurrent ? agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim()) : []} empty={selectedHelmIsCurrent ? copy.noAgents : "请先连接该 Helm 后加载舰员"} />
             </div>
 
-            <details className="helm-config-details">
-              <summary>
-                <span>Helm 模型配置</span>
-                <small>后端相关能力归属具体 Helm，默认收起。</small>
-              </summary>
-              <div className="empty-state">模型配置保留在 Helm 侧；Deck Settings 只放前端偏好。</div>
-            </details>
+            <section className="helm-config-panel">
+              <div className="section-head section-head-soft">
+                <div>
+                  <h3>项目配置</h3>
+                </div>
+                <p className="muted compact">项目、模型与 provider 能力归属当前 Helm。</p>
+              </div>
+              <div className="helm-config-placeholder">
+                <strong>项目</strong>
+                <span>这里承载当前 Helm 的项目级配置入口；Deck Settings 只保留前端偏好。</span>
+              </div>
+            </section>
+
+            <section className="helm-config-panel helm-agent-config-panel">
+              <div className="section-head section-head-soft">
+                <div>
+                  <h3>{copy.addAgentDraft}</h3>
+                </div>
+                <p className="muted compact">默认收起；展开后写入当前 Helm。</p>
+              </div>
+
+              {agentConfigExpanded ? (
+                <form className="config-form" onSubmit={saveDraft}>
+                  <div className="section-head">
+                    <h3>{copy.addAgentDraft}</h3>
+                    <div className="section-actions">
+                      <button className="secondary" type="submit">本地保存草稿</button>
+                      <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Helm 配置</button>
+                    </div>
+                  </div>
+
+                  {!selectedHelmIsCurrent ? (
+                    <div className="note-box compact-note target-helm-warning">
+                      <strong>目标 Helm 尚未连接</strong>
+                      <p className="muted compact">Deck 只能向当前已连接 Helm 写入舰员配置，请先连接目标 Helm。</p>
+                    </div>
+                  ) : null}
+
+                  <label>
+                    <span>{copy.name}</span>
+                    <input value={agentDraft.name} onChange={(event) => setAgentDraft((current) => ({ ...current, name: event.target.value }))} placeholder="OpenCode" />
+                  </label>
+                  <label>
+                    <span>{copy.command}</span>
+                    <input value={agentDraft.command} onChange={(event) => setAgentDraft((current) => ({ ...current, command: event.target.value }))} placeholder="opencode" />
+                  </label>
+                  <label>
+                    <span>{copy.arguments}</span>
+                    <input value={agentDraft.args} onChange={(event) => setAgentDraft((current) => ({ ...current, args: event.target.value }))} placeholder="acp --pure" />
+                  </label>
+
+                  <div className="meta-grid">
+                    <InfoList title={copy.draftOnlyTitle} items={[copy.draftOnlyHint, draftSaveMessage]} empty={copy.draftOnlyHint} />
+                    <InfoList title={copy.daemonConfigTitle} items={[copy.daemonConfigHint, configSaveMessage, `${copy.agentTestTitle}: ${agentTestResult}`]} empty={copy.daemonConfigHint} />
+                  </div>
+                </form>
+              ) : (
+                <button className="helm-config-placeholder helm-agent-placeholder" type="button" onClick={() => setAgentConfigExpanded(true)}>
+                  <strong>agent</strong>
+                  <span>点击展开 ACP 舰员配置表单，并写入当前 Helm。</span>
+                </button>
+              )}
+            </section>
           </section>
         </section>
-
-        <details className="card surface-card stack-gap helm-agent-config-details" open={agentConfigExpanded} onToggle={(event) => setAgentConfigExpanded(event.currentTarget.open)}>
-          <summary>
-            <span>{copy.addAgentDraft}</span>
-            <small>默认收起；展开后把新的 ACP 舰员写入当前已连接 Helm。</small>
-          </summary>
-          <form className="config-form" onSubmit={saveDraft}>
-            <div className="section-head">
-              <h3>{copy.addAgentDraft}</h3>
-              <div className="section-actions">
-                <button className="secondary" type="submit">本地保存草稿</button>
-                <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Helm 配置</button>
-              </div>
-            </div>
-
-            {!selectedHelmIsCurrent ? (
-              <div className="note-box compact-note target-helm-warning">
-                <strong>目标 Helm 尚未连接</strong>
-                <p className="muted compact">Deck 只能向当前已连接 Helm 写入舰员配置，请先连接目标 Helm。</p>
-              </div>
-            ) : null}
-
-            <label>
-              <span>{copy.name}</span>
-              <input value={agentDraft.name} onChange={(event) => setAgentDraft((current) => ({ ...current, name: event.target.value }))} placeholder="OpenCode" />
-            </label>
-            <label>
-              <span>{copy.command}</span>
-              <input value={agentDraft.command} onChange={(event) => setAgentDraft((current) => ({ ...current, command: event.target.value }))} placeholder="opencode" />
-            </label>
-            <label>
-              <span>{copy.arguments}</span>
-              <input value={agentDraft.args} onChange={(event) => setAgentDraft((current) => ({ ...current, args: event.target.value }))} placeholder="acp --pure" />
-            </label>
-
-            <div className="meta-grid">
-              <InfoList title={copy.draftOnlyTitle} items={[copy.draftOnlyHint, draftSaveMessage]} empty={copy.draftOnlyHint} />
-              <InfoList title={copy.daemonConfigTitle} items={[copy.daemonConfigHint, configSaveMessage, `${copy.agentTestTitle}: ${agentTestResult}`]} empty={copy.daemonConfigHint} />
-            </div>
-          </form>
-        </details>
       </section>
     );
   }
@@ -2233,10 +2525,10 @@ export function App() {
           subtitle: "Configure Deck theme, language, technical panels, and prompt enhancement. All options are stored locally in this browser.",
           reset: "Reset defaults",
           languageEyebrow: "Language",
-          languageLabel: "Interface language",
+          languageLabel: "Language",
           languageHelp: "Switches navigation and core Settings copy; ACP Crew domain terms keep their original names.",
           themeEyebrow: "Theme",
-          themeLabel: "Deck theme",
+          themeLabel: "Theme",
           themeSystem: "System",
           themeLight: "Light",
           themeDark: "Dark",
@@ -2277,10 +2569,10 @@ export function App() {
           subtitle: "配置 Deck 语言、主题、技术面板与提示词增强；所有选项只保存在浏览器本地。",
           reset: "重置默认",
           languageEyebrow: "语言 / Language",
-          languageLabel: "界面语言",
+          languageLabel: "语言",
           languageHelp: "用于切换导航与 设置基础文案；ACP 舰员 领域术语保持原名。",
           themeEyebrow: "主题切换",
-          themeLabel: "Deck 主题",
+          themeLabel: "主题",
           themeSystem: "跟随系统",
           themeLight: "浅色",
           themeDark: "深色",
@@ -2323,14 +2615,12 @@ export function App() {
           <div className="section-head section-head-soft">
             <div>
               <h2>{settingsCopy.title}</h2>
-              <p className="muted compact">{settingsCopy.subtitle}</p>
             </div>
             <button className="secondary" type="button" onClick={resetDeckPreferences}>{settingsCopy.reset}</button>
           </div>
 
           <div className="settings-grid settings-form">
             <section className="note-box settings-card">
-              <p className="eyebrow">{settingsCopy.languageEyebrow}</p>
               <label>
                 <span>{settingsCopy.languageLabel}</span>
                 <select
@@ -2342,11 +2632,9 @@ export function App() {
                   <option value="en-US">English</option>
                 </select>
               </label>
-              <p className="settings-help">{settingsCopy.languageHelp}</p>
             </section>
 
             <section className="note-box settings-card">
-              <p className="eyebrow">{settingsCopy.themeEyebrow}</p>
               <label>
                 <span>{settingsCopy.themeLabel}</span>
                 <select
@@ -2358,7 +2646,6 @@ export function App() {
                   <option value="dark">{settingsCopy.themeDark}</option>
                 </select>
               </label>
-              <p className="settings-help">{settingsCopy.themeHelp}</p>
             </section>
 
             <section className="note-box settings-card">
@@ -2411,7 +2698,6 @@ export function App() {
                   <h3>LLM 增强器</h3>
                 </div>
               </div>
-              <p className="settings-help">参考 Augment 的交互：增强 会把输入框里的普通草稿改写成可编辑的标准提示词；测试按钮只测连通性，不做真实增强。</p>
               <div className="prompt-enhancer-grid prompt-llm-grid">
                 <label>
                   <span>OpenAI-compatible Base URL</span>
@@ -2419,13 +2705,52 @@ export function App() {
                 </label>
                 <label>
                   <span>增强模型</span>
-                  <div className="prompt-model-input-row">
-                    <input value={deckPreferences.promptEnhancer.llm.model} onChange={(event) => updatePromptEnhancerLlmPreference("model", event.target.value)} placeholder="gpt-4.1-mini" list="prompt-enhancer-models" />
-                    <button className="secondary" type="button" onClick={refreshPromptEnhancerModels} disabled={promptEnhancerBusy}>刷新</button>
+                  <div className="prompt-model-combobox" ref={promptModelPickerRef}>
+                    <div className="prompt-model-input-row">
+                      <input
+                        value={deckPreferences.promptEnhancer.llm.model}
+                        onChange={(event) => updatePromptEnhancerModelInput(event.target.value)}
+                        onFocus={() => setPromptEnhancerModelPickerOpen(true)}
+                        placeholder="gpt-4.1-mini"
+                        autoComplete="off"
+                      />
+                      <button className="secondary" type="button" onClick={refreshPromptEnhancerModels} disabled={promptEnhancerBusy}>{promptEnhancerBusy ? "加载" : "刷新"}</button>
+                    </div>
+                    {promptEnhancerModelPickerOpen && (
+                      <div className="prompt-model-picker" role="listbox" aria-label="增强模型列表">
+                        <input
+                          className="prompt-model-filter"
+                          value={promptEnhancerModelFilter}
+                          onChange={(event) => setPromptEnhancerModelFilter(event.target.value)}
+                          placeholder="搜索模型或 owner"
+                          aria-label="搜索增强模型"
+                        />
+                        {promptEnhancerBusy ? <p className="prompt-model-empty">正在从 /v1/models 获取模型...</p> : null}
+                        {!promptEnhancerBusy && promptEnhancerModels.length === 0 ? <p className="prompt-model-empty">点击刷新，从 /v1/models 加载可用模型。</p> : null}
+                        {!promptEnhancerBusy && promptEnhancerModels.length > 0 && groupPromptEnhancerModels(promptEnhancerModels, promptEnhancerModelFilter).length === 0 ? <p className="prompt-model-empty">没有匹配的模型。</p> : null}
+                        {!promptEnhancerBusy && groupPromptEnhancerModels(promptEnhancerModels, promptEnhancerModelFilter).map((group) => (
+                          <div className="prompt-model-group" key={group.owner}>
+                            <p className="prompt-model-owner">{group.owner}<span>{group.models.length}</span></p>
+                            <div className="prompt-model-option-list">
+                              {group.models.map((model) => (
+                                <button
+                                  className={`prompt-model-option ${model.id === deckPreferences.promptEnhancer.llm.model ? "active" : ""}`}
+                                  key={`${model.ownedBy}:${model.id}`}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={model.id === deckPreferences.promptEnhancer.llm.model}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => selectPromptEnhancerModel(model)}
+                                >
+                                  {model.id}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <datalist id="prompt-enhancer-models">
-                    {promptEnhancerModels.map((model) => <option key={model} value={model} />)}
-                  </datalist>
                 </label>
                 <label className="settings-card-full">
                   <span>API Key</span>
@@ -2864,6 +3189,21 @@ function summarizeSessionContext(session: SessionSummary | null, sessionMessages
     session.lastMessagePreview ? `最近意图/结果：${session.lastMessagePreview}` : "",
     recentMessages.length ? ["最近消息：", ...recentMessages.map((message) => `- ${message}`)].join("\n") : "",
   ].filter(Boolean).join("\n");
+}
+
+function groupPromptEnhancerModels(models: PromptEnhancerModelOption[], filter: string) {
+  const needle = filter.trim().toLowerCase();
+  const groups = new Map<string, PromptEnhancerModelOption[]>();
+  for (const model of models) {
+    if (needle && !model.id.toLowerCase().includes(needle) && !model.ownedBy.toLowerCase().includes(needle)) {
+      continue;
+    }
+    const owner = model.ownedBy || "default";
+    groups.set(owner, [...(groups.get(owner) ?? []), model]);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([owner, ownerModels]) => ({ owner, models: ownerModels.sort((left, right) => left.id.localeCompare(right.id)) }));
 }
 
 function formatSessionTime(value: string) {

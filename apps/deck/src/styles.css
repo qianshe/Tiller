@@ -4716,3 +4716,475 @@ textarea:focus,
   background: rgba(15, 23, 42, 0.76);
   box-shadow: inset 3px 0 0 #60a5fa, inset 0 0 0 1px rgba(148, 163, 184, 0.16), 0 18px 44px rgba(2, 8, 23, 0.24);
 }
+
+/* Top nav avatar placeholder: local starship admiral profile until user system exists. */
+.admiral-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 20%, rgba(125, 211, 252, 0.28), rgba(30, 41, 59, 0.88));
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24), inset 0 0 0 1px rgba(255,255,255,0.08);
+  cursor: default;
+  overflow: hidden;
+}
+
+.admiral-avatar svg {
+  width: 42px;
+  height: 42px;
+  display: block;
+}
+
+.admiral-connected {
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14), 0 12px 28px rgba(15, 23, 42, 0.24);
+}
+
+.admiral-connecting {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16), 0 12px 28px rgba(15, 23, 42, 0.24);
+}
+
+.admiral-disconnected {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16), 0 12px 28px rgba(15, 23, 42, 0.24);
+}
+
+.top-nav .admiral-avatar {
+  margin-left: auto;
+}
+
+/* Prompt enhancer model list: grouped searchable /v1/models result. */
+.prompt-model-group {
+  display: grid;
+  gap: 6px;
+}
+
+.prompt-model-owner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 2px 2px;
+  color: #8fb4dd;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prompt-model-owner span {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(77, 163, 255, 0.12);
+  color: #bfdbfe;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.prompt-model-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.prompt-model-picker .prompt-model-filter {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: rgba(15, 23, 42, 0.44);
+  color: #e2e8f0;
+}
+
+[data-deck-theme="light"] .prompt-model-owner {
+  color: #475569;
+}
+
+[data-deck-theme="light"] .prompt-model-owner span {
+  background: rgba(31, 95, 191, 0.10);
+  color: #1f5fbf;
+}
+
+[data-deck-theme="light"] .prompt-model-empty {
+  background: rgba(100, 116, 139, 0.08);
+  color: #64748b;
+}
+
+[data-deck-theme="light"] .prompt-model-picker .prompt-model-filter {
+  background: rgba(255, 255, 255, 0.76);
+  color: #0f172a;
+}
+
+
+/* Mission composer width fix after visual feedback: keep the input bar Zed-like and full width. */
+.view-sessions .chat-input-area.draft-toolbar {
+  display: grid;
+  justify-items: stretch;
+}
+
+.view-sessions .mission-order-editor.chat-input-form {
+  width: min(920px, 100%);
+  max-width: 920px;
+  justify-self: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px !important;
+  align-items: stretch;
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.view-sessions .mission-composer-actions {
+  min-width: 94px;
+}
+
+.view-sessions .mission-composer-actions .primary,
+.view-sessions .mission-composer-actions .secondary {
+  width: 94px;
+  min-width: 94px;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .mission-order-editor.chat-input-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .view-sessions .mission-composer-actions,
+  .view-sessions .mission-composer-actions .primary,
+  .view-sessions .mission-composer-actions .secondary {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Mission composer config relocation: model/reasoning live in the lower-right command zone. */
+.view-sessions .draft-toolbar-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.view-sessions .mission-order-editor.chat-input-form {
+  width: min(980px, 100%);
+  max-width: 980px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px) !important;
+  gap: 12px;
+}
+
+.view-sessions .mission-composer-sidecar {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  min-width: 0;
+}
+
+.view-sessions .mission-composer-config {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(108px, 0.62fr);
+  gap: 10px;
+}
+
+.view-sessions .mission-composer-config label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.view-sessions .mission-composer-config label > span {
+  color: #8fa1ba;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.view-sessions .mission-composer-config input,
+.view-sessions .mission-composer-config select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 13px;
+  background: rgba(15, 23, 42, 0.50);
+  color: #e5eefb;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.view-sessions .mission-composer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  align-self: end;
+}
+
+.view-sessions .mission-composer-actions .primary,
+.view-sessions .mission-composer-actions .secondary {
+  width: 100%;
+  min-width: 0;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-composer-config input,
+[data-deck-theme="light"] .view-sessions .mission-composer-config select {
+  background: rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .draft-toolbar-grid,
+  .view-sessions .mission-order-editor.chat-input-form,
+  .view-sessions .mission-composer-config,
+  .view-sessions .mission-composer-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Fleet page IA polish: Fleet summary + Helm picker + selected Helm detail. */
+.fleet-command-panel {
+  gap: 22px;
+  padding: 28px;
+}
+
+.fleet-title-row {
+  align-items: center;
+  min-height: 56px;
+}
+
+.fleet-title-row h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.fleet-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.9fr);
+  gap: 22px;
+  align-items: stretch;
+}
+
+.fleet-summary-card,
+.fleet-helm-card-list,
+.helm-detail-panel-expanded {
+  border-radius: 22px;
+}
+
+.fleet-summary-card {
+  min-height: 240px;
+  align-content: center;
+  gap: 28px;
+}
+
+.fleet-summary-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+}
+
+.fleet-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.fleet-summary-metric {
+  display: grid;
+  gap: 8px;
+  min-height: 76px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.fleet-summary-metric span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.fleet-summary-metric strong {
+  color: #e5edf7;
+  font-size: 1.05rem;
+  word-break: break-word;
+}
+
+.fleet-card-heading {
+  align-items: flex-start;
+}
+
+.fleet-card-heading .primary {
+  min-width: 86px;
+}
+
+.fleet-helm-card-list .helm-card-grid {
+  grid-template-columns: 1fr;
+}
+
+.fleet-helm-card-list .helm-node-card {
+  min-height: 112px;
+}
+
+.fleet-helm-card-list .helm-node-main {
+  padding: 18px;
+}
+
+.helm-detail-panel-expanded {
+  gap: 22px;
+  padding: 22px;
+}
+
+.helm-inventory-grid {
+  align-items: stretch;
+}
+
+.helm-inventory-grid > * {
+  min-height: 128px;
+}
+
+.helm-config-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.helm-config-placeholder {
+  display: grid;
+  gap: 8px;
+  min-height: 136px;
+  padding: 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.18);
+  color: inherit;
+  text-align: left;
+}
+
+.helm-config-placeholder strong {
+  font-size: 1rem;
+}
+
+.helm-config-placeholder span {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.helm-agent-placeholder {
+  width: 100%;
+  cursor: pointer;
+}
+
+.helm-agent-placeholder:hover,
+.helm-agent-placeholder:focus-visible {
+  border-color: rgba(77, 163, 255, 0.42);
+  background: rgba(77, 163, 255, 0.10);
+  outline: none;
+}
+
+[data-deck-theme="dark"] .fleet-summary-card,
+[data-deck-theme="dark"] .fleet-helm-card-list,
+[data-deck-theme="dark"] .helm-detail-panel-expanded {
+  background: rgba(15, 23, 42, 0.42);
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
+[data-deck-theme="dark"] .helm-node-card {
+  background: rgba(15, 23, 42, 0.34);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+[data-deck-theme="dark"] .helm-node-card.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(15, 23, 42, 0.48));
+  border-color: rgba(96, 165, 250, 0.58);
+  box-shadow: 0 16px 36px rgba(37, 99, 235, 0.18);
+}
+
+[data-deck-theme="light"] .fleet-summary-metric,
+[data-deck-theme="light"] .helm-config-placeholder {
+  background: rgba(248, 250, 252, 0.72);
+}
+
+[data-deck-theme="light"] .fleet-summary-metric strong {
+  color: #0f172a;
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .fleet-command-panel {
+    padding: 18px;
+  }
+
+  .fleet-summary-metrics,
+  .helm-inventory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Fleet page second pass: make concrete Helm detail feel like the primary work area. */
+.helm-detail-panel-expanded {
+  min-height: 520px;
+}
+
+.helm-detail-panel-expanded > .section-head:first-child {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.helm-detail-panel-expanded > .section-head:first-child strong {
+  font-size: 1.08rem;
+}
+
+.helm-config-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.helm-config-panel > .section-head {
+  align-items: center;
+}
+
+.helm-config-placeholder {
+  min-height: 176px;
+  align-content: start;
+}
+
+.helm-agent-config-panel .helm-config-placeholder {
+  min-height: 210px;
+}
+
+.helm-config-placeholder strong {
+  width: fit-content;
+  min-width: 120px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.10);
+  text-align: center;
+}
+
+[data-deck-theme="light"] .helm-config-placeholder strong {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.62);
+}
+
+.fleet-summary-card .eyebrow,
+.fleet-summary-card h3 {
+  color: #fca5a5;
+}
+
+.fleet-helm-card-list .helm-node-card.active .helm-node-main strong {
+  color: #dbeafe;
+}
+
+[data-deck-theme="light"] .fleet-helm-card-list .helm-node-card.active .helm-node-main strong {
+  color: #0f172a;
+}
