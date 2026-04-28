@@ -1,4 +1,5 @@
 import type {
+  AcpModelOption,
   AgentMessage,
   CommandChunk,
   FileDiffSummary,
@@ -65,12 +66,17 @@ export function resolveDraftSelectionId<T extends { id: string }>(
   return availableItems[0]?.id ?? null;
 }
 
-export function resolveModelOptionsFromConfig(currentModel: string | undefined, configOptions: SessionConfigOption[] = []) {
+export function resolveModelOptionsFromConfig(
+  currentModel: string | undefined,
+  configOptions: SessionConfigOption[] = [],
+  nativeOptions: AcpModelOption[] = [],
+) {
   const modelOption = configOptions.find((option) => option.category?.toLowerCase() === "model");
   const configuredModels = (modelOption?.options ?? [])
     .map((option) => option.value)
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  const ordered = [currentModel, ...configuredModels, "provider-default"].filter(
+  const nativeModels = nativeOptions.map((option) => option.id).filter((value) => value.trim().length > 0);
+  const ordered = [currentModel, ...nativeModels, ...configuredModels, "provider-default"].filter(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
 

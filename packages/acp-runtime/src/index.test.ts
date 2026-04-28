@@ -7,6 +7,7 @@ import {
   buildSessionNewRequest,
   buildSessionPromptRequest,
   buildSessionResumeRequest,
+  buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
   normalizeProviderCleanupResult,
@@ -23,6 +24,18 @@ test("buildSessionNewRequest uses ACP session/new shape", () => {
     params: {
       cwd: "D:/myProject/tools/Tiller",
       mcpServers: [],
+    },
+  });
+});
+
+test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {
+  assert.deepEqual(buildSessionSetModelRequest("req-model", "sess-1", "openai/gpt-5.4"), {
+    jsonrpc: "2.0",
+    id: "req-model",
+    method: "session/set_model",
+    params: {
+      sessionId: "sess-1",
+      modelId: "openai/gpt-5.4",
     },
   });
 });
@@ -97,15 +110,19 @@ test("applySessionLaunchOverrides appends codex model and reasoning config flags
 test("applySessionLaunchOverrides leaves OpenCode ACP args unchanged because model config is passed through env", () => {
   assert.deepEqual(
     applySessionLaunchOverrides("opencode", ["acp", "--pure"], { model: "openai/gpt-5.4", reasoningEffort: "high" }),
-    ["acp", "--pure"],
+    ["acp", "--pure", "--port", "0"],
   );
 });
 
 test("applySessionLaunchOverrides strips stale OpenCode model flags from ACP args", () => {
   assert.deepEqual(
     applySessionLaunchOverrides("opencode", ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], { model: "openai/gpt-5.4-mini" }),
-    ["acp", "--pure"],
+    ["acp", "--pure", "--port", "0"],
   );
+});
+
+test("applySessionLaunchOverrides preserves explicit OpenCode ACP port args", () => {
+  assert.deepEqual(applySessionLaunchOverrides("opencode", ["acp", "--port", "4097"], { model: "openai/gpt-5.4" }), ["acp", "--port", "4097"]);
 });
 
 test("applySessionLaunchOverrides leaves unsupported providers unchanged", () => {
@@ -260,8 +277,7 @@ test("mapSessionUpdateNotification maps inferred diff summaries", () => {
           {
             path: "apps/web/src/App.tsx",
             status: "modified",
-            additions: 12,
-            deletions: 3,
+            patch: "@@ -1,2 +1,3 @@\n import React from 'react';\n+export const ok = true;",
           },
         ],
       },
@@ -274,7 +290,8 @@ test("mapSessionUpdateNotification maps inferred diff summaries", () => {
     throw new Error("Expected diff-update event");
   }
   assert.equal(mapped.event.files[0]?.path, "apps/web/src/App.tsx");
-  assert.equal(mapped.event.files[0]?.additions, 12);
+  assert.equal(mapped.event.files[0]?.additions, 1);
+  assert.match(mapped.event.files[0]?.patch ?? "", /@@ -1,2 \+1,3 @@/u);
 });
 
 test("normalizeProviderCleanupResult preserves unsupported provider responses", () => {
@@ -291,4 +308,37 @@ test("normalizeProviderCleanupResult preserves unsupported provider responses", 
       message: "Codex ACP does not expose remote session deletion yet.",
     },
   );
+});
+
+
+test("mapSessionUpdateNotification maps explicit tool call updates", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_tool",
+      update: {
+        type: "tool_call_update",
+        toolCall: {
+          id: "tool_1",
+          kind: "terminal",
+          title: "Run tests",
+          status: "completed",
+          commandId: "cmd_1",
+          output: "PASS src/index.test.ts",
+          stream: "stdout",
+        },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.id, "tool_1");
+  assert.equal(mapped.event.toolCall.kind, "terminal");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.output, "PASS src/index.test.ts");
 });

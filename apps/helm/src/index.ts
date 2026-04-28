@@ -1,7 +1,10 @@
 import { WebSocketServer, type WebSocket } from "ws";
 import qrcode from "qrcode-terminal";
+import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, dirname, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
   getDefaultConfigPath,
@@ -13,6 +16,7 @@ import {
   resolveHelmById,
   resolveProjectById,
   resolveProviderById,
+  saveHelmToConfig,
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
@@ -24,7 +28,9 @@ import {
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
+  AcpModelState,
   AgentMessage,
+  FileDiffSummary,
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
@@ -40,6 +46,7 @@ import { createSessionMessageStore } from "./session-message-store";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./session-runtime-store";
 import { createSessionStore } from "./session-store";
 import { resolveSessionCleanupOutcome } from "./session-cleanup";
+import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./session-summary";
 import { createTrustedDeviceStore } from "./trusted-device-store";
 
 // Tiller verification ping by Antigravity 🐾
@@ -48,6 +55,8 @@ const PORT = 47631;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const LOGS_DIR = resolve(REPO_ROOT, "logs");
 const HELM_LOG_FILE = resolve(LOGS_DIR, "helm.log");
+const execFileAsync = promisify(execFile);
+const GIT_DIFF_MAX_BUFFER = 5 * 1024 * 1024;
 
 mkdirSync(LOGS_DIR, { recursive: true });
 
@@ -72,6 +81,7 @@ let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
+const projectSemanticSummaryCache = new Map<string, string>();
 
 // --- Device pairing state ---
 let pairingCode: string | null = null;
@@ -116,12 +126,6 @@ function beginAuthenticationFlow(socket: WebSocket) {
   }
 
   let authenticated = false;
-  const authTimeout = setTimeout(() => {
-    if (!authenticated) {
-      reply(socket, { type: "error", message: "Authentication timeout. Send device.auth or device.pair within 5 seconds." });
-      socket.close();
-    }
-  }, 5000);
 
   socket.on("message", (raw) => {
     if (authenticated) {
@@ -132,7 +136,6 @@ function beginAuthenticationFlow(socket: WebSocket) {
       const payload = JSON.parse(String(raw)) as ClientToHelm;
       if (payload.type === "device.auth") {
         const result = trustedDeviceStore.authenticate({ deviceId: payload.deviceId, token: payload.token });
-        clearTimeout(authTimeout);
         if (!result.ok) {
           showPairingCode();
           reply(socket, {
@@ -148,7 +151,7 @@ function beginAuthenticationFlow(socket: WebSocket) {
 
         authenticated = true;
         authenticateSocket(socket, payload.deviceId);
-        logInfo(`[tiller-helm] Trusted device authenticated device=${payload.deviceId} ✓`);
+        logInfo(`[tiller-helm] Beacon authenticated device=${payload.deviceId} ✓`);
         reply(socket, {
           type: "device.auth.result",
           requestId: payload.requestId,
@@ -162,17 +165,12 @@ function beginAuthenticationFlow(socket: WebSocket) {
       if (payload.type === "device.pair") {
         handlePairing(socket, payload);
         authenticated = true;
-        clearTimeout(authTimeout);
         return;
       }
 
-      clearTimeout(authTimeout);
       reply(socket, { type: "error", message: "Helm not authenticated yet. Send device.auth or device.pair first." });
-      socket.close();
     } catch (error) {
-      clearTimeout(authTimeout);
       reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
-      socket.close();
     }
   });
 }
@@ -230,7 +228,7 @@ function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type:
   });
   pairingCode = null;
   authenticateSocket(socket, payload.deviceId);
-  logInfo(`[tiller-helm] Device paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
+  logInfo(`[tiller-helm] Beacon paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
 
   reply(socket, {
     type: "device.pair.result",
@@ -239,7 +237,7 @@ function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type:
     token: issued.token,
     trustedUntil: issued.record.expiresAt,
     deviceName: issued.record.deviceName,
-    message: "Device paired successfully.",
+    message: "Beacon anchored successfully.",
   });
 }
 
@@ -253,6 +251,19 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         helms,
       });
       return;
+    case "helm.save": {
+      const result = saveHelmToConfig(payload.helm, configPath);
+      helms = loadAvailableHelms();
+      projects = await loadAvailableProjectsWithSemanticSummaries();
+      emit(socket, {
+        type: "helm.save.result",
+        requestId: payload.requestId,
+        ok: true,
+        helmId: payload.helm.id,
+        message: `Saved Helm model config to ${result.configPath}`,
+      });
+      return;
+    }
     case "device.list":
       emit(socket, {
         type: "device.list.result",
@@ -271,7 +282,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
           requestId: payload.requestId,
           ok: revoked,
           deviceId: payload.deviceId,
-          message: revoked ? "This trusted device was revoked. Pair again to reconnect." : "Trusted device not found.",
+          message: revoked ? "This beacon was revoked. Pair again to reconnect." : "Beacon not found.",
         });
         record.socket.close();
       }
@@ -281,13 +292,13 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
           requestId: payload.requestId,
           ok: revoked,
           deviceId: payload.deviceId,
-          message: revoked ? "Trusted device revoked." : "Trusted device not found.",
+          message: revoked ? "Beacon revoked." : "Beacon not found.",
         });
       }
       return;
     }
     case "project.list":
-      projects = loadAvailableProjects();
+      projects = await loadAvailableProjectsWithSemanticSummaries();
       emit(socket, {
         type: "project.list.result",
         requestId: payload.requestId,
@@ -305,7 +316,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
     case "workspace.save": {
       const result = saveWorkspaceToConfig(payload.workspace, configPath);
       workspaces = loadAvailableWorkspaces();
-      projects = loadAvailableProjects();
+      projects = await loadAvailableProjectsWithSemanticSummaries();
       emit(socket, {
         type: "workspace.save.result",
         requestId: payload.requestId,
@@ -343,12 +354,13 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
       return;
     case "session.artifacts.get": {
       const artifacts = sessionArtifactStore.get(payload.sessionId);
+      const diffs = await hydrateDiffsFromWorkspaceGit(payload.sessionId, artifacts.diffs);
       emit(socket, {
         type: "session.artifacts.result",
         requestId: payload.requestId,
         sessionId: payload.sessionId,
         outputs: artifacts.outputs,
-        diffs: artifacts.diffs,
+        diffs,
       });
       return;
     }
@@ -406,7 +418,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
 
       const result = saveProviderToConfig(provider, configPath);
       agents = listAvailableProviders(configPath);
-      projects = loadAvailableProjects();
+      projects = await loadAvailableProjectsWithSemanticSummaries();
       emit(socket, {
         type: "agent.save.result",
         requestId: payload.requestId,
@@ -440,11 +452,39 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
       });
       return;
     }
+    case "agent.model.options.get": {
+      const agent = resolveProviderById(payload.providerId, agents);
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      if (!agent || !workspace) {
+        emit(socket, {
+          type: "agent.model.options.result",
+          requestId: payload.requestId,
+          ok: false,
+          providerId: payload.providerId,
+          workspaceId: payload.workspaceId,
+          message: !agent ? "Provider not found" : "Workspace not found",
+          modelOptions: [],
+          configOptions: [],
+          state: {},
+        });
+        return;
+      }
+
+      const result = await probeAgentModelOptions(agent, workspace);
+      emit(socket, {
+        type: "agent.model.options.result",
+        requestId: payload.requestId,
+        providerId: agent.id,
+        workspaceId: workspace.id,
+        ...result,
+      });
+      return;
+    }
     case "session.create": {
       helms = loadAvailableHelms();
       workspaces = loadAvailableWorkspaces();
       agents = listAvailableProviders(configPath);
-      projects = loadAvailableProjects();
+      projects = await loadAvailableProjectsWithSemanticSummaries();
 
       const project = resolveProjectById(payload.projectId, projects);
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);
@@ -527,6 +567,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         const summaryWithRuntime = hydrateSessionSummary({
           ...summary,
           model: runtime.sessionConfigState?.model ?? summary.model,
+          modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
           reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           runtimeSessionId: runtime.runtimeSessionId,
         });
@@ -585,12 +626,21 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         return;
       }
 
+      const timestamp = new Date().toISOString();
       persistSessionMessage(payload.sessionId, {
         id: `${payload.sessionId}-user-${Date.now()}`,
         role: "user",
         text: payload.text,
-        timestamp: new Date().toISOString(),
+        timestamp,
       });
+      const updated = updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
+      if (updated) {
+        broadcastAuthenticated({
+          type: "session.updated",
+          requestId: payload.requestId,
+          session: updated,
+        });
+      }
       record.runtime.prompt(payload.text);
       return;
     }
@@ -611,10 +661,12 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         : null;
       const nextModel = runtimeResult?.state.model ?? payload.model;
       const nextReasoning = runtimeResult?.state.reasoningEffort ?? payload.reasoningEffort;
+      const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
 
       updateSessionSummary(payload.sessionId, (summary) => ({
         ...summary,
         model: nextModel,
+        modelOptions: nextModelOptions,
         reasoningEffort: nextReasoning,
         updatedAt: new Date().toISOString(),
       }));
@@ -622,6 +674,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
       const next = hydrateSessionSummary({
         ...current,
         model: nextModel,
+        modelOptions: nextModelOptions,
         reasoningEffort: nextReasoning,
         updatedAt: new Date().toISOString(),
       });
@@ -729,6 +782,47 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
   }
 }
 
+async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: WorkspaceSummary) {
+  const probeSessionId = `probe-${agent.id}-${Date.now()}`;
+  let modelState: AcpModelState | undefined;
+  let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
+  let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
+
+  logInfo(`[tiller-helm] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`);
+
+  const runtime = await createAcpRuntime({
+    sessionId: probeSessionId,
+    workspace,
+    agent,
+    onEvent: (event) => {
+      if (event.type === "model-options") {
+        modelState = event.state;
+      } else if (event.type === "config-options") {
+        configState = event.state;
+        configOptions = event.options;
+      } else if (event.type === "error") {
+        logError(`[tiller-helm] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
+      }
+    },
+  });
+
+  runtime.cancel();
+
+  const modelCount = modelState?.options.length ?? 0;
+  logInfo(
+    `[tiller-helm] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length}`,
+  );
+
+  return {
+    ok: modelCount > 0 || configOptions.length > 0,
+    message: modelCount > 0 || configOptions.length > 0 ? `Loaded ${modelCount || configOptions.length} model option(s).` : "Agent did not return model options.",
+    currentModelId: modelState?.currentModelId ?? configState.model,
+    modelOptions: modelState?.options ?? [],
+    configOptions,
+    state: configState,
+  };
+}
+
 function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
   if (!sessions.has(sessionId) && !sessionStore.list().some((item) => item.id === sessionId)) {
     return;
@@ -751,12 +845,7 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
       return;
     case "message":
       persistSessionMessage(sessionId, event.message);
-      updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        updatedAt: event.message.timestamp,
-        messageCount: current.messageCount + 1,
-        lastMessagePreview: event.message.text.slice(0, 160),
-      }));
+      updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, event.message));
       broadcastAuthenticated({
         type: "agent.message",
         sessionId,
@@ -777,6 +866,13 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
         permissionRequest: event.request,
       });
       return;
+    case "tool-call":
+      broadcastAuthenticated({
+        type: "tool.call",
+        sessionId,
+        toolCall: event.toolCall,
+      });
+      return;
     case "command-output":
       sessionArtifactStore.appendOutput(sessionId, event.chunk);
       broadcastAuthenticated({
@@ -785,16 +881,21 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
         commandId: event.chunk.commandId,
         chunk: event.chunk,
       });
+      if (event.toolCall) {
+        broadcastAuthenticated({
+          type: "tool.call",
+          sessionId,
+          toolCall: event.toolCall,
+        });
+      }
       return;
     case "diff-update":
-      sessionArtifactStore.replaceDiffs(sessionId, event.files);
-      broadcastAuthenticated({
-        type: "diff.update",
-        sessionId,
-        files: event.files,
-      });
+      void publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
+      logInfo(
+        `[tiller-helm] session.config.options session=${sessionId} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
+      );
       const updated = updateSessionSummary(sessionId, (current) => ({
         ...current,
         model: event.state.model ?? current.model,
@@ -813,6 +914,32 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
       broadcastAuthenticated({
         type: "session.updated",
         requestId: `session-config-${Date.now()}`,
+        session: hydrateSessionSummary(updated),
+      });
+      return;
+    }
+    case "model-options": {
+      logInfo(
+        `[tiller-helm] session.model.options session=${sessionId} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
+      );
+      const updated = updateSessionSummary(sessionId, (current) => ({
+        ...current,
+        model: event.state.currentModelId ?? current.model,
+        modelOptions: event.state.options,
+        updatedAt: new Date().toISOString(),
+      }));
+      broadcastAuthenticated({
+        type: "session.model.options",
+        sessionId,
+        currentModelId: event.state.currentModelId,
+        options: event.state.options,
+      });
+      if (!updated) {
+        return;
+      }
+      broadcastAuthenticated({
+        type: "session.updated",
+        requestId: `session-model-${Date.now()}`,
         session: hydrateSessionSummary(updated),
       });
       return;
@@ -1051,6 +1178,7 @@ async function startSessionResume(sessionId: string) {
     const restoredSummary = hydrateSessionSummary({
       ...summary,
       model: runtime.sessionConfigState?.model ?? summary.model,
+      modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
       reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
       runtimeSessionId: runtime.runtimeSessionId,
       status: "idle",
@@ -1100,6 +1228,183 @@ function persistRuntimeDescriptor(
     lastSeenAt: summary.updatedAt,
     state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
   });
+}
+
+async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
+  const diffs = await hydrateDiffsFromWorkspaceGit(sessionId, files);
+  sessionArtifactStore.replaceDiffs(sessionId, diffs);
+  broadcastAuthenticated({
+    type: "diff.update",
+    sessionId,
+    files: diffs,
+  });
+}
+
+async function hydrateDiffsFromWorkspaceGit(sessionId: string, files: FileDiffSummary[]) {
+  const workspace = resolveSessionWorkspace(sessionId);
+  if (!workspace) {
+    return files;
+  }
+
+  const gitDiffs = await readWorkspaceGitDiffs(workspace.path);
+  if (!gitDiffs.length) {
+    return files;
+  }
+
+  if (!files.length) {
+    return gitDiffs;
+  }
+
+  const gitByPath = new Map(gitDiffs.map((file) => [normalizeDiffPath(file.path), file]));
+  return files.map((file) => {
+    const fromGit = gitByPath.get(normalizeDiffPath(file.path));
+    return fromGit ? { ...file, additions: fromGit.additions, deletions: fromGit.deletions, patch: file.patch ?? fromGit.patch } : file;
+  });
+}
+
+function resolveSessionWorkspace(sessionId: string) {
+  const liveWorkspace = sessions.get(sessionId)?.workspace;
+  if (liveWorkspace) {
+    return liveWorkspace;
+  }
+
+  const summary = sessionStore.list().find((item) => item.id === sessionId);
+  return summary ? workspaces.find((workspace) => workspace.id === summary.workspaceId) ?? null : null;
+}
+
+async function readWorkspaceGitDiffs(workspacePath: string): Promise<FileDiffSummary[]> {
+  try {
+    const [nameStatusResult, numstatResult] = await Promise.all([
+      execFileAsync("git", ["-C", workspacePath, "diff", "--name-status", "HEAD", "--"], { maxBuffer: GIT_DIFF_MAX_BUFFER }),
+      execFileAsync("git", ["-C", workspacePath, "diff", "--numstat", "HEAD", "--"], { maxBuffer: GIT_DIFF_MAX_BUFFER }),
+    ]);
+    const statsByPath = parseGitNumstat(numstatResult.stdout);
+    const files = parseGitNameStatus(nameStatusResult.stdout);
+    const trackedDiffs = await Promise.all(
+      files.map(async (file) => {
+        const stats = statsByPath.get(normalizeDiffPath(file.path));
+        const patch = await readWorkspaceGitPatch(workspacePath, file.path);
+        return {
+          ...file,
+          additions: stats?.additions ?? countPatchLines(patch, "+"),
+          deletions: stats?.deletions ?? countPatchLines(patch, "-"),
+          ...(patch ? { patch } : {}),
+        };
+      }),
+    );
+    const untrackedDiffs = await readWorkspaceUntrackedDiffs(workspacePath);
+    return [...trackedDiffs, ...untrackedDiffs];
+  } catch {
+    return [];
+  }
+}
+
+async function readWorkspaceGitPatch(workspacePath: string, filePath: string) {
+  try {
+    const result = await execFileAsync("git", ["-C", workspacePath, "diff", "--no-ext-diff", "HEAD", "--", filePath], { maxBuffer: GIT_DIFF_MAX_BUFFER });
+    const patch = result.stdout.trimEnd();
+    return patch || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readWorkspaceUntrackedDiffs(workspacePath: string): Promise<FileDiffSummary[]> {
+  try {
+    const result = await execFileAsync("git", ["-C", workspacePath, "ls-files", "--others", "--exclude-standard", "-z"], { maxBuffer: GIT_DIFF_MAX_BUFFER });
+    const files = result.stdout.split("\0").filter(Boolean);
+    return Promise.all(files.map((filePath) => buildUntrackedFileDiff(workspacePath, filePath)));
+  } catch {
+    return [];
+  }
+}
+
+async function buildUntrackedFileDiff(workspacePath: string, filePath: string): Promise<FileDiffSummary> {
+  try {
+    const absoluteWorkspace = resolve(workspacePath);
+    const absoluteFile = resolve(absoluteWorkspace, filePath);
+    if (absoluteFile !== absoluteWorkspace && !absoluteFile.startsWith(`${absoluteWorkspace}${sep}`)) {
+      return { path: filePath, status: "added", additions: 0, deletions: 0 };
+    }
+
+    const content = await readFile(absoluteFile, "utf8");
+    const patch = buildAddedFilePatch(filePath, content);
+    return {
+      path: filePath,
+      status: "added",
+      additions: countPatchLines(patch, "+"),
+      deletions: 0,
+      patch,
+    };
+  } catch {
+    return { path: filePath, status: "added", additions: 0, deletions: 0 };
+  }
+}
+
+function buildAddedFilePatch(filePath: string, content: string) {
+  const normalizedContent = content.replace(/\r\n/g, "\n");
+  const lines = normalizedContent ? normalizedContent.replace(/\n$/u, "").split("\n") : [];
+  const body = lines.map((line) => `+${line}`).join("\n");
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    body,
+  ].filter(Boolean).join("\n");
+}
+
+function parseGitNameStatus(output: string): FileDiffSummary[] {
+  return output
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [statusToken = "M", ...paths] = line.split(/\t+/u);
+      const path = paths.at(-1) ?? "";
+      return {
+        path,
+        status: statusToken.startsWith("A") ? "added" as const : statusToken.startsWith("D") ? "deleted" as const : "modified" as const,
+        additions: 0,
+        deletions: 0,
+      };
+    })
+    .filter((file) => Boolean(file.path));
+}
+
+function parseGitNumstat(output: string) {
+  const stats = new Map<string, { additions: number; deletions: number }>();
+  for (const line of output.split(/\r?\n/u)) {
+    const [additionsRaw, deletionsRaw, ...paths] = line.split(/\t+/u);
+    const path = paths.at(-1);
+    if (!path) {
+      continue;
+    }
+    stats.set(normalizeDiffPath(path), {
+      additions: parseGitStatNumber(additionsRaw),
+      deletions: parseGitStatNumber(deletionsRaw),
+    });
+  }
+  return stats;
+}
+
+function parseGitStatNumber(value: string | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeDiffPath(path: string) {
+  return path.replace(/\\/g, "/");
+}
+
+function countPatchLines(patch: string | undefined, marker: "+" | "-") {
+  if (!patch) {
+    return 0;
+  }
+
+  const ignoredPrefix = marker === "+" ? "+++" : "---";
+  return patch.split(/\r?\n/u).filter((line) => line.startsWith(marker) && !line.startsWith(ignoredPrefix)).length;
 }
 
 function emit(socket: WebSocket, payload: HelmToClient) {
@@ -1194,6 +1499,116 @@ function loadAvailableProjects() {
   ] satisfies ProjectSummary[];
 }
 
+
+async function loadAvailableProjectsWithSemanticSummaries() {
+  const baseProjects = loadAvailableProjects();
+  return Promise.all(baseProjects.map((project) => enrichProjectSummary(project)));
+}
+
+async function enrichProjectSummary(project: ProjectSummary): Promise<ProjectSummary> {
+  const helm = resolveHelmById(project.helmId, loadAvailableHelms());
+  const modelConfig = helm?.modelConfig;
+  if (!modelConfig?.baseUrl?.trim() || !modelConfig.model?.trim()) {
+    return project;
+  }
+
+  const projectWorkspaces = resolveProjectWorkspaces(project, loadAvailableWorkspaces());
+  const cacheKey = [project.id, project.summary ?? "", modelConfig.baseUrl, modelConfig.model, projectWorkspaces.map((workspace) => `${workspace.id}:${workspace.path}`).join("|")].join("::");
+  const cached = projectSemanticSummaryCache.get(cacheKey);
+  if (cached) {
+    return { ...project, summary: cached };
+  }
+
+  try {
+    const source = await collectProjectSummarySource(project, projectWorkspaces);
+    const semanticSummary = await requestHelmModelSummary(modelConfig, source);
+    const summary = semanticSummary.trim() || project.summary;
+    if (!summary) {
+      return project;
+    }
+    projectSemanticSummaryCache.set(cacheKey, summary);
+    return { ...project, summary };
+  } catch (error) {
+    logInfo(`[tiller-helm] project.summary.semantic.skip project=${project.id} reason=${error instanceof Error ? error.message : "unknown"}`);
+    return project;
+  }
+}
+
+function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: WorkspaceSummary[]) {
+  return project.workspaceIds?.length
+    ? availableWorkspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id))
+    : availableWorkspaces;
+}
+
+async function collectProjectSummarySource(project: ProjectSummary, projectWorkspaces: WorkspaceSummary[]) {
+  const snippets = await Promise.all(projectWorkspaces.slice(0, 3).map(async (workspace) => {
+    const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1800);
+    const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1200);
+    return [
+      `Workspace: ${workspace.name}`,
+      `Path: ${workspace.path}`,
+      workspace.summary ? `Rule summary: ${workspace.summary}` : "",
+      readme ? `README excerpt:\n${readme}` : "",
+      packageJson ? `package.json excerpt:\n${packageJson}` : "",
+    ].filter(Boolean).join("\n");
+  }));
+
+  return [
+    `Project: ${project.name}`,
+    project.summary ? `Existing summary: ${project.summary}` : "",
+    ...snippets,
+  ].filter(Boolean).join("\n\n").slice(0, 8000);
+}
+
+async function readOptionalSnippet(path: string, maxLength: number) {
+  try {
+    return (await readFile(path, "utf8")).slice(0, maxLength);
+  } catch {
+    return "";
+  }
+}
+
+async function requestHelmModelSummary(modelConfig: NonNullable<HelmSummary["modelConfig"]>, source: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(resolveHelmModelChatUrl(modelConfig.baseUrl ?? ""), {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(modelConfig.apiKey?.trim() ? { Authorization: `Bearer ${modelConfig.apiKey.trim()}` } : {}),
+      },
+      body: JSON.stringify({
+        model: modelConfig.model?.trim(),
+        temperature: 0.1,
+        messages: [
+          { role: "system", content: "Summarize this software project for a coding-agent prompt context. Return 3-5 concise bullet points. No markdown fence." },
+          { role: "user", content: source },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`summary model failed: ${response.status}`);
+    }
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return data.choices?.[0]?.message?.content?.trim() ?? "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function resolveHelmModelChatUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/chat/completions")) {
+    return trimmed;
+  }
+  if (/\/v\d+(?:\/|$)/.test(trimmed)) {
+    return `${trimmed}/chat/completions`;
+  }
+  return `${trimmed}/v1/chat/completions`;
+}
+
 function logInfo(message: string) {
   writeLogLine("INFO", message);
   console.log(message);
@@ -1219,10 +1634,12 @@ type SessionRecord = {
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     };
+    sessionModelState?: AcpModelState;
     prompt: (text: string) => void;
     configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
       runtimeApplied: boolean;
       state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      modelState?: AcpModelState;
     }>;
     respondPermission: (requestId: string, decision: "allow" | "deny") => void;
     cancel: () => void;

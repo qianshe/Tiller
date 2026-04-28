@@ -71,20 +71,20 @@ export function createTrustedDeviceStore(filePath: string, options?: { now?: () 
       const record = registry.devices.find((item) => item.deviceId === input.deviceId);
       if (!record) {
         persistOrDeleteRegistry(filePath, registry);
-        return { ok: false, requiresPairing: true, reason: "not-found", message: "Trusted device not found. Pair again." };
+        return { ok: false, requiresPairing: true, reason: "not-found", message: "Beacon not found. Pair again." };
       }
       if (record.revokedAt) {
-        return { ok: false, requiresPairing: true, reason: "revoked", message: "Trusted device revoked. Pair again." };
+        return { ok: false, requiresPairing: true, reason: "revoked", message: "Beacon revoked. Pair again." };
       }
       if (Date.parse(record.expiresAt) <= Date.parse(currentTime)) {
         registry = {
           devices: registry.devices.filter((item) => item.deviceId !== input.deviceId),
         };
         persistOrDeleteRegistry(filePath, registry);
-        return { ok: false, requiresPairing: true, reason: "expired", message: "Trusted device expired. Pair again." };
+        return { ok: false, requiresPairing: true, reason: "expired", message: "Beacon expired. Pair again." };
       }
       if (record.tokenHash !== hashToken(input.token)) {
-        return { ok: false, requiresPairing: true, reason: "token-mismatch", message: "Trusted device token mismatch. Pair again." };
+        return { ok: false, requiresPairing: true, reason: "token-mismatch", message: "Beacon token mismatch. Pair again." };
       }
 
       const nextRecord: TrustedDeviceRecord = {
@@ -94,7 +94,7 @@ export function createTrustedDeviceStore(filePath: string, options?: { now?: () 
       };
       registry = upsertTrustedDeviceRecord(registry, nextRecord);
       persistOrDeleteRegistry(filePath, registry);
-      return { ok: true, record: nextRecord, trustedUntil: nextRecord.expiresAt, message: "Trusted device authenticated." };
+      return { ok: true, record: nextRecord, trustedUntil: nextRecord.expiresAt, message: "Beacon authenticated." };
     },
     list() {
       registry = pruneExpiredRecords(registry, now);

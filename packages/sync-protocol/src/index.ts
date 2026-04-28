@@ -1,6 +1,8 @@
 import type {
   AcpAgentProvider,
+  AcpModelOption,
   AgentMessage,
+  AgentToolCall,
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
@@ -24,6 +26,11 @@ export type ClientToHelm =
       requestId: string;
     }
   | {
+      type: "helm.save";
+      requestId: string;
+      helm: HelmSummary;
+    }
+  | {
       type: "project.list";
       requestId: string;
     }
@@ -44,6 +51,12 @@ export type ClientToHelm =
       type: "agent.test";
       requestId: string;
       providerId: string;
+    }
+  | {
+      type: "agent.model.options.get";
+      requestId: string;
+      providerId: string;
+      workspaceId: string;
     }
   | {
       type: "agent.save";
@@ -143,6 +156,13 @@ export type HelmToClient =
       helms: HelmSummary[];
     }
   | {
+      type: "helm.save.result";
+      requestId: string;
+      ok: boolean;
+      helmId: string;
+      message: string;
+    }
+  | {
       type: "project.list.result";
       requestId: string;
       projects: ProjectSummary[];
@@ -170,6 +190,18 @@ export type HelmToClient =
       ok: boolean;
       providerId: string;
       message: string;
+    }
+  | {
+      type: "agent.model.options.result";
+      requestId: string;
+      ok: boolean;
+      providerId: string;
+      workspaceId: string;
+      message: string;
+      currentModelId?: string;
+      modelOptions: AcpModelOption[];
+      configOptions: SessionConfigOption[];
+      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
     }
   | {
       type: "agent.save.result";
@@ -232,6 +264,12 @@ export type HelmToClient =
       options: SessionConfigOption[];
     }
   | {
+      type: "session.model.options";
+      sessionId: string;
+      currentModelId?: string;
+      options: AcpModelOption[];
+    }
+  | {
       type: "session.status";
       sessionId: string;
       status: SessionStatus;
@@ -258,6 +296,11 @@ export type HelmToClient =
       sessionId: string;
       commandId: string;
       chunk: CommandChunk;
+    }
+  | {
+      type: "tool.call";
+      sessionId: string;
+      toolCall: AgentToolCall;
     }
   | {
       type: "diff.update";

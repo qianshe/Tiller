@@ -1,30 +1,254 @@
-export type PromptEnhancerPreferences = {
+export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
+  "You are improving a user's draft into a clear coding-agent prompt.",
+  "Use these context fields as background; do not expose irrelevant runtime details.",
+  "",
+  "Project summary:",
+  "{{projectSummary}}",
+  "",
+  "Session summary:",
+  "{{sessionSummary}}",
+  "",
+  "User draft:",
+  "{{userPrompt}}",
+  "",
+  "Return direct Markdown only. Do not answer the task itself. Do not wrap the result in markdown code fences.",
+].join("\n");
+
+export type PromptEnhancerLlmConfig = {
   enabled: boolean;
-  instruction: string;
-  modelProfile: string;
-  responseContract: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  instructionTemplate: string;
 };
 
-export function buildEnhancedPrompt(rawPrompt: string, preferences: PromptEnhancerPreferences) {
+export type PromptEnhancerPreferences = {
+  enabled: boolean;
+  instruction?: string;
+  modelProfile?: string;
+  responseContract?: string;
+  llm: PromptEnhancerLlmConfig;
+};
+
+export type PromptEnhancerContext = {
+  projectName?: string | null;
+  workspaceName?: string | null;
+  projectSummary?: string | null;
+  workspaceSummary?: string | null;
+  sessionStatus?: string | null;
+  sessionSummary?: string | null;
+};
+
+type FetchLike = typeof fetch;
+
+
+export function buildEnhancedPrompt(rawPrompt: string, preferences: PromptEnhancerPreferences, context: { projectName?: string | null; workspaceName?: string | null; agentName?: string | null; model?: string | null; reasoningEffort?: string | null } = {}) {
   if (!preferences.enabled) {
     return rawPrompt;
   }
 
-  const sections = ["# 标准提示词增强上下文"];
-  const instruction = preferences.instruction.trim();
-  const modelProfile = preferences.modelProfile.trim();
-  const responseContract = preferences.responseContract.trim();
+  const sections = [
+    "# Mission Prompt",
+    "",
+    "## Objective",
+    rawPrompt.trim(),
+  ];
 
-  if (instruction) {
-    sections.push(["## 角色与目标", instruction].join("\n"));
-  }
-  if (modelProfile) {
-    sections.push(["## 模型与推理偏好", modelProfile].join("\n"));
-  }
-  if (responseContract) {
-    sections.push(["## 输出契约", responseContract].join("\n"));
-  }
-  sections.push(["## 用户原始指令", rawPrompt.trim()].join("\n"));
+  const contextLines = [
+    context.projectName ? `- Project: ${context.projectName}` : null,
+    context.workspaceName ? `- Workspace: ${context.workspaceName}` : null,
+    context.agentName ? `- Agent: ${context.agentName}` : null,
+    context.model ? `- Model: ${context.model}` : null,
+    context.reasoningEffort ? `- Reasoning: ${context.reasoningEffort}` : null,
+  ].filter((line): line is string => Boolean(line));
 
-  return sections.join("\n\n");
+  if (contextLines.length) {
+    sections.push("", "## Context", ...contextLines);
+  }
+  if (preferences.instruction?.trim()) {
+    sections.push("", "## Working Guidelines", preferences.instruction.trim());
+  }
+  if (preferences.modelProfile?.trim()) {
+    sections.push("", "## Model / Reasoning Notes", preferences.modelProfile.trim());
+  }
+
+  sections.push("", "## Requested Behavior", "Rewrite and execute the user intent while preserving explicit constraints.");
+
+  if (preferences.responseContract?.trim()) {
+    sections.push("", "## Response Format", preferences.responseContract.trim());
+  }
+
+  return sections.join("\n");
+}
+
+export async function enhancePromptWithLlm(
+  rawPrompt: string,
+  preferences: PromptEnhancerPreferences,
+  context: PromptEnhancerContext = {},
+  fetcher: FetchLike = fetch,
+) {
+  const objective = rawPrompt.trim();
+  const llm = preferences.llm;
+  if (!llm.baseUrl.trim() || !llm.model.trim()) {
+    throw new Error("Prompt enhancer LLM is not configured");
+  }
+
+  const instructionTemplate = renderInstructionTemplate(llm.instructionTemplate.trim() || DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, context, objective);
+
+  const response = await fetcher(resolveChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: llm.systemPrompt.trim() || "Rewrite the user's draft into a clear, actionable coding-agent prompt. Return only the rewritten prompt.",
+        },
+        {
+          role: "user",
+          content: instructionTemplate,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prompt enhancer LLM failed: ${response.status}`);
+  }
+
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const enhanced = normalizeEnhancedPrompt(data.choices?.[0]?.message?.content);
+  if (!enhanced) {
+    throw new Error("Prompt enhancer LLM returned empty content");
+  }
+  return enhanced;
+}
+
+
+export async function testPromptEnhancerConnectivity(llm: PromptEnhancerLlmConfig, fetcher: FetchLike = fetch) {
+  if (!llm.baseUrl.trim() || !llm.model.trim()) {
+    throw new Error("Prompt enhancer LLM is not configured");
+  }
+
+  const response = await fetcher(resolveChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0,
+      messages: [
+        { role: "system", content: "Connectivity check. Reply with ok." },
+        { role: "user", content: "ping" },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prompt enhancer LLM connectivity failed: ${response.status}`);
+  }
+}
+
+
+export async function listPromptEnhancerModels(llm: PromptEnhancerLlmConfig, fetcher: FetchLike = fetch) {
+  if (!llm.baseUrl.trim()) {
+    throw new Error("Prompt enhancer LLM is not configured");
+  }
+
+  const headers = {
+    ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+  };
+  const response = await fetcher(resolveModelsUrl(llm.baseUrl), { method: "GET", headers });
+  if (!response.ok) {
+    throw new Error(`Prompt enhancer model fetch failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return extractModelIds(data);
+}
+
+function resolveChatCompletionsUrl(baseUrl: string) {
+  const normalized = resolveApiBaseUrl(baseUrl);
+  return normalized.endsWith("/chat/completions") ? normalized : `${normalized}/chat/completions`;
+}
+
+function resolveModelsUrl(baseUrl: string) {
+  const normalized = resolveApiBaseUrl(baseUrl);
+  const base = normalized.endsWith("/chat/completions")
+    ? normalized.replace(/\/chat\/completions$/, "")
+    : normalized;
+  return `${base}/models`;
+}
+
+function extractModelIds(data: unknown) {
+  if (Array.isArray(data)) {
+    return data.map(readModelId).filter(Boolean);
+  }
+  if (!data || typeof data !== "object") {
+    return [];
+  }
+  const record = data as { data?: unknown; models?: unknown };
+  const list = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : [];
+  return list.map(readModelId).filter(Boolean);
+}
+
+function readModelId(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  const record = value as { id?: unknown; model?: unknown; name?: unknown };
+  const id = record.id ?? record.model ?? record.name;
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function resolveApiBaseUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/chat/completions") || /\/v\d+(?:\/|$)/.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed}/v1`;
+}
+
+function renderInstructionTemplate(template: string, context: PromptEnhancerContext, userPrompt: string) {
+  const values: Record<string, string> = {
+    projectName: context.projectName?.trim() || "Not available.",
+    workspaceName: context.workspaceName?.trim() || "Not available.",
+    projectSummary: context.projectSummary?.trim() || summarizeProjectContext(context),
+    workspaceSummary: context.workspaceSummary?.trim() || summarizeWorkspaceContext(context),
+    sessionStatus: context.sessionStatus?.trim() || "Not available.",
+    sessionSummary: context.sessionSummary?.trim() || "No prior session context.",
+    userPrompt,
+  };
+
+  const rendered = template.replace(/\{\{\s*(projectName|workspaceName|projectSummary|workspaceSummary|sessionStatus|sessionSummary|userPrompt)\s*\}\}/g, (_match, key: string) => values[key] ?? "");
+  return /\{\{\s*userPrompt\s*\}\}/.test(template) ? rendered : [rendered, "", "User draft:", userPrompt].join("\n");
+}
+
+function summarizeProjectContext(context: PromptEnhancerContext) {
+  const parts = [
+    context.projectName?.trim() ? `Project: ${context.projectName.trim()}.` : "",
+    context.workspaceName?.trim() ? `Workspace: ${context.workspaceName.trim()}.` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : "Not available.";
+}
+
+function summarizeWorkspaceContext(context: PromptEnhancerContext) {
+  return context.workspaceName?.trim() ? `Workspace: ${context.workspaceName.trim()}.` : "Not available.";
+}
+
+function normalizeEnhancedPrompt(content?: string) {
+  const trimmed = content?.trim() ?? "";
+  const fenced = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i);
+  return (fenced?.[1] ?? trimmed).trim();
 }

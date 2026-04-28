@@ -87,6 +87,31 @@ export function listAvailableProviders(configPath = getDefaultConfigPath()) {
   return getConfiguredProviders(configPath);
 }
 
+
+export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextHelms = [...(current.helms ?? []).filter((item) => item.id !== helm.id), helm];
+
+  const nextConfig: TillerConfig = {
+    helms: nextHelms,
+    projects: current.projects ?? [],
+    workspaces: current.workspaces ?? [],
+    agents: current.agents ?? [],
+    daemon: current.daemon ?? {
+      host: "127.0.0.1",
+      port: 47631,
+    },
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    helm,
+  };
+}
+
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {
   const current = readTillerConfig(configPath);
   const normalizedProvider = hydrateProvider(provider);

@@ -7,7 +7,10 @@
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
     "dev": "pnpm run clean-port && tsx watch src/index.ts",
     "test": "tsx --test src/**/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "probe:acp-models": "tsx scripts/probe-codex-models.ts",
+    "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
+    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --port --arg 0"
   },
   "dependencies": {
     "@tiller/acp-runtime": "workspace:*",

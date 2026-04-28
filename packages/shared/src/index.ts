@@ -52,6 +52,14 @@ export type WorkspaceSummary = {
   id: string;
   name: string;
   path: string;
+  /** Helm-generated lightweight summary for prompt enhancement context. */
+  summary?: string;
+};
+
+export type HelmModelConfig = {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
 };
 
 export type HelmSummary = {
@@ -59,12 +67,16 @@ export type HelmSummary = {
   name: string;
   host: string;
   port: number;
+  /** Helm-level model endpoint used by backend-owned capabilities such as summaries. */
+  modelConfig?: HelmModelConfig;
 };
 
 export type ProjectSummary = {
   id: string;
   name: string;
   helmId: string;
+  /** Helm-generated lightweight summary for prompt enhancement context. */
+  summary?: string;
   workspaceIds?: string[];
   allowedAgentIds?: string[];
   defaultWorkspaceId?: string;
@@ -121,6 +133,17 @@ export type SessionConfigOption = {
   options?: Array<{ value: SessionConfigOptionValue; label?: string; name?: string }>;
 };
 
+export type AcpModelOption = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+export type AcpModelState = {
+  currentModelId?: string;
+  options: AcpModelOption[];
+};
+
 export type SessionConfigSupport = {
   model: SessionConfigApplyMode;
   reasoningEffort: SessionConfigApplyMode;
@@ -158,6 +181,7 @@ export type SessionSummary = {
   agentId: string;
   agentName: string;
   model?: string;
+  modelOptions?: AcpModelOption[];
   reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;
@@ -192,9 +216,26 @@ export type CommandChunk = {
   timestamp: string;
 };
 
+export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
+
+export type AgentToolCall = {
+  id: string;
+  kind: "terminal" | "edit" | "subagent" | "tool" | "unknown";
+  title: string;
+  status: AgentToolCallStatus;
+  commandId?: string;
+  input?: string;
+  output?: string;
+  stream?: "stdout" | "stderr";
+  timestamp: string;
+  updatedAt: string;
+};
+
 export type FileDiffSummary = {
   path: string;
   status: "modified" | "added" | "deleted";
   additions: number;
   deletions: number;
+  /** Unified patch/hunk text when the ACP provider includes file-level diff content. */
+  patch?: string;
 };

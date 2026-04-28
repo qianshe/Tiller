@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
   AcpAgentProvider,
   AgentMessage,
+  AgentToolCall,
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
@@ -18,10 +22,11 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "./hybrid-connection";
-import { buildEnhancedPrompt, type PromptEnhancerPreferences } from "./prompt-enhancer";
+import { buildEnhancedPrompt, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerPreferences } from "./prompt-enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "./snapshot-cache";
 import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./session-state";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "./trusted-device-cache";
+import { buildConversationTimeline, commandChunkToToolCall, mergeToolCallHistory } from "./tool-timeline";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "./ui";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
@@ -161,6 +166,16 @@ type DeckPreferences = {
 const DEFAULT_PROMPT_ENHANCER_INSTRUCTION = "你是 Tiller Deck 的协作型 Coding Agent。先理解目标、约束和风险，再给出可执行方案；涉及代码时遵循最小改动、可验证、可回滚。";
 const DEFAULT_PROMPT_MODEL_PROFILE = "模型偏好：遵循当前 Mission 的 Model / Reasoning 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
 const DEFAULT_PROMPT_RESPONSE_CONTRACT = "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
+const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = "你是提示词增强器。把用户草稿改写为清晰、可执行、可验证的 coding-agent 提示词；保留用户意图，不要直接回答任务。";
+const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
+  "You are improving a user's draft into a clear coding-agent prompt.",
+  "Project summary:",
+  "{{projectSummary}}",
+  "Session summary:",
+  "{{sessionSummary}}",
+  "User draft:",
+  "{{userPrompt}}",
+].join("\n");
 
 const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
@@ -179,6 +194,14 @@ const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
     instruction: DEFAULT_PROMPT_ENHANCER_INSTRUCTION,
     modelProfile: DEFAULT_PROMPT_MODEL_PROFILE,
     responseContract: DEFAULT_PROMPT_RESPONSE_CONTRACT,
+    llm: {
+      enabled: true,
+      baseUrl: "",
+      apiKey: "",
+      model: "",
+      systemPrompt: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
+      instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+    },
   },
 };
 
@@ -275,6 +298,73 @@ function TopNav({
   );
 }
 
+
+const markdownComponents: Components = {
+  a({ children, href, ...props }) {
+    const external = Boolean(href && /^(https?:)?\/\//i.test(href));
+    return <a {...props} href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer noopener" : undefined}>{children}</a>;
+  },
+  img() {
+    return null;
+  },
+  pre({ children }) {
+    const code = extractTextFromReactNode(children).replace(/\n$/, "");
+    const language = findCodeLanguage(children);
+    return <MarkdownCodeBlock code={code} language={language}>{children}</MarkdownCodeBlock>;
+  },
+};
+
+function MarkdownMessage({ text }: { text: string }) {
+  return (
+    <div className="markdown-message">
+      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MarkdownCodeBlock({ children, code, language }: { children: ReactNode; code: string; language?: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1400);
+    } catch {
+      setCopyState("failed");
+      window.setTimeout(() => setCopyState("idle"), 1800);
+    }
+  }
+  return (
+    <div className="markdown-code-block">
+      <div className="markdown-code-toolbar">
+        <span>{language ?? "text"}</span>
+        <button type="button" onClick={copyCode} disabled={!code} aria-label="Copy code block">{copyState === "copied" ? "Copied" : copyState === "failed" ? "Failed" : "Copy"}</button>
+      </div>
+      <pre>{children}</pre>
+    </div>
+  );
+}
+
+function extractTextFromReactNode(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractTextFromReactNode).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return extractTextFromReactNode(node.props.children);
+  return "";
+}
+
+function findCodeLanguage(node: ReactNode): string | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<{ className?: string; children?: ReactNode }>(child)) continue;
+    const match = /language-([\w-]+)/.exec(child.props.className ?? "");
+    if (match?.[1]) return match[1];
+    const nested = findCodeLanguage(child.props.children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const requestCounter = useRef(0);
@@ -308,10 +398,14 @@ export function App() {
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>({});
+  const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>({});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>({});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
+  const [promptEnhancerModels, setPromptEnhancerModels] = useState<string[]>([]);
+  const [promptEnhancerBusy, setPromptEnhancerBusy] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
@@ -330,6 +424,9 @@ export function App() {
   const [draftSaveMessage, setDraftSaveMessage] = useState<string>("草稿未保存");
   const [configSaveMessage, setConfigSaveMessage] = useState<string>("尚未写入 Helm 配置");
   const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>(() => readDaemonProfiles());
+  const [selectedHelmKey, setSelectedHelmKey] = useState<string>("");
+  const [agentConfigExpanded, setAgentConfigExpanded] = useState(false);
+  const [fleetAddHelmModalOpen, setFleetAddHelmModalOpen] = useState(false);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -597,6 +694,69 @@ export function App() {
     }));
   }
 
+  function updatePromptEnhancerLlmPreference<K extends keyof PromptEnhancerPreferences["llm"]>(key: K, value: PromptEnhancerPreferences["llm"][K]) {
+    setDeckPreferences((current) => ({
+      ...current,
+      promptEnhancer: {
+        ...current.promptEnhancer,
+        llm: { ...current.promptEnhancer.llm, [key]: value },
+      },
+    }));
+  }
+
+  async function testPromptEnhancerSelectedModel() {
+    setPromptEnhancerBusy(true);
+    setPromptEnhancerStatus("正在测试 LLM 连通性...");
+    try {
+      await testPromptEnhancerConnectivity(deckPreferences.promptEnhancer.llm);
+      setPromptEnhancerStatus("LLM 连通性正常。");
+    } catch (error) {
+      setPromptEnhancerStatus(error instanceof Error ? error.message : "LLM 连通性测试失败");
+    } finally {
+      setPromptEnhancerBusy(false);
+    }
+  }
+
+  async function refreshPromptEnhancerModels() {
+    setPromptEnhancerBusy(true);
+    setPromptEnhancerStatus("正在获取模型列表...");
+    try {
+      const models = await listPromptEnhancerModels(deckPreferences.promptEnhancer.llm);
+      setPromptEnhancerModels(models);
+      setPromptEnhancerStatus(models.length ? `已获取 ${models.length} 个模型。` : "模型接口可用，但没有返回模型。");
+    } catch (error) {
+      setPromptEnhancerStatus(error instanceof Error ? error.message : "获取模型失败");
+    } finally {
+      setPromptEnhancerBusy(false);
+    }
+  }
+
+  async function enhancePromptDraft() {
+    const rawPrompt = prompt.trim();
+    if (!rawPrompt || !deckPreferences.promptEnhancer.enabled) {
+      return;
+    }
+    setPromptEnhancerBusy(true);
+    setPromptEnhancerStatus("正在增强提示词...");
+    try {
+      const workspace = filteredWorkspaces.find((item) => item.id === (activeSession?.workspaceId ?? selectedWorkspaceId));
+      const enhanced = await enhancePromptWithLlm(rawPrompt, deckPreferences.promptEnhancer, {
+        projectName: draftProject?.name ?? activeSession?.projectName,
+        workspaceName: activeSession?.workspaceName ?? workspace?.name,
+        projectSummary: draftProject?.summary,
+        workspaceSummary: workspace?.summary,
+        sessionStatus: activeSession?.status,
+        sessionSummary: summarizeSessionContext(activeSession, activeSession ? messages[activeSession.id] ?? [] : []),
+      });
+      setPrompt(enhanced);
+      setPromptEnhancerStatus("已增强并回填输入框，请确认后再发送。");
+    } catch (error) {
+      setPromptEnhancerStatus(error instanceof Error ? error.message : "提示词增强失败");
+    } finally {
+      setPromptEnhancerBusy(false);
+    }
+  }
+
   function resetDeckPreferences() {
     setDeckPreferences(DEFAULT_DECK_PREFERENCES);
   }
@@ -626,6 +786,7 @@ export function App() {
       setMessages({});
       setPermissionRequests({});
       setOutputs({});
+      setToolCalls({});
       setDiffs({});
       setSessionConfigOptions({});
       setTrustedDevices([]);
@@ -857,6 +1018,10 @@ export function App() {
           ...current,
           [payload.sessionId]: mergeCommandHistory(current[payload.sessionId] ?? [], payload.outputs),
         }));
+        setToolCalls((current) => ({
+          ...current,
+          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], payload.outputs.map(commandChunkToToolCall)),
+        }));
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
         return;
       case "session.resume.result":
@@ -940,6 +1105,16 @@ export function App() {
         setOutputs((current) => ({
           ...current,
           [payload.sessionId]: [...(current[payload.sessionId] ?? []), payload.chunk],
+        }));
+        setToolCalls((current) => ({
+          ...current,
+          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [commandChunkToToolCall(payload.chunk)]),
+        }));
+        return;
+      case "tool.call":
+        setToolCalls((current) => ({
+          ...current,
+          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [payload.toolCall]),
         }));
         return;
       case "diff.update":
@@ -1423,19 +1598,34 @@ export function App() {
     );
   }
 
-  function renderPlainMessages(items: AgentMessage[]) {
-    if (!items.length) {
+  function renderPlainMessages(items: AgentMessage[], commandChunks: CommandChunk[], sessionToolCalls: AgentToolCall[]) {
+    const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
+    if (!timelineItems.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
 
     return (
-      <div className="plain-message-list">
-        {items.map((item) => (
-          <article key={item.id} className={`plain-message plain-${item.role}`}>
-            <span className="plain-message-role">{copy.role[item.role]}</span>
-            <p>{item.text}</p>
-          </article>
-        ))}
+      <div className="plain-message-list conversation-timeline">
+        {timelineItems.map((item) =>
+          item.kind === "message" ? (
+            <article key={item.message.id} className={`plain-message plain-${item.message.role}`}>
+              <span className="plain-message-role">{copy.role[item.message.role]}</span>
+              <MarkdownMessage text={item.message.text} />
+            </article>
+          ) : (
+            <article key={item.id} className={`tool-call-card tool-call-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
+              <div className="tool-call-head">
+                <span className="tool-call-icon" aria-hidden="true">$</span>
+                <div>
+                  <span className="plain-message-role">???? ? {item.status}</span>
+                  <strong>{item.title}</strong>
+                </div>
+                <span className={`tool-call-stream tool-call-stream-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
+              </div>
+              <pre className="tool-call-output">{item.text}</pre>
+            </article>
+          ),
+        )}
       </div>
     );
   }
@@ -1560,7 +1750,7 @@ export function App() {
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(messages[activeSession.id] ?? [])}
+                    {renderPlainMessages(messages[activeSession.id] ?? [], outputs[activeSession.id] ?? [], toolCalls[activeSession.id] ?? [])}
 
                     <details className="chat-collapsible" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
                       <summary>{copy.commandOutput}</summary>
@@ -1635,7 +1825,12 @@ export function App() {
                     onChange={(event) => setPrompt(event.target.value)}
                     placeholder={draftPromptPlaceholder}
                   />
-                  <button className="primary" type="submit" disabled={!canSend}>发送</button>
+                  <div className="mission-composer-actions">
+                    {deckPreferences.promptEnhancer.enabled ? (
+                      <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>Enhance</button>
+                    ) : null}
+                    <button className="primary" type="submit" disabled={!canSend}>发送</button>
+                  </div>
                   {deckPreferences.technicalPanels.showOrderHints ? (
                     <p className="order-editor-hint">左栏按 Project 管理 Mission；ACP 在会话成立后锁定，Model / Reasoning 作为当前 session 配置可继续调整。{draftConfigHint}</p>
                   ) : null}
@@ -1678,22 +1873,147 @@ export function App() {
   }
 
   function renderAgents() {
+    const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
+    const helmCards = [
+      {
+        key: currentHelmKey,
+        name: daemonProfileName.trim() || "Local Helm",
+        host: daemonHost.trim() || DEFAULT_DAEMON_HOST,
+        port: daemonPort.trim() || DEFAULT_DAEMON_PORT,
+        isCurrent: true,
+        profile: null as DaemonProfile | null,
+      },
+      ...daemonProfiles
+        .filter((profile) => daemonProfileKey(profile.host, profile.port) !== currentHelmKey)
+        .map((profile) => ({
+          key: daemonProfileKey(profile.host, profile.port),
+          name: profile.name,
+          host: profile.host,
+          port: profile.port,
+          isCurrent: false,
+          profile,
+        })),
+    ];
+    const selectedKey = selectedHelmKey || currentHelmKey;
+    const selectedHelm = helmCards.find((helm) => helm.key === selectedKey) ?? helmCards[0];
+    const selectedHelmIsCurrent = selectedHelm.key === currentHelmKey;
+
     return (
       <section className="workspace-single">
         {(showConnectionCard || showPairingCard) ? renderConnectionPanel() : null}
-        <section className="card surface-card stack-gap">
+        {fleetAddHelmModalOpen ? (
+          <div className="fleet-modal-backdrop" role="presentation">
+            <section className="card surface-card stack-gap fleet-add-helm-modal" role="dialog" aria-modal="true" aria-label="添加 Helm">
+              <div className="section-head section-head-soft">
+                <div>
+                  <h3>添加 Helm</h3>
+                  <p className="muted compact">提交 Helm 地址；连接后可在这里填写 6 位验证码完成配对。</p>
+                </div>
+                <button className="secondary" type="button" onClick={() => setFleetAddHelmModalOpen(false)}>关闭</button>
+              </div>
+
+              <form className="fleet-modal-form" onSubmit={(event) => { event.preventDefault(); saveDaemonProfile(); }}>
+                <label>
+                  <span>Helm 名称</span>
+                  <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
+                </label>
+                <label>
+                  <span>Helm 地址</span>
+                  <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
+                </label>
+                <label>
+                  <span>端口</span>
+                  <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
+                </label>
+                <div className="section-actions fleet-modal-actions">
+                  <button className="secondary" type="submit">提交 Helm</button>
+                  <button className="secondary" type="button" onClick={() => void connectToDaemon()}>连接</button>
+                </div>
+              </form>
+
+              <form className="pairing-form" onSubmit={submitPairingCode}>
+                <PairingBoxes
+                  refs={pairInputRefs}
+                  value={pairingCodeInput}
+                  disabled={pairingState === "waiting" || connection !== "connected"}
+                  onChange={updatePairingDigit}
+                  onKeyDown={handlePairingKeyDown}
+                  onPaste={pastePairingDigits}
+                />
+                <div className="section-actions pairing-actions">
+                  <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting" || connection !== "connected"}>
+                    {pairingState === "waiting" ? "提交中..." : "提交验证码"}
+                  </button>
+                  <button className="secondary" type="button" onClick={() => void connectToDaemon(undefined, { preserveState: true })}>重新连接</button>
+                </div>
+              </form>
+              <p className="subtle compact">{daemonProfileMessage || connectFeedback || pairingFeedback}</p>
+            </section>
+          </div>
+        ) : null}
+
+        <section className="card surface-card stack-gap fleet-panel">
           <div className="section-head section-head-soft">
             <div>
-              <h2>Crew</h2>
-              <p className="muted compact">管理本地 ACP Crew 配置草稿，并查看当前 Helm 返回的 Crew 列表。</p>
+              <h2>舰队</h2>
+              <p className="muted compact">Fleet 收纳多个 Helm；点击 Helm 后查看项目、ACP 舰员与配置入口。</p>
             </div>
-            <button className="secondary" type="button" onClick={testAgent} disabled={connection !== "connected" || !agents.length}>测试 Crew 连接</button>
+            <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
           </div>
 
-          <InfoList title="Agent 列表" items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
+          <section className="note-box compact-note fleet-card fleet-helm-card-list">
+            <div className="section-head section-head-soft">
+              <div>
+                <strong>Helm 节点</strong>
+                <p className="muted compact">只显示名称和地址，点击即可选中。</p>
+              </div>
+            </div>
+            <div className="helm-card-grid" aria-label="Fleet Helm 节点">
+              {helmCards.map((helm) => (
+                <article className={`helm-node-card ${selectedHelm.key === helm.key ? "active" : ""}`} key={helm.key}>
+                  <button className="helm-node-main" type="button" onClick={() => setSelectedHelmKey(helm.key)} aria-pressed={selectedHelm.key === helm.key}>
+                    <strong>{helm.name}</strong>
+                    <span className="muted compact">{helm.host}:{helm.port}</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="note-box compact-note fleet-card helm-detail-panel">
+            <div className="section-head section-head-soft">
+              <div>
+                <strong>{selectedHelm.name}</strong>
+                <p className="muted compact">{selectedHelm.host}:{selectedHelm.port}{selectedHelmIsCurrent ? ` · ${formatConnectionStatus(connection)}` : " · 已保存"}</p>
+              </div>
+              <div className="section-actions">
+                {!selectedHelmIsCurrent && selectedHelm.profile ? (
+                  <button className="secondary" type="button" onClick={() => { if (selectedHelm.profile) applyDaemonProfile(selectedHelm.profile); }}>连接此 Helm</button>
+                ) : null}
+                <button className="secondary" type="button" onClick={() => setAgentConfigExpanded((current) => !current)}>添加舰员</button>
+              </div>
+            </div>
+
+            <div className="helm-detail-grid">
+              <InfoList title="项目列表" items={selectedHelmIsCurrent ? projects.map((project) => project.name) : []} empty={selectedHelmIsCurrent ? "当前 Helm 暂无项目" : "请先连接该 Helm 后加载项目"} />
+              <InfoList title="ACP 舰员" items={selectedHelmIsCurrent ? agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim()) : []} empty={selectedHelmIsCurrent ? copy.noAgents : "请先连接该 Helm 后加载舰员"} />
+            </div>
+
+            <details className="helm-config-details">
+              <summary>
+                <span>Helm 模型配置</span>
+                <small>后端相关能力归属具体 Helm，默认收起。</small>
+              </summary>
+              <div className="empty-state">模型配置保留在 Helm 侧；Deck Settings 只放前端偏好。</div>
+            </details>
+          </section>
         </section>
 
-        <section className="card surface-card stack-gap">
+        <details className="card surface-card stack-gap helm-agent-config-details" open={agentConfigExpanded} onToggle={(event) => setAgentConfigExpanded(event.currentTarget.open)}>
+          <summary>
+            <span>{copy.addAgentDraft}</span>
+            <small>默认收起；展开后把新的 ACP 舰员写入当前已连接 Helm。</small>
+          </summary>
           <form className="config-form" onSubmit={saveDraft}>
             <div className="section-head">
               <h3>{copy.addAgentDraft}</h3>
@@ -1702,6 +2022,13 @@ export function App() {
                 <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Helm 配置</button>
               </div>
             </div>
+
+            {!selectedHelmIsCurrent ? (
+              <div className="note-box compact-note target-helm-warning">
+                <strong>目标 Helm 尚未连接</strong>
+                <p className="muted compact">Deck 只能向当前已连接 Helm 写入舰员配置，请先连接目标 Helm。</p>
+              </div>
+            ) : null}
 
             <label>
               <span>{copy.name}</span>
@@ -1721,12 +2048,7 @@ export function App() {
               <InfoList title={copy.daemonConfigTitle} items={[copy.daemonConfigHint, configSaveMessage, `${copy.agentTestTitle}: ${agentTestResult}`]} empty={copy.daemonConfigHint} />
             </div>
           </form>
-        </section>
-
-        <section className="note-box compact-note">
-          <strong>Helm 管理功能即将推出。</strong>
-          <p className="muted compact">后续会在这里管理多 Helm 生命周期、健康检查与切换策略。</p>
-        </section>
+        </details>
       </section>
     );
   }
@@ -1935,6 +2257,39 @@ export function App() {
                   <textarea value={deckPreferences.promptEnhancer.responseContract} onChange={(event) => updatePromptEnhancerPreference("responseContract", event.target.value)} placeholder={DEFAULT_PROMPT_RESPONSE_CONTRACT} />
                 </label>
               </div>
+              <div className="prompt-enhancer-grid prompt-llm-grid">
+                <label>
+                  <span>OpenAI-compatible Base URL</span>
+                  <input value={deckPreferences.promptEnhancer.llm.baseUrl} onChange={(event) => updatePromptEnhancerLlmPreference("baseUrl", event.target.value)} placeholder="http://localhost:8317" />
+                </label>
+                <label>
+                  <span>增强模型</span>
+                  <div className="prompt-model-input-row">
+                    <input value={deckPreferences.promptEnhancer.llm.model} onChange={(event) => updatePromptEnhancerLlmPreference("model", event.target.value)} placeholder="gpt-4.1-mini" list="prompt-enhancer-models" />
+                    <button className="secondary" type="button" onClick={refreshPromptEnhancerModels} disabled={promptEnhancerBusy}>刷新</button>
+                  </div>
+                  <datalist id="prompt-enhancer-models">
+                    {promptEnhancerModels.map((model) => <option key={model} value={model} />)}
+                  </datalist>
+                </label>
+                <label className="settings-card-full">
+                  <span>API Key</span>
+                  <input type="password" value={deckPreferences.promptEnhancer.llm.apiKey} onChange={(event) => updatePromptEnhancerLlmPreference("apiKey", event.target.value)} placeholder="sk-..." autoComplete="off" />
+                </label>
+                <label className="settings-card-full">
+                  <span>增强器 System Prompt</span>
+                  <textarea value={deckPreferences.promptEnhancer.llm.systemPrompt} onChange={(event) => updatePromptEnhancerLlmPreference("systemPrompt", event.target.value)} placeholder={DEFAULT_PROMPT_LLM_SYSTEM_PROMPT} />
+                </label>
+                <label className="settings-card-full">
+                  <span>增强器指令模板</span>
+                  <textarea value={deckPreferences.promptEnhancer.llm.instructionTemplate} onChange={(event) => updatePromptEnhancerLlmPreference("instructionTemplate", event.target.value)} placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE} />
+                  <small className="settings-help">{`可使用 {{projectSummary}}、{{sessionSummary}}、{{userPrompt}} 等标签；Deck 会在增强时主动替换。`}</small>
+                </label>
+                <div className="section-actions settings-card-full">
+                  <button className="secondary" type="button" onClick={testPromptEnhancerSelectedModel} disabled={promptEnhancerBusy}>测试连通性</button>
+                  {promptEnhancerStatus ? <span className="settings-status">{promptEnhancerStatus}</span> : null}
+                </div>
+              </div>
             </section>
 
             <section className="note-box settings-card settings-card-wide">
@@ -2104,6 +2459,10 @@ function formatResumeLabel(resume: SessionSummary["resume"], locale: Locale) {
 }
 
 
+function daemonProfileKey(host: string, port: string) {
+  return `${host}:${port}`;
+}
+
 function formatDaemonProfileLine(
   profile: DaemonProfile,
   currentHost: string,
@@ -2182,6 +2541,14 @@ function readDeckPreferences(): DeckPreferences {
         instruction: readPreferenceText(promptEnhancer.instruction, DEFAULT_PROMPT_ENHANCER_INSTRUCTION),
         modelProfile: readPreferenceText(promptEnhancer.modelProfile, DEFAULT_PROMPT_MODEL_PROFILE),
         responseContract: readPreferenceText(promptEnhancer.responseContract, DEFAULT_PROMPT_RESPONSE_CONTRACT),
+        llm: {
+          enabled: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.enabled === "boolean" ? promptEnhancer.llm.enabled : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.enabled,
+          baseUrl: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.baseUrl === "string" ? promptEnhancer.llm.baseUrl : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.baseUrl,
+          apiKey: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.apiKey === "string" ? promptEnhancer.llm.apiKey : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.apiKey,
+          model: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.model === "string" ? promptEnhancer.llm.model : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.model,
+          systemPrompt: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.systemPrompt === "string" ? promptEnhancer.llm.systemPrompt : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
+          instructionTemplate: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.instructionTemplate === "string" ? promptEnhancer.llm.instructionTemplate : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
+        },
       },
     };
   } catch {
@@ -2304,6 +2671,18 @@ function resolveModelInputPlaceholder(
   const provider = agents.find((agent) => agent.id === (activeSession?.agentId ?? draftAgentId));
   const support = resolveSessionConfigSupport(provider);
   return support.modelFormat === "provider/model" ? "provider-default 或 openai/gpt-5.4" : "provider-default 或 gpt-5.4";
+}
+
+function summarizeSessionContext(session: SessionSummary | null, sessionMessages: AgentMessage[]) {
+  if (!session) {
+    return "No active session yet; enhance the draft for a new session.";
+  }
+  const recentMessages = sessionMessages.slice(-4).map((message) => `${message.role}: ${message.text.replace(/\s+/g, " ").trim().slice(0, 180)}`);
+  return [
+    `Session ${session.id} is ${session.status}; messages: ${session.messageCount}.`,
+    session.lastMessagePreview ? `Last intent/result: ${session.lastMessagePreview}` : "",
+    recentMessages.length ? ["Recent messages:", ...recentMessages.map((message) => `- ${message}`)].join("\n") : "",
+  ].filter(Boolean).join("\n");
 }
 
 function formatSessionTime(value: string) {

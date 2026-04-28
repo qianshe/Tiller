@@ -112,41 +112,43 @@ pnpm dev
 
 1. 在 Helm 终端里查看 6 位 pairing code
 2. 在 Web 的 **设备配对** 区输入 pairing code
-3. 配对成功后，Deck 会在当前浏览器保存：
+3. 配对成功后，Deck 会在当前浏览器保存一枚 **信标（Beacon）**：
    - 稳定 `deviceId`
-   - 当前 Helm 的 trusted device token
-4. Helm 会把这台设备登记到本地 trusted device registry，并给它 **7 天滑动续期**
-5. 之后同一设备在 7 天内再次打开 Deck，会自动 `device.auth`
+   - 当前 Helm 的 beacon token（内部仍按 trusted-device token 存储）
+4. Helm 会把这枚信标登记到本地 beacon registry，并给它 **7 天滑动续期**
+5. 之后同一设备在 7 天内再次打开 Deck，会自动用信标执行 `device.auth`
 
-### Trusted Device Authentication
+### 信标认证（Beacon Authentication）
+
+信标表示一台 Deck / App 在当前 Helm 星图里的位置锚点：Helm 通过它识别“这是不是之前已经配对过的位置”。
 
 - 第一次连接仍然需要 pairing code
-- Helm 会按设备维度记住 Web / App，而不是只记住一次性内存 token
-- 每次 `device.auth` 成功，都会把设备有效期顺延 7 天
-- 如果某台设备连续 7 天没有使用，下一次连接必须重新配对
-- Helm 重启后仍能识别 trusted devices；新设备首次连接仍需重新认证
+- Helm 会按信标维度记住 Web / App，而不是只记住一次性内存 token
+- 每次 `device.auth` 成功，都会把信标有效期顺延 7 天
+- 如果某枚信标连续 7 天没有使用，下一次连接必须重新配对
+- Helm 重启后仍能识别已有信标；新设备首次连接仍需重新认证
 
 ### Hybrid Reconnect
 
 - Deck 刷新后会先恢复最近一次成功同步的本地 snapshot cache
-- 如果当前 Helm 的 trusted token 仍有效，Deck 会在后台静默尝试恢复 websocket 连接
+- 如果当前 Helm 的信标 token 仍有效，Deck 会在后台静默尝试恢复 websocket 连接
 - `Mission` / `Crew` 视图需要实时数据；进入这些页面时，Deck 会自动确保 live connection
 - 如果 Helm 暂时离线，Overview 仍可先展示缓存，不需要刷新后立刻手动重连
 
-如果你清除了浏览器本地存储、设备超过 7 天未使用，或 Helm 侧设备信任记录已失效，就重新输入 pairing code 即可。
+如果你清除了浏览器本地存储、信标超过 7 天未使用，或 Helm 侧信标记录已失效，就重新输入 pairing code 即可。
 
-### 受信设备管理
+### 信标管理
 
-- 进入 **Settings** 页面后，Deck 会请求当前 Helm 的受信设备列表
+- 进入 **Settings** 页面后，Deck 会请求当前 Helm 的信标列表
 - 列表会显示：
   - `deviceName`
-  - 设备类型（Web / App）
+  - 信标类型（Web / App）
   - `deviceId`
   - 最近认证时间
-  - 信任到期时间
-- 点击 **撤销** 后，Helm 会删除对应 trusted device record
-- 如果撤销的是“当前设备”，这个浏览器里的 token 会被清掉，并在下一次连接时要求重新配对
-- 这个列表是 **按 Helm profile 隔离** 的；切换到另一个 Helm，只会看到它自己的受信设备
+  - 信标到期时间
+- 点击 **撤销** 后，Helm 会删除对应 beacon record
+- 如果撤销的是“当前信标”，这个浏览器里的 token 会被清掉，并在下一次连接时要求重新配对
+- 这个列表是 **按 Helm profile 隔离** 的；切换到另一个 Helm，只会看到它自己的信标
 
 ### 日志约定
 
@@ -254,12 +256,30 @@ Tiller 的接入方式不是硬编码某个 Agent，而是让 Helm 读取 provid
   "name": "OpenCode",
   "kind": "native-acp",
   "command": "opencode",
-  "args": ["acp"],
+  "args": ["acp", "--port", "0"],
   "transport": "stdio",
   "protocol": "acp",
-  "installHint": "Install OpenCode and ensure `opencode acp` works in your terminal."
+  "installHint": "Install OpenCode and ensure `opencode acp --port 0` works in your terminal."
 }
 ```
+
+> OpenCode ACP 会启动本地 server；如果不显式传 `--port 0`，本机配置或默认端口可能撞到 `4096`，表现为 ACP `initialize` 超时。Tiller 的 OpenCode adapter 会在 `args` 包含 `acp` 且未显式声明 `--port` 时自动追加 `--port 0`。
+
+模型列表遵循 Zed 的 ACP 思路：
+
+1. **ACP `session.models`**：优先读取 `session/new` / `session/load` / `session/resume` 返回的 `models.availableModels` 与 `models.currentModelId`。
+2. **ACP `configOptions`**：若 agent 同时返回 model 类 `configOptions`，切换模型优先使用标准 `session/set_config_option`；否则才回退到 `session/set_model`。
+3. **Provider adapter fallback**：只有当 agent 没暴露标准模型/配置能力时，才走 provider adapter 或 stored-only fallback。
+
+可用下面的探针脚本直接检查 agent 返回的模型列表：
+
+```bash
+pnpm --filter @tiller/helm probe:codex-models -- --cwd D:/myProject/tools/Tiller --timeout 30000
+pnpm --filter @tiller/helm probe:opencode-models -- --cwd D:/myProject/tools/Tiller --timeout 30000
+pnpm --filter @tiller/helm probe:acp-models -- --command opencode --arg acp --arg --port --arg 0
+```
+
+探针原始 JSON-RPC 日志会写入 `logs/acp/probe-codex-models-*.ndjson`；真实 Helm session 收到模型配置事件时，会在 `logs/helm.log` 记录 `session.model.options` / `session.config.options` 的当前模型与 options 数量。
 
 未来真实接入路径会是：
 
@@ -280,7 +300,7 @@ Tiller 现在把 `Model / Reasoning` 能力拆成三层，尽量复用标准 ACP
 1. **ACP-native path**：如果 agent 在 `session/new` / `session/load` / `session/resume` 返回 `configOptions`，或后续通过 `config_option_update` 推送配置变化，Tiller 会优先走标准 ACP `session/set_config_option`。
 2. **Provider adapter path**：如果 agent 没暴露标准 `configOptions`，就走 `acp-runtime` 里的 provider adapter：
    - `codex-acp`：通过 `-c model=...` / `-c model_reasoning_effort=...`
-   - `opencode`：通过 `-m provider/model` + `OPENCODE_CONFIG_CONTENT`
+   - `opencode`：启动时移除陈旧 `-m/--model`，通过 `OPENCODE_CONFIG_CONTENT` 注入模型配置，并在 ACP args 缺少显式 `--port` 时追加 `--port 0`
 3. **Stored-only fallback**：如果既没有标准 ACP config option，也没有 provider adapter，Tiller 仍会把配置保存在 session summary 中，等待后续 provider 支持。
 
 当前推荐的分层职责：

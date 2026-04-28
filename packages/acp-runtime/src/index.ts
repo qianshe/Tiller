@@ -4,7 +4,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   AcpAgentProvider,
+  AcpModelOption,
+  AcpModelState,
   AgentMessage,
+  AgentToolCall,
   CommandChunk,
   FileDiffSummary,
   PermissionDecision,
@@ -42,8 +45,13 @@ export type SessionRuntimeEvent =
       request: PermissionRequest;
     }
   | {
+      type: "tool-call";
+      toolCall: AgentToolCall;
+    }
+  | {
       type: "command-output";
       chunk: CommandChunk;
+      toolCall?: AgentToolCall;
     }
   | {
       type: "diff-update";
@@ -53,6 +61,10 @@ export type SessionRuntimeEvent =
       type: "config-options";
       state: AcpSessionConfigState;
       options: AcpSessionConfigOption[];
+    }
+  | {
+      type: "model-options";
+      state: AcpModelState;
     }
   | {
       type: "error";
@@ -98,6 +110,33 @@ export type AcpSessionConfigOption = {
 export type AcpSessionConfigState = {
   model?: string;
   reasoningEffort?: SessionReasoningEffort;
+};
+
+type AcpProtocolModelInfo = {
+  modelId?: string;
+  model_id?: string;
+  id?: string;
+  name?: string;
+  description?: string | null;
+};
+
+type AcpProtocolSessionModelState = {
+  currentModelId?: string;
+  current_model_id?: string;
+  availableModels?: AcpProtocolModelInfo[];
+  available_models?: AcpProtocolModelInfo[];
+};
+
+type AcpSessionResponseWithModels = {
+  sessionId?: string;
+  session_id?: string;
+  id?: string;
+  models?: AcpProtocolSessionModelState | null;
+};
+
+type AcpSetSessionModelRequest = {
+  sessionId: string;
+  modelId: string;
 };
 
 export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
@@ -434,33 +473,44 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   });
   const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
   let currentConfigOptions: AcpSessionConfigOption[] = [];
+  let currentModelState: AcpModelState | undefined;
 
   if (options.restore) {
     if (options.restore.strategy === "load") {
       if (!sessionCapabilities.sessionLoad) {
         throw new Error("ACP agent does not advertise session/load capability.");
       }
-      const loadResult = await sendRequest<any>(
+      const loadResult = await sendRequest<AcpSessionResponseWithModels>(
         buildSessionLoadRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
       );
       sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
       currentConfigOptions = extractSessionConfigOptions(loadResult);
+      currentModelState = extractAcpModelState(loadResult);
     } else {
       if (!sessionCapabilities.sessionResume) {
         throw new Error("ACP agent does not advertise session.resume capability.");
       }
-      const resumeResult = await sendRequest<any>(
+      const resumeResult = await sendRequest<AcpSessionResponseWithModels>(
         buildSessionResumeRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
       );
       sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
       currentConfigOptions = extractSessionConfigOptions(resumeResult);
+      currentModelState = extractAcpModelState(resumeResult);
     }
   } else {
-    const sessionResult = await sendRequest<any>(
+    const sessionResult = await sendRequest<AcpSessionResponseWithModels>(
       buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent),
     );
     sessionToken = resolveRuntimeSessionId(sessionResult, options.sessionId);
     currentConfigOptions = extractSessionConfigOptions(sessionResult);
+    currentModelState = extractAcpModelState(sessionResult);
+  }
+
+  if (currentModelState?.options.length) {
+    options.onEvent({
+      type: "model-options",
+      state: currentModelState,
+    });
   }
 
   if (currentConfigOptions.length) {
@@ -491,12 +541,12 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
     const applyOption = async (category: "model" | "thought_level", value: string | undefined) => {
       if (!value) {
-        return;
+        return false;
       }
 
       const optionId = findSessionConfigOptionId(currentConfigOptions, category);
       if (!optionId) {
-        return;
+        return false;
       }
 
       const result = await sendRequest<any>({
@@ -519,14 +569,31 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
         });
       }
       runtimeApplied = true;
+      return true;
     };
 
-    await applyOption("model", nextConfig.model);
+    if (nextConfig.model && hasSessionConfigOptionValue(currentConfigOptions, "model", nextConfig.model)) {
+      await applyOption("model", nextConfig.model);
+    } else if (nextConfig.model && currentModelState?.options.some((model) => model.id === nextConfig.model)) {
+      await sendRequest(buildSessionSetModelRequest(nextRpcId(), sessionToken, nextConfig.model), 15_000);
+      currentModelState = {
+        ...currentModelState,
+        currentModelId: nextConfig.model,
+      };
+      options.onEvent({
+        type: "model-options",
+        state: currentModelState,
+      });
+      runtimeApplied = true;
+    } else {
+      await applyOption("model", nextConfig.model);
+    }
     await applyOption("thought_level", nextConfig.reasoningEffort);
 
     return {
       runtimeApplied,
-      state: resolveSessionConfigState(currentConfigOptions),
+      state: resolveCombinedSessionConfigState(currentConfigOptions, currentModelState),
+      modelState: currentModelState,
     };
   };
 
@@ -578,7 +645,8 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   return {
     runtimeSessionId: sessionToken,
     sessionCapabilities,
-    sessionConfigState: resolveSessionConfigState(currentConfigOptions),
+    sessionConfigState: resolveCombinedSessionConfigState(currentConfigOptions, currentModelState),
+    sessionModelState: currentModelState,
     prompt,
     configure,
     respondPermission,
@@ -587,8 +655,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   };
 }
 
-export function resolveRuntimeSessionId(sessionResult: { sessionId?: string; id?: string } | null | undefined, fallbackSessionId: string) {
-  return sessionResult?.sessionId ?? sessionResult?.id ?? fallbackSessionId;
+export function resolveRuntimeSessionId(sessionResult: unknown, fallbackSessionId: string) {
+  const result = sessionResult && typeof sessionResult === "object" ? sessionResult as AcpSessionResponseWithModels : null;
+  return result?.sessionId ?? result?.session_id ?? result?.id ?? fallbackSessionId;
 }
 
 export function buildSessionNewRequest(id: string, cwd: string, agent?: string) {
@@ -642,6 +711,18 @@ export function buildSessionPromptRequest(id: string, sessionId: string, text: s
       prompt: [{ type: "text", text }],
       ...(agent ? { agent } : {}),
     },
+  };
+}
+
+export function buildSessionSetModelRequest(id: string, sessionId: string, modelId: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/set_model",
+    params: {
+      sessionId,
+      modelId,
+    } satisfies AcpSetSessionModelRequest,
   };
 }
 
@@ -716,6 +797,17 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
     };
   }
 
+  const explicitToolCall = extractToolCall(sessionId, updateType, update);
+  if (explicitToolCall) {
+    return {
+      sessionId,
+      event: {
+        type: "tool-call",
+        toolCall: explicitToolCall,
+      },
+    };
+  }
+
   const permissionRequest = extractPermissionRequest(sessionId, updateType, update);
   if (permissionRequest) {
     return {
@@ -734,6 +826,7 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
       event: {
         type: "command-output",
         chunk: commandChunk,
+        toolCall: mapCommandChunkToToolCall(commandChunk),
       },
     };
   }
@@ -790,6 +883,61 @@ function extractSessionConfigOptions(payload: any): AcpSessionConfigOption[] {
           }))
         : undefined,
     }));
+}
+
+function extractAcpModelState(payload: AcpSessionResponseWithModels | any): AcpModelState | undefined {
+  const rawModels = payload?.models as AcpProtocolSessionModelState | undefined | null;
+  const rawAvailableModels = rawModels?.availableModels ?? rawModels?.available_models;
+  if (!rawModels || !Array.isArray(rawAvailableModels)) {
+    return undefined;
+  }
+
+  const options = rawAvailableModels
+    .map(normalizeAcpModelInfo)
+    .filter((model): model is AcpModelOption => Boolean(model));
+  if (!options.length) {
+    return undefined;
+  }
+
+  return {
+    currentModelId: typeof rawModels.currentModelId === "string" ? rawModels.currentModelId : typeof rawModels.current_model_id === "string" ? rawModels.current_model_id : undefined,
+    options,
+  };
+}
+
+function normalizeAcpModelInfo(model: AcpProtocolModelInfo): AcpModelOption | null {
+  const modelId = model?.modelId ?? model?.model_id ?? model?.id;
+  if (typeof modelId !== "string" || !modelId.trim()) {
+    return null;
+  }
+
+  return {
+    id: modelId,
+    name: typeof model.name === "string" && model.name.trim() ? model.name : modelId,
+    description: typeof model.description === "string" && model.description.trim() ? model.description : undefined,
+  };
+}
+
+function resolveCombinedSessionConfigState(configOptions: AcpSessionConfigOption[], modelState?: AcpModelState): AcpSessionConfigState {
+  const state = resolveSessionConfigState(configOptions);
+  return {
+    ...state,
+    ...(!state.model && modelState?.currentModelId ? { model: modelState.currentModelId } : {}),
+  };
+}
+
+function hasSessionConfigOptionValue(configOptions: AcpSessionConfigOption[], category: string, value: string) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === category);
+  if (!option) {
+    return false;
+  }
+
+  const candidates = [option.currentValue, option.selectedValue, option.value, ...(option.options ?? []).map((item) => item.value)];
+  return candidates.some((candidate) => candidate === value);
+}
+
+function hasOpenCodePortArg(args: string[]) {
+  return args.some((value, index) => value === "--port" || value.startsWith("--port=") || args[index - 1] === "--port");
 }
 
 function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {
@@ -879,10 +1027,16 @@ const OPENCODE_SESSION_CONFIG_ADAPTER: SessionConfigAdapter = {
   id: "opencode",
   matches: (command) => /^opencode(?:\.exe)?$/iu.test(command),
   applyLaunchArgs: (args) => {
-    return args.filter((value, index, list) => {
+    const nextArgs = args.filter((value, index, list) => {
       const previous = list[index - 1];
       return value !== "-m" && value !== "--model" && previous !== "-m" && previous !== "--model" && !value.startsWith("--model=");
     });
+
+    if (nextArgs.includes("acp") && !hasOpenCodePortArg(nextArgs)) {
+      nextArgs.push("--port", "0");
+    }
+
+    return nextArgs;
   },
   applyEnv: (sessionConfig) => {
     const configOverride = buildOpenCodeConfigOverride(sessionConfig);
@@ -1044,6 +1198,92 @@ function normalizePreferredAgentId(agent: string | undefined) {
   return aliasMap[canonical] ?? canonical;
 }
 
+
+function extractToolCall(sessionId: string, updateType: string | undefined, update: any): AgentToolCall | null {
+  const type = updateType ?? "";
+  if (!/(tool|terminal)/iu.test(type) || /command_output/iu.test(type)) {
+    return null;
+  }
+
+  const source = update.toolCall ?? update.tool_call ?? update.tool ?? update.terminal ?? update;
+  const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
+  const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
+  const title =
+    stringFrom(source.title ?? source.label ?? source.name ?? source.toolName ?? source.tool_name ?? source.command) ??
+    commandId ??
+    id;
+  const output = stringFrom(source.output ?? source.result ?? source.content ?? source.text);
+  const input = stringFrom(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command);
+  const now = timestamp();
+
+  return {
+    id,
+    kind: inferToolCallKind(type, source),
+    title,
+    status: inferToolCallStatus(type, source.status ?? source.state ?? update.status ?? update.state),
+    ...(commandId ? { commandId } : {}),
+    ...(input ? { input } : {}),
+    ...(output ? { output } : {}),
+    ...(source.stream === "stderr" || source.stream === "stdout" ? { stream: source.stream } : {}),
+    timestamp: stringFrom(source.timestamp ?? update.timestamp) ?? now,
+    updatedAt: stringFrom(source.updatedAt ?? source.updated_at ?? update.updatedAt ?? update.timestamp) ?? now,
+  };
+}
+
+function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
+  const raw = String(source.kind ?? source.type ?? updateType).toLowerCase();
+  if (/terminal|command|shell|bash|exec/u.test(raw)) {
+    return "terminal";
+  }
+  if (/edit|diff|patch|file/u.test(raw)) {
+    return "edit";
+  }
+  if (/subagent|agent/u.test(raw)) {
+    return "subagent";
+  }
+  if (/tool/u.test(raw)) {
+    return "tool";
+  }
+  return "unknown";
+}
+
+function inferToolCallStatus(updateType: string, status: unknown): AgentToolCall["status"] {
+  const raw = String(status ?? updateType).toLowerCase();
+  if (/fail|error|reject/u.test(raw)) {
+    return "failed";
+  }
+  if (/cancel/u.test(raw)) {
+    return "cancelled";
+  }
+  if (/wait|permission|confirm/u.test(raw)) {
+    return "waiting_for_permission";
+  }
+  if (/complete|done|success|finished|end/u.test(raw)) {
+    return "completed";
+  }
+  if (/pending|start/u.test(raw)) {
+    return "pending";
+  }
+  return "running";
+}
+
+function stringFrom(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function extractPermissionRequest(sessionId: string, updateType: string | undefined, update: any): PermissionRequest | null {
   if (!/permission/iu.test(updateType ?? "")) {
     return null;
@@ -1098,6 +1338,21 @@ function extractCommandChunk(sessionId: string, updateType: string | undefined, 
   };
 }
 
+
+function mapCommandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
+  return {
+    id: `tool-${chunk.commandId}`,
+    kind: "terminal",
+    title: chunk.commandId,
+    status: chunk.stream === "stderr" ? "failed" : "running",
+    commandId: chunk.commandId,
+    output: chunk.text,
+    stream: chunk.stream,
+    timestamp: chunk.timestamp,
+    updatedAt: chunk.timestamp,
+  };
+}
+
 function extractDiffFiles(updateType: string | undefined, update: any): FileDiffSummary[] | null {
   if (!/diff/iu.test(updateType ?? "")) {
     return null;
@@ -1110,12 +1365,56 @@ function extractDiffFiles(updateType: string | undefined, update: any): FileDiff
 
   return (files as Array<Record<string, unknown>>)
     .filter((item: Record<string, unknown>) => typeof item.path === "string" || typeof item.file === "string")
-    .map((item: Record<string, unknown>) => ({
-      path: String(item.path ?? item.file),
-      status: item.status === "added" || item.status === "deleted" ? item.status : "modified",
-      additions: typeof item.additions === "number" ? item.additions : 0,
-      deletions: typeof item.deletions === "number" ? item.deletions : 0,
-    }));
+    .map((item: Record<string, unknown>) => {
+      const patch = extractDiffPatch(item);
+      return {
+        path: String(item.path ?? item.file),
+        status: item.status === "added" || item.status === "deleted" ? item.status : "modified",
+        additions: typeof item.additions === "number" ? item.additions : countPatchLines(patch, "+"),
+        deletions: typeof item.deletions === "number" ? item.deletions : countPatchLines(patch, "-"),
+        ...(patch ? { patch } : {}),
+      };
+    });
+}
+
+function extractDiffPatch(item: Record<string, unknown>): string | undefined {
+  const candidates = [item.patch, item.diff, item.hunk, item.content, item.text];
+  for (const candidate of candidates) {
+    const patch = normalizePatchCandidate(candidate);
+    if (patch) {
+      return patch;
+    }
+  }
+
+  if (Array.isArray(item.hunks)) {
+    const hunks = item.hunks.map(normalizePatchCandidate).filter((hunk): hunk is string => Boolean(hunk));
+    return hunks.length ? hunks.join("\n") : undefined;
+  }
+
+  return undefined;
+}
+
+function normalizePatchCandidate(candidate: unknown): string | undefined {
+  if (typeof candidate === "string") {
+    const trimmed = candidate.trimEnd();
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (candidate && typeof candidate === "object") {
+    const record = candidate as Record<string, unknown>;
+    return normalizePatchCandidate(record.patch ?? record.diff ?? record.text ?? record.content);
+  }
+
+  return undefined;
+}
+
+function countPatchLines(patch: string | undefined, marker: "+" | "-") {
+  if (!patch) {
+    return 0;
+  }
+
+  const ignoredPrefix = marker === "+" ? "+++" : "---";
+  return patch.split(/\r?\n/u).filter((line) => line.startsWith(marker) && !line.startsWith(ignoredPrefix)).length;
 }
 
 function extractTextContent(content: any): string | null {
