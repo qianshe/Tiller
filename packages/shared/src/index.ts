@@ -75,6 +75,8 @@ export type ProjectSummary = {
   id: string;
   name: string;
   helmId: string;
+  /** Project root path owned by project config; Helm may expose it as a runtime workspace without writing workspaces config. */
+  path?: string;
   /** Helm-generated lightweight summary for prompt enhancement context. */
   summary?: string;
   workspaceIds?: string[];

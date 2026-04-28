@@ -7470,3 +7470,20 @@ textarea:focus,
   color: #7f1d1d;
 }
 
+.helm-inline-add-form-project {
+  grid-template-columns: minmax(140px, 0.8fr) minmax(220px, 1.4fr) auto;
+  align-items: center;
+}
+
+.helm-inline-save-message {
+  order: 4;
+  margin: 0;
+  padding-left: 2px;
+}
+
+@media (max-width: 860px) {
+  .helm-inline-add-form-project {
+    grid-template-columns: 1fr;
+  }
+}
+

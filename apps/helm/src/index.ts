@@ -1,4 +1,4 @@
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
 import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -17,6 +17,7 @@ import {
   resolveProjectById,
   resolveProviderById,
   saveHelmToConfig,
+  saveProjectToConfig,
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
@@ -121,11 +122,12 @@ server.on("connection", (socket) => {
 });
 
 function beginAuthenticationFlow(socket: WebSocket) {
-  if (!pairingCode) {
-    showPairingCode();
-  }
-
   let authenticated = false;
+  const pairingPromptTimer = setTimeout(() => {
+    if (!authenticated && socket.readyState === WebSocket.OPEN) {
+      showPairingCode();
+    }
+  }, 500);
 
   socket.on("message", (raw) => {
     if (authenticated) {
@@ -137,6 +139,7 @@ function beginAuthenticationFlow(socket: WebSocket) {
       if (payload.type === "device.auth") {
         const result = trustedDeviceStore.authenticate({ deviceId: payload.deviceId, token: payload.token });
         if (!result.ok) {
+          clearTimeout(pairingPromptTimer);
           showPairingCode();
           reply(socket, {
             type: "device.auth.result",
@@ -150,6 +153,7 @@ function beginAuthenticationFlow(socket: WebSocket) {
         }
 
         authenticated = true;
+        clearTimeout(pairingPromptTimer);
         authenticateSocket(socket, payload.deviceId);
         logInfo(`[tiller-helm] Beacon authenticated device=${payload.deviceId} ✓`);
         reply(socket, {
@@ -163,6 +167,7 @@ function beginAuthenticationFlow(socket: WebSocket) {
       }
 
       if (payload.type === "device.pair") {
+        clearTimeout(pairingPromptTimer);
         handlePairing(socket, payload);
         authenticated = true;
         return;
@@ -305,6 +310,37 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         projects,
       });
       return;
+    case "project.save": {
+      try {
+        const result = saveProjectToConfig(payload.project, configPath);
+        workspaces = loadAvailableWorkspaces();
+        projects = await loadAvailableProjectsWithSemanticSummaries();
+        emit(socket, {
+          type: "project.save.result",
+          requestId: payload.requestId,
+          ok: true,
+          projectId: payload.project.id,
+          message: `Saved project to ${result.configPath}`,
+        });
+        emit(socket, {
+          type: "project.list.result",
+          requestId: `project-list-${Date.now()}`,
+          projects,
+        });
+        emit(socket, {
+          type: "workspace.list.result",
+          requestId: `workspace-list-${Date.now()}`,
+          workspaces,
+        });
+      } catch (error) {
+        emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: error instanceof Error ? error.message : "Failed to save project.",
+        });
+      }
+      return;
+    }
     case "workspace.list":
       workspaces = loadAvailableWorkspaces();
       emit(socket, {
@@ -1477,10 +1513,32 @@ function loadAvailableHelms() {
   ] satisfies HelmSummary[];
 }
 
+function dedupeWorkspaces(items: WorkspaceSummary[]) {
+  const seen = new Set<string>();
+  const next: WorkspaceSummary[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      continue;
+    }
+    seen.add(item.id);
+    next.push(item);
+  }
+  return next;
+}
+
 function loadAvailableWorkspaces() {
-  const configuredWorkspaces = readTillerConfig(configPath).workspaces ?? [];
-  if (configuredWorkspaces.length) {
-    return configuredWorkspaces;
+  const config = readTillerConfig(configPath);
+  const configuredWorkspaces = config.workspaces ?? [];
+  const projectWorkspaces = (config.projects ?? [])
+    .filter((project) => project.path?.trim())
+    .map((project) => ({
+      id: project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? `${project.id}-workspace`,
+      name: project.name,
+      path: project.path!.replace(/\\/g, "/"),
+    } satisfies WorkspaceSummary));
+  const mergedWorkspaces = dedupeWorkspaces([...configuredWorkspaces, ...projectWorkspaces]);
+  if (mergedWorkspaces.length) {
+    return mergedWorkspaces;
   }
 
   return [

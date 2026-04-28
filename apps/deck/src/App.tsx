@@ -804,7 +804,8 @@ export function App() {
   const [fleetAddHelmHost, setFleetAddHelmHost] = useState<string>(DEFAULT_DAEMON_HOST);
   const [fleetAddHelmPort, setFleetAddHelmPort] = useState<string>(DEFAULT_DAEMON_PORT);
   const [fleetProjectFormOpen, setFleetProjectFormOpen] = useState(false);
-  const [fleetProjectDraftName, setFleetProjectDraftName] = useState("");
+  const [fleetProjectDraft, setFleetProjectDraft] = useState({ name: "", path: "" });
+  const [fleetProjectSaveMessage, setFleetProjectSaveMessage] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
@@ -1622,6 +1623,10 @@ export function App() {
       }
       case "project.save.result":
         setConfigSaveMessage(payload.message);
+        setFleetProjectSaveMessage(payload.message);
+        if (sourceIsCurrentHelm) {
+          setSelectedProjectId(payload.projectId);
+        }
         return;
       case "agent.save.result":
         setConfigSaveMessage(payload.message);
@@ -3125,25 +3130,18 @@ export function App() {
                 </div>
                 {fleetProjectFormOpen ? (
                   <form
-                    className="helm-inline-add-form"
+                    className="helm-inline-add-form helm-inline-add-form-project"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      if (!selectedHelmSocket || !fleetProjectDraftName.trim()) {
+                      if (!selectedHelmSocket || !fleetProjectDraft.path.trim()) {
                         return;
                       }
-                      const projectPath = fleetProjectDraftName.trim().replace(/\\/g, "/");
-                      const projectName = projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
-                      const projectId = slugify(projectName);
+                      const projectPath = fleetProjectDraft.path.trim().replace(/\\/g, "/");
+                      const fallbackProjectName = projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
+                      const projectName = fleetProjectDraft.name.trim() || fallbackProjectName;
+                      const projectId = createProjectId(projectName, projectPath);
                       const workspaceId = `${projectId}-workspace`;
-                      dispatch(selectedHelmSocket, {
-                        type: "workspace.save",
-                        requestId: nextRequestId(requestCounter),
-                        workspace: {
-                          id: workspaceId,
-                          name: projectName,
-                          path: projectPath,
-                        },
-                      });
+                      setFleetProjectSaveMessage(`正在保存项目：${projectName}...`);
                       dispatch(selectedHelmSocket, {
                         type: "project.save",
                         requestId: nextRequestId(requestCounter),
@@ -3151,20 +3149,23 @@ export function App() {
                           id: projectId,
                           name: projectName,
                           helmId: selectedHelmId,
+                          path: projectPath,
                           workspaceIds: [workspaceId],
                           allowedAgentIds: selectedHelmAgents.map((agent) => agent.id),
                           defaultWorkspaceId: workspaceId,
                           defaultAgentId: selectedHelmAgents[0]?.id,
                         },
                       });
-                      setFleetProjectDraftName("");
+                      setFleetProjectDraft({ name: "", path: "" });
                       setFleetProjectFormOpen(false);
                     }}
                   >
-                    <input value={fleetProjectDraftName} onChange={(event) => setFleetProjectDraftName(event.target.value)} placeholder="项目绝对路径，例如 D:/projects/my-app" />
-                    <button className="primary" type="submit" disabled={!fleetProjectDraftName.trim()}>保存项目</button>
+                    <input value={fleetProjectDraft.name} onChange={(event) => setFleetProjectDraft((current) => ({ ...current, name: event.target.value }))} placeholder="项目名称，例如 Tiller" />
+                    <input value={fleetProjectDraft.path} onChange={(event) => setFleetProjectDraft((current) => ({ ...current, path: event.target.value }))} placeholder="项目路径，例如 D:/projects/my-app" />
+                    <button className="primary" type="submit" disabled={!fleetProjectDraft.path.trim()}>保存项目</button>
                   </form>
                 ) : null}
+                {fleetProjectSaveMessage ? <p className="muted compact helm-inline-save-message">{fleetProjectSaveMessage}</p> : null}
                 {selectedHelmProjects.length ? (
                   <ul className="helm-simple-list">
                     {selectedHelmProjects.map((project) => (
@@ -3176,6 +3177,7 @@ export function App() {
                           </summary>
                           <dl>
                             <div><dt>Project ID</dt><dd>{project.id}</dd></div>
+                            <div><dt>Path</dt><dd>{project.path ?? "-"}</dd></div>
                             <div><dt>Helm ID</dt><dd>{project.helmId}</dd></div>
                             <div><dt>Workspaces</dt><dd>{(project.workspaceIds ?? []).join(", ") || "-"}</dd></div>
                             <div><dt>Default Agent</dt><dd>{project.defaultAgentId ?? "-"}</dd></div>
@@ -3857,6 +3859,16 @@ function readPreferenceText(value: unknown, fallback: string) {
 
 function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "custom-agent";
+}
+
+function createProjectId(name: string, path: string) {
+  const base = slugify(name) || "project";
+  const normalizedPath = path.trim().replace(/\\/g, "/").toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < normalizedPath.length; index += 1) {
+    hash = (hash * 31 + normalizedPath.charCodeAt(index)) >>> 0;
+  }
+  return `${base}-${hash.toString(36).slice(0, 6)}`;
 }
 
 function splitArgs(value: string) {
