@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -7,6 +7,7 @@ import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
   AcpAgentProvider,
+  AcpModelOption,
   AgentMessage,
   AgentToolCall,
   CommandChunk,
@@ -326,6 +327,26 @@ type CleanupFeedback = {
   message: string;
 };
 
+type MissionPaneWidths = {
+  sidebar: number;
+  display: number;
+  inspector: number;
+};
+
+type MissionResizeHandle = "sidebar" | "display" | "inspector";
+
+const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
+const MISSION_PANE_LIMITS: Record<keyof MissionPaneWidths, { min: number; max: number }> = {
+  sidebar: { min: 260, max: 420 },
+  display: { min: 300, max: 720 },
+  inspector: { min: 260, max: 420 },
+};
+
+function clampPaneWidth(value: number, pane: keyof MissionPaneWidths) {
+  const limits = MISSION_PANE_LIMITS[pane];
+  return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
+}
+
 type AppView = "overview" | "sessions" | "agents" | "settings";
 
 const VIEW_PATHS: Record<AppView, string> = {
@@ -618,6 +639,7 @@ function createMissionVisualFixture(): MissionVisualFixture {
 
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
+  const helmSocketRefs = useRef<Map<string, WebSocket>>(new Map());
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
@@ -631,6 +653,7 @@ export function App() {
 
   const locale: Locale = "zh-CN";
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">(missionVisualFixture ? "connected" : "disconnected");
+  const [helmConnectionStates, setHelmConnectionStates] = useState<Record<string, "connecting" | "connected" | "disconnected">>({});
   const [pairingState, setPairingState] = useState<"idle" | "waiting" | "input" | "paired" | "rejected">(missionVisualFixture ? "paired" : "idle");
   const [pairingCodeInput, setPairingCodeInput] = useState("");
   const [pairingFeedback, setPairingFeedback] = useState("");
@@ -674,6 +697,7 @@ export function App() {
   const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
+  const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -686,6 +710,7 @@ export function App() {
   const [selectedHelmKey, setSelectedHelmKey] = useState<string>("");
   const [agentConfigExpanded, setAgentConfigExpanded] = useState(false);
   const [fleetAddHelmModalOpen, setFleetAddHelmModalOpen] = useState(false);
+  const [fleetAddHelmStage, setFleetAddHelmStage] = useState<"connect" | "connecting" | "pair">("connect");
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -899,6 +924,29 @@ export function App() {
   }, [promptEnhancerModelPickerOpen]);
 
   useEffect(() => {
+    if (fleetAddHelmModalOpen && fleetAddHelmStage === "connecting" && connection === "connected") {
+      setFleetAddHelmStage("pair");
+    }
+  }, [connection, fleetAddHelmModalOpen, fleetAddHelmStage]);
+
+  function openFleetAddHelmModal() {
+    setFleetAddHelmStage("connect");
+    setFleetAddHelmModalOpen(true);
+  }
+
+  function closeFleetAddHelmModal() {
+    setFleetAddHelmModalOpen(false);
+    setFleetAddHelmStage("connect");
+  }
+
+  function connectFromFleetAddHelmModal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    saveDaemonProfile();
+    setFleetAddHelmStage("connecting");
+    void connectToDaemon(undefined, { preserveState: true });
+  }
+
+  useEffect(() => {
     window.localStorage.setItem(MISSION_PANEL_PAGES_STORAGE_KEY, JSON.stringify(customMissionPanelPages));
   }, [customMissionPanelPages]);
 
@@ -1093,11 +1141,53 @@ export function App() {
     dispatch(socket, { type: "device.list", requestId: nextRequestId(requestCounter) });
   }
 
-  function connectToDaemon(event?: FormEvent<HTMLFormElement>, options?: { preserveState?: boolean; auto?: boolean }) {
+  function setHelmConnectionState(helmKey: string, state: "connecting" | "connected" | "disconnected") {
+    setHelmConnectionStates((current) => ({ ...current, [helmKey]: state }));
+  }
+
+  function connectHelmSocket(profile: DaemonProfile) {
+    const helmKey = daemonProfileKey(profile.host, profile.port);
+    const existing = helmSocketRefs.current.get(helmKey);
+    if (existing?.readyState === WebSocket.OPEN) {
+      setHelmConnectionState(helmKey, "connected");
+      setDaemonProfileMessage(`${profile.name} 已连接`);
+      return;
+    }
+    existing?.close();
+
+    const wsUrl = `ws://${profile.host}:${profile.port}`;
+    const socket = new WebSocket(wsUrl);
+    helmSocketRefs.current.set(helmKey, socket);
+    setHelmConnectionState(helmKey, "connecting");
+    setDaemonProfileMessage(`正在连接 ${profile.name}...`);
+
+    socket.addEventListener("open", () => {
+      setHelmConnectionState(helmKey, "connected");
+      setDaemonProfileMessage(`已连接 ${profile.name}`);
+      const cache = readTrustedDeviceCache(window.localStorage, profile.host, profile.port);
+      if (cache?.token) {
+        dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
+      }
+    });
+
+    socket.addEventListener("close", () => {
+      if (helmSocketRefs.current.get(helmKey) === socket) {
+        helmSocketRefs.current.delete(helmKey);
+      }
+      setHelmConnectionState(helmKey, "disconnected");
+    });
+
+    socket.addEventListener("error", () => {
+      setHelmConnectionState(helmKey, "disconnected");
+      setDaemonProfileMessage(`${profile.name} 连接失败`);
+    });
+  }
+
+  function connectToDaemon(event?: FormEvent<HTMLFormElement>, options?: { preserveState?: boolean; auto?: boolean; host?: string; port?: string }) {
     event?.preventDefault();
     const preserveState = options?.preserveState ?? false;
-    const host = daemonHost.trim() || DEFAULT_DAEMON_HOST;
-    const port = daemonPort.trim() || DEFAULT_DAEMON_PORT;
+    const host = options?.host?.trim() || daemonHost.trim() || DEFAULT_DAEMON_HOST;
+    const port = options?.port?.trim() || daemonPort.trim() || DEFAULT_DAEMON_PORT;
     const wsUrl = `ws://${host}:${port}`;
 
     window.localStorage.setItem(DAEMON_HOST_KEY, host);
@@ -1119,6 +1209,7 @@ export function App() {
       setCleanupFeedback(null);
     }
     setDebugTrace((current) => ({ ...current, connectClicks: current.connectClicks + 1 }));
+    setHelmConnectionState(daemonProfileKey(host, port), "connecting");
     setConnection("connecting");
     setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
     setPairingState("idle");
@@ -1129,6 +1220,7 @@ export function App() {
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
+      setHelmConnectionState(daemonProfileKey(host, port), "connected");
       setConnection("connected");
       setConnectFeedback(`已连接到 ${wsUrl}`);
       const cache = readTrustedDeviceCache(window.localStorage, host, port);
@@ -1144,6 +1236,7 @@ export function App() {
     });
 
     socket.addEventListener("close", () => {
+      setHelmConnectionState(daemonProfileKey(host, port), "disconnected");
       setConnection("disconnected");
       if (socketRef.current === socket) {
         socketRef.current = null;
@@ -1574,7 +1667,8 @@ export function App() {
       host,
       port,
     };
-    const nextProfiles = [...daemonProfiles.filter((item) => item.id !== profile.id), profile];
+    const profileKey = daemonProfileKey(profile.host, profile.port);
+    const nextProfiles = [...daemonProfiles.filter((item) => daemonProfileKey(item.host, item.port) !== profileKey), profile];
     setDaemonProfiles(nextProfiles);
     setDaemonProfileName(name);
     setDaemonProfileMessage(`已保存 Helm：${name}`);
@@ -1599,6 +1693,10 @@ export function App() {
     setDaemonPort(profile.port);
     setDaemonProfileName(profile.name);
     setDaemonProfileMessage(`已切换到 ${profile.name}`);
+  }
+
+  function connectDaemonProfile(profile: DaemonProfile) {
+    connectHelmSocket(profile);
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
@@ -1982,6 +2080,71 @@ export function App() {
     );
   }
 
+  function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
+    setMissionPaneWidths(() => {
+      if (handle === "sidebar") {
+        return { ...base, sidebar: clampPaneWidth(base.sidebar + delta, "sidebar") };
+      }
+      if (handle === "display") {
+        return { ...base, display: clampPaneWidth(base.display - delta, "display") };
+      }
+
+      const nextDisplay = clampPaneWidth(base.display + delta, "display");
+      const displayDelta = nextDisplay - base.display;
+      return {
+        ...base,
+        display: nextDisplay,
+        inspector: clampPaneWidth(base.inspector - displayDelta, "inspector"),
+      };
+    });
+  }
+
+  function startMissionPaneResize(handle: MissionResizeHandle, event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const base = missionPaneWidths;
+    const onMove = (moveEvent: MouseEvent) => {
+      applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
+    };
+    const onUp = () => {
+      document.body.classList.remove("mission-pane-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    document.body.classList.add("mission-pane-resizing");
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp, { once: true });
+  }
+
+  function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
+    applyMissionPaneDelta(handle, direction * 24, missionPaneWidths);
+  }
+
+  function renderMissionPaneResizer(handle: MissionResizeHandle, label: string) {
+    return (
+      <button
+        type="button"
+        className={`mission-pane-resizer mission-pane-resizer-${handle}`}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={label}
+        title={label}
+        onMouseDown={(event) => startMissionPaneResize(handle, event)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            nudgeMissionPane(handle, -1);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            nudgeMissionPane(handle, 1);
+          }
+        }}
+      />
+    );
+  }
+
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
     const missionDiffCount = activeSession ? (diffs[activeSession.id] ?? []).length : 0;
@@ -1993,6 +2156,11 @@ export function App() {
       ...customMissionPanelPages,
     ];
     const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
+    const missionLayoutStyle = {
+      "--mission-sidebar-width": `${missionPaneWidths.sidebar}px`,
+      "--mission-display-width": `${missionPaneWidths.display}px`,
+      "--mission-inspector-width": `${missionPaneWidths.inspector}px`,
+    } as CSSProperties;
     const renderMissionDisplayPanel = () => (
       <aside className={`mission-display-panel ${activeSession ? "" : "mission-display-empty"}`.trim()} aria-label="任务展示容器">
         <div className="mission-panel-head">
@@ -2070,7 +2238,7 @@ export function App() {
     );
 
     return (
-      <section className="card surface-card chat-layout chat-layout-sidebar">
+      <section className="card surface-card chat-layout chat-layout-sidebar" style={missionLayoutStyle}>
         {pairingState !== "paired" ? (
           <div className="note-box compact-note">
             <strong>任务视图待连接</strong>
@@ -2147,6 +2315,8 @@ export function App() {
                 )}
               </div>
             </aside>
+
+            {renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
 
             <div className="chat-conversation">
               <div className="chat-main">
@@ -2242,6 +2412,10 @@ export function App() {
                     placeholder={draftPromptPlaceholder}
                   />
                   <div className="mission-composer-sidecar">
+                    <div className="mission-composer-tools" aria-hidden="true">
+                      <span>＋</span>
+                      <span>◎</span>
+                    </div>
                     <div className="mission-composer-config" aria-label="当前任务模型配置">
                       <label className="mission-config-card mission-config-model">
                         <span>模型</span>
@@ -2271,9 +2445,9 @@ export function App() {
                     </div>
                     <div className="mission-composer-actions">
                       {deckPreferences.promptEnhancer.enabled ? (
-                        <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>增强</button>
+                        <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">↺</button>
                       ) : null}
-                      <button className="primary" type="submit" disabled={!canSend}>发送</button>
+                      <button className="primary composer-send-icon" type="submit" disabled={!canSend} aria-label="发送" title="发送">➤</button>
                     </div>
                   </div>
                   {deckPreferences.technicalPanels.showOrderHints ? (
@@ -2283,7 +2457,11 @@ export function App() {
               </div>
             </div>
 
+            {renderMissionPaneResizer("display", "调整任务展示宽度")}
+
             {renderMissionDisplayPanel()}
+
+            {renderMissionPaneResizer("inspector", "调整检视器宽度")}
 
             <aside className="mission-inspector" aria-label="任务检视器">
               <section className="inspector-section">
@@ -2329,7 +2507,18 @@ export function App() {
 
   function renderAgents() {
     const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
-    const helmCards = [
+    const mockHelmProfile: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
+    const mockHelmCards = import.meta.env.DEV
+      ? [{
+          key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
+          name: mockHelmProfile.name,
+          host: mockHelmProfile.host,
+          port: mockHelmProfile.port,
+          isCurrent: false,
+          profile: mockHelmProfile,
+        }]
+      : [];
+    const rawHelmCards = [
       {
         key: currentHelmKey,
         name: daemonProfileName.trim() || "Local Helm",
@@ -2348,10 +2537,15 @@ export function App() {
           isCurrent: false,
           profile,
         })),
+      ...mockHelmCards,
     ];
+    const helmCards = dedupeHelmCards(rawHelmCards);
     const selectedKey = selectedHelmKey || currentHelmKey;
     const selectedHelm = helmCards.find((helm) => helm.key === selectedKey) ?? helmCards[0];
     const selectedHelmIsCurrent = selectedHelm.key === currentHelmKey;
+    const selectedHelmConnection = resolveHelmConnectionState(selectedHelm, currentHelmKey, connection, helmConnectionStates);
+    const selectedHelmIsConnected = selectedHelmConnection === "connected";
+    const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
 
     return (
       <section className="workspace-single">
@@ -2363,67 +2557,68 @@ export function App() {
                 <div>
                   <p className="eyebrow">New Helm</p>
                   <h3>添加 Helm</h3>
-                  <p className="muted compact">先保存并连接 Helm 地址，再输入 6 位验证码完成配对。</p>
+                  <p className="muted compact">{fleetModalReadyForPairing ? "连接成功，输入 6 位验证码完成配对。" : "填写 Helm 地址并连接；成功后自动进入验证。"}</p>
                 </div>
-                <button className="secondary fleet-dialog-close" type="button" onClick={() => setFleetAddHelmModalOpen(false)}>关闭</button>
+                <button className="secondary fleet-dialog-close" type="button" onClick={closeFleetAddHelmModal}>关闭</button>
               </div>
 
-              <div className="fleet-dialog-body">
-                <form className="fleet-dialog-card fleet-connect-card" onSubmit={(event) => { event.preventDefault(); saveDaemonProfile(); }}>
-                  <div className="fleet-dialog-card-head">
-                    <span>01</span>
-                    <div>
-                      <strong>连接信息</strong>
-                      <p className="muted compact">为这个 Helm 设置一个可识别名称和 WebSocket 地址。</p>
+              <div className="fleet-dialog-body fleet-dialog-body-single">
+                {!fleetModalReadyForPairing ? (
+                  <form className="fleet-dialog-card fleet-connect-card" onSubmit={connectFromFleetAddHelmModal}>
+                    <div className="fleet-dialog-card-head">
+                      <span>01</span>
+                      <div>
+                        <strong>连接 Helm</strong>
+                        <p className="muted compact">输入名称与地址；连接成功后会自动切到验证码。</p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="fleet-connect-grid">
-                    <label className="fleet-field-full">
-                      <span>Helm 名称</span>
-                      <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
-                    </label>
-                    <label>
-                      <span>Helm 地址</span>
-                      <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
-                    </label>
-                    <label>
-                      <span>端口</span>
-                      <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
-                    </label>
-                  </div>
-
-                  <div className="section-actions fleet-modal-actions">
-                    <button className="secondary" type="submit">保存 Helm</button>
-                    <button className="primary" type="button" onClick={() => void connectToDaemon()}>连接</button>
-                  </div>
-                </form>
-
-                <form className="fleet-dialog-card fleet-pair-card" onSubmit={submitPairingCode}>
-                  <div className="fleet-dialog-card-head">
-                    <span>02</span>
-                    <div>
-                      <strong>配对验证</strong>
-                      <p className="muted compact">连接成功后，输入 Helm 返回的 6 位验证码。</p>
+                    <div className="fleet-connect-grid">
+                      <label className="fleet-field-full">
+                        <span>Helm 名称</span>
+                        <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
+                      </label>
+                      <label>
+                        <span>Helm 地址</span>
+                        <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
+                      </label>
+                      <label>
+                        <span>端口</span>
+                        <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
+                      </label>
                     </div>
-                  </div>
 
-                  <PairingBoxes
-                    refs={pairInputRefs}
-                    value={pairingCodeInput}
-                    disabled={pairingState === "waiting" || connection !== "connected"}
-                    onChange={updatePairingDigit}
-                    onKeyDown={handlePairingKeyDown}
-                    onPaste={pastePairingDigits}
-                  />
+                    <div className="section-actions fleet-modal-actions">
+                      <button className="primary" type="submit" disabled={fleetAddHelmStage === "connecting"}>{fleetAddHelmStage === "connecting" ? "连接中..." : "连接 Helm"}</button>
+                    </div>
+                  </form>
+                ) : (
+                  <form className="fleet-dialog-card fleet-pair-card" onSubmit={submitPairingCode}>
+                    <div className="fleet-dialog-card-head">
+                      <span>02</span>
+                      <div>
+                        <strong>输入验证码</strong>
+                        <p className="muted compact">请填写 Helm 返回的 6 位验证码。</p>
+                      </div>
+                    </div>
 
-                  <div className="section-actions pairing-actions fleet-pair-actions">
-                    <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting" || connection !== "connected"}>
-                      {pairingState === "waiting" ? "提交中..." : "提交验证码"}
-                    </button>
-                    <button className="secondary" type="button" onClick={() => void connectToDaemon(undefined, { preserveState: true })}>重新连接</button>
-                  </div>
-                </form>
+                    <PairingBoxes
+                      refs={pairInputRefs}
+                      value={pairingCodeInput}
+                      disabled={pairingState === "waiting" || connection !== "connected"}
+                      onChange={updatePairingDigit}
+                      onKeyDown={handlePairingKeyDown}
+                      onPaste={pastePairingDigits}
+                    />
+
+                    <div className="section-actions pairing-actions fleet-pair-actions">
+                      <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting" || connection !== "connected"}>
+                        {pairingState === "waiting" ? "提交中..." : "提交验证码"}
+                      </button>
+                      <button className="secondary" type="button" onClick={() => void connectToDaemon(undefined, { preserveState: true })}>重新连接</button>
+                    </div>
+                  </form>
+                )}
               </div>
 
               <div className="fleet-dialog-status">
@@ -2449,7 +2644,7 @@ export function App() {
                   <span>{helmCards.length} Helm</span>
                 </div>
               </div>
-              <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
+              <button className="primary" type="button" onClick={openFleetAddHelmModal}>添加</button>
             </div>
 
             <p className="fleet-hub-copy">统一管理可用 Helm 节点；选择一个 Helm 后，在下方查看它的项目、ACP 舰员与配置入口。</p>
@@ -2465,7 +2660,7 @@ export function App() {
                   aria-pressed={selectedHelm.key === helm.key}
                   title={`${helm.name} · ${helm.host}:${helm.port}`}
                 >
-                  <span className={`helm-status-dot ${helm.isCurrent ? `helm-status-${connection}` : "helm-status-saved"}`} aria-hidden="true" />
+                  <span className={`helm-status-dot helm-status-${resolveHelmConnectionState(helm, currentHelmKey, connection, helmConnectionStates)}`} aria-hidden="true" />
                   <span>{helm.name}</span>
                 </button>
               ))}
@@ -2476,19 +2671,19 @@ export function App() {
             <div className="section-head section-head-soft">
               <div>
                 <strong>{selectedHelm.name}</strong>
-                <p className="muted compact">{selectedHelm.host}:{selectedHelm.port}{selectedHelmIsCurrent ? ` · ${formatConnectionStatus(connection)}` : " · 已保存"}</p>
+                <p className="muted compact">{selectedHelm.host}:{selectedHelm.port} · {formatConnectionStatus(selectedHelmConnection)}</p>
               </div>
               <div className="section-actions">
-                {!selectedHelmIsCurrent && selectedHelm.profile ? (
-                  <button className="secondary" type="button" onClick={() => { if (selectedHelm.profile) applyDaemonProfile(selectedHelm.profile); }}>连接此 Helm</button>
+                {!selectedHelmIsConnected && selectedHelm.profile ? (
+                  <button className="secondary" type="button" onClick={() => { if (selectedHelm.profile) connectDaemonProfile(selectedHelm.profile); }}>连接此 Helm</button>
                 ) : null}
                 <button className="secondary" type="button" onClick={() => setAgentConfigExpanded((current) => !current)}>添加舰员</button>
               </div>
             </div>
 
             <div className="helm-detail-grid helm-inventory-grid">
-              <InfoList title="项目列表" items={selectedHelmIsCurrent ? projects.map((project) => project.name) : []} empty={selectedHelmIsCurrent ? "当前 Helm 暂无项目" : "请先连接该 Helm 后加载项目"} />
-              <InfoList title="ACP 舰员" items={selectedHelmIsCurrent ? agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim()) : []} empty={selectedHelmIsCurrent ? copy.noAgents : "请先连接该 Helm 后加载舰员"} />
+              <InfoList title="项目列表" items={selectedHelmIsCurrent ? projects.map((project) => project.name) : []} empty={selectedHelmIsConnected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"} />
+              <InfoList title="ACP 舰员" items={selectedHelmIsCurrent ? agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim()) : []} empty={selectedHelmIsConnected ? copy.noAgents : "请先连接该 Helm 后加载舰员"} />
             </div>
 
             <section className="helm-config-panel">
@@ -3140,8 +3335,21 @@ function resolveSessionTitle(session: SessionSummary) {
   return `${session.projectName} 任务`;
 }
 
-function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = []) {
-  return Array.from(new Set([...resolveModelOptionsFromConfig(currentModel, configOptions), ...MODEL_OPTIONS]));
+function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
+  const resolved = resolveModelOptionsFromConfig(undefined, configOptions, nativeOptions);
+  return resolved.length ? resolved : currentModel ? [currentModel] : [];
+}
+
+function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
+  const option = configOptions.find((item) => ["thought_level", "reasoning", "reasoning_effort"].includes(item.category?.toLowerCase() ?? ""));
+  const values = (option?.options ?? [])
+    .map((item) => item.value)
+    .filter((value): value is SessionReasoningEffort => typeof value === "string" && REASONING_OPTIONS.some((candidate) => candidate.value === value));
+  return Array.from(new Set(values));
+}
+
+function resolveReasoningLabel(value: SessionReasoningEffort) {
+  return REASONING_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
 function resolveDraftConfigOptions(
@@ -3231,6 +3439,28 @@ function summarizeSessionContext(session: SessionSummary | null, sessionMessages
     session.lastMessagePreview ? `最近意图/结果：${session.lastMessagePreview}` : "",
     recentMessages.length ? ["最近消息：", ...recentMessages.map((message) => `- ${message}`)].join("\n") : "",
   ].filter(Boolean).join("\n");
+}
+
+function resolveHelmConnectionState(
+  helm: { key: string; isCurrent: boolean },
+  currentHelmKey: string,
+  globalConnection: "connecting" | "connected" | "disconnected",
+  helmConnectionStates: Record<string, "connecting" | "connected" | "disconnected">,
+) {
+  return helmConnectionStates[helm.key] ?? (helm.key === currentHelmKey ? globalConnection : "disconnected");
+}
+
+function dedupeHelmCards<T extends { key: string; isCurrent: boolean }>(cards: T[]) {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const card of cards) {
+    if (seen.has(card.key)) {
+      continue;
+    }
+    seen.add(card.key);
+    result.push(card);
+  }
+  return result;
 }
 
 function groupPromptEnhancerModels(models: PromptEnhancerModelOption[], filter: string) {

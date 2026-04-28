@@ -110,7 +110,7 @@ test("resolveModelOptionsFromConfig reads concrete ACP model choices from config
     },
   ]);
 
-  assert.deepEqual(options.slice(0, 3), ["openai/gpt-5.4", "anthropic/claude-sonnet-4", "provider-default"]);
+  assert.deepEqual(options, ["anthropic/claude-sonnet-4", "openai/gpt-5.4"]);
 });
 
 

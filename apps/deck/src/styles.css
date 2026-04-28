@@ -6196,3 +6196,407 @@ textarea:focus,
     width: 100%;
   }
 }
+
+/* Simplify Add Helm modal and remove Fleet node-list container shell. */
+.fleet-dialog-body-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fleet-dialog-body-single .fleet-dialog-card {
+  width: 100%;
+}
+
+.fleet-dialog-body-single .fleet-connect-card {
+  max-width: 620px;
+}
+
+.fleet-dialog-body-single .fleet-pair-card {
+  max-width: 680px;
+}
+
+.fleet-hub-node-list {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-deck-theme="light"] .fleet-hub-node-list {
+  background: transparent;
+}
+
+/* Mission resizable edge-to-edge workbench. */
+.shell.view-sessions {
+  padding-top: 0;
+}
+
+.view-sessions .top-nav {
+  left: 0;
+  right: 0;
+  margin: 0;
+}
+
+.view-sessions .page-content {
+  min-height: 100vh;
+  padding: 0;
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar {
+  --mission-sidebar-width: 320px;
+  --mission-display-width: 520px;
+  --mission-inspector-width: 320px;
+  grid-template-columns:
+    var(--mission-sidebar-width)
+    8px
+    minmax(420px, 1fr)
+    8px
+    var(--mission-display-width)
+    8px
+    var(--mission-inspector-width) !important;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.mission-pane-resizer {
+  position: relative;
+  z-index: 8;
+  width: 8px;
+  min-width: 8px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.76);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.mission-pane-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.mission-pane-resizer:hover::before,
+.mission-pane-resizer:focus-visible::before,
+.mission-pane-resizing .mission-pane-resizer::before {
+  background: rgba(132, 204, 22, 0.78);
+  box-shadow: 0 0 0 1px rgba(132, 204, 22, 0.20), 0 0 18px rgba(132, 204, 22, 0.24);
+}
+
+.mission-pane-resizer:focus-visible {
+  outline: 1px solid rgba(132, 204, 22, 0.70);
+  outline-offset: -1px;
+}
+
+.mission-pane-resizing,
+.mission-pane-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@media (max-width: 1500px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns:
+      minmax(260px, var(--mission-sidebar-width))
+      8px
+      minmax(380px, 1fr)
+      8px
+      minmax(300px, var(--mission-display-width)) !important;
+  }
+
+  .view-sessions .mission-pane-resizer-inspector {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns: minmax(240px, var(--mission-sidebar-width)) 8px minmax(0, 1fr) !important;
+  }
+
+  .view-sessions .mission-pane-resizer-display,
+  .view-sessions .mission-pane-resizer-inspector {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell.view-sessions {
+    padding-top: 0;
+  }
+
+  .view-sessions .page-content {
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns: 1fr !important;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .view-sessions .mission-pane-resizer {
+    display: none;
+  }
+}
+
+/* Mission composer: copy Zed's compact editor footer instead of a large form card. */
+.view-sessions .mission-order-editor.chat-input-form {
+  width: min(760px, calc(100% - 32px));
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: 1fr !important;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: #0c0d0f;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.26);
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea {
+  min-height: 86px;
+  max-height: 180px;
+  padding: 16px 16px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d6d9df;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea::placeholder {
+  color: #8b8275;
+}
+
+.view-sessions .mission-composer-sidecar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 7px 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: #111214;
+}
+
+.view-sessions .mission-composer-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  color: #a7adb8;
+  font-size: 1.05rem;
+}
+
+.view-sessions .mission-composer-tools span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+}
+
+.view-sessions .mission-composer-config {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.view-sessions .mission-config-card,
+.view-sessions .mission-composer-config label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .mission-config-card > span,
+.view-sessions .mission-composer-config label > span {
+  color: #b7bfcc;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.view-sessions .mission-config-mode {
+  padding-inline: 4px;
+}
+
+.view-sessions .mission-config-card select,
+.view-sessions .mission-composer-config select {
+  width: auto;
+  max-width: 190px;
+  min-height: 28px;
+  padding: 2px 22px 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cfd6e2;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.view-sessions .mission-config-card select:hover,
+.view-sessions .mission-composer-config select:hover,
+.view-sessions .mission-config-card select:focus,
+.view-sessions .mission-composer-config select:focus {
+  background: rgba(148, 163, 184, 0.12);
+  outline: none;
+}
+
+.view-sessions .mission-config-card small {
+  display: none;
+}
+
+.view-sessions .mission-composer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-self: auto;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button,
+.view-sessions .mission-composer-actions .composer-send-icon {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button {
+  border: 0;
+  background: transparent;
+  color: #a7adb8;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.view-sessions .mission-composer-actions .composer-send-icon {
+  background: rgba(148, 163, 184, 0.18);
+  color: #98a2b3;
+}
+
+.view-sessions .mission-composer-actions .composer-send-icon:not(:disabled) {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.view-sessions .mission-order-editor .order-editor-hint {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #707887;
+  font-size: 0.72rem;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-order-editor.chat-input-form {
+  background: #111214;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-composer-sidecar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .view-sessions .mission-composer-config {
+    width: 100%;
+    order: 3;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
+/* Mission composer fine tune: Zed-like controls are icon/select only. */
+.view-sessions .mission-composer-config {
+  gap: 6px;
+}
+
+.view-sessions .mission-config-card > span,
+.view-sessions .mission-composer-config label > span {
+  display: none;
+}
+
+.view-sessions .mission-config-model select {
+  width: 154px;
+  max-width: 154px;
+}
+
+.view-sessions .mission-config-reasoning select {
+  width: 86px;
+  max-width: 86px;
+}
+
+.view-sessions .mission-config-card select,
+.view-sessions .mission-composer-config select {
+  min-height: 30px;
+  padding-inline: 8px 20px;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-config-model select {
+    width: 150px;
+    max-width: 150px;
+  }
+
+  .view-sessions .mission-config-reasoning select {
+    width: 82px;
+    max-width: 82px;
+  }
+}
+
+
+/* Add Helm modal: remove inner card chrome, keep form flow lightweight. */
+.fleet-add-helm-dialog .fleet-dialog-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fleet-add-helm-dialog .fleet-dialog-card-head > span {
+  background: rgba(77, 163, 255, 0.18);
+}
+
+.fleet-add-helm-dialog .fleet-connect-card,
+.fleet-add-helm-dialog .fleet-pair-card {
+  max-width: 720px;
+}
+
+.fleet-add-helm-dialog .fleet-connect-grid {
+  padding-top: 4px;
+}

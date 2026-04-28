@@ -76,11 +76,15 @@ export function resolveModelOptionsFromConfig(
     .map((option) => option.value)
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
   const nativeModels = nativeOptions.map((option) => option.id).filter((value) => value.trim().length > 0);
-  const ordered = [currentModel, ...nativeModels, ...configuredModels, "provider-default"].filter(
+  const realModels = [...nativeModels, ...configuredModels].filter(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
 
-  return Array.from(new Set(ordered));
+  if (realModels.length) {
+    return Array.from(new Set(realModels));
+  }
+
+  return currentModel?.trim() ? [currentModel] : [];
 }
 
 
