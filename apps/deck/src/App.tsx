@@ -308,6 +308,14 @@ type DaemonProfile = {
   port: string;
 };
 
+type HelmInventoryBucket = {
+  projects: ProjectSummary[];
+  workspaces: WorkspaceSummary[];
+  agents: AcpAgentProvider[];
+  sessions: SessionSummary[];
+  statuses: Record<string, SessionStatus>;
+};
+
 type Locale = keyof typeof UI_COPY;
 
 type DebugTrace = {
@@ -334,6 +342,18 @@ type MissionPaneWidths = {
 };
 
 type MissionResizeHandle = "sidebar" | "display" | "inspector";
+
+type AgentModelOptionsEntry = {
+  loading?: boolean;
+  message?: string;
+  modelOptions: AcpModelOption[];
+  configOptions: SessionConfigOption[];
+  state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+};
+
+function agentModelOptionsKey(providerId: string, workspaceId: string) {
+  return `${providerId}::${workspaceId}`;
+}
 
 const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
 const MISSION_PANE_LIMITS: Record<keyof MissionPaneWidths, { min: number; max: number }> = {
@@ -645,15 +665,19 @@ export function App() {
   const lastPairingAttemptRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
+  const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(() => missionVisualMode ? createMissionVisualFixture() : null, [missionVisualMode]);
   const deckDeviceId = useMemo(() => getOrCreateDeviceId(window.localStorage), []);
   const autoConnectAttemptRef = useRef<string | null>(null);
+  const manualDisconnectRef = useRef<string | null>(null);
 
   const locale: Locale = "zh-CN";
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">(missionVisualFixture ? "connected" : "disconnected");
   const [helmConnectionStates, setHelmConnectionStates] = useState<Record<string, "connecting" | "connected" | "disconnected">>({});
+  const [helmInventories, setHelmInventories] = useState<Record<string, HelmInventoryBucket>>({});
   const [pairingState, setPairingState] = useState<"idle" | "waiting" | "input" | "paired" | "rejected">(missionVisualFixture ? "paired" : "idle");
   const [pairingCodeInput, setPairingCodeInput] = useState("");
   const [pairingFeedback, setPairingFeedback] = useState("");
@@ -678,6 +702,7 @@ export function App() {
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
+  const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>({});
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
@@ -698,6 +723,7 @@ export function App() {
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
+  const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -711,6 +737,9 @@ export function App() {
   const [agentConfigExpanded, setAgentConfigExpanded] = useState(false);
   const [fleetAddHelmModalOpen, setFleetAddHelmModalOpen] = useState(false);
   const [fleetAddHelmStage, setFleetAddHelmStage] = useState<"connect" | "connecting" | "pair">("connect");
+  const [fleetAddHelmName, setFleetAddHelmName] = useState<string>("");
+  const [fleetAddHelmHost, setFleetAddHelmHost] = useState<string>(DEFAULT_DAEMON_HOST);
+  const [fleetAddHelmPort, setFleetAddHelmPort] = useState<string>(DEFAULT_DAEMON_PORT);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -767,8 +796,22 @@ export function App() {
   const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
   const draftConfigHint = resolveSessionConfigHint(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
   const draftModelPlaceholder = resolveModelInputPlaceholder(activeSession, agents, activeSession?.agentId ?? selectedAgentId);
-  const draftConfigOptions = resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId);
-  const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions);
+  const draftAgentModelOptionsKey = !activeSession && selectedAgentId && selectedWorkspaceId ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId) : null;
+  const draftAgentModelOptions = draftAgentModelOptionsKey ? agentModelOptions[draftAgentModelOptionsKey] : undefined;
+  const draftConfigOptions = activeSession
+    ? resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId)
+    : draftAgentModelOptions?.configOptions ?? resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId);
+  const cachedModelSession = activeSession ? null : sessions.find((session) => session.agentId === selectedAgentId && (session.modelOptions?.length ?? 0) > 0);
+  const draftNativeModelOptions = activeSession?.modelOptions ?? draftAgentModelOptions?.modelOptions ?? cachedModelSession?.modelOptions ?? [];
+  const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions, draftNativeModelOptions);
+  const draftModelParts = splitModelReasoning(draftModel);
+  const draftModelBase = draftModelParts.model || draftModel;
+  const draftModelBaseOptions = resolveBaseModelOptions(draftModelOptions);
+  const draftModelPickerLabel = draftModelBaseOptions.length ? draftModelBase : draftAgentModelOptions?.loading ? "加载模型..." : "暂无模型列表";
+  const draftModelPickerDisabled = draftModelBaseOptions.length === 0;
+  const draftReasoningOptions = resolveReasoningOptionsForModel(draftModelBase, draftModelOptions, draftConfigOptions);
+  const effectiveDraftReasoningEffort = draftModelParts.reasoning ?? draftReasoningEffort;
+  const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   const daemonInventory = daemonProfiles.map((profile) =>
     formatDaemonProfileLine(profile, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT, connection, locale),
   );
@@ -854,6 +897,29 @@ export function App() {
   }, [draftProject, filteredAgents, selectedAgentId]);
 
   useEffect(() => {
+    if (activeSession || pairingState !== "paired" || !selectedAgentId || !selectedWorkspaceId || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId);
+    const cached = agentModelOptions[key];
+    if (cached) {
+      return;
+    }
+
+    setAgentModelOptions((current) => ({
+      ...current,
+      [key]: { loading: true, modelOptions: [], configOptions: [], state: {}, message: "正在加载模型列表..." },
+    }));
+    dispatch(socketRef.current, {
+      type: "agent.model.options.get",
+      requestId: nextRequestId(requestCounter),
+      providerId: selectedAgentId,
+      workspaceId: selectedWorkspaceId,
+    });
+  }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedWorkspaceId]);
+
+  useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -897,6 +963,19 @@ export function App() {
   }, [deckPreferences]);
 
   useEffect(() => {
+    if (activeView !== "sessions" || !missionPromptRef.current) {
+      return;
+    }
+
+    const textarea = missionPromptRef.current;
+    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [activeView, prompt]);
+
+  useEffect(() => {
     if (!promptEnhancerModelPickerOpen) {
       return;
     }
@@ -931,19 +1010,25 @@ export function App() {
 
   function openFleetAddHelmModal() {
     setFleetAddHelmStage("connect");
+    setFleetAddHelmName("");
+    setFleetAddHelmHost(DEFAULT_DAEMON_HOST);
+    setFleetAddHelmPort(DEFAULT_DAEMON_PORT);
+    pendingAddHelmProfileRef.current = null;
     setFleetAddHelmModalOpen(true);
   }
 
   function closeFleetAddHelmModal() {
     setFleetAddHelmModalOpen(false);
     setFleetAddHelmStage("connect");
+    pendingAddHelmProfileRef.current = null;
   }
 
   function connectFromFleetAddHelmModal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    saveDaemonProfile();
+    const profile = createDaemonProfile(fleetAddHelmName, fleetAddHelmHost, fleetAddHelmPort);
+    pendingAddHelmProfileRef.current = profile;
     setFleetAddHelmStage("connecting");
-    void connectToDaemon(undefined, { preserveState: true });
+    void connectToDaemon(undefined, { preserveState: true, host: profile.host, port: profile.port, persistEndpoint: false });
   }
 
   useEffect(() => {
@@ -997,6 +1082,9 @@ export function App() {
     })) {
       return;
     }
+    if (manualDisconnectRef.current === activeProfileId) {
+      return;
+    }
     const attemptKey = `silent:${activeProfileId}`;
     if (autoConnectAttemptRef.current === attemptKey) {
       return;
@@ -1007,6 +1095,9 @@ export function App() {
 
   useEffect(() => {
     if (missionVisualMode || !trustedDevice?.token || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
+      return;
+    }
+    if (manualDisconnectRef.current === activeProfileId) {
       return;
     }
     const attemptKey = `live:${activeView}:${activeProfileId}`;
@@ -1145,6 +1236,18 @@ export function App() {
     setHelmConnectionStates((current) => ({ ...current, [helmKey]: state }));
   }
 
+  function updateHelmInventory(helmKey: string, patch: Partial<HelmInventoryBucket>) {
+    const emptyBucket: HelmInventoryBucket = { projects: [], workspaces: [], agents: [], sessions: [], statuses: {} };
+    setHelmInventories((current) => ({
+      ...current,
+      [helmKey]: {
+        ...emptyBucket,
+        ...(current[helmKey] ?? {}),
+        ...patch,
+      },
+    }));
+  }
+
   function connectHelmSocket(profile: DaemonProfile) {
     const helmKey = daemonProfileKey(profile.host, profile.port);
     const existing = helmSocketRefs.current.get(helmKey);
@@ -1167,7 +1270,13 @@ export function App() {
       const cache = readTrustedDeviceCache(window.localStorage, profile.host, profile.port);
       if (cache?.token) {
         dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
+        requestInitialSync(socket);
       }
+    });
+
+    socket.addEventListener("message", (event) => {
+      const payload = JSON.parse(String(event.data)) as HelmToClient;
+      handleServerEvent(payload, helmKey);
     });
 
     socket.addEventListener("close", () => {
@@ -1183,15 +1292,21 @@ export function App() {
     });
   }
 
-  function connectToDaemon(event?: FormEvent<HTMLFormElement>, options?: { preserveState?: boolean; auto?: boolean; host?: string; port?: string }) {
+  function connectToDaemon(event?: FormEvent<HTMLFormElement>, options?: { preserveState?: boolean; auto?: boolean; host?: string; port?: string; persistEndpoint?: boolean }) {
     event?.preventDefault();
     const preserveState = options?.preserveState ?? false;
     const host = options?.host?.trim() || daemonHost.trim() || DEFAULT_DAEMON_HOST;
     const port = options?.port?.trim() || daemonPort.trim() || DEFAULT_DAEMON_PORT;
     const wsUrl = `ws://${host}:${port}`;
 
-    window.localStorage.setItem(DAEMON_HOST_KEY, host);
-    window.localStorage.setItem(DAEMON_PORT_KEY, port);
+    if (!options?.auto) {
+      manualDisconnectRef.current = null;
+    }
+
+    if (options?.persistEndpoint ?? true) {
+      window.localStorage.setItem(DAEMON_HOST_KEY, host);
+      window.localStorage.setItem(DAEMON_PORT_KEY, port);
+    }
     socketRef.current?.close();
     if (!preserveState) {
       setSessions([]);
@@ -1257,7 +1372,7 @@ export function App() {
 
     socket.addEventListener("message", (event) => {
       const payload = JSON.parse(String(event.data)) as HelmToClient;
-      handleServerEvent(payload);
+      handleServerEvent(payload, daemonProfileKey(host, port));
     });
   }
 
@@ -1270,7 +1385,9 @@ export function App() {
     }));
   }
 
-  function handleServerEvent(payload: HelmToClient) {
+  function handleServerEvent(payload: HelmToClient, sourceHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT)) {
+    const currentEventHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
+    const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
     switch (payload.type) {
       case "device.pair.result":
         if (payload.ok && payload.token) {
@@ -1280,12 +1397,26 @@ export function App() {
             trustedUntil: payload.trustedUntil,
             lastAuthenticatedAt: new Date().toISOString(),
           };
+          const pairedProfile = pendingAddHelmProfileRef.current;
+          const pairedHost = pairedProfile?.host ?? (daemonHost.trim() || DEFAULT_DAEMON_HOST);
+          const pairedPort = pairedProfile?.port ?? (daemonPort.trim() || DEFAULT_DAEMON_PORT);
           writeTrustedDeviceCache(
             window.localStorage,
-            daemonHost.trim() || DEFAULT_DAEMON_HOST,
-            daemonPort.trim() || DEFAULT_DAEMON_PORT,
+            pairedHost,
+            pairedPort,
             nextCache,
           );
+          if (pairedProfile) {
+            persistDaemonProfile(pairedProfile);
+            setDaemonHost(pairedProfile.host);
+            setDaemonPort(pairedProfile.port);
+            window.localStorage.setItem(DAEMON_HOST_KEY, pairedProfile.host);
+            window.localStorage.setItem(DAEMON_PORT_KEY, pairedProfile.port);
+            setSelectedHelmKey(daemonProfileKey(pairedProfile.host, pairedProfile.port));
+            pendingAddHelmProfileRef.current = null;
+            setFleetAddHelmModalOpen(false);
+            setFleetAddHelmStage("connect");
+          }
           setTrustedDevice(nextCache);
           autoConnectAttemptRef.current = null;
           setPairingFeedback(payload.message);
@@ -1358,17 +1489,48 @@ export function App() {
         setHelms(payload.helms);
         return;
       case "project.list.result":
-        setProjects(payload.projects);
+        updateHelmInventory(sourceHelmKey, { projects: payload.projects });
+        if (sourceIsCurrentHelm) {
+          setProjects(payload.projects);
+        }
         return;
       case "workspace.list.result":
-        setWorkspaces(payload.workspaces);
+        updateHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
+        if (sourceIsCurrentHelm) {
+          setWorkspaces(payload.workspaces);
+        }
         return;
       case "agent.list.result":
-        setAgents(payload.agents);
+        updateHelmInventory(sourceHelmKey, { agents: payload.agents });
+        if (sourceIsCurrentHelm) {
+          setAgents(payload.agents);
+        }
         return;
       case "agent.test.result":
         setAgentTestResult(payload.message);
         return;
+      case "agent.model.options.result": {
+        const key = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+        const nextEntry: AgentModelOptionsEntry = {
+          loading: false,
+          message: payload.message,
+          modelOptions: payload.modelOptions,
+          configOptions: payload.configOptions,
+          state: payload.state,
+        };
+        setAgentModelOptions((current) => ({ ...current, [key]: nextEntry }));
+        if (sourceIsCurrentHelm && payload.providerId === selectedAgentId && payload.workspaceId === selectedWorkspaceId) {
+          const realOptions = resolveModelOptions(payload.currentModelId ?? payload.state.model, payload.configOptions, payload.modelOptions);
+          const nextModel = payload.currentModelId ?? payload.state.model ?? realOptions[0];
+          if (nextModel) {
+            setSelectedModel(nextModel);
+          }
+          if (payload.state.reasoningEffort) {
+            setSelectedReasoningEffort(payload.state.reasoningEffort);
+          }
+        }
+        return;
+      }
       case "agent.save.result":
         setConfigSaveMessage(payload.message);
         if (socketRef.current) {
@@ -1413,16 +1575,35 @@ export function App() {
           ),
         );
         return;
-      case "session.list.result":
-        setSessions(payload.sessions);
-        setStatuses(createSessionStatusMap(payload.sessions));
-        setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
-        setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
-        setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
-        setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
-        setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
-        setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
+      case "session.model.options":
+        setSessions((current) =>
+          current.map((session) =>
+            session.id === payload.sessionId
+              ? {
+                  ...session,
+                  model: payload.currentModelId ?? session.model,
+                  modelOptions: payload.options,
+                  updatedAt: new Date().toISOString(),
+                }
+              : session,
+          ),
+        );
         return;
+      case "session.list.result": {
+        const nextStatuses = createSessionStatusMap(payload.sessions);
+        updateHelmInventory(sourceHelmKey, { sessions: payload.sessions, statuses: nextStatuses });
+        if (sourceIsCurrentHelm) {
+          setSessions(payload.sessions);
+          setStatuses(nextStatuses);
+          setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
+          setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
+          setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
+          setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
+          setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
+          setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
+        }
+        return;
+      }
       case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
@@ -1657,22 +1838,29 @@ export function App() {
   }
 
 
-  function saveDaemonProfile() {
-    const host = daemonHost.trim() || DEFAULT_DAEMON_HOST;
-    const port = daemonPort.trim() || DEFAULT_DAEMON_PORT;
-    const name = daemonProfileName.trim() || `${host}:${port}`;
-    const profile: DaemonProfile = {
+  function createDaemonProfile(nameValue: string, hostValue: string, portValue: string): DaemonProfile {
+    const host = hostValue.trim() || DEFAULT_DAEMON_HOST;
+    const port = portValue.trim() || DEFAULT_DAEMON_PORT;
+    const name = nameValue.trim() || `${host}:${port}`;
+    return {
       id: slugify(`${name}-${host}-${port}`),
       name,
       host,
       port,
     };
+  }
+
+  function persistDaemonProfile(profile: DaemonProfile) {
     const profileKey = daemonProfileKey(profile.host, profile.port);
     const nextProfiles = [...daemonProfiles.filter((item) => daemonProfileKey(item.host, item.port) !== profileKey), profile];
     setDaemonProfiles(nextProfiles);
-    setDaemonProfileName(name);
-    setDaemonProfileMessage(`已保存 Helm：${name}`);
+    setDaemonProfileName(profile.name);
+    setDaemonProfileMessage(`已保存 Helm：${profile.name}`);
     window.localStorage.setItem(DAEMON_PROFILE_STORAGE_KEY, JSON.stringify(nextProfiles));
+  }
+
+  function saveDaemonProfile() {
+    persistDaemonProfile(createDaemonProfile(daemonProfileName, daemonHost, daemonPort));
   }
 
   function revokeTrustedDevice(deviceId: string) {
@@ -1861,11 +2049,11 @@ export function App() {
             <form className="connect-form" onSubmit={connectToDaemon}>
               <label>
                 <span>{copy.daemonAddress}</span>
-                <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
+                <input value={fleetAddHelmHost} onChange={(event) => setFleetAddHelmHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
               </label>
               <label>
                 <span>{copy.daemonPort}</span>
-                <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
+                <input value={fleetAddHelmPort} onChange={(event) => setFleetAddHelmPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
               </label>
               <button className="primary" type="submit">
                 {connection === "connecting" ? copy.connection.connecting : copy.connectDaemon}
@@ -2329,7 +2517,7 @@ export function App() {
                         {deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
                           <>
                             <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                            <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "provider-default"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
+                            <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
                             <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
                           </>
                         ) : null}
@@ -2384,8 +2572,8 @@ export function App() {
                 {!activeSession ? (
                   <div className="draft-toolbar-grid">
                     <label>
-                      <span>é¡¹ç®</span>
-                      <input value={draftProject?.name ?? "æªéæ©é¡¹ç®"} readOnly />
+                      <span>项目</span>
+                      <input value={draftProject?.name ?? "未选择项目"} readOnly />
                     </label>
                     <label>
                       <span>{copy.selectedWorkspace}</span>
@@ -2407,6 +2595,7 @@ export function App() {
                 ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
                   <textarea
+                    ref={missionPromptRef}
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     placeholder={draftPromptPlaceholder}
@@ -2417,42 +2606,99 @@ export function App() {
                       <span>◎</span>
                     </div>
                     <div className="mission-composer-config" aria-label="当前任务模型配置">
-                      <label className="mission-config-card mission-config-model">
-                        <span>模型</span>
-                        <select
-                          value={draftModel}
-                          onChange={(event) => updateSessionDraftPreferences({ model: event.target.value })}
+                      <div
+                        className={`mission-config-picker mission-config-picker-model ${missionConfigPicker === "model" ? "open" : ""}`}
+                        onBlur={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            setMissionConfigPicker(null);
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="mission-config-trigger"
                           title={draftModelPlaceholder}
+                          aria-haspopup="listbox"
+                          aria-expanded={missionConfigPicker === "model"}
+                          disabled={draftModelPickerDisabled}
+                          onClick={() => setMissionConfigPicker((current) => current === "model" ? null : "model")}
                         >
-                          {Array.from(new Set([draftModel, ...draftModelOptions].filter(Boolean))).map((model) => (
-                            <option key={model} value={model}>{model}</option>
-                          ))}
-                        </select>
-                        <small>{draftModelOptions.length} candidates</small>
-                      </label>
-                      <label className="mission-config-card mission-config-reasoning">
-                        <span>推理</span>
-                        <select
-                          value={draftReasoningEffort}
-                          onChange={(event) => updateSessionDraftPreferences({ reasoningEffort: event.target.value as SessionReasoningEffort })}
+                          <span>{draftModelPickerLabel}</span>
+                        </button>
+                        {missionConfigPicker === "model" ? (
+                          <div className="mission-config-menu" role="listbox" aria-label="模型列表">
+                            {draftModelBaseOptions.map((model) => {
+                              const modelReasoningOptions = resolveReasoningOptionsForModel(model, draftModelOptions, draftConfigOptions);
+                              const nextReasoning = modelReasoningOptions.includes(effectiveDraftReasoningEffort) ? effectiveDraftReasoningEffort : modelReasoningOptions[0];
+                              const selected = model === draftModelBase;
+                              return (
+                                <button
+                                  key={model}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selected}
+                                  className={selected ? "active" : ""}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(model, nextReasoning, draftModelOptions), ...(nextReasoning ? { reasoningEffort: nextReasoning } : {}) });
+                                    setMissionConfigPicker(null);
+                                  }}
+                                >
+                                  {model}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                      {showDraftReasoningSelect ? (
+                        <div
+                          className={`mission-config-picker mission-config-picker-reasoning ${missionConfigPicker === "reasoning" ? "open" : ""}`}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setMissionConfigPicker(null);
+                            }
+                          }}
                         >
-                          {REASONING_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                        <small>session scope</small>
-                      </label>
+                          <button
+                            type="button"
+                            className="mission-config-trigger"
+                            aria-haspopup="listbox"
+                            aria-expanded={missionConfigPicker === "reasoning"}
+                            onClick={() => setMissionConfigPicker((current) => current === "reasoning" ? null : "reasoning")}
+                          >
+                            <span>{resolveReasoningLabel(effectiveDraftReasoningEffort)}</span>
+                          </button>
+                          {missionConfigPicker === "reasoning" ? (
+                            <div className="mission-config-menu" role="listbox" aria-label="推理级别">
+                              {draftReasoningOptions.map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={option === effectiveDraftReasoningEffort}
+                                  className={option === effectiveDraftReasoningEffort ? "active" : ""}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(draftModelBase, option, draftModelOptions), reasoningEffort: option });
+                                    setMissionConfigPicker(null);
+                                  }}
+                                >
+                                  {resolveReasoningLabel(option)}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="mission-composer-actions">
                       {deckPreferences.promptEnhancer.enabled ? (
-                        <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">↺</button>
+                        <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">✦</button>
                       ) : null}
                       <button className="primary composer-send-icon" type="submit" disabled={!canSend} aria-label="发送" title="发送">➤</button>
                     </div>
                   </div>
-                  {deckPreferences.technicalPanels.showOrderHints ? (
-                    <p className="order-editor-hint">左栏按 项目管理任务；ACP 在会话成立后锁定，模型 / 推理 作为当前 session 配置可继续调整。{draftConfigHint}</p>
-                  ) : null}
                 </form>
               </div>
             </div>
@@ -2478,11 +2724,11 @@ export function App() {
                 <p className="eyebrow">模型 / 推理</p>
                 <div className="model-inspector-hero">
                   <span className="model-inspector-label">MODEL</span>
-                  <strong title={draftModel}>{draftModel}</strong>
+                  <strong title={draftModel}>{draftModelBaseOptions.length ? draftModelBase : draftModelPickerLabel}</strong>
                 </div>
                 <div className="model-inspector-grid">
                   <span>推理</span>
-                  <strong>{draftReasoningEffort}</strong>
+                  <strong>{showDraftReasoningSelect ? effectiveDraftReasoningEffort : "—"}</strong>
                   <span>候选</span>
                   <strong>{draftModelOptions.length}</strong>
                 </div>
@@ -2507,6 +2753,7 @@ export function App() {
 
   function renderAgents() {
     const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
+    const currentSavedHelmProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === currentHelmKey);
     const mockHelmProfile: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
     const mockHelmCards = import.meta.env.DEV
       ? [{
@@ -2521,7 +2768,7 @@ export function App() {
     const rawHelmCards = [
       {
         key: currentHelmKey,
-        name: daemonProfileName.trim() || "Local Helm",
+        name: currentSavedHelmProfile?.name || "Local Helm",
         host: daemonHost.trim() || DEFAULT_DAEMON_HOST,
         port: daemonPort.trim() || DEFAULT_DAEMON_PORT,
         isCurrent: true,
@@ -2545,46 +2792,36 @@ export function App() {
     const selectedHelmIsCurrent = selectedHelm.key === currentHelmKey;
     const selectedHelmConnection = resolveHelmConnectionState(selectedHelm, currentHelmKey, connection, helmConnectionStates);
     const selectedHelmIsConnected = selectedHelmConnection === "connected";
+    const selectedHelmInventory = helmInventories[selectedHelm.key];
+    const selectedHelmProjects = selectedHelmIsCurrent ? projects : selectedHelmInventory?.projects ?? [];
+    const selectedHelmAgents = selectedHelmIsCurrent ? agents : selectedHelmInventory?.agents ?? [];
     const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
 
     return (
       <section className="workspace-single">
-        {(showConnectionCard || showPairingCard) ? renderConnectionPanel() : null}
         {fleetAddHelmModalOpen ? (
           <div className="fleet-modal-backdrop" role="presentation">
             <section className="card surface-card fleet-add-helm-modal fleet-add-helm-dialog" role="dialog" aria-modal="true" aria-label="添加 Helm">
-              <div className="fleet-dialog-head">
-                <div>
-                  <p className="eyebrow">New Helm</p>
-                  <h3>添加 Helm</h3>
-                  <p className="muted compact">{fleetModalReadyForPairing ? "连接成功，输入 6 位验证码完成配对。" : "填写 Helm 地址并连接；成功后自动进入验证。"}</p>
-                </div>
+              <div className="fleet-dialog-head fleet-dialog-head-simple">
+                <h3>添加 Helm</h3>
                 <button className="secondary fleet-dialog-close" type="button" onClick={closeFleetAddHelmModal}>关闭</button>
               </div>
 
               <div className="fleet-dialog-body fleet-dialog-body-single">
                 {!fleetModalReadyForPairing ? (
                   <form className="fleet-dialog-card fleet-connect-card" onSubmit={connectFromFleetAddHelmModal}>
-                    <div className="fleet-dialog-card-head">
-                      <span>01</span>
-                      <div>
-                        <strong>连接 Helm</strong>
-                        <p className="muted compact">输入名称与地址；连接成功后会自动切到验证码。</p>
-                      </div>
-                    </div>
-
                     <div className="fleet-connect-grid">
                       <label className="fleet-field-full">
                         <span>Helm 名称</span>
-                        <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
+                        <input value={fleetAddHelmName} onChange={(event) => setFleetAddHelmName(event.target.value)} placeholder="本地 Helm" autoFocus />
                       </label>
                       <label>
                         <span>Helm 地址</span>
-                        <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
+                        <input value={fleetAddHelmHost} onChange={(event) => setFleetAddHelmHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
                       </label>
                       <label>
                         <span>端口</span>
-                        <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
+                        <input value={fleetAddHelmPort} onChange={(event) => setFleetAddHelmPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
                       </label>
                     </div>
 
@@ -2594,13 +2831,7 @@ export function App() {
                   </form>
                 ) : (
                   <form className="fleet-dialog-card fleet-pair-card" onSubmit={submitPairingCode}>
-                    <div className="fleet-dialog-card-head">
-                      <span>02</span>
-                      <div>
-                        <strong>输入验证码</strong>
-                        <p className="muted compact">请填写 Helm 返回的 6 位验证码。</p>
-                      </div>
-                    </div>
+                    <strong className="fleet-pair-title">输入验证码</strong>
 
                     <PairingBoxes
                       refs={pairInputRefs}
@@ -2620,11 +2851,6 @@ export function App() {
                   </form>
                 )}
               </div>
-
-              <div className="fleet-dialog-status">
-                <span className={`helm-status-dot helm-status-${connection}`} aria-hidden="true" />
-                <p className="subtle compact">{daemonProfileMessage || connectFeedback || pairingFeedback || "等待连接 Helm。"}</p>
-              </div>
             </section>
           </div>
         ) : null}
@@ -2640,14 +2866,14 @@ export function App() {
             <div className="fleet-hub-head">
               <div>
                 <div className="fleet-hub-title-row">
-                  <h3>Helm 节点</h3>
+                  <h3>Helm</h3>
                   <span>{helmCards.length} Helm</span>
                 </div>
               </div>
               <button className="primary" type="button" onClick={openFleetAddHelmModal}>添加</button>
             </div>
 
-            <p className="fleet-hub-copy">统一管理可用 Helm 节点；选择一个 Helm 后，在下方查看它的项目、ACP 舰员与配置入口。</p>
+            <p className="fleet-hub-copy">Fleet 收纳多个 Helm；点击 Helm 后在下方查看该 Helm 的项目、ACP 舰员与配置入口。</p>
 
             <div className="fleet-hub-node-list" role="list" aria-label="Helm 节点列表">
               {helmCards.map((helm) => (
@@ -2671,84 +2897,103 @@ export function App() {
             <div className="section-head section-head-soft">
               <div>
                 <strong>{selectedHelm.name}</strong>
-                <p className="muted compact">{selectedHelm.host}:{selectedHelm.port} · {formatConnectionStatus(selectedHelmConnection)}</p>
+                <p className="muted compact">{selectedHelm.host}:{selectedHelm.port} · <span className={`helm-inline-status helm-inline-status-${selectedHelmConnection}`}>{formatConnectionStatus(selectedHelmConnection)}</span></p>
               </div>
               <div className="section-actions">
-                {!selectedHelmIsConnected && selectedHelm.profile ? (
-                  <button className="secondary" type="button" onClick={() => { if (selectedHelm.profile) connectDaemonProfile(selectedHelm.profile); }}>连接此 Helm</button>
-                ) : null}
-                <button className="secondary" type="button" onClick={() => setAgentConfigExpanded((current) => !current)}>添加舰员</button>
+                {selectedHelmIsConnected ? (
+                  <button
+                    className="secondary helm-disconnect-button"
+                    type="button"
+                    onClick={() => {
+                      manualDisconnectRef.current = selectedHelm.key;
+                      if (selectedHelmIsCurrent) {
+                        socketRef.current?.close();
+                        socketRef.current = null;
+                        setConnection("disconnected");
+                        setHelmConnectionState(selectedHelm.key, "disconnected");
+                        return;
+                      }
+                      helmSocketRefs.current.get(selectedHelm.key)?.close();
+                      helmSocketRefs.current.delete(selectedHelm.key);
+                      setHelmConnectionState(selectedHelm.key, "disconnected");
+                    }}
+                  >
+                    断开连接
+                  </button>
+                ) : selectedHelmConnection === "connecting" ? (
+                  <span className="helm-state-chip helm-state-connecting">连接中</span>
+                ) : (
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => {
+                      if (selectedHelm.profile) {
+                        connectDaemonProfile(selectedHelm.profile);
+                        return;
+                      }
+                      void connectToDaemon(undefined, { preserveState: true });
+                    }}
+                  >
+                    连接 Helm
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="helm-detail-grid helm-inventory-grid">
-              <InfoList title="项目列表" items={selectedHelmIsCurrent ? projects.map((project) => project.name) : []} empty={selectedHelmIsConnected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"} />
-              <InfoList title="ACP 舰员" items={selectedHelmIsCurrent ? agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim()) : []} empty={selectedHelmIsConnected ? copy.noAgents : "请先连接该 Helm 后加载舰员"} />
+            <div className="helm-inventory-list-stack">
+              <section className="helm-inventory-list-section">
+                <h3>项目列表</h3>
+                {selectedHelmProjects.length ? (
+                  <ul className="helm-simple-list">
+                    {selectedHelmProjects.map((project) => (
+                      <li key={project.id}>
+                        <details className="helm-simple-detail-row">
+                          <summary>
+                            <strong>{project.name}</strong>
+                            <span>{project.defaultWorkspaceId ? `workspace · ${project.defaultWorkspaceId}` : project.id}</span>
+                          </summary>
+                          <dl>
+                            <div><dt>Project ID</dt><dd>{project.id}</dd></div>
+                            <div><dt>Helm ID</dt><dd>{project.helmId}</dd></div>
+                            <div><dt>Workspaces</dt><dd>{(project.workspaceIds ?? []).join(", ") || "-"}</dd></div>
+                            <div><dt>Default Agent</dt><dd>{project.defaultAgentId ?? "-"}</dd></div>
+                          </dl>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">{selectedHelmIsConnected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"}</div>
+                )}
+              </section>
+
+              <section className="helm-inventory-list-section">
+                <h3>ACP 舰员</h3>
+                {selectedHelmAgents.length ? (
+                  <ul className="helm-simple-list">
+                    {selectedHelmAgents.map((agent) => (
+                      <li key={agent.id}>
+                        <details className="helm-simple-detail-row">
+                          <summary>
+                            <strong>{agent.name}</strong>
+                            <span>{`${agent.command} ${(agent.args ?? []).join(" ")}`.trim()}</span>
+                          </summary>
+                          <dl>
+                            <div><dt>Agent ID</dt><dd>{agent.id}</dd></div>
+                            <div><dt>Command</dt><dd>{agent.command}</dd></div>
+                            <div><dt>Arguments</dt><dd>{(agent.args ?? []).join(" ") || "-"}</dd></div>
+                            <div><dt>Transport</dt><dd>{agent.transport}</dd></div>
+                            <div><dt>Protocol</dt><dd>{agent.protocol}</dd></div>
+                          </dl>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">{selectedHelmIsConnected ? copy.noAgents : "请先连接该 Helm 后加载舰员"}</div>
+                )}
+              </section>
             </div>
-
-            <section className="helm-config-panel">
-              <div className="section-head section-head-soft">
-                <div>
-                  <h3>项目配置</h3>
-                </div>
-                <p className="muted compact">项目、模型与 provider 能力归属当前 Helm。</p>
-              </div>
-              <div className="helm-config-placeholder">
-                <strong>项目</strong>
-                <span>这里承载当前 Helm 的项目级配置入口；Deck Settings 只保留前端偏好。</span>
-              </div>
-            </section>
-
-            <section className="helm-config-panel helm-agent-config-panel">
-              <div className="section-head section-head-soft">
-                <div>
-                  <h3>{copy.addAgentDraft}</h3>
-                </div>
-                <p className="muted compact">默认收起；展开后写入当前 Helm。</p>
-              </div>
-
-              {agentConfigExpanded ? (
-                <form className="config-form" onSubmit={saveDraft}>
-                  <div className="section-head">
-                    <h3>{copy.addAgentDraft}</h3>
-                    <div className="section-actions">
-                      <button className="secondary" type="submit">本地保存草稿</button>
-                      <button className="primary" type="button" onClick={writeDraftToConfig} disabled={connection !== "connected" || !agentDraft.command.trim()}>写入 Helm 配置</button>
-                    </div>
-                  </div>
-
-                  {!selectedHelmIsCurrent ? (
-                    <div className="note-box compact-note target-helm-warning">
-                      <strong>目标 Helm 尚未连接</strong>
-                      <p className="muted compact">Deck 只能向当前已连接 Helm 写入舰员配置，请先连接目标 Helm。</p>
-                    </div>
-                  ) : null}
-
-                  <label>
-                    <span>{copy.name}</span>
-                    <input value={agentDraft.name} onChange={(event) => setAgentDraft((current) => ({ ...current, name: event.target.value }))} placeholder="OpenCode" />
-                  </label>
-                  <label>
-                    <span>{copy.command}</span>
-                    <input value={agentDraft.command} onChange={(event) => setAgentDraft((current) => ({ ...current, command: event.target.value }))} placeholder="opencode" />
-                  </label>
-                  <label>
-                    <span>{copy.arguments}</span>
-                    <input value={agentDraft.args} onChange={(event) => setAgentDraft((current) => ({ ...current, args: event.target.value }))} placeholder="acp --pure" />
-                  </label>
-
-                  <div className="meta-grid">
-                    <InfoList title={copy.draftOnlyTitle} items={[copy.draftOnlyHint, draftSaveMessage]} empty={copy.draftOnlyHint} />
-                    <InfoList title={copy.daemonConfigTitle} items={[copy.daemonConfigHint, configSaveMessage, `${copy.agentTestTitle}: ${agentTestResult}`]} empty={copy.daemonConfigHint} />
-                  </div>
-                </form>
-              ) : (
-                <button className="helm-config-placeholder helm-agent-placeholder" type="button" onClick={() => setAgentConfigExpanded(true)}>
-                  <strong>agent</strong>
-                  <span>点击展开 ACP 舰员配置表单，并写入当前 Helm。</span>
-                </button>
-              )}
-            </section>
           </section>
         </section>
       </section>
@@ -3335,9 +3580,8 @@ function resolveSessionTitle(session: SessionSummary) {
   return `${session.projectName} 任务`;
 }
 
-function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
-  const resolved = resolveModelOptionsFromConfig(undefined, configOptions, nativeOptions);
-  return resolved.length ? resolved : currentModel ? [currentModel] : [];
+function resolveModelOptions(_currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
+  return resolveModelOptionsFromConfig(undefined, configOptions, nativeOptions);
 }
 
 function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
@@ -3350,6 +3594,43 @@ function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
 
 function resolveReasoningLabel(value: SessionReasoningEffort) {
   return REASONING_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function splitModelReasoning(value: string | undefined) {
+  const raw = value?.trim() ?? "";
+  const index = raw.lastIndexOf("/");
+  if (index <= 0) {
+    return { model: raw, reasoning: undefined as SessionReasoningEffort | undefined };
+  }
+  const suffix = raw.slice(index + 1).toLowerCase();
+  const reasoning = REASONING_OPTIONS.find((option) => option.value === suffix)?.value;
+  return reasoning ? { model: raw.slice(0, index), reasoning } : { model: raw, reasoning: undefined as SessionReasoningEffort | undefined };
+}
+
+function resolveBaseModelOptions(modelOptions: string[]) {
+  return Array.from(new Set(modelOptions.map((model) => splitModelReasoning(model).model).filter(Boolean)));
+}
+
+function resolveReasoningOptionsForModel(model: string, modelOptions: string[], configOptions: SessionConfigOption[] = []) {
+  const fromModel = modelOptions
+    .map((option) => splitModelReasoning(option))
+    .filter((option) => option.model === model && option.reasoning)
+    .map((option) => option.reasoning as SessionReasoningEffort);
+  return fromModel.length ? Array.from(new Set(fromModel)) : resolveReasoningOptions(configOptions);
+}
+
+function resolveCombinedModelValue(model: string, reasoning: SessionReasoningEffort | undefined, modelOptions: string[]) {
+  if (reasoning) {
+    const combined = modelOptions.find((option) => {
+      const parsed = splitModelReasoning(option);
+      return parsed.model === model && parsed.reasoning === reasoning;
+    });
+    if (combined) {
+      return combined;
+    }
+  }
+
+  return modelOptions.find((option) => splitModelReasoning(option).model === model) ?? model;
 }
 
 function resolveDraftConfigOptions(
@@ -3509,5 +3790,6 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
 
 

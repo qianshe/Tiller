@@ -8,6 +8,7 @@ import type {
   SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
+import { Fragment } from "react";
 
 export type UICopyLike = {
   waitingForAgent: string;
@@ -72,27 +73,37 @@ export function PairingBoxes({
 }) {
   const chars = Array.from({ length: 6 }, (_, index) => value[index] ?? "");
   return (
-    <div className="pairing-boxes">
-      {chars.map((char, index) => (
-        <input
-          key={index}
-          ref={(element) => {
-            refs.current[index] = element;
-          }}
-          className="pairing-box"
-          value={char}
-          inputMode="text"
-          autoCapitalize="characters"
-          autoComplete="one-time-code"
-          maxLength={1}
-          disabled={disabled}
-          onChange={(event) => onChange(index, event.target.value)}
-          onKeyDown={(event) => onKeyDown(index, event.key)}
-          onPaste={(event) => {
-            event.preventDefault();
-            onPaste(index, event.clipboardData.getData("text"));
-          }}
-        />
+    <div className="pairing-boxes pairing-boxes-grouped" aria-label="6 位验证码，按两位一组输入">
+      {[0, 2, 4].map((startIndex, groupIndex) => (
+        <Fragment key={startIndex}>
+          {groupIndex > 0 ? <span className="pairing-separator" aria-hidden="true">-</span> : null}
+          <div className="pairing-box-group">
+            {chars.slice(startIndex, startIndex + 2).map((char, offset) => {
+              const index = startIndex + offset;
+              return (
+                <input
+                  key={index}
+                  ref={(element) => {
+                    refs.current[index] = element;
+                  }}
+                  className="pairing-box"
+                  value={char}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoComplete="one-time-code"
+                  maxLength={1}
+                  disabled={disabled}
+                  onChange={(event) => onChange(index, event.target.value)}
+                  onKeyDown={(event) => onKeyDown(index, event.key)}
+                  onPaste={(event) => {
+                    event.preventDefault();
+                    onPaste(index, event.clipboardData.getData("text"));
+                  }}
+                />
+              );
+            })}
+          </div>
+        </Fragment>
       ))}
     </div>
   );

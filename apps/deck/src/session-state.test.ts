@@ -113,6 +113,24 @@ test("resolveModelOptionsFromConfig reads concrete ACP model choices from config
   assert.deepEqual(options, ["anthropic/claude-sonnet-4", "openai/gpt-5.4"]);
 });
 
+test("resolveModelOptionsFromConfig prefers ACP config options over legacy model state", () => {
+  const options = resolveModelOptionsFromConfig("legacy/default", [
+    {
+      id: "model-picker",
+      category: "model",
+      currentValue: "openai/gpt-5.4",
+      options: [
+        { value: "openai/gpt-5.4", label: "GPT 5.4" },
+        { value: "openai/gpt-5.4/high", label: "GPT 5.4 · High" },
+      ],
+    },
+  ], [
+    { id: "legacy/default", name: "Legacy Default" },
+  ]);
+
+  assert.deepEqual(options, ["openai/gpt-5.4", "openai/gpt-5.4/high"]);
+});
+
 
 test("resolvePromptPlaceholder uses the selected ACP command as empty-editor hint", () => {
   assert.equal(resolvePromptPlaceholder({ command: "codex-acp" }), "向 codex-acp 下达指令；@ 引用上下文，/ 调用命令");

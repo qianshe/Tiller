@@ -6600,3 +6600,545 @@ textarea:focus,
 .fleet-add-helm-dialog .fleet-connect-grid {
   padding-top: 4px;
 }
+
+/* Mission composer custom upward pickers fed by Helm/ACP model metadata. */
+.view-sessions .mission-config-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.view-sessions .mission-config-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d9e2f1;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: left;
+}
+
+.view-sessions .mission-config-trigger::after {
+  content: "⌄";
+  color: #96a0ad;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-config-trigger:hover,
+.view-sessions .mission-config-picker.open .mission-config-trigger {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .mission-config-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger {
+  width: 154px;
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  width: 86px;
+}
+
+.view-sessions .mission-config-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(320px, 72vw);
+  max-height: 280px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 9px;
+  background: #181a1f;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.view-sessions .mission-config-menu button {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-config-menu button:hover,
+.view-sessions .mission-config-menu button.active {
+  background: rgba(96, 165, 250, 0.20);
+  color: #f8fafc;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button {
+  font-size: 1rem;
+  color: #a7f3d0;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-config-menu {
+  background: #181a1f;
+}
+
+/* Mission composer visual fix: keep popovers visible and align with dark page surfaces. */
+.view-sessions .chat-input-area.draft-toolbar,
+.view-sessions .mission-order-editor.chat-input-form,
+.view-sessions .mission-composer-sidecar {
+  overflow: visible;
+}
+
+.view-sessions .chat-input-area.draft-toolbar {
+  z-index: 30;
+}
+
+.view-sessions .mission-order-editor.chat-input-form {
+  border-color: rgba(60, 74, 96, 0.82);
+  border-radius: 8px;
+  background: #0b1019;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.view-sessions .mission-composer-sidecar {
+  border-top-color: rgba(60, 74, 96, 0.72);
+  border-radius: 0 0 8px 8px;
+  background: #0d121d;
+}
+
+.view-sessions .mission-config-menu {
+  z-index: 80;
+  min-width: 188px;
+  background: #111827;
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-menu {
+  min-width: 112px;
+}
+
+.view-sessions .mission-config-menu button {
+  color: #d7deea;
+}
+
+.view-sessions .mission-config-menu button.active {
+  background: rgba(59, 130, 246, 0.34);
+}
+
+
+
+/* Fleet hierarchy correction: Fleet/Helm cards stay above selected Helm contents. */
+.view-agents .fleet-command-panel {
+  display: grid;
+  grid-template-rows: auto auto auto;
+}
+
+.view-agents .fleet-hub {
+  order: 1;
+}
+
+.view-agents .helm-detail-panel-expanded {
+  order: 2;
+}
+
+/* Add Helm modal: keep only the necessary form controls. */
+.fleet-add-helm-dialog {
+  gap: 16px;
+  width: min(720px, calc(100vw - 32px));
+}
+
+.fleet-dialog-head-simple {
+  align-items: center;
+}
+
+.fleet-dialog-head-simple h3 {
+  margin: 0;
+}
+
+.fleet-add-helm-dialog .fleet-dialog-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.fleet-add-helm-dialog .fleet-connect-card,
+.fleet-add-helm-dialog .fleet-pair-card {
+  max-width: none;
+}
+
+.fleet-pair-title {
+  font-size: 0.95rem;
+}
+
+[data-deck-theme="light"] .fleet-add-helm-dialog .fleet-dialog-card {
+  background: transparent;
+}
+
+/* Mission composer interaction polish: content-driven height and adaptive pickers. */
+.view-sessions .mission-order-editor.chat-input-form > textarea {
+  min-height: 72px;
+  max-height: 50vh;
+  resize: none;
+  overflow-y: hidden;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger,
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  width: auto;
+  min-width: 0;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger {
+  max-width: min(220px, 24vw);
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  max-width: min(108px, 14vw);
+}
+
+.view-sessions .mission-config-trigger {
+  padding-inline: 8px 6px;
+}
+
+.view-sessions .mission-config-trigger::after {
+  margin-left: 4px;
+}
+
+.view-sessions .mission-config-menu {
+  min-width: max(100%, 132px);
+}
+
+
+
+/* Pairing code input: display as three grouped pairs, e.g. []-[]-[]. */
+.pairing-boxes-grouped {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.pairing-box-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pairing-separator {
+  color: #748197;
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+  user-select: none;
+}
+
+.fleet-pair-card .pairing-boxes-grouped {
+  justify-content: stretch;
+}
+
+@media (max-width: 520px) {
+  .pairing-boxes-grouped,
+  .fleet-pair-card .pairing-boxes-grouped {
+    gap: 6px;
+  }
+
+  .pairing-box-group {
+    gap: 6px;
+  }
+}
+
+/* Mission composer chevron polish: use a small CSS caret instead of a text glyph. */
+.view-sessions .mission-config-trigger {
+  gap: 5px;
+}
+
+.view-sessions .mission-config-trigger::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid #8ea0ba;
+  border-bottom: 1.5px solid #8ea0ba;
+  transform: translateY(-2px) rotate(45deg);
+  flex: 0 0 auto;
+}
+
+.view-sessions .mission-config-picker.open .mission-config-trigger::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+
+
+/* Fleet selected Helm: status action + simple inventory lists. */
+.helm-state-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.helm-state-connected {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.22);
+}
+
+.helm-state-connecting {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+}
+
+.helm-inventory-list-stack {
+  display: grid;
+  gap: 22px;
+}
+
+.helm-inventory-list-section {
+  display: grid;
+  gap: 10px;
+}
+
+.helm-inventory-list-section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.helm-simple-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.helm-simple-list li {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.helm-simple-list strong {
+  color: inherit;
+  font-size: 0.98rem;
+}
+
+.helm-simple-list span {
+  color: #aebbd0;
+  overflow-wrap: anywhere;
+}
+
+[data-deck-theme="light"] .helm-state-connected {
+  color: #166534;
+  background: rgba(220, 252, 231, 0.72);
+}
+
+[data-deck-theme="light"] .helm-state-connecting {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.72);
+}
+
+[data-deck-theme="light"] .helm-simple-list span {
+  color: #475569;
+}
+
+@media (max-width: 720px) {
+  .helm-simple-list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+/* Mission composer: Zed-like footer has no explanatory hint below the toolbar. */
+.view-sessions .mission-order-editor .order-editor-hint {
+  display: none;
+}
+
+
+
+/* Fleet inventory: keep direct lists, but present projects and ACP agents in two columns. */
+.helm-inventory-list-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 48px;
+}
+
+@media (max-width: 860px) {
+  .helm-inventory-list-stack {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+}
+
+
+.helm-disconnect-button {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.24);
+}
+
+.helm-disconnect-button:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.24);
+}
+
+[data-deck-theme="light"] .helm-disconnect-button {
+  color: #991b1b;
+  background: rgba(254, 226, 226, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.28);
+}
+
+
+.helm-inline-status {
+  font-weight: 850;
+}
+
+.helm-inline-status-connected {
+  color: #4ade80;
+}
+
+.helm-inline-status-connecting {
+  color: #93c5fd;
+}
+
+.helm-inline-status-disconnected {
+  color: #fca5a5;
+}
+
+.helm-simple-list li {
+  display: block;
+}
+
+.helm-simple-detail-row {
+  display: grid;
+  gap: 10px;
+}
+
+.helm-simple-detail-row summary {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.helm-simple-detail-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.helm-simple-detail-row summary:hover strong,
+.helm-simple-detail-row[open] summary strong {
+  color: #93c5fd;
+}
+
+.helm-simple-detail-row dl {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.helm-simple-detail-row dl > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.helm-simple-detail-row dt {
+  color: #748197;
+  font-weight: 800;
+}
+
+.helm-simple-detail-row dd {
+  margin: 0;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+
+[data-deck-theme="light"] .helm-inline-status-connected {
+  color: #16a34a;
+}
+
+[data-deck-theme="light"] .helm-inline-status-connecting {
+  color: #2563eb;
+}
+
+[data-deck-theme="light"] .helm-inline-status-disconnected {
+  color: #dc2626;
+}
+
+[data-deck-theme="light"] .helm-simple-detail-row dl {
+  background: rgba(248, 250, 252, 0.82);
+}
+
+[data-deck-theme="light"] .helm-simple-detail-row dd {
+  color: #334155;
+}
+
+@media (max-width: 720px) {
+  .helm-simple-detail-row summary,
+  .helm-simple-detail-row dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+/* Mission top navigation fix: keep the menu visible and consistent instead of a hidden drawer. */
+.view-sessions .top-nav {
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  width: auto;
+  margin: 0;
+  min-height: 76px;
+  transform: none;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+}
+
+.view-sessions .top-nav::after {
+  display: none;
+}
+
+.view-sessions .top-nav:hover,
+.view-sessions .top-nav:focus-within {
+  width: auto;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .top-nav {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    min-height: 0;
+    transform: none;
+  }
+}
