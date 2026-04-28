@@ -1993,6 +1993,82 @@ export function App() {
       ...customMissionPanelPages,
     ];
     const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
+    const renderMissionDisplayPanel = () => (
+      <aside className={`mission-display-panel ${activeSession ? "" : "mission-display-empty"}`.trim()} aria-label="任务展示容器">
+        <div className="mission-panel-head">
+          <div>
+            <p className="eyebrow">展示</p>
+            <h3>{activeSession ? "任务展示" : "草稿展示"}</h3>
+          </div>
+          <button className="mission-panel-add" type="button" onClick={addMissionPanelPage} aria-label="增加展示页">＋</button>
+        </div>
+        {activeSession ? (
+          <div className="mission-panel-body">
+            <nav className="mission-panel-tree" aria-label="展示页">
+              <p className="mission-panel-tree-title">展示页</p>
+              {missionPanelPages.map((page) => {
+                const custom = page.id.startsWith("custom-");
+                return (
+                  <button
+                    className={`mission-panel-node ${selectedMissionPanelPage.id === page.id ? "active" : ""}`}
+                    draggable={custom}
+                    key={page.id}
+                    type="button"
+                    onClick={() => setSelectedMissionPanelPageId(page.id)}
+                    onDragStart={() => custom ? setDraggedMissionPanelPageId(page.id) : undefined}
+                    onDragOver={(event) => { if (custom) event.preventDefault(); }}
+                    onDrop={() => custom ? dropMissionPanelPage(page.id) : undefined}
+                  >
+                    <span className="mission-panel-node-icon">{page.id === "overview" ? "⌂" : page.id === "changes" ? "◇" : page.id === "logbook" ? "▸" : "□"}</span>
+                    <span>{page.title}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <section className="mission-panel-content">
+              <div className="mission-panel-content-head">
+                <div>
+                  <p className="eyebrow">{selectedMissionPanelPage.id.startsWith("custom-") ? "自定义" : selectedMissionPanelPage.title}</p>
+                  <h3>{selectedMissionPanelPage.title}</h3>
+                </div>
+                <span className="status-chip">{copy.status[statuses[activeSession.id] ?? activeSession.status]}</span>
+              </div>
+              {selectedMissionPanelPage.id === "changes" ? (
+                <div className="mission-panel-page"><DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} /></div>
+              ) : selectedMissionPanelPage.id === "logbook" ? (
+                <div className="mission-panel-page"><CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} /></div>
+              ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
+                <div className="mission-panel-page mission-custom-page">
+                  <div className="mission-custom-page-tools">
+                    <label>
+                      <span>展示页名称</span>
+                      <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
+                    </label>
+                    <div className="mission-custom-page-actions">
+                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
+                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
+                      <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
+                    </div>
+                  </div>
+                  <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
+                </div>
+              ) : (
+                <div className="mission-panel-page">
+                  <InfoList title="摘要" items={[`项目 · ${activeSession.projectName}`, `工作区 · ${activeSession.workspaceName}`, `ACP 舰员 · ${activeSession.agentName}`, `发送 · ${activeSession.messageCount} 次`]} empty="暂无摘要" />
+                </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="mission-panel-page mission-panel-empty-page">
+            <p className="eyebrow">等待任务</p>
+            <h3>创建任务后显示变更、日志与摘要</h3>
+            <p className="muted compact">这里会作为 Zed-like 第三栏，承载 Diff、航行日志和自定义展示页。</p>
+          </div>
+        )}
+      </aside>
+    );
+
     return (
       <section className="card surface-card chat-layout chat-layout-sidebar">
         {pairingState !== "paired" ? (
@@ -2122,71 +2198,7 @@ export function App() {
                       <DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} />
                     </details>
 
-                    <aside className="mission-display-panel" aria-label="任务展示容器">
-                      <div className="mission-panel-head">
-                        <div>
-                          <p className="eyebrow">展示</p>
-                          <h3>任务展示</h3>
-                        </div>
-                        <button className="mission-panel-add" type="button" onClick={addMissionPanelPage} aria-label="增加展示页">＋</button>
-                      </div>
-                      <div className="mission-panel-body">
-                        <nav className="mission-panel-tree" aria-label="展示页">
-                          <p className="mission-panel-tree-title">展示页</p>
-                          {missionPanelPages.map((page) => {
-                            const custom = page.id.startsWith("custom-");
-                            return (
-                              <button
-                                className={`mission-panel-node ${selectedMissionPanelPage.id === page.id ? "active" : ""}`}
-                                draggable={custom}
-                                key={page.id}
-                                type="button"
-                                onClick={() => setSelectedMissionPanelPageId(page.id)}
-                                onDragStart={() => custom ? setDraggedMissionPanelPageId(page.id) : undefined}
-                                onDragOver={(event) => { if (custom) event.preventDefault(); }}
-                                onDrop={() => custom ? dropMissionPanelPage(page.id) : undefined}
-                              >
-                                <span className="mission-panel-node-icon">{page.id === "overview" ? "⌂" : page.id === "changes" ? "◇" : page.id === "logbook" ? "▸" : "□"}</span>
-                                <span>{page.title}</span>
-                              </button>
-                            );
-                          })}
-                        </nav>
-                        <section className="mission-panel-content">
-                          <div className="mission-panel-content-head">
-                            <div>
-                              <p className="eyebrow">{selectedMissionPanelPage.id.startsWith("custom-") ? "自定义" : selectedMissionPanelPage.title}</p>
-                              <h3>{selectedMissionPanelPage.title}</h3>
-                            </div>
-                            <span className="status-chip">{copy.status[statuses[activeSession.id] ?? activeSession.status]}</span>
-                          </div>
-                          {selectedMissionPanelPage.id === "changes" ? (
-                            <div className="mission-panel-page"><DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} /></div>
-                          ) : selectedMissionPanelPage.id === "logbook" ? (
-                            <div className="mission-panel-page"><CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} /></div>
-                          ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
-                            <div className="mission-panel-page mission-custom-page">
-                              <div className="mission-custom-page-tools">
-                                <label>
-                                  <span>展示页名称</span>
-                                  <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
-                                </label>
-                                <div className="mission-custom-page-actions">
-                                  <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
-                                  <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
-                                  <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
-                                </div>
-                              </div>
-                              <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
-                            </div>
-                          ) : (
-                            <div className="mission-panel-page">
-                              <InfoList title="摘要" items={[`项目 · ${activeSession.projectName}`, `工作区 · ${activeSession.workspaceName}`, `ACP 舰员 · ${activeSession.agentName}`, `消息 · ${activeSession.messageCount}`]} empty="暂无摘要" />
-                            </div>
-                          )}
-                        </section>
-                      </div>
-                    </aside>
+
                   </>
                 ) : (
                   <div className="chat-empty">
@@ -2231,7 +2243,7 @@ export function App() {
                   />
                   <div className="mission-composer-sidecar">
                     <div className="mission-composer-config" aria-label="当前任务模型配置">
-                      <label>
+                      <label className="mission-config-card mission-config-model">
                         <span>模型</span>
                         <select
                           value={draftModel}
@@ -2242,8 +2254,9 @@ export function App() {
                             <option key={model} value={model}>{model}</option>
                           ))}
                         </select>
+                        <small>{draftModelOptions.length} candidates</small>
                       </label>
-                      <label>
+                      <label className="mission-config-card mission-config-reasoning">
                         <span>推理</span>
                         <select
                           value={draftReasoningEffort}
@@ -2253,6 +2266,7 @@ export function App() {
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
+                        <small>session scope</small>
                       </label>
                     </div>
                     <div className="mission-composer-actions">
@@ -2269,6 +2283,8 @@ export function App() {
               </div>
             </div>
 
+            {renderMissionDisplayPanel()}
+
             <aside className="mission-inspector" aria-label="任务检视器">
               <section className="inspector-section">
                 <p className="eyebrow">上下文</p>
@@ -2280,11 +2296,19 @@ export function App() {
                 </div>
               </section>
 
-              <section className="inspector-section">
-                <p className="eyebrow">模型</p>
-                <h3>{draftModel}</h3>
-                <p className="subtle compact">推理 · {draftReasoningEffort}</p>
-                <p className="subtle compact">候选模型 {draftModelOptions.length} 个；若 ACP 返回 configOptions，会优先显示 provider 的真实模型列表。</p>
+              <section className="inspector-section model-inspector-section">
+                <p className="eyebrow">模型 / 推理</p>
+                <div className="model-inspector-hero">
+                  <span className="model-inspector-label">MODEL</span>
+                  <strong title={draftModel}>{draftModel}</strong>
+                </div>
+                <div className="model-inspector-grid">
+                  <span>推理</span>
+                  <strong>{draftReasoningEffort}</strong>
+                  <span>候选</span>
+                  <strong>{draftModelOptions.length}</strong>
+                </div>
+                <p className="subtle compact">ACP configOptions 可用时优先展示 provider 的真实模型列表。</p>
               </section>
 
               <section className="inspector-section inspector-scroll">
@@ -2334,51 +2358,78 @@ export function App() {
         {(showConnectionCard || showPairingCard) ? renderConnectionPanel() : null}
         {fleetAddHelmModalOpen ? (
           <div className="fleet-modal-backdrop" role="presentation">
-            <section className="card surface-card stack-gap fleet-add-helm-modal" role="dialog" aria-modal="true" aria-label="添加 Helm">
-              <div className="section-head section-head-soft">
+            <section className="card surface-card fleet-add-helm-modal fleet-add-helm-dialog" role="dialog" aria-modal="true" aria-label="添加 Helm">
+              <div className="fleet-dialog-head">
                 <div>
+                  <p className="eyebrow">New Helm</p>
                   <h3>添加 Helm</h3>
-                  <p className="muted compact">提交 Helm 地址；连接后可在这里填写 6 位验证码完成配对。</p>
+                  <p className="muted compact">先保存并连接 Helm 地址，再输入 6 位验证码完成配对。</p>
                 </div>
-                <button className="secondary" type="button" onClick={() => setFleetAddHelmModalOpen(false)}>关闭</button>
+                <button className="secondary fleet-dialog-close" type="button" onClick={() => setFleetAddHelmModalOpen(false)}>关闭</button>
               </div>
 
-              <form className="fleet-modal-form" onSubmit={(event) => { event.preventDefault(); saveDaemonProfile(); }}>
-                <label>
-                  <span>Helm 名称</span>
-                  <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
-                </label>
-                <label>
-                  <span>Helm 地址</span>
-                  <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
-                </label>
-                <label>
-                  <span>端口</span>
-                  <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
-                </label>
-                <div className="section-actions fleet-modal-actions">
-                  <button className="secondary" type="submit">提交 Helm</button>
-                  <button className="secondary" type="button" onClick={() => void connectToDaemon()}>连接</button>
-                </div>
-              </form>
+              <div className="fleet-dialog-body">
+                <form className="fleet-dialog-card fleet-connect-card" onSubmit={(event) => { event.preventDefault(); saveDaemonProfile(); }}>
+                  <div className="fleet-dialog-card-head">
+                    <span>01</span>
+                    <div>
+                      <strong>连接信息</strong>
+                      <p className="muted compact">为这个 Helm 设置一个可识别名称和 WebSocket 地址。</p>
+                    </div>
+                  </div>
 
-              <form className="pairing-form" onSubmit={submitPairingCode}>
-                <PairingBoxes
-                  refs={pairInputRefs}
-                  value={pairingCodeInput}
-                  disabled={pairingState === "waiting" || connection !== "connected"}
-                  onChange={updatePairingDigit}
-                  onKeyDown={handlePairingKeyDown}
-                  onPaste={pastePairingDigits}
-                />
-                <div className="section-actions pairing-actions">
-                  <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting" || connection !== "connected"}>
-                    {pairingState === "waiting" ? "提交中..." : "提交验证码"}
-                  </button>
-                  <button className="secondary" type="button" onClick={() => void connectToDaemon(undefined, { preserveState: true })}>重新连接</button>
-                </div>
-              </form>
-              <p className="subtle compact">{daemonProfileMessage || connectFeedback || pairingFeedback}</p>
+                  <div className="fleet-connect-grid">
+                    <label className="fleet-field-full">
+                      <span>Helm 名称</span>
+                      <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="本地 Helm" autoFocus />
+                    </label>
+                    <label>
+                      <span>Helm 地址</span>
+                      <input value={daemonHost} onChange={(event) => setDaemonHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
+                    </label>
+                    <label>
+                      <span>端口</span>
+                      <input value={daemonPort} onChange={(event) => setDaemonPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
+                    </label>
+                  </div>
+
+                  <div className="section-actions fleet-modal-actions">
+                    <button className="secondary" type="submit">保存 Helm</button>
+                    <button className="primary" type="button" onClick={() => void connectToDaemon()}>连接</button>
+                  </div>
+                </form>
+
+                <form className="fleet-dialog-card fleet-pair-card" onSubmit={submitPairingCode}>
+                  <div className="fleet-dialog-card-head">
+                    <span>02</span>
+                    <div>
+                      <strong>配对验证</strong>
+                      <p className="muted compact">连接成功后，输入 Helm 返回的 6 位验证码。</p>
+                    </div>
+                  </div>
+
+                  <PairingBoxes
+                    refs={pairInputRefs}
+                    value={pairingCodeInput}
+                    disabled={pairingState === "waiting" || connection !== "connected"}
+                    onChange={updatePairingDigit}
+                    onKeyDown={handlePairingKeyDown}
+                    onPaste={pastePairingDigits}
+                  />
+
+                  <div className="section-actions pairing-actions fleet-pair-actions">
+                    <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting" || connection !== "connected"}>
+                      {pairingState === "waiting" ? "提交中..." : "提交验证码"}
+                    </button>
+                    <button className="secondary" type="button" onClick={() => void connectToDaemon(undefined, { preserveState: true })}>重新连接</button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="fleet-dialog-status">
+                <span className={`helm-status-dot helm-status-${connection}`} aria-hidden="true" />
+                <p className="subtle compact">{daemonProfileMessage || connectFeedback || pairingFeedback || "等待连接 Helm。"}</p>
+              </div>
             </section>
           </div>
         ) : null}
@@ -2390,45 +2441,36 @@ export function App() {
             </div>
           </div>
 
-          <div className="fleet-overview-grid">
-            <section className="note-box compact-note fleet-card fleet-summary-card">
+          <section className="fleet-hub" aria-label="舰队 Helm 节点">
+            <div className="fleet-hub-head">
               <div>
-                <p className="eyebrow">Fleet</p>
-                <h3>舰队</h3>
-                <p className="muted compact">Fleet 收纳多个 Helm；点击 Helm 后查看项目、ACP 舰员与配置入口。</p>
-              </div>
-              <div className="fleet-summary-metrics">
-                <div className="fleet-summary-metric">
-                  <span>Helm</span>
-                  <strong>{helmCards.length}</strong>
-                </div>
-                <div className="fleet-summary-metric">
-                  <span>当前 Helm</span>
-                  <strong>{selectedHelm.name}</strong>
+                <div className="fleet-hub-title-row">
+                  <h3>Helm 节点</h3>
+                  <span>{helmCards.length} Helm</span>
                 </div>
               </div>
-            </section>
+              <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
+            </div>
 
-            <section className="note-box compact-note fleet-card fleet-helm-card-list">
-              <div className="section-head section-head-soft fleet-card-heading">
-                <div>
-                  <strong>Helm 节点</strong>
-                  <p className="muted compact">只显示名称和地址，点击即可选中。</p>
-                </div>
-                <button className="primary" type="button" onClick={() => setFleetAddHelmModalOpen(true)}>添加</button>
-              </div>
-              <div className="helm-card-grid" aria-label="Fleet Helm 节点">
-                {helmCards.map((helm) => (
-                  <article className={`helm-node-card ${selectedHelm.key === helm.key ? "active" : ""}`} key={helm.key}>
-                    <button className="helm-node-main" type="button" onClick={() => setSelectedHelmKey(helm.key)} aria-pressed={selectedHelm.key === helm.key}>
-                      <strong>{helm.name}</strong>
-                      <span className="muted compact">{helm.host}:{helm.port}</span>
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
+            <p className="fleet-hub-copy">统一管理可用 Helm 节点；选择一个 Helm 后，在下方查看它的项目、ACP 舰员与配置入口。</p>
+
+            <div className="fleet-hub-node-list" role="list" aria-label="Helm 节点列表">
+              {helmCards.map((helm) => (
+                <button
+                  className={`fleet-hub-node ${selectedHelm.key === helm.key ? "active" : ""}`}
+                  key={helm.key}
+                  type="button"
+                  role="listitem"
+                  onClick={() => setSelectedHelmKey(helm.key)}
+                  aria-pressed={selectedHelm.key === helm.key}
+                  title={`${helm.name} · ${helm.host}:${helm.port}`}
+                >
+                  <span className={`helm-status-dot ${helm.isCurrent ? `helm-status-${connection}` : "helm-status-saved"}`} aria-hidden="true" />
+                  <span>{helm.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
 
           <section className="note-box compact-note fleet-card helm-detail-panel helm-detail-panel-expanded">
             <div className="section-head section-head-soft">

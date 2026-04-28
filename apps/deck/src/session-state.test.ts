@@ -115,6 +115,6 @@ test("resolveModelOptionsFromConfig reads concrete ACP model choices from config
 
 
 test("resolvePromptPlaceholder uses the selected ACP command as empty-editor hint", () => {
-  assert.equal(resolvePromptPlaceholder({ command: "codex-acp" }), "Message codex-acp – @ to include context, / for commands");
-  assert.equal(resolvePromptPlaceholder({ command: "opencode", args: ["acp", "--pure"] }), "Message opencode acp --pure – @ to include context, / for commands");
+  assert.equal(resolvePromptPlaceholder({ command: "codex-acp" }), "向 codex-acp 下达指令；@ 引用上下文，/ 调用命令");
+  assert.equal(resolvePromptPlaceholder({ command: "opencode", args: ["acp", "--pure"] }), "向 opencode acp --pure 下达指令；@ 引用上下文，/ 调用命令");
 });

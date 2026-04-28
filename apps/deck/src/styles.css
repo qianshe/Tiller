@@ -5188,3 +5188,1011 @@ textarea:focus,
 [data-deck-theme="light"] .fleet-helm-card-list .helm-node-card.active .helm-node-main strong {
   color: #0f172a;
 }
+
+/* Fleet order fix: Helm selection belongs above selected Helm contents. */
+.shell.view-agents {
+  padding-top: 72px;
+}
+
+.view-agents .page-content,
+.view-agents .workspace-single {
+  gap: 10px;
+}
+
+.fleet-command-panel {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 16px;
+  padding-top: 22px;
+}
+
+.fleet-title-row {
+  order: 0;
+  min-height: auto;
+  padding-bottom: 2px;
+}
+
+.fleet-overview-grid {
+  order: 1;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+}
+
+.fleet-summary-card,
+.fleet-helm-card-list {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+
+.helm-detail-panel,
+.helm-detail-panel-expanded {
+  order: 2;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+}
+
+.fleet-summary-card {
+  min-height: 176px;
+  align-content: start;
+  gap: 18px;
+}
+
+.fleet-helm-card-list .helm-node-card {
+  min-height: 96px;
+}
+
+.fleet-helm-card-list .helm-node-main {
+  padding: 16px 18px;
+}
+
+.helm-detail-panel-expanded {
+  min-height: 500px;
+}
+
+/* Mission full-window pass: remove the page-card feeling and let the command deck fill the viewport. */
+.shell.view-sessions {
+  width: 100vw;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.view-sessions .top-nav {
+  margin: 16px 16px 0;
+}
+
+.view-sessions .page-content {
+  min-height: calc(100vh - 76px);
+  padding: 16px;
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar {
+  width: 100%;
+  height: calc(100vh - 108px);
+  min-height: 0;
+  max-height: none;
+  border-radius: 18px;
+}
+
+.view-sessions .chat-main {
+  padding-bottom: 170px;
+  scroll-padding-bottom: 170px;
+}
+
+.view-sessions .chat-input-area.draft-toolbar:has(.draft-toolbar-grid) .mission-order-editor.chat-input-form {
+  margin-top: 0;
+}
+
+.view-sessions .chat-input-area.draft-toolbar:not(:has(.draft-toolbar-grid)) {
+  padding-top: 10px;
+}
+
+.view-sessions .chat-input-area.draft-toolbar:not(:has(.draft-toolbar-grid)) .mission-order-editor.chat-input-form {
+  width: min(760px, 100%);
+  max-width: 760px;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .top-nav {
+    margin: 10px 10px 0;
+  }
+
+  .view-sessions .page-content {
+    padding: 10px;
+  }
+
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    height: calc(100vh - 92px);
+    border-radius: 14px;
+  }
+}
+
+/* Fleet Helm node bubbles: name + status dot only. */
+.fleet-summary-metrics-single {
+  grid-template-columns: minmax(180px, 260px);
+}
+
+.fleet-summary-metrics-single .fleet-summary-metric {
+  min-height: 66px;
+}
+
+.fleet-helm-card-list .helm-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  align-items: start;
+}
+
+.fleet-helm-card-list .helm-node-bubble {
+  min-height: 54px;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 12px 16px;
+  border-radius: 999px;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main strong {
+  overflow: hidden;
+  color: #e5edf7;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.helm-status-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+}
+
+.helm-status-connected {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14), 0 0 18px rgba(34, 197, 94, 0.35);
+}
+
+.helm-status-connecting {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14), 0 0 18px rgba(245, 158, 11, 0.35);
+}
+
+.helm-status-disconnected,
+.helm-status-saved {
+  background: #64748b;
+  box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.14);
+}
+
+[data-deck-theme="light"] .fleet-helm-card-list .helm-node-bubble .helm-node-main strong {
+  color: #0f172a;
+}
+
+/* Fleet top block should read as one unified content card. */
+.fleet-overview-grid {
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.fleet-overview-grid .fleet-summary-card,
+.fleet-overview-grid .fleet-helm-card-list {
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.fleet-overview-grid .fleet-summary-card {
+  min-height: 0;
+  align-content: start;
+}
+
+.fleet-overview-grid .fleet-helm-card-list {
+  align-content: start;
+  padding-left: 20px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14) !important;
+}
+
+.fleet-overview-grid .fleet-summary-metrics-single {
+  max-width: 260px;
+}
+
+.fleet-overview-grid .helm-card-grid {
+  margin-top: 18px;
+}
+
+.fleet-overview-grid .helm-node-bubble.active {
+  background: rgba(226, 232, 240, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-overview-grid {
+  background: rgba(248, 250, 252, 0.76);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-grid .fleet-helm-card-list {
+    padding-left: 0;
+    padding-top: 18px;
+    border-left: 0 !important;
+    border-top: 1px solid rgba(148, 163, 184, 0.14) !important;
+  }
+}
+
+/* Fleet top block layout: top info row + lower count/bubble row. */
+.fleet-overview-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.9fr);
+  grid-template-rows: auto;
+  gap: 28px;
+  padding: 20px 22px 22px;
+  align-items: stretch;
+}
+
+.fleet-overview-grid .fleet-summary-card,
+.fleet-overview-grid .fleet-helm-card-list {
+  display: grid;
+  grid-template-rows: auto minmax(74px, 1fr);
+  gap: 20px;
+}
+
+.fleet-summary-card h3 {
+  margin: 4px 0 8px;
+  font-size: 1.18rem;
+}
+
+.fleet-summary-copy {
+  max-width: 68ch;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.fleet-overview-grid .fleet-summary-metrics-single {
+  align-self: end;
+  max-width: 320px;
+}
+
+.fleet-summary-metrics-single .fleet-summary-metric {
+  min-height: 78px;
+  padding: 16px 18px;
+}
+
+.fleet-card-heading {
+  min-height: 76px;
+}
+
+.fleet-card-heading strong {
+  font-size: 1.08rem;
+}
+
+.fleet-card-heading .primary {
+  align-self: start;
+  min-width: 90px;
+  min-height: 50px;
+}
+
+.fleet-overview-grid .helm-card-grid {
+  align-self: end;
+  margin-top: 0;
+}
+
+.fleet-helm-card-list .helm-node-bubble {
+  min-height: 50px;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main {
+  min-height: 50px;
+  padding: 10px 16px;
+}
+
+/* Mission four-column Zed-like workbench: sessions | thread | display | inspector. */
+.view-sessions .chat-layout.chat-layout-sidebar {
+  grid-template-columns: 300px minmax(420px, 1.45fr) minmax(320px, 0.92fr) 292px !important;
+  gap: 0;
+  background: #080d17;
+}
+
+.view-sessions .chat-session-sidebar,
+.view-sessions .chat-conversation,
+.view-sessions .mission-display-panel,
+.view-sessions .mission-inspector {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0;
+}
+
+.view-sessions .chat-conversation {
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.view-sessions .mission-display-panel {
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 0;
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(14, 19, 29, 0.98), rgba(10, 15, 24, 0.98));
+  overflow: hidden;
+}
+
+.view-sessions .mission-display-empty {
+  align-content: start;
+}
+
+.view-sessions .mission-panel-head {
+  min-height: 46px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.view-sessions .mission-panel-head h3 {
+  font-size: 0.88rem;
+}
+
+.view-sessions .mission-panel-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.view-sessions .mission-panel-tree {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 8px 0;
+  border-right: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+  overflow-x: auto;
+  background: rgba(8, 13, 23, 0.84);
+}
+
+.view-sessions .mission-panel-tree-title {
+  flex: 0 0 auto;
+  margin: 0 6px 7px 0;
+}
+
+.view-sessions .mission-panel-node {
+  width: auto;
+  max-width: 136px;
+  min-height: 28px;
+  padding: 5px 8px;
+  flex: 0 0 auto;
+  border-radius: 8px 8px 0 0;
+  color: #91a0b7;
+}
+
+.view-sessions .mission-panel-node.active,
+.view-sessions .mission-panel-node:hover {
+  color: #e8eef8;
+  background: rgba(30, 41, 59, 0.96);
+  box-shadow: 0 -1px 0 rgba(132, 204, 22, 0.8) inset;
+}
+
+.view-sessions .mission-panel-content {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.view-sessions .mission-panel-content-head {
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.36);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+}
+
+.view-sessions .mission-panel-page {
+  padding: 12px;
+}
+
+.view-sessions .mission-panel-empty-page {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-height: 240px;
+  color: #b8c4d7;
+}
+
+.view-sessions .mission-composer-config {
+  grid-template-columns: minmax(0, 1.15fr) minmax(112px, 0.85fr);
+}
+
+.view-sessions .mission-config-card {
+  position: relative;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.view-sessions .mission-config-card > span {
+  color: #8ea0ba;
+}
+
+.view-sessions .mission-config-card select {
+  min-height: 34px;
+  padding-left: 8px;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(8, 13, 23, 0.82);
+  font-weight: 750;
+}
+
+.view-sessions .mission-config-card small {
+  display: block;
+  overflow: hidden;
+  color: #71819a;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-inspector-section {
+  gap: 10px;
+}
+
+.model-inspector-hero {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(77, 163, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(77, 163, 255, 0.08);
+}
+
+.model-inspector-label {
+  color: #8ea0ba;
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+
+.model-inspector-hero strong {
+  overflow: hidden;
+  color: #e8eef8;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-inspector-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.model-inspector-grid span {
+  color: #8ea0ba;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.model-inspector-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-display-panel {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.96));
+}
+
+[data-deck-theme="light"] .view-sessions .mission-panel-head,
+[data-deck-theme="light"] .view-sessions .mission-panel-tree,
+[data-deck-theme="light"] .view-sessions .mission-panel-content-head,
+[data-deck-theme="light"] .view-sessions .mission-config-card,
+[data-deck-theme="light"] .model-inspector-grid {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+[data-deck-theme="light"] .model-inspector-hero strong {
+  color: #0f172a;
+}
+
+@media (max-width: 1500px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns: 288px minmax(380px, 1fr) minmax(300px, 0.82fr) !important;
+  }
+
+  .view-sessions .mission-inspector {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns: 280px minmax(0, 1fr) !important;
+  }
+
+  .view-sessions .mission-display-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    grid-template-columns: 1fr !important;
+    overflow-y: auto;
+  }
+
+  .view-sessions .chat-session-sidebar {
+    min-height: 260px;
+  }
+}
+
+/* Fleet unified top block v2: explicit four-zone layout. */
+.fleet-overview-unified {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.9fr);
+  grid-template-rows: auto auto;
+  column-gap: 28px;
+  row-gap: 20px;
+  padding: 20px 22px 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.fleet-info-head {
+  display: grid;
+  gap: 8px;
+}
+
+.fleet-info-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 36px;
+}
+
+.fleet-info-title-row h3 {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 1.2rem;
+}
+
+.fleet-info-title-row strong {
+  color: #f87171;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.fleet-helm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-left: 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.fleet-helm-head strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.08rem;
+}
+
+.fleet-helm-head .primary {
+  min-width: 92px;
+  min-height: 50px;
+}
+
+.fleet-count-card {
+  display: grid;
+  gap: 8px;
+  align-self: end;
+  width: min(260px, 100%);
+  min-height: 76px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.fleet-count-card span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.fleet-count-card strong {
+  color: #e5edf7;
+  font-size: 1.16rem;
+}
+
+.fleet-helm-bubbles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  align-self: end;
+  padding-left: 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.fleet-helm-bubbles .helm-node-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: rgba(226, 232, 240, 0.16);
+  color: #e5edf7;
+  text-align: left;
+}
+
+.fleet-helm-bubbles .helm-node-bubble.active {
+  border-color: rgba(96, 165, 250, 0.72);
+  background: rgba(226, 232, 240, 0.24);
+}
+
+.fleet-helm-bubbles .helm-node-bubble strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .fleet-overview-unified {
+  background: rgba(248, 250, 252, 0.76);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-count-card,
+[data-deck-theme="light"] .fleet-helm-bubbles .helm-node-bubble {
+  background: rgba(248, 250, 252, 0.72);
+  color: #0f172a;
+}
+
+[data-deck-theme="light"] .fleet-count-card strong {
+  color: #0f172a;
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-unified {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-helm-head,
+  .fleet-helm-bubbles {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* Fleet Hub redesign: one focused module for Helm selection only. */
+.fleet-hub {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(239, 68, 68, 0.10), transparent 34%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.62), rgba(15, 23, 42, 0.34));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 48px rgba(0, 0, 0, 0.14);
+}
+
+.fleet-hub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.fleet-hub-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.fleet-hub-title-row h3 {
+  margin: 0;
+  color: #fca5a5;
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+  line-height: 1;
+}
+
+.fleet-hub-title-row span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.fleet-hub-head .primary {
+  min-width: 92px;
+  min-height: 48px;
+  border-radius: 999px;
+}
+
+.fleet-hub-copy {
+  max-width: 82ch;
+  margin: 0;
+  color: #aebbd0;
+  font-size: 0.98rem;
+  line-height: 1.58;
+}
+
+.fleet-hub-node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 58px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(2, 6, 23, 0.20);
+}
+
+.fleet-hub-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  max-width: 260px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background: rgba(226, 232, 240, 0.10);
+  color: #e5edf7;
+  font-weight: 900;
+  text-align: left;
+  box-shadow: none;
+}
+
+.fleet-hub-node:hover,
+.fleet-hub-node:focus-visible {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.14);
+  outline: none;
+}
+
+.fleet-hub-node.active {
+  border-color: rgba(96, 165, 250, 0.78);
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.24), rgba(59, 130, 246, 0.16));
+}
+
+.fleet-hub-node span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .fleet-hub {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(239, 68, 68, 0.10), transparent 34%),
+    rgba(248, 250, 252, 0.78);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-hub-copy {
+  color: #475569;
+}
+
+[data-deck-theme="light"] .fleet-hub-node-list {
+  background: rgba(255, 255, 255, 0.54);
+}
+
+[data-deck-theme="light"] .fleet-hub-node {
+  background: rgba(248, 250, 252, 0.82);
+  color: #0f172a;
+}
+
+@media (max-width: 720px) {
+  .fleet-hub-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fleet-hub-head .primary {
+    width: 100%;
+  }
+}
+
+/* Mission top menu parity: keep the shared drawer style; only the workspace below is full-window. */
+.shell.view-sessions {
+  padding-top: 96px;
+}
+
+.view-sessions .top-nav {
+  margin: 0;
+}
+
+.view-sessions .page-content {
+  min-height: calc(100vh - 96px);
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar {
+  height: calc(100vh - 128px);
+}
+
+@media (max-width: 860px) {
+  .shell.view-sessions {
+    padding-top: 90px;
+  }
+
+  .view-sessions .top-nav {
+    margin: 0;
+  }
+
+  .view-sessions .page-content {
+    min-height: calc(100vh - 90px);
+  }
+
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    height: calc(100vh - 110px);
+  }
+}
+
+
+/* Add Helm modal redesign: step-based connection + pairing flow. */
+.fleet-add-helm-dialog {
+  display: grid;
+  gap: 20px;
+  width: min(880px, calc(100vw - 32px));
+  padding: 24px;
+  border-radius: 28px;
+}
+
+.fleet-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.fleet-dialog-head h3 {
+  margin: 4px 0 8px;
+  font-size: 1.35rem;
+}
+
+.fleet-dialog-close {
+  min-width: 76px;
+  border-radius: 999px;
+}
+
+.fleet-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.fleet-dialog-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.18);
+}
+
+.fleet-dialog-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fleet-dialog-card-head > span {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(77, 163, 255, 0.14);
+  color: #bfdbfe;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.fleet-dialog-card-head strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 1rem;
+}
+
+.fleet-connect-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 12px;
+}
+
+.fleet-field-full {
+  grid-column: 1 / -1;
+}
+
+.fleet-connect-grid label,
+.fleet-dialog-card label {
+  display: grid;
+  gap: 8px;
+}
+
+.fleet-connect-grid label > span {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.fleet-add-helm-dialog .fleet-modal-actions,
+.fleet-pair-actions {
+  justify-content: flex-end;
+}
+
+.fleet-pair-card .pairing-form,
+.fleet-pair-card .pairing-boxes {
+  width: 100%;
+}
+
+.fleet-pair-card .pairing-boxes {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fleet-pair-card .pairing-boxes input {
+  min-width: 0;
+  width: 100%;
+}
+
+.fleet-dialog-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.fleet-dialog-status p {
+  margin: 0;
+}
+
+[data-deck-theme="light"] .fleet-dialog-card,
+[data-deck-theme="light"] .fleet-dialog-status {
+  background: rgba(248, 250, 252, 0.72);
+}
+
+[data-deck-theme="light"] .fleet-connect-grid label > span {
+  color: #334155;
+}
+
+@media (max-width: 860px) {
+  .fleet-dialog-body,
+  .fleet-connect-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-dialog-head,
+  .fleet-add-helm-dialog .fleet-modal-actions,
+  .fleet-pair-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fleet-dialog-close,
+  .fleet-add-helm-dialog button {
+    width: 100%;
+  }
+}
