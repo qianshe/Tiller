@@ -35,6 +35,11 @@ export type ClientToHelm =
       requestId: string;
     }
   | {
+      type: "project.save";
+      requestId: string;
+      project: ProjectSummary;
+    }
+  | {
       type: "workspace.list";
       requestId: string;
     }
@@ -166,6 +171,13 @@ export type HelmToClient =
       type: "project.list.result";
       requestId: string;
       projects: ProjectSummary[];
+    }
+  | {
+      type: "project.save.result";
+      requestId: string;
+      ok: boolean;
+      projectId: string;
+      message: string;
     }
   | {
       type: "workspace.list.result";

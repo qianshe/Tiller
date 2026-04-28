@@ -68,7 +68,24 @@ export function readTillerConfig(configPath = getDefaultConfigPath()): TillerCon
     return {};
   }
 
-  return JSON.parse(stub.raw) as TillerConfig;
+  return parseTillerConfig(stub.raw, configPath);
+}
+
+export function parseTillerConfig(raw: string, configPath = "<memory>"): TillerConfig {
+  try {
+    return JSON.parse(raw) as TillerConfig;
+  } catch (error) {
+    try {
+      return JSON.parse(stripJsonTrailingCommas(raw)) as TillerConfig;
+    } catch {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid Tiller config JSON at ${configPath}: ${message}`);
+    }
+  }
+}
+
+function stripJsonTrailingCommas(raw: string) {
+  return raw.replace(/,(\s*[}\]])/g, "$1");
 }
 
 export function listAvailableHelms(configPath = getDefaultConfigPath()) {
@@ -134,6 +151,31 @@ export function saveProviderToConfig(provider: AcpAgentProvider, configPath = ge
   return {
     configPath,
     provider: normalizedProvider,
+  };
+}
+
+
+export function saveProjectToConfig(project: ProjectSummary, configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextProjects = [...(current.projects ?? []).filter((item) => item.id !== project.id), project];
+
+  const nextConfig: TillerConfig = {
+    helms: current.helms ?? [],
+    projects: nextProjects,
+    workspaces: current.workspaces ?? [],
+    agents: current.agents ?? [],
+    daemon: current.daemon ?? {
+      host: "127.0.0.1",
+      port: 47631,
+    },
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    project,
   };
 }
 

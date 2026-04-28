@@ -1550,6 +1550,60 @@ textarea:focus,
   }
 }
 
+
+/* Shared top navigation contract: TopNav is one component, so every view uses the same drawer geometry. */
+.shell > .top-nav {
+  position: fixed;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  width: auto;
+  max-width: none;
+  min-height: 76px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  overflow: visible;
+  transform: translateY(-78px);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  transition: transform 0.24s ease, box-shadow 0.24s ease;
+}
+
+.shell > .top-nav::after {
+  display: block;
+}
+
+.shell > .top-nav:hover,
+.shell > .top-nav:focus-within {
+  width: auto;
+  transform: translateY(0);
+}
+
+.shell > .top-nav .top-nav-brand strong,
+.shell > .top-nav .top-nav-links,
+.shell > .top-nav .status-pill {
+  opacity: 1;
+  max-width: none;
+  pointer-events: auto;
+}
+
+@media (max-width: 860px) {
+  .shell > .top-nav {
+    top: 0;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    min-height: 150px;
+    transform: translateY(-142px);
+  }
+
+  .shell > .top-nav:hover,
+  .shell > .top-nav:focus-within {
+    width: auto;
+    transform: translateY(0);
+  }
+}
+
 /* Zed-inspired Mission workspace: dense thread sidebar + editor-like conversation panel */
 .chat-layout.chat-layout-sidebar {
   grid-template-columns: 320px minmax(0, 1fr);
@@ -5258,9 +5312,6 @@ textarea:focus,
   padding: 0;
 }
 
-.view-sessions .top-nav {
-  margin: 16px 16px 0;
-}
 
 .view-sessions .page-content {
   min-height: calc(100vh - 76px);
@@ -5294,9 +5345,6 @@ textarea:focus,
 }
 
 @media (max-width: 860px) {
-  .view-sessions .top-nav {
-    margin: 10px 10px 0;
-  }
 
   .view-sessions .page-content {
     padding: 10px;
@@ -6016,9 +6064,6 @@ textarea:focus,
   padding-top: 96px;
 }
 
-.view-sessions .top-nav {
-  margin: 0;
-}
 
 .view-sessions .page-content {
   min-height: calc(100vh - 96px);
@@ -6033,9 +6078,6 @@ textarea:focus,
     padding-top: 90px;
   }
 
-  .view-sessions .top-nav {
-    margin: 0;
-  }
 
   .view-sessions .page-content {
     min-height: calc(100vh - 90px);
@@ -6231,11 +6273,6 @@ textarea:focus,
   padding-top: 0;
 }
 
-.view-sessions .top-nav {
-  left: 0;
-  right: 0;
-  margin: 0;
-}
 
 .view-sessions .page-content {
   min-height: 100vh;
@@ -7110,35 +7147,202 @@ textarea:focus,
   }
 }
 
-/* Mission top navigation fix: keep the menu visible and consistent instead of a hidden drawer. */
-.view-sessions .top-nav {
-  top: 16px;
-  left: 16px;
-  right: 16px;
-  width: auto;
-  margin: 0;
-  min-height: 76px;
-  transform: none;
-  border-top-left-radius: 24px;
-  border-top-right-radius: 24px;
+
+.helm-inline-add-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
 }
 
-.view-sessions .top-nav::after {
-  display: none;
+.helm-inline-add-form-agent {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1fr) auto;
 }
 
-.view-sessions .top-nav:hover,
-.view-sessions .top-nav:focus-within {
-  width: auto;
-  transform: none;
+.helm-inline-add-form input {
+  min-height: 40px;
+}
+
+.helm-inline-add-form button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .helm-inline-add-form {
+  background: rgba(248, 250, 252, 0.82);
 }
 
 @media (max-width: 860px) {
-  .view-sessions .top-nav {
-    top: 10px;
-    left: 10px;
-    right: 10px;
-    min-height: 0;
-    transform: none;
+  .helm-inline-add-form,
+  .helm-inline-add-form-agent {
+    grid-template-columns: 1fr;
   }
 }
+
+
+/* Fleet add controls: keep action buttons in the section header and append forms below the list. */
+.helm-inventory-list-section {
+  align-content: start;
+}
+
+.helm-inventory-section-head {
+  order: 1;
+  min-height: 42px;
+}
+
+.helm-simple-list,
+.helm-inventory-list-section > .empty-state {
+  order: 2;
+}
+
+.helm-inline-add-form {
+  order: 3;
+  margin-top: 4px;
+}
+
+.helm-inventory-section-head .helm-list-add-button {
+  margin-left: auto;
+}
+
+@media (max-width: 520px) {
+  .helm-inventory-section-head {
+    align-items: center;
+    flex-direction: row;
+  }
+}
+
+
+/* Fleet list add buttons: compact plus actions aligned with section titles. */
+.helm-inventory-section-head {
+  min-height: 36px;
+  align-items: center;
+  padding-bottom: 0;
+}
+
+.helm-list-add-button {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.helm-inventory-list-section {
+  grid-template-rows: 36px auto auto;
+}
+
+.helm-inline-add-form {
+  width: 100%;
+}
+
+
+/* Fleet section plus buttons: pin to the far right of each column header. */
+.helm-inventory-section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  width: 100%;
+}
+
+.helm-inventory-section-head .helm-list-add-button {
+  justify-self: end;
+  margin-left: 0;
+}
+
+.helm-inventory-section-head h3 {
+  min-width: 0;
+}
+
+
+.helm-inline-add-form-agent {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(220px, 1.2fr) auto;
+  align-items: start;
+}
+
+.helm-args-array-input {
+  min-height: 72px;
+  resize: vertical;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  line-height: 1.45;
+}
+
+/* Fleet ACP add form: keep the primary fields in one row, and manage args as a real array below. */
+.helm-inline-add-form-agent {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.helm-agent-core-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.helm-agent-args-column {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(89, 109, 145, 0.18);
+  border-radius: 18px;
+  background: rgba(7, 13, 25, 0.18);
+}
+
+.helm-agent-args-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #dbe7fb;
+  font-weight: 800;
+}
+
+.helm-arg-action-button {
+  min-height: 34px !important;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+
+.helm-agent-arg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.helm-agent-arg-row input {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.helm-arg-icon-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+[data-deck-theme="light"] .helm-agent-args-column {
+  background: rgba(248, 250, 252, 0.7);
+}
+
+[data-deck-theme="light"] .helm-agent-args-head {
+  color: #0f172a;
+}
+
+@media (max-width: 720px) {
+  .helm-agent-core-row {
+    grid-template-columns: 1fr;
+  }
+}
+

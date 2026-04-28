@@ -790,23 +790,39 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
 
   logInfo(`[tiller-helm] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`);
 
-  const runtime = await createAcpRuntime({
-    sessionId: probeSessionId,
-    workspace,
-    agent,
-    onEvent: (event) => {
-      if (event.type === "model-options") {
-        modelState = event.state;
-      } else if (event.type === "config-options") {
-        configState = event.state;
-        configOptions = event.options;
-      } else if (event.type === "error") {
-        logError(`[tiller-helm] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
-      }
-    },
-  });
+  try {
+    const runtime = await createAcpRuntime({
+      sessionId: probeSessionId,
+      workspace,
+      agent: {
+        ...agent,
+        initializeTimeoutMs: Math.max(agent.initializeTimeoutMs ?? 0, 180_000),
+      },
+      onEvent: (event) => {
+        if (event.type === "model-options") {
+          modelState = event.state;
+        } else if (event.type === "config-options") {
+          configState = event.state;
+          configOptions = event.options;
+        } else if (event.type === "error") {
+          logError(`[tiller-helm] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
+        }
+      },
+    });
 
-  runtime.cancel();
+    runtime.cancel();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
+    logError(`[tiller-helm] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`);
+    return {
+      ok: false,
+      message,
+      currentModelId: undefined,
+      modelOptions: [],
+      configOptions: [],
+      state: {},
+    };
+  }
 
   const modelCount = modelState?.options.length ?? 0;
   logInfo(
@@ -822,7 +838,6 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
     state: configState,
   };
 }
-
 function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
   if (!sessions.has(sessionId) && !sessionStore.list().some((item) => item.id === sessionId)) {
     return;
@@ -1646,3 +1661,6 @@ type SessionRecord = {
     supportsPermissionResponses: boolean;
   };
 };
+
+
+

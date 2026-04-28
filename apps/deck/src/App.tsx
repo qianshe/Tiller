@@ -39,6 +39,8 @@ const DAEMON_PORT_KEY = "tiller.daemon-port";
 const DAEMON_PROFILE_STORAGE_KEY = "tiller.daemon-profiles";
 const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
+const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
+const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const MODEL_OPTIONS = [
@@ -353,6 +355,67 @@ type AgentModelOptionsEntry = {
 
 function agentModelOptionsKey(providerId: string, workspaceId: string) {
   return `${providerId}::${workspaceId}`;
+}
+
+
+type AgentModelOptionsCache = Record<string, AgentModelOptionsEntry & { cachedAt: number }>;
+
+function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEntry> {
+  try {
+    const raw = window.localStorage.getItem(AGENT_MODEL_OPTIONS_CACHE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as AgentModelOptionsCache;
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([, entry]) => now - entry.cachedAt < AGENT_MODEL_OPTIONS_CACHE_TTL_MS)
+        .map(([key, entry]) => [
+          key,
+          {
+            loading: false,
+            message: entry.message,
+            modelOptions: entry.modelOptions ?? [],
+            configOptions: entry.configOptions ?? [],
+            state: entry.state ?? {},
+          } satisfies AgentModelOptionsEntry,
+        ]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeAgentModelOptionsCache(nextEntries: Record<string, AgentModelOptionsEntry>) {
+  try {
+    const now = Date.now();
+    const cache = Object.fromEntries(
+      Object.entries(nextEntries)
+        .filter(([, entry]) => !entry.loading && ((entry.modelOptions?.length ?? 0) > 0 || (entry.configOptions?.length ?? 0) > 0))
+        .map(([key, entry]) => [key, { ...entry, cachedAt: now }]),
+    );
+    window.localStorage.setItem(AGENT_MODEL_OPTIONS_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage can be unavailable in private contexts; ignore cache failures.
+  }
+}
+
+function resolvePreferredModel(currentModel: string | undefined, modelOptions: string[]) {
+  if (currentModel && modelOptions.includes(currentModel)) {
+    return currentModel;
+  }
+
+  if (currentModel) {
+    const currentBase = splitModelReasoning(currentModel).model;
+    const matchingBase = modelOptions.find((option) => splitModelReasoning(option).model === currentBase);
+    if (matchingBase) {
+      return matchingBase;
+    }
+  }
+
+  return modelOptions[0];
 }
 
 const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
@@ -702,7 +765,7 @@ export function App() {
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
-  const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>({});
+  const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
@@ -740,6 +803,10 @@ export function App() {
   const [fleetAddHelmName, setFleetAddHelmName] = useState<string>("");
   const [fleetAddHelmHost, setFleetAddHelmHost] = useState<string>(DEFAULT_DAEMON_HOST);
   const [fleetAddHelmPort, setFleetAddHelmPort] = useState<string>(DEFAULT_DAEMON_PORT);
+  const [fleetProjectFormOpen, setFleetProjectFormOpen] = useState(false);
+  const [fleetProjectDraftName, setFleetProjectDraftName] = useState("");
+  const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
+  const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -804,12 +871,15 @@ export function App() {
   const cachedModelSession = activeSession ? null : sessions.find((session) => session.agentId === selectedAgentId && (session.modelOptions?.length ?? 0) > 0);
   const draftNativeModelOptions = activeSession?.modelOptions ?? draftAgentModelOptions?.modelOptions ?? cachedModelSession?.modelOptions ?? [];
   const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions, draftNativeModelOptions);
+  const draftAllModelOptions = Array.from(new Set([...draftModelOptions, ...draftNativeModelOptions.map((option) => option.id)]));
   const draftModelParts = splitModelReasoning(draftModel);
   const draftModelBase = draftModelParts.model || draftModel;
   const draftModelBaseOptions = resolveBaseModelOptions(draftModelOptions);
-  const draftModelPickerLabel = draftModelBaseOptions.length ? draftModelBase : draftAgentModelOptions?.loading ? "加载模型..." : "暂无模型列表";
+  const draftModelBaseValid = draftModelBaseOptions.includes(draftModelBase);
+  const effectiveDraftModelBase = draftModelBaseValid ? draftModelBase : draftModelBaseOptions[0] ?? draftModelBase;
+  const draftModelPickerLabel = draftModelBaseOptions.length ? effectiveDraftModelBase : draftAgentModelOptions?.loading ? "加载模型..." : "暂无模型列表";
   const draftModelPickerDisabled = draftModelBaseOptions.length === 0;
-  const draftReasoningOptions = resolveReasoningOptionsForModel(draftModelBase, draftModelOptions, draftConfigOptions);
+  const draftReasoningOptions = resolveReasoningOptionsForModel(effectiveDraftModelBase, draftAllModelOptions, draftConfigOptions);
   const effectiveDraftReasoningEffort = draftModelParts.reasoning ?? draftReasoningEffort;
   const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   const daemonInventory = daemonProfiles.map((profile) =>
@@ -903,7 +973,20 @@ export function App() {
 
     const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId);
     const cached = agentModelOptions[key];
-    if (cached) {
+    if (cached && !cached.loading) {
+      const realOptions = resolveModelOptions(cached.state.model, cached.configOptions, cached.modelOptions);
+      const allOptions = Array.from(new Set([...realOptions, ...cached.modelOptions.map((option) => option.id)]));
+      const nextModel = resolvePreferredModel(cached.state.model, allOptions);
+      if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
+        setSelectedModel(nextModel);
+      }
+      if (cached.state.reasoningEffort) {
+        setSelectedReasoningEffort(cached.state.reasoningEffort);
+      }
+      return;
+    }
+
+    if (cached?.loading) {
       return;
     }
 
@@ -917,7 +1000,7 @@ export function App() {
       providerId: selectedAgentId,
       workspaceId: selectedWorkspaceId,
     });
-  }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedWorkspaceId]);
+  }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedModel, selectedWorkspaceId]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -1518,11 +1601,16 @@ export function App() {
           configOptions: payload.configOptions,
           state: payload.state,
         };
-        setAgentModelOptions((current) => ({ ...current, [key]: nextEntry }));
+        setAgentModelOptions((current) => {
+          const next = { ...current, [key]: nextEntry };
+          writeAgentModelOptionsCache(next);
+          return next;
+        });
         if (sourceIsCurrentHelm && payload.providerId === selectedAgentId && payload.workspaceId === selectedWorkspaceId) {
           const realOptions = resolveModelOptions(payload.currentModelId ?? payload.state.model, payload.configOptions, payload.modelOptions);
-          const nextModel = payload.currentModelId ?? payload.state.model ?? realOptions[0];
-          if (nextModel) {
+          const allOptions = Array.from(new Set([...realOptions, ...payload.modelOptions.map((option) => option.id)]));
+          const nextModel = resolvePreferredModel(payload.currentModelId ?? payload.state.model, allOptions);
+          if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
             setSelectedModel(nextModel);
           }
           if (payload.state.reasoningEffort) {
@@ -1531,6 +1619,9 @@ export function App() {
         }
         return;
       }
+      case "project.save.result":
+        setConfigSaveMessage(payload.message);
+        return;
       case "agent.save.result":
         setConfigSaveMessage(payload.message);
         if (socketRef.current) {
@@ -2628,9 +2719,9 @@ export function App() {
                         {missionConfigPicker === "model" ? (
                           <div className="mission-config-menu" role="listbox" aria-label="模型列表">
                             {draftModelBaseOptions.map((model) => {
-                              const modelReasoningOptions = resolveReasoningOptionsForModel(model, draftModelOptions, draftConfigOptions);
+                              const modelReasoningOptions = resolveReasoningOptionsForModel(model, draftAllModelOptions, draftConfigOptions);
                               const nextReasoning = modelReasoningOptions.includes(effectiveDraftReasoningEffort) ? effectiveDraftReasoningEffort : modelReasoningOptions[0];
-                              const selected = model === draftModelBase;
+                              const selected = model === effectiveDraftModelBase;
                               return (
                                 <button
                                   key={model}
@@ -2640,7 +2731,7 @@ export function App() {
                                   className={selected ? "active" : ""}
                                   onMouseDown={(event) => event.preventDefault()}
                                   onClick={() => {
-                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(model, nextReasoning, draftModelOptions), ...(nextReasoning ? { reasoningEffort: nextReasoning } : {}) });
+                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(model, nextReasoning, draftAllModelOptions), ...(nextReasoning ? { reasoningEffort: nextReasoning } : {}) });
                                     setMissionConfigPicker(null);
                                   }}
                                 >
@@ -2680,7 +2771,7 @@ export function App() {
                                   className={option === effectiveDraftReasoningEffort ? "active" : ""}
                                   onMouseDown={(event) => event.preventDefault()}
                                   onClick={() => {
-                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(draftModelBase, option, draftModelOptions), reasoningEffort: option });
+                                    updateSessionDraftPreferences({ model: resolveCombinedModelValue(effectiveDraftModelBase, option, draftAllModelOptions), reasoningEffort: option });
                                     setMissionConfigPicker(null);
                                   }}
                                 >
@@ -2724,7 +2815,7 @@ export function App() {
                 <p className="eyebrow">模型 / 推理</p>
                 <div className="model-inspector-hero">
                   <span className="model-inspector-label">MODEL</span>
-                  <strong title={draftModel}>{draftModelBaseOptions.length ? draftModelBase : draftModelPickerLabel}</strong>
+                  <strong title={draftModel}>{draftModelBaseOptions.length ? effectiveDraftModelBase : draftModelPickerLabel}</strong>
                 </div>
                 <div className="model-inspector-grid">
                   <span>推理</span>
@@ -2795,6 +2886,10 @@ export function App() {
     const selectedHelmInventory = helmInventories[selectedHelm.key];
     const selectedHelmProjects = selectedHelmIsCurrent ? projects : selectedHelmInventory?.projects ?? [];
     const selectedHelmAgents = selectedHelmIsCurrent ? agents : selectedHelmInventory?.agents ?? [];
+    const selectedHelmWorkspaces = selectedHelmIsCurrent ? workspaces : selectedHelmInventory?.workspaces ?? [];
+    const selectedHelmSocket = selectedHelmIsCurrent ? socketRef.current : helmSocketRefs.current.get(selectedHelm.key) ?? null;
+    const selectedHelmSummary = helms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
+    const selectedHelmId = selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
     const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
 
     return (
@@ -2942,7 +3037,52 @@ export function App() {
 
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
-                <h3>项目列表</h3>
+                <div className="helm-inventory-section-head">
+                  <h3>项目列表</h3>
+                  <button className="secondary helm-list-add-button" type="button" disabled={!selectedHelmIsConnected} aria-label="添加项目" title="添加项目" onClick={() => setFleetProjectFormOpen((current) => !current)}>+</button>
+                </div>
+                {fleetProjectFormOpen ? (
+                  <form
+                    className="helm-inline-add-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!selectedHelmSocket || !fleetProjectDraftName.trim()) {
+                        return;
+                      }
+                      const projectPath = fleetProjectDraftName.trim().replace(/\\/g, "/");
+                      const projectName = projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
+                      const projectId = slugify(projectName);
+                      const workspaceId = `${projectId}-workspace`;
+                      dispatch(selectedHelmSocket, {
+                        type: "workspace.save",
+                        requestId: nextRequestId(requestCounter),
+                        workspace: {
+                          id: workspaceId,
+                          name: projectName,
+                          path: projectPath,
+                        },
+                      });
+                      dispatch(selectedHelmSocket, {
+                        type: "project.save",
+                        requestId: nextRequestId(requestCounter),
+                        project: {
+                          id: projectId,
+                          name: projectName,
+                          helmId: selectedHelmId,
+                          workspaceIds: [workspaceId],
+                          allowedAgentIds: selectedHelmAgents.map((agent) => agent.id),
+                          defaultWorkspaceId: workspaceId,
+                          defaultAgentId: selectedHelmAgents[0]?.id,
+                        },
+                      });
+                      setFleetProjectDraftName("");
+                      setFleetProjectFormOpen(false);
+                    }}
+                  >
+                    <input value={fleetProjectDraftName} onChange={(event) => setFleetProjectDraftName(event.target.value)} placeholder="项目绝对路径，例如 D:/projects/my-app" />
+                    <button className="primary" type="submit" disabled={!fleetProjectDraftName.trim()}>保存项目</button>
+                  </form>
+                ) : null}
                 {selectedHelmProjects.length ? (
                   <ul className="helm-simple-list">
                     {selectedHelmProjects.map((project) => (
@@ -2968,7 +3108,79 @@ export function App() {
               </section>
 
               <section className="helm-inventory-list-section">
-                <h3>ACP 舰员</h3>
+                <div className="helm-inventory-section-head">
+                  <h3>ACP 舰员</h3>
+                  <button className="secondary helm-list-add-button" type="button" disabled={!selectedHelmIsConnected} aria-label="添加 ACP" title="添加 ACP" onClick={() => setFleetAgentFormOpen((current) => !current)}>+</button>
+                </div>
+                {fleetAgentFormOpen ? (
+                  <form
+                    className="helm-inline-add-form helm-inline-add-form-agent"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!selectedHelmSocket || !fleetAgentDraft.command.trim()) {
+                        return;
+                      }
+                      const providerId = slugify(fleetAgentDraft.name || fleetAgentDraft.command);
+                      const agentArgs = fleetAgentDraft.args.map((item) => item.trim()).filter(Boolean);
+                      dispatch(selectedHelmSocket, {
+                        type: "agent.save",
+                        requestId: nextRequestId(requestCounter),
+                        provider: {
+                          id: providerId,
+                          name: fleetAgentDraft.name.trim() || providerId,
+                          kind: "custom",
+                          command: fleetAgentDraft.command.trim(),
+                          args: agentArgs,
+                          installHint: `请确认命令 \`${[fleetAgentDraft.command.trim(), ...agentArgs].join(" ")}\` 可以在终端运行。`,
+                        },
+                      });
+                      setFleetAgentDraft({ name: "", command: "", args: [""] });
+                      setFleetAgentFormOpen(false);
+                    }}
+                  >
+                    <div className="helm-agent-core-row">
+                      <input value={fleetAgentDraft.name} onChange={(event) => setFleetAgentDraft((current) => ({ ...current, name: event.target.value }))} placeholder="舰员名称" />
+                      <input value={fleetAgentDraft.command} onChange={(event) => setFleetAgentDraft((current) => ({ ...current, command: event.target.value }))} placeholder="command" />
+                      <button className="primary" type="submit" disabled={!fleetAgentDraft.command.trim()}>保存 ACP</button>
+                    </div>
+                    <div className="helm-agent-args-column">
+                      <div className="helm-agent-args-head">
+                        <span>args 数组</span>
+                        <button
+                          className="secondary helm-arg-action-button"
+                          type="button"
+                          onClick={() => setFleetAgentDraft((current) => ({ ...current, args: [...current.args, ""] }))}
+                        >
+                          + 参数
+                        </button>
+                      </div>
+                      {fleetAgentDraft.args.map((arg, index) => (
+                        <div className="helm-agent-arg-row" key={`fleet-agent-arg-${index}`}>
+                          <input
+                            value={arg}
+                            onChange={(event) => setFleetAgentDraft((current) => ({
+                              ...current,
+                              args: current.args.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)),
+                            }))}
+                            placeholder={index === 0 ? "acp" : "--pure"}
+                          />
+                          <button
+                            className="secondary helm-arg-icon-button"
+                            type="button"
+                            aria-label={`删除第 ${index + 1} 个参数`}
+                            title="删除参数"
+                            onClick={() => setFleetAgentDraft((current) => ({
+                              ...current,
+                              args: current.args.length > 1 ? current.args.filter((_, itemIndex) => itemIndex !== index) : [""],
+                            }))}
+                          >
+                            −
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </form>
+                ) : null}
                 {selectedHelmAgents.length ? (
                   <ul className="helm-simple-list">
                     {selectedHelmAgents.map((agent) => (
@@ -3566,7 +3778,7 @@ function slugify(value: string) {
 
 function splitArgs(value: string) {
   return value
-    .split(" ")
+    .split(/\s+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -3790,6 +4002,9 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
+
+
 
 
 

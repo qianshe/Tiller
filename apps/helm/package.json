@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
-    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --port --arg 0"
+    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
   },
   "dependencies": {
     "@tiller/acp-runtime": "workspace:*",
