@@ -807,6 +807,7 @@ export function App() {
   const [fleetProjectDraftName, setFleetProjectDraftName] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
+  const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -1954,6 +1955,45 @@ export function App() {
     persistDaemonProfile(createDaemonProfile(daemonProfileName, daemonHost, daemonPort));
   }
 
+  function removeDaemonProfile(profile: DaemonProfile) {
+    const profileKey = daemonProfileKey(profile.host, profile.port);
+    const nextProfiles = daemonProfiles.filter((item) => daemonProfileKey(item.host, item.port) !== profileKey);
+    const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
+    const fallbackProfile = nextProfiles[0];
+
+    helmSocketRefs.current.get(profileKey)?.close();
+    helmSocketRefs.current.delete(profileKey);
+    setHelmConnectionState(profileKey, "disconnected");
+    setHelmInventories((current) => {
+      const { [profileKey]: _removed, ...rest } = current;
+      return rest;
+    });
+    setHelmConnectionStates((current) => {
+      const { [profileKey]: _removed, ...rest } = current;
+      return rest;
+    });
+
+    if (currentHelmKey === profileKey) {
+      manualDisconnectRef.current = profileKey;
+      socketRef.current?.close();
+      socketRef.current = null;
+      setConnection("disconnected");
+      const fallbackHost = fallbackProfile?.host ?? DEFAULT_DAEMON_HOST;
+      const fallbackPort = fallbackProfile?.port ?? DEFAULT_DAEMON_PORT;
+      setDaemonHost(fallbackHost);
+      setDaemonPort(fallbackPort);
+      window.localStorage.setItem(DAEMON_HOST_KEY, fallbackHost);
+      window.localStorage.setItem(DAEMON_PORT_KEY, fallbackPort);
+      setSelectedHelmKey(fallbackProfile ? daemonProfileKey(fallbackHost, fallbackPort) : "");
+    } else if (selectedHelmKey === profileKey) {
+      setSelectedHelmKey(currentHelmKey);
+    }
+
+    setDaemonProfiles(nextProfiles);
+    window.localStorage.setItem(DAEMON_PROFILE_STORAGE_KEY, JSON.stringify(nextProfiles));
+    setDaemonProfileMessage(`已删除 Helm 前端配置：${profile.name}`);
+  }
+
   function revokeTrustedDevice(deviceId: string) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       setPairingFeedback("请先连接 Helm 后再管理受信设备。");
@@ -2571,7 +2611,7 @@ export function App() {
                           <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
                         </span>
                         <span className="session-nav-meta">{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
-                        <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "provider-default"}`}</span>
+                        <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "等待模型"}`}</span>
                       </button>
                       <div className="session-nav-actions">
                         <button
@@ -2890,6 +2930,7 @@ export function App() {
     const selectedHelmSocket = selectedHelmIsCurrent ? socketRef.current : helmSocketRefs.current.get(selectedHelm.key) ?? null;
     const selectedHelmSummary = helms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
     const selectedHelmId = selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
+    const selectedHelmSavedProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === selectedHelm.key) ?? null;
     const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
 
     return (
@@ -2945,6 +2986,37 @@ export function App() {
                     </div>
                   </form>
                 )}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {pendingHelmDeleteProfile ? (
+          <div className="fleet-modal-backdrop" role="presentation">
+            <section className="card surface-card fleet-delete-helm-modal" role="dialog" aria-modal="true" aria-label="删除 Helm 前端配置">
+              <div className="fleet-dialog-head fleet-dialog-head-simple">
+                <h3>删除 Helm 前端配置</h3>
+                <button className="secondary fleet-dialog-close" type="button" onClick={() => setPendingHelmDeleteProfile(null)}>关闭</button>
+              </div>
+              <div className="fleet-delete-confirm-body">
+                <p>只会从 Deck 的本地 Fleet 列表删除这条 Helm 配置，不会销毁远端 Helm 进程，也不会删除 Helm 后端配置。</p>
+                <div className="fleet-delete-target">
+                  <strong>{pendingHelmDeleteProfile.name}</strong>
+                  <span>{pendingHelmDeleteProfile.host}:{pendingHelmDeleteProfile.port}</span>
+                </div>
+              </div>
+              <div className="section-actions fleet-delete-actions">
+                <button className="secondary" type="button" onClick={() => setPendingHelmDeleteProfile(null)}>取消</button>
+                <button
+                  className="secondary helm-destroy-button"
+                  type="button"
+                  onClick={() => {
+                    removeDaemonProfile(pendingHelmDeleteProfile);
+                    setPendingHelmDeleteProfile(null);
+                  }}
+                >
+                  确认删除配置
+                </button>
               </div>
             </section>
           </div>
@@ -3032,6 +3104,16 @@ export function App() {
                     连接 Helm
                   </button>
                 )}
+                {selectedHelmSavedProfile ? (
+                  <button
+                    className="secondary helm-destroy-button"
+                    type="button"
+                    onClick={() => setPendingHelmDeleteProfile(selectedHelmSavedProfile)}
+                    title="仅删除 Deck 前端保存的 Helm 配置，不销毁远端 Helm 进程或后端配置"
+                  >
+                    删除配置
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -3156,6 +3238,7 @@ export function App() {
                       </div>
                       {fleetAgentDraft.args.map((arg, index) => (
                         <div className="helm-agent-arg-row" key={`fleet-agent-arg-${index}`}>
+                          <span className="helm-agent-arg-index">args[{index}]</span>
                           <input
                             value={arg}
                             onChange={(event) => setFleetAgentDraft((current) => ({
@@ -4002,9 +4085,3 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
-
-
-
-
-
-
