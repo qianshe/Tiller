@@ -4427,3 +4427,292 @@ textarea:focus,
     flex-direction: column;
   }
 }
+
+/* Prompt enhancer settings polish: keep model refresh compact and textareas readable. */
+.prompt-enhancer-card .prompt-llm-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.prompt-enhancer-card .prompt-model-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px !important;
+  gap: 10px;
+  align-items: center;
+}
+
+.prompt-enhancer-card .prompt-model-input-row button {
+  width: 96px;
+  min-width: 96px;
+  height: 46px;
+  padding: 0 12px;
+  border-radius: 14px;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(4) textarea {
+  min-height: 150px;
+  max-height: 260px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(5) textarea {
+  min-height: 260px;
+  max-height: 480px;
+}
+
+@media (max-width: 980px) {
+  .prompt-enhancer-card .prompt-llm-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-enhancer-card .prompt-model-input-row {
+    grid-template-columns: minmax(0, 1fr) 84px !important;
+  }
+
+  .prompt-enhancer-card .prompt-model-input-row button {
+    width: 84px;
+    min-width: 84px;
+  }
+}
+
+/* Prompt enhancer settings spacing/typography polish. */
+.prompt-enhancer-card {
+  gap: 18px;
+}
+
+.prompt-enhancer-card .settings-help {
+  margin: 0;
+  max-width: 92ch;
+  line-height: 1.6;
+}
+
+.prompt-enhancer-card .prompt-llm-grid {
+  gap: 16px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label > span {
+  font-size: 0.9rem;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+}
+
+.prompt-enhancer-card input,
+.prompt-enhancer-card .prompt-model-input-row button {
+  min-height: 50px;
+}
+
+.prompt-enhancer-card textarea {
+  padding: 16px 18px;
+  line-height: 1.58;
+  font-size: 0.95rem;
+}
+
+.prompt-enhancer-card .section-actions.settings-card-full {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.prompt-enhancer-card .settings-status {
+  line-height: 1.45;
+}
+
+
+/* Zed-inspired Mission page polish: project/thread rail + focused thread + compact composer. */
+.view-sessions .chat-layout.chat-layout-sidebar {
+  min-height: min(78vh, 920px);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(10, 18, 31, 0.72);
+  box-shadow: 0 24px 70px rgba(2, 8, 23, 0.22);
+}
+
+.view-sessions .chat-session-sidebar {
+  padding: 18px 12px;
+  background:
+    linear-gradient(180deg, rgba(16, 24, 39, 0.96), rgba(12, 20, 34, 0.96)),
+    radial-gradient(circle at 0 0, rgba(59, 130, 246, 0.16), transparent 32%);
+  border-right: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .sidebar-heading-block h2 {
+  font-size: 0.96rem;
+  letter-spacing: -0.01em;
+}
+
+.view-sessions .sidebar-heading-block .muted,
+.view-sessions .session-nav-preview,
+.view-sessions .session-nav-meta {
+  font-size: 0.78rem;
+}
+
+.view-sessions .project-nav-list,
+.view-sessions .session-switcher {
+  gap: 8px;
+}
+
+.view-sessions .project-nav-item,
+.view-sessions .chat-session-item {
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  background: rgba(15, 23, 42, 0.36);
+  color: #e8eefb;
+  box-shadow: none;
+}
+
+.view-sessions .project-nav-item.active,
+.view-sessions .chat-session-item.active,
+.view-sessions .session-nav-card.active .chat-session-item {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.32), rgba(30, 64, 175, 0.22));
+  box-shadow: inset 3px 0 0 #60a5fa, 0 14px 34px rgba(37, 99, 235, 0.18);
+}
+
+.view-sessions .session-inline-action {
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.view-sessions .chat-conversation {
+  min-height: 0;
+  background: linear-gradient(180deg, rgba(11, 18, 31, 0.98), rgba(7, 12, 22, 0.98));
+}
+
+.view-sessions .chat-main {
+  padding: 20px 28px 190px;
+  overflow-y: auto;
+  scroll-padding-bottom: 190px;
+}
+
+.view-sessions .plain-message-list {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.view-sessions .plain-message {
+  border-radius: 0;
+  border-left-width: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .plain-user {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.04));
+}
+
+.view-sessions .plain-assistant {
+  background: rgba(10, 18, 31, 0.18);
+}
+
+.view-sessions .mission-display-panel {
+  max-width: 920px;
+  margin: 18px auto 0;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.view-sessions .chat-input-area.draft-toolbar {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 16px 16px;
+  background: linear-gradient(180deg, rgba(7, 12, 22, 0.08), rgba(7, 12, 22, 0.98) 20%, rgba(7, 12, 22, 1));
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.view-sessions .draft-toolbar-grid {
+  max-width: 920px;
+  margin: 0 auto 10px;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 0.9fr) minmax(120px, 0.9fr) minmax(120px, 0.9fr) minmax(120px, 0.8fr);
+  gap: 10px;
+}
+
+.view-sessions .draft-toolbar-grid label > span {
+  color: #8fa1ba;
+}
+
+.view-sessions .draft-toolbar-grid input,
+.view-sessions .draft-toolbar-grid select,
+.view-sessions .mission-order-editor textarea {
+  min-height: 44px;
+  color: #eef4ff;
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.view-sessions .mission-order-editor {
+  max-width: 920px;
+  margin: 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.view-sessions .mission-order-editor textarea {
+  min-height: 76px;
+  border-radius: 14px;
+  resize: vertical;
+}
+
+.view-sessions .mission-composer-actions {
+  align-self: stretch;
+  display: grid;
+  grid-auto-rows: minmax(42px, auto);
+  gap: 8px;
+}
+
+.view-sessions .mission-composer-actions .primary,
+.view-sessions .mission-composer-actions .secondary {
+  min-width: 92px;
+}
+
+.view-sessions .order-editor-hint {
+  max-width: 920px;
+  color: #8fa1ba;
+}
+
+.view-sessions .mission-inspector {
+  background: rgba(12, 20, 34, 0.96);
+  border-left-color: rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .inspector-section {
+  background: rgba(15, 23, 42, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.13);
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .chat-main {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+}
+
+@media (max-width: 860px) {
+  .view-sessions .draft-toolbar-grid,
+  .view-sessions .mission-order-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .view-sessions .chat-main {
+    padding-bottom: 360px;
+    scroll-padding-bottom: 360px;
+  }
+}
+
+
+.view-sessions .chat-layout.chat-layout-sidebar > .note-box:only-child {
+  grid-column: 1 / -1;
+  place-self: center;
+  width: min(520px, calc(100% - 32px));
+  min-height: auto;
+  padding: 22px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.76);
+  box-shadow: inset 3px 0 0 #60a5fa, inset 0 0 0 1px rgba(148, 163, 184, 0.16), 0 18px 44px rgba(2, 8, 23, 0.24);
+}

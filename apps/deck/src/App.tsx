@@ -2,6 +2,7 @@ import { Children, isValidElement, useEffect, useMemo, useRef, useState, type Fo
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import "highlight.js/styles/github-dark.css";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
@@ -36,6 +37,7 @@ const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
 const DAEMON_PROFILE_STORAGE_KEY = "tiller.daemon-profiles";
 const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
+const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const MODEL_OPTIONS = [
@@ -59,7 +61,7 @@ const UI_COPY = {
   "zh-CN": {
     localeLabel: "中文",
     heroEyebrow: "ACP Coding Agent 舰队指挥甲板",
-    heroBody: "一个 Command Deck，多个 Helm，任意 ACP Crew。当前默认走真实 ACP mission，并保留最小协议归一化层来接入不同实现。",
+    heroBody: "一个 Command Deck，可连接多个 Helm，管理多个 ACP 舰员。先选项目，再进入该项目下的任务，会话成立后 ACP 舰员会被锁定。",
     connection: {
       connecting: "连接中",
       connected: "已连接",
@@ -77,44 +79,44 @@ const UI_COPY = {
     pairingFeedbackIdle: "等待输入配对码。",
     pairingDebug: "调试回显",
     controlPlane: "指挥甲板",
-    testConfiguredAgent: "测试当前 Crew",
-    createSession: "创建 Mission",
+    testConfiguredAgent: "测试当前舰员",
+    createSession: "创建任务",
     selectedWorkspace: "工作区",
-    selectedAgent: "Crew",
+    selectedAgent: "舰员",
     workspaces: "工作区",
-    agents: "ACP Crew",
+    agents: "ACP 舰员",
     noWorkspaces: "暂无工作区",
-    noAgents: "暂无 Crew",
-    addAgentDraft: "添加 ACP Crew 配置",
+    noAgents: "暂无舰员",
+    addAgentDraft: "添加 ACP 舰员配置",
     saveDraftLocal: "保存本地配置草稿",
     writeDaemonConfig: "写入 Helm 配置",
     name: "名称",
     command: "命令",
     arguments: "参数",
     draftOnlyTitle: "本地配置草稿",
-    draftOnlyHint: "可先录入一个真实 ACP Crew command 组合，例如 `opencode acp --pure`，确认无误后再写入 Helm 配置。",
+    draftOnlyHint: "可先录入一个真实 ACP 舰员 command 组合，例如 `opencode acp --pure`，确认无误后再写入 Helm 配置。",
     daemonConfigTitle: "写入 Helm 配置",
-    daemonConfigHint: "这里会向 `~/.tiller/config.json` 写入 Crew provider 条目。建议先测试当前 Crew 命令可用。",
+    daemonConfigHint: "这里会向 `~/.tiller/config.json` 写入舰员 provider 条目。建议先测试当前舰员命令可用。",
     hooksTitle: "ACP 归一化层",
-    hooksBody: "runtime 会把 session/update 尽量归一化为消息、权限请求、Logbook 与 diff 事件，便于不同 ACP Crew 共用同一套 UI。",
-    agentTestTitle: "Crew 测试",
-    sessions: "Mission",
+    hooksBody: "runtime 会把 session/update 尽量归一化为消息、权限请求、航行日志与 diff 事件，便于不同 ACP 舰员共用同一套 UI。",
+    agentTestTitle: "舰员测试",
+    sessions: "任务",
     totalSuffix: "个",
-    noSessions: "先创建一个 Mission 开始控制环路。",
-    sessionDetail: "Mission 详情",
-    noActiveSession: "还没有活跃 Mission。",
-    cancelSession: "取消 Mission",
-    cleanupSession: "清理 Mission",
-    promptPlaceholder: "向当前 Mission 下达指令",
+    noSessions: "先创建一个任务开始控制环路。",
+    sessionDetail: "任务详情",
+    noActiveSession: "还没有活跃任务。",
+    cancelSession: "取消任务",
+    cleanupSession: "清理任务",
+    promptPlaceholder: "向当前任务下达指令",
     sendPrompt: "发送提示词",
-    agentStream: "Crew 消息流",
-    commandOutput: "Logbook",
+    agentStream: "舰员消息流",
+    commandOutput: "航行日志",
     diffSummary: "变更摘要",
-    waitingForAgent: "等待 Crew 活动中。",
+    waitingForAgent: "等待舰员活动中。",
     permissionRequest: "权限请求",
     allowOnce: "本次允许",
     deny: "拒绝",
-    noCommandOutput: "Logbook 暂无记录。",
+    noCommandOutput: "航行日志暂无记录。",
     noDiffSummary: "还没有文件变更。",
     role: {
       assistant: "助手",
@@ -132,7 +134,7 @@ const UI_COPY = {
     draftLoaded: "已从浏览器本地存储加载配置草稿。",
     draftParseFailed: "本地配置草稿解析失败，已回退到默认 ACP 配置。",
     savedDraft: "已保存本地配置草稿：",
-    writingConfig: "正在写入 Crew provider 到 Helm 配置...",
+    writingConfig: "正在写入舰员 provider 到 Helm 配置...",
     testRunningPrefix: "正在测试",
   },
 } as const;
@@ -164,10 +166,11 @@ type DeckPreferences = {
 };
 
 const DEFAULT_PROMPT_ENHANCER_INSTRUCTION = "你是 Tiller Deck 的协作型 Coding Agent。先理解目标、约束和风险，再给出可执行方案；涉及代码时遵循最小改动、可验证、可回滚。";
-const DEFAULT_PROMPT_MODEL_PROFILE = "模型偏好：遵循当前 Mission 的 Model / Reasoning 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
+const DEFAULT_PROMPT_MODEL_PROFILE = "模型偏好：遵循当前任务的 模型 / 推理 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
 const DEFAULT_PROMPT_RESPONSE_CONTRACT = "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
-const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = "你是提示词增强器。把用户草稿改写为清晰、可执行、可验证的 coding-agent 提示词；保留用户意图，不要直接回答任务。";
-const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
+const OLD_PROMPT_LLM_SYSTEM_PROMPT = "你是提示词增强器。把用户草稿改写为清晰、可执行、可验证的 coding-agent 提示词；保留用户意图，不要直接回答任务。";
+const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = '你是一个 coding-agent 提示词增强器。\n\n你的任务是把用户的原始草稿改写成清晰、可执行、可验证的 Markdown 提示词，用于驱动代码代理完成开发任务。\n\n你必须保留用户的真实意图，不要改变任务目标，不要擅自扩大范围，不要替用户做技术决策，除非用户草稿中已经明确表达。\n\n你可以根据上下文补充必要的结构，例如目标、背景、约束、执行步骤、验收标准、验证方式、注意事项和交付要求，但只在有帮助时添加。\n\n你应该让增强后的提示词具备以下特征：\n- 面向 coding agent，而不是面向普通聊天助手\n- 任务边界清楚\n- 优先使用项目内已有代码、约定和上下文\n- 鼓励先阅读相关文件再修改\n- 鼓励小步修改，避免无关重构\n- 鼓励给出可验证的完成标准\n- 鼓励运行测试、类型检查、lint 或最小可行验证\n- 对不确定信息提出需要确认的问题，而不是臆造\n- 不暴露或重复无关的运行时、工具、会话细节\n\n你不能直接回答用户草稿中的开发任务本身。\n你只能输出增强后的 Prompt。\n不要输出解释。\n不要使用 Markdown 代码围栏。';
+const OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
   "You are improving a user's draft into a clear coding-agent prompt.",
   "Project summary:",
   "{{projectSummary}}",
@@ -176,6 +179,7 @@ const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
   "User draft:",
   "{{userPrompt}}",
 ].join("\n");
+const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = "Rewrite the user's draft into a direct, repo-aware Markdown prompt for an autonomous coding agent.\n\nUse the project/session context only to clarify the task. Preserve the user's intent exactly. Do not answer or implement the task yourself.\n\nInputs:\n- Project summary: {{projectSummary}}\n- Session summary: {{sessionSummary}}\n- User draft: {{userPrompt}}\n\nOutput only the enhanced prompt, without Markdown code fences.\n\nThe enhanced prompt should:\n- Be written as instructions to a coding agent working in the current repository.\n- Make the task concrete, scoped, and verifiable.\n- Encourage the agent to inspect the codebase before editing.\n- Encourage the agent to follow existing conventions, naming, architecture, tests, and style.\n- Prefer minimal, targeted changes over broad rewrites.\n- Separate facts from assumptions.\n- Include goals, constraints, acceptance criteria, and verification steps when useful.\n- Ask clarifying questions only when the task cannot be safely executed without them.\n- Avoid invented details, fake file paths, fake APIs, or unsupported assumptions.\n- Avoid irrelevant runtime/tool/session details.\n- Avoid explaining that the prompt was enhanced.\n\nUse this structure when applicable:\n\n# Objective\n\nState the user’s intended outcome clearly.\n\n# Relevant Context\n\nInclude only context that helps the coding agent complete the task.\n\n# Goals\n\nList the expected outcomes.\n\n# Scope\n\nDefine what is included and what is out of scope.\n\n# Constraints\n\nList important limits, compatibility requirements, user preferences, or things the agent must avoid.\n\n# Instructions\n\nGive direct execution guidance:\n1. Inspect the relevant parts of the repository before making changes.\n2. Identify existing patterns, APIs, tests, and conventions related to the task.\n3. Make the smallest safe change that satisfies the objective.\n4. Avoid unrelated refactors, formatting churn, dependency changes, or behavior changes.\n5. Update or add tests only where they directly verify the requested behavior.\n6. Keep user-facing behavior, compatibility, and existing contracts intact unless the user explicitly requested otherwise.\n\n# Acceptance Criteria\n\nList measurable conditions that indicate the task is complete.\n\n# Verification\n\nList concrete checks the agent should run or explain if unavailable.\n\n# Questions / Assumptions\n\nInclude this section only if the draft is ambiguous or missing critical information.\nState assumptions explicitly and keep them minimal.\n\nReturn only the final enhanced Markdown prompt.";
 
 const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
@@ -221,6 +225,11 @@ type DebugTrace = {
   lastRequestType: string;
 };
 
+type MissionPanelPage = {
+  id: string;
+  title: string;
+};
+
 type CleanupFeedback = {
   tone: "success" | "warning" | "info";
   message: string;
@@ -238,8 +247,8 @@ const VIEW_PATHS: Record<AppView, string> = {
 const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
   "zh-CN": {
     overview: "总览",
-    sessions: "Mission",
-    agents: "Fleet",
+    sessions: "任务",
+    agents: "舰队",
     settings: "设置",
   },
   "en-US": {
@@ -326,6 +335,39 @@ function MarkdownMessage({ text }: { text: string }) {
 
 function MarkdownCodeBlock({ children, code, language }: { children: ReactNode; code: string; language?: string }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [highlightedCode, setHighlightedCode] = useState<{ html: string; language?: string } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setHighlightedCode(null);
+
+    if (!code.trim()) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    void import("highlight.js/lib/common")
+      .then((module) => {
+        const hljs = module.default;
+        const result = language && hljs.getLanguage(language)
+          ? hljs.highlight(code, { language, ignoreIllegals: true })
+          : hljs.highlightAuto(code);
+        if (mounted) {
+          setHighlightedCode({ html: result.value, language: result.language ?? language });
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setHighlightedCode(null);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [code, language]);
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code);
@@ -336,13 +378,18 @@ function MarkdownCodeBlock({ children, code, language }: { children: ReactNode; 
       window.setTimeout(() => setCopyState("idle"), 1800);
     }
   }
+
   return (
     <div className="markdown-code-block">
       <div className="markdown-code-toolbar">
-        <span>{language ?? "text"}</span>
-        <button type="button" onClick={copyCode} disabled={!code} aria-label="Copy code block">{copyState === "copied" ? "Copied" : copyState === "failed" ? "Failed" : "Copy"}</button>
+        <span>{highlightedCode?.language ?? language ?? "text"}</span>
+        <button type="button" onClick={copyCode} disabled={!code} aria-label="复制代码块">{copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制"}</button>
       </div>
-      <pre>{children}</pre>
+      {highlightedCode ? (
+        <pre><code className={`hljs language-${highlightedCode.language ?? language ?? "text"}`} dangerouslySetInnerHTML={{ __html: highlightedCode.html }} /></pre>
+      ) : (
+        <pre>{children}</pre>
+      )}
     </div>
   );
 }
@@ -415,6 +462,9 @@ export function App() {
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
   const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
+  const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
+  const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
+  const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -613,6 +663,10 @@ export function App() {
   }, [deckPreferences]);
 
   useEffect(() => {
+    window.localStorage.setItem(MISSION_PANEL_PAGES_STORAGE_KEY, JSON.stringify(customMissionPanelPages));
+  }, [customMissionPanelPages]);
+
+  useEffect(() => {
     setTrustedDevice(readTrustedDeviceCache(window.localStorage, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT));
     setTrustedDevices([]);
   }, [daemonHost, daemonPort]);
@@ -704,6 +758,21 @@ export function App() {
     }));
   }
 
+  function resetPromptEnhancerDefaults() {
+    setDeckPreferences((current) => ({
+      ...current,
+      promptEnhancer: {
+        ...current.promptEnhancer,
+        llm: {
+          ...current.promptEnhancer.llm,
+          systemPrompt: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
+          instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+        },
+      },
+    }));
+    setPromptEnhancerStatus("已恢复默认增强器 System Prompt 与指令模板。");
+  }
+
   async function testPromptEnhancerSelectedModel() {
     setPromptEnhancerBusy(true);
     setPromptEnhancerStatus("正在测试 LLM 连通性...");
@@ -733,7 +802,7 @@ export function App() {
 
   async function enhancePromptDraft() {
     const rawPrompt = prompt.trim();
-    if (!rawPrompt || !deckPreferences.promptEnhancer.enabled) {
+    if (!rawPrompt) {
       return;
     }
     setPromptEnhancerBusy(true);
@@ -1416,12 +1485,12 @@ export function App() {
       return;
     }
 
-    const confirmed = window.confirm("将清理当前 Mission 的本地记录；若该 Mission 由 Tiller 创建且 provider 支持，也会尝试删除远端 ACP session。确认继续吗？");
+    const confirmed = window.confirm("将清理当前任务的本地记录；若该任务由 Tiller 创建且 provider 支持，也会尝试删除远端 ACP session。确认继续吗？");
     if (!confirmed) {
       return;
     }
 
-    setCleanupFeedback({ tone: "info", message: "正在清理当前 Mission..." });
+    setCleanupFeedback({ tone: "info", message: "正在清理当前任务..." });
     dispatch(socketRef.current, {
       type: "session.cleanup",
       requestId: nextRequestId(requestCounter),
@@ -1525,13 +1594,13 @@ export function App() {
           <div>
             <p className="eyebrow">ACP Coding Agent 舰队指挥甲板</p>
             <h1>Tiller Deck</h1>
-            <p className="muted hero-copy">Tiller 是你的 ACP Coding Agent 舰队指挥甲板：调度 Mission、审批权限、追踪 Logbook 与文件变更。</p>
+            <p className="muted hero-copy">Tiller 是你的 ACP Coding Agent 舰队指挥甲板：调度任务、审批权限、追踪航行日志与文件变更。</p>
           </div>
           <div className="hero-metrics overview-stats">
-            <StatCard label="Project" value={String(projects.length)} meta={projects[0]?.name ?? "暂无 Project"} />
-            <StatCard label="Workspace" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
-            <StatCard label="Crew" value={String(agents.length)} meta={agents[0]?.name ?? copy.noAgents} />
-            <StatCard label="活跃 Mission" value={String(sessions.length)} meta={activeStatus} />
+            <StatCard label="项目" value={String(projects.length)} meta={projects[0]?.name ?? "暂无项目"} />
+            <StatCard label="工作区" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
+            <StatCard label="舰员" value={String(agents.length)} meta={agents[0]?.name ?? copy.noAgents} />
+            <StatCard label="活跃任务" value={String(sessions.length)} meta={activeStatus} />
           </div>
         </header>
 
@@ -1539,11 +1608,11 @@ export function App() {
           <section className="card surface-card stack-gap">
             <div className="section-head section-head-soft">
               <div>
-                <h2>Project 列表</h2>
-                <p className="muted compact">只读展示当前 Deck 可见的 Project 及其绑定 Helm。</p>
+                <h2>项目列表</h2>
+                <p className="muted compact">只读展示当前 Deck 可见的项目 及其绑定 Helm。</p>
               </div>
             </div>
-            <InfoList items={projects.map((project) => `${project.name} · ${helms.find((helm) => helm.id === project.helmId)?.name ?? project.helmId}`)} empty="暂无 Project" />
+            <InfoList items={projects.map((project) => `${project.name} · ${helms.find((helm) => helm.id === project.helmId)?.name ?? project.helmId}`)} empty="暂无项目" />
           </section>
 
           <section className="card surface-card stack-gap">
@@ -1559,8 +1628,8 @@ export function App() {
           <section className="card surface-card stack-gap">
             <div className="section-head section-head-soft">
               <div>
-                <h2>Crew 列表</h2>
-                <p className="muted compact">只读展示当前可用的 ACP Crew。</p>
+                <h2>舰员列表</h2>
+                <p className="muted compact">只读展示当前可用的 ACP 舰员。</p>
               </div>
             </div>
             <InfoList items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
@@ -1570,8 +1639,8 @@ export function App() {
         <section className="card surface-card stack-gap">
           <div className="section-head section-head-soft">
             <div>
-              <h2>最近 Mission</h2>
-              <p className="muted compact">最近 5 条 Mission 记录，只读展示。</p>
+              <h2>最近任务</h2>
+              <p className="muted compact">最近 5 条任务记录，只读展示。</p>
             </div>
           </div>
           {recentSessions.length ? (
@@ -1598,6 +1667,35 @@ export function App() {
     );
   }
 
+  function addMissionPanelPage() {
+    const id = `custom-${Date.now().toString(36)}`;
+    const page = { id, title: `展示页 ${customMissionPanelPages.length + 1}` };
+    setCustomMissionPanelPages((current) => [...current, page]);
+    setSelectedMissionPanelPageId(id);
+  }
+
+  function renameMissionPanelPage(pageId: string, title: string) {
+    setCustomMissionPanelPages((current) => current.map((page) => page.id === pageId ? { ...page, title } : page));
+  }
+
+  function deleteMissionPanelPage(pageId: string) {
+    setCustomMissionPanelPages((current) => current.filter((page) => page.id !== pageId));
+    setSelectedMissionPanelPageId("overview");
+  }
+
+  function moveMissionPanelPage(pageId: string, direction: -1 | 1) {
+    setCustomMissionPanelPages((current) => moveMissionPanelPageInList(current, pageId, direction));
+  }
+
+  function dropMissionPanelPage(targetPageId: string) {
+    if (!draggedMissionPanelPageId || draggedMissionPanelPageId === targetPageId) {
+      setDraggedMissionPanelPageId(null);
+      return;
+    }
+    setCustomMissionPanelPages((current) => reorderMissionPanelPage(current, draggedMissionPanelPageId, targetPageId));
+    setDraggedMissionPanelPageId(null);
+  }
+
   function renderPlainMessages(items: AgentMessage[], commandChunks: CommandChunk[], sessionToolCalls: AgentToolCall[]) {
     const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
     if (!timelineItems.length) {
@@ -1617,7 +1715,7 @@ export function App() {
               <div className="tool-call-head">
                 <span className="tool-call-icon" aria-hidden="true">$</span>
                 <div>
-                  <span className="plain-message-role">???? ? {item.status}</span>
+                  <span className="plain-message-role">工具调用 · {item.status}</span>
                   <strong>{item.title}</strong>
                 </div>
                 <span className={`tool-call-stream tool-call-stream-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
@@ -1632,21 +1730,30 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
+    const missionDiffCount = activeSession ? (diffs[activeSession.id] ?? []).length : 0;
+    const missionLogCount = activeSession ? (outputs[activeSession.id] ?? []).length : 0;
+    const missionPanelPages = [
+      { id: "overview", title: "概览" },
+      { id: "changes", title: `Git Diff (${missionDiffCount})` },
+      { id: "logbook", title: `航行日志 (${missionLogCount})` },
+      ...customMissionPanelPages,
+    ];
+    const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
     return (
       <section className="card surface-card chat-layout chat-layout-sidebar">
         {pairingState !== "paired" ? (
           <div className="note-box compact-note">
-            <strong>Mission 视图待连接</strong>
-            <p>请先在 Crew 页连接并配对 Helm，再返回这里下达指令。</p>
+            <strong>任务视图待连接</strong>
+            <p>请先在舰队页连接并配对 Helm，再返回这里下达指令。</p>
           </div>
         ) : (
           <>
-            <aside className="chat-session-sidebar" aria-label="Mission 列表">
+            <aside className="chat-session-sidebar" aria-label="任务列表">
               <div className="sidebar-section project-switcher">
                 <div className="section-head section-head-soft sidebar-heading-block">
                   <div>
-                    <h2>Project</h2>
-                    <p className="muted compact">先选 Project，再进入该 Project 下的 Mission。</p>
+                    <h2>项目</h2>
+                    <p className="muted compact">先选项目，再进入该项目下的任务。</p>
                   </div>
                 </div>
                 <div className="project-nav-list">
@@ -1660,7 +1767,7 @@ export function App() {
                         onClick={() => selectProject(project.id)}
                       >
                         <strong>{project.name}</strong>
-                        <span>{sessionCountsByProject[project.id] ?? 0} Mission</span>
+                        <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
                       </button>
                     );
                   })}
@@ -1670,13 +1777,13 @@ export function App() {
               <div className="sidebar-section session-switcher">
                 <div className="section-head section-head-soft sidebar-heading-block">
                   <div>
-                    <h2>Mission</h2>
-                    <p className="muted compact">当前 Project：{draftProject?.name ?? "未选择"}</p>
+                    <h2>任务</h2>
+                    <p className="muted compact">当前项目：{draftProject?.name ?? "未选择"}</p>
                   </div>
                 </div>
                 <button type="button" className={`chat-session-item ${!activeSession ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
-                  <strong>新 Mission</strong>
-                  <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择 Project"}</span>
+                  <strong>新任务</strong>
+                  <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择项目"}</span>
                 </button>
                 {projectSessions.length ? (
                   projectSessions.map((session) => (
@@ -1694,7 +1801,7 @@ export function App() {
                           type="button"
                           className="session-inline-action"
                           aria-label={`清理 ${resolveSessionTitle(session)}`}
-                          title="清理 Mission"
+                          title="清理任务"
                           onClick={(event) => {
                             event.stopPropagation();
                             cleanupSession(session.id);
@@ -1706,7 +1813,7 @@ export function App() {
                     </div>
                   ))
                 ) : (
-                  <div className="empty-state sidebar-empty">这个 Project 还没有 Mission。</div>
+                  <div className="empty-state sidebar-empty">这个项目还没有任务。</div>
                 )}
               </div>
             </aside>
@@ -1722,8 +1829,8 @@ export function App() {
                         {deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
                           <>
                             <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                            <p className="subtle compact">ACP：{activeSession.agentName} · Model：{activeSession.model ?? "provider-default"} · Reasoning：{activeSession.reasoningEffort ?? "medium"}</p>
-                            <p className="subtle compact">ACP Mission ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
+                            <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "provider-default"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
+                            <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
                           </>
                         ) : null}
                         {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
@@ -1731,7 +1838,7 @@ export function App() {
                       </div>
                       <div className="section-actions">
                         <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
-                        <button className="secondary" type="button" onClick={cancelSession}>取消 Mission</button>
+                        <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
                       </div>
                     </div>
 
@@ -1760,12 +1867,78 @@ export function App() {
                       <summary>{copy.diffSummary}</summary>
                       <DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} />
                     </details>
+
+                    <aside className="mission-display-panel" aria-label="任务展示容器">
+                      <div className="mission-panel-head">
+                        <div>
+                          <p className="eyebrow">展示</p>
+                          <h3>任务展示</h3>
+                        </div>
+                        <button className="mission-panel-add" type="button" onClick={addMissionPanelPage} aria-label="增加展示页">＋</button>
+                      </div>
+                      <div className="mission-panel-body">
+                        <nav className="mission-panel-tree" aria-label="展示页">
+                          <p className="mission-panel-tree-title">展示页</p>
+                          {missionPanelPages.map((page) => {
+                            const custom = page.id.startsWith("custom-");
+                            return (
+                              <button
+                                className={`mission-panel-node ${selectedMissionPanelPage.id === page.id ? "active" : ""}`}
+                                draggable={custom}
+                                key={page.id}
+                                type="button"
+                                onClick={() => setSelectedMissionPanelPageId(page.id)}
+                                onDragStart={() => custom ? setDraggedMissionPanelPageId(page.id) : undefined}
+                                onDragOver={(event) => { if (custom) event.preventDefault(); }}
+                                onDrop={() => custom ? dropMissionPanelPage(page.id) : undefined}
+                              >
+                                <span className="mission-panel-node-icon">{page.id === "overview" ? "⌂" : page.id === "changes" ? "◇" : page.id === "logbook" ? "▸" : "□"}</span>
+                                <span>{page.title}</span>
+                              </button>
+                            );
+                          })}
+                        </nav>
+                        <section className="mission-panel-content">
+                          <div className="mission-panel-content-head">
+                            <div>
+                              <p className="eyebrow">{selectedMissionPanelPage.id.startsWith("custom-") ? "自定义" : selectedMissionPanelPage.title}</p>
+                              <h3>{selectedMissionPanelPage.title}</h3>
+                            </div>
+                            <span className="status-chip">{copy.status[statuses[activeSession.id] ?? activeSession.status]}</span>
+                          </div>
+                          {selectedMissionPanelPage.id === "changes" ? (
+                            <div className="mission-panel-page"><DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} /></div>
+                          ) : selectedMissionPanelPage.id === "logbook" ? (
+                            <div className="mission-panel-page"><CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} /></div>
+                          ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
+                            <div className="mission-panel-page mission-custom-page">
+                              <div className="mission-custom-page-tools">
+                                <label>
+                                  <span>展示页名称</span>
+                                  <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
+                                </label>
+                                <div className="mission-custom-page-actions">
+                                  <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
+                                  <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
+                                  <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
+                                </div>
+                              </div>
+                              <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
+                            </div>
+                          ) : (
+                            <div className="mission-panel-page">
+                              <InfoList title="摘要" items={[`项目 · ${activeSession.projectName}`, `工作区 · ${activeSession.workspaceName}`, `ACP 舰员 · ${activeSession.agentName}`, `消息 · ${activeSession.messageCount}`]} empty="暂无摘要" />
+                            </div>
+                          )}
+                        </section>
+                      </div>
+                    </aside>
                   </>
                 ) : (
                   <div className="chat-empty">
-                    <p className="eyebrow">新 Mission</p>
-                    <h2>{draftProject ? `在 ${draftProject.name} 下创建新的 Mission` : "先在左侧选择一个 Project"}</h2>
-                    <p className="muted">左侧上半是 Project，下半是该 Project 的 Mission。底部草稿栏里锁定 ACP，可继续调整 Model / Reasoning。</p>
+                    <p className="eyebrow">新任务</p>
+                    <h2>{draftProject ? `在 ${draftProject.name} 下创建新的任务` : "先在左侧选择一个项目"}</h2>
+                    <p className="muted">左侧上半是项目，下半是该项目的任务。底部草稿栏里锁定 ACP，可继续调整 模型 / 推理。</p>
                     {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
@@ -1774,8 +1947,8 @@ export function App() {
               <div className="chat-input-area draft-toolbar">
                 <div className="draft-toolbar-grid">
                   <label>
-                    <span>Project</span>
-                    <input value={draftProject?.name ?? "未选择 Project"} readOnly />
+                    <span>项目</span>
+                    <input value={draftProject?.name ?? "未选择项目"} readOnly />
                   </label>
                   <label>
                     <span>{copy.selectedWorkspace}</span>
@@ -1794,7 +1967,7 @@ export function App() {
                     </select>
                   </label>
                   <label>
-                    <span>Model</span>
+                    <span>模型</span>
                     <input
                       list="session-model-options"
                       value={draftModel}
@@ -1808,7 +1981,7 @@ export function App() {
                     </datalist>
                   </label>
                   <label>
-                    <span>Reasoning</span>
+                    <span>推理</span>
                     <select
                       value={draftReasoningEffort}
                       onChange={(event) => updateSessionDraftPreferences({ reasoningEffort: event.target.value as SessionReasoningEffort })}
@@ -1827,42 +2000,42 @@ export function App() {
                   />
                   <div className="mission-composer-actions">
                     {deckPreferences.promptEnhancer.enabled ? (
-                      <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>Enhance</button>
+                      <button className="secondary" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy}>增强</button>
                     ) : null}
                     <button className="primary" type="submit" disabled={!canSend}>发送</button>
                   </div>
                   {deckPreferences.technicalPanels.showOrderHints ? (
-                    <p className="order-editor-hint">左栏按 Project 管理 Mission；ACP 在会话成立后锁定，Model / Reasoning 作为当前 session 配置可继续调整。{draftConfigHint}</p>
+                    <p className="order-editor-hint">左栏按 项目管理任务；ACP 在会话成立后锁定，模型 / 推理 作为当前 session 配置可继续调整。{draftConfigHint}</p>
                   ) : null}
                 </form>
               </div>
             </div>
 
-            <aside className="mission-inspector" aria-label="Mission inspector">
+            <aside className="mission-inspector" aria-label="任务检视器">
               <section className="inspector-section">
-                <p className="eyebrow">Context</p>
-                <h3>{activeSession ? resolveSessionTitle(activeSession) : "Draft Mission"}</h3>
-                <p className="subtle compact">{draftProject?.name ?? "No Project"} · {activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "No Workspace"}</p>
+                <p className="eyebrow">上下文</p>
+                <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
+                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "未选工作区"}</p>
                 <div className="inspector-pills">
-                  <span>{activeSession ? activeStatus : "Draft"}</span>
-                  <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "No Crew"}</span>
+                  <span>{activeSession ? activeStatus : "草稿"}</span>
+                  <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
                 </div>
               </section>
 
               <section className="inspector-section">
-                <p className="eyebrow">Model</p>
+                <p className="eyebrow">模型</p>
                 <h3>{draftModel}</h3>
-                <p className="subtle compact">Reasoning · {draftReasoningEffort}</p>
+                <p className="subtle compact">推理 · {draftReasoningEffort}</p>
                 <p className="subtle compact">候选模型 {draftModelOptions.length} 个；若 ACP 返回 configOptions，会优先显示 provider 的真实模型列表。</p>
               </section>
 
               <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">Changes</p>
+                <p className="eyebrow">变更</p>
                 <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
               </section>
 
               <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">Logbook</p>
+                <p className="eyebrow">航行日志</p>
                 <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
               </section>
             </aside>
@@ -2105,20 +2278,20 @@ export function App() {
           reset: "重置默认",
           languageEyebrow: "语言 / Language",
           languageLabel: "界面语言",
-          languageHelp: "用于切换导航与 Settings 基础文案；ACP Crew 领域术语保持原名。",
+          languageHelp: "用于切换导航与 设置基础文案；ACP 舰员 领域术语保持原名。",
           themeEyebrow: "主题切换",
           themeLabel: "Deck 主题",
           themeSystem: "跟随系统",
           themeLight: "浅色",
           themeDark: "深色",
-          themeHelp: "主题只影响当前 Deck，不会写入 Helm 或 Crew 配置。",
+          themeHelp: "主题只影响当前 Deck，不会写入 Helm 或舰员配置。",
           motionEyebrow: "动效",
           reduceMotion: "减少过渡动画",
           technicalEyebrow: "技术面板控制",
           technicalTitle: "决定哪些诊断信息默认展示",
-          logbookOpen: "默认展开 Logbook",
+          logbookOpen: "默认展开航行日志",
           diffOpen: "默认展开变更摘要",
-          runtimeMeta: "显示 Session runtime 元信息",
+          runtimeMeta: "显示任务 runtime 元信息",
           permissionWorkspace: "显示权限请求工作区路径",
           orderHints: "显示发送区配置提示",
           connectionDebug: "显示连接/配对调试回显",
@@ -2131,12 +2304,12 @@ export function App() {
           contractLabel: "输出契约",
           saveEyebrow: "保存状态",
           browserTitle: "当前浏览器",
-          saveStatus: "前端偏好会自动保存；后端、provider、Helm 级配置仍在具体 Helm / Crew 中管理。",
-          devicesEyebrow: "受信设备",
-          devicesTitle: "当前 Helm 记住的 7 天设备",
-          devicesHelp: "每个受信设备都只属于当前 Helm profile。撤销后，该设备下次必须重新配对。",
-          devicesEmpty: "当前还没有受信设备。",
-          currentDevice: "当前设备",
+          saveStatus: "前端偏好会自动保存；后端、provider、Helm 级配置仍在具体 Helm / 舰员中管理。",
+          devicesEyebrow: "信标",
+          devicesTitle: "当前 Helm 记住的 7 天信标",
+          devicesHelp: "每个信标都只属于当前 Helm profile。撤销后，该设备下次必须重新配对。",
+          devicesEmpty: "当前还没有信标。",
+          currentDevice: "当前信标",
           revoke: "撤销",
           clientKindWeb: "网页",
           clientKindApp: "App",
@@ -2234,29 +2407,11 @@ export function App() {
             <section className="note-box settings-card settings-card-full prompt-enhancer-card">
               <div className="settings-card-head">
                 <div>
-                  <p className="eyebrow">{settingsCopy.enhancerEyebrow}</p>
-                  <h3>{settingsCopy.enhancerTitle}</h3>
+                  <p className="eyebrow">提示词增强</p>
+                  <h3>LLM 增强器</h3>
                 </div>
-                <label className="toggle-row toggle-row-inline">
-                  <input type="checkbox" checked={deckPreferences.promptEnhancer.enabled} onChange={(event) => updatePromptEnhancerPreference("enabled", event.target.checked)} />
-                  <span>{settingsCopy.enhancerEnabled}</span>
-                </label>
               </div>
-              <p className="settings-help">{settingsCopy.enhancerHelp}</p>
-              <div className="prompt-enhancer-grid">
-                <label className="settings-card-full">
-                  <span>{settingsCopy.instructionLabel}</span>
-                  <textarea value={deckPreferences.promptEnhancer.instruction} onChange={(event) => updatePromptEnhancerPreference("instruction", event.target.value)} placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION} />
-                </label>
-                <label>
-                  <span>{settingsCopy.modelLabel}</span>
-                  <textarea value={deckPreferences.promptEnhancer.modelProfile} onChange={(event) => updatePromptEnhancerPreference("modelProfile", event.target.value)} placeholder={DEFAULT_PROMPT_MODEL_PROFILE} />
-                </label>
-                <label>
-                  <span>{settingsCopy.contractLabel}</span>
-                  <textarea value={deckPreferences.promptEnhancer.responseContract} onChange={(event) => updatePromptEnhancerPreference("responseContract", event.target.value)} placeholder={DEFAULT_PROMPT_RESPONSE_CONTRACT} />
-                </label>
-              </div>
+              <p className="settings-help">参考 Augment 的交互：增强 会把输入框里的普通草稿改写成可编辑的标准提示词；测试按钮只测连通性，不做真实增强。</p>
               <div className="prompt-enhancer-grid prompt-llm-grid">
                 <label>
                   <span>OpenAI-compatible Base URL</span>
@@ -2283,19 +2438,13 @@ export function App() {
                 <label className="settings-card-full">
                   <span>增强器指令模板</span>
                   <textarea value={deckPreferences.promptEnhancer.llm.instructionTemplate} onChange={(event) => updatePromptEnhancerLlmPreference("instructionTemplate", event.target.value)} placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE} />
-                  <small className="settings-help">{`可使用 {{projectSummary}}、{{sessionSummary}}、{{userPrompt}} 等标签；Deck 会在增强时主动替换。`}</small>
                 </label>
                 <div className="section-actions settings-card-full">
+                  <button className="secondary" type="button" onClick={resetPromptEnhancerDefaults}>恢复默认模板</button>
                   <button className="secondary" type="button" onClick={testPromptEnhancerSelectedModel} disabled={promptEnhancerBusy}>测试连通性</button>
                   {promptEnhancerStatus ? <span className="settings-status">{promptEnhancerStatus}</span> : null}
                 </div>
               </div>
-            </section>
-
-            <section className="note-box settings-card settings-card-wide">
-              <p className="eyebrow">{settingsCopy.saveEyebrow}</p>
-              <h3>{settingsCopy.browserTitle}</h3>
-              <p className="settings-status">{settingsCopy.saveStatus}</p>
             </section>
 
             <section className="note-box settings-card settings-card-full">
@@ -2305,7 +2454,6 @@ export function App() {
                   <h3>{settingsCopy.devicesTitle}</h3>
                 </div>
               </div>
-              <p className="settings-help">{settingsCopy.devicesHelp}</p>
               {trustedDevices.length ? (
                 <div className="trusted-device-list">
                   {trustedDevices.map((device) => {
@@ -2516,6 +2664,39 @@ function readDaemonProfiles(): DaemonProfile[] {
   }
 }
 
+function readMissionPanelPages(): MissionPanelPage[] {
+  try {
+    const raw = window.localStorage.getItem(MISSION_PANEL_PAGES_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(isRecord).map((page, index) => ({
+      id: typeof page.id === "string" && page.id ? page.id : `custom-${index + 1}`,
+      title: typeof page.title === "string" && page.title ? page.title : `展示页 ${index + 1}`,
+    })) : [];
+  } catch {
+    return [];
+  }
+}
+
+function moveMissionPanelPageInList(pages: MissionPanelPage[], pageId: string, direction: -1 | 1) {
+  const index = pages.findIndex((page) => page.id === pageId);
+  const nextIndex = index + direction;
+  if (index < 0 || nextIndex < 0 || nextIndex >= pages.length) return pages;
+  const next = [...pages];
+  const [page] = next.splice(index, 1);
+  next.splice(nextIndex, 0, page);
+  return next;
+}
+
+function reorderMissionPanelPage(pages: MissionPanelPage[], sourceId: string, targetId: string) {
+  const sourceIndex = pages.findIndex((page) => page.id === sourceId);
+  const targetIndex = pages.findIndex((page) => page.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return pages;
+  const next = [...pages];
+  const [page] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, page);
+  return next;
+}
+
 function readDeckPreferences(): DeckPreferences {
   try {
     const raw = window.localStorage.getItem(DECK_PREFERENCES_STORAGE_KEY);
@@ -2546,8 +2727,8 @@ function readDeckPreferences(): DeckPreferences {
           baseUrl: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.baseUrl === "string" ? promptEnhancer.llm.baseUrl : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.baseUrl,
           apiKey: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.apiKey === "string" ? promptEnhancer.llm.apiKey : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.apiKey,
           model: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.model === "string" ? promptEnhancer.llm.model : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.model,
-          systemPrompt: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.systemPrompt === "string" ? promptEnhancer.llm.systemPrompt : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
-          instructionTemplate: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.instructionTemplate === "string" ? promptEnhancer.llm.instructionTemplate : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
+          systemPrompt: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.systemPrompt === "string" && promptEnhancer.llm.systemPrompt !== OLD_PROMPT_LLM_SYSTEM_PROMPT ? promptEnhancer.llm.systemPrompt : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
+          instructionTemplate: isRecord(promptEnhancer.llm) && typeof promptEnhancer.llm.instructionTemplate === "string" && promptEnhancer.llm.instructionTemplate !== OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE ? promptEnhancer.llm.instructionTemplate : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
         },
       },
     };
@@ -2589,7 +2770,7 @@ function resolveSessionTitle(session: SessionSummary) {
     return preview.replaceAll("`r", " ").replaceAll("`n", " ").slice(0, 36);
   }
 
-  return `${session.projectName} Mission`;
+  return `${session.projectName} 任务`;
 }
 
 function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = []) {
@@ -2648,18 +2829,18 @@ function resolveSessionConfigHint(
 
   if (support.model === "startup" && support.reasoningEffort === "startup") {
     return activeSession
-      ? " 该 provider 会在下次 runtime 启动/恢复时应用 Model 与 Reasoning 覆盖。"
-      : " 该 provider 的新会话会直接写入 Model / Reasoning。";
+      ? " 该 provider 会在下次 runtime 启动/恢复时应用模型与推理 覆盖。"
+      : " 该 provider 的新会话会直接写入 模型 / 推理。";
   }
 
   if (support.model === "startup" && support.reasoningEffort === "none") {
     return activeSession
-      ? " 该 provider 会在下次 runtime 启动/恢复时应用 Model 覆盖；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仍只保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。"
-      : " 该 provider 的新会话支持写入 Model；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仅保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。";
+      ? " 该 provider 会在下次 runtime 启动/恢复时应用模型覆盖；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仍只保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。"
+      : " 该 provider 的新会话支持写入模型；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仅保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。";
   }
 
   return activeSession
-    ? " 当前 provider 暂未暴露通用的运行时 Model/Reasoning 热切换接口，Tiller 会先保存为 session 配置。"
+    ? " 当前 provider 暂未暴露通用的运行时 模型/推理热切换接口，Tiller 会先保存为 session 配置。"
     : " 新会话会尽量把这些配置带入 provider。";
 }
 
@@ -2675,13 +2856,13 @@ function resolveModelInputPlaceholder(
 
 function summarizeSessionContext(session: SessionSummary | null, sessionMessages: AgentMessage[]) {
   if (!session) {
-    return "No active session yet; enhance the draft for a new session.";
+    return "暂无活跃任务；请先增强新任务草稿。";
   }
   const recentMessages = sessionMessages.slice(-4).map((message) => `${message.role}: ${message.text.replace(/\s+/g, " ").trim().slice(0, 180)}`);
   return [
     `Session ${session.id} is ${session.status}; messages: ${session.messageCount}.`,
-    session.lastMessagePreview ? `Last intent/result: ${session.lastMessagePreview}` : "",
-    recentMessages.length ? ["Recent messages:", ...recentMessages.map((message) => `- ${message}`)].join("\n") : "",
+    session.lastMessagePreview ? `最近意图/结果：${session.lastMessagePreview}` : "",
+    recentMessages.length ? ["最近消息：", ...recentMessages.map((message) => `- ${message}`)].join("\n") : "",
   ].filter(Boolean).join("\n");
 }
 
