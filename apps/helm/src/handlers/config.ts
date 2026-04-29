@@ -1,6 +1,198 @@
+import { execFile } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { listAvailableProviders, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
+import type { AcpAgentProvider, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
+
+
+const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
+
+const execFileAsync = promisify(execFile);
+const GIT_COMMAND_TIMEOUT_MS = 8000;
+
+function normalizeGitBranchName(input: string) {
+  return input.trim().replace(/\s+/g, "-");
+}
+
+function validateGitBranchName(branchName: string) {
+  if (!branchName || branchName.includes("..") || branchName.startsWith("/") || branchName.endsWith("/") || !/^[A-Za-z0-9._/-]+$/.test(branchName)) {
+    throw new Error("Branch name can only contain letters, numbers, dot, slash, underscore and dash.");
+  }
+}
+
+function safeWorktreeSlug(branchName: string) {
+  return branchName.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "worktree";
+}
+
+async function runGit(cwd: string, args: string[]) {
+  return execFileAsync("git", ["-C", cwd, ...args], { timeout: GIT_COMMAND_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 });
+}
+
+async function resolveGitRoot(path: string) {
+  const result = await runGit(path, ["rev-parse", "--show-toplevel"]);
+  return result.stdout.trim() || path;
+}
+
+async function listGitBranches(root: string) {
+  const [branchesResult, currentResult] = await Promise.all([
+    runGit(root, ["branch", "--format=%(refname:short)"]),
+    runGit(root, ["branch", "--show-current"]).catch(() => ({ stdout: "" })),
+  ]);
+  return {
+    branches: branchesResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    currentBranch: currentResult.stdout.trim() || undefined,
+  };
+}
+
+function resolveProjectRoot(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
+  if (project.path) {
+    return project.path;
+  }
+  const workspace = workspaces.find((item) => item.id === project.defaultWorkspaceId) ?? workspaces.find((item) => project.workspaceIds?.includes(item.id));
+  return workspace?.path;
+}
+
+function projectWorkspaceItems(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
+  if (!project.workspaceIds?.length) {
+    return workspaces;
+  }
+  return workspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id));
+}
+
+async function createProjectWorktree(project: ProjectSummary, workspaces: WorkspaceSummary[], branchNameInput: string, configPath: string) {
+  const branchName = normalizeGitBranchName(branchNameInput);
+  validateGitBranchName(branchName);
+  const projectRoot = resolveProjectRoot(project, workspaces);
+  if (!projectRoot) {
+    throw new Error("Project has no path or workspace path to create a Git worktree from.");
+  }
+  const gitRoot = await resolveGitRoot(projectRoot);
+  const { branches } = await listGitBranches(gitRoot);
+  const branchExists = branches.includes(branchName);
+  const worktreePath = join(gitRoot, ".tiller", "worktrees", safeWorktreeSlug(branchName));
+  await mkdir(join(gitRoot, ".tiller", "worktrees"), { recursive: true });
+  await runGit(gitRoot, branchExists ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath]);
+
+  const workspaceId = `${project.id}-worktree-${safeWorktreeSlug(branchName)}`;
+  const workspace: WorkspaceSummary = { id: workspaceId, name: branchName, path: worktreePath.replace(/\\/g, "/") };
+  saveWorkspaceToConfig(workspace, configPath);
+  saveProjectToConfig({
+    ...project,
+    workspaceIds: Array.from(new Set([...(project.workspaceIds ?? []), workspaceId])),
+    defaultWorkspaceId: project.defaultWorkspaceId ?? workspaceId,
+  }, configPath);
+  return workspace;
+}
+
+
+type RegistryAgent = {
+  id?: string;
+  name?: string;
+  distribution?: {
+    binary?: Record<string, { cmd?: string; args?: string[] }>;
+  };
+};
+
+function currentRegistryPlatformKey() {
+  const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  return `${os}-${arch}`;
+}
+
+function normalizeRegistryCommand(command: string) {
+  return command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
+}
+
+function discoveryCommandKey(command: string) {
+  return normalizeRegistryCommand(command).replace(/\.exe$/i, "").toLowerCase();
+}
+
+function providerFromRegistryAgent(agent: RegistryAgent): AcpAgentProvider | null {
+  if (!agent.id || !agent.name) {
+    return null;
+  }
+
+  const platformBinary = agent.distribution?.binary?.[currentRegistryPlatformKey()];
+  if (!platformBinary?.cmd) {
+    return null;
+  }
+
+  const command = normalizeRegistryCommand(platformBinary.cmd);
+  return {
+    id: agent.id,
+    name: agent.name,
+    kind: "custom",
+    command,
+    args: platformBinary.args ?? [],
+    transport: "stdio",
+    protocol: "acp",
+    installHint: `Install ${agent.name} and make \`${command}\` available on PATH.`,
+  };
+}
+
+async function loadRegistryDiscoveryCandidates() {
+  try {
+    const response = await fetch(ACP_REGISTRY_URL, { signal: AbortSignal.timeout(3500) });
+    if (!response.ok) {
+      throw new Error(`ACP registry responded ${response.status}`);
+    }
+    const registry = (await response.json()) as { agents?: RegistryAgent[] };
+    const providers = (registry.agents ?? []).map(providerFromRegistryAgent).filter((agent): agent is AcpAgentProvider => Boolean(agent));
+    return providers;
+  } catch {
+    return [];
+  }
+}
+
+async function commandHasHelpOutput(command: string) {
+  if (!command.trim() || /[\/:]/.test(command)) {
+    return false;
+  }
+
+  const candidates = [["-h"], ["--help"]];
+  for (const args of candidates) {
+    const output = await new Promise<string>((resolve) => {
+      try {
+        execFile(command, args, { timeout: 2500, windowsHide: true }, (_error, stdout, stderr) => {
+          resolve(`${stdout ?? ""}${stderr ?? ""}`.trim());
+        });
+      } catch {
+        resolve("");
+      }
+    });
+    if (output) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function discoverAcpAgents(configuredAgents: AcpAgentProvider[]) {
+  const configuredById = new Map(configuredAgents.map((agent) => [agent.id, agent]));
+  const configuredCommands = new Set(configuredAgents.map((agent) => discoveryCommandKey(agent.command)));
+  const registryCandidates = await loadRegistryDiscoveryCandidates();
+  const candidateResults = await Promise.all(
+    registryCandidates.map(async (candidate) => ({
+      agent: candidate,
+      available: await commandHasHelpOutput(candidate.command),
+      configured: configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command)),
+    })),
+  );
+  const discovered = candidateResults.filter((result) => result.available).map((result) => result.agent);
+  const candidates = candidateResults.map((result) => ({
+    id: result.agent.id,
+    name: result.agent.name,
+    command: result.agent.command,
+    args: result.agent.args,
+    available: result.available,
+    configured: result.configured,
+  }));
+
+  return { discovered, agents: configuredAgents, candidates };
+}
 
 export const handleConfigMessage: HelmMessageHandler = async (socket, payload, context) => {
   switch (payload.type) {
@@ -75,10 +267,92 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       });
       return true;
     }
+
+    case "workspace.git.list": {
+      const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      const workspaces = context.loadAvailableWorkspaces();
+      context.setProjects(projects);
+      context.setWorkspaces(workspaces);
+      const project = context.resolveProjectById(payload.projectId, projects);
+      if (!project) {
+        context.emit(socket, { type: "workspace.git.result", requestId: payload.requestId, ok: false, projectId: payload.projectId, branches: [], workspaces: [], message: "Project not found" });
+        return true;
+      }
+      const projectRoot = resolveProjectRoot(project, workspaces);
+      try {
+        const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
+        const gitInfo = gitRoot ? await listGitBranches(gitRoot) : { branches: [], currentBranch: undefined };
+        context.emit(socket, {
+          type: "workspace.git.result",
+          requestId: payload.requestId,
+          ok: true,
+          projectId: project.id,
+          branches: gitInfo.branches,
+          currentBranch: gitInfo.currentBranch,
+          workspaces: projectWorkspaceItems(project, workspaces),
+          selectedWorkspaceId: project.defaultWorkspaceId,
+          message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
+        });
+      } catch (error) {
+        context.emit(socket, { type: "workspace.git.result", requestId: payload.requestId, ok: false, projectId: project.id, branches: [], workspaces: projectWorkspaceItems(project, workspaces), message: error instanceof Error ? error.message : "Failed to list Git worktrees" });
+      }
+      return true;
+    }
+    case "workspace.git.create": {
+      const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      const workspaces = context.loadAvailableWorkspaces();
+      const project = context.resolveProjectById(payload.projectId, projects);
+      if (!project) {
+        context.emit(socket, { type: "workspace.git.result", requestId: payload.requestId, ok: false, projectId: payload.projectId, branches: [], workspaces: [], message: "Project not found" });
+        return true;
+      }
+      try {
+        const workspace = await createProjectWorktree(project, workspaces, payload.branchName, context.configPath);
+        const nextProjects = await context.loadAvailableProjectsWithSemanticSummaries();
+        const nextWorkspaces = context.loadAvailableWorkspaces();
+        context.setProjects(nextProjects);
+        context.setWorkspaces(nextWorkspaces);
+        const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
+        const gitRoot = await resolveGitRoot(workspace.path);
+        const gitInfo = await listGitBranches(gitRoot);
+        context.emit(socket, {
+          type: "workspace.git.result",
+          requestId: payload.requestId,
+          ok: true,
+          projectId: project.id,
+          branches: gitInfo.branches,
+          currentBranch: payload.branchName,
+          workspaces: projectWorkspaceItems(nextProject, nextWorkspaces),
+          selectedWorkspaceId: workspace.id,
+          message: `Created worktree ${payload.branchName}`,
+        });
+        context.emit(socket, { type: "workspace.list.result", requestId: `workspace-list-${Date.now()}`, workspaces: nextWorkspaces });
+        context.emit(socket, { type: "project.list.result", requestId: `project-list-${Date.now()}`, projects: nextProjects });
+      } catch (error) {
+        context.emit(socket, { type: "workspace.git.result", requestId: payload.requestId, ok: false, projectId: project.id, branches: [], workspaces: projectWorkspaceItems(project, workspaces), message: error instanceof Error ? error.message : "Failed to create Git worktree" });
+      }
+      return true;
+    }
     case "agent.list": {
       const agents = context.loadAvailableAgents();
       context.setAgents(agents);
       context.emit(socket, { type: "agent.list.result", requestId: payload.requestId, agents });
+      return true;
+    }
+    case "agent.discover": {
+      const configuredAgents = context.loadAvailableAgents();
+      const result = await discoverAcpAgents(configuredAgents);
+      context.setAgents(result.agents);
+      context.emit(socket, {
+        type: "agent.discover.result",
+        requestId: payload.requestId,
+        agents: result.agents,
+        discoveredCount: result.discovered.length,
+        candidates: result.candidates,
+        message: result.discovered.length
+          ? `Discovered ${result.discovered.length} ACP agent${result.discovered.length === 1 ? "" : "s"}.`
+          : "No ACP agents discovered on PATH.",
+      });
       return true;
     }
     case "agent.save": {

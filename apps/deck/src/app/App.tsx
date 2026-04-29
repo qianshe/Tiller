@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
+import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
+import geminiProviderIconUrl from "./assets/provider-icons/Gemini.svg";
+import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport } from "@tiller/shared";
 import type {
   AcpAgentProvider,
@@ -475,6 +478,8 @@ export function App() {
   const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
+  const worktreePickerRef = useRef<HTMLDivElement | null>(null);
+  const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
   const resumeStartRequestsRef = useRef<Set<string>>(new Set());
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
@@ -523,6 +528,10 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(missionVisualFixture?.activeSessionId ?? null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(missionVisualFixture?.selectedProjectId ?? null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
+  const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [worktreeGitByProject, setWorktreeGitByProject] = useState<Record<string, { branches: string[]; currentBranch?: string; message?: string; loading?: boolean }>>({});
+  const [newGitBranchName, setNewGitBranchName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
   const [selectedModel, setSelectedModel] = useState<string>(missionVisualFixture?.sessions[0]?.model ?? MODEL_OPTIONS[0]);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
@@ -561,6 +570,8 @@ export function App() {
   const [fleetProjectSaveMessage, setFleetProjectSaveMessage] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
+  const [fleetAgentDiscoverMessage, setFleetAgentDiscoverMessage] = useState("");
+  const [fleetAgentDiscoveryCandidates, setFleetAgentDiscoveryCandidates] = useState<AcpDiscoveryCandidate[]>([]);
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
@@ -607,6 +618,10 @@ export function App() {
     }
     return workspaces.filter((workspace) => workspaceIds.includes(workspace.id));
   }, [draftProject?.workspaceIds, workspaces]);
+  const selectedWorkspace = filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? filteredWorkspaces[0] ?? null;
+  const draftWorktreeGit = selectedProjectId ? worktreeGitByProject[selectedProjectId] : undefined;
+  const draftGitBranchOptions = Array.from(new Set([draftWorktreeGit?.currentBranch, ...(draftWorktreeGit?.branches ?? []), "main", "master"].filter(Boolean) as string[]));
+  const selectedGitBranch = selectedWorkspace?.id.includes("-worktree-") ? selectedWorkspace.name : draftWorktreeGit?.currentBranch ?? "main";
   const filteredAgents = useMemo(() => {
     const allowedAgentIds = draftProject?.allowedAgentIds;
     if (!allowedAgentIds?.length) {
@@ -625,6 +640,7 @@ export function App() {
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
+  const selectedDraftAgent = filteredAgents.find((agent) => agent.id === selectedAgentId) ?? filteredAgents[0] ?? null;
   const draftAgent = agents.find((agent) => agent.id === (activeSession?.agentId ?? selectedAgentId)) ?? null;
   const draftModel = activeSession ? activeSession.model ?? MODEL_OPTIONS[0] : selectedModel;
   const draftReasoningEffort = activeSession ? activeSession.reasoningEffort ?? "medium" : selectedReasoningEffort;
@@ -683,15 +699,39 @@ export function App() {
       setSelectedMissionHelmId(project.helmId);
       setSelectedProjectId(projectId);
     }
-    setExpandedMissionProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
+    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+  }
+
+  function selectDraftWorktreeBranch(branch: string) {
+    const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
+    const fallbackWorkspace = filteredWorkspaces.find((workspace) => workspace.id === draftProject?.defaultWorkspaceId) ?? filteredWorkspaces[0];
+    setSelectedWorkspaceId(matchingWorkspace?.id ?? fallbackWorkspace?.id ?? selectedWorkspaceId);
+    setWorktreeGitByProject((current) => selectedProjectId ? {
+      ...current,
+      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), currentBranch: branch },
+    } : current);
+    setWorktreePickerOpen(false);
+  }
+
+  function selectDraftAgent(agentId: string) {
+    setSelectedAgentId(agentId);
+    setAgentPickerOpen(false);
+  }
+
+  function createDraftGitBranch(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!selectedProjectId || !socketRef.current) {
+      return;
+    }
+    const branch = newGitBranchName.trim().replace(/\s+/g, "-");
+    if (!branch) {
+      return;
+    }
+    setWorktreeGitByProject((current) => ({
+      ...current,
+      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), loading: true, message: `正在创建 worktree：${branch}...` },
+    }));
+    dispatch(socketRef.current, { type: "workspace.git.create", requestId: nextRequestId(requestCounter), projectId: selectedProjectId, branchName: branch });
   }
 
   function selectMissionHelm(helmId: string) {
@@ -751,6 +791,37 @@ export function App() {
 
   const agentLocked = Boolean(activeSession?.runtimeSessionId ?? activeSession?.resume?.runtimeSessionId);
 
+
+  useEffect(() => {
+    if (!worktreePickerOpen && !agentPickerOpen) {
+      return;
+    }
+
+    function closeDraftPickersFromPointer(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && (worktreePickerRef.current?.contains(target) || agentPickerRef.current?.contains(target))) {
+        return;
+      }
+      setWorktreePickerOpen(false);
+      setAgentPickerOpen(false);
+    }
+
+    function closeDraftPickersFromKeyboard(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setWorktreePickerOpen(false);
+      setAgentPickerOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeDraftPickersFromPointer);
+    document.addEventListener("keydown", closeDraftPickersFromKeyboard);
+    return () => {
+      document.removeEventListener("mousedown", closeDraftPickersFromPointer);
+      document.removeEventListener("keydown", closeDraftPickersFromKeyboard);
+    };
+  }, [agentPickerOpen, worktreePickerOpen]);
+
   useEffect(() => {
     if (!selectedMissionHelmId && (activeSession?.helmId || draftProject?.helmId || projects[0]?.helmId || helms[0]?.id)) {
       setSelectedMissionHelmId(activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? helms[0]?.id ?? null);
@@ -785,6 +856,17 @@ export function App() {
       setSelectedWorkspaceId(nextWorkspaceId);
     }
   }, [draftProject, filteredWorkspaces, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (!selectedProjectId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    setWorktreeGitByProject((current) => ({
+      ...current,
+      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), loading: true, message: "正在加载 worktree..." },
+    }));
+    dispatch(socketRef.current, { type: "workspace.git.list", requestId: nextRequestId(requestCounter), projectId: selectedProjectId });
+  }, [pairingState, selectedProjectId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -948,6 +1030,30 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem(MISSION_PANEL_PAGES_STORAGE_KEY, JSON.stringify(customMissionPanelPages));
   }, [customMissionPanelPages]);
+
+  useEffect(() => {
+    const transientMessages = [
+      [fleetProjectSaveMessage, setFleetProjectSaveMessage],
+      [fleetAgentDiscoverMessage, setFleetAgentDiscoverMessage],
+    ] as const;
+    const timers = transientMessages
+      .filter(([message]) => message && !message.startsWith("正在"))
+      .map(([, clearMessage]) => window.setTimeout(() => clearMessage(""), 3600));
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [fleetProjectSaveMessage, fleetAgentDiscoverMessage]);
+
+  useEffect(() => {
+    if (!fleetAgentDiscoverMessage.startsWith("正在发现")) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setFleetAgentDiscoverMessage("Discover 暂无响应，请确认 Helm 已加载最新代码。");
+    }, 12000);
+
+    return () => window.clearTimeout(timer);
+  }, [fleetAgentDiscoverMessage]);
 
   useEffect(() => {
     setTrustedDevice(readTrustedDeviceCache(window.localStorage, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT));
@@ -1422,8 +1528,34 @@ export function App() {
           setWorkspaces(payload.workspaces);
         }
         return;
+      case "workspace.git.result":
+        setWorktreeGitByProject((current) => ({
+          ...current,
+          [payload.projectId]: { branches: payload.branches, currentBranch: payload.currentBranch, message: payload.message, loading: false },
+        }));
+        if (sourceIsCurrentHelm && payload.workspaces.length) {
+          setWorkspaces((current) => {
+            const nextById = new Map(current.map((workspace) => [workspace.id, workspace]));
+            payload.workspaces.forEach((workspace) => nextById.set(workspace.id, workspace));
+            return Array.from(nextById.values());
+          });
+        }
+        if (payload.selectedWorkspaceId) {
+          setSelectedWorkspaceId(payload.selectedWorkspaceId);
+          setWorktreePickerOpen(false);
+          setNewGitBranchName("");
+        }
+        return;
       case "agent.list.result":
         updateHelmInventory(sourceHelmKey, { agents: payload.agents });
+        if (sourceIsCurrentHelm) {
+          setAgents(payload.agents);
+        }
+        return;
+      case "agent.discover.result":
+        updateHelmInventory(sourceHelmKey, { agents: payload.agents });
+        setFleetAgentDiscoveryCandidates(payload.candidates);
+        setFleetAgentDiscoverMessage(payload.discoveredCount ? `已发现 ${payload.discoveredCount} 个本机 ACP` : "未发现新的本机 ACP");
         if (sourceIsCurrentHelm) {
           setAgents(payload.agents);
         }
@@ -1467,6 +1599,8 @@ export function App() {
         return;
       case "agent.save.result":
         setConfigSaveMessage(payload.message);
+        setFleetAgentDiscoverMessage(payload.message);
+        setFleetAgentDiscoveryCandidates((current) => current.map((candidate) => candidate.id === payload.providerId ? { ...candidate, configured: true } : candidate));
         if (socketRef.current) {
           dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
           dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
@@ -2451,6 +2585,33 @@ export function App() {
     );
   }
 
+  function resolveMissionAgentInitials(agentName: string) {
+    const words = agentName.match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])/g) ?? [agentName];
+    return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "A";
+  }
+
+  function resolveMissionAgentIconUrl(agentName: string) {
+    const normalized = agentName.toLowerCase();
+    if (normalized.includes("codex") || normalized.includes("openai")) {
+      return codexProviderIconUrl;
+    }
+    if (normalized.includes("claude") || normalized.includes("anthropic")) {
+      return claudeProviderIconUrl;
+    }
+    if (normalized.includes("gemini")) {
+      return geminiProviderIconUrl;
+    }
+    return null;
+  }
+
+  function renderMissionAgentIcon(agentName: string) {
+    const iconUrl = resolveMissionAgentIconUrl(agentName);
+    if (iconUrl) {
+      return <img src={iconUrl} alt="" aria-hidden="true" />;
+    }
+    return <span className="mission-tree-agent-initials">{resolveMissionAgentInitials(agentName)}</span>;
+  }
+
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
     const missionSidebarWidth = missionSidebarCollapsed ? 0 : missionPaneWidths.sidebar;
@@ -2631,6 +2792,8 @@ export function App() {
                       const selectedHelm = helm.id === effectiveMissionHelmId;
                       const helmExpanded = expandedMissionHelmIds.has(helm.id);
                       const helmProjects = projects.filter((project) => project.helmId === helm.id);
+                      const helmKey = daemonProfileKey(helm.host, String(helm.port));
+                      const helmConnectionState = helmConnectionStates[helmKey] ?? (helmKey === activeProfileId ? connection : "disconnected");
                       return (
                         <div key={helm.id} className="mission-tree-group" role="group">
                           <button
@@ -2638,6 +2801,8 @@ export function App() {
                             className={`mission-tree-row mission-tree-row-helm ${selectedHelm ? "active" : ""}`}
                             onClick={() => toggleMissionHelmNode(helm.id)}
                             role="treeitem"
+                            aria-level={1}
+                            aria-expanded={helmExpanded}
                             aria-selected={selectedHelm}
                           >
                             <span className="mission-tree-caret">{helmExpanded ? "▾" : "▸"}</span>
@@ -2646,6 +2811,7 @@ export function App() {
                               <strong>{helm.name}</strong>
                               <span>{helm.host}:{helm.port} · {helmProjects.length} 项目</span>
                             </span>
+                            <span className={`mission-tree-status-dot helm-status-${helmConnectionState}`} title={formatConnectionStatus(helmConnectionState)} aria-label={formatConnectionStatus(helmConnectionState)} />
                           </button>
                           {helmExpanded ? (
                             <div className="mission-tree-children mission-tree-children-projects" role="group">
@@ -2655,42 +2821,40 @@ export function App() {
                               const projectNodeSessions = sessions.filter((session) => session.projectId === project.id);
                               return (
                                 <div key={project.id} className="mission-tree-group" role="group">
-                                  <button
-                                    type="button"
-                                    className={`mission-tree-row mission-tree-row-project ${selectedProject ? "active" : ""}`}
-                                    onClick={() => toggleMissionProjectNode(project.id)}
-                                    role="treeitem"
-                                    aria-selected={selectedProject}
-                                  >
-                                    <span className="mission-tree-caret">{projectExpanded ? "▾" : "▸"}</span>
-                                    <span className="mission-tree-icon">{projectExpanded ? "📂" : "📁"}</span>
-                                    <span className="mission-tree-main">
-                                      <strong>{project.name}</strong>
-                                      <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
-                                    </span>
-                                  </button>
-                                  {projectExpanded ? (
-                                    <div className="mission-tree-children mission-tree-children-sessions" role="group">
-                                      {selectedProject ? (
-                                      <button
+                                  <div className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}>
+                                    <button
+                                      type="button"
+                                      className={`mission-tree-row mission-tree-row-project ${selectedProject ? "active" : ""}`}
+                                      onClick={() => toggleMissionProjectNode(project.id)}
+                                      role="treeitem"
+                                      aria-level={2}
+                                      aria-expanded={projectExpanded}
+                                      aria-selected={selectedProject}
+                                    >
+                                      <span className="mission-tree-caret">{projectExpanded ? "▾" : "▸"}</span>
+                                      <span className="mission-tree-icon">{projectExpanded ? "📂" : "📁"}</span>
+                                      <span className="mission-tree-main">
+                                        <strong>{project.name}</strong>
+                                        <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
+                                      </span>
+                                    </button>
+                                    <button
                                         type="button"
-                                        className={`mission-tree-row mission-tree-row-session mission-tree-row-new ${!activeSession ? "active" : ""}`}
+                                        className={`mission-tree-new-inline ${selectedProject && !activeSession ? "active" : ""}`}
                                         onClick={() => {
                                           setSelectedMissionHelmId(project.helmId);
                                           setSelectedProjectId(project.id);
+                                          setExpandedMissionProjectIds((current) => new Set([...current, project.id]));
                                           setActiveSessionId(null);
                                         }}
-                                        role="treeitem"
-                                        aria-selected={!activeSession}
+                                        aria-label={`在 ${project.name} 下新建任务`}
+                                        title="新建任务"
                                       >
-                                        <span className="mission-tree-caret" />
-                                        <span className="mission-tree-icon">＋</span>
-                                        <span className="mission-tree-main">
-                                          <strong>新任务</strong>
-                                          <span>选择 ACP 后创建 Session</span>
-                                        </span>
+                                        ＋
                                       </button>
-                                    ) : null}
+                                  </div>
+                                  {projectExpanded ? (
+                                    <div className="mission-tree-children mission-tree-children-sessions" role="group">
                                     {projectNodeSessions.length ? (
                                       projectNodeSessions.map((session) => (
                                         <div key={session.id} className={`mission-tree-session-row ${session.id === activeSessionId ? "active" : ""}`}>
@@ -2699,10 +2863,11 @@ export function App() {
                                             className="mission-tree-row mission-tree-row-session"
                                             onClick={() => openSession(session.id)}
                                             role="treeitem"
+                                            aria-level={3}
                                             aria-selected={session.id === activeSessionId}
                                           >
                                             <span className="mission-tree-caret" />
-                                            <span className="mission-tree-icon">◆</span>
+                                            <span className="mission-tree-agent-icon" title={session.agentName}>{renderMissionAgentIcon(session.agentName)}</span>
                                             <span className="mission-tree-main">
                                               <strong>{resolveSessionTitle(session)}</strong>
                                               <span>ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
@@ -2723,9 +2888,9 @@ export function App() {
                                           </button>
                                         </div>
                                       ))
-                                      ) : selectedProject ? (
+                                      ) : (
                                         <div className="mission-tree-empty">这个项目还没有任务。</div>
-                                      ) : null}
+                                      )}
                                     </div>
                                   ) : null}
                                 </div>
@@ -2756,7 +2921,7 @@ export function App() {
             ) : null}
             {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
 
-            <div className="chat-conversation">
+            <div className={`chat-conversation ${!activeSession ? "mission-draft-chat" : ""}`.trim()}>
               <div className="chat-main">
                 {activeSession ? (
                   <>
@@ -2780,10 +2945,9 @@ export function App() {
 
                   </>
                 ) : (
-                  <div className="chat-empty">
+                  <div className="chat-empty mission-draft-empty">
                     <p className="eyebrow">新任务</p>
-                    <h2>{draftProject ? `在 ${draftProject.name} 下创建新的任务` : "先在左侧选择一个项目"}</h2>
-                    <p className="muted">左侧上半是项目，下半是该项目的任务。底部草稿栏里锁定 ACP，可继续调整 模型 / 推理。</p>
+                    <h2>{draftProject ? `${draftProject.name} · 草稿` : "先在左侧选择一个项目"}</h2>
                     {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
@@ -2791,27 +2955,51 @@ export function App() {
 
               <div className="chat-input-area draft-toolbar">
                 {!activeSession ? (
-                  <div className="draft-toolbar-grid">
-                    <label>
-                      <span>项目</span>
-                      <input value={draftProject?.name ?? "未选择项目"} readOnly />
-                    </label>
-                    <label>
-                      <span>{copy.selectedWorkspace}</span>
-                      <select value={selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)}>
-                        {filteredWorkspaces.map((workspace) => (
-                          <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
+                  <div className="draft-toolbar-grid draft-toolbar-grid-mission">
+                    <div ref={worktreePickerRef} className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}>
+                      <span>Workspace</span>
+                      <button type="button" className="mission-worktree-trigger" onClick={() => setWorktreePickerOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={worktreePickerOpen}>
+                        <strong>{selectedGitBranch}</strong>
+                      </button>
+                      {worktreePickerOpen ? (
+                        <div className="mission-worktree-menu" role="listbox" aria-label="Workspace / Git worktree">
+                          {draftGitBranchOptions.map((branch) => {
+                            const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
+                            const branchHint = matchingWorkspace ? "已配置 workspace" : branch === (draftWorktreeGit?.currentBranch ?? "main") ? "当前项目 workspace" : "新建后生成独立 Git worktree";
+                            return (
+                              <button key={branch} type="button" role="option" aria-selected={branch === selectedGitBranch} className={branch === selectedGitBranch ? "active" : ""} onClick={() => selectDraftWorktreeBranch(branch)}>
+                                <strong>{branch}</strong>
+                                <span>{branchHint}</span>
+                              </button>
+                            );
+                          })}
+                          <form className="mission-worktree-create" onSubmit={createDraftGitBranch}>
+                            <span>新建 Git worktree</span>
+                            <input list="mission-git-branches" value={newGitBranchName} onChange={(event) => setNewGitBranchName(event.target.value)} placeholder="feature/mission" />
+                            <datalist id="mission-git-branches">
+                              {draftGitBranchOptions.map((branch) => <option key={branch} value={branch} />)}
+                            </datalist>
+                            <button className="secondary" type="submit" disabled={!selectedProjectId || !newGitBranchName.trim() || Boolean(draftWorktreeGit?.loading)}>{draftWorktreeGit?.loading ? "创建中" : "新建并使用"}</button>
+                            {draftWorktreeGit?.message ? <p>{draftWorktreeGit.message}</p> : null}
+                          </form>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div ref={agentPickerRef} className={`mission-agent-field ${agentPickerOpen ? "open" : ""}`}>
                       <span>{copy.selectedAgent}</span>
-                      <select value={selectedAgentId ?? ""} onChange={(event) => setSelectedAgentId(event.target.value)} disabled={agentLocked}>
-                        {filteredAgents.map((agent) => (
-                          <option key={agent.id} value={agent.id}>{agent.name}</option>
-                        ))}
-                      </select>
-                    </label>
+                      <button type="button" className="mission-agent-trigger" onClick={() => setAgentPickerOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={agentPickerOpen} disabled={agentLocked}>
+                        <strong>{selectedDraftAgent?.name ?? "选择舰员"}</strong>
+                      </button>
+                      {agentPickerOpen ? (
+                        <div className="mission-agent-menu" role="listbox" aria-label={copy.selectedAgent}>
+                          {filteredAgents.map((agent) => (
+                            <button key={agent.id} type="button" role="option" aria-selected={agent.id === selectedAgentId} className={agent.id === selectedAgentId ? "active" : ""} onClick={() => selectDraftAgent(agent.id)}>
+                              {agent.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
@@ -2935,7 +3123,7 @@ export function App() {
               <section className="inspector-section">
                 <p className="eyebrow">上下文</p>
                 <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
-                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "未选工作区"}</p>
+                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? `Git branch: ${selectedGitBranch}`}</p>
                 <div className="inspector-pills">
                   <span>{activeSession ? activeStatus : "草稿"}</span>
                   <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
@@ -2969,7 +3157,7 @@ export function App() {
                 <InfoList
                   items={[
                     `项目 · ${draftProject?.name ?? "未选项目"}`,
-                    `工作区 · ${activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "未选工作区"}`,
+                    `Git branch · ${selectedGitBranch}`,
                     `舰员 · ${activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}`,
                   ]}
                   empty="暂无项目摘要"
@@ -3181,7 +3369,7 @@ export function App() {
               <button className="primary" type="button" onClick={openFleetAddHelmModal}>添加</button>
             </div>
 
-            <p className="fleet-hub-copy">Fleet 收纳多个 Helm；点击 Helm 后在下方查看该 Helm 的项目、ACP 舰员与配置入口。</p>
+            <p className="fleet-hub-copy">管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。</p>
 
             <div className="fleet-hub-node-list" role="list" aria-label="Helm 节点列表">
               {helmCards.map((helm) => (
@@ -3261,10 +3449,8 @@ export function App() {
             <div className="helm-detail-facts" aria-label="Helm 配置范围">
               <span><strong>{selectedHelmProjects.length}</strong> 项目配置</span>
               <span><strong>{selectedHelmAgents.length}</strong> ACP 舰员</span>
-              <span title="项目路径会在运行时派生为入口，不写入 config.workspaces"><strong>{selectedHelmWorkspaces.length}</strong> 运行入口</span>
+              <span><strong>{selectedHelmWorkspaces.length}</strong> 运行入口</span>
             </div>
-            <p className="muted compact helm-detail-scope-note">添加项目会写入 Helm 的 projects 配置；运行入口由项目路径派生，不会新增 config.workspaces。</p>
-
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
                 <div className="helm-inventory-section-head">
@@ -3337,7 +3523,35 @@ export function App() {
               <section className="helm-inventory-list-section">
                 <div className="helm-inventory-section-head">
                   <h3>ACP 舰员</h3>
-                  <button className="secondary helm-list-add-button" type="button" disabled={!selectedHelmIsConnected} aria-label="添加 ACP" title="添加 ACP" onClick={() => setFleetAgentFormOpen((current) => !current)}>+</button>
+                  <div className="helm-section-actions-inline">
+                    <button
+                      className="secondary helm-discover-button"
+                      type="button"
+                      disabled={!selectedHelmIsConnected}
+                      onClick={() => {
+                        if (!selectedHelmSocket) {
+                          setFleetAgentDiscoverMessage("请先连接 Helm 后再 Discover。");
+                          return;
+                        }
+                        setFleetAgentDiscoverMessage("正在发现 ACP 舰员...");
+                        dispatch(selectedHelmSocket, { type: "agent.discover", requestId: nextRequestId(requestCounter) });
+                        const probeWorkspaceId = selectedHelmWorkspaces[0]?.id;
+                        if (probeWorkspaceId) {
+                          selectedHelmAgents.forEach((agent) => {
+                            dispatch(selectedHelmSocket, {
+                              type: "agent.model.options.get",
+                              requestId: nextRequestId(requestCounter),
+                              providerId: agent.id,
+                              workspaceId: probeWorkspaceId,
+                            });
+                          });
+                        }
+                      }}
+                    >
+                      Discover
+                    </button>
+                    <button className="secondary helm-list-add-button" type="button" disabled={!selectedHelmIsConnected} aria-label="添加 ACP" title="添加 ACP" onClick={() => setFleetAgentFormOpen((current) => !current)}>+</button>
+                  </div>
                 </div>
                 {fleetAgentFormOpen ? (
                   <form
@@ -3409,6 +3623,17 @@ export function App() {
                     </div>
                   </form>
                 ) : null}
+                {fleetAgentDiscoverMessage ? <p className="muted compact helm-inline-save-message">{fleetAgentDiscoverMessage}</p> : null}
+                {fleetAgentDiscoveryCandidates.length ? (
+                  <div className="helm-discovery-candidates" aria-label="ACP Discover 结果">
+                    {fleetAgentDiscoveryCandidates.map((candidate) => (
+                      <span className={`helm-discovery-chip ${candidate.available ? "available" : "missing"}`} key={candidate.id} title={[candidate.command, ...(candidate.args ?? [])].join(" ")}>
+                        <strong>{candidate.name}</strong>
+                        {candidate.configured ? "已配置" : candidate.available ? "可添加" : "未安装"}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 {selectedHelmAgents.length ? (
                   <ul className="helm-simple-list">
                     {selectedHelmAgents.map((agent) => (
@@ -3434,6 +3659,7 @@ export function App() {
                 )}
               </section>
             </div>
+
 
             {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, selectedHelm.name)}
           </section>
@@ -4097,4 +4323,5 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
 

@@ -5240,6 +5240,74 @@ textarea:focus,
   margin: -10px 0 0;
 }
 
+.helm-section-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.helm-inventory-section-head .helm-section-actions-inline {
+  justify-self: end;
+}
+
+.helm-section-actions-inline .helm-list-add-button {
+  margin-left: 0;
+}
+
+.helm-discover-button {
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
+.helm-discover-button {
+  width: auto;
+  min-width: 92px;
+  white-space: nowrap;
+}
+
+.helm-discovery-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  order: 2;
+}
+
+.helm-discovery-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #b7c4d8;
+  background: rgba(148, 163, 184, 0.10);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 0.84rem;
+}
+
+.helm-discovery-chip strong {
+  color: #e5edf7;
+}
+
+.helm-discovery-chip.available {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.helm-discovery-chip.missing {
+  opacity: 0.72;
+}
+
+
+[data-deck-theme="light"] .helm-discovery-chip {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.86);
+  border-color: rgba(148, 163, 184, 0.20);
+}
+
+[data-deck-theme="light"] .helm-discovery-chip strong {
+  color: #0f172a;
+}
+
 [data-deck-theme="light"] .helm-detail-facts span {
   color: #475569;
   background: rgba(241, 245, 249, 0.86);
@@ -7398,7 +7466,7 @@ textarea:focus,
 /* Fleet section plus buttons: pin to the far right of each column header. */
 .helm-inventory-section-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   width: 100%;
 }
@@ -7989,3 +8057,634 @@ textarea:focus,
   font-size: 0.78rem;
 }
 
+/* Mission tree final polish: only sessions are bubble-like; Helm/Project stay explorer-flat. */
+.view-sessions .mission-tree-row-helm.active,
+.view-sessions .mission-tree-row-project.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .mission-tree-row-helm:hover,
+.view-sessions .mission-tree-row-project:hover {
+  background: rgba(148, 163, 184, 0.10);
+}
+
+.view-sessions .mission-tree-row-session,
+.view-sessions .mission-tree-session-row.active .mission-tree-row-session,
+.view-sessions .mission-tree-row-new.active {
+  border-radius: 6px;
+  background: rgba(30, 58, 104, 0.56);
+}
+
+.view-sessions .mission-tree-row-session:hover,
+.view-sessions .mission-tree-session-row:hover .mission-tree-row-session {
+  background: rgba(37, 99, 235, 0.24);
+}
+
+.view-sessions .mission-tree-row-session.active,
+.view-sessions .mission-tree-session-row.active .mission-tree-row-session,
+.view-sessions .mission-tree-row-new.active {
+  box-shadow: inset 2px 0 0 #60a5fa;
+}
+
+.view-sessions .mission-tree-row-new {
+  padding-left: 18px;
+}
+
+.view-sessions .mission-tree-status-dot {
+  width: 8px;
+  height: 8px;
+  justify-self: end;
+  border-radius: 999px;
+  background: #64748b;
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.14);
+}
+
+.view-sessions .mission-tree-status-dot.helm-status-connected {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16), 0 0 14px rgba(34, 197, 94, 0.30);
+}
+
+.view-sessions .mission-tree-status-dot.helm-status-connecting {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16), 0 0 14px rgba(245, 158, 11, 0.28);
+}
+
+.view-sessions .mission-tree-agent-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 5px;
+  background: rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* Mission tree project row action: new session lives on the project line, VSCode explorer style. */
+.view-sessions .mission-tree-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.view-sessions .mission-tree-project-row .mission-tree-row-project {
+  min-width: 0;
+}
+
+.view-sessions .mission-tree-new-inline {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #bfdbfe;
+  font-size: 0.9rem;
+  font-weight: 900;
+  opacity: 0;
+}
+
+.view-sessions .mission-tree-project-row:hover .mission-tree-new-inline,
+.view-sessions .mission-tree-project-row.active .mission-tree-new-inline,
+.view-sessions .mission-tree-new-inline:focus-visible {
+  opacity: 1;
+}
+
+.view-sessions .mission-tree-new-inline:hover,
+.view-sessions .mission-tree-new-inline.active {
+  background: rgba(96, 165, 250, 0.18);
+  color: #ffffff;
+}
+
+.view-sessions .mission-tree-row-new {
+  display: none;
+}
+
+/* Mission tree alignment tightening pass. */
+.view-sessions .mission-tree-row {
+  min-height: 22px;
+  padding: 2px 4px;
+  gap: 3px;
+}
+
+.view-sessions .mission-tree-row-helm {
+  grid-template-columns: 12px 15px minmax(0, 1fr) 22px;
+}
+
+.view-sessions .mission-tree-project-row {
+  grid-template-columns: minmax(0, 1fr) 22px;
+}
+
+.view-sessions .mission-tree-row-project {
+  grid-template-columns: 12px 16px minmax(0, 1fr);
+  padding-left: 16px;
+}
+
+.view-sessions .mission-tree-row-session {
+  min-height: 24px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  padding-left: 28px;
+  padding-right: 6px;
+}
+
+.view-sessions .mission-tree-row-session .mission-tree-caret {
+  display: none;
+}
+
+.view-sessions .mission-tree-agent-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  font-size: 0.64rem;
+}
+
+.view-sessions .mission-tree-session-row {
+  grid-template-columns: minmax(0, 1fr) 22px;
+}
+
+.view-sessions .mission-tree-cleanup,
+.view-sessions .mission-tree-new-inline {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+}
+
+.view-sessions .mission-tree-status-dot {
+  margin-right: 6px;
+}
+
+.view-sessions .mission-tree-main strong {
+  font-size: 0.82rem;
+}
+
+.view-sessions .mission-tree-empty {
+  margin-left: 28px;
+  padding-block: 3px;
+}
+
+/* Mission ACP provider icons. */
+.view-sessions .mission-tree-agent-icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.view-sessions .mission-tree-agent-initials {
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-tree-agent-icon img {
+  width: 13px;
+  height: 13px;
+  display: block;
+  object-fit: contain;
+}
+
+
+/* Mission draft refinement: compact hint + taller draft editor + branch selector. */
+.view-sessions .mission-draft-chat {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.view-sessions .mission-draft-chat .chat-main {
+  align-content: start;
+  padding: 18px 28px 8px;
+}
+
+.view-sessions .mission-draft-empty.chat-empty {
+  width: min(720px, 100%);
+  min-height: 72px;
+  margin-inline: auto;
+  padding: 14px 18px;
+  place-content: center;
+  gap: 4px;
+  border: 1px dashed rgba(96, 165, 250, 0.20);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.view-sessions .mission-draft-empty .eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+}
+
+.view-sessions .mission-draft-empty h2 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.view-sessions .mission-draft-chat .chat-input-area.draft-toolbar {
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr);
+  gap: 14px;
+}
+
+.view-sessions .draft-toolbar-grid-mission {
+  grid-template-columns: minmax(140px, 1fr) minmax(150px, 1fr) minmax(220px, 1.35fr) minmax(150px, 1fr);
+  align-items: end;
+}
+
+.view-sessions .mission-branch-create {
+  display: grid;
+  gap: 6px;
+}
+
+.view-sessions .mission-branch-create > span {
+  color: #8d98aa;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.view-sessions .mission-branch-create > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.view-sessions .mission-branch-create button {
+  min-height: 40px;
+  padding-inline: 12px;
+  border-radius: 12px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  align-self: stretch;
+  height: min(52vh, 520px);
+  max-height: 520px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form > textarea {
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+  resize: none;
+}
+
+.view-sessions .mission-tree-project-row .mission-tree-new-inline {
+  opacity: 0;
+}
+
+.view-sessions .mission-tree-project-row:hover .mission-tree-new-inline,
+.view-sessions .mission-tree-project-row.active .mission-tree-new-inline,
+.view-sessions .mission-tree-new-inline:focus-visible {
+  opacity: 1;
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .draft-toolbar-grid-mission {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .view-sessions .draft-toolbar-grid-mission {
+    grid-template-columns: 1fr;
+  }
+
+  .view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+    height: 44vh;
+  }
+}
+
+/* Mission workspace selector: custom dropdown with inline Git worktree creation. */
+.view-sessions .draft-toolbar-grid-mission {
+  grid-template-columns: minmax(140px, 0.9fr) minmax(300px, 1.8fr) minmax(150px, 0.9fr);
+}
+
+.view-sessions .mission-worktree-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.view-sessions .mission-worktree-field > span {
+  color: #8d98aa;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.view-sessions .mission-worktree-trigger {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  align-content: center;
+  padding: 8px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(60, 74, 96, 0.88);
+  background: #111827;
+  color: #e5edf8;
+  text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.view-sessions .mission-worktree-trigger::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  align-self: center;
+  border-right: 1.5px solid #8ea0ba;
+  border-bottom: 1.5px solid #8ea0ba;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.view-sessions .mission-worktree-field.open .mission-worktree-trigger::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.view-sessions .mission-worktree-trigger strong,
+.view-sessions .mission-worktree-trigger small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-worktree-trigger strong {
+  font-size: 0.95rem;
+}
+
+.view-sessions .mission-worktree-trigger small {
+  grid-column: 1 / 2;
+  color: #8190a7;
+  font-size: 0.68rem;
+}
+
+.view-sessions .mission-worktree-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 90;
+  width: min(520px, 78vw);
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.30);
+  border-radius: 12px;
+  background: #111827;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.view-sessions .mission-worktree-menu > button {
+  min-height: 42px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #d7deea;
+  text-align: left;
+}
+
+.view-sessions .mission-worktree-menu > button span {
+  color: #8794aa;
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-worktree-menu > button:hover,
+.view-sessions .mission-worktree-menu > button.active {
+  background: rgba(59, 130, 246, 0.28);
+  color: #f8fafc;
+}
+
+.view-sessions .mission-worktree-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .mission-worktree-create > span,
+.view-sessions .mission-worktree-create > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #8ea0ba;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.view-sessions .mission-worktree-create input {
+  min-height: 38px;
+  border-radius: 10px;
+}
+
+.view-sessions .mission-worktree-create button {
+  min-height: 38px;
+  border-radius: 10px;
+  padding-inline: 12px;
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .draft-toolbar-grid-mission {
+    grid-template-columns: 1fr;
+  }
+
+  .view-sessions .mission-worktree-menu {
+    width: min(420px, 86vw);
+  }
+}
+
+/* Mission draft height correction: make the editor taller than default but avoid an oversized empty lower block. */
+.view-sessions .mission-draft-chat .chat-input-area.draft-toolbar {
+  grid-template-rows: auto auto;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  height: clamp(260px, 34vh, 390px);
+  max-height: 390px;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+    height: min(320px, 40vh);
+  }
+}
+
+/* Mission workspace trigger is single-line; draft composer footer matches active-session height. */
+.view-sessions .mission-worktree-trigger {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.view-sessions .mission-worktree-trigger small {
+  display: none;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  grid-template-rows: minmax(0, 1fr) 42px;
+}
+
+.view-sessions .mission-draft-chat .mission-composer-sidecar {
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
+  box-sizing: border-box;
+}
+
+/* Mission agent picker: avoid native select popup and match the dark Zed-like menus. */
+.view-sessions .mission-agent-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.view-sessions .mission-agent-field > span {
+  color: #8d98aa;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.view-sessions .mission-agent-trigger {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(60, 74, 96, 0.88);
+  background: #111827;
+  color: #e5edf8;
+  text-align: left;
+}
+
+.view-sessions .mission-agent-trigger::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid #8ea0ba;
+  border-bottom: 1.5px solid #8ea0ba;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.view-sessions .mission-agent-field.open .mission-agent-trigger::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.view-sessions .mission-agent-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+
+.view-sessions .mission-agent-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 92;
+  width: min(260px, 64vw);
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.30);
+  border-radius: 12px;
+  background: #111827;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.view-sessions .mission-agent-menu button {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #d7deea;
+  font-size: 0.9rem;
+  font-weight: 750;
+  text-align: left;
+}
+
+.view-sessions .mission-agent-menu button:hover,
+.view-sessions .mission-agent-menu button.active {
+  background: rgba(59, 130, 246, 0.28);
+  color: #f8fafc;
+}
+
+/* Mission draft toolbar sizing: project is shown in the draft header, keep controls compact. */
+.view-sessions .draft-toolbar-grid-mission {
+  grid-template-columns: minmax(220px, 300px) minmax(150px, 190px);
+  justify-content: center;
+  align-items: end;
+}
+
+.view-sessions .mission-worktree-trigger {
+  min-height: 44px;
+}
+
+.view-sessions .mission-agent-trigger {
+  min-height: 44px;
+}
+
+.view-sessions .mission-worktree-menu {
+  width: min(360px, 70vw);
+}
+
+.view-sessions .mission-agent-menu {
+  width: 100%;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .draft-toolbar-grid-mission {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mission draft toolbar: inline labels with controls. */
+.view-sessions .mission-worktree-field,
+.view-sessions .mission-agent-field {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.view-sessions .mission-worktree-field > span,
+.view-sessions .mission-agent-field > span {
+  min-width: max-content;
+  padding-top: 0;
+}
+
+.view-sessions .mission-worktree-trigger,
+.view-sessions .mission-agent-trigger {
+  min-width: 0;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  left: auto;
+  right: 0;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-worktree-field,
+  .view-sessions .mission-agent-field {
+    grid-template-columns: 1fr;
+    row-gap: 6px;
+  }
+}
