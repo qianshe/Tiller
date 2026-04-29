@@ -4111,11 +4111,10 @@ textarea:focus,
 
 .tool-call-card {
   max-width: min(88ch, 100%);
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border-left: 3px solid #7c3aed;
+  display: block;
+  padding: 0;
+  border-radius: 10px;
+  border-left: 2px solid #7c3aed;
   background: rgba(124, 58, 237, 0.07);
   box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.12);
 }
@@ -4128,56 +4127,75 @@ textarea:focus,
 
 .tool-call-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tool-call-head::-webkit-details-marker {
+  display: none;
 }
 
 .tool-call-icon {
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 5px;
   background: rgba(124, 58, 237, 0.16);
   color: #5b21b6;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
   font-weight: 800;
+}
+
+.tool-call-kind {
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .tool-call-head strong {
   display: block;
-  margin-top: 2px;
+  min-width: 0;
   overflow: hidden;
+  color: #cbd5e1;
+  font-size: 0.86rem;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tool-call-stream {
-  padding: 0.18rem 0.5rem;
+  padding: 0;
   border-radius: 999px;
-  background: rgba(124, 58, 237, 0.12);
-  color: #5b21b6;
+  background: transparent;
+  color: #7a8597;
   font-size: 0.72rem;
   font-weight: 800;
 }
 
 .tool-call-stream-stderr {
-  background: rgba(217, 45, 32, 0.12);
-  color: #b42318;
+  background: transparent;
+  color: #f87171;
 }
 
 .tool-call-output {
   max-height: 260px;
   overflow: auto;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(15, 23, 36, 0.92);
-  color: #f8fafc;
+  margin: 0 10px 8px 36px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #e5e7eb;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.84rem;
-  line-height: 1.55;
+  line-height: 1.45;
   white-space: pre-wrap;
 }
 

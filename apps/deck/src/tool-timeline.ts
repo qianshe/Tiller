@@ -11,6 +11,7 @@ export type ConversationToolCallItem = {
   timestamp: string;
   title: string;
   status: AgentToolCall["status"];
+  toolKind: AgentToolCall["kind"];
   text: string;
   streams: Array<CommandChunk["stream"]>;
 };
@@ -38,6 +39,7 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
         commandId: key,
         title: call.title || key,
         status: call.status,
+        toolKind: call.kind,
         timestamp: call.updatedAt || call.timestamp,
         text: call.output ?? call.input ?? "",
         streams: call.stream ? [call.stream] : [],
@@ -48,6 +50,7 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
     current.text = `${current.text}${call.output ?? call.input ?? ""}`;
     current.timestamp = call.updatedAt || call.timestamp;
     current.status = call.status;
+    current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
     current.title = call.title || current.title;
     if (call.stream && !current.streams.includes(call.stream)) {
       current.streams.push(call.stream);

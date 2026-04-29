@@ -547,6 +547,22 @@ const markdownComponents: Components = {
   },
 };
 
+function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
+  if (kind === "terminal") {
+    return "Terminal";
+  }
+  if (kind === "edit") {
+    return "File";
+  }
+  if (kind === "tool") {
+    return /mcp/iu.test(title) ? "MCP" : "Tool";
+  }
+  if (kind === "subagent") {
+    return "Agent";
+  }
+  return "Tool";
+}
+
 function MarkdownMessage({ text }: { text: string }) {
   return (
     <div className="markdown-message">
@@ -2416,17 +2432,15 @@ export function App() {
               <MarkdownMessage text={item.message.text} />
             </article>
           ) : (
-            <article key={item.id} className={`tool-call-card tool-call-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
-              <div className="tool-call-head">
+            <details key={item.id} className={`tool-call-card tool-call-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
+              <summary className="tool-call-head">
                 <span className="tool-call-icon" aria-hidden="true">$</span>
-                <div>
-                  <span className="plain-message-role">工具调用 · {item.status}</span>
-                  <strong>{item.title}</strong>
-                </div>
+                <span className="tool-call-kind">{resolveToolCallLabel(item.toolKind, item.title)}</span>
+                <strong>{item.title}</strong>
                 <span className={`tool-call-stream tool-call-stream-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
-              </div>
-              <pre className="tool-call-output">{item.text}</pre>
-            </article>
+              </summary>
+              {item.text.trim() ? <pre className="tool-call-output">{item.text}</pre> : null}
+            </details>
           ),
         )}
       </div>
@@ -2566,7 +2580,6 @@ export function App() {
         {activeSession ? (
           <div className="mission-panel-body">
             <nav className="mission-panel-tree" aria-label="展示页">
-              <p className="mission-panel-tree-title">展示页</p>
               {missionPanelPages.map((page) => {
                 const custom = page.id.startsWith("custom-");
                 return (
@@ -2587,13 +2600,6 @@ export function App() {
               })}
             </nav>
             <section className="mission-panel-content">
-              <div className="mission-panel-content-head">
-                <div>
-                  <p className="eyebrow">{selectedMissionPanelPage.id.startsWith("custom-") ? "自定义" : selectedMissionPanelPage.title}</p>
-                  <h3>{selectedMissionPanelPage.title}</h3>
-                </div>
-                <span className="status-chip">{copy.status[statuses[activeSession.id] ?? activeSession.status]}</span>
-              </div>
               {selectedMissionPanelPage.id === "changes" ? (
                 <div className="mission-panel-page mission-change-tree">
                   {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
@@ -2635,7 +2641,17 @@ export function App() {
                 </div>
               ) : (
                 <div className="mission-panel-page">
-                  <InfoList title="摘要" items={[`项目 · ${activeSession.projectName}`, `工作区 · ${activeSession.workspaceName}`, `ACP 舰员 · ${activeSession.agentName}`, `发送 · ${activeSession.messageCount} 次`]} empty="暂无摘要" />
+                  <InfoList
+                    title="任务概览"
+                    items={[
+                      `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
+                      `消息 · ${activeSession.messageCount} 条`,
+                      `变更 · ${missionDiffCount} 个文件`,
+                      `航行日志 · ${missionLogCount} 条`,
+                      activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
+                    ]}
+                    empty="暂无概览"
+                  />
                 </div>
               )}
             </section>
@@ -2735,26 +2751,6 @@ export function App() {
               <div className="chat-main">
                 {activeSession ? (
                   <>
-                    <div className="section-head section-head-soft chat-session-head">
-                      <div>
-                        <h2>{resolveSessionTitle(activeSession)}</h2>
-                        <p className="muted compact">{activeSession.projectName} · {activeSession.workspaceName} · {activeStatus}</p>
-                        {deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
-                          <>
-                            <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                            <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
-                            <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
-                          </>
-                        ) : null}
-                        {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
-                        {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
-                      </div>
-                      <div className="section-actions">
-                        <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
-                        <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
-                      </div>
-                    </div>
-
                     {pendingPermission ? (
                       <section className="permission-card">
                         <div>
@@ -2771,15 +2767,6 @@ export function App() {
                     ) : null}
 
                     {renderPlainMessages(messages[activeSession.id] ?? [], outputs[activeSession.id] ?? [], toolCalls[activeSession.id] ?? [])}
-
-                    <details className="chat-collapsible" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
-                      <summary>{copy.commandOutput}</summary>
-                      <CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} />
-                    </details>
-                    <details className="chat-collapsible" open={deckPreferences.technicalPanels.diffDefaultOpen}>
-                      <summary>{copy.diffSummary}</summary>
-                      <DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} />
-                    </details>
 
 
                   </>
@@ -2943,7 +2930,65 @@ export function App() {
                   <span>{activeSession ? activeStatus : "草稿"}</span>
                   <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
                 </div>
+                {activeSession && deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
+                  <>
+                    <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
+                    <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
+                    <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
+                  </>
+                ) : null}
+                {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
+                {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
+                {activeSession ? (
+                  <div className="section-actions">
+                    <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
+                    <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
+                  </div>
+                ) : null}
               </section>
+
+              <section className="inspector-section inspector-scroll">
+                <p className="eyebrow">文件树</p>
+                <div className="mission-change-tree">
+                  {activeSession && activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
+                </div>
+              </section>
+
+              <section className="inspector-section">
+                <p className="eyebrow">项目摘要</p>
+                <InfoList
+                  items={[
+                    `项目 · ${draftProject?.name ?? "未选项目"}`,
+                    `工作区 · ${activeSession?.workspaceName ?? filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? "未选工作区"}`,
+                    `舰员 · ${activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}`,
+                  ]}
+                  empty="暂无项目摘要"
+                />
+              </section>
+
+              <section className="inspector-section">
+                <p className="eyebrow">会话摘要</p>
+                <InfoList
+                  items={activeSession ? [
+                    `状态 · ${activeStatus}`,
+                    `消息 · ${activeSession.messageCount} 条`,
+                    `变更 · ${missionDiffCount} 个文件`,
+                    `航行日志 · ${missionLogCount} 条`,
+                    activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
+                  ] : ["草稿 · 尚未创建会话"]}
+                  empty="暂无会话摘要"
+                />
+              </section>
+
+              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.diffDefaultOpen}>
+                <summary>{copy.diffSummary}</summary>
+                <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
+              </details>
+
+              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
+                <summary>{copy.commandOutput}</summary>
+                <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
+              </details>
 
               <section className="inspector-section model-inspector-section">
                 <p className="eyebrow">模型 / 推理</p>
@@ -2960,15 +3005,6 @@ export function App() {
                 <p className="subtle compact">ACP configOptions 可用时优先展示 provider 的真实模型列表。</p>
               </section>
 
-              <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">变更</p>
-                <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
-              </section>
-
-              <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">航行日志</p>
-                <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
-              </section>
             </aside>
           </>
         )}
