@@ -1791,6 +1791,7 @@ export function App() {
           app: "App",
           lastSeen: "Last auth",
           expiresAt: "Expires",
+          revokeDevice: (deviceName: string) => `Revoke ${deviceName}`,
         }
       : {
           eyebrow: "信标",
@@ -1803,10 +1804,26 @@ export function App() {
           app: "App",
           lastSeen: "最近",
           expiresAt: "到期",
+          revokeDevice: (deviceName: string) => `撤销 ${deviceName}`,
         };
 
-    const sortedDevices = [...devices].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
-    const nameIndexes: Record<string, number> = {};
+    const nameIndexes = new Map<string, number>();
+    const deviceRows = [...devices]
+      .sort((left, right) => {
+        const createdAtDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        return createdAtDelta || left.deviceId.localeCompare(right.deviceId);
+      })
+      .map((device) => {
+        const baseName = (device.deviceName || "Tiller Deck").trim() || "Tiller Deck";
+        const index = nameIndexes.get(baseName) ?? 0;
+        nameIndexes.set(baseName, index + 1);
+
+        return {
+          ...device,
+          displayName: `${baseName}-${index}`,
+          isCurrentDevice: device.deviceId === deckDeviceId,
+        };
+      });
 
     return (
       <section className="helm-beacon-section">
@@ -1814,27 +1831,25 @@ export function App() {
           <h3>{labels.title}</h3>
           <span className="muted compact">{labels.count}</span>
         </div>
-        {sortedDevices.length ? (
+        {deviceRows.length ? (
           <ul className="helm-beacon-simple-list">
-            {sortedDevices.map((device) => {
-              const isCurrentDevice = device.deviceId === deckDeviceId;
-              const baseName = device.deviceName || "Tiller Deck";
-              const index = nameIndexes[baseName] ?? 0;
-              nameIndexes[baseName] = index + 1;
-              const displayName = `${baseName}-${index}`;
-              return (
-                <li key={device.deviceId} className="helm-beacon-simple-row">
-                  <strong className="helm-beacon-device-name">{displayName}</strong>
-                  <span className="status-chip subtle-chip">{device.clientKind === "app" ? labels.app : labels.web}</span>
-                  {isCurrentDevice ? <span className="status-chip">{labels.current}</span> : null}
-                  <span>{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
-                  <span>{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
-                  <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}>
-                    {labels.revoke}
-                  </button>
-                </li>
-              );
-            })}
+            {deviceRows.map((device) => (
+              <li key={device.deviceId} className="helm-beacon-simple-row">
+                <strong className="helm-beacon-device-name" title={device.displayName}>{device.displayName}</strong>
+                <span className="status-chip subtle-chip helm-beacon-kind">{device.clientKind === "app" ? labels.app : labels.web}</span>
+                {device.isCurrentDevice ? <span className="status-chip helm-beacon-current">{labels.current}</span> : null}
+                <span className="helm-beacon-meta">{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
+                <span className="helm-beacon-meta">{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
+                <button
+                  aria-label={labels.revokeDevice(device.displayName)}
+                  className="secondary helm-beacon-action"
+                  type="button"
+                  onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}
+                >
+                  {labels.revoke}
+                </button>
+              </li>
+            ))}
           </ul>
         ) : (
           <div className="empty-state helm-beacon-empty">{labels.empty}</div>

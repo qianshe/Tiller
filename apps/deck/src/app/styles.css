@@ -7535,22 +7535,50 @@ textarea:focus,
 
 .helm-beacon-simple-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) auto auto auto auto auto;
+  grid-template-columns: minmax(150px, 1fr) auto auto minmax(132px, auto) minmax(132px, auto) auto;
+  grid-template-areas: "name kind current last expires action";
   gap: 10px;
   align-items: center;
-  padding: 12px 0;
+  min-height: 58px;
+  padding: 10px 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   color: #93a4bd;
   font-size: 0.9rem;
 }
 
 .helm-beacon-device-name {
+  grid-area: name;
+  min-width: 0;
   color: #e5edf7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.helm-beacon-kind {
+  grid-area: kind;
+}
+
+.helm-beacon-current {
+  grid-area: current;
+}
+
+.helm-beacon-meta {
+  white-space: nowrap;
+}
+
+.helm-beacon-meta:first-of-type {
+  grid-area: last;
+}
+
+.helm-beacon-meta:last-of-type {
+  grid-area: expires;
+}
+
+.helm-beacon-action {
+  grid-area: action;
+  justify-self: end;
+}
 
 .helm-beacon-empty {
   min-height: 72px;
@@ -7560,23 +7588,36 @@ textarea:focus,
   color: #0f172a;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1120px) {
   .helm-beacon-simple-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "name kind action"
+      "last expires action"
+      "current current action";
+    align-items: center;
   }
 
-  .helm-beacon-simple-row > span:nth-of-type(n + 3) {
-    grid-column: 1 / -1;
+  .helm-beacon-current {
+    justify-self: start;
   }
 }
 
 @media (max-width: 720px) {
   .helm-beacon-simple-row {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "name"
+      "kind"
+      "current"
+      "last"
+      "expires"
+      "action";
   }
 
-  .helm-beacon-simple-row .secondary {
+  .helm-beacon-action {
     width: 100%;
+    justify-self: stretch;
   }
 }
 
