@@ -8,8 +8,6 @@ import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
 
 
-const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
 
@@ -88,19 +86,16 @@ async function createProjectWorktree(project: ProjectSummary, workspaces: Worksp
 }
 
 
-type RegistryAgent = {
-  id?: string;
-  name?: string;
-  distribution?: {
-    binary?: Record<string, { cmd?: string; args?: string[] }>;
-  };
-};
-
-function currentRegistryPlatformKey() {
-  const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
-  return `${os}-${arch}`;
-}
+const LOCAL_ACP_DISCOVERY_CANDIDATES: AcpAgentProvider[] = [
+  { id: "claude-agent-acp", name: "Claude Agent ACP", command: "claude-agent-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install claude-agent-acp and make it available on PATH." },
+  { id: "cline", name: "Cline", command: "cline", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install cline and make it available on PATH." },
+  { id: "gemini", name: "Gemini", command: "gemini", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install gemini and make it available on PATH." },
+  { id: "openclaw", name: "OpenClaw", command: "openclaw", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install openclaw and make it available on PATH." },
+  { id: "droid", name: "Droid", command: "droid", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install droid and make it available on PATH." },
+  { id: "hermes", name: "Hermes", command: "hermes", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install hermes and make it available on PATH." },
+  { id: "codex-acp", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install codex-acp and make it available on PATH." },
+  { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install opencode and make it available on PATH." },
+];
 
 function normalizeRegistryCommand(command: string) {
   const executable = command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
@@ -111,58 +106,25 @@ function discoveryCommandKey(command: string) {
   return normalizeRegistryCommand(command).toLowerCase();
 }
 
-function providerFromRegistryAgent(agent: RegistryAgent): AcpAgentProvider | null {
-  if (!agent.id || !agent.name) {
-    return null;
-  }
-
-  const platformBinary = agent.distribution?.binary?.[currentRegistryPlatformKey()];
-  if (!platformBinary?.cmd) {
-    return null;
-  }
-
-  const command = normalizeRegistryCommand(platformBinary.cmd);
-  return {
-    id: agent.id,
-    name: agent.name,
-    kind: "custom",
-    command,
-    args: platformBinary.args ?? [],
-    transport: "stdio",
-    protocol: "acp",
-    installHint: `Install ${agent.name} and make \`${command}\` available on PATH.`,
-  };
-}
-
-async function loadRegistryDiscoveryCandidates() {
-  try {
-    const response = await fetch(ACP_REGISTRY_URL, { signal: AbortSignal.timeout(3500) });
-    if (!response.ok) {
-      throw new Error(`ACP registry responded ${response.status}`);
-    }
-    const registry = (await response.json()) as { agents?: RegistryAgent[] };
-    const providers = (registry.agents ?? []).map(providerFromRegistryAgent).filter((agent): agent is AcpAgentProvider => Boolean(agent));
-    return providers;
-  } catch {
-    return [];
-  }
-}
-
-function discoverProbeCommands(command: string) {
+function discoverProbeCommands(command: string, logInfo?: (message: string) => void) {
   const normalized = normalizeRegistryCommand(command).trim();
-  if (!normalized || /[\/:]/.test(normalized)) {
+  if (!/^[A-Za-z0-9._-]+$/.test(normalized)) {
+    logInfo?.(`[tiller-helm] agent.discover.probe.skip command=${JSON.stringify(command)} reason="not-a-simple-global-command"`);
     return [];
   }
   return [normalized];
 }
 
-async function commandHasHelpOutput(command: string) {
-  const commands = discoverProbeCommands(command);
+async function commandHasHelpOutput(command: string, logInfo: (message: string) => void) {
+  const commands = discoverProbeCommands(command, logInfo);
   const candidates = ["-h", "--help"];
   for (const probeCommand of commands) {
     for (const arg of candidates) {
+      const shellCommand = `${probeCommand} ${arg}`;
+      logInfo(`[tiller-helm] agent.discover.probe.start command=${JSON.stringify(shellCommand)}`);
       const output = await new Promise<string>((resolve) => {
-        exec(`${probeCommand} ${arg}`, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
+        exec(shellCommand, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
+          logInfo(`[tiller-helm] agent.discover.probe.result command=${JSON.stringify(shellCommand)} ok=${error ? "false" : "true"} error=${JSON.stringify(error?.message ?? "")} stdout=${JSON.stringify(stdout ?? "")} stderr=${JSON.stringify(stderr ?? "")}`);
           if (error) {
             resolve("");
             return;
@@ -178,19 +140,34 @@ async function commandHasHelpOutput(command: string) {
   return false;
 }
 
-async function discoverAcpAgents(configuredAgents: AcpAgentProvider[]) {
+function mergeDiscoveryCandidates(configuredAgents: AcpAgentProvider[]) {
+  const byCommand = new Map<string, AcpAgentProvider>();
+  [...LOCAL_ACP_DISCOVERY_CANDIDATES, ...configuredAgents].forEach((candidate) => {
+    const key = discoveryCommandKey(candidate.command);
+    if (!byCommand.has(key)) {
+      byCommand.set(key, candidate);
+    }
+  });
+  return Array.from(byCommand.values());
+}
+
+async function discoverAcpAgents(configuredAgents: AcpAgentProvider[], logInfo: (message: string) => void) {
   const configuredById = new Map(configuredAgents.map((agent) => [agent.id, agent]));
   const configuredCommands = new Set(configuredAgents.map((agent) => discoveryCommandKey(agent.command)));
-  const registryCandidates = await loadRegistryDiscoveryCandidates();
+  const discoveryCandidates = mergeDiscoveryCandidates(configuredAgents);
   const candidateResults = await Promise.all(
-    registryCandidates.map(async (candidate) => ({
-      agent: candidate,
-      available: await commandHasHelpOutput(candidate.command),
-      configured: configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command)),
-    })),
+    discoveryCandidates.map(async (candidate) => {
+      const configured = configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command));
+      return {
+        agent: candidate,
+        available: await commandHasHelpOutput(candidate.command, logInfo),
+        configured,
+      };
+    }),
   );
-  const discovered = candidateResults.filter((result) => result.available).map((result) => result.agent);
-  const candidates = candidateResults.map((result) => ({
+  const visibleResults = candidateResults.filter((result) => result.available || result.configured);
+  const discovered = visibleResults.filter((result) => result.available).map((result) => result.agent);
+  const candidates = visibleResults.map((result) => ({
     id: result.agent.id,
     name: result.agent.name,
     command: result.agent.command,
@@ -358,7 +335,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
     }
     case "agent.discover": {
       const configuredAgents = context.loadAvailableAgents();
-      const result = await discoverAcpAgents(configuredAgents);
+      const result = await discoverAcpAgents(configuredAgents, context.logInfo);
       context.setAgents(result.agents);
       context.emit(socket, {
         type: "agent.discover.result",

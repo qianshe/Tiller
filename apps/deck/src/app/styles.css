@@ -2185,10 +2185,6 @@ textarea:focus,
 }
 
 /* Mission layout: inherit the shared page theme; only define the third inspector column. */
-.view-sessions .chat-layout.chat-layout-sidebar {
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
-}
-
 .mission-inspector {
   display: grid;
   align-content: start;
@@ -2269,18 +2265,7 @@ textarea:focus,
   }
 }
 
-@media (max-width: 1180px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: 300px minmax(0, 1fr);
-  }
-
-  .mission-inspector {
-    display: none;
-  }
-}
-
 @media (max-width: 860px) {
-  .view-sessions .chat-layout.chat-layout-sidebar,
   .view-sessions .draft-toolbar-grid {
     grid-template-columns: 1fr;
   }
@@ -5666,7 +5651,6 @@ textarea:focus,
 
 /* Mission four-column Zed-like workbench: sessions | thread | display | inspector. */
 .view-sessions .chat-layout.chat-layout-sidebar {
-  grid-template-columns: 300px minmax(420px, 1.45fr) minmax(320px, 0.92fr) 292px !important;
   gap: 0;
   background: #080d17;
 }
@@ -5876,37 +5860,6 @@ textarea:focus,
 
 [data-deck-theme="light"] .model-inspector-hero strong {
   color: #0f172a;
-}
-
-@media (max-width: 1500px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: 288px minmax(380px, 1fr) minmax(300px, 0.82fr) !important;
-  }
-
-  .view-sessions .mission-inspector {
-    display: none;
-  }
-}
-
-@media (max-width: 1180px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: 280px minmax(0, 1fr) !important;
-  }
-
-  .view-sessions .mission-display-panel {
-    display: none;
-  }
-}
-
-@media (max-width: 860px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: 1fr !important;
-    overflow-y: auto;
-  }
-
-  .view-sessions .chat-session-sidebar {
-    min-height: 260px;
-  }
 }
 
 /* Fleet unified top block v2: explicit four-zone layout. */
@@ -6405,14 +6358,6 @@ textarea:focus,
   --mission-sidebar-width: 320px;
   --mission-display-width: 520px;
   --mission-inspector-width: 320px;
-  grid-template-columns:
-    var(--mission-sidebar-width)
-    8px
-    minmax(420px, 1fr)
-    8px
-    var(--mission-display-width)
-    8px
-    var(--mission-inspector-width) !important;
   height: 100vh;
   border-radius: 0;
 }
@@ -6458,32 +6403,6 @@ textarea:focus,
   user-select: none !important;
 }
 
-@media (max-width: 1500px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns:
-      minmax(260px, var(--mission-sidebar-width))
-      8px
-      minmax(380px, 1fr)
-      8px
-      minmax(300px, var(--mission-display-width)) !important;
-  }
-
-  .view-sessions .mission-pane-resizer-inspector {
-    display: none;
-  }
-}
-
-@media (max-width: 1180px) {
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: minmax(240px, var(--mission-sidebar-width)) 8px minmax(0, 1fr) !important;
-  }
-
-  .view-sessions .mission-pane-resizer-display,
-  .view-sessions .mission-pane-resizer-inspector {
-    display: none;
-  }
-}
-
 @media (max-width: 860px) {
   .shell.view-sessions {
     padding-top: 0;
@@ -6494,26 +6413,10 @@ textarea:focus,
     padding: 0;
   }
 
-  .view-sessions .chat-layout.chat-layout-sidebar {
-    grid-template-columns: 1fr !important;
-    height: 100vh;
-    overflow-y: auto;
-  }
 
   .view-sessions .mission-pane-resizer {
     display: none;
   }
-}
-
-/* Mission hierarchy sidebar: Helm -> Project -> Session, with a zero-width collapsed state. */
-.view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
-  grid-template-columns:
-    0
-    minmax(420px, 1fr)
-    8px
-    var(--mission-display-width)
-    8px
-    var(--mission-inspector-width) !important;
 }
 
 .view-sessions .chat-session-sidebar {
@@ -6579,23 +6482,7 @@ textarea:focus,
   color: #93c5fd;
 }
 
-@media (max-width: 1500px) {
-  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
-    grid-template-columns: 0 minmax(380px, 1fr) 8px minmax(300px, var(--mission-display-width)) !important;
-  }
-}
-
-@media (max-width: 1180px) {
-  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
-    grid-template-columns: 0 minmax(0, 1fr) !important;
-  }
-}
-
 @media (max-width: 860px) {
-  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
-    grid-template-columns: 1fr !important;
-  }
-
   .view-sessions .chat-session-sidebar.collapsed {
     min-height: 56px;
   }
@@ -8792,4 +8679,215 @@ textarea:focus,
 
 .view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
   width: min(760px, calc(100% - 4px));
+}
+
+/* Mission split-layout v2: flex panels driven by React pane state, not CSS Grid templates. */
+.view-sessions .chat-layout.chat-layout-sidebar {
+  display: flex !important;
+  grid-template-columns: none !important;
+  gap: 0;
+  align-items: stretch;
+  position: relative;
+  max-width: 100vw;
+  overflow: hidden;
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar > .note-box:only-child {
+  margin: auto;
+}
+
+.view-sessions .mission-pane {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.view-sessions .mission-pane-sidebar {
+  width: var(--mission-sidebar-width);
+  min-width: min(var(--mission-sidebar-width), 100%);
+}
+
+.view-sessions .mission-pane-chat {
+  width: var(--mission-chat-width);
+  min-width: 420px;
+}
+
+.view-sessions .mission-pane-display {
+  width: var(--mission-display-width);
+  min-width: 320px;
+}
+
+.view-sessions .mission-pane-inspector {
+  width: var(--mission-inspector-width);
+  min-width: 240px;
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed .mission-pane-sidebar {
+  flex-basis: 0 !important;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+
+.view-sessions .mission-pane-resizer {
+  display: block;
+  flex: 0 0 8px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  width: calc(100% - 4px);
+  min-width: 0;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.view-sessions .mission-draft-chat .mission-composer-sidecar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.view-sessions .mission-draft-chat .mission-composer-config {
+  min-width: 0;
+  justify-self: end;
+  overflow: hidden;
+}
+
+.view-sessions .mission-draft-chat .mission-config-picker-model,
+.view-sessions .mission-draft-chat .mission-config-picker-reasoning,
+.view-sessions .mission-draft-chat .mission-composer-actions {
+  min-width: 0;
+}
+
+.view-sessions .mission-draft-chat .mission-config-picker-model .mission-config-trigger {
+  max-width: 168px;
+}
+
+.view-sessions .mission-draft-chat .mission-config-picker-reasoning .mission-config-trigger {
+  max-width: 86px;
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    display: flex !important;
+    grid-template-columns: none !important;
+  }
+
+  .view-sessions .mission-pane-resizer-display,
+  .view-sessions .mission-pane-resizer-inspector {
+    display: block;
+  }
+}
+
+@media (max-width: 860px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    display: flex !important;
+    flex-direction: column;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .view-sessions .mission-pane-sidebar,
+  .view-sessions .mission-pane-display,
+  .view-sessions .mission-pane-inspector,
+  .view-sessions .mission-pane-resizer,
+  .view-sessions .mission-sidebar-floating-toggle {
+    display: none !important;
+  }
+
+  .view-sessions .mission-pane-chat {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Mission split-layout direction fix: desktop panes must stay horizontal. */
+.view-sessions .chat-layout.chat-layout-sidebar {
+  flex-direction: row !important;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+    flex-direction: column !important;
+  }
+}
+
+/* Mission split-layout tuning: give chat more room and keep draft dropdowns aligned to triggers. */
+.view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
+  width: min(560px, calc(100% - 16px));
+  grid-template-columns: minmax(0, 340px) minmax(140px, 200px);
+  gap: 12px;
+}
+
+.view-sessions .mission-worktree-field,
+.view-sessions .mission-agent-field {
+  min-width: 0;
+}
+
+.view-sessions .mission-worktree-trigger,
+.view-sessions .mission-agent-trigger {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  left: 0;
+  right: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+
+/* Mission picker popovers: align dropdown width and x-position with the visible trigger. */
+.view-sessions .mission-worktree-field {
+  --mission-picker-label-width: 82px;
+  --mission-picker-gap: 10px;
+}
+
+.view-sessions .mission-agent-field {
+  --mission-picker-label-width: 25px;
+  --mission-picker-gap: 10px;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  left: calc(var(--mission-picker-label-width) + var(--mission-picker-gap));
+  right: auto;
+  width: calc(100% - var(--mission-picker-label-width) - var(--mission-picker-gap));
+  min-width: 0;
+  max-width: calc(100% - var(--mission-picker-label-width) - var(--mission-picker-gap));
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-worktree-menu,
+  .view-sessions .mission-agent-menu {
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+
+/* Mission narrow viewport: keep composer controls compact so the sidecar never overflows. */
+@media (max-width: 860px) {
+  .view-sessions .mission-composer-sidecar {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    overflow: visible;
+  }
+
+  .view-sessions .mission-composer-actions {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: max-content;
+    justify-self: end;
+  }
 }

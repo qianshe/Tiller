@@ -174,11 +174,9 @@ type CleanupFeedback = {
   message: string;
 };
 
-type MissionPaneWidths = {
-  sidebar: number;
-  display: number;
-  inspector: number;
-};
+type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
+
+type MissionPaneWidths = Record<MissionPaneId, number>;
 
 type MissionResizeHandle = "sidebar" | "display" | "inspector";
 
@@ -255,37 +253,76 @@ function resolvePreferredModel(currentModel: string | undefined, modelOptions: s
   return modelOptions[0];
 }
 
-const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
-const MISSION_PANE_LIMITS: Record<keyof MissionPaneWidths, { min: number; max: number }> = {
+const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, chat: 500, display: 420, inspector: 320 };
+const MISSION_PANE_LIMITS: Record<MissionPaneId, { min: number; max?: number }> = {
   sidebar: { min: 240, max: 400 },
-  display: { min: 240, max: 640 },
-  inspector: { min: 220, max: 360 },
+  chat: { min: 420, max: 820 },
+  display: { min: 320 },
+  inspector: { min: 240, max: 520 },
 };
-const MISSION_RESIZER_TOTAL_WIDTH = 24;
-const MISSION_MIN_CHAT_WIDTH = 300;
+const MISSION_RESIZER_WIDTH = 8;
 const MISSION_OUTER_GUTTER = 24;
 
-function clampPaneWidth(value: number, pane: keyof MissionPaneWidths) {
-  const limits = MISSION_PANE_LIMITS[pane];
-  return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
+function getMissionPaneMax(pane: MissionPaneId) {
+  return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
 }
 
-function clampMissionPaneSet(widths: MissionPaneWidths, sidebarCollapsed = false): MissionPaneWidths {
-  if (typeof window === "undefined") {
-    return widths;
-  }
-  const sidebarWidth = sidebarCollapsed ? 0 : widths.sidebar;
-  const fixedBudget = sidebarWidth + widths.display + widths.inspector + MISSION_RESIZER_TOTAL_WIDTH + MISSION_OUTER_GUTTER;
-  const overflow = fixedBudget + MISSION_MIN_CHAT_WIDTH - window.innerWidth;
-  if (overflow <= 0) {
-    return widths;
+function clampPaneWidth(value: number, pane: MissionPaneId) {
+  const limits = MISSION_PANE_LIMITS[pane];
+  const max = getMissionPaneMax(pane);
+  return Math.min(max, Math.max(limits.min, Math.round(value)));
+}
+
+function normalizeMissionPaneWidths(widths: MissionPaneWidths, sidebarCollapsed: boolean, viewportWidth: number): MissionPaneWidths {
+  const next: MissionPaneWidths = {
+    sidebar: sidebarCollapsed ? 0 : clampPaneWidth(widths.sidebar, "sidebar"),
+    chat: clampPaneWidth(widths.chat, "chat"),
+    display: clampPaneWidth(widths.display, "display"),
+    inspector: clampPaneWidth(widths.inspector, "inspector"),
+  };
+  const visibleResizerCount = sidebarCollapsed ? 2 : 3;
+  const availableWidth = Math.max(0, viewportWidth - MISSION_OUTER_GUTTER - visibleResizerCount * MISSION_RESIZER_WIDTH);
+  const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
+
+  if (totalWidth < availableWidth) {
+    return { ...next, display: next.display + availableWidth - totalWidth };
   }
 
-  const displayReduction = Math.min(overflow, Math.max(0, widths.display - MISSION_PANE_LIMITS.display.min));
-  const nextDisplay = widths.display - displayReduction;
-  const remainingOverflow = overflow - displayReduction;
-  const inspectorReduction = Math.min(remainingOverflow, Math.max(0, widths.inspector - MISSION_PANE_LIMITS.inspector.min));
-  return { ...widths, display: nextDisplay, inspector: widths.inspector - inspectorReduction };
+  let overflow = totalWidth - availableWidth;
+  if (overflow <= 0) {
+    return next;
+  }
+
+  const inspectorReduction = Math.min(overflow, Math.max(0, next.inspector - MISSION_PANE_LIMITS.inspector.min));
+  next.inspector -= inspectorReduction;
+  overflow -= inspectorReduction;
+
+  const displayReduction = Math.min(overflow, Math.max(0, next.display - MISSION_PANE_LIMITS.display.min));
+  next.display -= displayReduction;
+  overflow -= displayReduction;
+
+  if (!sidebarCollapsed && overflow > 0) {
+    const sidebarReduction = Math.min(overflow, Math.max(0, next.sidebar - MISSION_PANE_LIMITS.sidebar.min));
+    next.sidebar -= sidebarReduction;
+  }
+
+  return next;
+}
+
+function resizeMissionPanePair(widths: MissionPaneWidths, left: MissionPaneId, right: MissionPaneId, delta: number): MissionPaneWidths {
+  const total = widths[left] + widths[right];
+  const leftMin = MISSION_PANE_LIMITS[left].min;
+  const rightMin = MISSION_PANE_LIMITS[right].min;
+  const leftMax = getMissionPaneMax(left);
+  const rightMax = getMissionPaneMax(right);
+  const lowerLeft = Math.max(leftMin, total - rightMax);
+  const upperLeft = Math.min(leftMax, total - rightMin);
+  const nextLeft = Math.round(Math.min(upperLeft, Math.max(lowerLeft, widths[left] + delta)));
+  return {
+    ...widths,
+    [left]: nextLeft,
+    [right]: Math.round(total - nextLeft),
+  };
 }
 
 type AppView = "overview" | "sessions" | "agents" | "settings";
@@ -567,10 +604,19 @@ export function App() {
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
+  const [missionViewportWidth, setMissionViewportWidth] = useState(() => typeof window === "undefined" ? 1440 : window.innerWidth);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
   const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
+
+  useEffect(() => {
+    const handleMissionViewportResize = () => setMissionViewportWidth(window.innerWidth);
+    handleMissionViewportResize();
+    window.addEventListener("resize", handleMissionViewportResize);
+    return () => window.removeEventListener("resize", handleMissionViewportResize);
+  }, []);
+
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -721,7 +767,15 @@ export function App() {
       setSelectedMissionHelmId(project.helmId);
       setSelectedProjectId(projectId);
     }
-    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+    setExpandedMissionProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
   }
 
   function selectDraftWorktreeBranch(branch: string) {
@@ -798,6 +852,8 @@ export function App() {
 
     setSelectedMissionHelmId(session.helmId);
     setSelectedProjectId(session.projectId);
+    setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
+    setExpandedMissionProjectIds((current) => new Set([...current, session.projectId]));
     setActiveSessionId(sessionId);
   }
 
@@ -871,12 +927,6 @@ export function App() {
       setExpandedMissionHelmIds((current) => current.has(effectiveMissionHelmId) ? current : new Set([...current, effectiveMissionHelmId]));
     }
   }, [effectiveMissionHelmId]);
-
-  useEffect(() => {
-    if (selectedProjectId) {
-      setExpandedMissionProjectIds((current) => current.has(selectedProjectId) ? current : new Set([...current, selectedProjectId]));
-    }
-  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -2553,29 +2603,25 @@ export function App() {
     );
   }
 
-  function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
-    setMissionPaneWidths(() => {
-      if (handle === "sidebar") {
-        return clampMissionPaneSet({ ...base, sidebar: clampPaneWidth(base.sidebar + delta, "sidebar") }, missionSidebarCollapsed);
-      }
-      if (handle === "display") {
-        return clampMissionPaneSet({ ...base, display: clampPaneWidth(base.display - delta, "display") }, missionSidebarCollapsed);
-      }
+  function resolveMissionResizePair(handle: MissionResizeHandle): [MissionPaneId, MissionPaneId] {
+    if (handle === "sidebar") {
+      return ["sidebar", "chat"];
+    }
+    if (handle === "display") {
+      return ["chat", "display"];
+    }
+    return ["display", "inspector"];
+  }
 
-      const nextDisplay = clampPaneWidth(base.display + delta, "display");
-      const displayDelta = nextDisplay - base.display;
-      return clampMissionPaneSet({
-        ...base,
-        display: nextDisplay,
-        inspector: clampPaneWidth(base.inspector - displayDelta, "inspector"),
-      }, missionSidebarCollapsed);
-    });
+  function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
+    const [left, right] = resolveMissionResizePair(handle);
+    setMissionPaneWidths(resizeMissionPanePair(base, left, right, delta));
   }
 
   function startMissionPaneResize(handle: MissionResizeHandle, event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const base = missionPaneWidths;
+    const base = normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth);
     const onMove = (moveEvent: MouseEvent) => {
       applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
     };
@@ -2591,7 +2637,7 @@ export function App() {
   }
 
   function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
-    applyMissionPaneDelta(handle, direction * 24, missionPaneWidths);
+    applyMissionPaneDelta(handle, direction * 24, normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth));
   }
 
   function renderMissionPaneResizer(handle: MissionResizeHandle, label: string) {
@@ -2647,7 +2693,7 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
-    const missionSidebarWidth = missionSidebarCollapsed ? 0 : missionPaneWidths.sidebar;
+    const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth);
     const activeMissionHelm = missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ?? activeHelm;
     const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
@@ -2664,10 +2710,15 @@ export function App() {
     ];
     const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
     const missionLayoutStyle = {
-      "--mission-sidebar-width": `${missionSidebarWidth}px`,
-      "--mission-display-width": `${missionPaneWidths.display}px`,
-      "--mission-inspector-width": `${missionPaneWidths.inspector}px`,
+      "--mission-sidebar-width": `${resolvedMissionPaneWidths.sidebar}px`,
+      "--mission-chat-width": `${resolvedMissionPaneWidths.chat}px`,
+      "--mission-display-width": `${resolvedMissionPaneWidths.display}px`,
+      "--mission-inspector-width": `${resolvedMissionPaneWidths.inspector}px`,
     } as CSSProperties;
+    const missionSidebarPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.sidebar}px` } as CSSProperties;
+    const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
+    const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
+    const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
     const renderMissionDiffTreeNode = (node: MissionDiffTreeNode, depth = 0): ReactNode => {
       if (node.kind === "file" && node.file) {
         const file = node.file;
@@ -2705,7 +2756,7 @@ export function App() {
       );
     };
     const renderMissionDisplayPanel = () => (
-      <aside className={`mission-display-panel ${activeSession ? "" : "mission-display-empty"}`.trim()} aria-label="任务展示容器">
+      <aside className={`mission-display-panel mission-pane mission-pane-display ${activeSession ? "" : "mission-display-empty"}`.trim()} style={missionDisplayPaneStyle} aria-label="任务展示容器">
         <div className="mission-panel-head">
           <div>
             <p className="eyebrow">展示</p>
@@ -2798,7 +2849,7 @@ export function App() {
           </div>
         ) : (
           <>
-            <aside className={`chat-session-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} aria-label="任务导航：Helm、项目与任务">
+            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
               {!missionSidebarCollapsed ? (
                 <button
                   type="button"
@@ -2824,7 +2875,9 @@ export function App() {
                     {missionHelms.map((helm) => {
                       const selectedHelm = helm.id === effectiveMissionHelmId;
                       const helmExpanded = expandedMissionHelmIds.has(helm.id);
-                      const helmProjects = projects.filter((project) => project.helmId === helm.id);
+                      const helmProjects = [...projects]
+                        .filter((project) => project.helmId === helm.id)
+                        .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.id.localeCompare(right.id));
                       const helmKey = daemonProfileKey(helm.host, String(helm.port));
                       const helmConnectionState = helmConnectionStates[helmKey] ?? (helmKey === activeProfileId ? connection : "disconnected");
                       return (
@@ -2954,7 +3007,7 @@ export function App() {
             ) : null}
             {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
 
-            <div className={`chat-conversation ${!activeSession ? "mission-draft-chat" : ""}`.trim()}>
+            <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
               <div className="chat-main">
                 {activeSession ? (
                   <>
@@ -3163,7 +3216,7 @@ export function App() {
 
             {renderMissionPaneResizer("inspector", "调整检视器宽度")}
 
-            <aside className="mission-inspector" aria-label="任务检视器">
+            <aside className="mission-inspector mission-pane mission-pane-inspector" style={missionInspectorPaneStyle} aria-label="任务检视器">
               <section className="inspector-section">
                 <p className="eyebrow">上下文</p>
                 <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
@@ -4367,5 +4420,6 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
 
 

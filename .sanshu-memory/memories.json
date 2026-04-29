@@ -17,6 +17,14 @@
       "category": "Context",
       "created_at": "2026-04-29T07:32:01.031178900Z",
       "updated_at": "2026-04-29T07:32:01.031178900Z"
+    },
+    {
+      "id": "955f6bac-7218-4770-9493-d9e813efd043",
+      "content": "Tiller 项目中 ACP Discover 的本地命令白名单当前硬编码在 `apps/helm/src/handlers/config.ts` 的 `LOCAL_ACP_DISCOVERY_CANDIDATES`；Discover 会通过 `commandHasHelpOutput` 执行 `<command> -h`，失败后尝试 `<command> --help`，仅保留可用或已配置的候选；已配置 agents 从 `~/.tiller/config.json` 的 `agents` 读取并合并。",
+      "content_normalized": "tiller 项目中 acp discover 的本地命令白名单当前硬编码在 `apps/helm/src/handlers/configts` 的 `local_acp_discovery_candidates`discover 会通过 `commandhashelpoutput` 执行 `<command> -h`失败后尝试 `<command> --help`仅保留可用或已配置的候选已配置 agents 从 `~/tiller/configjson` 的 `agents` 读取并合并",
+      "category": "Context",
+      "created_at": "2026-04-29T11:14:10.333409300Z",
+      "updated_at": "2026-04-29T11:14:10.333409300Z"
     }
   ],
   "deleted_entries": [],
