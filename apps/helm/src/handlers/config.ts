@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -103,11 +103,12 @@ function currentRegistryPlatformKey() {
 }
 
 function normalizeRegistryCommand(command: string) {
-  return command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
+  const executable = command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
+  return executable.replace(/\.exe$/i, "");
 }
 
 function discoveryCommandKey(command: string) {
-  return normalizeRegistryCommand(command).replace(/\.exe$/i, "").toLowerCase();
+  return normalizeRegistryCommand(command).toLowerCase();
 }
 
 function providerFromRegistryAgent(agent: RegistryAgent): AcpAgentProvider | null {
@@ -147,24 +148,31 @@ async function loadRegistryDiscoveryCandidates() {
   }
 }
 
-async function commandHasHelpOutput(command: string) {
-  if (!command.trim() || /[\/:]/.test(command)) {
-    return false;
+function discoverProbeCommands(command: string) {
+  const normalized = normalizeRegistryCommand(command).trim();
+  if (!normalized || /[\/:]/.test(normalized)) {
+    return [];
   }
+  return [normalized];
+}
 
-  const candidates = [["-h"], ["--help"]];
-  for (const args of candidates) {
-    const output = await new Promise<string>((resolve) => {
-      try {
-        execFile(command, args, { timeout: 2500, windowsHide: true }, (_error, stdout, stderr) => {
+async function commandHasHelpOutput(command: string) {
+  const commands = discoverProbeCommands(command);
+  const candidates = ["-h", "--help"];
+  for (const probeCommand of commands) {
+    for (const arg of candidates) {
+      const output = await new Promise<string>((resolve) => {
+        exec(`${probeCommand} ${arg}`, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
+          if (error) {
+            resolve("");
+            return;
+          }
           resolve(`${stdout ?? ""}${stderr ?? ""}`.trim());
         });
-      } catch {
-        resolve("");
+      });
+      if (output) {
+        return true;
       }
-    });
-    if (output) {
-      return true;
     }
   }
   return false;
@@ -282,6 +290,12 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       try {
         const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
         const gitInfo = gitRoot ? await listGitBranches(gitRoot) : { branches: [], currentBranch: undefined };
+        if (gitInfo.branches.length) {
+          saveProjectToConfig({ ...project, gitBranches: gitInfo.branches }, context.configPath);
+          const nextProjects = await context.loadAvailableProjectsWithSemanticSummaries();
+          context.setProjects(nextProjects);
+          context.emit(socket, { type: "project.list.result", requestId: `project-list-${Date.now()}`, projects: nextProjects });
+        }
         context.emit(socket, {
           type: "workspace.git.result",
           requestId: payload.requestId,
@@ -312,9 +326,12 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
         const nextWorkspaces = context.loadAvailableWorkspaces();
         context.setProjects(nextProjects);
         context.setWorkspaces(nextWorkspaces);
-        const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
         const gitRoot = await resolveGitRoot(workspace.path);
         const gitInfo = await listGitBranches(gitRoot);
+        const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
+        if (gitInfo.branches.length) {
+          saveProjectToConfig({ ...nextProject, gitBranches: gitInfo.branches }, context.configPath);
+        }
         context.emit(socket, {
           type: "workspace.git.result",
           requestId: payload.requestId,

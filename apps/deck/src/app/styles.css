@@ -8721,3 +8721,75 @@ textarea:focus,
 .view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
   width: min(760px, calc(100% - 12px));
 }
+
+/* Mission worktree create is a single menu action; branch input lives in a modal. */
+.view-sessions .mission-worktree-create-button {
+  min-height: 38px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.16);
+  color: #dbeafe;
+  font-weight: 800;
+  text-align: left;
+}
+
+.view-sessions .mission-worktree-message {
+  margin: 2px 4px 0;
+  color: #8ea0ba;
+  font-size: 0.72rem;
+}
+
+.view-sessions .mission-branch-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.view-sessions .mission-branch-modal {
+  width: min(420px, calc(100vw - 48px));
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 16px;
+  background: #111827;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.view-sessions .mission-branch-modal h3,
+.view-sessions .mission-branch-modal p {
+  margin: 0;
+}
+
+.view-sessions .mission-branch-modal input {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.view-sessions .mission-branch-modal .section-actions {
+  justify-content: end;
+}
+
+/* Mission draft final density: minimize horizontal gutters around the conversation composer. */
+.view-sessions .mission-draft-chat .chat-main {
+  padding-inline: 10px;
+}
+
+.view-sessions .mission-draft-chat .chat-input-area.draft-toolbar {
+  padding-inline: 4px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  width: calc(100% - 4px);
+  max-width: none;
+}
+
+.view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
+  width: min(760px, calc(100% - 4px));
+}

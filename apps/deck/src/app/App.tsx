@@ -257,14 +257,35 @@ function resolvePreferredModel(currentModel: string | undefined, modelOptions: s
 
 const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
 const MISSION_PANE_LIMITS: Record<keyof MissionPaneWidths, { min: number; max: number }> = {
-  sidebar: { min: 260, max: 420 },
-  display: { min: 300, max: 720 },
-  inspector: { min: 260, max: 420 },
+  sidebar: { min: 240, max: 400 },
+  display: { min: 240, max: 640 },
+  inspector: { min: 220, max: 360 },
 };
+const MISSION_RESIZER_TOTAL_WIDTH = 24;
+const MISSION_MIN_CHAT_WIDTH = 300;
+const MISSION_OUTER_GUTTER = 24;
 
 function clampPaneWidth(value: number, pane: keyof MissionPaneWidths) {
   const limits = MISSION_PANE_LIMITS[pane];
   return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
+}
+
+function clampMissionPaneSet(widths: MissionPaneWidths, sidebarCollapsed = false): MissionPaneWidths {
+  if (typeof window === "undefined") {
+    return widths;
+  }
+  const sidebarWidth = sidebarCollapsed ? 0 : widths.sidebar;
+  const fixedBudget = sidebarWidth + widths.display + widths.inspector + MISSION_RESIZER_TOTAL_WIDTH + MISSION_OUTER_GUTTER;
+  const overflow = fixedBudget + MISSION_MIN_CHAT_WIDTH - window.innerWidth;
+  if (overflow <= 0) {
+    return widths;
+  }
+
+  const displayReduction = Math.min(overflow, Math.max(0, widths.display - MISSION_PANE_LIMITS.display.min));
+  const nextDisplay = widths.display - displayReduction;
+  const remainingOverflow = overflow - displayReduction;
+  const inspectorReduction = Math.min(remainingOverflow, Math.max(0, widths.inspector - MISSION_PANE_LIMITS.inspector.min));
+  return { ...widths, display: nextDisplay, inspector: widths.inspector - inspectorReduction };
 }
 
 type AppView = "overview" | "sessions" | "agents" | "settings";
@@ -530,6 +551,7 @@ export function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [branchCreateModalOpen, setBranchCreateModalOpen] = useState(false);
   const [worktreeGitByProject, setWorktreeGitByProject] = useState<Record<string, { branches: string[]; currentBranch?: string; message?: string; loading?: boolean }>>({});
   const [newGitBranchName, setNewGitBranchName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
@@ -620,7 +642,7 @@ export function App() {
   }, [draftProject?.workspaceIds, workspaces]);
   const selectedWorkspace = filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? filteredWorkspaces[0] ?? null;
   const draftWorktreeGit = selectedProjectId ? worktreeGitByProject[selectedProjectId] : undefined;
-  const draftGitBranchOptions = Array.from(new Set([draftWorktreeGit?.currentBranch, ...(draftWorktreeGit?.branches ?? []), "main", "master"].filter(Boolean) as string[]));
+  const draftGitBranchOptions = Array.from(new Set([draftWorktreeGit?.currentBranch, ...(draftWorktreeGit?.branches ?? []), ...(draftProject?.gitBranches ?? []), "main", "master"].filter(Boolean) as string[]));
   const selectedGitBranch = selectedWorkspace?.id.includes("-worktree-") ? selectedWorkspace.name : draftWorktreeGit?.currentBranch ?? "main";
   const filteredAgents = useMemo(() => {
     const allowedAgentIds = draftProject?.allowedAgentIds;
@@ -716,6 +738,16 @@ export function App() {
   function selectDraftAgent(agentId: string) {
     setSelectedAgentId(agentId);
     setAgentPickerOpen(false);
+  }
+
+  function openBranchCreateModal() {
+    setWorktreePickerOpen(false);
+    setBranchCreateModalOpen(true);
+  }
+
+  function closeBranchCreateModal() {
+    setBranchCreateModalOpen(false);
+    setNewGitBranchName("");
   }
 
   function createDraftGitBranch(event?: FormEvent<HTMLFormElement>) {
@@ -1543,6 +1575,7 @@ export function App() {
         if (payload.selectedWorkspaceId) {
           setSelectedWorkspaceId(payload.selectedWorkspaceId);
           setWorktreePickerOpen(false);
+          setBranchCreateModalOpen(false);
           setNewGitBranchName("");
         }
         return;
@@ -2523,19 +2556,19 @@ export function App() {
   function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
     setMissionPaneWidths(() => {
       if (handle === "sidebar") {
-        return { ...base, sidebar: clampPaneWidth(base.sidebar + delta, "sidebar") };
+        return clampMissionPaneSet({ ...base, sidebar: clampPaneWidth(base.sidebar + delta, "sidebar") }, missionSidebarCollapsed);
       }
       if (handle === "display") {
-        return { ...base, display: clampPaneWidth(base.display - delta, "display") };
+        return clampMissionPaneSet({ ...base, display: clampPaneWidth(base.display - delta, "display") }, missionSidebarCollapsed);
       }
 
       const nextDisplay = clampPaneWidth(base.display + delta, "display");
       const displayDelta = nextDisplay - base.display;
-      return {
+      return clampMissionPaneSet({
         ...base,
         display: nextDisplay,
         inspector: clampPaneWidth(base.inspector - displayDelta, "inspector"),
-      };
+      }, missionSidebarCollapsed);
     });
   }
 
@@ -2958,7 +2991,7 @@ export function App() {
                   <div className="draft-toolbar-grid draft-toolbar-grid-mission">
                     <div ref={worktreePickerRef} className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}>
                       <span>Workspace</span>
-                      <button type="button" className="mission-worktree-trigger" onClick={() => setWorktreePickerOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={worktreePickerOpen}>
+                      <button type="button" className="mission-worktree-trigger" onClick={() => { setAgentPickerOpen(false); setWorktreePickerOpen((current) => !current); }} aria-haspopup="listbox" aria-expanded={worktreePickerOpen}>
                         <strong>{selectedGitBranch}</strong>
                       </button>
                       {worktreePickerOpen ? (
@@ -2973,21 +3006,16 @@ export function App() {
                               </button>
                             );
                           })}
-                          <form className="mission-worktree-create" onSubmit={createDraftGitBranch}>
-                            <span>新建 Git worktree</span>
-                            <input list="mission-git-branches" value={newGitBranchName} onChange={(event) => setNewGitBranchName(event.target.value)} placeholder="feature/mission" />
-                            <datalist id="mission-git-branches">
-                              {draftGitBranchOptions.map((branch) => <option key={branch} value={branch} />)}
-                            </datalist>
-                            <button className="secondary" type="submit" disabled={!selectedProjectId || !newGitBranchName.trim() || Boolean(draftWorktreeGit?.loading)}>{draftWorktreeGit?.loading ? "创建中" : "新建并使用"}</button>
-                            {draftWorktreeGit?.message ? <p>{draftWorktreeGit.message}</p> : null}
-                          </form>
+                          <button className="mission-worktree-create-button" type="button" onClick={openBranchCreateModal} disabled={!selectedProjectId || Boolean(draftWorktreeGit?.loading)}>
+                            {draftWorktreeGit?.loading ? "创建中..." : "新建 Git worktree"}
+                          </button>
+                          {draftWorktreeGit?.message ? <p className="mission-worktree-message">{draftWorktreeGit.message}</p> : null}
                         </div>
                       ) : null}
                     </div>
                     <div ref={agentPickerRef} className={`mission-agent-field ${agentPickerOpen ? "open" : ""}`}>
                       <span>{copy.selectedAgent}</span>
-                      <button type="button" className="mission-agent-trigger" onClick={() => setAgentPickerOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={agentPickerOpen} disabled={agentLocked}>
+                      <button type="button" className="mission-agent-trigger" onClick={() => { setWorktreePickerOpen(false); setAgentPickerOpen((current) => !current); }} aria-haspopup="listbox" aria-expanded={agentPickerOpen} disabled={agentLocked}>
                         <strong>{selectedDraftAgent?.name ?? "选择舰员"}</strong>
                       </button>
                       {agentPickerOpen ? (
@@ -3000,6 +3028,22 @@ export function App() {
                         </div>
                       ) : null}
                     </div>
+                  </div>
+                ) : null}
+                {branchCreateModalOpen ? (
+                  <div className="mission-branch-modal-backdrop" role="presentation">
+                    <form className="mission-branch-modal" role="dialog" aria-modal="true" aria-label="新建 Git worktree" onSubmit={createDraftGitBranch}>
+                      <h3>新建 Git worktree</h3>
+                      <p className="muted compact">输入要创建或复用的 Git branch 名称，Helm 会创建独立 worktree 并记录到项目配置。</p>
+                      <input list="mission-git-branches" value={newGitBranchName} onChange={(event) => setNewGitBranchName(event.target.value)} placeholder="feature/mission" autoFocus />
+                      <datalist id="mission-git-branches">
+                        {draftGitBranchOptions.map((branch) => <option key={branch} value={branch} />)}
+                      </datalist>
+                      <div className="section-actions">
+                        <button className="secondary" type="button" onClick={closeBranchCreateModal}>取消</button>
+                        <button className="primary" type="submit" disabled={!selectedProjectId || !newGitBranchName.trim() || Boolean(draftWorktreeGit?.loading)}>{draftWorktreeGit?.loading ? "创建中..." : "创建并使用"}</button>
+                      </div>
+                    </form>
                   </div>
                 ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>

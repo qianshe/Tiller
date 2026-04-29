@@ -84,6 +84,8 @@ export type ProjectSummary = {
   /** Helm-generated lightweight summary for prompt enhancement context. */
   summary?: string;
   workspaceIds?: string[];
+  /** Last Git branches discovered by Helm for this project root. */
+  gitBranches?: string[];
   allowedAgentIds?: string[];
   defaultWorkspaceId?: string;
   defaultAgentId?: string;
