@@ -60,6 +60,36 @@ function projectWorkspaceItems(project: ProjectSummary, workspaces: WorkspaceSum
   return workspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id));
 }
 
+function isNonGitRepositoryError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not a git repository|not a git repo|outside repository/i.test(message);
+}
+
+function resolveProjectWorkspaceId(project: ProjectSummary) {
+  return `${project.id}-workspace`;
+}
+
+function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, projectRoot: string, configPath: string) {
+  const workspaceId = resolveProjectWorkspaceId(project);
+  const previousWorkspaceIds = project.workspaceIds ?? [];
+  const legacyBranchWorkspaceIds = new Set([project.defaultWorkspaceId, project.gitCurrentBranch, ...gitInfo.branches].filter(Boolean));
+  const workspaceIds = Array.from(new Set([workspaceId, ...previousWorkspaceIds.filter((id) => !legacyBranchWorkspaceIds.has(id))]));
+  saveProjectToConfig({
+    ...project,
+    workspaceIds,
+    defaultWorkspaceId: workspaceId,
+    gitBranches: gitInfo.branches,
+    gitCurrentBranch: gitInfo.currentBranch,
+  }, configPath);
+  if (gitInfo.currentBranch) {
+    saveWorkspaceToConfig({
+      id: workspaceId,
+      name: gitInfo.currentBranch,
+      path: projectRoot.replace(/\\/g, "/"),
+    }, configPath);
+  }
+}
+
 async function createProjectWorktree(project: ProjectSummary, workspaces: WorkspaceSummary[], branchNameInput: string, configPath: string) {
   const branchName = normalizeGitBranchName(branchNameInput);
   validateGitBranchName(branchName);
@@ -70,9 +100,12 @@ async function createProjectWorktree(project: ProjectSummary, workspaces: Worksp
   const gitRoot = await resolveGitRoot(projectRoot);
   const { branches } = await listGitBranches(gitRoot);
   const branchExists = branches.includes(branchName);
+  if (!branchExists) {
+    throw new Error(`Branch ${branchName} does not exist. Create the branch in Git first, then reload project branches.`);
+  }
   const worktreePath = join(gitRoot, ".tiller", "worktrees", safeWorktreeSlug(branchName));
   await mkdir(join(gitRoot, ".tiller", "worktrees"), { recursive: true });
-  await runGit(gitRoot, branchExists ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath]);
+  await runGit(gitRoot, ["worktree", "add", worktreePath, branchName]);
 
   const workspaceId = `${project.id}-worktree-${safeWorktreeSlug(branchName)}`;
   const workspace: WorkspaceSummary = { id: workspaceId, name: branchName, path: worktreePath.replace(/\\/g, "/") };
@@ -83,6 +116,45 @@ async function createProjectWorktree(project: ProjectSummary, workspaces: Worksp
     defaultWorkspaceId: project.defaultWorkspaceId ?? workspaceId,
   }, configPath);
   return workspace;
+}
+
+export async function refreshProjectGitBranches(projects: ProjectSummary[], workspaces: WorkspaceSummary[], configPath: string) {
+  let updated = 0;
+  let skipped = 0;
+  const failures: Array<{ projectId: string; message: string }> = [];
+
+  for (const project of projects) {
+    const projectRoot = resolveProjectRoot(project, workspaces);
+    if (!projectRoot) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const gitRoot = await resolveGitRoot(projectRoot);
+      const gitInfo = await listGitBranches(gitRoot);
+      if (!gitInfo.branches.length) {
+        skipped += 1;
+        continue;
+      }
+
+      const previous = project.gitBranches ?? [];
+      const branchChanged = previous.length !== gitInfo.branches.length || previous.some((branch, index) => branch !== gitInfo.branches[index]);
+      const currentChanged = project.gitCurrentBranch !== gitInfo.currentBranch;
+      if (branchChanged || currentChanged) {
+        persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+        updated += 1;
+      }
+    } catch (error) {
+      if (isNonGitRepositoryError(error)) {
+        skipped += 1;
+        continue;
+      }
+      failures.push({ projectId: project.id, message: error instanceof Error ? error.message : "Failed to refresh Git branches" });
+    }
+  }
+
+  return { updated, skipped, failures };
 }
 
 
@@ -267,12 +339,16 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       try {
         const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
         const gitInfo = gitRoot ? await listGitBranches(gitRoot) : { branches: [], currentBranch: undefined };
-        if (gitInfo.branches.length) {
-          saveProjectToConfig({ ...project, gitBranches: gitInfo.branches }, context.configPath);
+        if (gitInfo.branches.length && projectRoot) {
+          persistProjectGitInfo(project, gitInfo, projectRoot, context.configPath);
           const nextProjects = await context.loadAvailableProjectsWithSemanticSummaries();
+          const nextWorkspaces = context.loadAvailableWorkspaces();
           context.setProjects(nextProjects);
+          context.setWorkspaces(nextWorkspaces);
           context.emit(socket, { type: "project.list.result", requestId: `project-list-${Date.now()}`, projects: nextProjects });
+          context.emit(socket, { type: "workspace.list.result", requestId: `workspace-list-${Date.now()}`, workspaces: nextWorkspaces });
         }
+        const latestWorkspaces = context.loadAvailableWorkspaces();
         context.emit(socket, {
           type: "workspace.git.result",
           requestId: payload.requestId,
@@ -280,7 +356,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
           projectId: project.id,
           branches: gitInfo.branches,
           currentBranch: gitInfo.currentBranch,
-          workspaces: projectWorkspaceItems(project, workspaces),
+          workspaces: projectWorkspaceItems(project, latestWorkspaces),
           selectedWorkspaceId: project.defaultWorkspaceId,
           message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
         });
@@ -307,7 +383,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
         const gitInfo = await listGitBranches(gitRoot);
         const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
         if (gitInfo.branches.length) {
-          saveProjectToConfig({ ...nextProject, gitBranches: gitInfo.branches }, context.configPath);
+          persistProjectGitInfo(nextProject, gitInfo, workspace.path, context.configPath);
         }
         context.emit(socket, {
           type: "workspace.git.result",

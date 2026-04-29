@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,7 +48,7 @@ import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
-import { handleConfigMessage } from "./handlers/config";
+import { handleConfigMessage, refreshProjectGitBranches } from "./handlers/config";
 import { handleDeviceMessage } from "./handlers/devices";
 import { handleSessionMessage } from "./handlers/sessions";
 import type { HelmHandlerContext } from "./handlers/context";
@@ -78,10 +78,14 @@ const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
 const socketIds = new WeakMap<WebSocket, string>();
 let nextSocketSequence = 0;
 const configStub = loadTillerConfigStub(configPath);
+normalizeProjectIdsOnStartup();
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
 let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
+await refreshProjectGitBranchesOnStartup();
+normalizeProjectAgentDefaultsOnStartup();
+projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const projectContextSummaryCache = new Map<string, string>();
@@ -108,6 +112,96 @@ function showPairingCode() {
   qrcode.generate(pairUrl, { small: true }, (qr: string) => {
     console.log(qr);
   });
+}
+
+async function refreshProjectGitBranchesOnStartup() {
+  const result = await refreshProjectGitBranches(projects, workspaces, configPath);
+  projects = loadAvailableProjects();
+  workspaces = loadAvailableWorkspaces();
+  if (result.updated || result.failures.length) {
+    logInfo(`[tiller-helm] project.git.refresh updated=${result.updated} skipped=${result.skipped} failed=${result.failures.length}`);
+  }
+  for (const failure of result.failures) {
+    logError(`[tiller-helm] project.git.refresh.failed project=${failure.projectId} message=${failure.message}`);
+  }
+}
+
+function normalizeProjectIdsOnStartup() {
+  const config = readTillerConfig(configPath);
+  const configuredProjects = config.projects ?? [];
+  if (!configuredProjects.length) {
+    return;
+  }
+
+  const idMap = new Map<string, string>();
+  const nextProjects = configuredProjects.map((project, index) => {
+    const nextId = `project-${index + 1}`;
+    idMap.set(project.id, nextId);
+    if (project.id === nextId) {
+      return project;
+    }
+    return {
+      ...project,
+      id: nextId,
+      workspaceIds: project.workspaceIds?.map((workspaceId) => remapProjectScopedId(workspaceId, project.id, nextId)),
+      defaultWorkspaceId: project.defaultWorkspaceId ? remapProjectScopedId(project.defaultWorkspaceId, project.id, nextId) : project.defaultWorkspaceId,
+    };
+  });
+
+  const changed = nextProjects.some((project, index) => project.id !== configuredProjects[index]?.id);
+  if (!changed) {
+    return;
+  }
+
+  const nextWorkspaces = (config.workspaces ?? []).map((workspace) => {
+    for (const [oldId, nextId] of idMap) {
+      const remappedId = remapProjectScopedId(workspace.id, oldId, nextId);
+      if (remappedId !== workspace.id) {
+        return { ...workspace, id: remappedId };
+      }
+    }
+    return workspace;
+  });
+
+  writeFileSync(configPath, JSON.stringify({ ...config, projects: nextProjects, workspaces: nextWorkspaces }, null, 2), "utf8");
+  for (const summary of sessionStore.list()) {
+    const nextProjectId = idMap.get(summary.projectId);
+    if (nextProjectId && nextProjectId !== summary.projectId) {
+      sessionStore.upsert({ ...summary, projectId: nextProjectId });
+    }
+  }
+  for (const descriptor of sessionRuntimeStore.list()) {
+    const nextProjectId = descriptor.projectId ? idMap.get(descriptor.projectId) : undefined;
+    if (nextProjectId && nextProjectId !== descriptor.projectId) {
+      sessionRuntimeStore.upsert({ ...descriptor, projectId: nextProjectId });
+    }
+  }
+  logInfo(`[tiller-helm] project.id.normalize updated=${nextProjects.length}`);
+}
+
+function remapProjectScopedId(value: string, oldProjectId: string, nextProjectId: string) {
+  if (value === `${oldProjectId}-workspace`) {
+    return `${nextProjectId}-workspace`;
+  }
+  if (value.startsWith(`${oldProjectId}-worktree-`)) {
+    return `${nextProjectId}${value.slice(oldProjectId.length)}`;
+  }
+  return value;
+}
+
+function normalizeProjectAgentDefaultsOnStartup() {
+  const availableAgents = listAvailableProviders(configPath);
+  let updated = 0;
+  for (const project of listConfiguredProjects(configPath)) {
+    const nextDefaultAgentId = resolveDefaultProjectAgentId(project, availableAgents);
+    if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
+      saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
+      updated += 1;
+    }
+  }
+  if (updated) {
+    logInfo(`[tiller-helm] project.agent.default updated=${updated} default=codex`);
+  }
 }
 
 const server = new WebSocketServer({ host: HOST, port: PORT });
@@ -766,26 +860,35 @@ function loadAvailableWorkspaces() {
   ];
 }
 
-function loadAvailableProjects() {
+function loadAvailableProjects(): ProjectSummary[] {
   const configuredProjects = listConfiguredProjects(configPath);
+  const availableAgents = listAvailableProviders(configPath);
   if (configuredProjects.length) {
-    return configuredProjects;
+    return configuredProjects.map((project) => ({
+      ...project,
+      defaultAgentId: resolveDefaultProjectAgentId(project, availableAgents),
+    }));
   }
 
   const fallbackHelm = loadAvailableHelms()[0];
   const fallbackWorkspaces = loadAvailableWorkspaces();
-  const fallbackAgents = listAvailableProviders(configPath);
   return [
     {
       id: "current-project",
       name: basename(REPO_ROOT),
       helmId: fallbackHelm.id,
       workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
-      allowedAgentIds: fallbackAgents.map((agent) => agent.id),
+      allowedAgentIds: availableAgents.map((agent) => agent.id),
       defaultWorkspaceId: fallbackWorkspaces[0]?.id,
-      defaultAgentId: fallbackAgents[0]?.id,
+      defaultAgentId: resolveDefaultProjectAgentId({ allowedAgentIds: availableAgents.map((agent) => agent.id) } as ProjectSummary, availableAgents),
     },
   ] satisfies ProjectSummary[];
+}
+
+function resolveDefaultProjectAgentId(project: ProjectSummary, agents: AcpAgentProvider[]) {
+  const allowedAgentIds = project.allowedAgentIds?.length ? new Set(project.allowedAgentIds) : null;
+  const codex = agents.find((agent) => agent.id === "codex" && (!allowedAgentIds || allowedAgentIds.has(agent.id)));
+  return codex?.id ?? project.defaultAgentId ?? agents.find((agent) => !allowedAgentIds || allowedAgentIds.has(agent.id))?.id;
 }
 
 
@@ -896,6 +999,3 @@ type SessionRecord = {
     supportsPermissionResponses: boolean;
   };
 };
-
-
-

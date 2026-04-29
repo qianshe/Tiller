@@ -592,9 +592,7 @@ export function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [branchCreateModalOpen, setBranchCreateModalOpen] = useState(false);
   const [worktreeGitByProject, setWorktreeGitByProject] = useState<Record<string, { branches: string[]; currentBranch?: string; message?: string; loading?: boolean }>>({});
-  const [newGitBranchName, setNewGitBranchName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
   const [selectedModel, setSelectedModel] = useState<string>(missionVisualFixture?.sessions[0]?.model ?? MODEL_OPTIONS[0]);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
@@ -703,9 +701,8 @@ export function App() {
     return workspaces.filter((workspace) => workspaceIds.includes(workspace.id));
   }, [draftProject?.workspaceIds, workspaces]);
   const selectedWorkspace = filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? filteredWorkspaces[0] ?? null;
-  const draftWorktreeGit = selectedProjectId ? worktreeGitByProject[selectedProjectId] : undefined;
-  const draftGitBranchOptions = Array.from(new Set([draftWorktreeGit?.currentBranch, ...(draftWorktreeGit?.branches ?? []), ...(draftProject?.gitBranches ?? []), "main", "master"].filter(Boolean) as string[]));
-  const selectedGitBranch = selectedWorkspace?.id.includes("-worktree-") ? selectedWorkspace.name : draftWorktreeGit?.currentBranch ?? "main";
+  const draftWorkspaceOptions = filteredWorkspaces;
+  const selectedWorkspaceName = selectedWorkspace?.name ?? "";
   const filteredAgents = useMemo(() => {
     const allowedAgentIds = draftProject?.allowedAgentIds;
     if (!allowedAgentIds?.length) {
@@ -794,46 +791,14 @@ export function App() {
     });
   }
 
-  function selectDraftWorktreeBranch(branch: string) {
-    const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
-    const fallbackWorkspace = filteredWorkspaces.find((workspace) => workspace.id === draftProject?.defaultWorkspaceId) ?? filteredWorkspaces[0];
-    setSelectedWorkspaceId(matchingWorkspace?.id ?? fallbackWorkspace?.id ?? selectedWorkspaceId);
-    setWorktreeGitByProject((current) => selectedProjectId ? {
-      ...current,
-      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), currentBranch: branch },
-    } : current);
+  function selectDraftWorkspace(workspaceId: string) {
+    setSelectedWorkspaceId(workspaceId);
     setWorktreePickerOpen(false);
   }
 
   function selectDraftAgent(agentId: string) {
     setSelectedAgentId(agentId);
     setAgentPickerOpen(false);
-  }
-
-  function openBranchCreateModal() {
-    setWorktreePickerOpen(false);
-    setBranchCreateModalOpen(true);
-  }
-
-  function closeBranchCreateModal() {
-    setBranchCreateModalOpen(false);
-    setNewGitBranchName("");
-  }
-
-  function createDraftGitBranch(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    if (!selectedProjectId || !socketRef.current) {
-      return;
-    }
-    const branch = newGitBranchName.trim().replace(/\s+/g, "-");
-    if (!branch) {
-      return;
-    }
-    setWorktreeGitByProject((current) => ({
-      ...current,
-      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), loading: true, message: `正在创建 worktree：${branch}...` },
-    }));
-    dispatch(socketRef.current, { type: "workspace.git.create", requestId: nextRequestId(requestCounter), projectId: selectedProjectId, branchName: branch });
   }
 
   function selectMissionHelm(helmId: string) {
@@ -1641,8 +1606,6 @@ export function App() {
         if (payload.selectedWorkspaceId) {
           setSelectedWorkspaceId(payload.selectedWorkspaceId);
           setWorktreePickerOpen(false);
-          setBranchCreateModalOpen(false);
-          setNewGitBranchName("");
         }
         return;
       case "agent.list.result":
@@ -3065,24 +3028,15 @@ export function App() {
                     <div ref={worktreePickerRef} className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}>
                       <span>Workspace</span>
                       <button type="button" className="mission-worktree-trigger" onClick={() => { setAgentPickerOpen(false); setWorktreePickerOpen((current) => !current); }} aria-haspopup="listbox" aria-expanded={worktreePickerOpen}>
-                        <strong>{selectedGitBranch}</strong>
+                        <strong>{selectedWorkspaceName}</strong>
                       </button>
                       {worktreePickerOpen ? (
-                        <div className="mission-worktree-menu" role="listbox" aria-label="Workspace / Git worktree">
-                          {draftGitBranchOptions.map((branch) => {
-                            const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
-                            const branchHint = matchingWorkspace ? "已配置 workspace" : branch === (draftWorktreeGit?.currentBranch ?? "main") ? "当前项目 workspace" : "新建后生成独立 Git worktree";
-                            return (
-                              <button key={branch} type="button" role="option" aria-selected={branch === selectedGitBranch} className={branch === selectedGitBranch ? "active" : ""} onClick={() => selectDraftWorktreeBranch(branch)}>
-                                <strong>{branch}</strong>
-                                <span>{branchHint}</span>
-                              </button>
-                            );
-                          })}
-                          <button className="mission-worktree-create-button" type="button" onClick={openBranchCreateModal} disabled={!selectedProjectId || Boolean(draftWorktreeGit?.loading)}>
-                            {draftWorktreeGit?.loading ? "创建中..." : "新建 Git worktree"}
-                          </button>
-                          {draftWorktreeGit?.message ? <p className="mission-worktree-message">{draftWorktreeGit.message}</p> : null}
+                        <div className="mission-worktree-menu" role="listbox" aria-label="Workspace">
+                          {draftWorkspaceOptions.map((workspace) => (
+                            <button key={workspace.id} type="button" role="option" aria-selected={workspace.id === selectedWorkspaceId} className={workspace.id === selectedWorkspaceId ? "active" : ""} onClick={() => selectDraftWorkspace(workspace.id)}>
+                              <strong>{workspace.name}</strong>
+                            </button>
+                          ))}
                         </div>
                       ) : null}
                     </div>
@@ -3101,22 +3055,6 @@ export function App() {
                         </div>
                       ) : null}
                     </div>
-                  </div>
-                ) : null}
-                {branchCreateModalOpen ? (
-                  <div className="mission-branch-modal-backdrop" role="presentation">
-                    <form className="mission-branch-modal" role="dialog" aria-modal="true" aria-label="新建 Git worktree" onSubmit={createDraftGitBranch}>
-                      <h3>新建 Git worktree</h3>
-                      <p className="muted compact">输入要创建或复用的 Git branch 名称，Helm 会创建独立 worktree 并记录到项目配置。</p>
-                      <input list="mission-git-branches" value={newGitBranchName} onChange={(event) => setNewGitBranchName(event.target.value)} placeholder="feature/mission" autoFocus />
-                      <datalist id="mission-git-branches">
-                        {draftGitBranchOptions.map((branch) => <option key={branch} value={branch} />)}
-                      </datalist>
-                      <div className="section-actions">
-                        <button className="secondary" type="button" onClick={closeBranchCreateModal}>取消</button>
-                        <button className="primary" type="submit" disabled={!selectedProjectId || !newGitBranchName.trim() || Boolean(draftWorktreeGit?.loading)}>{draftWorktreeGit?.loading ? "创建中..." : "创建并使用"}</button>
-                      </div>
-                    </form>
                   </div>
                 ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
@@ -3245,7 +3183,7 @@ export function App() {
               <section className="inspector-section">
                 <p className="eyebrow">上下文</p>
                 <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
-                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? `Git branch: ${selectedGitBranch}`}</p>
+                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? selectedWorkspaceName}</p>
                 <div className="inspector-pills">
                   <span>{activeSession ? activeStatus : "草稿"}</span>
                   <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
@@ -3279,7 +3217,7 @@ export function App() {
                 <InfoList
                   items={[
                     `项目 · ${draftProject?.name ?? "未选项目"}`,
-                    `Git branch · ${selectedGitBranch}`,
+                    `Workspace · ${selectedWorkspaceName || "未选择"}`,
                     `舰员 · ${activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}`,
                   ]}
                   empty="暂无项目摘要"
@@ -3572,7 +3510,7 @@ export function App() {
             <div className="helm-detail-facts" aria-label="Helm 配置范围">
               <span><strong>{selectedHelmProjects.length}</strong> 项目配置</span>
               <span><strong>{selectedHelmAgents.length}</strong> ACP 舰员</span>
-              <span><strong>{selectedHelmWorkspaces.length}</strong> 运行入口</span>
+              <span><strong>{selectedHelmWorkspaces.length}</strong> 分支</span>
             </div>
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
@@ -3591,7 +3529,7 @@ export function App() {
                       const projectPath = fleetProjectDraft.path.trim().replace(/\\/g, "/");
                       const fallbackProjectName = projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
                       const projectName = fleetProjectDraft.name.trim() || fallbackProjectName;
-                      const projectId = createProjectId(projectName, projectPath);
+                      const projectId = createProjectId(selectedHelmProjects);
                       const workspaceId = `${projectId}-workspace`;
                       setFleetProjectSaveMessage(`正在保存项目：${projectName}...`);
                       dispatch(selectedHelmSocket, {
@@ -3605,7 +3543,7 @@ export function App() {
                           workspaceIds: [workspaceId],
                           allowedAgentIds: selectedHelmAgents.map((agent) => agent.id),
                           defaultWorkspaceId: workspaceId,
-                          defaultAgentId: selectedHelmAgents[0]?.id,
+                          defaultAgentId: defaultAgentId(selectedHelmAgents) ?? undefined,
                         },
                       });
                       setFleetProjectDraft({ name: "", path: "" });
@@ -3628,10 +3566,10 @@ export function App() {
                             <span>{project.path ? `路径 · ${project.path}` : `项目 · ${project.id}`}</span>
                           </summary>
                           <dl>
-                            <div><dt>Project ID</dt><dd>{project.id}</dd></div>
+                            <div><dt>Project ID</dt><dd>{resolveProjectDisplayId(project, selectedHelmProjects)}</dd></div>
                             <div><dt>Path</dt><dd>{project.path ?? "-"}</dd></div>
                             <div><dt>Helm ID</dt><dd>{project.helmId}</dd></div>
-                            <div><dt>运行入口</dt><dd>{project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? "由项目路径派生"}</dd></div>
+                            <div><dt>默认分支</dt><dd>{resolveProjectWorkspaceLabel(project, selectedHelmWorkspaces)}</dd></div>
                             <div><dt>Default Agent</dt><dd>{project.defaultAgentId ?? "-"}</dd></div>
                           </dl>
                         </details>
@@ -4210,14 +4148,32 @@ function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "custom-agent";
 }
 
-function createProjectId(name: string, path: string) {
-  const base = slugify(name) || "project";
-  const normalizedPath = path.trim().replace(/\\/g, "/").toLowerCase();
-  let hash = 0;
-  for (let index = 0; index < normalizedPath.length; index += 1) {
-    hash = (hash * 31 + normalizedPath.charCodeAt(index)) >>> 0;
+function createProjectId(projects: ProjectSummary[]) {
+  const usedIds = new Set(projects.map((project) => project.id));
+  const maxNumericId = projects.reduce((max, project) => {
+    const match = /^project-(\d+)$/u.exec(project.id);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  let next = Math.max(maxNumericId, projects.length) + 1;
+  while (usedIds.has(`project-${next}`)) {
+    next += 1;
   }
-  return `${base}-${hash.toString(36).slice(0, 6)}`;
+  return `project-${next}`;
+}
+
+function resolveProjectWorkspaceLabel(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
+  const workspaceId = project.defaultWorkspaceId ?? project.workspaceIds?.[0];
+  const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
+  return workspace?.name ?? project.gitCurrentBranch ?? workspaceId ?? "-";
+}
+
+function resolveProjectDisplayId(project: ProjectSummary, projects: ProjectSummary[]) {
+  const numericId = /^project-\d+$/u.test(project.id) ? project.id : null;
+  if (numericId) {
+    return numericId;
+  }
+  const index = projects.findIndex((item) => item.id === project.id);
+  return `project-${index >= 0 ? index + 1 : projects.length + 1}`;
 }
 
 function splitArgs(value: string) {
@@ -4272,7 +4228,12 @@ function resolveReasoningOptionsForModel(model: string, modelOptions: string[], 
     .map((option) => splitModelReasoning(option))
     .filter((option) => option.model === model && option.reasoning)
     .map((option) => option.reasoning as SessionReasoningEffort);
-  return fromModel.length ? Array.from(new Set(fromModel)) : resolveReasoningOptions(configOptions);
+  if (fromModel.length) {
+    return Array.from(new Set(fromModel));
+  }
+
+  const fromConfig = resolveReasoningOptions(configOptions);
+  return fromConfig.length ? fromConfig : model.trim() ? REASONING_OPTIONS.map((option) => option.value) : [];
 }
 
 function resolveCombinedModelValue(model: string, reasoning: SessionReasoningEffort | undefined, modelOptions: string[]) {
@@ -4308,7 +4269,7 @@ function normalizeModelSelection(model: string | undefined) {
 }
 
 function defaultAgentId(agents: AcpAgentProvider[]) {
-  return agents[0]?.id ?? null;
+  return agents.find((agent) => agent.id === "codex")?.id ?? agents[0]?.id ?? null;
 }
 
 function formatRelativeTime(value: string) {
@@ -4446,11 +4407,3 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
-
-
-
-
-
-
-
-
