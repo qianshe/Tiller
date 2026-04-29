@@ -7537,13 +7537,13 @@ textarea:focus,
   display: grid;
   grid-template-columns: minmax(150px, 1fr) auto auto minmax(132px, auto) minmax(132px, auto) auto;
   grid-template-areas: "name kind current last expires action";
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  min-height: 58px;
-  padding: 10px 0;
+  min-height: 48px;
+  padding: 8px 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   color: #93a4bd;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .helm-beacon-device-name {
@@ -7563,21 +7563,27 @@ textarea:focus,
   grid-area: current;
 }
 
+.helm-beacon-kind,
+.helm-beacon-current {
+  padding: 5px 9px;
+}
+
 .helm-beacon-meta {
   white-space: nowrap;
 }
 
-.helm-beacon-meta:first-of-type {
+.helm-beacon-last {
   grid-area: last;
 }
 
-.helm-beacon-meta:last-of-type {
+.helm-beacon-expires {
   grid-area: expires;
 }
 
 .helm-beacon-action {
   grid-area: action;
   justify-self: end;
+  padding: 8px 12px;
 }
 
 .helm-beacon-empty {
@@ -7620,4 +7626,5 @@ textarea:focus,
     justify-self: stretch;
   }
 }
+
 

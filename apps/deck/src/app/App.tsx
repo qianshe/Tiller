@@ -1781,7 +1781,6 @@ export function App() {
   function renderTrustedDevicesPanel(devices: TrustedDeviceSummary[], targetSocket: WebSocket | null, helmName: string) {
     const labels = deckPreferences.language === "en-US"
       ? {
-          eyebrow: "Beacons",
           title: "Beacons",
           count: `${devices.length}`,
           empty: `${helmName} has no beacons yet.`,
@@ -1794,7 +1793,6 @@ export function App() {
           revokeDevice: (deviceName: string) => `Revoke ${deviceName}`,
         }
       : {
-          eyebrow: "信标",
           title: "信标",
           count: `${devices.length} 个`,
           empty: `${helmName} 暂无信标。`,
@@ -1807,10 +1805,14 @@ export function App() {
           revokeDevice: (deviceName: string) => `撤销 ${deviceName}`,
         };
 
+    const deviceCreatedAtTime = (device: TrustedDeviceSummary) => {
+      const createdAt = Date.parse(device.createdAt);
+      return Number.isFinite(createdAt) ? createdAt : 0;
+    };
     const nameIndexes = new Map<string, number>();
     const deviceRows = [...devices]
       .sort((left, right) => {
-        const createdAtDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        const createdAtDelta = deviceCreatedAtTime(left) - deviceCreatedAtTime(right);
         return createdAtDelta || left.deviceId.localeCompare(right.deviceId);
       })
       .map((device) => {
@@ -1838,8 +1840,8 @@ export function App() {
                 <strong className="helm-beacon-device-name" title={device.displayName}>{device.displayName}</strong>
                 <span className="status-chip subtle-chip helm-beacon-kind">{device.clientKind === "app" ? labels.app : labels.web}</span>
                 {device.isCurrentDevice ? <span className="status-chip helm-beacon-current">{labels.current}</span> : null}
-                <span className="helm-beacon-meta">{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
-                <span className="helm-beacon-meta">{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
+                <span className="helm-beacon-meta helm-beacon-last">{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
+                <span className="helm-beacon-meta helm-beacon-expires">{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
                 <button
                   aria-label={labels.revokeDevice(device.displayName)}
                   className="secondary helm-beacon-action"
@@ -3925,3 +3927,4 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
