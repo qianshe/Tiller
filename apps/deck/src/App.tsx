@@ -757,6 +757,7 @@ export function App() {
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
+  const resumeStartRequestsRef = useRef<Set<string>>(new Set());
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(() => missionVisualMode ? createMissionVisualFixture() : null, [missionVisualMode]);
@@ -1770,9 +1771,15 @@ export function App() {
               : session,
           ),
         );
+        if (shouldAutoStartSessionResume({ resume: payload.resume })) {
+          requestSessionResumeStart(payload.sessionId, "检测到历史任务可恢复，正在自动重连 ACP 会话...");
+        }
         return;
       case "session.resume.start.result":
         setResumeFeedback(payload.message);
+        if (!payload.ok) {
+          resumeStartRequestsRef.current.delete(payload.sessionId);
+        }
         setSessions((current) =>
           current.map((session) =>
             session.id === payload.sessionId
@@ -2078,45 +2085,40 @@ export function App() {
         };
 
     return (
-      <section className={`note-box settings-card settings-card-full helm-beacon-card ${compact ? "helm-beacon-card-compact" : ""}`.trim()}>
-        <div className="settings-card-head">
+      <section className="helm-beacon-section">
+        <div className="helm-beacon-head">
           <div>
             <p className="eyebrow">{labels.eyebrow}</p>
             <h3>{labels.title}</h3>
           </div>
         </div>
         {devices.length ? (
-          <div className="trusted-device-list">
+          <ul className="helm-beacon-simple-list">
             {devices.map((device) => {
               const isCurrentDevice = device.deviceId === deckDeviceId;
               return (
-                <article key={device.deviceId} className={isCurrentDevice ? "trusted-device-row trusted-device-row-current" : "trusted-device-row"}>
-                  <div className="trusted-device-icon" aria-hidden="true">
-                    {device.clientKind === "app" ? "▣" : "⌁"}
-                  </div>
-                  <div className="trusted-device-copy">
-                    <div className="trusted-device-title-row">
+                <li key={device.deviceId} className="helm-beacon-simple-row">
+                  <div className="helm-beacon-main">
+                    <div className="helm-beacon-title-row">
                       <strong>{device.deviceName}</strong>
                       <span className="status-chip subtle-chip">{device.clientKind === "app" ? labels.app : labels.web}</span>
                       {isCurrentDevice ? <span className="status-chip">{labels.current}</span> : null}
                     </div>
                     <p className="subtle compact device-mono">{device.deviceId}</p>
-                    <div className="trusted-device-meta-grid">
+                    <div className="helm-beacon-meta">
                       <span>{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
                       <span>{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
                     </div>
                   </div>
-                  <div className="trusted-device-actions">
-                    <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}>
-                      {labels.revoke}
-                    </button>
-                  </div>
-                </article>
+                  <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}>
+                    {labels.revoke}
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         ) : (
-          <div className="empty-state">{labels.empty}</div>
+          <div className="empty-state helm-beacon-empty">{labels.empty}</div>
         )}
       </section>
     );
@@ -2131,6 +2133,29 @@ export function App() {
 
   function connectDaemonProfile(profile: DaemonProfile) {
     connectHelmSocket(profile);
+  }
+
+  function requestSessionResumeStart(sessionId: string, reason: string) {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || resumeStartRequestsRef.current.has(sessionId)) {
+      return;
+    }
+
+    resumeStartRequestsRef.current.add(sessionId);
+    setResumeFeedback(reason);
+    dispatch(socketRef.current, {
+      type: "session.resume.start",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+    });
+  }
+
+  function shouldAutoStartSessionResume(session: Pick<SessionSummary, "resume"> | undefined) {
+    const resume = session?.resume;
+    return Boolean(
+      resume?.state === "resume-available" &&
+      resume.mode === "reconnect" &&
+      (resume.restoreMethod === "session/load" || resume.restoreMethod === "session/resume"),
+    );
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
@@ -3347,8 +3372,6 @@ export function App() {
               </div>
             </div>
 
-            {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, true)}
-
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
                 <div className="helm-inventory-section-head">
@@ -3518,6 +3541,8 @@ export function App() {
                 )}
               </section>
             </div>
+
+            {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, true)}
           </section>
         </section>
       </section>

@@ -653,16 +653,34 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
       return;
     }
     case "session.prompt": {
-      const record = sessions.get(payload.sessionId);
+      let record = sessions.get(payload.sessionId);
       if (!record) {
+        logInfo(`[tiller-helm] session.prompt restore-required session=${payload.sessionId} chars=${payload.text.length}`);
+        const restore = await startSessionResume(payload.sessionId);
+        logInfo(`[tiller-helm] session.prompt restore-result session=${payload.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`);
+        emit(socket, {
+          type: "session.resume.start.result",
+          requestId: `session-prompt-restore-${Date.now()}`,
+          sessionId: payload.sessionId,
+          ok: restore.ok,
+          resume: restore.resume,
+          message: restore.message,
+        });
+        record = sessions.get(payload.sessionId);
+      }
+
+      if (!record) {
+        logError(`[tiller-helm] session.prompt failed session=${payload.sessionId} reason=Session runtime not available`);
         emit(socket, {
           type: "error",
           requestId: payload.requestId,
-          message: "Session not found",
+          sessionId: payload.sessionId,
+          message: "Session runtime is not available. Try reconnecting this Mission first.",
         });
         return;
       }
 
+      logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
       const timestamp = new Date().toISOString();
       persistSessionMessage(payload.sessionId, {
         id: `${payload.sessionId}-user-${Date.now()}`,
