@@ -244,6 +244,7 @@ export type HelmToClient =
       sessionId: string;
       outputs: CommandChunk[];
       diffs: FileDiffSummary[];
+      toolCalls: AgentToolCall[];
     }
   | {
       type: "session.resume.result";

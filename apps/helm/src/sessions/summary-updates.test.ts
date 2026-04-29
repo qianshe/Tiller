@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
-import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./session-summary";
+import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./summary-updates";
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {

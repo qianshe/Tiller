@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AcpAgentProvider, SessionSummary } from "@tiller/shared";
-import { resolveSessionCleanupOutcome } from "./session-cleanup";
+import { resolveSessionCleanupOutcome } from "./cleanup";
 
 const provider: AcpAgentProvider = {
   id: "opencode",

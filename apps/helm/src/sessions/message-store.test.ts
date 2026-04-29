@@ -15,14 +15,14 @@ test("session message store appends messages per session and reloads them from d
   } = null;
 
   try {
-    mod = await import("./session-message-store.js");
+    mod = await import("./message-store.js");
   } catch {
     mod = null;
   }
 
   assert.ok(mod?.createSessionMessageStore, "createSessionMessageStore export is missing");
 
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-message-store-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-"));
 
   try {
     const store = mod.createSessionMessageStore(tempRoot);
@@ -56,8 +56,8 @@ test("session message store appends messages per session and reloads them from d
 });
 
 test("session message store removes only the targeted session history", async () => {
-  const mod = await import("./session-message-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-message-store-delete-"));
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-delete-"));
 
   try {
     const store = mod.createSessionMessageStore(tempRoot);

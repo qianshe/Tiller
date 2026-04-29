@@ -17,14 +17,14 @@ test("session artifact store persists command output history and latest diff sna
   } = null;
 
   try {
-    mod = await import("./session-artifact-store.js");
+    mod = await import("./artifact-store.js");
   } catch {
     mod = null;
   }
 
   assert.ok(mod?.createSessionArtifactStore, "createSessionArtifactStore export is missing");
 
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-artifact-store-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-"));
 
   try {
     const store = mod.createSessionArtifactStore(tempRoot);
@@ -72,8 +72,8 @@ test("session artifact store persists command output history and latest diff sna
 });
 
 test("session artifact store removes only the targeted session artifacts", async () => {
-  const mod = await import("./session-artifact-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-artifact-store-delete-"));
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-delete-"));
 
   try {
     const store = mod.createSessionArtifactStore(tempRoot);

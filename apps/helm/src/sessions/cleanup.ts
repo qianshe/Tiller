@@ -1,6 +1,6 @@
 import { normalizeProviderCleanupResult, type ProviderCleanupResult } from "@tiller/acp-runtime";
 import type { AcpAgentProvider, SessionSummary } from "@tiller/shared";
-import { executeProviderCleanup } from "./provider-cleanup";
+import { executeProviderCleanup } from "../providers/cleanup";
 
 type CleanupExecutor = (provider: AcpAgentProvider, runtimeSessionId: string) => ProviderCleanupResult;
 

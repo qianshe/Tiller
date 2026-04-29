@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "./hybrid-connection.js";
+import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "./reconnect-policy.js";
 
 test("hybrid connection policy requires live connect for Mission and Crew views", () => {
   assert.equal(shouldEnsureLiveConnection("sessions"), true);

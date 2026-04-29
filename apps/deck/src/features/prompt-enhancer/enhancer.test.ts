@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerPreferences } from "./prompt-enhancer.js";
+import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerPreferences } from "./enhancer.js";
 
 const basePreferences: PromptEnhancerPreferences = {
   enabled: true,

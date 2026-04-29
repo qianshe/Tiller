@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 test("trusted device store authenticates a valid device and slides expiry by 7 days", async () => {
-  const mod = await import("./trusted-device-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-trusted-device-store-"));
+  const mod = await import("./beacon-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-beacon-store-"));
 
   try {
     const filePath = join(tempRoot, "trusted-devices.json");
@@ -33,8 +33,8 @@ test("trusted device store authenticates a valid device and slides expiry by 7 d
 });
 
 test("trusted device store rejects expired devices with requiresPairing", async () => {
-  const mod = await import("./trusted-device-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-trusted-device-store-expired-"));
+  const mod = await import("./beacon-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-beacon-store-expired-"));
 
   try {
     const filePath = join(tempRoot, "trusted-devices.json");
@@ -67,8 +67,8 @@ test("trusted device store rejects expired devices with requiresPairing", async 
 });
 
 test("trusted device store revokes a device and forces re-pairing", async () => {
-  const mod = await import("./trusted-device-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-trusted-device-store-revoke-"));
+  const mod = await import("./beacon-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-beacon-store-revoke-"));
 
   try {
     const filePath = join(tempRoot, "trusted-devices.json");

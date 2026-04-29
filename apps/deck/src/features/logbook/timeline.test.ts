@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
-import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "./tool-timeline.js";
+import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "./timeline.js";
 
 const baseMessage: AgentMessage = {
   id: "msg-1",

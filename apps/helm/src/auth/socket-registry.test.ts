@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 test("authenticated socket registry tracks sockets per device and removes them cleanly", async () => {
-  const mod = await import("./authenticated-socket-registry.js");
+  const mod = await import("./socket-registry.js");
   const registry = mod.createAuthenticatedSocketRegistry<{ readyState: number }>();
   registry.add({
     socketId: "sock-1",
@@ -25,7 +25,7 @@ test("authenticated socket registry tracks sockets per device and removes them c
 });
 
 test("authenticated socket registry lists all open sockets for broadcast", async () => {
-  const mod = await import("./authenticated-socket-registry.js");
+  const mod = await import("./socket-registry.js");
   const registry = mod.createAuthenticatedSocketRegistry<{ readyState: number }>();
   registry.add({
     socketId: "sock-open",

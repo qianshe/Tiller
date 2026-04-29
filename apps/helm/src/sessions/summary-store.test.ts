@@ -15,14 +15,14 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
   } = null;
 
   try {
-    mod = await import("./session-store.js");
+    mod = await import("./summary-store.js");
   } catch {
     mod = null;
   }
 
   assert.ok(mod?.createSessionStore, "createSessionStore export is missing");
 
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-store-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-"));
 
   try {
     const filePath = join(tempRoot, "sessions.json");
@@ -114,8 +114,8 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
 });
 
 test("session store normalizes legacy summaries without project or helm fields", async () => {
-  const mod = await import("./session-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-store-legacy-"));
+  const mod = await import("./summary-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-legacy-"));
 
   try {
     const filePath = join(tempRoot, "sessions.json");
@@ -150,8 +150,8 @@ test("session store normalizes legacy summaries without project or helm fields",
 });
 
 test("session store removes only the targeted session summary", async () => {
-  const mod = await import("./session-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-store-delete-"));
+  const mod = await import("./summary-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-delete-"));
 
   try {
     const filePath = join(tempRoot, "sessions.json");

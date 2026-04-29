@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { StoredSessionRuntimeDescriptor } from "./session-runtime-store";
+import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
 
 test("session runtime store persists reconnect descriptors", async () => {
   let mod: null | {
@@ -16,14 +16,14 @@ test("session runtime store persists reconnect descriptors", async () => {
   } = null;
 
   try {
-    mod = await import("./session-runtime-store.js");
+    mod = await import("./runtime-store.js");
   } catch {
     mod = null;
   }
 
   assert.ok(mod?.createSessionRuntimeStore, "createSessionRuntimeStore export is missing");
 
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-runtime-store-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-runtime-store-"));
 
   try {
     const filePath = join(tempRoot, "session-runtimes.json");
@@ -51,8 +51,8 @@ test("session runtime store persists reconnect descriptors", async () => {
 });
 
 test("session runtime store removes only the targeted descriptor", async () => {
-  const mod = await import("./session-runtime-store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-session-runtime-store-delete-"));
+  const mod = await import("./runtime-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-runtime-store-delete-"));
 
   try {
     const filePath = join(tempRoot, "session-runtimes.json");

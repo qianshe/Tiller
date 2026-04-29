@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { applySessionListSnapshot, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./session-state.js";
+import { applySessionListSnapshot, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./sessions.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
   return {

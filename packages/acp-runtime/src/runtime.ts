@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 import type {
   AcpAgentProvider,
   AcpModelOption,
@@ -132,11 +133,6 @@ type AcpSessionResponseWithModels = {
   session_id?: string;
   id?: string;
   models?: AcpProtocolSessionModelState | null;
-};
-
-type AcpSetSessionModelRequest = {
-  sessionId: string;
-  modelId: string;
 };
 
 export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
@@ -655,76 +651,6 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   };
 }
 
-export function resolveRuntimeSessionId(sessionResult: unknown, fallbackSessionId: string) {
-  const result = sessionResult && typeof sessionResult === "object" ? sessionResult as AcpSessionResponseWithModels : null;
-  return result?.sessionId ?? result?.session_id ?? result?.id ?? fallbackSessionId;
-}
-
-export function buildSessionNewRequest(id: string, cwd: string, agent?: string) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/new",
-    params: {
-      cwd,
-      mcpServers: [],
-      ...(agent ? { agent } : {}),
-    },
-  };
-}
-
-export function buildSessionLoadRequest(id: string, sessionId: string, cwd: string, agent?: string) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/load",
-    params: {
-      sessionId,
-      cwd,
-      mcpServers: [],
-      ...(agent ? { agent } : {}),
-    },
-  };
-}
-
-export function buildSessionResumeRequest(id: string, sessionId: string, cwd: string, agent?: string) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/resume",
-    params: {
-      sessionId,
-      cwd,
-      mcpServers: [],
-      ...(agent ? { agent } : {}),
-    },
-  };
-}
-
-export function buildSessionPromptRequest(id: string, sessionId: string, text: string, agent?: string) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/prompt",
-    params: {
-      sessionId,
-      prompt: [{ type: "text", text }],
-      ...(agent ? { agent } : {}),
-    },
-  };
-}
-
-export function buildSessionSetModelRequest(id: string, sessionId: string, modelId: string) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/set_model",
-    params: {
-      sessionId,
-      modelId,
-    } satisfies AcpSetSessionModelRequest,
-  };
-}
 
 export function resolveSessionCapabilities(initializeResult: any, provider?: AcpAgentProvider): DetectedAcpSessionCapabilities {
   const capabilities = initializeResult?.capabilities ?? initializeResult?.agentCapabilities ?? initializeResult?.sessionCapabilities ?? {};
@@ -1548,3 +1474,5 @@ function sanitizeLogToken(value: string) {
 
 
 
+
+export { buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";

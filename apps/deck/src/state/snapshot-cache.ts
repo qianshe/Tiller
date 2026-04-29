@@ -1,5 +1,5 @@
 import type { AcpAgentProvider, ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
-import type { StorageLike } from "./trusted-device-cache";
+import type { StorageLike } from "../auth/beacon-cache";
 
 export type DeckSnapshotCache = {
   profileId: string;

@@ -14,7 +14,7 @@ import {
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
-} from "./index";
+} from "./runtime";
 
 test("buildSessionNewRequest uses ACP session/new shape", () => {
   assert.deepEqual(buildSessionNewRequest("req-1", "D:/myProject/tools/Tiller"), {

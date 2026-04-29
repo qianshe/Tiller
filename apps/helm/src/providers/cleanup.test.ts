@@ -3,7 +3,7 @@ import test from "node:test";
 import type { AcpAgentProvider } from "@tiller/shared";
 
 test("resolveProviderCleanupPlan returns an OpenCode remote delete command when runtimeSessionId is tracked", async () => {
-  const mod = await import("./provider-cleanup.js");
+  const mod = await import("./cleanup.js");
   const provider: AcpAgentProvider = {
     id: "opencode",
     name: "OpenCode",
@@ -24,7 +24,7 @@ test("resolveProviderCleanupPlan returns an OpenCode remote delete command when 
 });
 
 test("resolveProviderCleanupPlan returns unsupported for Codex ACP", async () => {
-  const mod = await import("./provider-cleanup.js");
+  const mod = await import("./cleanup.js");
   const provider: AcpAgentProvider = {
     id: "codex",
     name: "Codex",
@@ -44,7 +44,7 @@ test("resolveProviderCleanupPlan returns unsupported for Codex ACP", async () =>
 });
 
 test("executeProviderCleanup runs OpenCode remote delete and reports success", async () => {
-  const mod = await import("./provider-cleanup.js");
+  const mod = await import("./cleanup.js");
   const provider: AcpAgentProvider = {
     id: "opencode",
     name: "OpenCode",
@@ -70,7 +70,7 @@ test("executeProviderCleanup runs OpenCode remote delete and reports success", a
 });
 
 test("executeProviderCleanup keeps Codex ACP as unsupported without invoking exec", async () => {
-  const mod = await import("./provider-cleanup.js");
+  const mod = await import("./cleanup.js");
   const provider: AcpAgentProvider = {
     id: "codex",
     name: "Codex",
@@ -93,7 +93,7 @@ test("executeProviderCleanup keeps Codex ACP as unsupported without invoking exe
 });
 
 test("quoteWindowsCommandLine quotes OpenCode cleanup args for cmd fallback", async () => {
-  const mod = await import("./provider-cleanup.js");
+  const mod = await import("./cleanup.js");
 
   assert.equal(
     mod.quoteWindowsCommandLine("opencode", ["session", "delete", "ses 789", "--pure"]),
