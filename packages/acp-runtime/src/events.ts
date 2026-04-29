@@ -38,14 +38,14 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
   const updateType = update.sessionUpdate ?? update.type;
   const text = extractTextContent(update.content) ?? extractTextContent(update.delta) ?? extractTextContent(update.message);
 
-  if (text && updateType === "agent_message_chunk") {
+  if (text && (updateType === "agent_message_chunk" || updateType === "user_message_chunk")) {
     return {
       sessionId,
       event: {
         type: "message",
         message: {
           id: update.messageId ?? `${sessionId}-msg-${Date.now()}`,
-          role: "assistant",
+          role: updateType === "user_message_chunk" ? "user" : "assistant",
           text,
           timestamp: timestamp(),
         },

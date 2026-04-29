@@ -275,7 +275,7 @@ h3 {
 .permission-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -1556,8 +1556,8 @@ textarea:focus,
   position: fixed;
   top: 0;
   left: 16px;
-  right: 16px;
-  width: auto;
+  right: auto;
+  width: calc(100vw - 32px);
   max-width: none;
   min-height: 76px;
   margin: 0 0 20px;
@@ -1575,7 +1575,7 @@ textarea:focus,
 
 .shell > .top-nav:hover,
 .shell > .top-nav:focus-within {
-  width: auto;
+  width: calc(100vw - 32px);
   transform: translateY(0);
 }
 
@@ -1591,15 +1591,15 @@ textarea:focus,
   .shell > .top-nav {
     top: 0;
     left: 8px;
-    right: 8px;
-    width: auto;
+    right: auto;
+    width: calc(100vw - 16px);
     min-height: 150px;
     transform: translateY(-142px);
   }
 
   .shell > .top-nav:hover,
   .shell > .top-nav:focus-within {
-    width: auto;
+    width: calc(100vw - 16px);
     transform: translateY(0);
   }
 }
@@ -7504,20 +7504,79 @@ textarea:focus,
     grid-template-columns: 1fr;
   }
 }
-
-.helm-beacon-card {
-  margin-top: 18px;
-}
-
-.helm-beacon-card-compact {
-  padding: 16px;
-}
-
-.helm-beacon-card-compact .trusted-device-list {
+/* Fleet Helm beacons: lightweight Helm-owned list, not a nested card. */
+.helm-beacon-section {
+  display: grid;
   gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
-.helm-beacon-card-compact .trusted-device-row {
-  padding: 12px;
+.helm-beacon-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.helm-beacon-head h3 {
+  margin: 2px 0 0;
+  font-size: 1rem;
+}
+
+.helm-beacon-simple-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.helm-beacon-simple-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: #93a4bd;
+  font-size: 0.9rem;
+}
+
+.helm-beacon-device-name {
+  color: #e5edf7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.helm-beacon-empty {
+  min-height: 72px;
+}
+
+[data-deck-theme="light"] .helm-beacon-device-name {
+  color: #0f172a;
+}
+
+@media (max-width: 980px) {
+  .helm-beacon-simple-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .helm-beacon-simple-row > span:nth-of-type(n + 3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .helm-beacon-simple-row {
+    grid-template-columns: 1fr;
+  }
+
+  .helm-beacon-simple-row .secondary {
+    width: 100%;
+  }
 }
 

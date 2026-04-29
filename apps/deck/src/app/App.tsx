@@ -1778,57 +1778,57 @@ export function App() {
     });
   }
 
-  function renderTrustedDevicesPanel(devices: TrustedDeviceSummary[], targetSocket: WebSocket | null, compact = false) {
+  function renderTrustedDevicesPanel(devices: TrustedDeviceSummary[], targetSocket: WebSocket | null, helmName: string) {
     const labels = deckPreferences.language === "en-US"
       ? {
-          eyebrow: "Trusted devices",
-          title: "7-day remembered Deck / App devices",
-          empty: "No trusted devices yet.",
-          current: "Current device",
+          eyebrow: "Beacons",
+          title: "Beacons",
+          count: `${devices.length}`,
+          empty: `${helmName} has no beacons yet.`,
+          current: "Current",
           revoke: "Revoke",
           web: "Web",
           app: "App",
-          lastSeen: "Last seen",
+          lastSeen: "Last auth",
           expiresAt: "Expires",
         }
       : {
           eyebrow: "信标",
-          title: "当前 Helm 记住的 7 天信标",
-          empty: "当前 Helm 还没有信标。",
-          current: "当前信标",
+          title: "信标",
+          count: `${devices.length} 个`,
+          empty: `${helmName} 暂无信标。`,
+          current: "当前",
           revoke: "撤销",
           web: "网页",
           app: "App",
-          lastSeen: "最近认证",
-          expiresAt: "信任到期",
+          lastSeen: "最近",
+          expiresAt: "到期",
         };
+
+    const sortedDevices = [...devices].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+    const nameIndexes: Record<string, number> = {};
 
     return (
       <section className="helm-beacon-section">
         <div className="helm-beacon-head">
-          <div>
-            <p className="eyebrow">{labels.eyebrow}</p>
-            <h3>{labels.title}</h3>
-          </div>
+          <h3>{labels.title}</h3>
+          <span className="muted compact">{labels.count}</span>
         </div>
-        {devices.length ? (
+        {sortedDevices.length ? (
           <ul className="helm-beacon-simple-list">
-            {devices.map((device) => {
+            {sortedDevices.map((device) => {
               const isCurrentDevice = device.deviceId === deckDeviceId;
+              const baseName = device.deviceName || "Tiller Deck";
+              const index = nameIndexes[baseName] ?? 0;
+              nameIndexes[baseName] = index + 1;
+              const displayName = `${baseName}-${index}`;
               return (
                 <li key={device.deviceId} className="helm-beacon-simple-row">
-                  <div className="helm-beacon-main">
-                    <div className="helm-beacon-title-row">
-                      <strong>{device.deviceName}</strong>
-                      <span className="status-chip subtle-chip">{device.clientKind === "app" ? labels.app : labels.web}</span>
-                      {isCurrentDevice ? <span className="status-chip">{labels.current}</span> : null}
-                    </div>
-                    <p className="subtle compact device-mono">{device.deviceId}</p>
-                    <div className="helm-beacon-meta">
-                      <span>{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
-                      <span>{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
-                    </div>
-                  </div>
+                  <strong className="helm-beacon-device-name">{displayName}</strong>
+                  <span className="status-chip subtle-chip">{device.clientKind === "app" ? labels.app : labels.web}</span>
+                  {isCurrentDevice ? <span className="status-chip">{labels.current}</span> : null}
+                  <span>{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
+                  <span>{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
                   <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}>
                     {labels.revoke}
                   </button>
@@ -3248,7 +3248,7 @@ export function App() {
               </section>
             </div>
 
-            {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, true)}
+            {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, selectedHelm.name)}
           </section>
         </section>
       </section>
@@ -3586,9 +3586,18 @@ function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
 function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) {
   const merged = [...current];
   for (const message of incoming) {
-    if (!merged.some((item) => item.id === message.id)) {
+    const index = merged.findIndex((item) => item.id === message.id);
+    if (index === -1) {
       merged.push(message);
+      continue;
     }
+
+    merged[index] = {
+      ...merged[index],
+      ...message,
+      text: merged[index].text === message.text || merged[index].text.endsWith(message.text) ? merged[index].text : `${merged[index].text}${message.text}`,
+      timestamp: merged[index].timestamp,
+    };
   }
 
   return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));

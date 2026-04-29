@@ -191,6 +191,31 @@ test("mapSessionUpdateNotification maps agent text chunks into Tiller message ev
   assert.match(mapped.event.message.timestamp, /\d{4}-\d{2}-\d{2}T/);
 });
 
+test("mapSessionUpdateNotification maps user text chunks into Tiller message events", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_123",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        messageId: "msg_user_1",
+        content: { type: "text", text: "中午好" },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.sessionId, "sess_123");
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(mapped.event.message.id, "msg_user_1");
+  assert.equal(mapped.event.message.role, "user");
+  assert.equal(mapped.event.message.text, "中午好");
+});
+
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

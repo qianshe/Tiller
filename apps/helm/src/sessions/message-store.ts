@@ -6,7 +6,7 @@ export function createSessionMessageStore(rootDir: string) {
   return {
     append(sessionId: string, message: AgentMessage) {
       const current = listSessionMessages(rootDir, sessionId);
-      const next = [...current, message];
+      const next = mergeSessionMessage(current, message);
       persistSessionMessages(rootDir, sessionId, next);
       return next;
     },
@@ -31,6 +31,22 @@ function listSessionMessages(rootDir: string, sessionId: string) {
   } catch {
     return [];
   }
+}
+
+function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
+  const index = messages.findIndex((item) => item.id === message.id);
+  if (index === -1) {
+    return [...messages, message];
+  }
+
+  return messages.map((item, itemIndex) => itemIndex === index
+    ? {
+        ...item,
+        ...message,
+        text: item.text === message.text || item.text.endsWith(message.text) ? item.text : `${item.text}${message.text}`,
+        timestamp: item.timestamp,
+      }
+    : item);
 }
 
 function persistSessionMessages(rootDir: string, sessionId: string, messages: AgentMessage[]) {

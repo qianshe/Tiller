@@ -475,6 +475,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   let currentModelState: AcpModelState | undefined;
 
   if (options.restore) {
+    sessionToken = options.restore.runtimeSessionId;
     if (options.restore.strategy === "load") {
       if (!sessionCapabilities.sessionLoad) {
         throw new Error("ACP agent does not advertise session/load capability.");
