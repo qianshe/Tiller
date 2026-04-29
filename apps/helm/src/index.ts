@@ -397,6 +397,7 @@ async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
         sessionId: payload.sessionId,
         outputs: artifacts.outputs,
         diffs,
+        toolCalls: artifacts.toolCalls,
       });
       return;
     }
@@ -918,6 +919,7 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
       });
       return;
     case "tool-call":
+      sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       broadcastAuthenticated({
         type: "tool.call",
         sessionId,
@@ -933,6 +935,7 @@ function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
         chunk: event.chunk,
       });
       if (event.toolCall) {
+        sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
         broadcastAuthenticated({
           type: "tool.call",
           sessionId,

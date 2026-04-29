@@ -1,10 +1,11 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type { AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
 
 type SessionArtifacts = {
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
+  toolCalls: AgentToolCall[];
 };
 
 export function createSessionArtifactStore(rootDir: string) {
@@ -23,6 +24,19 @@ export function createSessionArtifactStore(rootDir: string) {
       const next = {
         ...current,
         diffs,
+      };
+      persistSessionArtifacts(rootDir, sessionId, next);
+      return next;
+    },
+    appendToolCall(sessionId: string, toolCall: AgentToolCall) {
+      const current = getSessionArtifacts(rootDir, sessionId);
+      const index = current.toolCalls.findIndex((item) => item.id === toolCall.id);
+      const nextToolCalls = index === -1
+        ? [...current.toolCalls, toolCall]
+        : current.toolCalls.map((item, itemIndex) => itemIndex === index ? { ...item, ...toolCall, output: `${item.output ?? ""}${toolCall.output ?? ""}`, input: toolCall.input ?? item.input } : item);
+      const next = {
+        ...current,
+        toolCalls: nextToolCalls,
       };
       persistSessionArtifacts(rootDir, sessionId, next);
       return next;
@@ -47,9 +61,10 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
     return {
       outputs: Array.isArray(parsed?.outputs) ? parsed.outputs.filter(isCommandChunk) : [],
       diffs: Array.isArray(parsed?.diffs) ? parsed.diffs.filter(isFileDiffSummary) : [],
+      toolCalls: Array.isArray(parsed?.toolCalls) ? parsed.toolCalls.filter(isAgentToolCall) : [],
     };
   } catch {
-    return { outputs: [], diffs: [] };
+    return { outputs: [], diffs: [], toolCalls: [] };
   }
 }
 
@@ -88,5 +103,22 @@ function isFileDiffSummary(value: unknown): value is FileDiffSummary {
     typeof candidate.status === "string" &&
     typeof candidate.additions === "number" &&
     typeof candidate.deletions === "number"
+  );
+}
+
+
+function isAgentToolCall(value: unknown): value is AgentToolCall {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.kind === "string" &&
+    typeof candidate.title === "string" &&
+    typeof candidate.status === "string" &&
+    typeof candidate.timestamp === "string" &&
+    typeof candidate.updatedAt === "string"
   );
 }

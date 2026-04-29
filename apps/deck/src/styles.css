@@ -7505,3 +7505,19 @@ textarea:focus,
   }
 }
 
+.helm-beacon-card {
+  margin-top: 18px;
+}
+
+.helm-beacon-card-compact {
+  padding: 16px;
+}
+
+.helm-beacon-card-compact .trusted-device-list {
+  gap: 10px;
+}
+
+.helm-beacon-card-compact .trusted-device-row {
+  padding: 12px;
+}
+

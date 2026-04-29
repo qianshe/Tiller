@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -316,6 +316,7 @@ type HelmInventoryBucket = {
   agents: AcpAgentProvider[];
   sessions: SessionSummary[];
   statuses: Record<string, SessionStatus>;
+  trustedDevices: TrustedDeviceSummary[];
 };
 
 type Locale = keyof typeof UI_COPY;
@@ -1350,7 +1351,7 @@ export function App() {
   }
 
   function updateHelmInventory(helmKey: string, patch: Partial<HelmInventoryBucket>) {
-    const emptyBucket: HelmInventoryBucket = { projects: [], workspaces: [], agents: [], sessions: [], statuses: {} };
+    const emptyBucket: HelmInventoryBucket = { projects: [], workspaces: [], agents: [], sessions: [], statuses: {}, trustedDevices: [] };
     setHelmInventories((current) => ({
       ...current,
       [helmKey]: {
@@ -1582,10 +1583,18 @@ export function App() {
         }
         return;
       case "device.list.result":
-        setTrustedDevices(payload.devices);
+        updateHelmInventory(sourceHelmKey, { trustedDevices: payload.devices });
+        if (sourceIsCurrentHelm) {
+          setTrustedDevices(payload.devices);
+        }
         return;
       case "device.revoke.result":
-        setTrustedDevices((current) => current.filter((device) => device.deviceId !== payload.deviceId));
+        updateHelmInventory(sourceHelmKey, {
+          trustedDevices: (helmInventories[sourceHelmKey]?.trustedDevices ?? trustedDevices).filter((device) => device.deviceId !== payload.deviceId),
+        });
+        if (sourceIsCurrentHelm) {
+          setTrustedDevices((current) => current.filter((device) => device.deviceId !== payload.deviceId));
+        }
         setPairingFeedback(payload.message);
         if (payload.ok && payload.deviceId === deckDeviceId) {
           clearTrustedDeviceCache(
@@ -1742,7 +1751,10 @@ export function App() {
         }));
         setToolCalls((current) => ({
           ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], payload.outputs.map(commandChunkToToolCall)),
+          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [
+            ...payload.outputs.map(commandChunkToToolCall),
+            ...(payload.toolCalls ?? []),
+          ]),
         }));
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
         return;
@@ -2027,17 +2039,87 @@ export function App() {
     setDaemonProfileMessage(`已删除 Helm 前端配置：${profile.name}`);
   }
 
-  function revokeTrustedDevice(deviceId: string) {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      setPairingFeedback("请先连接 Helm 后再管理受信设备。");
+  function revokeTrustedDevice(deviceId: string, targetSocket: WebSocket | null = socketRef.current) {
+    if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) {
+      setPairingFeedback("请先连接 Helm 后再管理信标。");
       return;
     }
 
-    dispatch(socketRef.current, {
+    dispatch(targetSocket, {
       type: "device.revoke",
       requestId: nextRequestId(requestCounter),
       deviceId,
     });
+  }
+
+  function renderTrustedDevicesPanel(devices: TrustedDeviceSummary[], targetSocket: WebSocket | null, compact = false) {
+    const labels = deckPreferences.language === "en-US"
+      ? {
+          eyebrow: "Trusted devices",
+          title: "7-day remembered Deck / App devices",
+          empty: "No trusted devices yet.",
+          current: "Current device",
+          revoke: "Revoke",
+          web: "Web",
+          app: "App",
+          lastSeen: "Last seen",
+          expiresAt: "Expires",
+        }
+      : {
+          eyebrow: "信标",
+          title: "当前 Helm 记住的 7 天信标",
+          empty: "当前 Helm 还没有信标。",
+          current: "当前信标",
+          revoke: "撤销",
+          web: "网页",
+          app: "App",
+          lastSeen: "最近认证",
+          expiresAt: "信任到期",
+        };
+
+    return (
+      <section className={`note-box settings-card settings-card-full helm-beacon-card ${compact ? "helm-beacon-card-compact" : ""}`.trim()}>
+        <div className="settings-card-head">
+          <div>
+            <p className="eyebrow">{labels.eyebrow}</p>
+            <h3>{labels.title}</h3>
+          </div>
+        </div>
+        {devices.length ? (
+          <div className="trusted-device-list">
+            {devices.map((device) => {
+              const isCurrentDevice = device.deviceId === deckDeviceId;
+              return (
+                <article key={device.deviceId} className={isCurrentDevice ? "trusted-device-row trusted-device-row-current" : "trusted-device-row"}>
+                  <div className="trusted-device-icon" aria-hidden="true">
+                    {device.clientKind === "app" ? "▣" : "⌁"}
+                  </div>
+                  <div className="trusted-device-copy">
+                    <div className="trusted-device-title-row">
+                      <strong>{device.deviceName}</strong>
+                      <span className="status-chip subtle-chip">{device.clientKind === "app" ? labels.app : labels.web}</span>
+                      {isCurrentDevice ? <span className="status-chip">{labels.current}</span> : null}
+                    </div>
+                    <p className="subtle compact device-mono">{device.deviceId}</p>
+                    <div className="trusted-device-meta-grid">
+                      <span>{labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
+                      <span>{labels.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
+                    </div>
+                  </div>
+                  <div className="trusted-device-actions">
+                    <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId, targetSocket)}>
+                      {labels.revoke}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state">{labels.empty}</div>
+        )}
+      </section>
+    );
   }
 
   function applyDaemonProfile(profile: DaemonProfile) {
@@ -2075,6 +2157,22 @@ export function App() {
       sessionId: activeSessionId,
       text: enhancedPrompt,
     });
+  }
+
+  function submitPromptFromKeyboard(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   function respondToPermission(decision: PermissionDecision) {
@@ -2810,6 +2908,7 @@ export function App() {
                     ref={missionPromptRef}
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
+                    onKeyDown={submitPromptFromKeyboard}
                     placeholder={draftPromptPlaceholder}
                   />
                   <div className="mission-composer-sidecar">
@@ -3054,6 +3153,7 @@ export function App() {
     const selectedHelmConnection = resolveHelmConnectionState(selectedHelm, currentHelmKey, connection, helmConnectionStates);
     const selectedHelmIsConnected = selectedHelmConnection === "connected";
     const selectedHelmInventory = helmInventories[selectedHelm.key];
+    const selectedHelmTrustedDevices = selectedHelmIsCurrent ? trustedDevices : selectedHelmInventory?.trustedDevices ?? [];
     const selectedHelmProjects = selectedHelmIsCurrent ? projects : selectedHelmInventory?.projects ?? [];
     const selectedHelmAgents = selectedHelmIsCurrent ? agents : selectedHelmInventory?.agents ?? [];
     const selectedHelmWorkspaces = selectedHelmIsCurrent ? workspaces : selectedHelmInventory?.workspaces ?? [];
@@ -3246,6 +3346,8 @@ export function App() {
                 ) : null}
               </div>
             </div>
+
+            {renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, true)}
 
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
@@ -3676,47 +3778,6 @@ export function App() {
               </div>
             </section>
 
-            <section className="note-box settings-card settings-card-full">
-              <div className="settings-card-head">
-                <div>
-                  <p className="eyebrow">{settingsCopy.devicesEyebrow}</p>
-                  <h3>{settingsCopy.devicesTitle}</h3>
-                </div>
-              </div>
-              {trustedDevices.length ? (
-                <div className="trusted-device-list">
-                  {trustedDevices.map((device) => {
-                    const isCurrentDevice = device.deviceId === deckDeviceId;
-                    return (
-                      <article key={device.deviceId} className={isCurrentDevice ? "trusted-device-row trusted-device-row-current" : "trusted-device-row"}>
-                        <div className="trusted-device-icon" aria-hidden="true">
-                          {device.clientKind === "app" ? "▣" : "⌁"}
-                        </div>
-                        <div className="trusted-device-copy">
-                          <div className="trusted-device-title-row">
-                            <strong>{device.deviceName}</strong>
-                            <span className="status-chip subtle-chip">{device.clientKind === "app" ? settingsCopy.clientKindApp : settingsCopy.clientKindWeb}</span>
-                            {isCurrentDevice ? <span className="status-chip">{settingsCopy.currentDevice}</span> : null}
-                          </div>
-                          <p className="subtle compact device-mono">{device.deviceId}</p>
-                          <div className="trusted-device-meta-grid">
-                            <span>{settingsCopy.lastSeen} · {formatDeviceTime(device.lastSeenAt)}</span>
-                            <span>{settingsCopy.expiresAt} · {formatDeviceTime(device.expiresAt)}</span>
-                          </div>
-                        </div>
-                        <div className="trusted-device-actions">
-                          <button className="secondary" type="button" onClick={() => revokeTrustedDevice(device.deviceId)}>
-                            {settingsCopy.revoke}
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">{settingsCopy.devicesEmpty}</div>
-              )}
-            </section>
           </div>
         </section>
       </section>

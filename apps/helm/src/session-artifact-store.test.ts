@@ -3,14 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type { AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
 
 test("session artifact store persists command output history and latest diff snapshot", async () => {
   let mod: null | {
     createSessionArtifactStore: (rootDir: string) => {
-      appendOutput: (sessionId: string, chunk: CommandChunk) => { outputs: CommandChunk[]; diffs: FileDiffSummary[] };
-      replaceDiffs: (sessionId: string, diffs: FileDiffSummary[]) => { outputs: CommandChunk[]; diffs: FileDiffSummary[] };
-      get: (sessionId: string) => { outputs: CommandChunk[]; diffs: FileDiffSummary[] };
+      appendOutput: (sessionId: string, chunk: CommandChunk) => { outputs: CommandChunk[]; diffs: FileDiffSummary[]; toolCalls: AgentToolCall[] };
+      replaceDiffs: (sessionId: string, diffs: FileDiffSummary[]) => { outputs: CommandChunk[]; diffs: FileDiffSummary[]; toolCalls: AgentToolCall[] };
+      appendToolCall: (sessionId: string, toolCall: AgentToolCall) => { outputs: CommandChunk[]; diffs: FileDiffSummary[]; toolCalls: AgentToolCall[] };
+      get: (sessionId: string) => { outputs: CommandChunk[]; diffs: FileDiffSummary[]; toolCalls: AgentToolCall[] };
       remove: (sessionId: string) => void;
     };
   } = null;
@@ -43,8 +44,19 @@ test("session artifact store persists command output history and latest diff sna
       },
     ];
 
+    const toolCall: AgentToolCall = {
+      id: "tool-1",
+      kind: "tool",
+      title: "mcp search",
+      status: "completed",
+      output: "ok",
+      timestamp: "2026-04-26T12:15:01.000Z",
+      updatedAt: "2026-04-26T12:15:01.000Z",
+    };
+
     store.appendOutput("session-1", output);
     store.replaceDiffs("session-1", diffs);
+    store.appendToolCall("session-1", toolCall);
 
     const reloadedStore = mod.createSessionArtifactStore(tempRoot);
     const sessionArtifacts = reloadedStore.get("session-1");
@@ -52,7 +64,8 @@ test("session artifact store persists command output history and latest diff sna
     assert.equal(sessionArtifacts.outputs.length, 1);
     assert.deepEqual(sessionArtifacts.outputs[0], output);
     assert.deepEqual(sessionArtifacts.diffs, diffs);
-    assert.deepEqual(reloadedStore.get("session-2"), { outputs: [], diffs: [] });
+    assert.deepEqual(sessionArtifacts.toolCalls, [toolCall]);
+    assert.deepEqual(reloadedStore.get("session-2"), { outputs: [], diffs: [], toolCalls: [] });
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -83,7 +96,7 @@ test("session artifact store removes only the targeted session artifacts", async
     store.remove("session-1");
 
     const reloadedStore = mod.createSessionArtifactStore(tempRoot);
-    assert.deepEqual(reloadedStore.get("session-1"), { outputs: [], diffs: [] });
+    assert.deepEqual(reloadedStore.get("session-1"), { outputs: [], diffs: [], toolCalls: [] });
     assert.equal(reloadedStore.get("session-2").outputs.length, 1);
     assert.equal(reloadedStore.get("session-2").outputs[0]?.id, "chunk-2");
   } finally {
