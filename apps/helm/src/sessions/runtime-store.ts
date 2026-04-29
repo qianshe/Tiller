@@ -12,6 +12,8 @@ export type StoredSessionRuntimeDescriptor = {
     sessionLoad?: boolean;
     sessionResume?: boolean;
     sessionList?: boolean;
+    sessionClose?: boolean;
+    sessionDelete?: boolean;
   };
   lastSeenAt: string;
   state: "resumeable" | "stale" | "lost";
@@ -96,7 +98,7 @@ function isCapabilities(value: unknown) {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return ["sessionLoad", "sessionResume", "sessionList"].every(
+  return ["sessionLoad", "sessionResume", "sessionList", "sessionClose", "sessionDelete"].every(
     (key) => typeof candidate[key] === "boolean" || typeof candidate[key] === "undefined",
   );
 }

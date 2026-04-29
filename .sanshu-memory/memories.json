@@ -1,0 +1,29 @@
+{
+  "version": "2.0",
+  "project_path": "D:\\myProject\\tools\\Tiller",
+  "entries": [
+    {
+      "id": "c01902ec-1731-4eab-a936-f5a4d2093756",
+      "content": "ACP/Zed session 生命周期调研结论：ACP 将 session 删除与关闭区分为两个 JSON-RPC 方法：`session/delete` 用于删除 session 历史/archive 记录，能力位为 `sessionCapabilities.delete`；`session/close` 用于关闭活跃 session、释放运行资源，能力位为 `sessionCapabilities.close`。Zed 仓库也按这两个能力分开实现：外部 ACP provider 通过 capability 判断是否支持 close/delete；archive UI 删除时先删本地 ThreadMetadataStore，再通过 connection 的 session list 调用 delete_session。Tiller 的最佳实践：cleanup 活跃 runtime 时优先调用 `session/delete`，不支持则调用 `session/close`，都不支持则本地 cancel/cleanup；不要把 close 当 delete，也不要把 delete 当 close。参考链接：ACP RFD `https://agentclientprotocol.com/rfds/session-delete`、`https://agentclientprotocol.com/rfds/session-close`；Zed 仓库 `https://github.com/zed-industries/zed`。",
+      "content_normalized": "acp/zed session 生命周期调研结论acp 将 session 删除与关闭区分为两个 json-rpc 方法`session/delete` 用于删除 session 历史/archive 记录能力位为 `sessioncapabilitiesdelete``session/close` 用于关闭活跃 session释放运行资源能力位为 `sessioncapabilitiesclose`zed 仓库也按这两个能力分开实现外部 acp provider 通过 capability 判断是否支持 close/deletearchive ui 删除时先删本地 threadmetadatastore再通过 connection 的 session list 调用 delete_sessiontiller 的最佳实践cleanup 活跃 runtime 时优先调用 `session/delete`不支持则调用 `session/close`都不支持则本地 cancel/cleanup不要把 close 当 delete也不要把 delete 当 close参考链接acp rfd `https//agentclientprotocolcom/rfds/session-delete``https//agentclientprotocolcom/rfds/session-close`zed 仓库 `https//githubcom/zed-industries/zed`",
+      "category": "Context",
+      "created_at": "2026-04-29T07:23:06.568846500Z",
+      "updated_at": "2026-04-29T07:23:06.568846500Z"
+    },
+    {
+      "id": "0e7f1643-544b-453a-a483-77ef90ba621f",
+      "content": "Tiller 项目外部调研固定资料源：ACP 协议官网为 `https://agentclientprotocol.com/`，用于查询 Agent Client Protocol 的协议细节、RFD、官方文档与能力定义；Zed 项目仓库为 `https://github.com/zed-industries/zed`，用于参考 ACP client/agent 集成方式、session/model/tool-call 等实现约定。后续涉及 ACP 协议细节或 Zed 实现约定时，应优先回忆并使用这些资料源与已保存结论，避免重复确认基础地址。",
+      "content_normalized": "tiller 项目外部调研固定资料源acp 协议官网为 `https//agentclientprotocolcom/`用于查询 agent client protocol 的协议细节rfd官方文档与能力定义zed 项目仓库为 `https//githubcom/zed-industries/zed`用于参考 acp client/agent 集成方式session/model/tool-call 等实现约定后续涉及 acp 协议细节或 zed 实现约定时应优先回忆并使用这些资料源与已保存结论避免重复确认基础地址",
+      "category": "Context",
+      "created_at": "2026-04-29T07:32:01.031178900Z",
+      "updated_at": "2026-04-29T07:32:01.031178900Z"
+    }
+  ],
+  "deleted_entries": [],
+  "last_dedup_at": "2026-04-29T07:33:32.395266400Z",
+  "config": {
+    "similarity_threshold": 0.7,
+    "dedup_on_startup": true,
+    "enable_dedup": true
+  }
+}

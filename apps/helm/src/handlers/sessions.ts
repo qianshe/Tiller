@@ -1,3 +1,4 @@
+import { normalizeProviderCleanupResult, type ProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
 import type { SessionSummary } from "@tiller/shared";
@@ -242,13 +243,15 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         return true;
       }
       const provider = record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
+      let remoteResult;
       if (record) {
         context.sessions.delete(summary.id);
-        record.runtime.cancel();
+        remoteResult = normalizeProviderCleanupResult(await cleanupActiveRuntime(record.runtime, provider?.id ?? summary.agentId));
+      } else {
+        remoteResult = resolveSessionCleanupOutcome(summary, provider);
       }
       context.clearPermissionRequestsForSession(summary.id);
       context.deleteLocalSessionData(summary.id);
-      const remoteResult = resolveSessionCleanupOutcome(summary, provider);
       context.broadcastAuthenticated({
         type: "session.cleanup.result",
         requestId: payload.requestId,
@@ -267,3 +270,28 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return false;
   }
 };
+export async function cleanupActiveRuntime(runtime: {
+  sessionCapabilities?: { sessionDelete?: boolean; sessionClose?: boolean };
+  deleteSession?: () => Promise<ProviderCleanupResult>;
+  close?: () => Promise<ProviderCleanupResult>;
+  cancel: () => void;
+}, providerId: string): Promise<ProviderCleanupResult> {
+  if (runtime.sessionCapabilities?.sessionDelete && runtime.deleteSession) {
+    const deleted = await runtime.deleteSession();
+    runtime.cancel();
+    if (deleted.kind === "remote-deleted") {
+      return deleted;
+    }
+  }
+
+  if (runtime.sessionCapabilities?.sessionClose && runtime.close) {
+    return runtime.close();
+  }
+
+  runtime.cancel();
+  return {
+    kind: "unsupported",
+    providerId,
+    message: "ACP agent did not advertise session/delete or session/close; cleaned local Tiller session and terminated the local runtime process only.",
+  };
+}

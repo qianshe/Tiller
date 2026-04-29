@@ -25,7 +25,11 @@ export type AgentCapabilities = {
   sessionResume?: boolean;
   /** ACP session/list support: discovers agent-side sessions. */
   sessionList?: boolean;
-  /** @deprecated Use sessionLoad/sessionResume/sessionList. */
+  /** ACP session/close support: closes a live agent session and releases runtime resources. */
+  sessionClose?: boolean;
+  /** ACP session/delete support: removes an agent-side session from history/list storage. */
+  sessionDelete?: boolean;
+  /** @deprecated Use sessionLoad/sessionResume/sessionList/sessionClose/sessionDelete. */
   resumeMode?: RuntimeResumeMode;
   cancellation?: boolean;
   imageInput?: boolean;

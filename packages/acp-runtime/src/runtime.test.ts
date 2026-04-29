@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   applySessionLaunchOverrides,
   buildOpenCodeConfigOverride,
+  buildSessionCloseRequest,
+  buildSessionDeleteRequest,
   buildSessionLoadRequest,
   buildSessionNewRequest,
   buildSessionPromptRequest,
@@ -66,14 +68,36 @@ test("buildSessionResumeRequest uses ACP session/resume shape", () => {
   });
 });
 
+test("buildSessionCloseRequest uses ACP session/close shape", () => {
+  assert.deepEqual(buildSessionCloseRequest("req-close", "sess_123"), {
+    jsonrpc: "2.0",
+    id: "req-close",
+    method: "session/close",
+    params: { sessionId: "sess_123" },
+  });
+});
+
+test("buildSessionDeleteRequest uses ACP session/delete shape", () => {
+  assert.deepEqual(buildSessionDeleteRequest("req-delete", "sess_123"), {
+    jsonrpc: "2.0",
+    id: "req-delete",
+    method: "session/delete",
+    params: { sessionId: "sess_123" },
+  });
+});
+
 test("resolveSessionCapabilities reads initialize and provider capability hints", () => {
   assert.deepEqual(
     resolveSessionCapabilities({ capabilities: { session: { load: true, resume: true, list: true } } }),
-    { sessionLoad: true, sessionResume: true, sessionList: true },
+    { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: false, sessionDelete: false },
   );
   assert.deepEqual(
     resolveSessionCapabilities({}, { id: "agent", name: "Agent", command: "agent", transport: "stdio", protocol: "acp", capabilities: { sessionResume: true } }),
-    { sessionLoad: false, sessionResume: true, sessionList: false },
+    { sessionLoad: false, sessionResume: true, sessionList: false, sessionClose: false, sessionDelete: false },
+  );
+  assert.deepEqual(
+    resolveSessionCapabilities({ capabilities: { session: { close: true, delete: true } } }),
+    { sessionLoad: false, sessionResume: false, sessionList: false, sessionClose: true, sessionDelete: true },
   );
 });
 

@@ -502,6 +502,8 @@ function resolveSessionRestoreCapabilities(
     sessionLoad: Boolean(runtimeCapabilities?.sessionLoad ?? descriptor?.capabilities?.sessionLoad ?? agent?.capabilities?.sessionLoad),
     sessionResume: Boolean(runtimeCapabilities?.sessionResume ?? descriptor?.capabilities?.sessionResume ?? agent?.capabilities?.sessionResume),
     sessionList: Boolean(runtimeCapabilities?.sessionList ?? descriptor?.capabilities?.sessionList ?? agent?.capabilities?.sessionList),
+    sessionClose: Boolean(runtimeCapabilities?.sessionClose ?? descriptor?.capabilities?.sessionClose ?? agent?.capabilities?.sessionClose),
+    sessionDelete: Boolean(runtimeCapabilities?.sessionDelete ?? descriptor?.capabilities?.sessionDelete ?? agent?.capabilities?.sessionDelete),
   };
 }
 
@@ -606,7 +608,14 @@ function persistRuntimeDescriptor(
   capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
 ) {
   const resolvedCapabilities = resolveSessionRestoreCapabilities(agent, sessionRuntimeStore.get(summary.id), capabilities);
-  if (!summary.runtimeSessionId && !resolvedCapabilities.sessionLoad && !resolvedCapabilities.sessionResume && !resolvedCapabilities.sessionList) {
+  if (
+    !summary.runtimeSessionId &&
+    !resolvedCapabilities.sessionLoad &&
+    !resolvedCapabilities.sessionResume &&
+    !resolvedCapabilities.sessionList &&
+    !resolvedCapabilities.sessionClose &&
+    !resolvedCapabilities.sessionDelete
+  ) {
     return;
   }
 

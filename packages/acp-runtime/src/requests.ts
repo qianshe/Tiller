@@ -68,6 +68,31 @@ export function buildSessionPromptRequest(id: string, sessionId: string, text: s
   };
 }
 
+
+export function buildSessionCloseRequest(id: string, sessionId: string, agent?: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/close",
+    params: {
+      sessionId,
+      ...(agent ? { agent } : {}),
+    },
+  };
+}
+
+export function buildSessionDeleteRequest(id: string, sessionId: string, agent?: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/delete",
+    params: {
+      sessionId,
+      ...(agent ? { agent } : {}),
+    },
+  };
+}
+
 export function buildSessionSetModelRequest(id: string, sessionId: string, modelId: string) {
   return {
     jsonrpc: "2.0",

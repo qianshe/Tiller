@@ -543,6 +543,20 @@ export function normalizeProviderCleanupResult(result: ProviderCleanupResult) {
         providerId: result.providerId,
         message: result.message,
       };
+    case "remote-closed":
+      return {
+        remoteDeleted: false,
+        remoteDeletionAttempted: true,
+        providerId: result.providerId,
+        message: result.message,
+      };
+    case "remote-close-failed":
+      return {
+        remoteDeleted: false,
+        remoteDeletionAttempted: true,
+        providerId: result.providerId,
+        message: result.message,
+      };
     case "unsupported":
     default:
       return {

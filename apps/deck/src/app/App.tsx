@@ -537,6 +537,8 @@ export function App() {
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
+  const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
+  const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
   const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
@@ -662,8 +664,39 @@ export function App() {
     setActiveView(view);
   }
 
+  function toggleMissionHelmNode(helmId: string) {
+    setSelectedMissionHelmId(helmId);
+    setExpandedMissionHelmIds((current) => {
+      const next = new Set(current);
+      if (next.has(helmId)) {
+        next.delete(helmId);
+      } else {
+        next.add(helmId);
+      }
+      return next;
+    });
+  }
+
+  function toggleMissionProjectNode(projectId: string) {
+    const project = projects.find((item) => item.id === projectId);
+    if (project) {
+      setSelectedMissionHelmId(project.helmId);
+      setSelectedProjectId(projectId);
+    }
+    setExpandedMissionProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  }
+
   function selectMissionHelm(helmId: string) {
     setSelectedMissionHelmId(helmId);
+    setExpandedMissionHelmIds((current) => new Set([...current, helmId]));
     const nextProject = projects.find((project) => project.helmId === helmId) ?? null;
     setSelectedProjectId(nextProject?.id ?? null);
     setActiveSessionId(nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null);
@@ -673,6 +706,8 @@ export function App() {
     const project = projects.find((item) => item.id === projectId);
     if (project) {
       setSelectedMissionHelmId(project.helmId);
+      setExpandedMissionHelmIds((current) => new Set([...current, project.helmId]));
+      setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
     }
     setSelectedProjectId(projectId);
     setActiveSessionId((current) => {
@@ -727,6 +762,18 @@ export function App() {
       setSelectedProjectId(missionProjects[0].id);
     }
   }, [missionProjects, selectedProjectId]);
+
+  useEffect(() => {
+    if (effectiveMissionHelmId) {
+      setExpandedMissionHelmIds((current) => current.has(effectiveMissionHelmId) ? current : new Set([...current, effectiveMissionHelmId]));
+    }
+  }, [effectiveMissionHelmId]);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      setExpandedMissionProjectIds((current) => current.has(selectedProjectId) ? current : new Set([...current, selectedProjectId]));
+    }
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -2406,7 +2453,7 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
-    const missionSidebarWidth = missionSidebarCollapsed ? 48 : missionPaneWidths.sidebar;
+    const missionSidebarWidth = missionSidebarCollapsed ? 0 : missionPaneWidths.sidebar;
     const activeMissionHelm = missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ?? activeHelm;
     const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
@@ -2558,117 +2605,155 @@ export function App() {
         ) : (
           <>
             <aside className={`chat-session-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} aria-label="任务导航：Helm、项目与任务">
-              <button
-                type="button"
-                className="mission-sidebar-toggle"
-                onClick={() => setMissionSidebarCollapsed((current) => !current)}
-                aria-expanded={!missionSidebarCollapsed}
-                aria-label={missionSidebarCollapsed ? "展开任务导航" : "收起任务导航"}
-                title={missionSidebarCollapsed ? "展开任务导航" : "收起任务导航"}
-              >
-                {missionSidebarCollapsed ? "›" : "‹"}
-              </button>
+              {!missionSidebarCollapsed ? (
+                <button
+                  type="button"
+                  className="mission-sidebar-toggle"
+                  onClick={() => setMissionSidebarCollapsed(true)}
+                  aria-expanded="true"
+                  aria-label="收起任务导航"
+                  title="收起任务导航"
+                >
+                  ‹
+                </button>
+              ) : null}
 
               {missionSidebarCollapsed ? null : (
-                <>
-                  <div className="sidebar-section helm-switcher">
-                    <div className="section-head section-head-soft sidebar-heading-block">
-                      <div>
-                        <h2>Helm</h2>
-                        <p className="muted compact">先选 Helm，再进入该 Helm 下的项目。</p>
-                      </div>
-                    </div>
-                    <div className="project-nav-list mission-helm-nav-list">
-                      {missionHelms.map((helm) => {
-                        const selected = helm.id === effectiveMissionHelmId;
-                        const helmProjectCount = projects.filter((project) => project.helmId === helm.id).length;
-                        return (
-                          <button
-                            key={helm.id}
-                            type="button"
-                            className={`project-nav-item mission-helm-nav-item ${selected ? "active" : ""}`}
-                            onClick={() => selectMissionHelm(helm.id)}
-                          >
-                            <strong>{helm.name}</strong>
-                            <span>{helm.host}:{helm.port} · {helmProjectCount} 项目</span>
-                          </button>
-                        );
-                      })}
-                      {!missionHelms.length ? <div className="empty-state sidebar-empty">暂无 Helm。</div> : null}
+                <div className="sidebar-section mission-tree-switcher">
+                  <div className="section-head section-head-soft sidebar-heading-block">
+                    <div>
+                      <h2>项目</h2>
+                      <p className="muted compact">Helm → Project → Session（绑定 ACP）</p>
                     </div>
                   </div>
-
-                  <div className="sidebar-section project-switcher">
-                    <div className="section-head section-head-soft sidebar-heading-block">
-                      <div>
-                        <h2>项目</h2>
-                        <p className="muted compact">当前 Helm：{activeMissionHelm?.name ?? "未选择"} · {activeMissionHelmProjectCount} 项目</p>
-                      </div>
-                    </div>
-                    <div className="project-nav-list">
-                      {missionProjects.map((project) => {
-                        const selected = project.id === selectedProjectId;
-                        return (
+                  <div className="mission-tree" role="tree" aria-label="任务层级树">
+                    {missionHelms.map((helm) => {
+                      const selectedHelm = helm.id === effectiveMissionHelmId;
+                      const helmExpanded = expandedMissionHelmIds.has(helm.id);
+                      const helmProjects = projects.filter((project) => project.helmId === helm.id);
+                      return (
+                        <div key={helm.id} className="mission-tree-group" role="group">
                           <button
-                            key={project.id}
                             type="button"
-                            className={`project-nav-item ${selected ? "active" : ""}`}
-                            onClick={() => selectProject(project.id)}
+                            className={`mission-tree-row mission-tree-row-helm ${selectedHelm ? "active" : ""}`}
+                            onClick={() => toggleMissionHelmNode(helm.id)}
+                            role="treeitem"
+                            aria-selected={selectedHelm}
                           >
-                            <strong>{project.name}</strong>
-                            <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
-                          </button>
-                        );
-                      })}
-                      {!missionProjects.length ? <div className="empty-state sidebar-empty">这个 Helm 还没有项目。</div> : null}
-                    </div>
-                  </div>
-
-                  <div className="sidebar-section session-switcher">
-                    <div className="section-head section-head-soft sidebar-heading-block">
-                      <div>
-                        <h2>任务</h2>
-                        <p className="muted compact">当前项目：{draftProject?.name ?? "未选择"} · Session 绑定 ACP</p>
-                      </div>
-                    </div>
-                    <button type="button" className={`chat-session-item ${!activeSession ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
-                      <strong>新任务</strong>
-                      <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择项目"}</span>
-                    </button>
-                    {projectSessions.length ? (
-                      projectSessions.map((session) => (
-                        <div key={session.id} className={`session-nav-card ${session.id === activeSessionId ? "active" : ""}`}>
-                          <button type="button" className="chat-session-item session-nav-button" onClick={() => openSession(session.id)}>
-                            <span className="session-nav-title-row">
-                              <strong>{resolveSessionTitle(session)}</strong>
-                              <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
+                            <span className="mission-tree-caret">{helmExpanded ? "▾" : "▸"}</span>
+                            <span className="mission-tree-icon">⎈</span>
+                            <span className="mission-tree-main">
+                              <strong>{helm.name}</strong>
+                              <span>{helm.host}:{helm.port} · {helmProjects.length} 项目</span>
                             </span>
-                            <span className="session-nav-meta">ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
-                            <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "等待模型"}`}</span>
                           </button>
-                          <div className="session-nav-actions">
-                            <button
-                              type="button"
-                              className="session-inline-action"
-                              aria-label={`清理 ${resolveSessionTitle(session)}`}
-                              title="清理任务"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                cleanupSession(session.id);
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
+                          {helmExpanded ? (
+                            <div className="mission-tree-children mission-tree-children-projects" role="group">
+                              {helmProjects.map((project) => {
+                              const selectedProject = project.id === selectedProjectId;
+                              const projectExpanded = expandedMissionProjectIds.has(project.id);
+                              const projectNodeSessions = sessions.filter((session) => session.projectId === project.id);
+                              return (
+                                <div key={project.id} className="mission-tree-group" role="group">
+                                  <button
+                                    type="button"
+                                    className={`mission-tree-row mission-tree-row-project ${selectedProject ? "active" : ""}`}
+                                    onClick={() => toggleMissionProjectNode(project.id)}
+                                    role="treeitem"
+                                    aria-selected={selectedProject}
+                                  >
+                                    <span className="mission-tree-caret">{projectExpanded ? "▾" : "▸"}</span>
+                                    <span className="mission-tree-icon">{projectExpanded ? "📂" : "📁"}</span>
+                                    <span className="mission-tree-main">
+                                      <strong>{project.name}</strong>
+                                      <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
+                                    </span>
+                                  </button>
+                                  {projectExpanded ? (
+                                    <div className="mission-tree-children mission-tree-children-sessions" role="group">
+                                      {selectedProject ? (
+                                      <button
+                                        type="button"
+                                        className={`mission-tree-row mission-tree-row-session mission-tree-row-new ${!activeSession ? "active" : ""}`}
+                                        onClick={() => {
+                                          setSelectedMissionHelmId(project.helmId);
+                                          setSelectedProjectId(project.id);
+                                          setActiveSessionId(null);
+                                        }}
+                                        role="treeitem"
+                                        aria-selected={!activeSession}
+                                      >
+                                        <span className="mission-tree-caret" />
+                                        <span className="mission-tree-icon">＋</span>
+                                        <span className="mission-tree-main">
+                                          <strong>新任务</strong>
+                                          <span>选择 ACP 后创建 Session</span>
+                                        </span>
+                                      </button>
+                                    ) : null}
+                                    {projectNodeSessions.length ? (
+                                      projectNodeSessions.map((session) => (
+                                        <div key={session.id} className={`mission-tree-session-row ${session.id === activeSessionId ? "active" : ""}`}>
+                                          <button
+                                            type="button"
+                                            className="mission-tree-row mission-tree-row-session"
+                                            onClick={() => openSession(session.id)}
+                                            role="treeitem"
+                                            aria-selected={session.id === activeSessionId}
+                                          >
+                                            <span className="mission-tree-caret" />
+                                            <span className="mission-tree-icon">◆</span>
+                                            <span className="mission-tree-main">
+                                              <strong>{resolveSessionTitle(session)}</strong>
+                                              <span>ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
+                                            </span>
+                                            <span className="mission-tree-time">{formatRelativeTime(session.updatedAt)}</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="session-inline-action mission-tree-cleanup"
+                                            aria-label={`清理 ${resolveSessionTitle(session)}`}
+                                            title="清理任务"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              cleanupSession(session.id);
+                                            }}
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                      ))
+                                      ) : selectedProject ? (
+                                        <div className="mission-tree-empty">这个项目还没有任务。</div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                              })}
+                              {!helmProjects.length ? <div className="mission-tree-empty">这个 Helm 还没有项目。</div> : null}
+                            </div>
+                          ) : null}
                         </div>
-                      ))
-                    ) : (
-                      <div className="empty-state sidebar-empty">这个项目还没有任务。</div>
-                    )}
+                      );
+                    })}
+                    {!missionHelms.length ? <div className="empty-state sidebar-empty">暂无 Helm。</div> : null}
                   </div>
-                </>
+                </div>
               )}
             </aside>
+            {missionSidebarCollapsed ? (
+              <button
+                type="button"
+                className="mission-sidebar-toggle mission-sidebar-floating-toggle"
+                onClick={() => setMissionSidebarCollapsed(false)}
+                aria-expanded="false"
+                aria-label="展开任务导航"
+                title="展开任务导航"
+              >
+                ›
+              </button>
+            ) : null}
             {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
 
             <div className="chat-conversation">

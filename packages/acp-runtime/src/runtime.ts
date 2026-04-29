@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "./config-adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasOpenCodePortArg, hasSessionConfigOptionValue, mapPermissionRequest, mapSessionUpdateNotification, normalizeProviderCleanupResult, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
-import { buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 import type {
   AcpAgentProvider,
   AcpModelOption,
@@ -27,7 +27,9 @@ const ACP_EARLY_STDERR_FAILURE = /failed to start server|eaddrinuse|address alre
 export type ProviderCleanupResult =
   | { kind: "unsupported"; providerId: string; message: string }
   | { kind: "remote-deleted"; providerId: string; message: string }
-  | { kind: "remote-delete-failed"; providerId: string; message: string };
+  | { kind: "remote-delete-failed"; providerId: string; message: string }
+  | { kind: "remote-closed"; providerId: string; message: string }
+  | { kind: "remote-close-failed"; providerId: string; message: string };
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const LOGS_DIR = resolve(REPO_ROOT, "logs");
 const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
@@ -97,6 +99,8 @@ export type DetectedAcpSessionCapabilities = {
   sessionLoad?: boolean;
   sessionResume?: boolean;
   sessionList?: boolean;
+  sessionClose?: boolean;
+  sessionDelete?: boolean;
 };
 
 export type AcpSessionConfigOptionValue = string | boolean;
@@ -636,6 +640,59 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     });
   };
 
+  const deleteSession = async () => {
+    if (!sessionCapabilities.sessionDelete) {
+      return {
+        kind: "unsupported" as const,
+        providerId: options.agent.id,
+        message: `${options.agent.name} does not advertise ACP session/delete.`,
+      };
+    }
+
+    try {
+      await sendRequest(buildSessionDeleteRequest(nextRpcId(), sessionToken, preferredAgent), 15_000);
+      return {
+        kind: "remote-deleted" as const,
+        providerId: options.agent.id,
+        message: `${options.agent.name} remote session deleted: ${sessionToken}`,
+      };
+    } catch (error) {
+      return {
+        kind: "remote-delete-failed" as const,
+        providerId: options.agent.id,
+        message: error instanceof Error ? error.message : `Failed to delete remote session ${sessionToken}`,
+      };
+    }
+  };
+
+  const close = async () => {
+    if (!sessionCapabilities.sessionClose) {
+      terminateChildProcess(child.pid);
+      return {
+        kind: "unsupported" as const,
+        providerId: options.agent.id,
+        message: `${options.agent.name} does not advertise ACP session/close; terminated local runtime process only.`,
+      };
+    }
+
+    try {
+      await sendRequest(buildSessionCloseRequest(nextRpcId(), sessionToken, preferredAgent), 15_000);
+      terminateChildProcess(child.pid);
+      return {
+        kind: "remote-closed" as const,
+        providerId: options.agent.id,
+        message: `${options.agent.name} remote session closed: ${sessionToken}`,
+      };
+    } catch (error) {
+      terminateChildProcess(child.pid);
+      return {
+        kind: "remote-close-failed" as const,
+        providerId: options.agent.id,
+        message: error instanceof Error ? error.message : `Failed to close remote session ${sessionToken}`,
+      };
+    }
+  };
+
   const cancel = () => {
     cancelled = true;
     terminateChildProcess(child.pid);
@@ -650,6 +707,8 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     prompt,
     configure,
     respondPermission,
+    deleteSession,
+    close,
     cancel,
     supportsPermissionResponses: true,
   };
@@ -682,6 +741,20 @@ export function resolveSessionCapabilities(initializeResult: any, provider?: Acp
         capabilities.sessionList ??
         nestedSession.list ??
         nestedSession.listSessions,
+    ),
+    sessionClose: Boolean(
+      providerCapabilities.sessionClose ??
+        capabilities.closeSession ??
+        capabilities.sessionClose ??
+        nestedSession.close ??
+        nestedSession.closeSession,
+    ),
+    sessionDelete: Boolean(
+      providerCapabilities.sessionDelete ??
+        capabilities.deleteSession ??
+        capabilities.sessionDelete ??
+        nestedSession.delete ??
+        nestedSession.deleteSession,
     ),
   };
 }
@@ -769,7 +842,7 @@ function sanitizeLogToken(value: string) {
 
 
 
-export { buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 

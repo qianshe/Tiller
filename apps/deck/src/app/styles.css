@@ -6437,7 +6437,7 @@ textarea:focus,
   }
 }
 
-/* Mission hierarchy sidebar: Helm -> Project -> Session, with a compact rail state. */
+/* Mission hierarchy sidebar: Helm -> Project -> Session, with a zero-width collapsed state. */
 .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
   grid-template-columns:
     0
@@ -6459,11 +6459,12 @@ textarea:focus,
   background: transparent;
 }
 
-.view-sessions .chat-session-sidebar.collapsed .mission-sidebar-toggle {
+.mission-sidebar-floating-toggle {
   position: fixed;
   left: 12px;
-  bottom: 12px;
-  top: auto;
+  top: 12px;
+  bottom: auto;
+  z-index: 40;
   margin: 0;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 }
@@ -6493,6 +6494,15 @@ textarea:focus,
   border-color: rgba(96, 165, 250, 0.45);
   background: rgba(37, 99, 235, 0.24);
   outline: none;
+}
+
+.mission-sidebar-toggle.mission-sidebar-floating-toggle {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  bottom: auto;
+  z-index: 40;
+  margin: 0;
 }
 
 .mission-helm-nav-item strong::before {
@@ -7749,4 +7759,233 @@ textarea:focus,
   }
 }
 
+/* Mission project tree: file-explorer style Helm -> Project -> Session hierarchy. */
+.view-sessions .mission-tree-switcher {
+  gap: 12px;
+}
+
+.view-sessions .mission-tree {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0 8px;
+}
+
+.view-sessions .mission-tree-group {
+  display: grid;
+  gap: 2px;
+}
+
+.view-sessions .mission-tree-children {
+  display: grid;
+  gap: 2px;
+  position: relative;
+}
+
+.view-sessions .mission-tree-children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 4px;
+  left: 18px;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .mission-tree-children-projects {
+  margin-left: 14px;
+}
+
+.view-sessions .mission-tree-children-sessions {
+  margin-left: 18px;
+}
+
+.view-sessions .mission-tree-row {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 14px 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #dbe7f7;
+  text-align: left;
+}
+
+.view-sessions .mission-tree-row:hover {
+  background: rgba(96, 165, 250, 0.10);
+}
+
+.view-sessions .mission-tree-row.active,
+.view-sessions .mission-tree-session-row.active .mission-tree-row {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: rgba(37, 99, 235, 0.20);
+  box-shadow: inset 2px 0 0 #60a5fa;
+}
+
+.view-sessions .mission-tree-caret,
+.view-sessions .mission-tree-icon {
+  display: inline-grid;
+  place-items: center;
+  color: #8fb4e8;
+  font-size: 0.78rem;
+}
+
+.view-sessions .mission-tree-main {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.view-sessions .mission-tree-main strong,
+.view-sessions .mission-tree-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-tree-main strong {
+  color: #eef4ff;
+  font-size: 0.92rem;
+}
+
+.view-sessions .mission-tree-main span,
+.view-sessions .mission-tree-time {
+  color: #95a3ba;
+  font-size: 0.76rem;
+}
+
+.view-sessions .mission-tree-row-project {
+  grid-template-columns: 14px 20px minmax(0, 1fr) auto;
+}
+
+.view-sessions .mission-tree-row-session {
+  min-height: 32px;
+  grid-template-columns: 14px 18px minmax(0, 1fr) auto;
+  padding-block: 5px;
+}
+
+.view-sessions .mission-tree-row-new .mission-tree-icon {
+  color: #bfdbfe;
+  font-weight: 900;
+}
+
+.view-sessions .mission-tree-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 2px;
+  border-radius: 9px;
+}
+
+.view-sessions .mission-tree-cleanup {
+  align-self: stretch;
+  opacity: 0;
+}
+
+.view-sessions .mission-tree-session-row:hover .mission-tree-cleanup,
+.view-sessions .mission-tree-session-row.active .mission-tree-cleanup {
+  opacity: 1;
+}
+
+.view-sessions .mission-tree-empty {
+  margin: 4px 0 4px 42px;
+  padding: 7px 9px;
+  border: 1px dashed rgba(148, 163, 184, 0.16);
+  border-radius: 9px;
+  color: #8391a8;
+  font-size: 0.8rem;
+}
+
+/* Mission tree VSCode explorer tuning: compact rows instead of card-like sections. */
+.view-sessions .mission-tree-switcher .section-head {
+  padding: 6px 2px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .mission-tree-switcher .section-head h2 {
+  font-size: 0.9rem;
+}
+
+.view-sessions .mission-tree {
+  gap: 0;
+  font-size: 0.86rem;
+}
+
+.view-sessions .mission-tree-children::before {
+  display: none;
+}
+
+.view-sessions .mission-tree-children-projects,
+.view-sessions .mission-tree-children-sessions {
+  margin-left: 0;
+}
+
+.view-sessions .mission-tree-row {
+  min-height: 24px;
+  grid-template-columns: 12px 16px minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .mission-tree-row-project {
+  padding-left: 18px;
+}
+
+.view-sessions .mission-tree-row-session {
+  min-height: 24px;
+  padding-left: 34px;
+}
+
+.view-sessions .mission-tree-row:hover {
+  background: rgba(148, 163, 184, 0.10);
+}
+
+.view-sessions .mission-tree-row.active,
+.view-sessions .mission-tree-session-row.active .mission-tree-row {
+  border: 0;
+  background: rgba(96, 165, 250, 0.16);
+  box-shadow: none;
+}
+
+.view-sessions .mission-tree-row-helm .mission-tree-main strong {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.view-sessions .mission-tree-main strong {
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.view-sessions .mission-tree-main span,
+.view-sessions .mission-tree-time {
+  display: none;
+}
+
+.view-sessions .mission-tree-session-row {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  gap: 0;
+}
+
+.view-sessions .mission-tree-cleanup {
+  min-width: 22px;
+  height: 22px;
+}
+
+.view-sessions .mission-tree-empty {
+  margin: 2px 0 2px 34px;
+  padding: 4px 6px;
+  border: 0;
+  color: #7f8da3;
+  font-size: 0.78rem;
+}
 
