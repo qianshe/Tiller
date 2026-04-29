@@ -70,9 +70,10 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
-      context.logInfo(`[tiller-helm] session.config.options ${runtimeLogScope(sessionId, context)} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
+      context.logInfo(`[tiller-helm] session.config.options ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
+        agentMode: event.state.agentMode ?? current.agentMode,
         model: event.state.model ?? current.model,
         reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
         updatedAt: new Date().toISOString(),

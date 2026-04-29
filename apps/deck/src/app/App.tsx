@@ -185,7 +185,7 @@ type AgentModelOptionsEntry = {
   message?: string;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
-  state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+  state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
 };
 
 function agentModelOptionsKey(providerId: string, workspaceId: string) {
@@ -594,6 +594,7 @@ export function App() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [worktreeGitByProject, setWorktreeGitByProject] = useState<Record<string, { branches: string[]; currentBranch?: string; message?: string; loading?: boolean }>>({});
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
+  const [selectedAgentMode, setSelectedAgentMode] = useState<string>(missionVisualFixture?.sessions[0]?.agentMode ?? "");
   const [selectedModel, setSelectedModel] = useState<string>(missionVisualFixture?.sessions[0]?.model ?? MODEL_OPTIONS[0]);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
@@ -612,7 +613,7 @@ export function App() {
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
-  const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
+  const [missionConfigPicker, setMissionConfigPicker] = useState<"agentMode" | "model" | "reasoning" | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
 
   useEffect(() => {
@@ -723,6 +724,7 @@ export function App() {
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
   const selectedDraftAgent = filteredAgents.find((agent) => agent.id === selectedAgentId) ?? filteredAgents[0] ?? null;
   const draftAgent = agents.find((agent) => agent.id === (activeSession?.agentId ?? selectedAgentId)) ?? null;
+  const draftAgentMode = activeSession ? activeSession.agentMode ?? "" : selectedAgentMode;
   const draftModel = activeSession ? activeSession.model ?? MODEL_OPTIONS[0] : selectedModel;
   const draftReasoningEffort = activeSession ? activeSession.reasoningEffort ?? "medium" : selectedReasoningEffort;
   const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
@@ -735,6 +737,14 @@ export function App() {
     : draftAgentModelOptions?.configOptions ?? resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId);
   const cachedModelSession = activeSession ? null : sessions.find((session) => session.agentId === selectedAgentId && (session.modelOptions?.length ?? 0) > 0);
   const draftNativeModelOptions = activeSession?.modelOptions ?? draftAgentModelOptions?.modelOptions ?? cachedModelSession?.modelOptions ?? [];
+  const draftAgentModeOptions = resolveAgentModeOptions(draftConfigOptions);
+  const effectiveDraftAgentMode = resolveCurrentAgentMode(draftAgentMode, draftConfigOptions, draftAgentModelOptions?.state.agentMode);
+  const showDraftAgentModeSelect = draftAgentModeOptions.length > 0;
+  const draftAgentModePickerLabel = showDraftAgentModeSelect
+    ? draftAgentModeOptions.find((option) => option.value === effectiveDraftAgentMode)?.label ?? effectiveDraftAgentMode ?? "选择 Agent"
+    : draftAgentModelOptions?.loading
+      ? "加载 Agents..."
+      : "暂无 Agent 列表";
   const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions, draftNativeModelOptions);
   const draftAllModelOptions = Array.from(new Set([...draftModelOptions, ...draftNativeModelOptions.map((option) => option.id)]));
   const draftModelParts = splitModelReasoning(draftModel);
@@ -838,18 +848,22 @@ export function App() {
     setActiveSessionId(sessionId);
   }
 
-  function updateSessionDraftPreferences(next: { model?: string; reasoningEffort?: SessionReasoningEffort }) {
+  function updateSessionDraftPreferences(next: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) {
     if (activeSession && socketRef.current) {
       dispatch(socketRef.current, {
         type: "session.configure",
         requestId: nextRequestId(requestCounter),
         sessionId: activeSession.id,
+        agentMode: next.agentMode ?? activeSession.agentMode ?? effectiveDraftAgentMode,
         model: normalizeModelSelection(next.model ?? activeSession.model ?? draftModel),
         reasoningEffort: next.reasoningEffort ?? activeSession.reasoningEffort ?? selectedReasoningEffort,
       });
       return;
     }
 
+    if (typeof next.agentMode === "string") {
+      setSelectedAgentMode(next.agentMode);
+    }
     if (typeof next.model === "string") {
       setSelectedModel(next.model);
     }
@@ -955,6 +969,9 @@ export function App() {
       const nextModel = resolvePreferredModel(cached.state.model, allOptions);
       if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
         setSelectedModel(nextModel);
+      }
+      if (cached.state.agentMode) {
+        setSelectedAgentMode(cached.state.agentMode);
       }
       if (cached.state.reasoningEffort) {
         setSelectedReasoningEffort(cached.state.reasoningEffort);
@@ -1646,6 +1663,9 @@ export function App() {
           if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
             setSelectedModel(nextModel);
           }
+          if (payload.state.agentMode) {
+            setSelectedAgentMode(payload.state.agentMode);
+          }
           if (payload.state.reasoningEffort) {
             setSelectedReasoningEffort(payload.state.reasoningEffort);
           }
@@ -1698,6 +1718,7 @@ export function App() {
               ? {
                   ...session,
                   model: payload.state.model ?? session.model,
+                  agentMode: payload.state.agentMode ?? session.agentMode,
                   reasoningEffort: payload.state.reasoningEffort ?? session.reasoningEffort,
                   updatedAt: new Date().toISOString(),
                 }
@@ -1927,6 +1948,7 @@ export function App() {
       projectId,
       workspaceId,
       agentId,
+      agentMode: selectedAgentMode || undefined,
       model: normalizeModelSelection(selectedModel),
       reasoningEffort: selectedReasoningEffort,
     });
@@ -3071,6 +3093,46 @@ export function App() {
                       <span>◎</span>
                     </div>
                     <div className="mission-composer-config" aria-label="当前任务模型配置">
+                      {showDraftAgentModeSelect ? (
+                        <div
+                          className={`mission-config-picker mission-config-picker-agent ${missionConfigPicker === "agentMode" ? "open" : ""}`}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setMissionConfigPicker(null);
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="mission-config-trigger"
+                            aria-haspopup="listbox"
+                            aria-expanded={missionConfigPicker === "agentMode"}
+                            onClick={() => setMissionConfigPicker((current) => current === "agentMode" ? null : "agentMode")}
+                          >
+                            <span>{draftAgentModePickerLabel}</span>
+                          </button>
+                          {missionConfigPicker === "agentMode" ? (
+                            <div className="mission-config-menu" role="listbox" aria-label="Agent 列表">
+                              {draftAgentModeOptions.map((option) => (
+                                <button
+                                  key={String(option.value)}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={option.value === effectiveDraftAgentMode}
+                                  className={option.value === effectiveDraftAgentMode ? "active" : ""}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSessionDraftPreferences({ agentMode: option.value });
+                                    setMissionConfigPicker(null);
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div
                         className={`mission-config-picker mission-config-picker-model ${missionConfigPicker === "model" ? "open" : ""}`}
                         onBlur={(event) => {
@@ -3191,7 +3253,7 @@ export function App() {
                 {activeSession && deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
                   <>
                     <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                    <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
+                    <p className="subtle compact">ACP：{activeSession.agentName} · Agent：{activeSession.agentMode ?? "默认"} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
                     <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
                   </>
                 ) : null}
@@ -4190,6 +4252,24 @@ function resolveSessionTitle(session: SessionSummary) {
   }
 
   return `${session.projectName} 任务`;
+}
+
+function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");
+  return (option?.options ?? [])
+    .map((item) => ({
+      value: typeof item.value === "string" ? item.value : "",
+      label: item.label ?? item.name ?? String(item.value ?? ""),
+    }))
+    .filter((item) => item.value.trim().length > 0);
+}
+
+function resolveCurrentAgentMode(currentAgentMode: string | undefined, configOptions: SessionConfigOption[] = [], probedAgentMode?: string) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");
+  const currentValue = typeof option?.currentValue === "string" ? option.currentValue : undefined;
+  const selectedValue = typeof option?.selectedValue === "string" ? option.selectedValue : undefined;
+  const value = typeof option?.value === "string" ? option.value : undefined;
+  return currentAgentMode || currentValue || selectedValue || value || probedAgentMode;
 }
 
 function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {

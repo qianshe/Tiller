@@ -103,6 +103,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         workspaceName: workspace.name,
         agentId: agent.id,
         agentName: agent.name,
+        agentMode: payload.agentMode,
         model: payload.model,
         reasoningEffort: payload.reasoningEffort,
         status: "starting" as const,
@@ -120,11 +121,12 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           sessionId,
           workspace,
           agent,
-          sessionConfig: { model: summary.model, reasoningEffort: summary.reasoningEffort },
+          sessionConfig: { agentMode: summary.agentMode, model: summary.model, reasoningEffort: summary.reasoningEffort },
           onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
         });
         const summaryWithRuntime = context.hydrateSessionSummary({
           ...summary,
+          agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
           model: runtime.sessionConfigState?.model ?? summary.model,
           modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
           reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
@@ -191,12 +193,13 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         return true;
       }
       const activeRecord = context.sessions.get(payload.sessionId);
-      const runtimeResult = activeRecord ? await activeRecord.runtime.configure({ model: payload.model, reasoningEffort: payload.reasoningEffort }) : null;
+      const runtimeResult = activeRecord ? await activeRecord.runtime.configure({ agentMode: payload.agentMode, model: payload.model, reasoningEffort: payload.reasoningEffort }) : null;
+      const nextAgentMode = runtimeResult?.state.agentMode ?? payload.agentMode ?? current.agentMode;
       const nextModel = runtimeResult?.state.model ?? payload.model;
       const nextReasoning = runtimeResult?.state.reasoningEffort ?? payload.reasoningEffort;
       const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-      context.updateSessionSummary(payload.sessionId, (summary) => ({ ...summary, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() }));
-      const next = context.hydrateSessionSummary({ ...current, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() });
+      context.updateSessionSummary(payload.sessionId, (summary) => ({ ...summary, agentMode: nextAgentMode, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() }));
+      const next = context.hydrateSessionSummary({ ...current, agentMode: nextAgentMode, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() });
       context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: next });
       return true;
     }

@@ -98,6 +98,7 @@ export type ClientToHelm =
       projectId: string;
       workspaceId: string;
       agentId: string;
+      agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     }
@@ -135,6 +136,7 @@ export type ClientToHelm =
       type: "session.configure";
       requestId: string;
       sessionId: string;
+      agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     }
@@ -256,7 +258,7 @@ export type HelmToClient =
       currentModelId?: string;
       modelOptions: AcpModelOption[];
       configOptions: SessionConfigOption[];
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
     }
   | {
       type: "agent.save.result";
@@ -316,7 +318,7 @@ export type HelmToClient =
   | {
       type: "session.config.options";
       sessionId: string;
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
       options: SessionConfigOption[];
     }
   | {

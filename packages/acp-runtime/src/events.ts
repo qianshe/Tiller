@@ -210,6 +210,11 @@ export function hasOpenCodePortArg(args: string[]) {
 
 export function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {
   const state: AcpSessionConfigState = {};
+  const agentModeValue = readSessionConfigValue(configOptions, "mode");
+  if (typeof agentModeValue === "string" && agentModeValue) {
+    state.agentMode = agentModeValue;
+  }
+
   const modelValue = readSessionConfigValue(configOptions, "model");
   if (typeof modelValue === "string" && modelValue) {
     state.model = modelValue;

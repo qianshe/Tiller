@@ -190,6 +190,8 @@ export type SessionSummary = {
   workspaceName: string;
   agentId: string;
   agentName: string;
+  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
+  agentMode?: string;
   model?: string;
   modelOptions?: AcpModelOption[];
   reasoningEffort?: SessionReasoningEffort;

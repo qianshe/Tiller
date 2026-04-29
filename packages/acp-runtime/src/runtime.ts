@@ -85,6 +85,7 @@ export type AcpRuntimeOptions = {
   workspace: WorkspaceSummary;
   agent: AcpAgentProvider;
   sessionConfig?: {
+    agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
   };
@@ -116,6 +117,7 @@ export type AcpSessionConfigOption = {
 };
 
 export type AcpSessionConfigState = {
+  agentMode?: string;
   model?: string;
   reasoningEffort?: SessionReasoningEffort;
 };
@@ -510,6 +512,41 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     currentModelState = extractAcpModelState(sessionResult);
   }
 
+  const applyConfigOption = async (
+    category: "mode" | "model" | "thought_level",
+    value: string | undefined,
+    timeoutMs = 15_000,
+  ) => {
+    if (!value) {
+      return false;
+    }
+
+    const optionId = findSessionConfigOptionId(currentConfigOptions, category);
+    if (!optionId) {
+      return false;
+    }
+
+    const result = await sendRequest<any>({
+      jsonrpc: "2.0",
+      id: nextRpcId(),
+      method: "session/set_config_option",
+      params: {
+        sessionId: sessionToken,
+        optionId,
+        value,
+      },
+    }, timeoutMs);
+    const nextOptions = extractSessionConfigOptions(result);
+    if (nextOptions.length) {
+      currentConfigOptions = nextOptions;
+    }
+    return true;
+  };
+
+  if (options.sessionConfig?.agentMode && hasSessionConfigOptionValue(currentConfigOptions, "mode", options.sessionConfig.agentMode)) {
+    await applyConfigOption("mode", options.sessionConfig.agentMode);
+  }
+
   if (currentModelState?.options.length) {
     options.onEvent({
       type: "model-options",
@@ -540,41 +577,26 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     }
   };
 
-  const configure = async (nextConfig: { model?: string; reasoningEffort?: SessionReasoningEffort }) => {
+  const configure = async (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) => {
     let runtimeApplied = false;
 
-    const applyOption = async (category: "model" | "thought_level", value: string | undefined) => {
-      if (!value) {
+    const applyOption = async (category: "mode" | "model" | "thought_level", value: string | undefined) => {
+      const applied = await applyConfigOption(category, value);
+      if (!applied) {
         return false;
       }
-
-      const optionId = findSessionConfigOptionId(currentConfigOptions, category);
-      if (!optionId) {
-        return false;
-      }
-
-      const result = await sendRequest<any>({
-        jsonrpc: "2.0",
-        id: nextRpcId(),
-        method: "session/set_config_option",
-        params: {
-          sessionId: sessionToken,
-          optionId,
-          value,
-        },
-      }, 15_000);
-      const nextOptions = extractSessionConfigOptions(result);
-      if (nextOptions.length) {
-        currentConfigOptions = nextOptions;
-        options.onEvent({
-          type: "config-options",
-          state: resolveSessionConfigState(currentConfigOptions),
-          options: currentConfigOptions,
-        });
-      }
+      options.onEvent({
+        type: "config-options",
+        state: resolveSessionConfigState(currentConfigOptions),
+        options: currentConfigOptions,
+      });
       runtimeApplied = true;
       return true;
     };
+
+    if (nextConfig.agentMode && hasSessionConfigOptionValue(currentConfigOptions, "mode", nextConfig.agentMode)) {
+      await applyOption("mode", nextConfig.agentMode);
+    }
 
     if (nextConfig.model && hasSessionConfigOptionValue(currentConfigOptions, "model", nextConfig.model)) {
       await applyOption("model", nextConfig.model);

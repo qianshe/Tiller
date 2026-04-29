@@ -90,6 +90,29 @@ function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: str
   }
 }
 
+async function persistProjectGitInfoIfAvailable(project: ProjectSummary, workspaces: WorkspaceSummary[], configPath: string) {
+  const projectRoot = resolveProjectRoot(project, workspaces);
+  if (!projectRoot) {
+    return false;
+  }
+
+  try {
+    const gitRoot = await resolveGitRoot(projectRoot);
+    const gitInfo = await listGitBranches(gitRoot);
+    if (!gitInfo.branches.length) {
+      return false;
+    }
+
+    persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+    return true;
+  } catch (error) {
+    if (isNonGitRepositoryError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 async function createProjectWorktree(project: ProjectSummary, workspaces: WorkspaceSummary[], branchNameInput: string, configPath: string) {
   const branchName = normalizeGitBranchName(branchNameInput);
   validateGitBranchName(branchName);
@@ -281,6 +304,14 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
     case "project.save": {
       try {
         const result = saveProjectToConfig(payload.project, context.configPath);
+        const savedWorkspaces = context.loadAvailableWorkspaces();
+        try {
+          await persistProjectGitInfoIfAvailable(payload.project, savedWorkspaces, context.configPath);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to refresh project Git branches";
+          context.logError(`[tiller-helm] project.save.git.refresh.failed project=${payload.project.id} message=${message}`);
+        }
+
         const workspaces = context.loadAvailableWorkspaces();
         const projects = await context.loadAvailableProjectsWithSemanticSummaries();
         context.setWorkspaces(workspaces);

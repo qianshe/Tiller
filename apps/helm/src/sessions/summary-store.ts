@@ -125,6 +125,7 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
     workspaceName: candidate.workspaceName as string,
     agentId: candidate.agentId as string,
     agentName: candidate.agentName as string,
+    agentMode: typeof candidate.agentMode === "string" && candidate.agentMode.trim() ? candidate.agentMode : undefined,
     model: typeof candidate.model === "string" && candidate.model.trim() ? candidate.model : undefined,
     reasoningEffort:
       candidate.reasoningEffort === "minimal" ||
