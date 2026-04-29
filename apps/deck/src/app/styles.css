@@ -5214,6 +5214,42 @@ textarea:focus,
   font-size: 1.08rem;
 }
 
+.helm-detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+.helm-detail-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #b7c4d8;
+  background: rgba(148, 163, 184, 0.10);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.helm-detail-facts strong {
+  color: #e5edf7;
+}
+
+.helm-detail-scope-note {
+  margin: -10px 0 0;
+}
+
+[data-deck-theme="light"] .helm-detail-facts span {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.86);
+  border-color: rgba(148, 163, 184, 0.20);
+}
+
+[data-deck-theme="light"] .helm-detail-facts strong {
+  color: #0f172a;
+}
+
 .helm-config-panel h3 {
   margin: 0;
   font-size: 1rem;
@@ -6398,6 +6434,92 @@ textarea:focus,
 
   .view-sessions .mission-pane-resizer {
     display: none;
+  }
+}
+
+/* Mission hierarchy sidebar: Helm -> Project -> Session, with a compact rail state. */
+.view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
+  grid-template-columns:
+    0
+    minmax(420px, 1fr)
+    8px
+    var(--mission-display-width)
+    8px
+    var(--mission-inspector-width) !important;
+}
+
+.view-sessions .chat-session-sidebar {
+  position: relative;
+}
+
+.view-sessions .chat-session-sidebar.collapsed {
+  padding: 0;
+  border-right: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.view-sessions .chat-session-sidebar.collapsed .mission-sidebar-toggle {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  top: auto;
+  margin: 0;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.mission-sidebar-toggle {
+  position: sticky;
+  top: 8px;
+  z-index: 9;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin-left: auto;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.54);
+  color: #dbeafe;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.mission-sidebar-toggle:hover,
+.mission-sidebar-toggle:focus-visible {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.24);
+  outline: none;
+}
+
+.mission-helm-nav-item strong::before {
+  content: "⎈";
+  margin-right: 6px;
+  color: #93c5fd;
+}
+
+@media (max-width: 1500px) {
+  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
+    grid-template-columns: 0 minmax(380px, 1fr) 8px minmax(300px, var(--mission-display-width)) !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 860px) {
+  .view-sessions .chat-layout.chat-layout-sidebar.mission-sidebar-collapsed {
+    grid-template-columns: 1fr !important;
+  }
+
+  .view-sessions .chat-session-sidebar.collapsed {
+    min-height: 56px;
   }
 }
 

@@ -535,6 +535,8 @@ export function App() {
   const [collapsedMissionDiffDirectories, setCollapsedMissionDiffDirectories] = useState<Set<string>>(() => new Set());
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
+  const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
+  const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
@@ -583,6 +585,19 @@ export function App() {
     const helmId = activeSession?.helmId ?? draftProject?.helmId;
     return helms.find((helm) => helm.id === helmId) ?? null;
   }, [activeSession?.helmId, draftProject?.helmId, helms]);
+  const effectiveMissionHelmId = selectedMissionHelmId ?? activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? helms[0]?.id ?? null;
+  const missionHelms = useMemo(() => {
+    const projectHelmIds = new Set(projects.map((project) => project.helmId));
+    const knownHelms = helms.filter((helm) => projectHelmIds.has(helm.id) || helm.id === effectiveMissionHelmId);
+    if (knownHelms.length) {
+      return knownHelms;
+    }
+    return activeHelm ? [activeHelm] : helms;
+  }, [activeHelm, effectiveMissionHelmId, helms, projects]);
+  const missionProjects = useMemo(
+    () => projects.filter((project) => !effectiveMissionHelmId || project.helmId === effectiveMissionHelmId),
+    [effectiveMissionHelmId, projects],
+  );
   const filteredWorkspaces = useMemo(() => {
     const workspaceIds = draftProject?.workspaceIds;
     if (!workspaceIds?.length) {
@@ -647,7 +662,18 @@ export function App() {
     setActiveView(view);
   }
 
+  function selectMissionHelm(helmId: string) {
+    setSelectedMissionHelmId(helmId);
+    const nextProject = projects.find((project) => project.helmId === helmId) ?? null;
+    setSelectedProjectId(nextProject?.id ?? null);
+    setActiveSessionId(nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null);
+  }
+
   function selectProject(projectId: string) {
+    const project = projects.find((item) => item.id === projectId);
+    if (project) {
+      setSelectedMissionHelmId(project.helmId);
+    }
     setSelectedProjectId(projectId);
     setActiveSessionId((current) => {
       if (current && sessions.some((session) => session.id === current && session.projectId === projectId)) {
@@ -663,6 +689,7 @@ export function App() {
       return;
     }
 
+    setSelectedMissionHelmId(session.helmId);
     setSelectedProjectId(session.projectId);
     setActiveSessionId(sessionId);
   }
@@ -690,10 +717,16 @@ export function App() {
   const agentLocked = Boolean(activeSession?.runtimeSessionId ?? activeSession?.resume?.runtimeSessionId);
 
   useEffect(() => {
-    if (!selectedProjectId && projects.length) {
-      setSelectedProjectId(projects[0].id);
+    if (!selectedMissionHelmId && (activeSession?.helmId || draftProject?.helmId || projects[0]?.helmId || helms[0]?.id)) {
+      setSelectedMissionHelmId(activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? helms[0]?.id ?? null);
     }
-  }, [projects, selectedProjectId]);
+  }, [activeSession?.helmId, draftProject?.helmId, helms, projects, selectedMissionHelmId]);
+
+  useEffect(() => {
+    if (!selectedProjectId && missionProjects.length) {
+      setSelectedProjectId(missionProjects[0].id);
+    }
+  }, [missionProjects, selectedProjectId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -2373,6 +2406,9 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
+    const missionSidebarWidth = missionSidebarCollapsed ? 48 : missionPaneWidths.sidebar;
+    const activeMissionHelm = missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ?? activeHelm;
+    const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
     const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
     const activeDiffTree = buildMissionDiffTree(activeDiffs);
@@ -2387,7 +2423,7 @@ export function App() {
     ];
     const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
     const missionLayoutStyle = {
-      "--mission-sidebar-width": `${missionPaneWidths.sidebar}px`,
+      "--mission-sidebar-width": `${missionSidebarWidth}px`,
       "--mission-display-width": `${missionPaneWidths.display}px`,
       "--mission-inspector-width": `${missionPaneWidths.inspector}px`,
     } as CSSProperties;
@@ -2513,7 +2549,7 @@ export function App() {
     );
 
     return (
-      <section className="card surface-card chat-layout chat-layout-sidebar" style={missionLayoutStyle}>
+      <section className={`card surface-card chat-layout chat-layout-sidebar ${missionSidebarCollapsed ? "mission-sidebar-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
         {pairingState !== "paired" ? (
           <div className="note-box compact-note">
             <strong>任务视图待连接</strong>
@@ -2521,77 +2557,119 @@ export function App() {
           </div>
         ) : (
           <>
-            <aside className="chat-session-sidebar" aria-label="任务列表">
-              <div className="sidebar-section project-switcher">
-                <div className="section-head section-head-soft sidebar-heading-block">
-                  <div>
-                    <h2>项目</h2>
-                    <p className="muted compact">先选项目，再进入该项目下的任务。</p>
-                  </div>
-                </div>
-                <div className="project-nav-list">
-                  {projects.map((project) => {
-                    const selected = project.id === selectedProjectId;
-                    return (
-                      <button
-                        key={project.id}
-                        type="button"
-                        className={`project-nav-item ${selected ? "active" : ""}`}
-                        onClick={() => selectProject(project.id)}
-                      >
-                        <strong>{project.name}</strong>
-                        <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <aside className={`chat-session-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} aria-label="任务导航：Helm、项目与任务">
+              <button
+                type="button"
+                className="mission-sidebar-toggle"
+                onClick={() => setMissionSidebarCollapsed((current) => !current)}
+                aria-expanded={!missionSidebarCollapsed}
+                aria-label={missionSidebarCollapsed ? "展开任务导航" : "收起任务导航"}
+                title={missionSidebarCollapsed ? "展开任务导航" : "收起任务导航"}
+              >
+                {missionSidebarCollapsed ? "›" : "‹"}
+              </button>
 
-              <div className="sidebar-section session-switcher">
-                <div className="section-head section-head-soft sidebar-heading-block">
-                  <div>
-                    <h2>任务</h2>
-                    <p className="muted compact">当前项目：{draftProject?.name ?? "未选择"}</p>
-                  </div>
-                </div>
-                <button type="button" className={`chat-session-item ${!activeSession ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
-                  <strong>新任务</strong>
-                  <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择项目"}</span>
-                </button>
-                {projectSessions.length ? (
-                  projectSessions.map((session) => (
-                    <div key={session.id} className={`session-nav-card ${session.id === activeSessionId ? "active" : ""}`}>
-                      <button type="button" className="chat-session-item session-nav-button" onClick={() => openSession(session.id)}>
-                        <span className="session-nav-title-row">
-                          <strong>{resolveSessionTitle(session)}</strong>
-                          <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
-                        </span>
-                        <span className="session-nav-meta">{session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
-                        <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "等待模型"}`}</span>
-                      </button>
-                      <div className="session-nav-actions">
-                        <button
-                          type="button"
-                          className="session-inline-action"
-                          aria-label={`清理 ${resolveSessionTitle(session)}`}
-                          title="清理任务"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            cleanupSession(session.id);
-                          }}
-                        >
-                          ×
-                        </button>
+              {missionSidebarCollapsed ? null : (
+                <>
+                  <div className="sidebar-section helm-switcher">
+                    <div className="section-head section-head-soft sidebar-heading-block">
+                      <div>
+                        <h2>Helm</h2>
+                        <p className="muted compact">先选 Helm，再进入该 Helm 下的项目。</p>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="empty-state sidebar-empty">这个项目还没有任务。</div>
-                )}
-              </div>
-            </aside>
+                    <div className="project-nav-list mission-helm-nav-list">
+                      {missionHelms.map((helm) => {
+                        const selected = helm.id === effectiveMissionHelmId;
+                        const helmProjectCount = projects.filter((project) => project.helmId === helm.id).length;
+                        return (
+                          <button
+                            key={helm.id}
+                            type="button"
+                            className={`project-nav-item mission-helm-nav-item ${selected ? "active" : ""}`}
+                            onClick={() => selectMissionHelm(helm.id)}
+                          >
+                            <strong>{helm.name}</strong>
+                            <span>{helm.host}:{helm.port} · {helmProjectCount} 项目</span>
+                          </button>
+                        );
+                      })}
+                      {!missionHelms.length ? <div className="empty-state sidebar-empty">暂无 Helm。</div> : null}
+                    </div>
+                  </div>
 
-            {renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
+                  <div className="sidebar-section project-switcher">
+                    <div className="section-head section-head-soft sidebar-heading-block">
+                      <div>
+                        <h2>项目</h2>
+                        <p className="muted compact">当前 Helm：{activeMissionHelm?.name ?? "未选择"} · {activeMissionHelmProjectCount} 项目</p>
+                      </div>
+                    </div>
+                    <div className="project-nav-list">
+                      {missionProjects.map((project) => {
+                        const selected = project.id === selectedProjectId;
+                        return (
+                          <button
+                            key={project.id}
+                            type="button"
+                            className={`project-nav-item ${selected ? "active" : ""}`}
+                            onClick={() => selectProject(project.id)}
+                          >
+                            <strong>{project.name}</strong>
+                            <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
+                          </button>
+                        );
+                      })}
+                      {!missionProjects.length ? <div className="empty-state sidebar-empty">这个 Helm 还没有项目。</div> : null}
+                    </div>
+                  </div>
+
+                  <div className="sidebar-section session-switcher">
+                    <div className="section-head section-head-soft sidebar-heading-block">
+                      <div>
+                        <h2>任务</h2>
+                        <p className="muted compact">当前项目：{draftProject?.name ?? "未选择"} · Session 绑定 ACP</p>
+                      </div>
+                    </div>
+                    <button type="button" className={`chat-session-item ${!activeSession ? "active" : ""}`} onClick={() => setActiveSessionId(null)}>
+                      <strong>新任务</strong>
+                      <span>{draftProject ? `在 ${draftProject.name} 下创建新的会话` : "先选择项目"}</span>
+                    </button>
+                    {projectSessions.length ? (
+                      projectSessions.map((session) => (
+                        <div key={session.id} className={`session-nav-card ${session.id === activeSessionId ? "active" : ""}`}>
+                          <button type="button" className="chat-session-item session-nav-button" onClick={() => openSession(session.id)}>
+                            <span className="session-nav-title-row">
+                              <strong>{resolveSessionTitle(session)}</strong>
+                              <span className="session-nav-time">{formatRelativeTime(session.updatedAt)}</span>
+                            </span>
+                            <span className="session-nav-meta">ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
+                            <span className="session-nav-preview">{session.lastMessagePreview ?? `${session.workspaceName} · ${session.model ?? "等待模型"}`}</span>
+                          </button>
+                          <div className="session-nav-actions">
+                            <button
+                              type="button"
+                              className="session-inline-action"
+                              aria-label={`清理 ${resolveSessionTitle(session)}`}
+                              title="清理任务"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                cleanupSession(session.id);
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-state sidebar-empty">这个项目还没有任务。</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </aside>
+            {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
 
             <div className="chat-conversation">
               <div className="chat-main">
@@ -3095,6 +3173,13 @@ export function App() {
               </div>
             </div>
 
+            <div className="helm-detail-facts" aria-label="Helm 配置范围">
+              <span><strong>{selectedHelmProjects.length}</strong> 项目配置</span>
+              <span><strong>{selectedHelmAgents.length}</strong> ACP 舰员</span>
+              <span title="项目路径会在运行时派生为入口，不写入 config.workspaces"><strong>{selectedHelmWorkspaces.length}</strong> 运行入口</span>
+            </div>
+            <p className="muted compact helm-detail-scope-note">添加项目会写入 Helm 的 projects 配置；运行入口由项目路径派生，不会新增 config.workspaces。</p>
+
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
                 <div className="helm-inventory-section-head">
@@ -3146,13 +3231,13 @@ export function App() {
                         <details className="helm-simple-detail-row">
                           <summary>
                             <strong>{project.name}</strong>
-                            <span>{project.defaultWorkspaceId ? `workspace · ${project.defaultWorkspaceId}` : project.id}</span>
+                            <span>{project.path ? `路径 · ${project.path}` : `项目 · ${project.id}`}</span>
                           </summary>
                           <dl>
                             <div><dt>Project ID</dt><dd>{project.id}</dd></div>
                             <div><dt>Path</dt><dd>{project.path ?? "-"}</dd></div>
                             <div><dt>Helm ID</dt><dd>{project.helmId}</dd></div>
-                            <div><dt>Workspaces</dt><dd>{(project.workspaceIds ?? []).join(", ") || "-"}</dd></div>
+                            <div><dt>运行入口</dt><dd>{project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? "由项目路径派生"}</dd></div>
                             <div><dt>Default Agent</dt><dd>{project.defaultAgentId ?? "-"}</dd></div>
                           </dl>
                         </details>
