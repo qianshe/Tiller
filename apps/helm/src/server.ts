@@ -84,7 +84,7 @@ let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
-const projectSemanticSummaryCache = new Map<string, string>();
+const projectContextSummaryCache = new Map<string, string>();
 
 // --- Device pairing state ---
 let pairingCode: string | null = null;
@@ -795,32 +795,20 @@ async function loadAvailableProjectsWithSemanticSummaries() {
 }
 
 async function enrichProjectSummary(project: ProjectSummary): Promise<ProjectSummary> {
-  const helm = resolveHelmById(project.helmId, loadAvailableHelms());
-  const modelConfig = helm?.modelConfig;
-  if (!modelConfig?.baseUrl?.trim() || !modelConfig.model?.trim()) {
-    return project;
-  }
-
   const projectWorkspaces = resolveProjectWorkspaces(project, loadAvailableWorkspaces());
-  const cacheKey = [project.id, project.summary ?? "", modelConfig.baseUrl, modelConfig.model, projectWorkspaces.map((workspace) => `${workspace.id}:${workspace.path}`).join("|")].join("::");
-  const cached = projectSemanticSummaryCache.get(cacheKey);
+  const cacheKey = [project.id, project.summary ?? "", projectWorkspaces.map((workspace) => `${workspace.id}:${workspace.path}:${workspace.summary ?? ""}`).join("|")].join("::");
+  const cached = projectContextSummaryCache.get(cacheKey);
   if (cached) {
     return { ...project, summary: cached };
   }
 
-  try {
-    const source = await collectProjectSummarySource(project, projectWorkspaces);
-    const semanticSummary = await requestHelmModelSummary(modelConfig, source);
-    const summary = semanticSummary.trim() || project.summary;
-    if (!summary) {
-      return project;
-    }
-    projectSemanticSummaryCache.set(cacheKey, summary);
-    return { ...project, summary };
-  } catch (error) {
-    logInfo(`[tiller-helm] project.summary.semantic.skip project=${project.id} reason=${error instanceof Error ? error.message : "unknown"}`);
+  const source = await collectProjectSummarySource(project, projectWorkspaces);
+  const summary = compactProjectContextSource(source) || project.summary;
+  if (!summary) {
     return project;
   }
+  projectContextSummaryCache.set(cacheKey, summary);
+  return { ...project, summary };
 }
 
 function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: WorkspaceSummary[]) {
@@ -831,22 +819,36 @@ function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: 
 
 async function collectProjectSummarySource(project: ProjectSummary, projectWorkspaces: WorkspaceSummary[]) {
   const snippets = await Promise.all(projectWorkspaces.slice(0, 3).map(async (workspace) => {
-    const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1800);
-    const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1200);
+    const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
+    const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
+    const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1600);
+    const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1000);
     return [
       `Workspace: ${workspace.name}`,
       `Path: ${workspace.path}`,
-      workspace.summary ? `Rule summary: ${workspace.summary}` : "",
-      readme ? `README excerpt:\n${readme}` : "",
-      packageJson ? `package.json excerpt:\n${packageJson}` : "",
+      workspace.summary ? `Workspace summary: ${workspace.summary}` : "",
+      agents ? `AGENTS.md:\n${agents}` : "",
+      claude ? `CLAUDE.md:\n${claude}` : "",
+      readme ? `README.md:\n${readme}` : "",
+      packageJson ? `package.json:\n${packageJson}` : "",
     ].filter(Boolean).join("\n");
   }));
 
   return [
     `Project: ${project.name}`,
-    project.summary ? `Existing summary: ${project.summary}` : "",
+    project.summary ? `Configured summary: ${project.summary}` : "",
     ...snippets,
-  ].filter(Boolean).join("\n\n").slice(0, 8000);
+  ].filter(Boolean).join("\n\n").slice(0, 9000);
+}
+
+function compactProjectContextSource(source: string) {
+  return source
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 72)
+    .join("\n")
+    .slice(0, 5000);
 }
 
 async function readOptionalSnippet(path: string, maxLength: number) {
@@ -855,47 +857,6 @@ async function readOptionalSnippet(path: string, maxLength: number) {
   } catch {
     return "";
   }
-}
-
-async function requestHelmModelSummary(modelConfig: NonNullable<HelmSummary["modelConfig"]>, source: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(resolveHelmModelChatUrl(modelConfig.baseUrl ?? ""), {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(modelConfig.apiKey?.trim() ? { Authorization: `Bearer ${modelConfig.apiKey.trim()}` } : {}),
-      },
-      body: JSON.stringify({
-        model: modelConfig.model?.trim(),
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: "Summarize this software project for a coding-agent prompt context. Return 3-5 concise bullet points. No markdown fence." },
-          { role: "user", content: source },
-        ],
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`summary model failed: ${response.status}`);
-    }
-    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return data.choices?.[0]?.message?.content?.trim() ?? "";
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function resolveHelmModelChatUrl(baseUrl: string) {
-  const trimmed = baseUrl.trim().replace(/\/+$/, "");
-  if (trimmed.endsWith("/chat/completions")) {
-    return trimmed;
-  }
-  if (/\/v\d+(?:\/|$)/.test(trimmed)) {
-    return `${trimmed}/chat/completions`;
-  }
-  return `${trimmed}/v1/chat/completions`;
 }
 
 function logInfo(message: string) {

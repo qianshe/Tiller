@@ -20,6 +20,15 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 
+export type AcpDiscoveryCandidate = {
+  id: string;
+  name: string;
+  command: string;
+  args?: string[];
+  available: boolean;
+  configured: boolean;
+};
+
 export type ClientToHelm =
   | {
       type: "helm.list";
@@ -49,7 +58,22 @@ export type ClientToHelm =
       workspace: WorkspaceSummary;
     }
   | {
+      type: "workspace.git.list";
+      requestId: string;
+      projectId: string;
+    }
+  | {
+      type: "workspace.git.create";
+      requestId: string;
+      projectId: string;
+      branchName: string;
+    }
+  | {
       type: "agent.list";
+      requestId: string;
+    }
+  | {
+      type: "agent.discover";
       requestId: string;
     }
   | {
@@ -192,9 +216,28 @@ export type HelmToClient =
       message: string;
     }
   | {
+      type: "workspace.git.result";
+      requestId: string;
+      ok: boolean;
+      projectId: string;
+      currentBranch?: string;
+      branches: string[];
+      workspaces: WorkspaceSummary[];
+      selectedWorkspaceId?: string;
+      message: string;
+    }
+  | {
       type: "agent.list.result";
       requestId: string;
       agents: AcpAgentProvider[];
+    }
+  | {
+      type: "agent.discover.result";
+      requestId: string;
+      agents: AcpAgentProvider[];
+      discoveredCount: number;
+      candidates: AcpDiscoveryCandidate[];
+      message: string;
     }
   | {
       type: "agent.test.result";

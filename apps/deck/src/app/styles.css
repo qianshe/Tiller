@@ -8688,3 +8688,36 @@ textarea:focus,
     row-gap: 6px;
   }
 }
+
+/* Mission draft density fix: keep menus above panels and give textarea more horizontal room. */
+.view-sessions .mission-draft-chat,
+.view-sessions .mission-draft-chat .chat-main,
+.view-sessions .mission-draft-chat .chat-input-area.draft-toolbar {
+  overflow: visible;
+}
+
+.view-sessions .mission-draft-chat {
+  z-index: 35;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  z-index: 140;
+}
+
+.view-sessions .mission-draft-chat .chat-input-area.draft-toolbar {
+  padding-inline: 8px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form {
+  width: min(920px, calc(100% - 12px));
+  max-width: 920px;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form > textarea {
+  padding-inline: 12px;
+}
+
+.view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
+  width: min(760px, calc(100% - 12px));
+}
