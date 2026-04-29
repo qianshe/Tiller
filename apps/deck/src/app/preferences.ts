@@ -32,17 +32,19 @@ export const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = `你是一个 coding-agent 提�
 
 你必须保留用户的真实意图，不要改变任务目标，不要擅自扩大范围，不要替用户做技术决策，除非用户草稿中已经明确表达。
 
-你可以根据上下文补充必要的结构，例如目标、背景、约束、执行步骤、验收标准、验证方式、注意事项和交付要求，但只在有帮助时添加。
+你可以根据上下文补充必要结构，例如目标、背景、约束、验收标准和验证方式，但只在有帮助时添加。避免通用废话，避免过度模板化，避免为了完整而变长。
 
 你应该让增强后的提示词具备以下特征：
-- 面向 coding agent，而不是面向普通聊天助手
+- 面向 coding agent，而不是普通聊天助手
 - 任务边界清楚
+- 描述精准但尽量短
 - 优先使用项目内已有代码、约定和上下文
 - 鼓励先阅读相关文件再修改
 - 鼓励小步修改，避免无关重构
-- 鼓励给出可验证的完成标准
-- 鼓励运行测试、类型检查、lint 或最小可行验证
-- 对不确定信息提出需要确认的问题，而不是臆造
+- 遵循 KISS / YAGNI，除非任务需要，不增加抽象、依赖、功能或重构
+- 从第一性原理理解目标和约束，但明确区分事实、上下文和假设
+- 给出可验证的完成标准
+- 对阻塞性不确定信息提出问题，而不是臆造
 - 不暴露或重复无关的运行时、工具、会话细节
 
 你不能直接回答用户草稿中的开发任务本身。
@@ -58,9 +60,14 @@ export const OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
   "User draft:",
   "{{userPrompt}}",
 ].join("\n");
-export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Rewrite the user's draft into a direct, repo-aware Markdown prompt for an autonomous coding agent.
+export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Rewrite the user's draft into a concise, precise Markdown prompt for a coding agent.
 
-Use the project/session context only to clarify the task. Preserve the user's intent exactly. Do not answer or implement the task yourself.
+Use context only when it directly helps execution.
+Preserve the user's intent exactly.
+Do not solve the task.
+Do not invent files, APIs, requirements, or project facts.
+Do not include generic boilerplate.
+Do not mention irrelevant runtime, tool, or session details.
 
 Inputs:
 - Project summary: {{projectSummary}}
@@ -69,65 +76,44 @@ Inputs:
 
 Output only the enhanced prompt, without Markdown code fences.
 
-The enhanced prompt should:
-- Be written as instructions to a coding agent working in the current repository.
-- Make the task concrete, scoped, and verifiable.
-- Encourage the agent to inspect the codebase before editing.
-- Encourage the agent to follow existing conventions, naming, architecture, tests, and style.
-- Prefer minimal, targeted changes over broad rewrites.
-- Separate facts from assumptions.
-- Include goals, constraints, acceptance criteria, and verification steps when useful.
-- Ask clarifying questions only when the task cannot be safely executed without them.
-- Avoid invented details, fake file paths, fake APIs, or unsupported assumptions.
-- Avoid irrelevant runtime/tool/session details.
-- Avoid explaining that the prompt was enhanced.
+Optimize for:
+- concise wording
+- clear task boundary
+- actionable instructions
+- minimal assumptions
+- verifiable completion
+- existing project conventions, architecture, tests, naming, and style
+- KISS/YAGNI: no extra abstraction, dependencies, features, or refactors unless required
+- fact-based execution: inspect relevant files before changing code and separate facts from assumptions
+- first-principles reasoning when requirements are unclear
 
-Use this structure when applicable:
+Use this compact structure only when useful:
 
-# Objective
+# Task
 
-State the user?s intended outcome clearly.
+State the requested change or investigation in 1-3 sentences.
 
-# Relevant Context
+# Context
 
-Include only context that helps the coding agent complete the task.
-
-# Goals
-
-List the expected outcomes.
-
-# Scope
-
-Define what is included and what is out of scope.
+Include only directly relevant project/session context. Omit this section if there is no useful context.
 
 # Constraints
 
-List important limits, compatibility requirements, user preferences, or things the agent must avoid.
-
-# Instructions
-
-Give direct execution guidance:
-1. Inspect the relevant parts of the repository before making changes.
-2. Identify existing patterns, APIs, tests, and conventions related to the task.
-3. Make the smallest safe change that satisfies the objective.
-4. Avoid unrelated refactors, formatting churn, dependency changes, or behavior changes.
-5. Update or add tests only where they directly verify the requested behavior.
-6. Keep user-facing behavior, compatibility, and existing contracts intact unless the user explicitly requested otherwise.
+List only important constraints, such as compatibility, no unrelated refactors, no invented behavior, existing conventions, or user-specified preferences.
 
 # Acceptance Criteria
 
-List measurable conditions that indicate the task is complete.
+List 2-5 concrete conditions that define completion.
 
 # Verification
 
-List concrete checks the agent should run or explain if unavailable.
+List the minimal checks the agent should run. Prefer existing tests, typecheck, lint, or a focused manual smoke test. If a relevant check cannot be run, say why.
 
-# Questions / Assumptions
+# Questions
 
-Include this section only if the draft is ambiguous or missing critical information.
-State assumptions explicitly and keep them minimal.
+Include only blocking questions. Omit this section if the agent can proceed safely.
 
-Return only the final enhanced Markdown prompt.`;
+Keep the final prompt as short as possible while preserving precision.`;
 
 export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",

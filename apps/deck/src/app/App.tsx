@@ -26,7 +26,7 @@ import type {
 import { DAEMON_PROFILE_STORAGE_KEY, daemonProfileKey, formatConnectionStatus, formatDaemonProfileLine, formatPairingState, readDaemonProfiles, type DaemonProfile } from "./daemon-profiles";
 import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, DECK_PREFERENCES_STORAGE_KEY, isRecord, readDeckPreferences, type DeckLanguage, type DeckPreferences, type DeckTheme, type TechnicalPanelPreferences } from "./preferences";
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
-import { buildEnhancedPrompt, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
+import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
 import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
@@ -537,7 +537,7 @@ export function App() {
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
-  const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
+  const pendingPromptRef = useRef<string | null>(null);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
@@ -1697,12 +1697,12 @@ export function App() {
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
             pendingPromptRef.current = null;
-            appendUserMessage(payload.session.id, pendingPrompt.raw);
+            appendUserMessage(payload.session.id, pendingPrompt);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
-              text: pendingPrompt.enhanced,
+              text: pendingPrompt,
             });
           }
         }
@@ -1933,7 +1933,7 @@ export function App() {
     }));
   }
 
-  function createSession(initialPrompt?: { raw: string; enhanced: string }) {
+  function createSession(initialPrompt?: string) {
     const projectId = selectedProjectId || projects[0]?.id;
     const workspaceId = selectedWorkspaceId || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
@@ -2199,10 +2199,8 @@ export function App() {
       return;
     }
 
-    const enhancedPrompt = buildEnhancedPrompt(nextPrompt, deckPreferences.promptEnhancer);
-
     if (!activeSessionId) {
-      if (createSession({ raw: nextPrompt, enhanced: enhancedPrompt })) {
+      if (createSession(nextPrompt)) {
         setPrompt("");
       }
       return;
@@ -2214,7 +2212,7 @@ export function App() {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      text: enhancedPrompt,
+      text: nextPrompt,
     });
   }
 
