@@ -10,12 +10,11 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "@tiller/shared": ["packages/shared/src/index.ts"],
-      "@tiller/sync-protocol": ["packages/sync-protocol/src/index.ts"],
-      "@tiller/agent-registry": ["packages/agent-registry/src/index.ts"],
-      "@tiller/acp-runtime": ["packages/acp-runtime/src/index.ts"]
+      "@tiller/shared": ["./packages/shared/src/index.ts"],
+      "@tiller/sync-protocol": ["./packages/sync-protocol/src/index.ts"],
+      "@tiller/agent-registry": ["./packages/agent-registry/src/index.ts"],
+      "@tiller/acp-runtime": ["./packages/acp-runtime/src/index.ts"]
     }
   }
 }

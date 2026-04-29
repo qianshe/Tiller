@@ -332,6 +332,16 @@ type MissionPanelPage = {
   title: string;
 };
 
+type MissionDiffTreeNode = {
+  id: string;
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+  count: number;
+  file?: FileDiffSummary;
+  children?: MissionDiffTreeNode[];
+};
+
 type CleanupFeedback = {
   tone: "success" | "warning" | "info";
   message: string;
@@ -784,6 +794,8 @@ export function App() {
   const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
   const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
+  const [selectedMissionDiffFilePath, setSelectedMissionDiffFilePath] = useState<string | null>(null);
+  const [collapsedMissionDiffDirectories, setCollapsedMissionDiffDirectories] = useState<Set<string>>(() => new Set());
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
@@ -2372,6 +2384,23 @@ export function App() {
     setDraggedMissionPanelPageId(null);
   }
 
+  function toggleMissionDiffDirectory(directory: string) {
+    setCollapsedMissionDiffDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(directory)) {
+        next.delete(directory);
+      } else {
+        next.add(directory);
+      }
+      return next;
+    });
+  }
+
+  function openDiffDetail(filePath: string) {
+    setSelectedMissionDiffFilePath(filePath);
+    setSelectedMissionPanelPageId("diff-detail");
+  }
+
   function renderPlainMessages(items: AgentMessage[], commandChunks: CommandChunk[], sessionToolCalls: AgentToolCall[]) {
     const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
     if (!timelineItems.length) {
@@ -2471,11 +2500,15 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
-    const missionDiffCount = activeSession ? (diffs[activeSession.id] ?? []).length : 0;
-    const missionLogCount = activeSession ? (outputs[activeSession.id] ?? []).length : 0;
+    const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
+    const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
+    const activeDiffTree = buildMissionDiffTree(activeDiffs);
+    const missionDiffCount = activeDiffs.length;
+    const missionLogCount = activeOutputs.length;
     const missionPanelPages = [
       { id: "overview", title: "概览" },
       { id: "changes", title: `Git Diff (${missionDiffCount})` },
+      { id: "diff-detail", title: "Diff 详情" },
       { id: "logbook", title: `航行日志 (${missionLogCount})` },
       ...customMissionPanelPages,
     ];
@@ -2485,6 +2518,42 @@ export function App() {
       "--mission-display-width": `${missionPaneWidths.display}px`,
       "--mission-inspector-width": `${missionPaneWidths.inspector}px`,
     } as CSSProperties;
+    const renderMissionDiffTreeNode = (node: MissionDiffTreeNode, depth = 0): ReactNode => {
+      if (node.kind === "file" && node.file) {
+        const file = node.file;
+        return (
+          <button
+            key={node.id}
+            type="button"
+            className="mission-file-row mission-file-row-compact mission-file-row-button"
+            style={{ paddingLeft: `${8 + depth * 14}px` }}
+            onClick={() => openDiffDetail(file.path)}
+          >
+            <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
+            <strong>{node.name}</strong>
+            {renderDiffStats(file)}
+          </button>
+        );
+      }
+
+      const collapsed = collapsedMissionDiffDirectories.has(node.path);
+      return (
+        <section key={node.id} className={`mission-change-group ${collapsed ? "collapsed" : ""}`}>
+          <button
+            type="button"
+            className="mission-change-group-title"
+            style={{ paddingLeft: `${2 + depth * 14}px` }}
+            onClick={() => toggleMissionDiffDirectory(node.path)}
+            aria-expanded={!collapsed}
+          >
+            <span>{collapsed ? "▸" : "▾"}</span>
+            <span>{node.name}</span>
+            <span className="mission-change-count">{node.count}</span>
+          </button>
+          {!collapsed ? node.children?.map((child) => renderMissionDiffTreeNode(child, depth + 1)) : null}
+        </section>
+      );
+    };
     const renderMissionDisplayPanel = () => (
       <aside className={`mission-display-panel ${activeSession ? "" : "mission-display-empty"}`.trim()} aria-label="任务展示容器">
         <div className="mission-panel-head">
@@ -2511,7 +2580,7 @@ export function App() {
                     onDragOver={(event) => { if (custom) event.preventDefault(); }}
                     onDrop={() => custom ? dropMissionPanelPage(page.id) : undefined}
                   >
-                    <span className="mission-panel-node-icon">{page.id === "overview" ? "⌂" : page.id === "changes" ? "◇" : page.id === "logbook" ? "▸" : "□"}</span>
+                    <span className="mission-panel-node-icon">{resolveMissionPanelIcon(page.id)}</span>
                     <span>{page.title}</span>
                   </button>
                 );
@@ -2526,9 +2595,29 @@ export function App() {
                 <span className="status-chip">{copy.status[statuses[activeSession.id] ?? activeSession.status]}</span>
               </div>
               {selectedMissionPanelPage.id === "changes" ? (
-                <div className="mission-panel-page"><DiffSummary items={diffs[activeSession.id] ?? []} emptyLabel={copy.noDiffSummary} /></div>
+                <div className="mission-panel-page mission-change-tree">
+                  {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
+                </div>
+              ) : selectedMissionPanelPage.id === "diff-detail" ? (
+                <div className="mission-panel-page mission-diff-detail">
+                  {activeDiffs.length ? (
+                    activeDiffs.map((file) => (
+                      <details key={file.path} className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}>
+                        <summary className="mission-file-row mission-diff-file-summary">
+                          <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
+                          <strong>{file.path}</strong>
+                          {renderDiffStats(file)}
+                          <span className="mission-diff-expand-icon" aria-hidden="true">▸</span>
+                        </summary>
+                        {file.patch ? renderDiffPatch(file.patch) : <div className="mission-diff-patch-empty">该 diff 事件没有携带 patch/hunk 内容。</div>}
+                      </details>
+                    ))
+                  ) : (
+                    <div className="empty-state">{copy.noDiffSummary}</div>
+                  )}
+                </div>
               ) : selectedMissionPanelPage.id === "logbook" ? (
-                <div className="mission-panel-page"><CommandOutput items={outputs[activeSession.id] ?? []} emptyLabel={copy.noCommandOutput} /></div>
+                <div className="mission-panel-page"><CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} /></div>
               ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
                 <div className="mission-panel-page mission-custom-page">
                   <div className="mission-custom-page-tools">
@@ -3766,6 +3855,107 @@ function readDaemonProfiles(): DaemonProfile[] {
   } catch {
     return [];
   }
+}
+
+function resolveMissionPanelIcon(pageId: string) {
+  if (pageId === "overview") return "⌂";
+  if (pageId === "changes") return "◇";
+  if (pageId === "diff-detail") return "≋";
+  if (pageId === "logbook") return "▸";
+  return "□";
+}
+
+function buildMissionDiffTree(files: FileDiffSummary[]): MissionDiffTreeNode[] {
+  const root: MissionDiffTreeNode = { id: "root", name: "", path: "", kind: "directory", count: 0, children: [] };
+  for (const file of files) {
+    const normalized = normalizeDiffPath(file.path);
+    const parts = normalized.split("/").filter(Boolean);
+    let current = root;
+    parts.forEach((part, index) => {
+      const isFile = index === parts.length - 1;
+      const nodePath = parts.slice(0, index + 1).join("/");
+      current.children ??= [];
+      let node = current.children.find((child) => child.path === nodePath && child.kind === (isFile ? "file" : "directory"));
+      if (!node) {
+        node = {
+          id: `${isFile ? "file" : "dir"}:${nodePath}`,
+          name: part,
+          path: nodePath,
+          kind: isFile ? "file" : "directory",
+          count: 0,
+          ...(isFile ? { file } : { children: [] }),
+        };
+        current.children.push(node);
+      }
+      if (isFile) {
+        node.file = file;
+      } else {
+        current = node;
+      }
+    });
+  }
+
+  updateMissionDiffTreeCounts(root);
+  sortMissionDiffTree(root);
+  return root.children ?? [];
+}
+
+function updateMissionDiffTreeCounts(node: MissionDiffTreeNode): number {
+  if (node.kind === "file") {
+    node.count = 1;
+    return 1;
+  }
+
+  node.count = node.children?.reduce((total, child) => total + updateMissionDiffTreeCounts(child), 0) ?? 0;
+  return node.count;
+}
+
+function sortMissionDiffTree(node: MissionDiffTreeNode) {
+  node.children?.sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind === "directory" ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+  node.children?.forEach(sortMissionDiffTree);
+}
+
+function normalizeDiffPath(path: string) {
+  return path.replace(/\\/g, "/");
+}
+
+function formatDiffStatus(status: FileDiffSummary["status"]) {
+  return status === "modified" ? "M" : status === "added" ? "A" : "D";
+}
+
+function renderDiffStats(file: FileDiffSummary) {
+  return (
+    <span className="diff-meta diff-meta-split">
+      <span className="diff-additions">+{file.additions}</span>
+      <span className="diff-separator">/</span>
+      <span className="diff-deletions">-{file.deletions}</span>
+    </span>
+  );
+}
+
+function renderDiffPatch(patch: string) {
+  return (
+    <pre className="mission-diff-patch">
+      {patch.split(/\r?\n/u).map((line, index) => (
+        <span key={`${index}-${line.slice(0, 12)}`} className={`mission-diff-line ${resolveDiffLineClass(line)}`}>
+          {line || " "}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+function resolveDiffLineClass(line: string) {
+  if (line.startsWith("@@")) return "line-hunk";
+  if (line.startsWith("+") && !line.startsWith("+++")) return "line-added";
+  if (line.startsWith("-") && !line.startsWith("---")) return "line-deleted";
+  if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) return "line-meta";
+  return "line-context";
 }
 
 function readMissionPanelPages(): MissionPanelPage[] {
