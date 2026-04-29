@@ -48,6 +48,11 @@ import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
+import { handleConfigMessage } from "./handlers/config";
+import { handleDeviceMessage } from "./handlers/devices";
+import { handleSessionMessage } from "./handlers/sessions";
+import type { HelmHandlerContext } from "./handlers/context";
+import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime-events";
 
 // Tiller verification ping by Antigravity 🐾
 const HOST = "127.0.0.1";
@@ -244,596 +249,60 @@ function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type:
 }
 
 async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
-  switch (payload.type) {
-    case "helm.list":
-      helms = loadAvailableHelms();
-      emit(socket, {
-        type: "helm.list.result",
-        requestId: payload.requestId,
-        helms,
-      });
-      return;
-    case "helm.save": {
-      const result = saveHelmToConfig(payload.helm, configPath);
-      helms = loadAvailableHelms();
-      projects = await loadAvailableProjectsWithSemanticSummaries();
-      emit(socket, {
-        type: "helm.save.result",
-        requestId: payload.requestId,
-        ok: true,
-        helmId: payload.helm.id,
-        message: `Saved Helm model config to ${result.configPath}`,
-      });
-      return;
-    }
-    case "device.list":
-      emit(socket, {
-        type: "device.list.result",
-        requestId: payload.requestId,
-        devices: trustedDeviceStore.list().map(toTrustedDeviceSummary),
-      });
-      return;
-    case "device.revoke": {
-      const revoked = trustedDeviceStore.revoke(payload.deviceId);
-      const revokedSockets = authenticatedSockets.listForDevice(payload.deviceId);
-      const requesterRevoked = revokedSockets.some((record) => record.socket === socket);
-      for (const record of revokedSockets) {
-        authenticatedSockets.remove(record.socketId);
-        emit(record.socket, {
-          type: "device.revoke.result",
-          requestId: payload.requestId,
-          ok: revoked,
-          deviceId: payload.deviceId,
-          message: revoked ? "This beacon was revoked. Pair again to reconnect." : "Beacon not found.",
-        });
-        record.socket.close();
-      }
-      if (!requesterRevoked) {
-        emit(socket, {
-          type: "device.revoke.result",
-          requestId: payload.requestId,
-          ok: revoked,
-          deviceId: payload.deviceId,
-          message: revoked ? "Beacon revoked." : "Beacon not found.",
-        });
-      }
-      return;
-    }
-    case "project.list":
-      projects = await loadAvailableProjectsWithSemanticSummaries();
-      emit(socket, {
-        type: "project.list.result",
-        requestId: payload.requestId,
-        projects,
-      });
-      return;
-    case "project.save": {
-      try {
-        const result = saveProjectToConfig(payload.project, configPath);
-        workspaces = loadAvailableWorkspaces();
-        projects = await loadAvailableProjectsWithSemanticSummaries();
-        emit(socket, {
-          type: "project.save.result",
-          requestId: payload.requestId,
-          ok: true,
-          projectId: payload.project.id,
-          message: `Saved project to ${result.configPath}`,
-        });
-        emit(socket, {
-          type: "project.list.result",
-          requestId: `project-list-${Date.now()}`,
-          projects,
-        });
-        emit(socket, {
-          type: "workspace.list.result",
-          requestId: `workspace-list-${Date.now()}`,
-          workspaces,
-        });
-      } catch (error) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: error instanceof Error ? error.message : "Failed to save project.",
-        });
-      }
-      return;
-    }
-    case "workspace.list":
-      workspaces = loadAvailableWorkspaces();
-      emit(socket, {
-        type: "workspace.list.result",
-        requestId: payload.requestId,
-        workspaces,
-      });
-      return;
-    case "workspace.save": {
-      const result = saveWorkspaceToConfig(payload.workspace, configPath);
-      workspaces = loadAvailableWorkspaces();
-      projects = await loadAvailableProjectsWithSemanticSummaries();
-      emit(socket, {
-        type: "workspace.save.result",
-        requestId: payload.requestId,
-        ok: true,
-        workspaceId: payload.workspace.id,
-        message: `Saved workspace to ${result.configPath}`,
-      });
-      return;
-    }
-    case "agent.list":
-      agents = listAvailableProviders(configPath);
-      emit(socket, {
-        type: "agent.list.result",
-        requestId: payload.requestId,
-        agents,
-      });
-      return;
-    case "session.list": {
-      const normalizedSessions = sessionStore.list().map(migrateStoredSessionSummary);
-      logInfo(`[tiller-helm] session.list count=${normalizedSessions.length}`);
-      emit(socket, {
-        type: "session.list.result",
-        requestId: payload.requestId,
-        sessions: normalizedSessions,
-      });
-      return;
-    }
-    case "session.messages.list":
-      emit(socket, {
-        type: "session.messages.list.result",
-        requestId: payload.requestId,
-        sessionId: payload.sessionId,
-        messages: sessionMessageStore.list(payload.sessionId),
-      });
-      return;
-    case "session.artifacts.get": {
-      const artifacts = sessionArtifactStore.get(payload.sessionId);
-      const diffs = await hydrateDiffsFromWorkspaceGit(payload.sessionId, artifacts.diffs);
-      emit(socket, {
-        type: "session.artifacts.result",
-        requestId: payload.requestId,
-        sessionId: payload.sessionId,
-        outputs: artifacts.outputs,
-        diffs,
-        toolCalls: artifacts.toolCalls,
-      });
-      return;
-    }
-    case "session.resume.check": {
-      logInfo(`[tiller-helm] session.resume.check session=${payload.sessionId}`);
-      const summary = sessionStore.list().find((item) => item.id === payload.sessionId);
-      if (!summary) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          sessionId: payload.sessionId,
-          message: "Session not found",
-        });
-        return;
-      }
-
-      const hydrated = hydrateSessionSummary(summary);
-      emit(socket, {
-        type: "session.resume.result",
-        requestId: payload.requestId,
-        sessionId: payload.sessionId,
-        resume: hydrated.resume ?? buildResumeInfo(hydrated, resolveProviderById(hydrated.agentId, agents)),
-      });
-      return;
-    }
-    case "session.resume.start": {
-      logInfo(`[tiller-helm] session.resume.start session=${payload.sessionId}`);
-      const result = await startSessionResume(payload.sessionId);
-      logInfo(`[tiller-helm] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
-      emit(socket, {
-        type: "session.resume.start.result",
-        requestId: payload.requestId,
-        sessionId: payload.sessionId,
-        ok: result.ok,
-        resume: result.resume,
-        message: result.message,
-      });
-      return;
-    }
-    case "agent.save": {
-      const provider = {
-        id: payload.provider.id,
-        name: payload.provider.name,
-        kind: payload.provider.kind,
-        command: payload.provider.command,
-        args: payload.provider.args,
-        env: payload.provider.env,
-        cwd: payload.provider.cwd,
-        initializeTimeoutMs: payload.provider.initializeTimeoutMs,
-        defaultAgent: payload.provider.defaultAgent,
-        transport: "stdio" as const,
-        protocol: "acp" as const,
-        installHint: payload.provider.installHint,
-      };
-
-      const result = saveProviderToConfig(provider, configPath);
-      agents = listAvailableProviders(configPath);
-      projects = await loadAvailableProjectsWithSemanticSummaries();
-      emit(socket, {
-        type: "agent.save.result",
-        requestId: payload.requestId,
-        ok: true,
-        providerId: provider.id,
-        message: `Saved provider to ${result.configPath}`,
-      });
-      return;
-    }
-    case "agent.test": {
-      const agent = resolveProviderById(payload.providerId, agents);
-      if (!agent) {
-        emit(socket, {
-          type: "agent.test.result",
-          requestId: payload.requestId,
-          ok: false,
-          providerId: payload.providerId,
-          message: "Provider not found",
-        });
-        return;
-      }
-
-      const workspace = workspaces[0];
-      const result = await testAcpConnection(agent, workspace?.path);
-      emit(socket, {
-        type: "agent.test.result",
-        requestId: payload.requestId,
-        ok: result.ok,
-        providerId: payload.providerId,
-        message: result.message,
-      });
-      return;
-    }
-    case "agent.model.options.get": {
-      const agent = resolveProviderById(payload.providerId, agents);
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
-      if (!agent || !workspace) {
-        emit(socket, {
-          type: "agent.model.options.result",
-          requestId: payload.requestId,
-          ok: false,
-          providerId: payload.providerId,
-          workspaceId: payload.workspaceId,
-          message: !agent ? "Provider not found" : "Workspace not found",
-          modelOptions: [],
-          configOptions: [],
-          state: {},
-        });
-        return;
-      }
-
-      const result = await probeAgentModelOptions(agent, workspace);
-      emit(socket, {
-        type: "agent.model.options.result",
-        requestId: payload.requestId,
-        providerId: agent.id,
-        workspaceId: workspace.id,
-        ...result,
-      });
-      return;
-    }
-    case "session.create": {
-      helms = loadAvailableHelms();
-      workspaces = loadAvailableWorkspaces();
-      agents = listAvailableProviders(configPath);
-      projects = await loadAvailableProjectsWithSemanticSummaries();
-
-      const project = resolveProjectById(payload.projectId, projects);
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
-      const agent = resolveProviderById(payload.agentId, agents);
-      const helm = project ? resolveHelmById(project.helmId, helms) : undefined;
-
-      if (!project || !workspace || !agent || !helm) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Project, helm, workspace, or agent not found",
-        });
-        return;
-      }
-
-      if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Workspace does not belong to the selected project",
-        });
-        return;
-      }
-
-      if (project.allowedAgentIds?.length && !project.allowedAgentIds.includes(agent.id)) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "ACP agent is not allowed for the selected project",
-        });
-        return;
-      }
-
-      const sessionId = `session-${Date.now()}`;
-      const createdAt = new Date().toISOString();
-      logInfo(
-        `[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`,
-      );
-      const summaryBase: SessionSummary = {
-        id: sessionId,
-        projectId: project.id,
-        projectName: project.name,
-        helmId: helm.id,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        agentId: agent.id,
-        agentName: agent.name,
-        model: payload.model,
-        reasoningEffort: payload.reasoningEffort,
-        status: "starting",
-        createdAt,
-        updatedAt: createdAt,
-        messageCount: 0,
-      };
-      const summary: SessionSummary = {
-        ...summaryBase,
-        resume: buildResumeInfo(summaryBase, agent),
-      };
-      sessionStore.upsert(summary);
-      persistRuntimeDescriptor(summary, agent);
-
-      broadcastAuthenticated({
-        type: "session.created",
-        requestId: payload.requestId,
-        session: summary,
-      });
-
-      try {
-        const runtime = await createAcpRuntime({
-          sessionId,
-          workspace,
-          agent,
-          sessionConfig: {
-            model: summary.model,
-            reasoningEffort: summary.reasoningEffort,
-          },
-          onEvent: (event) => handleRuntimeEvent(sessionId, event),
-        });
-
-        const summaryWithRuntime = hydrateSessionSummary({
-          ...summary,
-          model: runtime.sessionConfigState?.model ?? summary.model,
-          modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-          reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
-          runtimeSessionId: runtime.runtimeSessionId,
-        });
-        const capabilitiesJson = JSON.stringify(runtime.sessionCapabilities ?? {});
-        logInfo(
-          `[tiller-helm] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${capabilitiesJson}`,
-        );
-        const record: SessionRecord = {
-          summary: summaryWithRuntime,
-          agent,
-          workspace,
-          runtime,
-        };
-
-        sessions.set(sessionId, record);
-        sessionStore.upsert(summaryWithRuntime);
-        persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
-        broadcastAuthenticated({
-          type: "session.created",
-          requestId: payload.requestId,
-          session: summaryWithRuntime,
-        });
-      } catch (error) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          sessionId,
-          message: error instanceof Error ? error.message : "Failed to create session runtime",
-        });
-        logError(
-          `[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`,
-        );
-        updateSessionSummary(sessionId, (current) => ({
-          ...current,
-          status: "error",
-          updatedAt: new Date().toISOString(),
-          lastMessagePreview: "Session startup failed",
-        }));
-        broadcastAuthenticated({
-          type: "session.status",
-          sessionId,
-          status: "error",
-          message: "Session startup failed",
-        });
-      }
-      return;
-    }
-    case "session.prompt": {
-      let record = sessions.get(payload.sessionId);
-      if (!record) {
-        logInfo(`[tiller-helm] session.prompt restore-required session=${payload.sessionId} chars=${payload.text.length}`);
-        const restore = await startSessionResume(payload.sessionId);
-        logInfo(`[tiller-helm] session.prompt restore-result session=${payload.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`);
-        emit(socket, {
-          type: "session.resume.start.result",
-          requestId: `session-prompt-restore-${Date.now()}`,
-          sessionId: payload.sessionId,
-          ok: restore.ok,
-          resume: restore.resume,
-          message: restore.message,
-        });
-        record = sessions.get(payload.sessionId);
-      }
-
-      if (!record) {
-        logError(`[tiller-helm] session.prompt failed session=${payload.sessionId} reason=Session runtime not available`);
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          sessionId: payload.sessionId,
-          message: "Session runtime is not available. Try reconnecting this Mission first.",
-        });
-        return;
-      }
-
-      logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
-      const timestamp = new Date().toISOString();
-      persistSessionMessage(payload.sessionId, {
-        id: `${payload.sessionId}-user-${Date.now()}`,
-        role: "user",
-        text: payload.text,
-        timestamp,
-      });
-      const updated = updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
-      if (updated) {
-        broadcastAuthenticated({
-          type: "session.updated",
-          requestId: payload.requestId,
-          session: updated,
-        });
-      }
-      record.runtime.prompt(payload.text);
-      return;
-    }
-    case "session.configure": {
-      const current = sessions.get(payload.sessionId)?.summary ?? sessionStore.list().find((item) => item.id === payload.sessionId);
-      if (!current) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Session not found",
-        });
-        return;
-      }
-
-      const activeRecord = sessions.get(payload.sessionId);
-      const runtimeResult = activeRecord
-        ? await activeRecord.runtime.configure({ model: payload.model, reasoningEffort: payload.reasoningEffort })
-        : null;
-      const nextModel = runtimeResult?.state.model ?? payload.model;
-      const nextReasoning = runtimeResult?.state.reasoningEffort ?? payload.reasoningEffort;
-      const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-
-      updateSessionSummary(payload.sessionId, (summary) => ({
-        ...summary,
-        model: nextModel,
-        modelOptions: nextModelOptions,
-        reasoningEffort: nextReasoning,
-        updatedAt: new Date().toISOString(),
-      }));
-
-      const next = hydrateSessionSummary({
-        ...current,
-        model: nextModel,
-        modelOptions: nextModelOptions,
-        reasoningEffort: nextReasoning,
-        updatedAt: new Date().toISOString(),
-      });
-      broadcastAuthenticated({
-        type: "session.updated",
-        requestId: payload.requestId,
-        session: next,
-      });
-      return;
-    }
-    case "permission.respond": {
-      const permission = permissionIndex.get(payload.permissionRequestId);
-      if (!permission) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Permission request not found",
-        });
-        return;
-      }
-
-      const record = sessions.get(permission.sessionId);
-      if (!record) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Session not found for permission response",
-        });
-        return;
-      }
-
-      if (!record.runtime.supportsPermissionResponses) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          sessionId: permission.sessionId,
-          message: "Real ACP permission passthrough is not wired yet. The request is still pending.",
-          code: "ACP_PERMISSION_UNSUPPORTED",
-        });
-        return;
-      }
-
-      permissionIndex.delete(payload.permissionRequestId);
-      broadcastAuthenticated({
-        type: "permission.resolved",
-        sessionId: permission.sessionId,
-        permissionRequestId: payload.permissionRequestId,
-        decision: payload.decision,
-      });
-      record.runtime.respondPermission(payload.permissionRequestId, payload.decision);
-      return;
-    }
-    case "session.cancel": {
-      const record = sessions.get(payload.sessionId);
-      if (!record) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Session not found",
-        });
-        return;
-      }
-
-      record.runtime.cancel();
-      return;
-    }
-    case "session.cleanup": {
-      const record = sessions.get(payload.sessionId);
-      const summary = record?.summary ?? sessionStore.list().find((item) => item.id === payload.sessionId);
-      if (!summary) {
-        emit(socket, {
-          type: "error",
-          requestId: payload.requestId,
-          message: "Session not found",
-        });
-        return;
-      }
-
-      const provider = record?.agent ?? resolveProviderById(summary.agentId, agents);
-      if (record) {
-        sessions.delete(summary.id);
-        record.runtime.cancel();
-      }
-
-      clearPermissionRequestsForSession(summary.id);
-      deleteLocalSessionData(summary.id);
-
-      const remoteResult = resolveSessionCleanupOutcome(summary, provider);
-      broadcastAuthenticated({
-        type: "session.cleanup.result",
-        requestId: payload.requestId,
-        result: {
-          sessionId: summary.id,
-          localDeleted: true,
-          remoteDeleted: remoteResult.remoteDeleted,
-          remoteDeletionAttempted: remoteResult.remoteDeletionAttempted,
-          providerId: remoteResult.providerId,
-          message: remoteResult.message,
-        },
-      });
-      return;
-    }
-    default:
-      return;
-  }
+  const context = createHandlerContext();
+  if (await handleDeviceMessage(socket, payload, context)) return;
+  if (await handleConfigMessage(socket, payload, context)) return;
+  if (await handleSessionMessage(socket, payload, context)) return;
 }
 
+function createHandlerContext(): HelmHandlerContext {
+  return {
+    configPath,
+    emit,
+    broadcastAuthenticated,
+    logInfo,
+    logError,
+    getHelms: () => helms,
+    setHelms: (items) => { helms = items; },
+    loadAvailableHelms,
+    getWorkspaces: () => workspaces,
+    setWorkspaces: (items) => { workspaces = items; },
+    loadAvailableWorkspaces,
+    getAgents: () => agents,
+    setAgents: (items) => { agents = items; },
+    loadAvailableAgents: () => listAvailableProviders(configPath),
+    getProjects: () => projects,
+    setProjects: (items) => { projects = items; },
+    loadAvailableProjectsWithSemanticSummaries,
+    trustedDeviceStore,
+    authenticatedSockets,
+    toTrustedDeviceSummary,
+    sessions,
+    permissionIndex,
+    sessionStore,
+    sessionMessageStore,
+    sessionArtifactStore,
+    sessionRuntimeStore,
+    createRuntime: createAcpRuntime,
+    testAcpConnection,
+    resolveHelmById,
+    resolveProjectById,
+    resolveProviderById,
+    probeAgentModelOptions,
+    startSessionResume,
+    handleRuntimeEvent,
+    hydrateSessionSummary,
+    migrateStoredSessionSummary,
+    buildResumeInfo,
+    persistRuntimeDescriptor,
+    updateSessionSummary,
+    persistSessionMessage,
+    publishDiffUpdate,
+    hydrateDiffsFromWorkspaceGit,
+    clearPermissionRequestsForSession,
+    deleteLocalSessionData,
+  };
+}
 async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: WorkspaceSummary) {
   const probeSessionId = `probe-${agent.id}-${Date.now()}`;
   let modelState: AcpModelState | undefined;
@@ -891,154 +360,8 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   };
 }
 function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
-  if (!sessions.has(sessionId) && !sessionStore.list().some((item) => item.id === sessionId)) {
-    return;
-  }
-
-  switch (event.type) {
-    case "status":
-      logInfo(`[tiller-helm] session.status session=${sessionId} status=${event.status}${event.message ? ` message=${event.message}` : ""}`);
-      updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        status: event.status,
-        updatedAt: new Date().toISOString(),
-      }));
-      broadcastAuthenticated({
-        type: "session.status",
-        sessionId,
-        status: event.status,
-        message: event.message,
-      });
-      return;
-    case "message":
-      persistSessionMessage(sessionId, event.message);
-      updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, event.message));
-      broadcastAuthenticated({
-        type: "agent.message",
-        sessionId,
-        message: event.message,
-      });
-      return;
-    case "permission-request":
-      updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        status: "waiting_for_permission",
-        updatedAt: new Date().toISOString(),
-        lastMessagePreview: event.request.reason,
-      }));
-      permissionIndex.set(event.request.id, { sessionId, request: event.request });
-      broadcastAuthenticated({
-        type: "permission.request",
-        sessionId,
-        permissionRequest: event.request,
-      });
-      return;
-    case "tool-call":
-      sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
-      broadcastAuthenticated({
-        type: "tool.call",
-        sessionId,
-        toolCall: event.toolCall,
-      });
-      return;
-    case "command-output":
-      sessionArtifactStore.appendOutput(sessionId, event.chunk);
-      broadcastAuthenticated({
-        type: "command.output",
-        sessionId,
-        commandId: event.chunk.commandId,
-        chunk: event.chunk,
-      });
-      if (event.toolCall) {
-        sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
-        broadcastAuthenticated({
-          type: "tool.call",
-          sessionId,
-          toolCall: event.toolCall,
-        });
-      }
-      return;
-    case "diff-update":
-      void publishDiffUpdate(sessionId, event.files);
-      return;
-    case "config-options": {
-      logInfo(
-        `[tiller-helm] session.config.options session=${sessionId} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
-      );
-      const updated = updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        model: event.state.model ?? current.model,
-        reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
-        updatedAt: new Date().toISOString(),
-      }));
-      broadcastAuthenticated({
-        type: "session.config.options",
-        sessionId,
-        state: event.state,
-        options: event.options,
-      });
-      if (!updated) {
-        return;
-      }
-      broadcastAuthenticated({
-        type: "session.updated",
-        requestId: `session-config-${Date.now()}`,
-        session: hydrateSessionSummary(updated),
-      });
-      return;
-    }
-    case "model-options": {
-      logInfo(
-        `[tiller-helm] session.model.options session=${sessionId} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
-      );
-      const updated = updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        model: event.state.currentModelId ?? current.model,
-        modelOptions: event.state.options,
-        updatedAt: new Date().toISOString(),
-      }));
-      broadcastAuthenticated({
-        type: "session.model.options",
-        sessionId,
-        currentModelId: event.state.currentModelId,
-        options: event.state.options,
-      });
-      if (!updated) {
-        return;
-      }
-      broadcastAuthenticated({
-        type: "session.updated",
-        requestId: `session-model-${Date.now()}`,
-        session: hydrateSessionSummary(updated),
-      });
-      return;
-    }
-    case "error":
-      logError(`[tiller-helm] session.error session=${sessionId} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
-      persistSessionMessage(sessionId, {
-        id: `${sessionId}-system-${Date.now()}`,
-        role: "system",
-        text: event.message,
-        timestamp: new Date().toISOString(),
-      });
-      updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        status: "error",
-        updatedAt: new Date().toISOString(),
-        lastMessagePreview: event.message.slice(0, 160),
-      }));
-      broadcastAuthenticated({
-        type: "error",
-        sessionId,
-        message: event.message,
-        code: event.code,
-      });
-      return;
-    default:
-      return;
-  }
+  dispatchRuntimeEvent(sessionId, event, createHandlerContext());
 }
-
 function clearPermissionRequestsForSession(sessionId: string) {
   for (const [requestId, permission] of permissionIndex.entries()) {
     if (permission.sessionId === sessionId) {
