@@ -8891,3 +8891,228 @@ textarea:focus,
     justify-self: end;
   }
 }
+
+/* Mission inspector progressive collapse control. */
+.view-sessions .mission-inspector {
+  position: relative;
+}
+
+.view-sessions .mission-inspector-toggle {
+  position: sticky;
+  top: 8px;
+  z-index: 12;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin-left: auto;
+  margin-bottom: -4px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.54);
+  color: #dbeafe;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-inspector-floating-toggle {
+  position: fixed;
+  right: 12px;
+  top: 12px;
+  z-index: 42;
+  margin: 0;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.view-sessions .mission-inspector-toggle:hover,
+.view-sessions .mission-inspector-toggle:focus-visible {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.24);
+  outline: none;
+}
+
+/* Mission top drawer: hide by its own height so it cannot protrude over single-chat mode after focus. */
+.shell.view-sessions > .top-nav {
+  top: 0;
+  left: 8px;
+  right: 8px;
+  width: calc(100vw - 16px);
+  transform: translateY(-100%) !important;
+  transition: transform 0.24s ease, box-shadow 0.24s ease;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  bottom: -12px;
+}
+
+
+/* Mission immersive mode: no visible top drawer handle/gap over the workbench. */
+.shell.view-sessions > .top-nav::after {
+  display: none !important;
+}
+
+.shell.view-sessions > .top-nav {
+  transform: translateY(calc(-100% - 1px)) !important;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+/* Mission top drawer access strip: keep a tiny hover target without pushing the workbench down. */
+.shell.view-sessions > .top-nav {
+  transform: translateY(calc(-100% + 4px)) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  height: 4px;
+  bottom: 0;
+  opacity: 0;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+/* Mission top drawer visible micro-handle. */
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  width: 56px;
+  height: 4px;
+  bottom: 0;
+  opacity: 0.72;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.82);
+  box-shadow: 0 0 12px rgba(148, 163, 184, 0.18);
+}
+
+/* Mission top drawer parity: use the same handle geometry as the other pages. */
+.shell.view-sessions > .top-nav {
+  top: 0;
+  left: 16px;
+  right: auto;
+  width: calc(100vw - 32px);
+  min-height: 76px;
+  transform: translateY(-78px) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  left: 50%;
+  bottom: -10px;
+  width: 64px;
+  height: 10px;
+  opacity: 1;
+  transform: translateX(-50%);
+  border-radius: 0 0 999px 999px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 24px rgba(26, 28, 29, 0.08);
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  width: calc(100vw - 32px);
+  transform: translateY(0) !important;
+}
+
+/* Shared top drawer row contract: keep brand, nav and avatar on one row across every view. */
+.shell > .top-nav {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center !important;
+  column-gap: 18px;
+  min-height: 76px;
+  max-height: 76px;
+  overflow: visible;
+}
+
+.shell > .top-nav .top-nav-brand {
+  min-width: max-content;
+}
+
+.shell > .top-nav .top-nav-links {
+  min-width: 0;
+  justify-content: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.shell > .top-nav .top-nav-links::-webkit-scrollbar {
+  display: none;
+}
+
+.shell > .top-nav .admiral-avatar {
+  justify-self: end;
+  align-self: center;
+  margin-left: 0;
+}
+
+@media (max-width: 860px) {
+  .shell > .top-nav,
+  .shell.view-sessions > .top-nav {
+    left: 8px;
+    right: auto;
+    width: calc(100vw - 16px);
+    min-height: 76px;
+    max-height: 76px;
+    padding: 12px 14px;
+    transform: translateY(-78px) !important;
+  }
+
+  .shell > .top-nav:hover,
+  .shell > .top-nav:focus-within,
+  .shell.view-sessions > .top-nav:hover,
+  .shell.view-sessions > .top-nav:focus-within {
+    width: calc(100vw - 16px);
+    transform: translateY(0) !important;
+  }
+}
+
+/* Mission composer picker repair: popovers stay clickable, compact, and aligned to their trigger width. */
+.view-sessions .mission-composer-config,
+.view-sessions .mission-draft-chat .mission-composer-config {
+  overflow: visible !important;
+}
+
+.view-sessions .mission-config-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.view-sessions .mission-config-trigger {
+  font-size: 0.78rem;
+}
+
+.view-sessions .mission-config-menu {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  z-index: 90;
+  font-size: 0.76rem;
+  line-height: 1.15;
+}
+
+.view-sessions .mission-config-menu button {
+  min-height: 26px;
+  padding: 6px 7px;
+  font-size: 0.76rem;
+  line-height: 1.15;
+}
+
+.view-sessions .mission-config-menu button span,
+.view-sessions .mission-config-menu button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

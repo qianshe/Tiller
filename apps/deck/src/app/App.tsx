@@ -258,10 +258,12 @@ const MISSION_PANE_LIMITS: Record<MissionPaneId, { min: number; max?: number }> 
   sidebar: { min: 240, max: 400 },
   chat: { min: 420, max: 820 },
   display: { min: 320 },
-  inspector: { min: 240, max: 520 },
+  inspector: { min: 320, max: 520 },
 };
 const MISSION_RESIZER_WIDTH = 8;
-const MISSION_OUTER_GUTTER = 24;
+const MISSION_OUTER_GUTTER = 0;
+const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1584;
+const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1156;
 
 function getMissionPaneMax(pane: MissionPaneId) {
   return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
@@ -273,14 +275,14 @@ function clampPaneWidth(value: number, pane: MissionPaneId) {
   return Math.min(max, Math.max(limits.min, Math.round(value)));
 }
 
-function normalizeMissionPaneWidths(widths: MissionPaneWidths, sidebarCollapsed: boolean, viewportWidth: number): MissionPaneWidths {
+function normalizeMissionPaneWidths(widths: MissionPaneWidths, sidebarCollapsed: boolean, inspectorCollapsed: boolean, viewportWidth: number): MissionPaneWidths {
   const next: MissionPaneWidths = {
     sidebar: sidebarCollapsed ? 0 : clampPaneWidth(widths.sidebar, "sidebar"),
     chat: clampPaneWidth(widths.chat, "chat"),
     display: clampPaneWidth(widths.display, "display"),
-    inspector: clampPaneWidth(widths.inspector, "inspector"),
+    inspector: inspectorCollapsed ? 0 : clampPaneWidth(widths.inspector, "inspector"),
   };
-  const visibleResizerCount = sidebarCollapsed ? 2 : 3;
+  const visibleResizerCount = 1 + (sidebarCollapsed ? 0 : 1) + (inspectorCollapsed ? 0 : 1);
   const availableWidth = Math.max(0, viewportWidth - MISSION_OUTER_GUTTER - visibleResizerCount * MISSION_RESIZER_WIDTH);
   const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
 
@@ -293,9 +295,11 @@ function normalizeMissionPaneWidths(widths: MissionPaneWidths, sidebarCollapsed:
     return next;
   }
 
-  const inspectorReduction = Math.min(overflow, Math.max(0, next.inspector - MISSION_PANE_LIMITS.inspector.min));
-  next.inspector -= inspectorReduction;
-  overflow -= inspectorReduction;
+  if (!inspectorCollapsed) {
+    const inspectorReduction = Math.min(overflow, Math.max(0, next.inspector - MISSION_PANE_LIMITS.inspector.min));
+    next.inspector -= inspectorReduction;
+    overflow -= inspectorReduction;
+  }
 
   const displayReduction = Math.min(overflow, Math.max(0, next.display - MISSION_PANE_LIMITS.display.min));
   next.display -= displayReduction;
@@ -380,7 +384,7 @@ function TopNav({
             key={item.id}
             type="button"
             className={`top-nav-item ${activeView === item.id ? "active" : ""}`}
-            onClick={() => onNavigate(item.id)}
+            onClick={(event) => { onNavigate(item.id); event.currentTarget.blur(); }}
           >
             {item.label}
           </button>
@@ -604,20 +608,32 @@ export function App() {
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
-  const [missionViewportWidth, setMissionViewportWidth] = useState(() => typeof window === "undefined" ? 1440 : window.innerWidth);
+  const [missionInspectorCollapsed, setMissionInspectorCollapsed] = useState(false);
+  const missionLayoutRef = useRef<HTMLElement | null>(null);
+  const [missionViewportWidth, setMissionViewportWidth] = useState(() => typeof document === "undefined" ? 1440 : document.documentElement.clientWidth);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
   const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
+  const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
 
   useEffect(() => {
-    const handleMissionViewportResize = () => setMissionViewportWidth(window.innerWidth);
-    handleMissionViewportResize();
-    window.addEventListener("resize", handleMissionViewportResize);
-    return () => window.removeEventListener("resize", handleMissionViewportResize);
-  }, []);
+    const measureMissionLayout = () => {
+      const width = missionLayoutRef.current?.getBoundingClientRect().width ?? document.documentElement.clientWidth;
+      setMissionViewportWidth(Math.max(0, Math.round(width)));
+    };
+    measureMissionLayout();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureMissionLayout);
+    if (missionLayoutRef.current) {
+      resizeObserver?.observe(missionLayoutRef.current);
+    }
+    window.addEventListener("resize", measureMissionLayout);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureMissionLayout);
+    };
+  }, [activeView]);
 
-  const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
     command: "opencode",
@@ -2621,7 +2637,9 @@ export function App() {
   function startMissionPaneResize(handle: MissionResizeHandle, event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const base = normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth);
+    const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
+    const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
+    const base = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
     const onMove = (moveEvent: MouseEvent) => {
       applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
     };
@@ -2637,7 +2655,7 @@ export function App() {
   }
 
   function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
-    applyMissionPaneDelta(handle, direction * 24, normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth));
+    applyMissionPaneDelta(handle, direction * 24, normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH, missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH, missionViewportWidth));
   }
 
   function renderMissionPaneResizer(handle: MissionResizeHandle, label: string) {
@@ -2693,7 +2711,9 @@ export function App() {
 
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
-    const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed, missionViewportWidth);
+    const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
+    const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
+    const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
     const activeMissionHelm = missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ?? activeHelm;
     const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
@@ -2841,7 +2861,7 @@ export function App() {
     );
 
     return (
-      <section className={`card surface-card chat-layout chat-layout-sidebar ${missionSidebarCollapsed ? "mission-sidebar-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
+      <section ref={missionLayoutRef} className={`card surface-card chat-layout chat-layout-sidebar ${effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : ""} ${effectiveInspectorCollapsed ? "mission-inspector-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
         {pairingState !== "paired" ? (
           <div className="note-box compact-note">
             <strong>任务视图待连接</strong>
@@ -2849,8 +2869,8 @@ export function App() {
           </div>
         ) : (
           <>
-            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
-              {!missionSidebarCollapsed ? (
+            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
+              {!effectiveSidebarCollapsed ? (
                 <button
                   type="button"
                   className="mission-sidebar-toggle"
@@ -3005,7 +3025,7 @@ export function App() {
                 ›
               </button>
             ) : null}
-            {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
+            {!effectiveSidebarCollapsed ? renderMissionPaneResizer("sidebar", "调整任务列表宽度") : null}
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
               <div className="chat-main">
@@ -3214,8 +3234,13 @@ export function App() {
 
             {renderMissionDisplayPanel()}
 
-            {renderMissionPaneResizer("inspector", "调整检视器宽度")}
+            {!effectiveInspectorCollapsed ? renderMissionPaneResizer("inspector", "调整检视器宽度") : null}
 
+            {effectiveInspectorCollapsed ? (
+              <button className="mission-inspector-toggle mission-inspector-floating-toggle" type="button" onClick={() => setMissionInspectorCollapsed(false)} aria-label="展开任务检视器" title="展开任务检视器">›</button>
+            ) : null}
+
+            {!effectiveInspectorCollapsed ? (
             <aside className="mission-inspector mission-pane mission-pane-inspector" style={missionInspectorPaneStyle} aria-label="任务检视器">
               <section className="inspector-section">
                 <p className="eyebrow">上下文</p>
@@ -3301,6 +3326,7 @@ export function App() {
               </section>
 
             </aside>
+            ) : null}
           </>
         )}
       </section>
@@ -4210,8 +4236,8 @@ function resolveSessionTitle(session: SessionSummary) {
   return `${session.projectName} 任务`;
 }
 
-function resolveModelOptions(_currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
-  return resolveModelOptionsFromConfig(undefined, configOptions, nativeOptions);
+function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
+  return resolveModelOptionsFromConfig(currentModel, configOptions, nativeOptions);
 }
 
 function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
@@ -4420,6 +4446,11 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
+
+
+
+
+
 
 
 

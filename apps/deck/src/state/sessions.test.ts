@@ -131,6 +131,12 @@ test("resolveModelOptionsFromConfig prefers ACP config options over legacy model
   assert.deepEqual(options, ["openai/gpt-5.4", "openai/gpt-5.4/high"]);
 });
 
+test("resolveModelOptionsFromConfig falls back to current model when no option list is available", () => {
+  const options = resolveModelOptionsFromConfig("gpt-5.5", [], []);
+
+  assert.deepEqual(options, ["gpt-5.5"]);
+});
+
 
 test("resolvePromptPlaceholder uses the selected ACP command as empty-editor hint", () => {
   assert.equal(resolvePromptPlaceholder({ command: "codex-acp" }), "向 codex-acp 下达指令；@ 引用上下文，/ 调用命令");

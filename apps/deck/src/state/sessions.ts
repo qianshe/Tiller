@@ -67,7 +67,7 @@ export function resolveDraftSelectionId<T extends { id: string }>(
 }
 
 export function resolveModelOptionsFromConfig(
-  _currentModel: string | undefined,
+  currentModel: string | undefined,
   configOptions: SessionConfigOption[] = [],
   nativeOptions: AcpModelOption[] = [],
 ) {
@@ -81,7 +81,12 @@ export function resolveModelOptionsFromConfig(
   }
 
   const nativeModels = nativeOptions.map((option) => option.id).filter((value) => value.trim().length > 0);
-  return Array.from(new Set(nativeModels));
+  if (nativeModels.length) {
+    return Array.from(new Set(nativeModels));
+  }
+
+  const fallbackModel = currentModel?.trim();
+  return fallbackModel ? [fallbackModel] : [];
 }
 
 
