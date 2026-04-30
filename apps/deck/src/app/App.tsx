@@ -2401,6 +2401,105 @@ case "session.messages.list.result":
     });
   }
 
+  function toggleProjectFileDirectory(path: string) {
+    setCollapsedProjectFileDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
+  function openDiffDetail(path: string) {
+    setSelectedMissionDiffFilePath(path);
+    setSelectedMissionPanelPageId("diff-detail");
+  }
+
+  function toggleMissionDiffDirectory(path: string) {
+    setCollapsedMissionDiffDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
+  function addMissionPanelPage() {
+    const id = `custom-${Date.now()}`;
+    setCustomMissionPanelPages((current) => [...current, { id, title: `展示页 ${current.length + 1}` }]);
+    setSelectedMissionPanelPageId(id);
+  }
+
+  function dropMissionPanelPage(targetPageId: string) {
+    if (!draggedMissionPanelPageId || draggedMissionPanelPageId === targetPageId) {
+      return;
+    }
+    setCustomMissionPanelPages((current) => {
+      const fromIndex = current.findIndex((page) => page.id === draggedMissionPanelPageId);
+      const toIndex = current.findIndex((page) => page.id === targetPageId);
+      if (fromIndex < 0 || toIndex < 0) {
+        return current;
+      }
+      const next = [...current];
+      const [dragged] = next.splice(fromIndex, 1);
+      if (!dragged) {
+        return current;
+      }
+      next.splice(toIndex, 0, dragged);
+      return next;
+    });
+    setDraggedMissionPanelPageId(null);
+  }
+
+  function renameMissionPanelPage(pageId: string, title: string) {
+    setCustomMissionPanelPages((current) => current.map((page) => page.id === pageId ? { ...page, title } : page));
+  }
+
+  function moveMissionPanelPage(pageId: string, direction: -1 | 1) {
+    setCustomMissionPanelPages((current) => {
+      const index = current.findIndex((page) => page.id === pageId);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) {
+        return current;
+      }
+      const next = [...current];
+      const [page] = next.splice(index, 1);
+      if (!page) {
+        return current;
+      }
+      next.splice(targetIndex, 0, page);
+      return next;
+    });
+  }
+
+  function deleteMissionPanelPage(pageId: string) {
+    setCustomMissionPanelPages((current) => current.filter((page) => page.id !== pageId));
+    if (selectedMissionPanelPageId === pageId) {
+      setSelectedMissionPanelPageId("overview");
+    }
+  }
+
+  function cleanupSession(sessionId: string) {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法清理任务。" });
+      return;
+    }
+
+    setCleanupFeedback({ tone: "info", message: "正在清理任务..." });
+    dispatch(socket, {
+      type: "session.cleanup",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+    });
+  }
+
   function loadOlderMessages(sessionId: string) {
     const historyState = messageHistoryState[sessionId];
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
@@ -2644,6 +2743,59 @@ case "session.messages.list.result":
       return <img src={iconUrl} alt="" aria-hidden="true" />;
     }
     return <span className="mission-tree-agent-initials">{resolveMissionAgentInitials(agentName)}</span>;
+  }
+
+  function renderOverview() {
+    const recentSessions = sessions.slice(0, 5);
+    const activeHelmLabel = activeHelm ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}` : `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+    const overviewItems = [
+      `Helm · ${activeHelmLabel}`,
+      `连接 · ${copy.connection[connection]}`,
+      `项目 · ${projects.length}`,
+      `工作区 · ${workspaces.length}`,
+      `ACP 舰员 · ${agents.length}`,
+      `任务 · ${sessions.length}`,
+    ];
+
+    return (
+      <section className="stack-gap overview-page">
+        <section className="card hero-card">
+          <div>
+            <p className="eyebrow">{copy.heroEyebrow}</p>
+            <h1>Tiller Command Deck</h1>
+            <p>{copy.heroBody}</p>
+          </div>
+          <div className="section-actions">
+            <button className="primary" type="button" onClick={() => navigateToView("sessions")}>进入任务</button>
+            <button className="secondary" type="button" onClick={() => navigateToView("agents")}>管理舰队</button>
+          </div>
+        </section>
+        <section className="card surface-card overview-grid">
+          <InfoList title="当前总览" items={overviewItems} empty="暂无总览信息" />
+          <div className="info-list">
+            <div className="section-head section-head-soft">
+              <div>
+                <h3>最近任务</h3>
+                <p className="muted compact">按 Helm 返回顺序展示最近会话。</p>
+              </div>
+            </div>
+            {recentSessions.length ? (
+              <div className="session-list compact-session-list">
+                {recentSessions.map((session) => (
+                  <button key={session.id} type="button" className="session-row" onClick={() => { openSession(session.id); navigateToView("sessions"); }}>
+                    <strong>{resolveSessionTitle(session)}</strong>
+                    <span>{session.projectName} · {session.agentName}</span>
+                    <small>{formatRelativeTime(session.updatedAt)}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">还没有任务，先进入任务页创建一个。</div>
+            )}
+          </div>
+        </section>
+      </section>
+    );
   }
 
   function renderSessions() {

@@ -4234,16 +4234,6 @@ textarea:focus,
   color: #7dd3fc;
 }
 
-.history-loading-pill {
-  align-self: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(124, 58, 237, 0.14);
-  color: #ddd6fe;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
 .session-overview-card {
   display: grid;
   gap: 12px;
