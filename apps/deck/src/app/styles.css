@@ -9036,6 +9036,20 @@ textarea:focus,
   box-shadow: inset 2px 0 0 #60a5fa;
 }
 
+.view-sessions .mission-tree-session-row {
+  padding-right: 4px;
+}
+
+.view-sessions .mission-tree-row-project {
+  padding-left: 8px;
+}
+
+.view-sessions .mission-tree-row-session {
+  width: calc(100% - 18px);
+  margin-left: 18px;
+  padding-left: 6px;
+}
+
 .view-sessions .mission-logbook-page {
   height: 100%;
   min-height: 0;

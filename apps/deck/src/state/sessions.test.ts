@@ -86,8 +86,8 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   });
 });
 
-test("resolveSessionTitle uses the first meaningful 6 chars of the user prompt preview", () => {
-  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "【紧急】修复 session.message 日志"), "紧急修复se");
+test("resolveSessionTitle uses the first meaningful 5 chars of the user prompt preview", () => {
+  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "【紧急】修复 session.message 日志"), "紧急修复s");
   assert.equal(resolveSessionTitle(buildSession("session-2", "2026-04-27T10:00:00.000Z"), "  你好！！！  "), "你好");
 });
 

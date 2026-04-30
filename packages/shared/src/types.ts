@@ -246,6 +246,7 @@ export type SessionSummary = {
   updatedAt: string;
   messageCount: number;
   runtimeSessionId?: string;
+  title?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
 };
@@ -297,5 +298,4 @@ export type FileDiffSummary = {
   /** Unified patch/hunk text when the ACP provider includes file-level diff content. */
   patch?: string;
 };
-
 

@@ -87,6 +87,7 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.updatedAt === "string" &&
     typeof candidate.messageCount === "number" &&
     (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
+    (typeof candidate.title === "string" || typeof candidate.title === "undefined") &&
     (typeof candidate.lastMessagePreview === "string" || typeof candidate.lastMessagePreview === "undefined") &&
     (typeof candidate.resume === "undefined" || isSessionResumeInfo(candidate.resume))
   );
@@ -140,6 +141,7 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
     updatedAt: candidate.updatedAt as string,
     messageCount: candidate.messageCount as number,
     runtimeSessionId: typeof candidate.runtimeSessionId === "string" ? candidate.runtimeSessionId : undefined,
+    title: typeof candidate.title === "string" ? candidate.title : undefined,
     lastMessagePreview: typeof candidate.lastMessagePreview === "string" ? candidate.lastMessagePreview : undefined,
     resume: normalizeResumeInfo(candidate.resume),
   };

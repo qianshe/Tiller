@@ -91,9 +91,12 @@ export function resolveModelOptionsFromConfig(
 
 
 export function resolveSessionTitle(session: SessionSummary, preview = session.lastMessagePreview) {
+  if (session.title?.trim()) {
+    return session.title.trim();
+  }
   const title = preview
     ?.replace(/[\p{P}\p{S}\s]+/gu, "")
-    .slice(0, 6);
+    .slice(0, 5);
 
   return title || `${session.projectName} 任务`;
 }

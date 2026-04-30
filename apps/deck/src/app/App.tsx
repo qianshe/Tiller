@@ -44,6 +44,7 @@ const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
 const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
 const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
+const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
 const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
@@ -226,6 +227,63 @@ function inferProjectFromText(text: string, projects: ProjectSummary[]) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readSessionTitles(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SESSION_TITLES_STORAGE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object"
+      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionTitles(titles: Record<string, string>) {
+  window.localStorage.setItem(SESSION_TITLES_STORAGE_KEY, JSON.stringify(titles));
+}
+
+function createFallbackSessionTitle(prompt: string) {
+  return prompt.replace(/[\p{P}\p{S}\s]+/gu, "").slice(0, 5) || "新任务";
+}
+
+function normalizeGeneratedSessionTitle(value: string) {
+  return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
+}
+
+async function generateSessionTitleWithLlm(prompt: string, llm: PromptEnhancerPreferences["llm"]) {
+  const response = await fetch(resolveSessionTitleChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "你是会话命名器。根据用户输入生成一个中文短标题，只输出标题本身，5到10个字，不要标点。" },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Session title LLM failed: ${response.status}`);
+  }
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return normalizeGeneratedSessionTitle(data.choices?.[0]?.message?.content ?? "");
+}
+
+function resolveSessionTitleChatCompletionsUrl(baseUrl: string) {
+  const normalized = baseUrl.trim().replace(/\/+$/u, "");
+  if (normalized.endsWith("/chat/completions")) {
+    return normalized;
+  }
+  if (normalized.endsWith("/v1")) {
+    return `${normalized}/chat/completions`;
+  }
+  return `${normalized}/v1/chat/completions`;
 }
 
 function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
@@ -659,6 +717,7 @@ export function App() {
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({});
+  const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(() => readSessionTitles());
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
@@ -753,6 +812,10 @@ export function App() {
   const [trustedDevices, setTrustedDevices] = useState<TrustedDeviceSummary[]>([]);
 
   const copy = UI_COPY[locale];
+
+  useEffect(() => {
+    writeSessionTitles(sessionTitles);
+  }, [sessionTitles]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -1839,6 +1902,7 @@ export function App() {
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
             pendingPromptRef.current = null;
+            assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
             const clientMessageId = createClientUserMessageId(payload.session.id);
             appendUserMessage(payload.session.id, pendingPrompt, clientMessageId);
             dispatch(socketRef.current, {
@@ -2089,6 +2153,35 @@ case "session.messages.list.result":
         },
       ]),
     }));
+  }
+
+  function resolveDisplaySessionTitle(session: SessionSummary) {
+    const firstUserMessage = messages[session.id]?.find((message) => message.role === "user")?.text;
+    return resolveSessionTitle(session, sessionTitles[session.id] ?? firstUserMessage);
+  }
+
+  function assignSessionTitleFromPrompt(sessionId: string, rawPrompt: string) {
+    const promptText = rawPrompt.trim();
+    if (!promptText) {
+      return;
+    }
+    const fallbackTitle = createFallbackSessionTitle(promptText);
+    setSessionTitles((current) => current[sessionId] ? current : { ...current, [sessionId]: fallbackTitle });
+
+    const llm = deckPreferences.promptEnhancer.llm;
+    if (!llm.enabled || !llm.baseUrl.trim() || !llm.model.trim()) {
+      return;
+    }
+
+    void generateSessionTitleWithLlm(promptText, llm)
+      .then((title) => {
+        if (title) {
+          setSessionTitles((current) => ({ ...current, [sessionId]: title }));
+        }
+      })
+      .catch(() => {
+        // Keep deterministic fallback title when the optional naming model is unavailable.
+      });
   }
 
   function createSession(initialPrompt?: string) {
@@ -2888,7 +2981,7 @@ case "session.messages.list.result":
               <div className="session-list compact-session-list">
                 {recentSessions.map((session) => (
                   <button key={session.id} type="button" className="session-row" onClick={() => { openSession(session.id); navigateToView("sessions"); }}>
-                    <strong>{resolveSessionTitle(session)}</strong>
+                    <strong>{resolveDisplaySessionTitle(session)}</strong>
                     <span>{session.projectName} · {session.agentName}</span>
                     <small>{formatRelativeTime(session.updatedAt)}</small>
                   </button>
@@ -3219,7 +3312,7 @@ case "session.messages.list.result":
                                             <span className="mission-tree-caret" />
                                             <span className="mission-tree-agent-icon" title={session.agentName}>{renderMissionAgentIcon(session.agentName)}</span>
                                             <span className="mission-tree-main">
-                                              <strong>{resolveSessionTitle(session)}</strong>
+                                              <strong>{resolveDisplaySessionTitle(session)}</strong>
                                               <span>ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
                                             </span>
                                             <span className="mission-tree-time">{formatRelativeTime(session.updatedAt)}</span>
@@ -3227,7 +3320,7 @@ case "session.messages.list.result":
                                           <button
                                             type="button"
                                             className="session-inline-action mission-tree-cleanup"
-                                            aria-label={`清理 ${resolveSessionTitle(session)}`}
+                                            aria-label={`清理 ${resolveDisplaySessionTitle(session)}`}
                                             title="清理任务"
                                             onClick={(event) => {
                                               event.stopPropagation();

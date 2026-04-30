@@ -1,8 +1,9 @@
 import { exec, execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { listAvailableProviders, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
+import { listAvailableProviders, readTillerConfig, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type { AcpAgentProvider, ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
@@ -165,8 +166,12 @@ function isNonGitRepositoryError(error: unknown) {
   return /not a git repository|not a git repo|outside repository/i.test(message);
 }
 
-function resolveProjectWorkspaceId(project: ProjectSummary) {
-  return `${project.id}-workspace`;
+export function resolveProjectWorkspaceId(project: Pick<ProjectSummary, "id" | "gitCurrentBranch">, currentBranch?: string) {
+  return currentBranch?.trim() || project.gitCurrentBranch?.trim() || `${project.id}-workspace`;
+}
+
+function isProjectRootWorkspaceId(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, workspaceId: string) {
+  return workspaceId === `${project.id}-workspace` || workspaceId === project.gitCurrentBranch || gitInfo.branches.includes(workspaceId);
 }
 
 function stripRuntimeProjectSummary(project: ProjectSummary) {
@@ -174,11 +179,13 @@ function stripRuntimeProjectSummary(project: ProjectSummary) {
   return persistableProject;
 }
 
-function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, projectRoot: string, configPath: string) {
-  const workspaceId = resolveProjectWorkspaceId(project);
+export function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, projectRoot: string, configPath: string) {
+  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
   const previousWorkspaceIds = project.workspaceIds ?? [];
-  const legacyBranchWorkspaceIds = new Set([project.defaultWorkspaceId, project.gitCurrentBranch, ...gitInfo.branches].filter(Boolean));
-  const workspaceIds = Array.from(new Set([workspaceId, ...previousWorkspaceIds.filter((id) => !legacyBranchWorkspaceIds.has(id))]));
+  const workspaceIds = Array.from(new Set([
+    workspaceId,
+    ...previousWorkspaceIds.filter((id) => id === workspaceId || !isProjectRootWorkspaceId(project, gitInfo, id)),
+  ]));
   saveProjectToConfig({
     ...stripRuntimeProjectSummary(project),
     workspaceIds,
@@ -187,12 +194,23 @@ function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: str
     gitCurrentBranch: gitInfo.currentBranch,
   }, configPath);
   if (gitInfo.currentBranch) {
-    saveWorkspaceToConfig({
+    saveProjectRootWorkspaceToConfig({
       id: workspaceId,
       name: gitInfo.currentBranch,
       path: projectRoot.replace(/\\/g, "/"),
-    }, configPath);
+    }, project, gitInfo, configPath);
   }
+}
+
+function saveProjectRootWorkspaceToConfig(workspace: WorkspaceSummary, project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, configPath: string) {
+  const current = readTillerConfig(configPath);
+  const retainedWorkspaces = (current.workspaces ?? []).filter((item) => (
+    item.id !== workspace.id && !isProjectRootWorkspaceId(project, gitInfo, item.id)
+  ));
+  writeFileSync(configPath, JSON.stringify({
+    ...current,
+    workspaces: [...retainedWorkspaces, workspace],
+  }, null, 2), "utf8");
 }
 
 async function persistProjectGitInfoIfAvailable(project: ProjectSummary, workspaces: WorkspaceSummary[], configPath: string) {
@@ -515,8 +533,8 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
           projectId: project.id,
           branches: gitInfo.branches,
           currentBranch: gitInfo.currentBranch,
-          workspaces: projectWorkspaceItems(project, latestWorkspaces),
-          selectedWorkspaceId: project.defaultWorkspaceId,
+          workspaces: projectWorkspaceItems(context.resolveProjectById(project.id, context.getProjects()) ?? project, latestWorkspaces),
+          selectedWorkspaceId: gitInfo.currentBranch ?? project.defaultWorkspaceId,
           message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
         });
       } catch (error) {

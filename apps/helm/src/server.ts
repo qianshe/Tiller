@@ -919,11 +919,14 @@ function loadAvailableWorkspaces() {
   const configuredWorkspaces = config.workspaces ?? [];
   const projectWorkspaces = (config.projects ?? [])
     .filter((project) => project.path?.trim())
-    .map((project) => ({
-      id: project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? `${project.id}-workspace`,
-      name: project.name,
-      path: project.path!.replace(/\\/g, "/"),
-    } satisfies WorkspaceSummary));
+    .map((project) => {
+      const branchWorkspaceId = project.gitCurrentBranch?.trim();
+      return {
+        id: branchWorkspaceId || project.defaultWorkspaceId || project.workspaceIds?.[0] || `${project.id}-workspace`,
+        name: branchWorkspaceId || project.name,
+        path: project.path!.replace(/\\/g, "/"),
+      } satisfies WorkspaceSummary;
+    });
   const mergedWorkspaces = dedupeWorkspaces([...configuredWorkspaces, ...projectWorkspaces]);
   if (mergedWorkspaces.length) {
     return mergedWorkspaces;
