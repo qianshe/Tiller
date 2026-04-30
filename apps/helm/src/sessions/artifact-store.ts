@@ -49,7 +49,7 @@ export function createSessionArtifactStore(rootDir: string) {
         : current.toolCalls.map((item, itemIndex) => itemIndex === index ? {
             ...item,
             ...toolCall,
-            title: toolCall.title || item.title,
+            title: resolveToolCallTitle(item.title, toolCall.title, toolCall.id),
             output: `${item.output ?? ""}${toolCall.output ?? ""}`,
             input: toolCall.input ?? item.input,
             timestamp: item.timestamp,
@@ -85,6 +85,19 @@ export function createSessionArtifactStore(rootDir: string) {
       }
     },
   };
+}
+
+
+function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
+  if (isInformativeToolCallTitle(incomingTitle, id)) {
+    return incomingTitle;
+  }
+  return currentTitle || incomingTitle || id;
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
 }
 
 export function pageSessionArtifacts(artifacts: SessionArtifacts, options: SessionArtifactPageOptions = {}): SessionArtifactPage {

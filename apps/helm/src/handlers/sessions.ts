@@ -106,7 +106,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
 
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
-      context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`);
+      context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`);
       const summaryBase: SessionSummary = {
         id: sessionId,
         projectId: project.id,
@@ -157,7 +157,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           sessionId,
           message: error instanceof Error ? error.message : "Failed to create session runtime",
         });
-        context.logError(`[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
+        context.logError(`[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
         context.updateSessionSummary(sessionId, (current) => ({ ...current, status: "error", updatedAt: new Date().toISOString(), lastMessagePreview: "Session startup failed" }));
         context.broadcastAuthenticated({ type: "session.status", sessionId, status: "error", message: "Session startup failed" });
       }

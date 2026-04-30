@@ -20,10 +20,15 @@ import {
   listAcpAgentSessions,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
+  DEFAULT_ACP_REQUEST_TIMEOUT_MS,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
 } from "./runtime";
+
+test("default ACP request timeout allows slow session/new responses", () => {
+  assert.equal(DEFAULT_ACP_REQUEST_TIMEOUT_MS, 30_000);
+});
 
 test("buildSessionNewRequest uses ACP session/new shape", () => {
   assert.deepEqual(buildSessionNewRequest("req-1", "D:/myProject/tools/Tiller"), {
@@ -446,6 +451,63 @@ test("normalizeProviderCleanupResult preserves unsupported provider responses", 
   );
 });
 
+
+test("mapSessionUpdateNotification derives generic tool names from nested tool fields", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_tool_name",
+      update: {
+        type: "tool_call_update",
+        toolCall: {
+          id: "call_generic",
+          title: "call_generic",
+          input: { toolName: "mcp_router/find_symbol", arguments: { name: "App" } },
+          output: "found",
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+});
+
+test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput server and tool", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_codex_tool",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_codex_mcp",
+        title: "call_codex_mcp",
+        status: "in_progress",
+        rawInput: {
+          server: "mcp_router",
+          tool: "activate_project",
+          arguments: { project: "D:\\myProject\\tools\\Tiller" },
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/activate_project");
+  assert.equal(mapped.event.toolCall.input, JSON.stringify({
+    server: "mcp_router",
+    tool: "activate_project",
+    arguments: { project: "D:\\myProject\\tools\\Tiller" },
+  }));
+});
 
 test("mapSessionUpdateNotification maps explicit tool call updates", () => {
   const mapped = mapSessionUpdateNotification({

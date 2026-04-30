@@ -246,12 +246,11 @@ function extractToolCall(sessionId: string, updateType: string | undefined, upda
   const source = update.toolCall ?? update.tool_call ?? update.tool ?? update.terminal ?? update;
   const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
-  const title =
-    stringFrom(source.title ?? source.label ?? source.name ?? source.toolName ?? source.tool_name ?? source.command) ??
-    commandId ??
-    id;
-  const output = stringFrom(source.output ?? source.result ?? source.content ?? source.text);
-  const input = stringFrom(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command);
+  const toolName = extractToolName(source, update);
+  const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command);
+  const title = resolveToolTitle(rawTitle, toolName, commandId, id);
+  const output = stringifyToolPayload(source.output ?? source.result ?? source.rawOutput ?? source.raw_output ?? source.content ?? source.text ?? source.state?.output);
+  const input = stringifyToolPayload(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command ?? source.rawInput ?? source.raw_input ?? source.state?.input);
   const now = timestamp();
 
   return {
@@ -266,6 +265,83 @@ function extractToolCall(sessionId: string, updateType: string | undefined, upda
     timestamp: stringFrom(source.timestamp ?? update.timestamp) ?? now,
     updatedAt: stringFrom(source.updatedAt ?? source.updated_at ?? update.updatedAt ?? update.timestamp) ?? now,
   };
+}
+
+
+function resolveToolTitle(rawTitle: string | undefined, toolName: string | undefined, commandId: string | undefined, id: string) {
+  if (isInformativeToolTitle(rawTitle, id)) {
+    return rawTitle!;
+  }
+  if (isInformativeToolTitle(toolName, id)) {
+    return toolName!.includes(":") ? toolName! : `Tool: ${toolName}`;
+  }
+  return commandId ?? rawTitle ?? id;
+}
+
+function extractToolName(source: any, update: any) {
+  return (
+    toolNameFromRawInput(source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input) ??
+    primitiveStringFrom(
+      source.toolName ??
+      source.tool_name ??
+      source.name ??
+      source.tool ??
+      source.function?.name ??
+      source.input?.name ??
+      source.input?.tool ??
+      source.input?.toolName ??
+      source.input?.tool_name ??
+      source.arguments?.name ??
+      source.args?.name ??
+      update.toolName ??
+      update.tool_name,
+    )
+  );
+}
+
+function toolNameFromRawInput(rawInput: unknown) {
+  if (!rawInput || typeof rawInput !== "object") {
+    return undefined;
+  }
+  const record = rawInput as Record<string, unknown>;
+  const server = primitiveStringFrom(record.server);
+  const tool = primitiveStringFrom(record.tool ?? record.name ?? record.toolName ?? record.tool_name);
+  if (server && tool) {
+    return `${server}/${tool}`;
+  }
+  return tool ?? server;
+}
+
+function stringifyToolPayload(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function isInformativeToolTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function primitiveStringFrom(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
 }
 
 function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {

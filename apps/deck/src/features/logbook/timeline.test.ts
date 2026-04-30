@@ -43,6 +43,79 @@ test("groupToolCalls merges chunks for the same command id", () => {
   assert.deepEqual(grouped[0]?.streams, ["stdout", "stderr"]);
 });
 
+test("groupToolCalls uses shell command prefix as title and expands only output", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell",
+      kind: "terminal",
+      title: "Tool: shell",
+      status: "completed",
+      input: JSON.stringify({ command: "pnpm --filter @tiller/helm test -- --reporter spec" }),
+      output: "PASS",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "pnpm --filter @tiller/helm test -- --reporter spec");
+  assert.equal(grouped[0]?.text, "PASS");
+});
+
+test("groupToolCalls summarizes Codex rawInput shell command arrays", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-raw",
+      kind: "terminal",
+      title: "call-shell-raw",
+      status: "completed",
+      input: JSON.stringify({
+        command: ["powershell.exe", "-Command", "Get-Content -Raw 'C:/Users/qjq/.codex/skills/foo/SKILL.md'"],
+        parsed_cmd: [{ type: "unknown", cmd: "Get-Content -Raw 'C:/Users/qjq/.codex/skills/foo/SKILL.md'" }],
+      }),
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: foo");
+  assert.equal(grouped[0]?.text, "skill docs");
+});
+
+test("groupToolCalls shows SKILL.md shell reads as skill names", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-skill-read",
+      kind: "terminal",
+      title: "Get-Content -Raw 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/56bcc02e/skills/brainstorming/SKILL.md'",
+      status: "completed",
+      input: JSON.stringify({ command: "Get-Content -Raw 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/56bcc02e/skills/brainstorming/SKILL.md'" }),
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: superpowers:brainstorming");
+  assert.equal(grouped[0]?.text, "skill docs");
+});
+
+test("groupToolCalls extracts skill names from terminal titles without input", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-skill-title",
+      kind: "terminal",
+      title: "Get-Content -Raw 'C:/Users/qjq/.codex/skills/.system/openai-docs/SKILL.md'",
+      status: "completed",
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: openai-docs");
+});
+
 test("groupToolCalls keeps the first timestamp for timeline placement", () => {
   const grouped = groupToolCalls([
     { id: "tool-1", kind: "tool", title: "search", status: "pending", commandId: "cmd", timestamp: "2026-04-30T13:22:46.627Z", updatedAt: "2026-04-30T13:22:46.627Z" },

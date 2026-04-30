@@ -40,10 +40,8 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
-import { createSessionArtifactStore } from "./sessions/artifact-store";
-import { createSessionMessageStore } from "./sessions/message-store";
-import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
-import { createSessionStore } from "./sessions/summary-store";
+import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
+import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
 import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
@@ -69,11 +67,25 @@ const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
 const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
 const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
+const sessionsSqlitePath = resolve(dirname(configPath), "sessions.sqlite");
 const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
-const sessionStore = createSessionStore(sessionHistoryPath);
-const sessionMessageStore = createSessionMessageStore(sessionMessagesPath);
-const sessionArtifactStore = createSessionArtifactStore(sessionArtifactsPath);
-const sessionRuntimeStore = createSessionRuntimeStore(sessionRuntimesPath);
+const {
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionRuntimeStore,
+} = createHelmSessionStores({
+  backend: resolveSessionStoreBackend(),
+  sqlitePath: sessionsSqlitePath,
+  jsonPaths: {
+    sessionHistoryPath,
+    sessionMessagesPath,
+    sessionArtifactsPath,
+    sessionRuntimesPath,
+  },
+  logInfo,
+  logError,
+});
 const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
 const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
 const socketIds = new WeakMap<WebSocket, string>();
@@ -517,7 +529,27 @@ function migrateStoredSessionSummary(summary: SessionSummary) {
 }
 
 function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
+  const inferredProject = inferProjectFromSessionHistory(summary.id);
+  if (inferredProject) {
+    return {
+      ...summary,
+      projectId: inferredProject.id,
+      projectName: inferredProject.name,
+      helmId: inferredProject.helmId,
+      workspaceId: inferredProject.defaultWorkspaceId ?? inferredProject.workspaceIds?.[0] ?? summary.workspaceId,
+    };
+  }
+
   const exactProject = resolveProjectById(summary.projectId, projects);
+  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+  if (exactProject && workspaceProject && workspaceProject.id !== exactProject.id) {
+    return {
+      ...summary,
+      projectId: workspaceProject.id,
+      projectName: workspaceProject.name,
+      helmId: workspaceProject.helmId,
+    };
+  }
   if (exactProject) {
     return {
       ...summary,
@@ -528,7 +560,7 @@ function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
 
   const matchedProject =
     projects.find((project) => project.name === summary.projectName) ??
-    projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+    workspaceProject;
   if (!matchedProject) {
     return summary;
   }
@@ -539,6 +571,32 @@ function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
     projectName: matchedProject.name,
     helmId: matchedProject.helmId,
   };
+}
+
+function inferProjectFromSessionHistory(sessionId: string) {
+  const text = sessionMessageStore.list(sessionId).map((message) => message.text).join("\n").toLowerCase();
+  if (!text) {
+    return null;
+  }
+  const scored = projects
+    .map((project) => {
+      const name = project.name.toLowerCase();
+      const path = project.path?.toLowerCase().replaceAll("\\", "/");
+      const score =
+        (path && text.includes(path) ? 4 : 0) +
+        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
+      return { project, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
+    return null;
+  }
+  return scored[0].project;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {

@@ -49,6 +49,7 @@ const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const DEFAULT_HISTORY_PAGE_LIMIT = 50;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
+const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -203,6 +204,28 @@ function agentModelOptionsKey(providerId: string, workspaceId: string) {
 
 function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
   return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
+}
+
+function inferProjectFromText(text: string, projects: ProjectSummary[]) {
+  const scored = projects
+    .map((project) => {
+      const name = project.name.toLowerCase();
+      const path = project.path?.toLowerCase().replaceAll("\\", "/");
+      const score =
+        (path && text.includes(path) ? 4 : 0) +
+        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
+      return { project, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
+    return null;
+  }
+  return scored[0].project;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
@@ -450,19 +473,47 @@ function TopNav({
 
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
+  const normalized = title.toLowerCase();
+  if (kind === "subagent" || /\b(subagent|delegate|explore|librarian|worker|oracle|metis|momus)\b/iu.test(title)) {
+    return "Subagent";
+  }
+  if (/\b(skill|execute_skill|load_skill)\b|[\\/](skills?|plugins)[\\/].*skill\.md|skill\.md/iu.test(title)) {
+    return "Skill";
+  }
+  if (/(^|[\s:/_-])mcp([\s:/_-]|$)|mcp_router|mcp-router|mcp__[a-z0-9_-]+/iu.test(title) || isKnownMcpRouterTool(normalized)) {
+    return "MCP";
+  }
   if (kind === "terminal") {
-    return "Terminal";
+    return "Shell";
   }
   if (kind === "edit") {
     return "File";
   }
-  if (kind === "tool") {
-    return /mcp/iu.test(title) ? "MCP" : "Tool";
+  if (/\b(apply_patch|update_plan|todos?|background_output|read_thread_terminal|shell_command|webfetch)\b|websearch|web_search/iu.test(normalized)) {
+    return "Built-in";
   }
-  if (kind === "subagent") {
-    return "Agent";
+  if (kind === "tool") {
+    return "Tool";
   }
   return "Tool";
+}
+
+function resolveToolCallTone(kind: AgentToolCall["kind"], title: string) {
+  const label = resolveToolCallLabel(kind, title);
+  const toneByLabel: Record<string, { className: string; icon: string }> = {
+    MCP: { className: "tool-call-mcp", icon: "◇" },
+    Shell: { className: "tool-call-shell", icon: "⌁" },
+    File: { className: "tool-call-file", icon: "□" },
+    Skill: { className: "tool-call-skill", icon: "✦" },
+    Subagent: { className: "tool-call-subagent", icon: "◎" },
+    "Built-in": { className: "tool-call-builtin", icon: "▵" },
+    Tool: { className: "tool-call-generic", icon: "·" },
+  };
+  return { label, ...(toneByLabel[label] ?? toneByLabel.Tool) };
+}
+
+function isKnownMcpRouterTool(normalizedTitle: string) {
+  return /^(activate_project|check_onboarding_performed|list_dir|find_file|read_file|read_memory|write_memory|search_context|search_for_pattern|find_symbol|find_referencing_symbols|get_symbols_overview|edit_file|replace_content|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_symbol|safe_delete_symbol|tavily_|resolve_library_id|get_library_docs|ask_question|read_wiki_|zhi|ji|tu)(\b|$)/u.test(normalizedTitle);
 }
 
 type MissionVisualFixture = {
@@ -567,6 +618,7 @@ export function App() {
   const pendingPromptRef = useRef<string | null>(null);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatMainRef = useRef<HTMLDivElement | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -606,6 +658,7 @@ export function App() {
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
+  const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
@@ -743,14 +796,29 @@ export function App() {
     }
     return agents.filter((agent) => allowedAgentIds.includes(agent.id));
   }, [agents, draftProject?.allowedAgentIds]);
+  function resolveSessionProjectId(session: SessionSummary) {
+    const evidenceText = (messages[session.id] ?? []).map((message) => message.text).join("\n").toLowerCase();
+    const evidenceProject = evidenceText ? inferProjectFromText(evidenceText, projects) : null;
+    if (evidenceProject) {
+      return evidenceProject.id;
+    }
+    const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
+    return workspaceProject?.id ?? session.projectId;
+  }
+
   const projectSessions = useMemo(
-    () => sessions.filter((session) => !selectedProjectId || session.projectId === selectedProjectId),
-    [selectedProjectId, sessions],
+    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session) === selectedProjectId),
+    [messages, projects, selectedProjectId, sessions],
   );
   const sessionCountsByProject = useMemo(
-    () => sessions.reduce<Record<string, number>>((counts, session) => ({ ...counts, [session.projectId]: (counts[session.projectId] ?? 0) + 1 }), {}),
-    [sessions],
+    () => sessions.reduce<Record<string, number>>((counts, session) => {
+      const projectId = resolveSessionProjectId(session);
+      return { ...counts, [projectId]: (counts[projectId] ?? 0) + 1 };
+    }, {}),
+    [messages, projects, sessions],
   );
+  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession) : null;
+  const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
@@ -804,7 +872,6 @@ export function App() {
   }
 
   function toggleMissionHelmNode(helmId: string) {
-    setSelectedMissionHelmId(helmId);
     setExpandedMissionHelmIds((current) => {
       const next = new Set(current);
       if (next.has(helmId)) {
@@ -820,7 +887,9 @@ export function App() {
     const project = projects.find((item) => item.id === projectId);
     if (project) {
       setSelectedMissionHelmId(project.helmId);
-      setSelectedProjectId(projectId);
+      setSelectedProjectId(project.id);
+      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
     setExpandedMissionProjectIds((current) => {
       const next = new Set(current);
@@ -857,6 +926,8 @@ export function App() {
       setSelectedMissionHelmId(project.helmId);
       setExpandedMissionHelmIds((current) => new Set([...current, project.helmId]));
       setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
     setSelectedProjectId(projectId);
     setActiveSessionId((current) => {
@@ -874,9 +945,10 @@ export function App() {
     }
 
     setSelectedMissionHelmId(session.helmId);
-    setSelectedProjectId(session.projectId);
+    const projectId = resolveSessionProjectId(session);
+    setSelectedProjectId(projectId);
     setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
-    setExpandedMissionProjectIds((current) => new Set([...current, session.projectId]));
+    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
     setActiveSessionId(sessionId);
   }
 
@@ -978,16 +1050,17 @@ export function App() {
   }, [pairingState, selectedProjectId]);
 
   useEffect(() => {
-    if (!selectedProjectId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+    if (!activeSession || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
-    const key = projectFilesKey(selectedProjectId, selectedWorkspaceId);
+    const projectId = resolveSessionProjectId(activeSession);
+    const key = projectFilesKey(projectId, activeSession.workspaceId);
     setProjectFilesByScope((current) => ({
       ...current,
       [key]: { loading: true, files: current[key]?.files ?? [], message: "正在加载项目文件..." },
     }));
-    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId: selectedProjectId, workspaceId: selectedWorkspaceId ?? undefined });
-  }, [pairingState, selectedProjectId, selectedWorkspaceId]);
+    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId, workspaceId: activeSession.workspaceId });
+  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -1038,6 +1111,19 @@ export function App() {
       workspaceId: selectedWorkspaceId,
     });
   }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedModel, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (activeView !== "sessions") {
+      return;
+    }
+    const chatMain = chatMainRef.current;
+    if (!chatMain) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      chatMain.scrollTop = chatMain.scrollHeight;
+    });
+  }, [activeView, activeSessionId, activeSession ? messages[activeSession.id]?.length : 0]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -2007,7 +2093,7 @@ case "session.messages.list.result":
 
   function createSession(initialPrompt?: string) {
     const projectId = selectedProjectId || projects[0]?.id;
-    const workspaceId = selectedWorkspaceId || filteredWorkspaces[0]?.id;
+    const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
     if (!projectId || !workspaceId || !agentId || !socketRef.current) {
       return false;
@@ -2574,6 +2660,9 @@ case "session.messages.list.result":
       ...toolItems.map((item) => ({ kind: "tool" as const, timestamp: item.timestamp, item })),
     ].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
     const historyState = sessionId ? activityHistoryState[sessionId] : undefined;
+    const visibleCount = sessionId ? activityVisibleCounts[sessionId] ?? DEFAULT_LOGBOOK_VISIBLE_LIMIT : DEFAULT_LOGBOOK_VISIBLE_LIMIT;
+    const visibleTimelineItems = timelineItems.slice(0, visibleCount);
+    const hiddenCount = Math.max(0, timelineItems.length - visibleTimelineItems.length);
     if (!timelineItems.length) {
       return <CommandOutput items={commandChunks} emptyLabel={copy.noCommandOutput} />;
     }
@@ -2585,34 +2674,50 @@ case "session.messages.list.result":
             <h3>{copy.commandOutput}</h3>
 
           </div>
-          {historyState?.hasMore ? (
-            <button className="secondary" type="button" onClick={() => loadOlderActivities(sessionId!)} disabled={historyState.loading}>
+        </div>
+        <div className="plain-message-list conversation-timeline activity-timeline">
+          {visibleTimelineItems.map((timelineItem) => {
+            if (timelineItem.kind === "prompt") {
+              return (
+                <details key={timelineItem.id} className="tool-call-card acp-prompt-card">
+                  <summary className="tool-call-head">
+                    <span className="tool-call-icon" aria-hidden="true">↗</span>
+                    <span className="tool-call-kind">Prompt</span>
+                    <strong>{summarizeActivityText(timelineItem.text)}</strong>
+                    <span className="tool-call-stream">user</span>
+                  </summary>
+                  <pre className="tool-call-output">{timelineItem.text}</pre>
+                </details>
+              );
+            }
+
+            const toolTone = resolveToolCallTone(timelineItem.item.toolKind, timelineItem.item.title);
+            const streamTone = timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout";
+            return (
+              <details key={timelineItem.item.id} className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}>
+                <summary className="tool-call-head">
+                  <span className="tool-call-icon" aria-hidden="true">{toolTone.icon}</span>
+                  <span className="tool-call-kind">{toolTone.label}</span>
+                  <strong>{timelineItem.item.title}</strong>
+                  <span className={`tool-call-stream tool-call-stream-${streamTone}`}>{streamTone}</span>
+                </summary>
+                {timelineItem.item.text.trim() ? <pre className="tool-call-output">{timelineItem.item.text}</pre> : null}
+              </details>
+            );
+          })}
+          {hiddenCount > 0 ? (
+            <button
+              className="secondary load-more-history"
+              type="button"
+              onClick={() => sessionId ? setActivityVisibleCounts((current) => ({ ...current, [sessionId]: visibleCount + DEFAULT_LOGBOOK_VISIBLE_LIMIT })) : undefined}
+            >
+              展开更多（剩余 {hiddenCount} 条）
+            </button>
+          ) : historyState?.hasMore ? (
+            <button className="secondary load-more-history" type="button" onClick={() => loadOlderActivities(sessionId!)} disabled={historyState.loading}>
               {historyState.loading ? "加载中..." : "加载更早活动"}
             </button>
           ) : null}
-        </div>
-        <div className="plain-message-list conversation-timeline activity-timeline">
-          {timelineItems.map((timelineItem) => timelineItem.kind === "prompt" ? (
-            <details key={timelineItem.id} className="tool-call-card acp-prompt-card">
-              <summary className="tool-call-head">
-                <span className="tool-call-icon" aria-hidden="true">↗</span>
-                <span className="tool-call-kind">Prompt</span>
-                <strong>{summarizeActivityText(timelineItem.text)}</strong>
-                <span className="tool-call-stream">user</span>
-              </summary>
-              <pre className="tool-call-output">{timelineItem.text}</pre>
-            </details>
-          ) : (
-            <details key={timelineItem.item.id} className={`tool-call-card tool-call-${timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
-              <summary className="tool-call-head">
-                <span className="tool-call-icon" aria-hidden="true">$</span>
-                <span className="tool-call-kind">{resolveToolCallLabel(timelineItem.item.toolKind, timelineItem.item.title)}</span>
-                <strong>{timelineItem.item.title}</strong>
-                <span className={`tool-call-stream tool-call-stream-${timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
-              </summary>
-              {timelineItem.item.text.trim() ? <pre className="tool-call-output">{timelineItem.item.text}</pre> : null}
-            </details>
-          ))}
         </div>
       </section>
     );
@@ -2829,9 +2934,9 @@ case "session.messages.list.result":
     const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
     const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
     const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
-    const projectFilesEntry = projectFilesByScope[projectFilesKey(selectedProjectId, selectedWorkspaceId)];
+    const projectFilesEntry = activeSession && activeSessionProjectId ? projectFilesByScope[projectFilesKey(activeSessionProjectId, activeSession.workspaceId)] : undefined;
     const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
-    const overviewProjectName = activeSession?.projectName ?? draftProject?.name ?? "未选项目";
+    const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? draftProject?.name ?? "未选项目";
     const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
     const overviewAgentName = activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
     const projectOverviewItems = [
@@ -3061,7 +3166,7 @@ case "session.messages.list.result":
                               {helmProjects.map((project) => {
                               const selectedProject = project.id === selectedProjectId;
                               const projectExpanded = expandedMissionProjectIds.has(project.id);
-                              const projectNodeSessions = sessions.filter((session) => session.projectId === project.id);
+                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session) === project.id);
                               return (
                                 <div key={project.id} className="mission-tree-group" role="group">
                                   <div className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}>
@@ -3087,6 +3192,8 @@ case "session.messages.list.result":
                                         onClick={() => {
                                           setSelectedMissionHelmId(project.helmId);
                                           setSelectedProjectId(project.id);
+                                          setSelectedWorkspaceId(project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+                                          setSelectedAgentId(project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
                                           setExpandedMissionProjectIds((current) => new Set([...current, project.id]));
                                           setActiveSessionId(null);
                                         }}
@@ -3165,7 +3272,7 @@ case "session.messages.list.result":
             {!effectiveSidebarCollapsed ? renderMissionPaneResizer("sidebar", "调整任务列表宽度") : null}
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
-              <div className="chat-main">
+              <div className="chat-main" ref={chatMainRef}>
                 {activeSession ? (
                   <>
                     {pendingPermission ? (

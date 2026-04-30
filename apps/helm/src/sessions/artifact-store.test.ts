@@ -132,6 +132,36 @@ test("session artifact store keeps the first timestamp for tool call updates", a
   }
 });
 
+test("session artifact store keeps informative tool title when later updates only carry call id", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-tool-title-"));
+
+  try {
+    const store = mod.createSessionArtifactStore(tempRoot);
+    store.appendToolCall("session-1", {
+      id: "call_abc123",
+      kind: "tool",
+      title: "Tool: mcp_router/find_symbol",
+      status: "running",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.627Z",
+    });
+    store.appendToolCall("session-1", {
+      id: "call_abc123",
+      kind: "tool",
+      title: "call_abc123",
+      status: "completed",
+      output: "ok",
+      timestamp: "2026-04-30T13:22:46.630Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    });
+
+    assert.equal(store.get("session-1").toolCalls[0]?.title, "Tool: mcp_router/find_symbol");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session artifact store replaces tool calls while keeping outputs and diffs", async () => {
   const mod = await import("./artifact-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-replace-tools-"));

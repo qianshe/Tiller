@@ -22,7 +22,8 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 
-const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
+export const DEFAULT_ACP_REQUEST_TIMEOUT_MS = 30_000;
+const ACP_INITIALIZE_TIMEOUT_MS = DEFAULT_ACP_REQUEST_TIMEOUT_MS;
 const ACP_EARLY_STDERR_FAILURE = /failed to start server|eaddrinuse|address already in use/i;
 
 export type ProviderCleanupResult =
