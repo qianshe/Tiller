@@ -1,15 +1,18 @@
 import { exec, execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { listAvailableProviders, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
-import type { AcpAgentProvider, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
 
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
+const PROJECT_FILES_MAX_BUFFER = 8 * 1024 * 1024;
+const PROJECT_FILE_FALLBACK_LIMIT = 5000;
+const IGNORED_PROJECT_FILE_DIRECTORIES = new Set([".git", "node_modules", ".tiller", "dist", "build", ".next", "coverage"]);
 
 function normalizeGitBranchName(input: string) {
   return input.trim().replace(/\s+/g, "-");
@@ -27,6 +30,110 @@ function safeWorktreeSlug(branchName: string) {
 
 async function runGit(cwd: string, args: string[]) {
   return execFileAsync("git", ["-C", cwd, ...args], { timeout: GIT_COMMAND_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 });
+}
+
+async function runGitForProjectFiles(cwd: string) {
+  return execFileAsync("git", ["-C", cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+    windowsHide: true,
+    maxBuffer: PROJECT_FILES_MAX_BUFFER,
+  });
+}
+
+function normalizeProjectFilePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function isPathInsideRoot(root: string, candidate: string) {
+  const relativePath = relative(root, candidate);
+  return relativePath === "" || (Boolean(relativePath) && !relativePath.startsWith("..") && !resolve(relativePath).startsWith(".."));
+}
+
+function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
+  const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
+  return workspace?.path ?? resolveProjectRoot(project, workspaces);
+}
+
+function sortProjectFileSummaries(left: ProjectFileSummary, right: ProjectFileSummary) {
+  const pathCompare = left.path.localeCompare(right.path);
+  if (pathCompare !== 0) {
+    return pathCompare;
+  }
+  return left.kind === right.kind ? 0 : left.kind === "directory" ? -1 : 1;
+}
+
+function buildProjectFileSummaries(filePaths: string[]) {
+  const directories = new Set<string>();
+  const files = new Set<string>();
+  filePaths.forEach((filePath) => {
+    const normalized = normalizeProjectFilePath(filePath).replace(/\/$/, "");
+    if (!normalized) {
+      return;
+    }
+    files.add(normalized);
+    const parts = normalized.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      directories.add(parts.slice(0, index).join("/"));
+    }
+  });
+  return [
+    ...Array.from(directories).map<ProjectFileSummary>((path) => ({ path, kind: "directory" })),
+    ...Array.from(files).map<ProjectFileSummary>((path) => ({ path, kind: "file" })),
+  ].sort(sortProjectFileSummaries);
+}
+
+async function listProjectFilesFromDirectory(rootPath: string) {
+  const root = resolve(rootPath);
+  const files: ProjectFileSummary[] = [];
+
+  async function walk(directory: string) {
+    if (files.length >= PROJECT_FILE_FALLBACK_LIMIT) {
+      return;
+    }
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (files.length >= PROJECT_FILE_FALLBACK_LIMIT) {
+        return;
+      }
+      const absolutePath = resolve(directory, entry.name);
+      if (!isPathInsideRoot(root, absolutePath)) {
+        continue;
+      }
+      const projectPath = normalizeProjectFilePath(relative(root, absolutePath));
+      if (entry.isDirectory()) {
+        if (!IGNORED_PROJECT_FILE_DIRECTORIES.has(entry.name)) {
+          files.push({ path: projectPath, kind: "directory" });
+          await walk(absolutePath);
+        }
+      } else if (entry.isFile()) {
+        files.push({ path: projectPath, kind: "file" });
+      }
+    }
+  }
+
+  await walk(root);
+  return files.sort(sortProjectFileSummaries);
+}
+
+async function listProjectFiles(rootPath: string) {
+  try {
+    const gitRoot = await resolveGitRoot(rootPath);
+    const result = await runGitForProjectFiles(gitRoot);
+    const files = result.stdout
+      .split("\0")
+      .map((path) => normalizeProjectFilePath(path.trim()))
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right))
+      .map<ProjectFileSummary>((path) => ({ path, kind: "file" }));
+    return { files, message: `Loaded ${files.length} Git files` };
+  } catch (error) {
+    if (!isNonGitRepositoryError(error)) {
+      throw error;
+    }
+    const files = await listProjectFilesFromDirectory(rootPath);
+    const truncated = files.length >= PROJECT_FILE_FALLBACK_LIMIT;
+    return { files, message: truncated ? `Loaded first ${files.length} files` : `Loaded ${files.length} files` };
+  }
 }
 
 async function resolveGitRoot(path: string) {
@@ -299,6 +406,29 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       const projects = await context.loadAvailableProjectsWithSemanticSummaries();
       context.setProjects(projects);
       context.emit(socket, { type: "project.list.result", requestId: payload.requestId, projects });
+      return true;
+    }
+    case "project.files.list": {
+      const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      const workspaces = context.loadAvailableWorkspaces();
+      context.setProjects(projects);
+      context.setWorkspaces(workspaces);
+      const project = context.resolveProjectById(payload.projectId, projects);
+      if (!project) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: payload.projectId, workspaceId: payload.workspaceId, files: [], message: "Project not found" });
+        return true;
+      }
+      const projectRoot = resolveProjectFileRoot(project, workspaces, payload.workspaceId);
+      if (!projectRoot) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: project.id, workspaceId: payload.workspaceId, files: [], message: "Project has no path or workspace path" });
+        return true;
+      }
+      try {
+        const result = await listProjectFiles(projectRoot);
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: true, projectId: project.id, workspaceId: payload.workspaceId, files: result.files, message: result.message });
+      } catch (error) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: project.id, workspaceId: payload.workspaceId, files: [], message: error instanceof Error ? error.message : "Failed to list project files" });
+      }
       return true;
     }
     case "project.save": {

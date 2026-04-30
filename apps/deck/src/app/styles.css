@@ -5791,6 +5791,68 @@ textarea:focus,
   white-space: nowrap;
 }
 
+.mission-overview-page {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.mission-project-files-section {
+  min-height: 220px;
+}
+
+.mission-inspector-section-head {
+  margin-bottom: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.mission-inline-loading {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(77, 163, 255, 0.14);
+  color: #b8d7ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.mission-project-file-list {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.mission-project-file-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  border-radius: 10px;
+  background: rgba(8, 13, 23, 0.42);
+}
+
+.mission-project-file-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #dbe6f7;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-project-file-kind {
+  min-width: 34px;
+  color: #7e8da6;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
 .model-inspector-section {
   gap: 10px;
 }

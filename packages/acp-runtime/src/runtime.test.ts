@@ -9,6 +9,7 @@ import {
   buildSessionNewRequest,
   buildSessionPromptRequest,
   buildSessionResumeRequest,
+  buildSessionSetConfigOptionRequest,
   buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
@@ -38,6 +39,19 @@ test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {
     params: {
       sessionId: "sess-1",
       modelId: "openai/gpt-5.4",
+    },
+  });
+});
+
+test("buildSessionSetConfigOptionRequest uses ACP session/set_config_option configId shape", () => {
+  assert.deepEqual(buildSessionSetConfigOptionRequest("req-config", "sess-1", "mode", "build"), {
+    jsonrpc: "2.0",
+    id: "req-config",
+    method: "session/set_config_option",
+    params: {
+      sessionId: "sess-1",
+      configId: "mode",
+      value: "build",
     },
   });
 });

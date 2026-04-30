@@ -8,6 +8,7 @@ import type {
   HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectFileSummary,
   ProjectSummary,
   SessionCleanupResult,
   SessionConfigOption,
@@ -42,6 +43,12 @@ export type ClientToHelm =
   | {
       type: "project.list";
       requestId: string;
+    }
+  | {
+      type: "project.files.list";
+      requestId: string;
+      projectId: string;
+      workspaceId?: string;
     }
   | {
       type: "project.save";
@@ -197,6 +204,15 @@ export type HelmToClient =
       type: "project.list.result";
       requestId: string;
       projects: ProjectSummary[];
+    }
+  | {
+      type: "project.files.result";
+      requestId: string;
+      ok: boolean;
+      projectId: string;
+      workspaceId?: string;
+      files: ProjectFileSummary[];
+      message: string;
     }
   | {
       type: "project.save.result";

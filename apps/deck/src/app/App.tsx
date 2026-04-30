@@ -15,6 +15,7 @@ import type {
   HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectFileSummary,
   ProjectSummary,
   SessionConfigOption,
   SessionReasoningEffort,
@@ -188,8 +189,18 @@ type AgentModelOptionsEntry = {
   state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
 };
 
+type ProjectFilesEntry = {
+  loading?: boolean;
+  message?: string;
+  files: ProjectFileSummary[];
+};
+
 function agentModelOptionsKey(providerId: string, workspaceId: string) {
   return `${providerId}::${workspaceId}`;
+}
+
+function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
+  return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
 }
 
 
@@ -580,6 +591,7 @@ export function App() {
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
+  const [projectFilesByScope, setProjectFilesByScope] = useState<Record<string, ProjectFilesEntry>>({});
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
@@ -944,6 +956,18 @@ export function App() {
     }));
     dispatch(socketRef.current, { type: "workspace.git.list", requestId: nextRequestId(requestCounter), projectId: selectedProjectId });
   }, [pairingState, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProjectId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const key = projectFilesKey(selectedProjectId, selectedWorkspaceId);
+    setProjectFilesByScope((current) => ({
+      ...current,
+      [key]: { loading: true, files: current[key]?.files ?? [], message: "正在加载项目文件..." },
+    }));
+    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId: selectedProjectId, workspaceId: selectedWorkspaceId ?? undefined });
+  }, [pairingState, selectedProjectId, selectedWorkspaceId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -1602,6 +1626,14 @@ export function App() {
           setProjects(payload.projects);
         }
         return;
+      case "project.files.result": {
+        const key = projectFilesKey(payload.projectId, payload.workspaceId);
+        setProjectFilesByScope((current) => ({
+          ...current,
+          [key]: { loading: false, files: payload.files, message: payload.message },
+        }));
+        return;
+      }
       case "workspace.list.result":
         updateHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
         if (sourceIsCurrentHelm) {
@@ -1948,7 +1980,7 @@ export function App() {
       projectId,
       workspaceId,
       agentId,
-      agentMode: selectedAgentMode || undefined,
+      agentMode: effectiveDraftAgentMode,
       model: normalizeModelSelection(selectedModel),
       reasoningEffort: selectedReasoningEffort,
     });
@@ -2722,6 +2754,50 @@ export function App() {
     const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
     const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
     const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
+    const projectFilesEntry = projectFilesByScope[projectFilesKey(selectedProjectId, selectedWorkspaceId)];
+    const projectFiles = projectFilesEntry?.files ?? [];
+    const overviewProjectName = activeSession?.projectName ?? draftProject?.name ?? "未选项目";
+    const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
+    const overviewAgentName = activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
+    const projectOverviewItems = [
+      `Helm · ${activeMissionHelm?.name ?? draftProject?.helmId ?? "未选择"}`,
+      `Project · ${overviewProjectName}`,
+      `Workspace · ${overviewWorkspaceName}`,
+      `ACP · ${overviewAgentName}`,
+      draftProject?.path ? `路径 · ${draftProject.path}` : "路径 · 等待 Helm 返回",
+      draftProject?.summary ? `摘要 · ${draftProject.summary}` : "摘要 · 暂无项目摘要",
+    ];
+    const sessionOverviewItems = activeSession ? [
+      `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
+      `消息 · ${activeSession.messageCount} 条`,
+      `变更 · ${missionDiffCount} 个文件`,
+      `航行日志 · ${missionLogCount} 条`,
+      activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
+    ] : [
+      "状态 · 待创建",
+      "会话 · 发送首条指令后创建",
+      `模型 · ${draftModelPickerLabel}`,
+      `推理 · ${showDraftReasoningSelect ? resolveReasoningLabel(effectiveDraftReasoningEffort) : "—"}`,
+    ];
+    const renderProjectFileList = () => {
+      if (projectFilesEntry?.loading && !projectFiles.length) {
+        return <div className="empty-state">正在加载项目文件...</div>;
+      }
+      if (!projectFiles.length) {
+        return <div className="empty-state">{projectFilesEntry?.message || "暂无项目文件"}</div>;
+      }
+      return (
+        <div className="mission-project-file-list" role="list" aria-label="项目文件列表">
+          {projectFiles.map((file) => (
+            <div key={file.path} className="mission-project-file-row" role="listitem" title={file.path}>
+              <span className="mission-project-file-kind">{file.kind === "directory" ? "DIR" : "FILE"}</span>
+              <strong>{file.path}</strong>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
     const renderMissionDiffTreeNode = (node: MissionDiffTreeNode, depth = 0): ReactNode => {
       if (node.kind === "file" && node.file) {
         const file = node.file;
@@ -2759,87 +2835,70 @@ export function App() {
       );
     };
     const renderMissionDisplayPanel = () => (
-      <aside className={`mission-display-panel mission-pane mission-pane-display ${activeSession ? "" : "mission-display-empty"}`.trim()} style={missionDisplayPaneStyle} aria-label="任务展示容器">
+      <aside className="mission-display-panel mission-pane mission-pane-display" style={missionDisplayPaneStyle} aria-label="任务展示容器">
         <div className="mission-panel-head">
           <div>
             <p className="eyebrow">展示</p>
-            <h3>{activeSession ? "任务展示" : "草稿展示"}</h3>
+            <h3>任务展示</h3>
           </div>
           <button className="mission-panel-add" type="button" onClick={addMissionPanelPage} aria-label="增加展示页">＋</button>
         </div>
-        {activeSession ? (
-          <div className="mission-panel-body">
-            <MissionPanelNav
-              pages={missionPanelPages}
-              selectedPageId={selectedMissionPanelPage.id}
-              onSelect={setSelectedMissionPanelPageId}
-              onDragStart={setDraggedMissionPanelPageId}
-              onDrop={dropMissionPanelPage}
-            />
-            <section className="mission-panel-content">
-              {selectedMissionPanelPage.id === "changes" ? (
-                <div className="mission-panel-page mission-change-tree">
-                  {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
-                </div>
-              ) : selectedMissionPanelPage.id === "diff-detail" ? (
-                <div className="mission-panel-page mission-diff-detail">
-                  {activeDiffs.length ? (
-                    activeDiffs.map((file) => (
-                      <details key={file.path} className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}>
-                        <summary className="mission-file-row mission-diff-file-summary">
-                          <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
-                          <strong>{file.path}</strong>
-                          {renderDiffStats(file)}
-                          <span className="mission-diff-expand-icon" aria-hidden="true">▸</span>
-                        </summary>
-                        {file.patch ? renderDiffPatch(file.patch) : <div className="mission-diff-patch-empty">该 diff 事件没有携带 patch/hunk 内容。</div>}
-                      </details>
-                    ))
-                  ) : (
-                    <div className="empty-state">{copy.noDiffSummary}</div>
-                  )}
-                </div>
-              ) : selectedMissionPanelPage.id === "logbook" ? (
-                <div className="mission-panel-page"><CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} /></div>
-              ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
-                <div className="mission-panel-page mission-custom-page">
-                  <div className="mission-custom-page-tools">
-                    <label>
-                      <span>展示页名称</span>
-                      <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
-                    </label>
-                    <div className="mission-custom-page-actions">
-                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
-                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
-                      <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
-                    </div>
+        <div className="mission-panel-body">
+          <MissionPanelNav
+            pages={missionPanelPages}
+            selectedPageId={selectedMissionPanelPage.id}
+            onSelect={setSelectedMissionPanelPageId}
+            onDragStart={setDraggedMissionPanelPageId}
+            onDrop={dropMissionPanelPage}
+          />
+          <section className="mission-panel-content">
+            {selectedMissionPanelPage.id === "changes" ? (
+              <div className="mission-panel-page mission-change-tree">
+                {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
+              </div>
+            ) : selectedMissionPanelPage.id === "diff-detail" ? (
+              <div className="mission-panel-page mission-diff-detail">
+                {activeDiffs.length ? (
+                  activeDiffs.map((file) => (
+                    <details key={file.path} className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}>
+                      <summary className="mission-file-row mission-diff-file-summary">
+                        <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
+                        <strong>{file.path}</strong>
+                        {renderDiffStats(file)}
+                        <span className="mission-diff-expand-icon" aria-hidden="true">▸</span>
+                      </summary>
+                      {file.patch ? renderDiffPatch(file.patch) : <div className="mission-diff-patch-empty">该 diff 事件没有携带 patch/hunk 内容。</div>}
+                    </details>
+                  ))
+                ) : (
+                  <div className="empty-state">{copy.noDiffSummary}</div>
+                )}
+              </div>
+            ) : selectedMissionPanelPage.id === "logbook" ? (
+              <div className="mission-panel-page"><CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} /></div>
+            ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
+              <div className="mission-panel-page mission-custom-page">
+                <div className="mission-custom-page-tools">
+                  <label>
+                    <span>展示页名称</span>
+                    <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
+                  </label>
+                  <div className="mission-custom-page-actions">
+                    <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
+                    <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
+                    <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
                   </div>
-                  <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
                 </div>
-              ) : (
-                <div className="mission-panel-page">
-                  <InfoList
-                    title="任务概览"
-                    items={[
-                      `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
-                      `消息 · ${activeSession.messageCount} 条`,
-                      `变更 · ${missionDiffCount} 个文件`,
-                      `航行日志 · ${missionLogCount} 条`,
-                      activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
-                    ]}
-                    empty="暂无概览"
-                  />
-                </div>
-              )}
-            </section>
-          </div>
-        ) : (
-          <div className="mission-panel-page mission-panel-empty-page">
-            <p className="eyebrow">等待任务</p>
-            <h3>创建任务后显示变更、日志与摘要</h3>
-            <p className="muted compact">这里会作为 Zed-like 第三栏，承载 Diff、航行日志和自定义展示页。</p>
-          </div>
-        )}
+                <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
+              </div>
+            ) : (
+              <div className="mission-panel-page mission-overview-page">
+                <InfoList title="项目信息" items={projectOverviewItems} empty="暂无项目信息" />
+                <InfoList title={activeSession ? "会话信息" : "新任务"} items={sessionOverviewItems} empty="暂无任务信息" />
+              </div>
+            )}
+          </section>
+        </div>
       </aside>
     );
 
@@ -3036,7 +3095,7 @@ export function App() {
                 ) : (
                   <div className="chat-empty mission-draft-empty">
                     <p className="eyebrow">新任务</p>
-                    <h2>{draftProject ? `${draftProject.name} · 草稿` : "先在左侧选择一个项目"}</h2>
+                    <h2>{draftProject ? `${draftProject.name} · 新任务` : "先在左侧选择一个项目"}</h2>
                     {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
@@ -3240,63 +3299,28 @@ export function App() {
 
             {!effectiveInspectorCollapsed ? (
             <aside className="mission-inspector mission-pane mission-pane-inspector" style={missionInspectorPaneStyle} aria-label="任务检视器">
-              <section className="inspector-section">
-                <p className="eyebrow">上下文</p>
-                <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
-                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? selectedWorkspaceName}</p>
-                <div className="inspector-pills">
-                  <span>{activeSession ? activeStatus : "草稿"}</span>
-                  <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
+              <section className="inspector-section inspector-scroll mission-project-files-section">
+                <div className="section-head section-head-soft mission-inspector-section-head">
+                  <div>
+                    <p className="eyebrow">项目文件</p>
+                    <h3>{projectFiles.length} 个文件</h3>
+                  </div>
+                  {projectFilesEntry?.loading ? <span className="mission-inline-loading">加载中</span> : null}
                 </div>
-                {activeSession && deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
-                  <>
-                    <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                    <p className="subtle compact">ACP：{activeSession.agentName} · Agent：{activeSession.agentMode ?? "默认"} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
-                    <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
-                  </>
-                ) : null}
-                {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
-                {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
-                {activeSession ? (
+                <p className="subtle compact">{projectFilesEntry?.message ?? "完整文件列表由 Helm 按当前 Project / Workspace 返回。"}</p>
+                {renderProjectFileList()}
+              </section>
+
+              {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
+              {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
+              {activeSession ? (
+                <section className="inspector-section">
                   <div className="section-actions">
                     <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
                     <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
                   </div>
-                ) : null}
-              </section>
-
-              <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">文件树</p>
-                <div className="mission-change-tree">
-                  {activeSession && activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
-                </div>
-              </section>
-
-              <section className="inspector-section">
-                <p className="eyebrow">项目摘要</p>
-                <InfoList
-                  items={[
-                    `项目 · ${draftProject?.name ?? "未选项目"}`,
-                    `Workspace · ${selectedWorkspaceName || "未选择"}`,
-                    `舰员 · ${activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}`,
-                  ]}
-                  empty="暂无项目摘要"
-                />
-              </section>
-
-              <section className="inspector-section">
-                <p className="eyebrow">会话摘要</p>
-                <InfoList
-                  items={activeSession ? [
-                    `状态 · ${activeStatus}`,
-                    `消息 · ${activeSession.messageCount} 条`,
-                    `变更 · ${missionDiffCount} 个文件`,
-                    `航行日志 · ${missionLogCount} 条`,
-                    activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
-                  ] : ["草稿 · 尚未创建会话"]}
-                  empty="暂无会话摘要"
-                />
-              </section>
+                </section>
+              ) : null}
 
               <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.diffDefaultOpen}>
                 <summary>{copy.diffSummary}</summary>
@@ -4264,10 +4288,20 @@ function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
 
 function resolveCurrentAgentMode(currentAgentMode: string | undefined, configOptions: SessionConfigOption[] = [], probedAgentMode?: string) {
   const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");
+  const modeOptions = resolveAgentModeOptions(configOptions);
+  const validModes = new Set(modeOptions.map((item) => item.value));
   const currentValue = typeof option?.currentValue === "string" ? option.currentValue : undefined;
   const selectedValue = typeof option?.selectedValue === "string" ? option.selectedValue : undefined;
   const value = typeof option?.value === "string" ? option.value : undefined;
-  return currentAgentMode || currentValue || selectedValue || value || probedAgentMode;
+  const candidates = [currentAgentMode, currentValue, selectedValue, value, probedAgentMode]
+    .map((candidate) => candidate?.trim())
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  if (validModes.size) {
+    return candidates.find((candidate) => validModes.has(candidate));
+  }
+
+  return currentValue || selectedValue || value || undefined;
 }
 
 function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {

@@ -9,6 +9,12 @@ type AcpSetSessionModelRequest = {
   modelId: string;
 };
 
+type AcpSetSessionConfigOptionRequest = {
+  sessionId: string;
+  configId: string;
+  value: string;
+};
+
 export function resolveRuntimeSessionId(sessionResult: unknown, fallbackSessionId: string) {
   const result = sessionResult && typeof sessionResult === "object" ? sessionResult as AcpSessionResponseWithModels : null;
   return result?.sessionId ?? result?.session_id ?? result?.id ?? fallbackSessionId;
@@ -102,5 +108,18 @@ export function buildSessionSetModelRequest(id: string, sessionId: string, model
       sessionId,
       modelId,
     } satisfies AcpSetSessionModelRequest,
+  };
+}
+
+export function buildSessionSetConfigOptionRequest(id: string, sessionId: string, configId: string, value: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/set_config_option",
+    params: {
+      sessionId,
+      configId,
+      value,
+    } satisfies AcpSetSessionConfigOptionRequest,
   };
 }

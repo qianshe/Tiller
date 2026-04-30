@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "./config-adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasOpenCodePortArg, hasSessionConfigOptionValue, mapPermissionRequest, mapSessionUpdateNotification, normalizeProviderCleanupResult, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
-import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 import type {
   AcpAgentProvider,
   AcpModelOption,
@@ -526,16 +526,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       return false;
     }
 
-    const result = await sendRequest<any>({
-      jsonrpc: "2.0",
-      id: nextRpcId(),
-      method: "session/set_config_option",
-      params: {
-        sessionId: sessionToken,
-        optionId,
-        value,
-      },
-    }, timeoutMs);
+    const result = await sendRequest<any>(buildSessionSetConfigOptionRequest(nextRpcId(), sessionToken, optionId, value), timeoutMs);
     const nextOptions = extractSessionConfigOptions(result);
     if (nextOptions.length) {
       currentConfigOptions = nextOptions;
@@ -857,14 +848,7 @@ function sanitizeLogToken(value: string) {
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
 
 
-
-
-
-
-
-
-
-export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 

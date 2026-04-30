@@ -75,6 +75,11 @@ export type HelmSummary = {
   modelConfig?: HelmModelConfig;
 };
 
+export type ProjectFileSummary = {
+  path: string;
+  kind: "file" | "directory";
+};
+
 export type ProjectSummary = {
   id: string;
   name: string;
@@ -251,3 +256,5 @@ export type FileDiffSummary = {
   /** Unified patch/hunk text when the ACP provider includes file-level diff content. */
   patch?: string;
 };
+
+
