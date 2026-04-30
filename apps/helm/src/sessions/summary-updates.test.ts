@@ -29,7 +29,7 @@ test("applyUserPromptToSummary increments send count once per user prompt", () =
   assert.equal(next.lastMessagePreview, "请检查总览统计。");
 });
 
-test("applyAgentMessageToSummary does not increment count for streamed agent chunks", () => {
+test("applyAgentMessageToSummary keeps the user prompt preview stable across streamed agent chunks", () => {
   const message: AgentMessage = {
     id: "agent-chunk-1",
     role: "assistant",
@@ -37,11 +37,11 @@ test("applyAgentMessageToSummary does not increment count for streamed agent chu
     timestamp: "2026-04-28T01:00:01.000Z",
   };
 
-  const next = applyAgentMessageToSummary(createSummary(), message);
+  const next = applyAgentMessageToSummary(createSummary({ lastMessagePreview: "请检查总览统计。" }), message);
 
   assert.equal(next.messageCount, 2);
   assert.equal(next.updatedAt, message.timestamp);
-  assert.equal(next.lastMessagePreview, "正在分析...");
+  assert.equal(next.lastMessagePreview, "请检查总览统计。");
 });
 
 

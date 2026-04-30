@@ -4,7 +4,7 @@ import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
 import geminiProviderIconUrl from "./assets/provider-icons/Gemini.svg";
 import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
-import { resolveSessionConfigSupport } from "@tiller/shared";
+import { resolveSessionConfigSupport, sortProjectFileSummaries } from "@tiller/shared";
 import type {
   AcpAgentProvider,
   AcpModelOption,
@@ -29,7 +29,7 @@ import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
 import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
@@ -201,6 +201,20 @@ function agentModelOptionsKey(providerId: string, workspaceId: string) {
 
 function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
   return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
+}
+
+function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
+  const normalized = summary?.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "暂无项目摘要";
+  }
+
+  const generatedPrefix = `Project: ${projectName} Configured summary:`;
+  const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
+    ? normalized.split(generatedPrefix).map((part) => part.trim()).filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim()
+    : normalized;
+  const compact = withoutGeneratedPrefix || normalized;
+  return compact.length > 360 ? `${compact.slice(0, 360)}…` : compact;
 }
 
 
@@ -592,6 +606,8 @@ export function App() {
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
   const [projectFilesByScope, setProjectFilesByScope] = useState<Record<string, ProjectFilesEntry>>({});
+  const [projectFileFilter, setProjectFileFilter] = useState("");
+  const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
@@ -2599,6 +2615,18 @@ export function App() {
     });
   }
 
+  function toggleProjectFileDirectory(directory: string) {
+    setCollapsedProjectFileDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(directory)) {
+        next.delete(directory);
+      } else {
+        next.add(directory);
+      }
+      return next;
+    });
+  }
+
   function openDiffDetail(filePath: string) {
     setSelectedMissionDiffFilePath(filePath);
     setSelectedMissionPanelPageId("diff-detail");
@@ -2755,7 +2783,7 @@ export function App() {
     const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
     const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
     const projectFilesEntry = projectFilesByScope[projectFilesKey(selectedProjectId, selectedWorkspaceId)];
-    const projectFiles = projectFilesEntry?.files ?? [];
+    const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
     const overviewProjectName = activeSession?.projectName ?? draftProject?.name ?? "未选项目";
     const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
     const overviewAgentName = activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
@@ -2765,7 +2793,7 @@ export function App() {
       `Workspace · ${overviewWorkspaceName}`,
       `ACP · ${overviewAgentName}`,
       draftProject?.path ? `路径 · ${draftProject.path}` : "路径 · 等待 Helm 返回",
-      draftProject?.summary ? `摘要 · ${draftProject.summary}` : "摘要 · 暂无项目摘要",
+      `摘要 · ${formatProjectSummaryForDisplay(draftProject?.summary, overviewProjectName)}`,
     ];
     const sessionOverviewItems = activeSession ? [
       `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
@@ -2776,9 +2804,15 @@ export function App() {
     ] : [
       "状态 · 待创建",
       "会话 · 发送首条指令后创建",
-      `模型 · ${draftModelPickerLabel}`,
-      `推理 · ${showDraftReasoningSelect ? resolveReasoningLabel(effectiveDraftReasoningEffort) : "—"}`,
     ];
+    const projectFileFilterText = projectFileFilter.trim().toLowerCase();
+    const visibleProjectFiles = projectFiles.filter((file) => {
+      if (projectFileFilterText) {
+        return file.path.toLowerCase().includes(projectFileFilterText);
+      }
+      const parts = file.path.split("/");
+      return !parts.slice(1).some((_, index) => collapsedProjectFileDirectories.has(parts.slice(0, index + 1).join("/")));
+    });
     const renderProjectFileList = () => {
       if (projectFilesEntry?.loading && !projectFiles.length) {
         return <div className="empty-state">正在加载项目文件...</div>;
@@ -2786,14 +2820,36 @@ export function App() {
       if (!projectFiles.length) {
         return <div className="empty-state">{projectFilesEntry?.message || "暂无项目文件"}</div>;
       }
+      if (!visibleProjectFiles.length) {
+        return <div className="empty-state">没有匹配的项目文件</div>;
+      }
       return (
-        <div className="mission-project-file-list" role="list" aria-label="项目文件列表">
-          {projectFiles.map((file) => (
-            <div key={file.path} className="mission-project-file-row" role="listitem" title={file.path}>
-              <span className="mission-project-file-kind">{file.kind === "directory" ? "DIR" : "FILE"}</span>
-              <strong>{file.path}</strong>
-            </div>
-          ))}
+        <div className="mission-project-file-list" role="tree" aria-label="项目文件列表">
+          {visibleProjectFiles.map((file) => {
+            const isDirectory = file.kind === "directory";
+            const collapsed = collapsedProjectFileDirectories.has(file.path);
+            const depth = Math.max(file.path.split("/").length - 1, 0);
+            return (
+              <button
+                key={`${file.kind}:${file.path}`}
+                type="button"
+                className={`mission-project-file-row mission-project-file-${file.kind}`}
+                role="treeitem"
+                aria-expanded={isDirectory ? !collapsed : undefined}
+                title={file.path}
+                style={{ paddingLeft: `${8 + depth * 12}px` }}
+                onClick={() => {
+                  if (isDirectory) {
+                    toggleProjectFileDirectory(file.path);
+                  }
+                }}
+              >
+                <span className="mission-project-file-caret">{isDirectory ? (collapsed ? "▸" : "▾") : ""}</span>
+                <span className="mission-project-file-icon" aria-hidden="true">{isDirectory ? (collapsed ? "📁" : "📂") : "📄"}</span>
+                <strong>{file.path.split("/").slice(-1)[0] ?? file.path}</strong>
+              </button>
+            );
+          })}
         </div>
       );
     };
@@ -2875,7 +2931,10 @@ export function App() {
                 )}
               </div>
             ) : selectedMissionPanelPage.id === "logbook" ? (
-              <div className="mission-panel-page"><CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} /></div>
+              <div className="mission-panel-page mission-logbook-page">
+                <InfoList title={activeSession ? "会话信息" : "新任务"} items={sessionOverviewItems} empty="暂无任务信息" />
+                <CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} />
+              </div>
             ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
               <div className="mission-panel-page mission-custom-page">
                 <div className="mission-custom-page-tools">
@@ -2894,7 +2953,6 @@ export function App() {
             ) : (
               <div className="mission-panel-page mission-overview-page">
                 <InfoList title="项目信息" items={projectOverviewItems} empty="暂无项目信息" />
-                <InfoList title={activeSession ? "会话信息" : "新任务"} items={sessionOverviewItems} empty="暂无任务信息" />
               </div>
             )}
           </section>
@@ -3308,44 +3366,17 @@ export function App() {
                   {projectFilesEntry?.loading ? <span className="mission-inline-loading">加载中</span> : null}
                 </div>
                 <p className="subtle compact">{projectFilesEntry?.message ?? "完整文件列表由 Helm 按当前 Project / Workspace 返回。"}</p>
+                <input
+                  className="mission-project-file-search"
+                  value={projectFileFilter}
+                  onChange={(event) => setProjectFileFilter(event.target.value)}
+                  placeholder="搜索文件路径"
+                  aria-label="搜索项目文件"
+                />
                 {renderProjectFileList()}
               </section>
 
-              {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
-              {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
-              {activeSession ? (
-                <section className="inspector-section">
-                  <div className="section-actions">
-                    <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
-                    <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
-                  </div>
-                </section>
-              ) : null}
 
-              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.diffDefaultOpen}>
-                <summary>{copy.diffSummary}</summary>
-                <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
-              </details>
-
-              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
-                <summary>{copy.commandOutput}</summary>
-                <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
-              </details>
-
-              <section className="inspector-section model-inspector-section">
-                <p className="eyebrow">模型 / 推理</p>
-                <div className="model-inspector-hero">
-                  <span className="model-inspector-label">MODEL</span>
-                  <strong title={draftModel}>{draftModelBaseOptions.length ? effectiveDraftModelBase : draftModelPickerLabel}</strong>
-                </div>
-                <div className="model-inspector-grid">
-                  <span>推理</span>
-                  <strong>{showDraftReasoningSelect ? effectiveDraftReasoningEffort : "—"}</strong>
-                  <span>候选</span>
-                  <strong>{draftModelOptions.length}</strong>
-                </div>
-                <p className="subtle compact">ACP configOptions 可用时优先展示 provider 的真实模型列表。</p>
-              </section>
 
             </aside>
             ) : null}
@@ -4267,14 +4298,6 @@ function splitArgs(value: string) {
     .filter(Boolean);
 }
 
-function resolveSessionTitle(session: SessionSummary) {
-  const preview = session.lastMessagePreview?.trim();
-  if (preview && /[A-Za-z0-9一-鿿]/u.test(preview)) {
-    return preview.replaceAll("`r", " ").replaceAll("`n", " ").slice(0, 36);
-  }
-
-  return `${session.projectName} 任务`;
-}
 
 function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
   const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");

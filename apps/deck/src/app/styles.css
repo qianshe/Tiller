@@ -5791,14 +5791,36 @@ textarea:focus,
   white-space: nowrap;
 }
 
-.mission-overview-page {
+.mission-overview-page,
+.mission-logbook-page {
   display: grid;
   gap: 14px;
   align-content: start;
 }
 
+.view-sessions .mission-inspector {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+
+.view-sessions .mission-inspector .inspector-scroll {
+  max-height: none;
+}
+
 .mission-project-files-section {
-  min-height: 220px;
+  min-height: 0;
+  height: 100%;
+  align-content: start;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.mission-project-files-section .empty-state,
+.mission-project-files-section .mission-project-file-list {
+  min-height: 0;
+  overflow: auto;
 }
 
 .mission-inspector-section-head {
@@ -5817,40 +5839,71 @@ textarea:focus,
   font-weight: 800;
 }
 
+.mission-project-file-search {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 13, 23, 0.42);
+  color: #e8eef8;
+}
+
 .mission-project-file-list {
   display: grid;
-  gap: 3px;
-  margin-top: 10px;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 1px;
+  margin-top: 8px;
 }
 
 .mission-project-file-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 10px 18px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
-  padding: 7px 8px;
-  border: 1px solid rgba(148, 163, 184, 0.10);
-  border-radius: 10px;
-  background: rgba(8, 13, 23, 0.42);
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.mission-project-file-row:hover,
+.mission-project-file-row:focus-visible {
+  background: rgba(77, 163, 255, 0.08);
+  outline: none;
 }
 
 .mission-project-file-row strong {
   min-width: 0;
   overflow: hidden;
-  color: #dbe6f7;
-  font-size: 0.76rem;
-  font-weight: 700;
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mission-project-file-kind {
-  min-width: 34px;
-  color: #7e8da6;
-  font-size: 0.58rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
+.mission-project-file-directory strong {
+  color: #dbeafe;
+  font-weight: 760;
+}
+
+.mission-project-file-caret {
+  color: #8fb7e6;
+  font-size: 0.66rem;
+}
+
+.mission-project-file-icon {
+  width: 18px;
+  font-size: 0.78rem;
+  line-height: 1;
+  text-align: center;
 }
 
 .model-inspector-section {

@@ -35,7 +35,10 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "session.status", sessionId, status: event.status, message: event.message });
       return;
     case "message":
-      context.logInfo(`[tiller-helm] session.message ${runtimeLogScope(sessionId, context)} role=${event.message.role} chars=${event.message.text.length} preview=${formatLogValue(event.message.text)}`);
+      if (event.message.role === "user") {
+        return;
+      }
+      process.stdout.write(event.message.text);
       context.persistSessionMessage(sessionId, event.message);
       context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, event.message));
       context.broadcastAuthenticated({ type: "agent.message", sessionId, message: event.message });

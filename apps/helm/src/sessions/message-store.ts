@@ -27,7 +27,7 @@ function listSessionMessages(rootDir: string, sessionId: string) {
   try {
     const raw = readFileSync(getSessionMessageFilePath(rootDir, sessionId), "utf8");
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isAgentMessage) : [];
+    return Array.isArray(parsed) ? sortAgentMessages(parsed.filter(isAgentMessage)) : [];
   } catch {
     return [];
   }
@@ -36,17 +36,21 @@ function listSessionMessages(rootDir: string, sessionId: string) {
 function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
   const index = messages.findIndex((item) => item.id === message.id);
   if (index === -1) {
-    return [...messages, message];
+    return sortAgentMessages([...messages, message]);
   }
 
-  return messages.map((item, itemIndex) => itemIndex === index
+  return sortAgentMessages(messages.map((item, itemIndex) => itemIndex === index
     ? {
         ...item,
         ...message,
         text: item.text === message.text || item.text.endsWith(message.text) ? item.text : `${item.text}${message.text}`,
         timestamp: item.timestamp,
       }
-    : item);
+    : item));
+}
+
+function sortAgentMessages(messages: AgentMessage[]) {
+  return [...messages].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
 }
 
 function persistSessionMessages(rootDir: string, sessionId: string, messages: AgentMessage[]) {

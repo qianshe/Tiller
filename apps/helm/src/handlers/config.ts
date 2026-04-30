@@ -3,6 +3,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { listAvailableProviders, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
+import { sortProjectFileSummaries } from "@tiller/shared";
 import type { AcpAgentProvider, ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
@@ -52,14 +53,6 @@ function isPathInsideRoot(root: string, candidate: string) {
 function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
   const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
   return workspace?.path ?? resolveProjectRoot(project, workspaces);
-}
-
-function sortProjectFileSummaries(left: ProjectFileSummary, right: ProjectFileSummary) {
-  const pathCompare = left.path.localeCompare(right.path);
-  if (pathCompare !== 0) {
-    return pathCompare;
-  }
-  return left.kind === right.kind ? 0 : left.kind === "directory" ? -1 : 1;
 }
 
 function buildProjectFileSummaries(filePaths: string[]) {
@@ -119,13 +112,13 @@ async function listProjectFiles(rootPath: string) {
   try {
     const gitRoot = await resolveGitRoot(rootPath);
     const result = await runGitForProjectFiles(gitRoot);
-    const files = result.stdout
-      .split("\0")
-      .map((path) => normalizeProjectFilePath(path.trim()))
-      .filter(Boolean)
-      .sort((left, right) => left.localeCompare(right))
-      .map<ProjectFileSummary>((path) => ({ path, kind: "file" }));
-    return { files, message: `Loaded ${files.length} Git files` };
+    const files = buildProjectFileSummaries(
+      result.stdout
+        .split("\0")
+        .map((path) => normalizeProjectFilePath(path.trim()))
+        .filter(Boolean),
+    );
+    return { files, message: `Loaded ${files.length} Git entries` };
   } catch (error) {
     if (!isNonGitRepositoryError(error)) {
       throw error;
@@ -176,13 +169,18 @@ function resolveProjectWorkspaceId(project: ProjectSummary) {
   return `${project.id}-workspace`;
 }
 
+function stripRuntimeProjectSummary(project: ProjectSummary) {
+  const { summary: _runtimeSummary, ...persistableProject } = project;
+  return persistableProject;
+}
+
 function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, projectRoot: string, configPath: string) {
   const workspaceId = resolveProjectWorkspaceId(project);
   const previousWorkspaceIds = project.workspaceIds ?? [];
   const legacyBranchWorkspaceIds = new Set([project.defaultWorkspaceId, project.gitCurrentBranch, ...gitInfo.branches].filter(Boolean));
   const workspaceIds = Array.from(new Set([workspaceId, ...previousWorkspaceIds.filter((id) => !legacyBranchWorkspaceIds.has(id))]));
   saveProjectToConfig({
-    ...project,
+    ...stripRuntimeProjectSummary(project),
     workspaceIds,
     defaultWorkspaceId: workspaceId,
     gitBranches: gitInfo.branches,

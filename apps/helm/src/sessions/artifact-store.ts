@@ -14,7 +14,7 @@ export function createSessionArtifactStore(rootDir: string) {
       const current = getSessionArtifacts(rootDir, sessionId);
       const next = {
         ...current,
-        outputs: [...current.outputs, chunk],
+        outputs: sortCommandChunks([...current.outputs, chunk]),
       };
       persistSessionArtifacts(rootDir, sessionId, next);
       return next;
@@ -36,7 +36,7 @@ export function createSessionArtifactStore(rootDir: string) {
         : current.toolCalls.map((item, itemIndex) => itemIndex === index ? { ...item, ...toolCall, output: `${item.output ?? ""}${toolCall.output ?? ""}`, input: toolCall.input ?? item.input } : item);
       const next = {
         ...current,
-        toolCalls: nextToolCalls,
+        toolCalls: sortToolCalls(nextToolCalls),
       };
       persistSessionArtifacts(rootDir, sessionId, next);
       return next;
@@ -59,13 +59,21 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
     const raw = readFileSync(getSessionArtifactFilePath(rootDir, sessionId), "utf8");
     const parsed = JSON.parse(raw);
     return {
-      outputs: Array.isArray(parsed?.outputs) ? parsed.outputs.filter(isCommandChunk) : [],
+      outputs: Array.isArray(parsed?.outputs) ? sortCommandChunks(parsed.outputs.filter(isCommandChunk)) : [],
       diffs: Array.isArray(parsed?.diffs) ? parsed.diffs.filter(isFileDiffSummary) : [],
-      toolCalls: Array.isArray(parsed?.toolCalls) ? parsed.toolCalls.filter(isAgentToolCall) : [],
+      toolCalls: Array.isArray(parsed?.toolCalls) ? sortToolCalls(parsed.toolCalls.filter(isAgentToolCall)) : [],
     };
   } catch {
     return { outputs: [], diffs: [], toolCalls: [] };
   }
+}
+
+function sortCommandChunks(items: CommandChunk[]) {
+  return [...items].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function sortToolCalls(items: AgentToolCall[]) {
+  return [...items].sort((left, right) => Date.parse(left.updatedAt || left.timestamp) - Date.parse(right.updatedAt || right.timestamp));
 }
 
 function persistSessionArtifacts(rootDir: string, sessionId: string, artifacts: SessionArtifacts) {

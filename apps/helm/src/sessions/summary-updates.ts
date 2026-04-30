@@ -13,6 +13,5 @@ export function applyAgentMessageToSummary(summary: SessionSummary, message: Age
   return {
     ...summary,
     updatedAt: message.timestamp,
-    lastMessagePreview: message.text.slice(0, 160),
   };
 }

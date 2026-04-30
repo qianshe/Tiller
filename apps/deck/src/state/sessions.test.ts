@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { applySessionListSnapshot, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./sessions.js";
+import { applySessionListSnapshot, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "./sessions.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
   return {
@@ -84,6 +84,15 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   assert.deepEqual(next.maps.diffs, {
     [live.id]: [{ path: "live.ts", status: "modified", additions: 2, deletions: 1 }],
   });
+});
+
+test("resolveSessionTitle uses the first meaningful 6 chars of the user prompt preview", () => {
+  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "【紧急】修复 session.message 日志"), "紧急修复se");
+  assert.equal(resolveSessionTitle(buildSession("session-2", "2026-04-27T10:00:00.000Z"), "  你好！！！  "), "你好");
+});
+
+test("resolveSessionTitle falls back to project task name when preview has no readable characters", () => {
+  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "!!! ---"), "Tiller 任务");
 });
 
 test("resolveDraftSelectionId preserves a valid manual selection instead of forcing the project default", () => {

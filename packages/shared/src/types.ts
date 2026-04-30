@@ -80,6 +80,39 @@ export type ProjectFileSummary = {
   kind: "file" | "directory";
 };
 
+export function sortProjectFileSummaries(left: ProjectFileSummary, right: ProjectFileSummary) {
+  const leftParts = left.path.split("/");
+  const rightParts = right.path.split("/");
+  const maxDepth = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxDepth; index += 1) {
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    if (leftPart === rightPart) {
+      continue;
+    }
+    if (leftPart === undefined) {
+      return -1;
+    }
+    if (rightPart === undefined) {
+      return 1;
+    }
+
+    const leftSegmentIsDirectory = index < leftParts.length - 1 || left.kind === "directory";
+    const rightSegmentIsDirectory = index < rightParts.length - 1 || right.kind === "directory";
+    if (leftSegmentIsDirectory !== rightSegmentIsDirectory) {
+      return leftSegmentIsDirectory ? -1 : 1;
+    }
+
+    const compare = leftPart.localeCompare(rightPart, undefined, { numeric: true, sensitivity: "base" });
+    if (compare !== 0) {
+      return compare;
+    }
+  }
+
+  return left.kind === right.kind ? 0 : left.kind === "directory" ? -1 : 1;
+}
+
 export type ProjectSummary = {
   id: string;
   name: string;

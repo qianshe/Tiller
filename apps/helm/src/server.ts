@@ -920,7 +920,21 @@ function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: 
     : availableWorkspaces;
 }
 
+function sanitizeConfiguredProjectSummary(projectName: string, summary: string | undefined) {
+  const normalized = summary?.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  const generatedPrefix = `Project: ${projectName} Configured summary:`;
+  const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
+    ? normalized.split(generatedPrefix).map((part) => part.trim()).filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim()
+    : normalized;
+  const compact = withoutGeneratedPrefix || normalized;
+  return compact.length > 900 ? `${compact.slice(0, 900)}…` : compact;
+}
+
 async function collectProjectSummarySource(project: ProjectSummary, projectWorkspaces: WorkspaceSummary[]) {
+  const configuredSummary = sanitizeConfiguredProjectSummary(project.name, project.summary);
   const snippets = await Promise.all(projectWorkspaces.slice(0, 3).map(async (workspace) => {
     const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
     const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
@@ -939,7 +953,7 @@ async function collectProjectSummarySource(project: ProjectSummary, projectWorks
 
   return [
     `Project: ${project.name}`,
-    project.summary ? `Configured summary: ${project.summary}` : "",
+    configuredSummary ? `Configured summary: ${configuredSummary}` : "",
     ...snippets,
   ].filter(Boolean).join("\n\n").slice(0, 9000);
 }

@@ -90,6 +90,14 @@ export function resolveModelOptionsFromConfig(
 }
 
 
+export function resolveSessionTitle(session: SessionSummary, preview = session.lastMessagePreview) {
+  const title = preview
+    ?.replace(/[\p{P}\p{S}\s]+/gu, "")
+    .slice(0, 6);
+
+  return title || `${session.projectName} 任务`;
+}
+
 export function resolvePromptPlaceholder(agent?: { command?: string; args?: string[] } | null) {
   const command = [agent?.command, ...(agent?.args ?? [])]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)

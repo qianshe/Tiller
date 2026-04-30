@@ -55,6 +55,31 @@ test("session message store appends messages per session and reloads them from d
   }
 });
 
+test("session message store returns messages sorted by timestamp", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-sort-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "msg-late",
+      role: "assistant",
+      text: "late",
+      timestamp: "2026-04-27T08:00:02.000Z",
+    });
+    store.append("session-1", {
+      id: "msg-early",
+      role: "user",
+      text: "early",
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-early", "msg-late"]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store merges chunks with the same message id", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-merge-"));

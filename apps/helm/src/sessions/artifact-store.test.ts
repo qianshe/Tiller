@@ -71,6 +71,25 @@ test("session artifact store persists command output history and latest diff sna
   }
 });
 
+test("session artifact store returns outputs and tool calls sorted by timestamp", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-sort-"));
+
+  try {
+    const store = mod.createSessionArtifactStore(tempRoot);
+    store.appendOutput("session-1", { id: "out-late", commandId: "cmd", text: "late", stream: "stdout", timestamp: "2026-04-26T12:15:02.000Z" });
+    store.appendOutput("session-1", { id: "out-early", commandId: "cmd", text: "early", stream: "stdout", timestamp: "2026-04-26T12:15:01.000Z" });
+    store.appendToolCall("session-1", { id: "tool-late", kind: "terminal", title: "late", status: "completed", timestamp: "2026-04-26T12:15:03.000Z", updatedAt: "2026-04-26T12:15:03.000Z" });
+    store.appendToolCall("session-1", { id: "tool-early", kind: "terminal", title: "early", status: "completed", timestamp: "2026-04-26T12:15:01.000Z", updatedAt: "2026-04-26T12:15:01.000Z" });
+
+    const artifacts = store.get("session-1");
+    assert.deepEqual(artifacts.outputs.map((item) => item.id), ["out-early", "out-late"]);
+    assert.deepEqual(artifacts.toolCalls.map((item) => item.id), ["tool-early", "tool-late"]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session artifact store removes only the targeted session artifacts", async () => {
   const mod = await import("./artifact-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-delete-"));
