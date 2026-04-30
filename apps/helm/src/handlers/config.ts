@@ -213,6 +213,17 @@ function saveProjectRootWorkspaceToConfig(workspace: WorkspaceSummary, project: 
   }, null, 2), "utf8");
 }
 
+export function shouldPersistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }) {
+  const previous = project.gitBranches ?? [];
+  const branchChanged = previous.length !== gitInfo.branches.length || previous.some((branch, index) => branch !== gitInfo.branches[index]);
+  const currentChanged = project.gitCurrentBranch !== gitInfo.currentBranch;
+  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
+  const workspaceChanged = project.defaultWorkspaceId !== workspaceId ||
+    !(project.workspaceIds ?? []).includes(workspaceId) ||
+    (project.workspaceIds ?? []).some((id) => id !== workspaceId && isProjectRootWorkspaceId(project, gitInfo, id));
+  return branchChanged || currentChanged || workspaceChanged;
+}
+
 async function persistProjectGitInfoIfAvailable(project: ProjectSummary, workspaces: WorkspaceSummary[], configPath: string) {
   const projectRoot = resolveProjectRoot(project, workspaces);
   if (!projectRoot) {
@@ -226,8 +237,11 @@ async function persistProjectGitInfoIfAvailable(project: ProjectSummary, workspa
       return false;
     }
 
-    persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
-    return true;
+    if (shouldPersistProjectGitInfo(project, gitInfo)) {
+      persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+      return true;
+    }
+    return false;
   } catch (error) {
     if (isNonGitRepositoryError(error)) {
       return false;
@@ -284,10 +298,7 @@ export async function refreshProjectGitBranches(projects: ProjectSummary[], work
         continue;
       }
 
-      const previous = project.gitBranches ?? [];
-      const branchChanged = previous.length !== gitInfo.branches.length || previous.some((branch, index) => branch !== gitInfo.branches[index]);
-      const currentChanged = project.gitCurrentBranch !== gitInfo.currentBranch;
-      if (branchChanged || currentChanged) {
+      if (shouldPersistProjectGitInfo(project, gitInfo)) {
         persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
         updated += 1;
       }

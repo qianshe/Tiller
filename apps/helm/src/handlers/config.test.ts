@@ -5,12 +5,28 @@ import { join } from "node:path";
 import test from "node:test";
 import { readTillerConfig } from "@tiller/agent-registry";
 import type { ProjectSummary } from "@tiller/shared";
-import { persistProjectGitInfo, resolveProjectWorkspaceId } from "./config.js";
+import { persistProjectGitInfo, resolveProjectWorkspaceId, shouldPersistProjectGitInfo } from "./config.js";
 
 test("resolveProjectWorkspaceId prefers current Git branch over project-scoped fallback", () => {
   assert.equal(resolveProjectWorkspaceId({ id: "project-1" }, "main"), "main");
   assert.equal(resolveProjectWorkspaceId({ id: "project-1", gitCurrentBranch: "develop" }), "develop");
   assert.equal(resolveProjectWorkspaceId({ id: "project-1" }), "project-1-workspace");
+});
+
+test("shouldPersistProjectGitInfo detects legacy project workspace ids even when branches are unchanged", () => {
+  const project: ProjectSummary = {
+    id: "project-1",
+    name: "Project",
+    helmId: "local-helm",
+    path: "D:/repo/project",
+    workspaceIds: ["project-1-workspace"],
+    defaultWorkspaceId: "project-1-workspace",
+    gitCurrentBranch: "main",
+    gitBranches: ["main"],
+  };
+
+  assert.equal(shouldPersistProjectGitInfo(project, { branches: ["main"], currentBranch: "main" }), true);
+  assert.equal(shouldPersistProjectGitInfo({ ...project, workspaceIds: ["main"], defaultWorkspaceId: "main" }, { branches: ["main"], currentBranch: "main" }), false);
 });
 
 test("persistProjectGitInfo uses branch name as root workspace id and removes obsolete project workspace", () => {
