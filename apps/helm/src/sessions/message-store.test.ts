@@ -5,13 +5,17 @@ import { join } from "node:path";
 import test from "node:test";
 import type { AgentMessage } from "@tiller/shared";
 
+type MessageStore = {
+  append: (sessionId: string, message: AgentMessage) => AgentMessage[];
+  replace: (sessionId: string, messages: AgentMessage[]) => AgentMessage[];
+  list: (sessionId: string) => AgentMessage[];
+  listPage: (sessionId: string, options?: { limit?: number; before?: string }) => { messages: AgentMessage[]; nextCursor?: string; hasMore: boolean };
+  remove: (sessionId: string) => void;
+};
+
 test("session message store appends messages per session and reloads them from disk", async () => {
   let mod: null | {
-    createSessionMessageStore: (rootDir: string) => {
-      append: (sessionId: string, message: AgentMessage) => AgentMessage[];
-      list: (sessionId: string) => AgentMessage[];
-      remove: (sessionId: string) => void;
-    };
+    createSessionMessageStore: (rootDir: string) => MessageStore;
   } = null;
 
   try {
@@ -110,6 +114,54 @@ test("session message store merges chunks with the same message id", async () =>
   }
 });
 
+test("session message store refreshes duplicate replay timestamps without duplicating text", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replay-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "msg-1",
+      role: "user",
+      text: "还有谁？",
+      timestamp: "2026-04-30T13:17:41.000Z",
+    });
+    store.append("session-1", {
+      id: "msg-1",
+      role: "user",
+      text: "还有谁？",
+      timestamp: "2026-04-30T13:22:46.686Z",
+    });
+
+    assert.deepEqual(store.list("session-1"), [{
+      id: "msg-1",
+      role: "user",
+      text: "还有谁？",
+      timestamp: "2026-04-30T13:22:46.686Z",
+    }]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store replaces a session with authoritative history", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replace-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", { id: "stale", role: "user", text: "old", timestamp: "2026-04-30T13:22:46.000Z" });
+    store.replace("session-1", [
+      { id: "msg-2", role: "assistant", text: "new", timestamp: "2026-04-30T09:59:11.000Z" },
+      { id: "msg-1", role: "user", text: "hello", timestamp: "2026-04-30T09:58:57.000Z" },
+    ]);
+
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-1", "msg-2"]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store removes only the targeted session history", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-delete-"));
@@ -135,6 +187,34 @@ test("session message store removes only the targeted session history", async ()
     assert.deepEqual(reloadedStore.list("session-1"), []);
     assert.equal(reloadedStore.list("session-2").length, 1);
     assert.equal(reloadedStore.list("session-2")[0]?.id, "msg-2");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store pages latest messages and exposes an older cursor", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-page-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    for (let index = 1; index <= 5; index += 1) {
+      store.append("session-1", {
+        id: `msg-${index}`,
+        role: index % 2 ? "user" : "assistant",
+        text: `message ${index}`,
+        timestamp: `2026-04-27T08:00:0${index}.000Z`,
+      });
+    }
+
+    const latest = store.listPage("session-1", { limit: 2 });
+    assert.deepEqual(latest.messages.map((message) => message.id), ["msg-4", "msg-5"]);
+    assert.equal(latest.hasMore, true);
+    assert.ok(latest.nextCursor);
+
+    const older = store.listPage("session-1", { limit: 2, before: latest.nextCursor });
+    assert.deepEqual(older.messages.map((message) => message.id), ["msg-2", "msg-3"]);
+    assert.equal(older.hasMore, true);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }

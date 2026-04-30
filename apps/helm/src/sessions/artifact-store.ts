@@ -8,6 +8,19 @@ type SessionArtifacts = {
   toolCalls: AgentToolCall[];
 };
 
+export type SessionArtifactPageOptions = {
+  limit?: number;
+  before?: string;
+};
+
+export type SessionArtifactPage = SessionArtifacts & {
+  nextCursor?: string;
+  hasMore: boolean;
+};
+
+const DEFAULT_ARTIFACT_PAGE_LIMIT = 50;
+const MAX_ARTIFACT_PAGE_LIMIT = 200;
+
 export function createSessionArtifactStore(rootDir: string) {
   return {
     appendOutput(sessionId: string, chunk: CommandChunk) {
@@ -33,7 +46,15 @@ export function createSessionArtifactStore(rootDir: string) {
       const index = current.toolCalls.findIndex((item) => item.id === toolCall.id);
       const nextToolCalls = index === -1
         ? [...current.toolCalls, toolCall]
-        : current.toolCalls.map((item, itemIndex) => itemIndex === index ? { ...item, ...toolCall, output: `${item.output ?? ""}${toolCall.output ?? ""}`, input: toolCall.input ?? item.input } : item);
+        : current.toolCalls.map((item, itemIndex) => itemIndex === index ? {
+            ...item,
+            ...toolCall,
+            title: toolCall.title || item.title,
+            output: `${item.output ?? ""}${toolCall.output ?? ""}`,
+            input: toolCall.input ?? item.input,
+            timestamp: item.timestamp,
+            updatedAt: toolCall.updatedAt,
+          } : item);
       const next = {
         ...current,
         toolCalls: sortToolCalls(nextToolCalls),
@@ -41,8 +62,20 @@ export function createSessionArtifactStore(rootDir: string) {
       persistSessionArtifacts(rootDir, sessionId, next);
       return next;
     },
+    replaceToolCalls(sessionId: string, toolCalls: AgentToolCall[]) {
+      const current = getSessionArtifacts(rootDir, sessionId);
+      const next = {
+        ...current,
+        toolCalls: sortToolCalls(toolCalls),
+      };
+      persistSessionArtifacts(rootDir, sessionId, next);
+      return next;
+    },
     get(sessionId: string) {
       return getSessionArtifacts(rootDir, sessionId);
+    },
+    getPage(sessionId: string, options: SessionArtifactPageOptions = {}) {
+      return pageSessionArtifacts(getSessionArtifacts(rootDir, sessionId), options);
     },
     remove(sessionId: string) {
       try {
@@ -52,6 +85,60 @@ export function createSessionArtifactStore(rootDir: string) {
       }
     },
   };
+}
+
+export function pageSessionArtifacts(artifacts: SessionArtifacts, options: SessionArtifactPageOptions = {}): SessionArtifactPage {
+  const limit = normalizePageLimit(options.limit, DEFAULT_ARTIFACT_PAGE_LIMIT, MAX_ARTIFACT_PAGE_LIMIT);
+  const before = decodeHistoryCursor(options.before);
+  const activities = [
+    ...artifacts.outputs.map((item) => ({ kind: "output" as const, timestamp: item.timestamp, id: item.id, item })),
+    ...artifacts.toolCalls.map((item) => ({ kind: "toolCall" as const, timestamp: item.updatedAt || item.timestamp, id: item.id, item })),
+  ].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
+  const eligible = before
+    ? activities.filter((activity) => compareHistoryPosition(activity.timestamp, activity.id, before.timestamp, before.id) < 0)
+    : activities;
+  const pageActivities = eligible.slice(Math.max(eligible.length - limit, 0));
+  const outputIds = new Set(pageActivities.filter((activity) => activity.kind === "output").map((activity) => activity.id));
+  const toolCallIds = new Set(pageActivities.filter((activity) => activity.kind === "toolCall").map((activity) => activity.id));
+  const hasMore = eligible.length > pageActivities.length;
+
+  return {
+    outputs: artifacts.outputs.filter((item) => outputIds.has(item.id)),
+    diffs: artifacts.diffs,
+    toolCalls: artifacts.toolCalls.filter((item) => toolCallIds.has(item.id)),
+    nextCursor: hasMore ? encodeHistoryCursor(pageActivities[0]?.timestamp, pageActivities[0]?.id) : undefined,
+    hasMore,
+  };
+}
+
+function normalizePageLimit(limit: number | undefined, fallback: number, max: number) {
+  if (!Number.isFinite(limit) || !limit || limit < 1) {
+    return fallback;
+  }
+  return Math.min(Math.floor(limit), max);
+}
+
+function encodeHistoryCursor(timestamp: string | undefined, id: string | undefined) {
+  return timestamp && id ? `${timestamp}\t${id}` : undefined;
+}
+
+function decodeHistoryCursor(cursor: string | undefined) {
+  if (!cursor) {
+    return null;
+  }
+  const [timestamp, id] = cursor.split("\t");
+  if (!timestamp || !id) {
+    return null;
+  }
+  return { timestamp, id };
+}
+
+function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTimestamp: string, rightId: string) {
+  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return leftId.localeCompare(rightId);
 }
 
 function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifacts {
@@ -69,11 +156,11 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
 }
 
 function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return [...items].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
 }
 
 function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) => Date.parse(left.updatedAt || left.timestamp) - Date.parse(right.updatedAt || right.timestamp));
+  return [...items].sort((left, right) => compareHistoryPosition(left.updatedAt || left.timestamp, left.id, right.updatedAt || right.timestamp, right.id));
 }
 
 function persistSessionArtifacts(rootDir: string, sessionId: string, artifacts: SessionArtifacts) {

@@ -134,11 +134,15 @@ export type ClientToHelm =
       type: "session.messages.list";
       requestId: string;
       sessionId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.artifacts.get";
       requestId: string;
       sessionId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.resume.check";
@@ -155,6 +159,7 @@ export type ClientToHelm =
       requestId: string;
       sessionId: string;
       text: string;
+      clientMessageId?: string;
     }
   | {
       type: "session.configure";
@@ -332,6 +337,8 @@ export type HelmToClient =
       requestId: string;
       sessionId: string;
       messages: AgentMessage[];
+      nextCursor?: string;
+      hasMore?: boolean;
     }
   | {
       type: "session.artifacts.result";
@@ -340,6 +347,8 @@ export type HelmToClient =
       outputs: CommandChunk[];
       diffs: FileDiffSummary[];
       toolCalls: AgentToolCall[];
+      nextCursor?: string;
+      hasMore?: boolean;
     }
   | {
       type: "session.resume.result";

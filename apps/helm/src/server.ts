@@ -45,6 +45,7 @@ import { createSessionMessageStore } from "./sessions/message-store";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { createSessionStore } from "./sessions/summary-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
+import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
@@ -609,6 +610,24 @@ function resolveResumeMode(agent: AcpAgentProvider | undefined) {
   return agent?.capabilities?.resumeMode ?? "none";
 }
 
+async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
+  try {
+    const history = await loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+    if (!history) {
+      return;
+    }
+    if (history.messages.length) {
+      sessionMessageStore.replace(sessionId, history.messages);
+    }
+    if (history.toolCalls.length) {
+      sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+    }
+    logInfo(`[tiller-helm] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+  } catch (error) {
+    logError(`[tiller-helm] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+  }
+}
+
 async function startSessionResume(sessionId: string) {
   const activeRecord = sessions.get(sessionId);
   if (activeRecord) {
@@ -675,6 +694,7 @@ async function startSessionResume(sessionId: string) {
     sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
     sessionStore.upsert(restoredSummary);
     persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
+    await importAuthoritativeOpenCodeHistory(sessionId, agent, runtime.runtimeSessionId, workspace.path);
     logInfo(`[tiller-helm] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
     return {
       ok: true,

@@ -40,7 +40,7 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
         title: call.title || key,
         status: call.status,
         toolKind: call.kind,
-        timestamp: call.updatedAt || call.timestamp,
+        timestamp: call.timestamp,
         text: call.output ?? call.input ?? "",
         streams: call.stream ? [call.stream] : [],
       });
@@ -48,7 +48,9 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
     }
 
     current.text = `${current.text}${call.output ?? call.input ?? ""}`;
-    current.timestamp = call.updatedAt || call.timestamp;
+    if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
+      current.timestamp = call.timestamp;
+    }
     current.status = call.status;
     current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
     current.title = call.title || current.title;
@@ -88,6 +90,7 @@ export function mergeToolCallHistory(current: AgentToolCall[], incoming: AgentTo
       ...next,
       output: `${existing.output ?? ""}${next.output ?? ""}`,
       input: next.input ?? existing.input,
+      timestamp: Date.parse(next.timestamp) < Date.parse(existing.timestamp) ? next.timestamp : existing.timestamp,
       updatedAt: next.updatedAt,
       status: next.status,
     };

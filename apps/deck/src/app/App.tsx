@@ -7,7 +7,6 @@ import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/
 import { resolveSessionConfigSupport, sortProjectFileSummaries } from "@tiller/shared";
 import type {
   AcpAgentProvider,
-  AcpAgentSessionInfo,
   AcpModelOption,
   AgentMessage,
   AgentToolCall,
@@ -34,7 +33,7 @@ import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, 
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
-import { buildConversationTimeline, commandChunkToToolCall, mergeToolCallHistory } from "../features/logbook/timeline";
+import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -48,6 +47,8 @@ const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
 const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
+const DEFAULT_HISTORY_PAGE_LIMIT = 50;
+const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -600,9 +601,11 @@ export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>(missionVisualFixture?.sessions ?? []);
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
+  const [messageHistoryState, setMessageHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
+  const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
@@ -628,9 +631,6 @@ export function App() {
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
-  const [agentHistorySessions, setAgentHistorySessions] = useState<AcpAgentSessionInfo[]>([]);
-  const [agentHistoryFeedback, setAgentHistoryFeedback] = useState<string>("");
-  const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
   const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
   const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
@@ -1044,15 +1044,19 @@ export function App() {
       return;
     }
 
+    setMessageHistoryState((current) => ({ ...current, [activeSessionId]: { hasMore: false, loading: true } }));
+    setActivityHistoryState((current) => ({ ...current, [activeSessionId]: { hasMore: false, loading: true } }));
     dispatch(socketRef.current, {
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
+      limit: DEFAULT_HISTORY_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.artifacts.get",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
+      limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.resume.check",
@@ -1749,12 +1753,14 @@ export function App() {
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
             pendingPromptRef.current = null;
-            appendUserMessage(payload.session.id, pendingPrompt);
+            const clientMessageId = createClientUserMessageId(payload.session.id);
+            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
               text: pendingPrompt,
+              clientMessageId,
             });
           }
         }
@@ -1799,33 +1805,25 @@ export function App() {
           setSessions(payload.sessions);
           setStatuses(nextStatuses);
           setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
+          setMessageHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
           setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
           setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
+          setToolCalls((current) => pruneSessionScopedMap(current, payload.sessions));
+          setActivityHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
           setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
           setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
           setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
         }
         return;
       }
-      case "agent.sessions.list.result":
-        setAgentHistoryLoading(false);
-        setAgentHistorySessions(payload.sessions);
-        setAgentHistoryFeedback(payload.sessions.length ? `发现 ${payload.sessions.length} 条 agent 历史。` : "该 agent 暂无可导入历史。醒醒喵~");
-        return;
-      case "agent.session.import.result":
-        setAgentHistoryLoading(false);
-        setAgentHistoryFeedback(payload.message);
-        if (payload.ok && socketRef.current) {
-          setActiveSessionId(payload.sessionId);
-          dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
-          dispatch(socketRef.current, { type: "session.messages.list", requestId: nextRequestId(requestCounter), sessionId: payload.sessionId });
-          dispatch(socketRef.current, { type: "session.artifacts.get", requestId: nextRequestId(requestCounter), sessionId: payload.sessionId });
-        }
-        return;
-      case "session.messages.list.result":
+case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
           [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+        }));
+        setMessageHistoryState((current) => ({
+          ...current,
+          [payload.sessionId]: { nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false },
         }));
         return;
       case "session.artifacts.result":
@@ -1841,6 +1839,10 @@ export function App() {
           ]),
         }));
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
+        setActivityHistoryState((current) => ({
+          ...current,
+          [payload.sessionId]: { nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false },
+        }));
         return;
       case "session.resume.result":
         setSessions((current) =>
@@ -1945,10 +1947,6 @@ export function App() {
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.files }));
         return;
       case "error":
-        setAgentHistoryLoading(false);
-        if (agentHistoryLoading) {
-          setAgentHistoryFeedback(payload.message);
-        }
         setPairingFeedback(payload.message);
         if (payload.message.toLowerCase().includes("not paired")) {
           setPairingState("input");
@@ -1989,18 +1987,21 @@ export function App() {
     }));
   }
 
-  function appendUserMessage(sessionId: string, text: string) {
+  function createClientUserMessageId(sessionId: string) {
+    return `${sessionId}-user-${Date.now()}`;
+  }
+
+  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId)) {
     setMessages((current) => ({
       ...current,
-      [sessionId]: [
-        ...(current[sessionId] ?? []),
+      [sessionId]: mergeMessageHistory(current[sessionId] ?? [], [
         {
-          id: `${sessionId}-user-${Date.now()}`,
+          id,
           role: "user",
           text,
           timestamp: new Date().toISOString(),
         },
-      ],
+      ]),
     }));
   }
 
@@ -2277,13 +2278,15 @@ export function App() {
       return;
     }
 
-    appendUserMessage(activeSessionId, nextPrompt);
+    const clientMessageId = createClientUserMessageId(activeSessionId);
+    appendUserMessage(activeSessionId, nextPrompt, clientMessageId);
     setPrompt("");
     dispatch(socketRef.current, {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
       text: nextPrompt,
+      clientMessageId,
     });
   }
 
@@ -2398,328 +2401,158 @@ export function App() {
     });
   }
 
-  function listAgentHistorySessions() {
-    const workspaceId = activeSession?.workspaceId ?? selectedWorkspaceId;
-    const agentId = activeSession?.agentId ?? selectedAgentId;
-    if (!workspaceId || !agentId || !socketRef.current) {
-      setAgentHistoryFeedback("请先选择 Workspace 与 ACP agent。");
+  function loadOlderMessages(sessionId: string) {
+    const historyState = messageHistoryState[sessionId];
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
       return;
     }
-    setAgentHistoryLoading(true);
-    setAgentHistoryFeedback("正在读取 agent-side sessions...");
+    setMessageHistoryState((current) => ({
+      ...current,
+      [sessionId]: { ...current[sessionId], loading: true },
+    }));
     dispatch(socketRef.current, {
-      type: "agent.sessions.list",
+      type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
-      workspaceId,
-      agentId,
+      sessionId,
+      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      before: historyState.nextCursor,
     });
   }
 
-  function importAgentHistorySession(agentSession: AcpAgentSessionInfo) {
-    const projectId = activeSession?.projectId ?? selectedProjectId;
-    const workspaceId = activeSession?.workspaceId ?? selectedWorkspaceId;
-    const agentId = activeSession?.agentId ?? selectedAgentId;
-    if (!projectId || !workspaceId || !agentId || !socketRef.current) {
-      setAgentHistoryFeedback("请先选择 Project、Workspace 与 ACP agent 后再导入。");
+  function loadOlderActivities(sessionId: string) {
+    const historyState = activityHistoryState[sessionId];
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
       return;
     }
-    setAgentHistoryLoading(true);
-    setAgentHistoryFeedback(`正在导入 ${agentSession.title ?? agentSession.sessionId}...`);
+    setActivityHistoryState((current) => ({
+      ...current,
+      [sessionId]: { ...current[sessionId], loading: true },
+    }));
     dispatch(socketRef.current, {
-      type: "agent.session.import",
+      type: "session.artifacts.get",
       requestId: nextRequestId(requestCounter),
-      projectId,
-      workspaceId,
-      agentId,
-      runtimeSessionId: agentSession.sessionId,
-      title: agentSession.title,
+      sessionId,
+      limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
+      before: historyState.nextCursor,
     });
   }
 
-  function cancelSession() {
-    if (!activeSessionId || !socketRef.current) {
-      return;
-    }
-
-    dispatch(socketRef.current, {
-      type: "session.cancel",
-      requestId: nextRequestId(requestCounter),
-      sessionId: activeSessionId,
-    });
-  }
-
-  function cleanupSession(targetSessionId = activeSessionId) {
-    if (!targetSessionId || !socketRef.current) {
-      return;
-    }
-
-    const confirmed = window.confirm("将清理当前任务的本地记录；若该任务由 Tiller 创建且 provider 支持，也会尝试删除远端 ACP session。确认继续吗？");
-    if (!confirmed) {
-      return;
-    }
-
-    setCleanupFeedback({ tone: "info", message: "正在清理当前任务..." });
-    dispatch(socketRef.current, {
-      type: "session.cleanup",
-      requestId: nextRequestId(requestCounter),
-      sessionId: targetSessionId,
-    });
-  }
-
-  function renderConnectionPanel() {
-    return (
-      <section className="card pairing-card">
-        <h2>{showConnectionCard ? copy.connectDaemon : copy.pairingTitle}</h2>
-        <p className="muted">{showConnectionCard ? copy.connectHint : copy.pairingHint}</p>
-
-        {showConnectionCard && (
-          <div className="stack-gap">
-            <form className="connect-form" onSubmit={connectToDaemon}>
-              <label>
-                <span>{copy.daemonAddress}</span>
-                <input value={fleetAddHelmHost} onChange={(event) => setFleetAddHelmHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
-              </label>
-              <label>
-                <span>{copy.daemonPort}</span>
-                <input value={fleetAddHelmPort} onChange={(event) => setFleetAddHelmPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
-              </label>
-              <button className="primary" type="submit">
-                {connection === "connecting" ? copy.connection.connecting : copy.connectDaemon}
-              </button>
-            </form>
-
-            <div className="note-box compact-note">
-              <strong>多 Helm 预设</strong>
-              <label>
-                <span>预设名称</span>
-                <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="工作室 Helm" />
-              </label>
-              <div className="section-actions">
-                <button className="secondary" type="button" onClick={saveDaemonProfile}>
-                  保存当前 Helm
-                </button>
-              </div>
-              {daemonProfiles.length ? (
-                <div className="stack-gap">
-                  {daemonProfiles.map((profile) => (
-                    <button key={profile.id} className="secondary" type="button" onClick={() => applyDaemonProfile(profile)}>
-                      {profile.name} · {profile.host}:{profile.port}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted compact">还没有保存的 Helm 预设。</p>
-              )}
-              {daemonProfileMessage ? <p className="subtle compact">{daemonProfileMessage}</p> : null}
-            </div>
-          </div>
-        )}
-
-        {showPairingCard && (
-          <form className="pairing-form" onSubmit={submitPairingCode}>
-            <PairingBoxes
-              refs={pairInputRefs}
-              value={pairingCodeInput}
-              disabled={pairingState === "waiting"}
-              onChange={updatePairingDigit}
-              onKeyDown={handlePairingKeyDown}
-              onPaste={pastePairingDigits}
-            />
-            <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting"}>
-              {pairingState === "waiting" ? "配对中..." : "配对"}
-            </button>
-          </form>
-        )}
-
-        <div className="note-box compact-note">
-          <strong>{showConnectionCard ? copy.connectDaemon : copy.pairingTitle}</strong>
-          <p>{showConnectionCard ? connectFeedback : pairingFeedback}</p>
-        </div>
-
-        {deckPreferences.technicalPanels.showConnectionDebug ? (
-          <div className="note-box compact-note">
-            <strong>{copy.pairingDebug}</strong>
-            <p>
-              连接次数={debugTrace.connectClicks} · 配对次数={debugTrace.pairClicks} · 请求数={debugTrace.requestsSent}
-            </p>
-            <p className="muted compact">最近请求类型={debugTrace.lastRequestType}</p>
-          </div>
-        ) : null}
-
-        {pairingState === "rejected" && <p className="error-text">配对失败，请检查配对码后重试。</p>}
-      </section>
-    );
-  }
-
-  const showConnectionCard = connection !== "connected" && pairingState !== "paired";
-  const showPairingCard = connection === "connected" && pairingState !== "paired";
-
-  function renderOverview() {
-    const recentSessions = sessions.slice(0, 5);
-    return (
-      <section className="workspace-single">
-        <header className="hero card hero-panel">
-          <div>
-            <p className="eyebrow">ACP Coding Agent 舰队指挥甲板</p>
-            <h1>Tiller Deck</h1>
-            <p className="muted hero-copy">Tiller 是你的 ACP Coding Agent 舰队指挥甲板：调度任务、审批权限、追踪航行日志与文件变更。</p>
-          </div>
-          <div className="hero-metrics overview-stats">
-            <StatCard label="项目" value={String(projects.length)} meta={projects[0]?.name ?? "暂无项目"} />
-            <StatCard label="工作区" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
-            <StatCard label="舰员" value={String(agents.length)} meta={agents[0]?.name ?? copy.noAgents} />
-            <StatCard label="活跃任务" value={String(sessions.length)} meta={activeStatus} />
-          </div>
-        </header>
-
-        <div className="meta-grid">
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>项目列表</h2>
-                <p className="muted compact">只读展示当前 Deck 可见的项目 及其绑定 Helm。</p>
-              </div>
-            </div>
-            <InfoList items={projects.map((project) => `${project.name} · ${helms.find((helm) => helm.id === project.helmId)?.name ?? project.helmId}`)} empty="暂无项目" />
-          </section>
-
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>工作区列表</h2>
-                <p className="muted compact">只读展示当前 Helm 暴露的 Workspace。</p>
-              </div>
-            </div>
-            <InfoList items={workspaces.map((workspace) => `${workspace.name} · ${workspace.path}`)} empty={copy.noWorkspaces} />
-          </section>
-
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>舰员列表</h2>
-                <p className="muted compact">只读展示当前可用的 ACP 舰员。</p>
-              </div>
-            </div>
-            <InfoList items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
-          </section>
-        </div>
-
-        <section className="card surface-card stack-gap">
-          <div className="section-head section-head-soft">
-            <div>
-              <h2>最近任务</h2>
-              <p className="muted compact">最近 5 条任务记录，只读展示。</p>
-            </div>
-          </div>
-          {recentSessions.length ? (
-            <div className="session-history-list read-only-list">
-              {recentSessions.map((session) => (
-                <article key={session.id} className="session-item session-history-item read-only-item">
-                  <span className="session-item-main">
-                    <strong>{session.projectName}</strong>
-                    <span className="subtle">{session.workspaceName} · {session.agentName} · {formatSessionTime(session.updatedAt)}</span>
-                    <span className="subtle">{session.lastMessagePreview ?? "暂无消息预览"}</span>
-                  </span>
-                  <span className="session-history-meta">
-                    <span className="status-chip">{copy.status[statuses[session.id] ?? session.status]}</span>
-                    <span className="subtle">{session.messageCount} 条消息</span>
-                  </span>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">{copy.noSessions}</div>
-          )}
-        </section>
-      </section>
-    );
-  }
-
-  function addMissionPanelPage() {
-    const id = `custom-${Date.now().toString(36)}`;
-    const page = { id, title: `展示页 ${customMissionPanelPages.length + 1}` };
-    setCustomMissionPanelPages((current) => [...current, page]);
-    setSelectedMissionPanelPageId(id);
-  }
-
-  function renameMissionPanelPage(pageId: string, title: string) {
-    setCustomMissionPanelPages((current) => current.map((page) => page.id === pageId ? { ...page, title } : page));
-  }
-
-  function deleteMissionPanelPage(pageId: string) {
-    setCustomMissionPanelPages((current) => current.filter((page) => page.id !== pageId));
-    setSelectedMissionPanelPageId("overview");
-  }
-
-  function moveMissionPanelPage(pageId: string, direction: -1 | 1) {
-    setCustomMissionPanelPages((current) => moveMissionPanelPageInList(current, pageId, direction));
-  }
-
-  function dropMissionPanelPage(targetPageId: string) {
-    if (!draggedMissionPanelPageId || draggedMissionPanelPageId === targetPageId) {
-      setDraggedMissionPanelPageId(null);
-      return;
-    }
-    setCustomMissionPanelPages((current) => reorderMissionPanelPage(current, draggedMissionPanelPageId, targetPageId));
-    setDraggedMissionPanelPageId(null);
-  }
-
-  function toggleMissionDiffDirectory(directory: string) {
-    setCollapsedMissionDiffDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(directory)) {
-        next.delete(directory);
-      } else {
-        next.add(directory);
-      }
-      return next;
-    });
-  }
-
-  function toggleProjectFileDirectory(directory: string) {
-    setCollapsedProjectFileDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(directory)) {
-        next.delete(directory);
-      } else {
-        next.add(directory);
-      }
-      return next;
-    });
-  }
-
-  function openDiffDetail(filePath: string) {
-    setSelectedMissionDiffFilePath(filePath);
-    setSelectedMissionPanelPageId("diff-detail");
-  }
-
-  function renderPlainMessages(items: AgentMessage[], commandChunks: CommandChunk[], sessionToolCalls: AgentToolCall[]) {
-    const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
-    if (!timelineItems.length) {
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string) {
+    if (!items.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
+    const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
 
     return (
       <div className="plain-message-list conversation-timeline">
-        {timelineItems.map((item) =>
-          item.kind === "message" ? (
-            <article key={item.message.id} className={`plain-message plain-${item.message.role}`}>
-              <span className="plain-message-role">{copy.role[item.message.role]}</span>
-              <MarkdownMessage text={item.message.text} />
-            </article>
+        {historyState?.hasMore ? (
+          <button className="secondary load-more-history" type="button" onClick={() => loadOlderMessages(sessionId!)} disabled={historyState.loading}>
+            {historyState.loading ? "加载中..." : "加载更早消息"}
+          </button>
+        ) : null}
+        {items.map((message) => (
+          <article key={message.id} className={`plain-message plain-${message.role}`}>
+            <span className="plain-message-role">{copy.role[message.role]}</span>
+            <MarkdownMessage text={message.text} />
+          </article>
+        ))}
+      </div>
+    );
+  }
+
+  function summarizeActivityText(text: string) {
+    const compact = text.replace(/\s+/g, " ").trim();
+    return compact.length > 72 ? `${compact.slice(0, 72)}…` : compact || "发送给 ACP";
+  }
+
+  function renderActivityLog(sessionId: string | undefined, sessionToolCalls: AgentToolCall[], commandChunks: CommandChunk[], sessionMessages: AgentMessage[]) {
+    const toolItems = groupToolCalls(sessionToolCalls.length ? sessionToolCalls : commandChunks.map(commandChunkToToolCall));
+    const promptItems = sessionMessages
+      .filter((message) => message.role === "user")
+      .map((message) => ({ kind: "prompt" as const, id: message.id, timestamp: message.timestamp, text: message.text }));
+    const timelineItems = [
+      ...promptItems,
+      ...toolItems.map((item) => ({ kind: "tool" as const, timestamp: item.timestamp, item })),
+    ].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    const historyState = sessionId ? activityHistoryState[sessionId] : undefined;
+    if (!timelineItems.length) {
+      return <CommandOutput items={commandChunks} emptyLabel={copy.noCommandOutput} />;
+    }
+
+    return (
+      <section className="info-list mission-activity-log">
+        <div className="section-head section-head-soft">
+          <div>
+            <h3>{copy.commandOutput}</h3>
+
+          </div>
+          {historyState?.hasMore ? (
+            <button className="secondary" type="button" onClick={() => loadOlderActivities(sessionId!)} disabled={historyState.loading}>
+              {historyState.loading ? "加载中..." : "加载更早活动"}
+            </button>
+          ) : null}
+        </div>
+        <div className="plain-message-list conversation-timeline activity-timeline">
+          {timelineItems.map((timelineItem) => timelineItem.kind === "prompt" ? (
+            <details key={timelineItem.id} className="tool-call-card acp-prompt-card">
+              <summary className="tool-call-head">
+                <span className="tool-call-icon" aria-hidden="true">↗</span>
+                <span className="tool-call-kind">Prompt</span>
+                <strong>{summarizeActivityText(timelineItem.text)}</strong>
+                <span className="tool-call-stream">user</span>
+              </summary>
+              <pre className="tool-call-output">{timelineItem.text}</pre>
+            </details>
           ) : (
-            <details key={item.id} className={`tool-call-card tool-call-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
+            <details key={timelineItem.item.id} className={`tool-call-card tool-call-${timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
               <summary className="tool-call-head">
                 <span className="tool-call-icon" aria-hidden="true">$</span>
-                <span className="tool-call-kind">{resolveToolCallLabel(item.toolKind, item.title)}</span>
-                <strong>{item.title}</strong>
-                <span className={`tool-call-stream tool-call-stream-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
+                <span className="tool-call-kind">{resolveToolCallLabel(timelineItem.item.toolKind, timelineItem.item.title)}</span>
+                <strong>{timelineItem.item.title}</strong>
+                <span className={`tool-call-stream tool-call-stream-${timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
               </summary>
-              {item.text.trim() ? <pre className="tool-call-output">{item.text}</pre> : null}
+              {timelineItem.item.text.trim() ? <pre className="tool-call-output">{timelineItem.item.text}</pre> : null}
             </details>
-          ),
-        )}
-      </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function renderSessionOverview(diffCount: number, logCount: number) {
+    const statusLabel = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : "待创建";
+    const cards = activeSession ? [
+      { label: "状态", value: statusLabel, meta: "Session state" },
+      { label: "消息", value: `${activeSession.messageCount} 条`, meta: "Conversation" },
+      { label: "变更", value: `${diffCount} 个文件`, meta: "Git diff" },
+      { label: "航行日志", value: `${logCount} 条`, meta: "Activity" },
+    ] : [
+      { label: "状态", value: "待创建", meta: "Session state" },
+      { label: "会话", value: "未创建", meta: "发送首条指令后创建" },
+    ];
+
+    return (
+      <section className="session-overview-card">
+        <div className="section-head section-head-soft">
+          <div>
+            <h3>{activeSession ? "会话信息" : "新任务"}</h3>
+
+          </div>
+        </div>
+        <div className="session-overview-grid">
+          {cards.map((card) => (
+            <article key={card.label} className="session-overview-metric">
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.meta}</small>
+            </article>
+          ))}
+        </div>
+        <div className="session-overview-preview">
+          <span>最近活动</span>
+          <strong>{activeSession?.lastMessagePreview || "暂无预览"}</strong>
+        </div>
+      </section>
     );
   }
 
@@ -2822,9 +2655,10 @@ export function App() {
     const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
     const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
+    const activeToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
     const activeDiffTree = buildMissionDiffTree(activeDiffs);
     const missionDiffCount = activeDiffs.length;
-    const missionLogCount = activeOutputs.length;
+    const missionLogCount = activeToolCalls.length || activeOutputs.length;
     const missionPanelPages = [
       { id: "overview", title: "概览" },
       { id: "changes", title: `Git Diff (${missionDiffCount})` },
@@ -2855,16 +2689,6 @@ export function App() {
       `ACP · ${overviewAgentName}`,
       draftProject?.path ? `路径 · ${draftProject.path}` : "路径 · 等待 Helm 返回",
       `摘要 · ${formatProjectSummaryForDisplay(draftProject?.summary, overviewProjectName)}`,
-    ];
-    const sessionOverviewItems = activeSession ? [
-      `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
-      `消息 · ${activeSession.messageCount} 条`,
-      `变更 · ${missionDiffCount} 个文件`,
-      `航行日志 · ${missionLogCount} 条`,
-      activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
-    ] : [
-      "状态 · 待创建",
-      "会话 · 发送首条指令后创建",
     ];
     const projectFileFilterText = projectFileFilter.trim().toLowerCase();
     const visibleProjectFiles = projectFiles.filter((file) => {
@@ -2993,33 +2817,8 @@ export function App() {
               </div>
             ) : selectedMissionPanelPage.id === "logbook" ? (
               <div className="mission-panel-page mission-logbook-page">
-                <InfoList title={activeSession ? "会话信息" : "新任务"} items={sessionOverviewItems} empty="暂无任务信息" />
-                <section className="info-list agent-history-import">
-                  <div className="section-head section-head-soft">
-                    <div>
-                      <h3>Agent 远程历史</h3>
-                      <p className="muted compact">从支持 ACP session/list 的 provider 读取远程会话；导入时会通过 session/load 回放并落到本地历史。</p>
-                    </div>
-                    <button className="secondary" type="button" onClick={listAgentHistorySessions} disabled={agentHistoryLoading}>
-                      {agentHistoryLoading ? "读取中..." : "读取远程历史"}
-                    </button>
-                  </div>
-                  {agentHistoryFeedback ? <p className="compact muted">{agentHistoryFeedback}</p> : null}
-                  {agentHistorySessions.length ? (
-                    <div className="session-history-list read-only-list">
-                      {agentHistorySessions.map((agentSession) => (
-                        <article key={agentSession.sessionId} className="session-item session-history-item read-only-item">
-                          <span className="session-item-main">
-                            <strong>{agentSession.title ?? agentSession.sessionId}</strong>
-                            <span className="subtle">{agentSession.cwd ?? "未知工作区"}{agentSession.updatedAt ? ` · ${formatSessionTime(agentSession.updatedAt)}` : ""}</span>
-                          </span>
-                          <button className="secondary" type="button" onClick={() => importAgentHistorySession(agentSession)} disabled={agentHistoryLoading}>导入消息</button>
-                        </article>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-                <CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} />
+                {renderSessionOverview(missionDiffCount, missionLogCount)}
+                {renderActivityLog(activeSession?.id, activeToolCalls, activeOutputs, activeSession ? messages[activeSession.id] ?? [] : [])}
               </div>
             ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
               <div className="mission-panel-page mission-custom-page">
@@ -3232,7 +3031,7 @@ export function App() {
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(messages[activeSession.id] ?? [], outputs[activeSession.id] ?? [], toolCalls[activeSession.id] ?? [])}
+                    {renderPlainMessages(messages[activeSession.id] ?? [], activeSession.id)}
 
 
                   </>
@@ -4262,20 +4061,30 @@ function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) 
   const merged = [...current];
   for (const message of incoming) {
     const index = merged.findIndex((item) => item.id === message.id);
-    if (index === -1) {
+    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
+    if (index === -1 && equivalentIndex === -1) {
       merged.push(message);
       continue;
     }
 
-    merged[index] = {
-      ...merged[index],
+    const mergeIndex = index === -1 ? equivalentIndex : index;
+    merged[mergeIndex] = {
+      ...merged[mergeIndex],
       ...message,
-      text: merged[index].text === message.text || merged[index].text.endsWith(message.text) ? merged[index].text : `${merged[index].text}${message.text}`,
-      timestamp: merged[index].timestamp,
+      text: merged[mergeIndex].text === message.text || merged[mergeIndex].text.endsWith(message.text) ? merged[mergeIndex].text : `${merged[mergeIndex].text}${message.text}`,
+      timestamp: merged[mergeIndex].timestamp,
     };
   }
 
   return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
+  if (left.role !== right.role || left.text !== right.text) {
+    return false;
+  }
+  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return Number.isFinite(delta) && delta < 10_000;
 }
 
 function mergeCommandHistory(current: CommandChunk[], incoming: CommandChunk[]) {

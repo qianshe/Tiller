@@ -110,16 +110,26 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       });
       return true;
     }
-    case "session.messages.list":
+    case "session.messages.list": {
+      const page = context.sessionMessageStore.listPage(payload.sessionId, {
+        limit: payload.limit,
+        before: payload.before,
+      });
       context.emit(socket, {
         type: "session.messages.list.result",
         requestId: payload.requestId,
         sessionId: payload.sessionId,
-        messages: context.sessionMessageStore.list(payload.sessionId),
+        messages: page.messages,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
       });
       return true;
+    }
     case "session.artifacts.get": {
-      const artifacts = context.sessionArtifactStore.get(payload.sessionId);
+      const artifacts = context.sessionArtifactStore.getPage(payload.sessionId, {
+        limit: payload.limit,
+        before: payload.before,
+      });
       const diffs = await context.hydrateDiffsFromWorkspaceGit(payload.sessionId, artifacts.diffs);
       context.emit(socket, {
         type: "session.artifacts.result",
@@ -128,6 +138,8 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         outputs: artifacts.outputs,
         diffs,
         toolCalls: artifacts.toolCalls,
+        nextCursor: artifacts.nextCursor,
+        hasMore: artifacts.hasMore,
       });
       return true;
     }
@@ -276,7 +288,8 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       }
       context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
       const timestamp = new Date().toISOString();
-      context.persistSessionMessage(payload.sessionId, { id: `${payload.sessionId}-user-${Date.now()}`, role: "user", text: payload.text, timestamp });
+      const userMessageId = payload.clientMessageId || `${payload.sessionId}-user-${Date.now()}`;
+      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp });
       const updated = context.updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
       if (updated) {
         context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: updated });
