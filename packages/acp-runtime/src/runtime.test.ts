@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   applySessionLaunchOverrides,
   buildOpenCodeConfigOverride,
@@ -14,6 +17,7 @@ import {
   buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
+  listAcpAgentSessions,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
   resolvePreferredAgentId,
@@ -64,6 +68,40 @@ test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP se
     nextCursor: "next-page",
     meta: { total: 2 },
   });
+});
+
+test("listAcpAgentSessions reads sessions from a fake ACP agent", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-list-"));
+  const fakeAgentPath = join(tempDir, "fake-agent.mjs");
+  writeFileSync(fakeAgentPath, `
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  const payload = JSON.parse(line);
+  if (payload.method === "initialize") {
+    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { capabilities: { session: { list: true } }, agentInfo: { name: "Fake ACP" } } }));
+    return;
+  }
+  if (payload.method === "session/list") {
+    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { sessions: [{ session_id: "remote-1", cwd: payload.params.cwd, title: "Remote history", updated_at: "2026-04-30T00:00:00Z" }], next_cursor: "next" } }));
+  }
+});
+`, "utf8");
+
+  try {
+    const result = await listAcpAgentSessions(
+      { id: "fake", name: "Fake ACP", command: process.execPath, args: [fakeAgentPath], transport: "stdio", protocol: "acp" },
+      { id: "workspace", name: "Workspace", path: tempDir },
+    );
+
+    assert.deepEqual(result, {
+      sessions: [{ sessionId: "remote-1", cwd: tempDir, title: "Remote history", updatedAt: "2026-04-30T00:00:00Z", meta: undefined }],
+      nextCursor: "next",
+      meta: undefined,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {

@@ -37,7 +37,10 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       return;
     case "message":
       if (event.message.role === "user") {
-        const existingMessages = context.sessionMessageStore.list(sessionId) as AgentMessage[];
+        const existingMessages = context.sessionMessageStore?.list(sessionId) as AgentMessage[] | undefined;
+        if (!existingMessages) {
+          return;
+        }
         const alreadyRecorded = existingMessages.some((message) =>
           message.role === "user" && (
             message.id === event.message.id ||

@@ -1,6 +1,7 @@
-import { listAcpAgentSessions } from "@tiller/acp-runtime";
+import { listAcpAgentSessions, normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
+import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 import type { SessionSummary } from "@tiller/shared";
 import type { HelmMessageHandler } from "./context";
 

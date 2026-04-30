@@ -885,7 +885,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
 export function resolveSessionCapabilities(initializeResult: any, provider?: AcpAgentProvider): DetectedAcpSessionCapabilities {
   const capabilities = initializeResult?.capabilities ?? initializeResult?.agentCapabilities ?? initializeResult?.sessionCapabilities ?? {};
-  const nestedSession = capabilities.session ?? capabilities.sessions ?? initializeResult?.sessionCapabilities ?? {};
+  const nestedSession = capabilities.session ?? capabilities.sessions ?? capabilities.sessionCapabilities ?? initializeResult?.sessionCapabilities ?? {};
   const providerCapabilities = provider?.capabilities ?? {};
 
   return {
