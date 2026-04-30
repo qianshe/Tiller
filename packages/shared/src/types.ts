@@ -13,6 +13,14 @@ export type SessionCleanupResult = {
   message: string;
 };
 
+export type AcpAgentSessionInfo = {
+  sessionId: string;
+  cwd?: string;
+  title?: string;
+  updatedAt?: string;
+  meta?: unknown;
+};
+
 export type AgentCapabilities = {
   streaming?: boolean;
   permissionRequests?: boolean;

@@ -5,6 +5,7 @@ import {
   buildOpenCodeConfigOverride,
   buildSessionCloseRequest,
   buildSessionDeleteRequest,
+  buildSessionListRequest,
   buildSessionLoadRequest,
   buildSessionNewRequest,
   buildSessionPromptRequest,
@@ -13,6 +14,7 @@ import {
   buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
+  normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
@@ -28,6 +30,39 @@ test("buildSessionNewRequest uses ACP session/new shape", () => {
       cwd: "D:/myProject/tools/Tiller",
       mcpServers: [],
     },
+  });
+});
+
+test("buildSessionListRequest uses ACP session/list shape", () => {
+  assert.deepEqual(buildSessionListRequest("req-list", "D:/myProject/tools/Tiller", "codex", "cursor-1"), {
+    jsonrpc: "2.0",
+    id: "req-list",
+    method: "session/list",
+    params: {
+      cwd: "D:/myProject/tools/Tiller",
+      mcpServers: [],
+      cursor: "cursor-1",
+      agent: "codex",
+    },
+  });
+});
+
+test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP session entries", () => {
+  assert.deepEqual(normalizeAcpAgentSessionListResult({
+    sessions: [
+      { session_id: "sess_1", cwd: "D:/repo", title: "Fix bug", updated_at: "2026-04-30T00:00:00Z", meta: { source: "agent" } },
+      { sessionId: "sess_2", updatedAt: "2026-04-30T01:00:00Z" },
+      { title: "missing id" },
+    ],
+    next_cursor: "next-page",
+    meta: { total: 2 },
+  }), {
+    sessions: [
+      { sessionId: "sess_1", cwd: "D:/repo", title: "Fix bug", updatedAt: "2026-04-30T00:00:00Z", meta: { source: "agent" } },
+      { sessionId: "sess_2", cwd: undefined, title: undefined, updatedAt: "2026-04-30T01:00:00Z", meta: undefined },
+    ],
+    nextCursor: "next-page",
+    meta: { total: 2 },
   });
 });
 

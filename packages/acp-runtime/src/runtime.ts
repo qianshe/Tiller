@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "./config-adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasOpenCodePortArg, hasSessionConfigOptionValue, mapPermissionRequest, mapSessionUpdateNotification, normalizeProviderCleanupResult, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
-import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 import type {
   AcpAgentProvider,
+  AcpAgentSessionInfo,
   AcpModelOption,
   AcpModelState,
   AgentMessage,
@@ -103,6 +104,27 @@ export type DetectedAcpSessionCapabilities = {
   sessionClose?: boolean;
   sessionDelete?: boolean;
 };
+
+export type AcpAgentSessionListResult = {
+  sessions: AcpAgentSessionInfo[];
+  nextCursor?: string;
+  meta?: unknown;
+};
+
+export function normalizeAcpAgentSessionListResult(result: any): AcpAgentSessionListResult {
+  const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
+  return {
+    sessions: sessions.map((item: any) => ({
+      sessionId: String(item?.sessionId ?? item?.session_id ?? item?.id ?? ""),
+      cwd: typeof item?.cwd === "string" ? item.cwd : undefined,
+      title: typeof item?.title === "string" ? item.title : undefined,
+      updatedAt: typeof item?.updatedAt === "string" ? item.updatedAt : typeof item?.updated_at === "string" ? item.updated_at : undefined,
+      meta: item?.meta,
+    })).filter((item: AcpAgentSessionInfo) => item.sessionId.length > 0),
+    nextCursor: typeof result?.nextCursor === "string" ? result.nextCursor : typeof result?.next_cursor === "string" ? result.next_cursor : undefined,
+    meta: result?.meta,
+  };
+}
 
 export type AcpSessionConfigOptionValue = string | boolean;
 
@@ -276,6 +298,139 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
     writeProtocolLog(logFile, "stdin", initializePayload);
     child.stdin.write(`${JSON.stringify(initializePayload)}\n`);
   });
+}
+
+export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
+  const launchSpec = resolveLaunchSpec(provider.command, provider.args ?? []);
+  const launchCwd = existsSync(provider.cwd ?? "") ? provider.cwd! : existsSync(workspace.path) ? workspace.path : process.cwd();
+  const childEnv = { ...process.env, ...provider.env };
+  delete childEnv.NODE_OPTIONS;
+  delete childEnv.TSX_TSCONFIG_PATH;
+  delete childEnv.TSX_DISABLE_CACHE;
+  const preferredAgent = resolvePreferredAgentId(provider);
+  const logFile = resolve(ACP_LOGS_DIR, `session-list-${sanitizeLogToken(provider.id)}.log`);
+  const child = spawn(launchSpec.command, launchSpec.args, {
+    cwd: launchCwd,
+    env: childEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  let closed = false;
+  const pending = new Map<string, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>();
+
+  const cleanup = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    for (const waiter of pending.values()) {
+      waiter.reject(new Error("ACP process closed before request completed."));
+    }
+    pending.clear();
+  };
+
+  const sendRequest = async <T>(payload: Record<string, unknown>, timeoutMs = provider.initializeTimeoutMs ?? ACP_INITIALIZE_TIMEOUT_MS) => {
+    const id = String(payload.id);
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(stderrBuffer.trim() || `Timed out waiting for ACP response: ${String(payload.method)}`));
+      }, timeoutMs);
+
+      pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timeout);
+          resolve(value as T);
+        },
+        reject: (reason) => {
+          clearTimeout(timeout);
+          reject(reason);
+        },
+      });
+
+      writeProtocolLog(logFile, "stdin", payload);
+      child.stdin.write(`${JSON.stringify(payload)}\n`);
+    });
+  };
+
+  const handleProtocolMessage = (line: string) => {
+    if (!line.trim()) {
+      return;
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    if (payload.id && pending.has(String(payload.id))) {
+      writeProtocolLog(logFile, "stdout", payload);
+      const waiter = pending.get(String(payload.id))!;
+      pending.delete(String(payload.id));
+      if (payload.error) {
+        waiter.reject(new Error(formatAcpError(payload.error)));
+        return;
+      }
+      waiter.resolve(payload.result);
+    }
+  };
+
+  child.on("error", (error) => {
+    writeLogLine(logFile, "process-error", error.message);
+    cleanup();
+  });
+  child.on("exit", (code) => {
+    writeLogLine(logFile, "exit", `code=${code ?? "unknown"}`);
+    cleanup();
+  });
+  child.stderr.on("data", (chunk) => {
+    const text = String(chunk);
+    stderrBuffer += text;
+    writeChunkLog(logFile, "stderr", text);
+  });
+  child.stdout.on("data", (chunk) => {
+    const text = String(chunk);
+    stdoutBuffer += text;
+    writeChunkLog(logFile, "stdout-raw", text);
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      handleProtocolMessage(line);
+    }
+    if (stdoutBuffer.trim().startsWith("{") && stdoutBuffer.trim().endsWith("}")) {
+      handleProtocolMessage(stdoutBuffer.trim());
+      stdoutBuffer = "";
+    }
+  });
+
+  try {
+    const initializeResult = await sendRequest<any>({
+      jsonrpc: "2.0",
+      id: "tiller-list-init",
+      method: "initialize",
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+        },
+        clientInfo: { name: "tiller-helm", version: "0.1.0" },
+      },
+    });
+    const sessionCapabilities = resolveSessionCapabilities(initializeResult, provider);
+    if (!sessionCapabilities.sessionList) {
+      throw new Error("ACP agent does not advertise session/list capability.");
+    }
+    const result = await sendRequest<any>(buildSessionListRequest("tiller-list-sessions", launchCwd, preferredAgent, cursor), 15_000);
+    return normalizeAcpAgentSessionListResult(result);
+  } finally {
+    terminateChildProcess(child.pid);
+    cleanup();
+  }
 }
 
 export async function createAcpRuntime(options: AcpRuntimeOptions) {
@@ -848,7 +1003,7 @@ function sanitizeLogToken(value: string) {
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
 
 
-export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 

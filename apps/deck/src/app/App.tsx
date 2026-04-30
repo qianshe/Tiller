@@ -7,6 +7,7 @@ import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/
 import { resolveSessionConfigSupport, sortProjectFileSummaries } from "@tiller/shared";
 import type {
   AcpAgentProvider,
+  AcpAgentSessionInfo,
   AcpModelOption,
   AgentMessage,
   AgentToolCall,
@@ -627,6 +628,9 @@ export function App() {
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
+  const [agentHistorySessions, setAgentHistorySessions] = useState<AcpAgentSessionInfo[]>([]);
+  const [agentHistoryFeedback, setAgentHistoryFeedback] = useState<string>("");
+  const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
   const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
   const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
@@ -1803,6 +1807,21 @@ export function App() {
         }
         return;
       }
+      case "agent.sessions.list.result":
+        setAgentHistoryLoading(false);
+        setAgentHistorySessions(payload.sessions);
+        setAgentHistoryFeedback(payload.sessions.length ? `发现 ${payload.sessions.length} 条 agent 历史。` : "该 agent 暂无可导入历史。醒醒喵~");
+        return;
+      case "agent.session.import.result":
+        setAgentHistoryLoading(false);
+        setAgentHistoryFeedback(payload.message);
+        if (payload.ok && socketRef.current) {
+          setActiveSessionId(payload.sessionId);
+          dispatch(socketRef.current, { type: "session.list", requestId: nextRequestId(requestCounter) });
+          dispatch(socketRef.current, { type: "session.messages.list", requestId: nextRequestId(requestCounter), sessionId: payload.sessionId });
+          dispatch(socketRef.current, { type: "session.artifacts.get", requestId: nextRequestId(requestCounter), sessionId: payload.sessionId });
+        }
+        return;
       case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
@@ -1926,6 +1945,10 @@ export function App() {
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.files }));
         return;
       case "error":
+        setAgentHistoryLoading(false);
+        if (agentHistoryLoading) {
+          setAgentHistoryFeedback(payload.message);
+        }
         setPairingFeedback(payload.message);
         if (payload.message.toLowerCase().includes("not paired")) {
           setPairingState("input");
@@ -2372,6 +2395,44 @@ export function App() {
       type: "session.resume.start",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
+    });
+  }
+
+  function listAgentHistorySessions() {
+    const workspaceId = activeSession?.workspaceId ?? selectedWorkspaceId;
+    const agentId = activeSession?.agentId ?? selectedAgentId;
+    if (!workspaceId || !agentId || !socketRef.current) {
+      setAgentHistoryFeedback("请先选择 Workspace 与 ACP agent。");
+      return;
+    }
+    setAgentHistoryLoading(true);
+    setAgentHistoryFeedback("正在读取 agent-side sessions...");
+    dispatch(socketRef.current, {
+      type: "agent.sessions.list",
+      requestId: nextRequestId(requestCounter),
+      workspaceId,
+      agentId,
+    });
+  }
+
+  function importAgentHistorySession(agentSession: AcpAgentSessionInfo) {
+    const projectId = activeSession?.projectId ?? selectedProjectId;
+    const workspaceId = activeSession?.workspaceId ?? selectedWorkspaceId;
+    const agentId = activeSession?.agentId ?? selectedAgentId;
+    if (!projectId || !workspaceId || !agentId || !socketRef.current) {
+      setAgentHistoryFeedback("请先选择 Project、Workspace 与 ACP agent 后再导入。");
+      return;
+    }
+    setAgentHistoryLoading(true);
+    setAgentHistoryFeedback(`正在导入 ${agentSession.title ?? agentSession.sessionId}...`);
+    dispatch(socketRef.current, {
+      type: "agent.session.import",
+      requestId: nextRequestId(requestCounter),
+      projectId,
+      workspaceId,
+      agentId,
+      runtimeSessionId: agentSession.sessionId,
+      title: agentSession.title,
     });
   }
 
@@ -2933,6 +2994,31 @@ export function App() {
             ) : selectedMissionPanelPage.id === "logbook" ? (
               <div className="mission-panel-page mission-logbook-page">
                 <InfoList title={activeSession ? "会话信息" : "新任务"} items={sessionOverviewItems} empty="暂无任务信息" />
+                <section className="info-list agent-history-import">
+                  <div className="section-head section-head-soft">
+                    <div>
+                      <h3>Agent 远程历史</h3>
+                      <p className="muted compact">从支持 ACP session/list 的 provider 读取远程会话；导入时会通过 session/load 回放并落到本地历史。</p>
+                    </div>
+                    <button className="secondary" type="button" onClick={listAgentHistorySessions} disabled={agentHistoryLoading}>
+                      {agentHistoryLoading ? "读取中..." : "读取远程历史"}
+                    </button>
+                  </div>
+                  {agentHistoryFeedback ? <p className="compact muted">{agentHistoryFeedback}</p> : null}
+                  {agentHistorySessions.length ? (
+                    <div className="session-history-list read-only-list">
+                      {agentHistorySessions.map((agentSession) => (
+                        <article key={agentSession.sessionId} className="session-item session-history-item read-only-item">
+                          <span className="session-item-main">
+                            <strong>{agentSession.title ?? agentSession.sessionId}</strong>
+                            <span className="subtle">{agentSession.cwd ?? "未知工作区"}{agentSession.updatedAt ? ` · ${formatSessionTime(agentSession.updatedAt)}` : ""}</span>
+                          </span>
+                          <button className="secondary" type="button" onClick={() => importAgentHistorySession(agentSession)} disabled={agentHistoryLoading}>导入消息</button>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
                 <CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} />
               </div>
             ) : selectedMissionPanelPage.id.startsWith("custom-") ? (

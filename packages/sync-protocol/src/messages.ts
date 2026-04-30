@@ -1,5 +1,6 @@
 import type {
   AcpAgentProvider,
+  AcpAgentSessionInfo,
   AcpModelOption,
   AgentMessage,
   AgentToolCall,
@@ -112,6 +113,22 @@ export type ClientToHelm =
   | {
       type: "session.list";
       requestId: string;
+    }
+  | {
+      type: "agent.sessions.list";
+      requestId: string;
+      workspaceId: string;
+      agentId: string;
+      cursor?: string;
+    }
+  | {
+      type: "agent.session.import";
+      requestId: string;
+      projectId: string;
+      workspaceId: string;
+      agentId: string;
+      runtimeSessionId: string;
+      title?: string;
     }
   | {
       type: "session.messages.list";
@@ -292,6 +309,23 @@ export type HelmToClient =
       type: "session.list.result";
       requestId: string;
       sessions: SessionSummary[];
+    }
+  | {
+      type: "agent.sessions.list.result";
+      requestId: string;
+      workspaceId: string;
+      agentId: string;
+      sessions: AcpAgentSessionInfo[];
+      nextCursor?: string;
+      meta?: unknown;
+    }
+  | {
+      type: "agent.session.import.result";
+      requestId: string;
+      sessionId: string;
+      runtimeSessionId: string;
+      ok: boolean;
+      message: string;
     }
   | {
       type: "session.messages.list.result";

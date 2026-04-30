@@ -33,6 +33,20 @@ export function buildSessionNewRequest(id: string, cwd: string, agent?: string) 
   };
 }
 
+export function buildSessionListRequest(id: string, cwd: string, agent?: string, cursor?: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/list",
+    params: {
+      cwd,
+      mcpServers: [],
+      ...(cursor ? { cursor } : {}),
+      ...(agent ? { agent } : {}),
+    },
+  };
+}
+
 export function buildSessionLoadRequest(id: string, sessionId: string, cwd: string, agent?: string) {
   return {
     jsonrpc: "2.0",

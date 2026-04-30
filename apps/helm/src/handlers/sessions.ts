@@ -1,4 +1,4 @@
-import { normalizeProviderCleanupResult, type ProviderCleanupResult } from "@tiller/acp-runtime";
+import { listAcpAgentSessions } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
 import type { SessionSummary } from "@tiller/shared";
@@ -10,6 +10,103 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
       context.logInfo(`[tiller-helm] session.list count=${normalizedSessions.length}`);
       context.emit(socket, { type: "session.list.result", requestId: payload.requestId, sessions: normalizedSessions });
+      return true;
+    }
+    case "agent.sessions.list": {
+      const agents = context.loadAvailableAgents();
+      const workspaces = context.loadAvailableWorkspaces();
+      context.setAgents(agents);
+      context.setWorkspaces(workspaces);
+      const agent = context.resolveProviderById(payload.agentId, agents);
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      if (!agent || !workspace) {
+        context.emit(socket, { type: "error", requestId: payload.requestId, message: "Workspace or ACP agent not found" });
+        return true;
+      }
+
+      try {
+        const result = await listAcpAgentSessions(agent, workspace, payload.cursor);
+        context.emit(socket, {
+          type: "agent.sessions.list.result",
+          requestId: payload.requestId,
+          workspaceId: payload.workspaceId,
+          agentId: payload.agentId,
+          sessions: result.sessions,
+          nextCursor: result.nextCursor,
+          meta: result.meta,
+        });
+      } catch (error) {
+        context.emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          message: error instanceof Error ? error.message : "Failed to list agent sessions",
+        });
+      }
+      return true;
+    }
+    case "agent.session.import": {
+      const helms = context.loadAvailableHelms();
+      const workspaces = context.loadAvailableWorkspaces();
+      const agents = context.loadAvailableAgents();
+      context.setHelms(helms);
+      context.setWorkspaces(workspaces);
+      context.setAgents(agents);
+      const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      context.setProjects(projects);
+
+      const project = context.resolveProjectById(payload.projectId, projects);
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      const agent = context.resolveProviderById(payload.agentId, agents);
+      const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
+      if (!project || !workspace || !agent || !helm) {
+        context.emit(socket, { type: "error", requestId: payload.requestId, message: "Project, workspace, ACP agent, or helm not found" });
+        return true;
+      }
+      if (!agent.capabilities?.sessionLoad) {
+        context.emit(socket, { type: "error", requestId: payload.requestId, message: "ACP agent does not advertise session/load capability." });
+        return true;
+      }
+
+      const sessionId = `session-${Date.now()}`;
+      const createdAt = new Date().toISOString();
+      const summaryBase: SessionSummary = {
+        id: sessionId,
+        projectId: project.id,
+        projectName: project.name,
+        helmId: helm.id,
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        agentId: agent.id,
+        agentName: agent.name,
+        status: "starting" as const,
+        createdAt,
+        updatedAt: createdAt,
+        messageCount: 0,
+        runtimeSessionId: payload.runtimeSessionId,
+        lastMessagePreview: payload.title ? `Importing ${payload.title}` : "Importing agent session history",
+      };
+      const summary = { ...summaryBase, resume: context.buildResumeInfo(summaryBase, agent) };
+      context.sessionStore.upsert(summary);
+      context.persistRuntimeDescriptor(summary, agent);
+      context.broadcastAuthenticated({ type: "session.created", requestId: payload.requestId, session: summary });
+
+      const restore = await context.startSessionResume(sessionId);
+      context.emit(socket, {
+        type: "agent.session.import.result",
+        requestId: payload.requestId,
+        sessionId,
+        runtimeSessionId: payload.runtimeSessionId,
+        ok: restore.ok,
+        message: restore.message,
+      });
+      context.emit(socket, {
+        type: "session.resume.start.result",
+        requestId: `agent-session-import-${Date.now()}`,
+        sessionId,
+        ok: restore.ok,
+        resume: restore.resume,
+        message: restore.message,
+      });
       return true;
     }
     case "session.messages.list":

@@ -1,5 +1,6 @@
 import { applyAgentMessageToSummary } from "./sessions/summary-updates";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "./handlers/context";
 
 
@@ -36,7 +37,17 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       return;
     case "message":
       if (event.message.role === "user") {
-        return;
+        const existingMessages = context.sessionMessageStore.list(sessionId) as AgentMessage[];
+        const alreadyRecorded = existingMessages.some((message) =>
+          message.role === "user" && (
+            message.id === event.message.id ||
+            message.text === event.message.text ||
+            message.text.endsWith(event.message.text)
+          ),
+        );
+        if (alreadyRecorded) {
+          return;
+        }
       }
       process.stdout.write(event.message.text);
       context.persistSessionMessage(sessionId, event.message);
