@@ -892,13 +892,7 @@ export function App() {
   const selectedWorkspace = filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? filteredWorkspaces[0] ?? null;
   const draftWorkspaceOptions = filteredWorkspaces;
   const selectedWorkspaceName = selectedWorkspace?.name ?? "";
-  const filteredAgents = useMemo(() => {
-    const allowedAgentIds = draftProject?.allowedAgentIds;
-    if (!allowedAgentIds?.length) {
-      return agents;
-    }
-    return agents.filter((agent) => allowedAgentIds.includes(agent.id));
-  }, [agents, draftProject?.allowedAgentIds]);
+  const filteredAgents = agents;
   const projectSessions = useMemo(
     () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session, projects) === selectedProjectId),
     [projects, selectedProjectId, sessions],
@@ -1103,9 +1097,13 @@ export function App() {
 
   useEffect(() => {
     if (!selectedProjectId && missionProjects.length) {
-      setSelectedProjectId(missionProjects[0].id);
+      const nextProject = missionProjects[0];
+      const nextSessionId = sessions.find((session) => resolveSessionProjectId(session, projects) === nextProject.id)?.id ?? null;
+      setSelectedProjectId(nextProject.id);
+      requestChatScrollToBottom(nextSessionId);
+      setActiveSessionId(nextSessionId);
     }
-  }, [missionProjects, selectedProjectId]);
+  }, [missionProjects, projects, selectedProjectId, sessions]);
 
   useEffect(() => {
     if (effectiveMissionHelmId) {
@@ -1956,9 +1954,12 @@ export function App() {
         setConfigSaveMessage(payload.message);
         setFleetAgentDiscoverMessage(payload.message);
         setFleetAgentDiscoveryCandidates((current) => current.map((candidate) => candidate.id === payload.providerId ? { ...candidate, configured: true } : candidate));
-        if (socketRef.current) {
-          dispatch(socketRef.current, { type: "agent.list", requestId: nextRequestId(requestCounter) });
-          dispatch(socketRef.current, { type: "project.list", requestId: nextRequestId(requestCounter) });
+        {
+          const refreshSocket = sourceIsCurrentHelm ? socketRef.current : helmSocketRefs.current.get(sourceHelmKey) ?? null;
+          if (refreshSocket?.readyState === WebSocket.OPEN) {
+            dispatch(refreshSocket, { type: "agent.list", requestId: nextRequestId(requestCounter) });
+            dispatch(refreshSocket, { type: "project.list", requestId: nextRequestId(requestCounter) });
+          }
         }
         return;
       case "session.created":
