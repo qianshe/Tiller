@@ -166,11 +166,6 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         context.emit(socket, { type: "error", requestId: payload.requestId, message: "Workspace does not belong to the selected project" });
         return true;
       }
-      if (project.allowedAgentIds?.length && !project.allowedAgentIds.includes(agent.id)) {
-        context.emit(socket, { type: "error", requestId: payload.requestId, message: "ACP agent is not allowed for the selected project" });
-        return true;
-      }
-
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
       context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`);

@@ -630,7 +630,7 @@ function createMissionVisualFixture(): MissionVisualFixture {
   return {
     helms: [{ id: helmId, name: "Local Helm", host: DEFAULT_DAEMON_HOST, port: Number(DEFAULT_DAEMON_PORT) }],
     workspaces: [{ id: workspaceId, name: "Tiller", path: "D:/myProject/tools/Tiller" }],
-    projects: [{ id: projectId, name: "Tiller", helmId, workspaceIds: [workspaceId], allowedAgentIds: [agentId], defaultWorkspaceId: workspaceId, defaultAgentId: agentId }],
+    projects: [{ id: projectId, name: "Tiller", helmId, workspaceIds: [workspaceId], defaultWorkspaceId: workspaceId, defaultAgentId: agentId }],
     agents: [{ id: agentId, name: "Codex", command: "codex-acp", args: ["-c", "model=gpt-5.5"], transport: "stdio", protocol: "acp" }],
     sessions: [session],
     statuses: { [sessionId]: "running" },
@@ -1005,7 +1005,7 @@ export function App() {
       setExpandedMissionHelmIds((current) => new Set([...current, project.helmId]));
       setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
       setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
-      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
+      setSelectedAgentId((current) => agents.some((agent) => agent.id === current) ? current : project.defaultAgentId ?? agents[0]?.id ?? null);
     }
     setSelectedProjectId(projectId);
     const nextSessionId = activeSessionId && sessions.some((session) => session.id === activeSessionId && session.projectId === projectId)
@@ -3477,7 +3477,7 @@ case "session.messages.list.result":
                                           setSelectedMissionHelmId(project.helmId);
                                           setSelectedProjectId(project.id);
                                           setSelectedWorkspaceId(project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
-                                          setSelectedAgentId(project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
+                                          setSelectedAgentId(project.defaultAgentId ?? agents[0]?.id ?? null);
                                           setExpandedMissionProjectIds((current) => new Set([...current, project.id]));
                                           setActiveSessionId(null);
                                         }}
@@ -4110,7 +4110,6 @@ case "session.messages.list.result":
                           helmId: selectedHelmId,
                           path: projectPath,
                           workspaceIds: [workspaceId],
-                          allowedAgentIds: selectedHelmAgents.map((agent) => agent.id),
                           defaultWorkspaceId: workspaceId,
                           defaultAgentId: defaultAgentId(selectedHelmAgents) ?? undefined,
                         },

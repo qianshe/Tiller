@@ -143,7 +143,6 @@ export type ProjectSummary = {
   gitBranches?: string[];
   /** Current Git branch discovered by Helm for this project root. */
   gitCurrentBranch?: string;
-  allowedAgentIds?: string[];
   defaultWorkspaceId?: string;
   defaultAgentId?: string;
 };

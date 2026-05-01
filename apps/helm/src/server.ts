@@ -209,7 +209,7 @@ function normalizeProjectAgentDefaultsOnStartup() {
   const availableAgents = listAvailableProviders(configPath);
   let updated = 0;
   for (const project of listConfiguredProjects(configPath)) {
-    const nextDefaultAgentId = resolveDefaultProjectAgentId(project, availableAgents);
+    const nextDefaultAgentId = resolveDefaultProjectAgentId(availableAgents, project.defaultAgentId);
     if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
       saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
       updated += 1;
@@ -910,7 +910,7 @@ function loadAvailableProjects(): ProjectSummary[] {
   if (configuredProjects.length) {
     return configuredProjects.map((project) => ({
       ...project,
-      defaultAgentId: resolveDefaultProjectAgentId(project, availableAgents),
+      defaultAgentId: resolveDefaultProjectAgentId(availableAgents, project.defaultAgentId),
     }));
   }
 
@@ -922,17 +922,15 @@ function loadAvailableProjects(): ProjectSummary[] {
       name: basename(REPO_ROOT),
       helmId: fallbackHelm.id,
       workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
-      allowedAgentIds: availableAgents.map((agent) => agent.id),
       defaultWorkspaceId: fallbackWorkspaces[0]?.id,
-      defaultAgentId: resolveDefaultProjectAgentId({ allowedAgentIds: availableAgents.map((agent) => agent.id) } as ProjectSummary, availableAgents),
+      defaultAgentId: resolveDefaultProjectAgentId(availableAgents, undefined),
     },
   ] satisfies ProjectSummary[];
 }
 
-function resolveDefaultProjectAgentId(project: ProjectSummary, agents: AcpAgentProvider[]) {
-  const allowedAgentIds = project.allowedAgentIds?.length ? new Set(project.allowedAgentIds) : null;
-  const codex = agents.find((agent) => agent.id === "codex" && (!allowedAgentIds || allowedAgentIds.has(agent.id)));
-  return codex?.id ?? project.defaultAgentId ?? agents.find((agent) => !allowedAgentIds || allowedAgentIds.has(agent.id))?.id;
+function resolveDefaultProjectAgentId(agents: AcpAgentProvider[], existingDefaultAgentId: string | undefined) {
+  const codex = agents.find((agent) => agent.id === "codex");
+  return codex?.id ?? existingDefaultAgentId ?? agents[0]?.id;
 }
 
 
