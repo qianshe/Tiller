@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
-import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity, sortAgentMessagesByTimeline } from "./timeline.js";
+import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity, sortAgentMessagesByTimeline } from "./timeline.js";
 
 const baseMessage: AgentMessage = {
   id: "msg-1",
@@ -279,6 +279,43 @@ test("mergeAgentMessages merges runtime generated assistant chunks without share
 
   assert.equal(merged.length, 1);
   assert.equal(merged[0]?.text, "流式回复");
+});
+
+test("mergeMessageHistory preserves server order even when timestamps are out of order", () => {
+  const merged = mergeMessageHistory([], [
+    { id: "assistant-1", role: "assistant", text: "先收到", timestamp: "2026-04-28T10:00:02.000Z" },
+    { id: "user-1", role: "user", text: "后展示但时间更早", timestamp: "2026-04-28T10:00:01.000Z" },
+  ]);
+
+  assert.deepEqual(merged.map((message) => message.id), ["assistant-1", "user-1"]);
+});
+
+test("mergeMessageHistory prepends older pages before current messages", () => {
+  const current: AgentMessage[] = [
+    { id: "msg-3", role: "user", text: "三", timestamp: "2026-04-28T10:00:03.000Z" },
+    { id: "msg-4", role: "assistant", text: "四", timestamp: "2026-04-28T10:00:04.000Z" },
+  ];
+  const older: AgentMessage[] = [
+    { id: "msg-1", role: "user", text: "一", timestamp: "2026-04-28T10:00:01.000Z" },
+    { id: "msg-2", role: "assistant", text: "二", timestamp: "2026-04-28T10:00:02.000Z" },
+  ];
+
+  const merged = mergeMessageHistory(current, older, { mode: "prepend" });
+
+  assert.deepEqual(merged.map((message) => message.id), ["msg-1", "msg-2", "msg-3", "msg-4"]);
+});
+
+test("mergeMessageHistory updates existing messages in place", () => {
+  const merged = mergeMessageHistory([
+    { id: "msg-1", role: "assistant", text: "你", timestamp: "2026-04-28T10:00:01.000Z" },
+    { id: "msg-2", role: "user", text: "继续", timestamp: "2026-04-28T10:00:02.000Z" },
+  ], [
+    { id: "msg-1", role: "assistant", text: "好", timestamp: "2026-04-28T10:00:03.000Z" },
+  ]);
+
+  assert.deepEqual(merged.map((message) => message.id), ["msg-1", "msg-2"]);
+  assert.equal(merged[0]?.text, "你好");
+  assert.equal(merged[0]?.timestamp, "2026-04-28T10:00:01.000Z");
 });
 
 test("resolvePendingToolActivity reports the latest running tool", () => {

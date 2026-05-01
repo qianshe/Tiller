@@ -59,7 +59,7 @@ test("session message store appends messages per session and reloads them from d
   }
 });
 
-test("session message store returns messages sorted by timestamp", async () => {
+test("session message store preserves append order instead of sorting by timestamp", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-sort-"));
 
@@ -78,7 +78,7 @@ test("session message store returns messages sorted by timestamp", async () => {
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-early", "msg-late"]);
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-late", "msg-early"]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -231,7 +231,7 @@ test("session message store refreshes duplicate replay timestamps without duplic
   }
 });
 
-test("session message store replaces a session with authoritative history", async () => {
+test("session message store replaces a session with authoritative history order", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replace-"));
 
@@ -243,7 +243,7 @@ test("session message store replaces a session with authoritative history", asyn
       { id: "msg-1", role: "user", text: "hello", timestamp: "2026-04-30T09:58:57.000Z" },
     ]);
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-1", "msg-2"]);
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-2", "msg-1"]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -302,6 +302,31 @@ test("session message store pages latest messages and exposes an older cursor", 
     const older = store.listPage("session-1", { limit: 2, before: latest.nextCursor });
     assert.deepEqual(older.messages.map((message) => message.id), ["msg-2", "msg-3"]);
     assert.equal(older.hasMore, true);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store defaults to the latest twenty messages", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-default-page-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    for (let index = 1; index <= 25; index += 1) {
+      store.append("session-1", {
+        id: `msg-${index}`,
+        role: index % 2 ? "user" : "assistant",
+        text: `message ${index}`,
+        timestamp: `2026-04-27T08:00:${String(index).padStart(2, "0")}.000Z`,
+      });
+    }
+
+    const latest = store.listPage("session-1");
+    assert.equal(latest.messages.length, 20);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(0, 3), ["msg-6", "msg-7", "msg-8"]);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(-3), ["msg-23", "msg-24", "msg-25"]);
+    assert.equal(latest.hasMore, true);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }

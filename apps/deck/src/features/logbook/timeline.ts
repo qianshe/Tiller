@@ -263,6 +263,46 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   return [...items, incoming];
 }
 
+export type MergeMessageHistoryOptions = {
+  mode?: "append" | "prepend";
+};
+
+export function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[], options: MergeMessageHistoryOptions = {}) {
+  const merged = [...current];
+  const source = options.mode === "prepend" ? [...incoming].reverse() : incoming;
+
+  for (const message of source) {
+    const index = merged.findIndex((item) => item.id === message.id);
+    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
+    const mergeIndex = index === -1 ? equivalentIndex : index;
+    if (mergeIndex === -1) {
+      if (options.mode === "prepend") {
+        merged.unshift(message);
+      } else {
+        merged.push(message);
+      }
+      continue;
+    }
+
+    merged[mergeIndex] = {
+      ...merged[mergeIndex],
+      ...message,
+      text: merged[mergeIndex]!.text === message.text || merged[mergeIndex]!.text.endsWith(message.text) ? merged[mergeIndex]!.text : `${merged[mergeIndex]!.text}${message.text}`,
+      timestamp: merged[mergeIndex]!.timestamp,
+    };
+  }
+
+  return merged;
+}
+
+function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
+  if (left.role !== right.role || left.text !== right.text) {
+    return false;
+  }
+  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return Number.isFinite(delta) && delta < 10_000;
+}
+
 function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
   return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
 }

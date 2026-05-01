@@ -107,10 +107,41 @@ test("sqlite message store matches append merge, replace, pagination, and remove
       assert.equal(firstPage.hasMore, true);
       assert.deepEqual(store.listPage("session-1", { limit: 1, before: firstPage.nextCursor }).messages.map((item) => item.id), ["m1"]);
 
-      store.replace("session-1", [createMessage("m3", "2026-04-30T10:00:03.000Z")]);
-      assert.deepEqual(store.list("session-1").map((item) => item.id), ["m3"]);
+      store.replace("session-1", [
+        createMessage("m3", "2026-04-30T10:00:03.000Z"),
+        createMessage("m0", "2026-04-30T09:59:59.000Z"),
+      ]);
+      assert.deepEqual(store.list("session-1").map((item) => item.id), ["m3", "m0"]);
       store.remove("session-1");
       assert.deepEqual(store.list("session-1"), []);
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("sqlite message store preserves insertion order and defaults to twenty-message pages", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-message-order-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionMessageStore(dbPath);
+    try {
+      store.append("session-1", createMessage("late", "2026-04-30T10:00:02.000Z"));
+      store.append("session-1", createMessage("early", "2026-04-30T10:00:01.000Z"));
+      assert.deepEqual(store.list("session-1").map((item) => item.id), ["late", "early"]);
+
+      store.replace("session-1", Array.from({ length: 25 }, (_, index) => {
+        const ordinal = index + 1;
+        return createMessage(`m${ordinal}`, `2026-04-30T10:00:${String(ordinal).padStart(2, "0")}.000Z`);
+      }));
+
+      const latest = store.listPage("session-1");
+      assert.equal(latest.messages.length, 20);
+      assert.deepEqual(latest.messages.map((item) => item.id).slice(0, 3), ["m6", "m7", "m8"]);
+      assert.deepEqual(latest.messages.map((item) => item.id).slice(-3), ["m23", "m24", "m25"]);
+      assert.equal(latest.hasMore, true);
     } finally {
       store.close();
     }

@@ -58,7 +58,7 @@ export function createSqliteSessionMessageStore(dbPath: string) {
       return next;
     },
     replace(sessionId: string, messages: AgentMessage[]) {
-      const next = sortAgentMessages(messages);
+      const next = normalizeSessionMessages(messages);
       replaceSessionMessages(db, sessionId, next);
       return next;
     },
@@ -212,6 +212,7 @@ function openSessionDatabase(dbPath: string) {
     CREATE TABLE IF NOT EXISTS session_messages(
       session_id TEXT NOT NULL,
       id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
       role TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       payload_json TEXT NOT NULL,
@@ -254,13 +255,43 @@ function openSessionDatabase(dbPath: string) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
-    CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
   `);
+  ensureSessionMessagePositions(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_messages_page");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, position, id)");
   db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(new Date().toISOString());
   return db;
+}
+
+function ensureSessionMessagePositions(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === "position")) {
+    return;
+  }
+
+  runTransaction(db, () => {
+    db.exec("ALTER TABLE session_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
+    const rows = db.prepare(`
+      SELECT session_id, id
+      FROM session_messages
+      ORDER BY session_id ASC, timestamp ASC, id ASC
+    `).all() as Array<{ session_id: string; id: string }>;
+    const update = db.prepare("UPDATE session_messages SET position = ? WHERE session_id = ? AND id = ?");
+    let currentSessionId = "";
+    let position = 0;
+    for (const row of rows) {
+      if (row.session_id !== currentSessionId) {
+        currentSessionId = row.session_id;
+        position = 0;
+      }
+      update.run(position, row.session_id, row.id);
+      position += 1;
+    }
+  });
+  recordMigrationVersion(db, 3);
 }
 
 function hasMigrationVersion(db: DatabaseSync, version: number) {
@@ -304,7 +335,7 @@ function listSessionMessages(db: DatabaseSync, sessionId: string) {
     SELECT payload_json
     FROM session_messages
     WHERE session_id = ?
-    ORDER BY timestamp ASC, id ASC
+    ORDER BY position ASC, id ASC
   `).all(sessionId) as Array<{ payload_json: string }>;
   return normalizeSessionMessages(rows.map((row) => parseJson<AgentMessage>(row.payload_json)).filter(isNotNull));
 }
@@ -313,11 +344,11 @@ function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: A
   runTransaction(db, () => {
     db.prepare("DELETE FROM session_messages WHERE session_id = ?").run(sessionId);
     const insert = db.prepare(`
-      INSERT OR REPLACE INTO session_messages(session_id, id, role, timestamp, payload_json)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO session_messages(session_id, id, position, role, timestamp, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    for (const message of sortAgentMessages(messages)) {
-      insert.run(sessionId, message.id, message.role, message.timestamp, JSON.stringify(message));
+    for (const [position, message] of normalizeSessionMessages(messages).entries()) {
+      insert.run(sessionId, message.id, position, message.role, message.timestamp, JSON.stringify(message));
     }
   });
 }
@@ -442,16 +473,20 @@ function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
 }
 
 function normalizeSessionMessages(messages: AgentMessage[]) {
-  return sortAgentMessages(messages).reduce<AgentMessage[]>((merged, message) => {
+  return messages.reduce<AgentMessage[]>((merged, message) => {
+    const existingIndex = merged.findIndex((item) => item.id === message.id);
+    if (existingIndex !== -1) {
+      merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
+      return merged;
+    }
+
     const last = merged.at(-1);
-    if (!last || (last.id !== message.id && !shouldMergeAssistantStreamChunk(last, message))) {
+    if (!last || !shouldMergeAssistantStreamChunk(last, message)) {
       return [...merged, message];
     }
 
-    return [
-      ...merged.slice(0, -1),
-      mergeAgentMessageChunk(last, message),
-    ];
+    merged[merged.length - 1] = mergeAgentMessageChunk(last, message);
+    return merged;
   }, []);
 }
 
@@ -514,10 +549,6 @@ function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: s
 function isInformativeToolCallTitle(title: string | undefined, id: string) {
   const normalized = title?.trim();
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
-}
-
-function sortAgentMessages(messages: AgentMessage[]) {
-  return [...messages].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
 }
 
 function sortCommandChunks(items: CommandChunk[]) {

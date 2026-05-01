@@ -13,8 +13,9 @@ export type SessionMessagePage = {
   hasMore: boolean;
 };
 
-const DEFAULT_MESSAGE_PAGE_LIMIT = 50;
+const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const MAX_MESSAGE_PAGE_LIMIT = 200;
+const ORDER_CURSOR_PREFIX = "order";
 
 export function createSessionMessageStore(rootDir: string) {
   return {
@@ -25,7 +26,7 @@ export function createSessionMessageStore(rootDir: string) {
       return next;
     },
     replace(sessionId: string, messages: AgentMessage[]) {
-      const next = sortAgentMessages(messages);
+      const next = normalizeSessionMessages(messages);
       persistSessionMessages(rootDir, sessionId, next);
       return next;
     },
@@ -46,17 +47,16 @@ export function createSessionMessageStore(rootDir: string) {
 }
 
 export function pageSessionMessages(messages: AgentMessage[], options: SessionMessagePageOptions = {}): SessionMessagePage {
-  const sorted = sortAgentMessages(messages);
+  const normalized = normalizeSessionMessages(messages);
   const limit = normalizePageLimit(options.limit, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT);
-  const before = decodeHistoryCursor(options.before);
-  const eligible = before
-    ? sorted.filter((message) => compareHistoryPosition(message.timestamp, message.id, before.timestamp, before.id) < 0)
-    : sorted;
-  const page = eligible.slice(Math.max(eligible.length - limit, 0));
-  const hasMore = eligible.length > page.length;
+  const endIndex = resolvePageEndIndex(normalized, options.before);
+  const eligible = normalized.slice(0, endIndex);
+  const startIndex = Math.max(eligible.length - limit, 0);
+  const page = eligible.slice(startIndex);
+  const hasMore = startIndex > 0;
   return {
     messages: page,
-    nextCursor: hasMore ? encodeHistoryCursor(page[0]?.timestamp, page[0]?.id) : undefined,
+    nextCursor: hasMore ? encodeOrderCursor(startIndex, page[0]?.id) : undefined,
     hasMore,
   };
 }
@@ -68,19 +68,51 @@ function normalizePageLimit(limit: number | undefined, fallback: number, max: nu
   return Math.min(Math.floor(limit), max);
 }
 
-function encodeHistoryCursor(timestamp: string | undefined, id: string | undefined) {
-  return timestamp && id ? `${timestamp}\t${id}` : undefined;
+function encodeOrderCursor(position: number | undefined, id: string | undefined) {
+  return Number.isInteger(position) && id ? `${ORDER_CURSOR_PREFIX}\t${position}\t${id}` : undefined;
 }
 
-function decodeHistoryCursor(cursor: string | undefined) {
+function decodeOrderCursor(cursor: string | undefined) {
+  if (!cursor) {
+    return null;
+  }
+  const [prefix, position, id] = cursor.split("\t");
+  if (prefix !== ORDER_CURSOR_PREFIX || !position || !id) {
+    return null;
+  }
+  const parsedPosition = Number.parseInt(position, 10);
+  return Number.isFinite(parsedPosition) && parsedPosition >= 0 ? { position: parsedPosition, id } : null;
+}
+
+function decodeLegacyHistoryCursor(cursor: string | undefined) {
   if (!cursor) {
     return null;
   }
   const [timestamp, id] = cursor.split("\t");
-  if (!timestamp || !id) {
+  if (!timestamp || !id || timestamp === ORDER_CURSOR_PREFIX) {
     return null;
   }
   return { timestamp, id };
+}
+
+function resolvePageEndIndex(messages: AgentMessage[], cursor: string | undefined) {
+  const orderCursor = decodeOrderCursor(cursor);
+  if (orderCursor) {
+    return Math.max(0, Math.min(orderCursor.position, messages.length));
+  }
+
+  const legacyCursor = decodeLegacyHistoryCursor(cursor);
+  if (!legacyCursor) {
+    return messages.length;
+  }
+
+  const exactIndex = messages.findIndex((message) => message.timestamp === legacyCursor.timestamp && message.id === legacyCursor.id);
+  if (exactIndex !== -1) {
+    return exactIndex;
+  }
+
+  const compatibleIndex = messages.findIndex((message) => compareHistoryPosition(message.timestamp, message.id, legacyCursor.timestamp, legacyCursor.id) >= 0);
+  return compatibleIndex === -1 ? messages.length : compatibleIndex;
 }
 
 function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTimestamp: string, rightId: string) {
@@ -89,13 +121,6 @@ function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTime
     return timestampDelta;
   }
   return leftId.localeCompare(rightId);
-}
-
-function sortAgentMessages(messages: AgentMessage[]) {
-  return [...messages].sort((left, right) => {
-    const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
-    return timestampDelta === 0 ? left.id.localeCompare(right.id) : timestampDelta;
-  });
 }
 
 function listSessionMessages(rootDir: string, sessionId: string) {
@@ -113,16 +138,20 @@ function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
 }
 
 function normalizeSessionMessages(messages: AgentMessage[]) {
-  return sortAgentMessages(messages).reduce<AgentMessage[]>((merged, message) => {
+  return messages.reduce<AgentMessage[]>((merged, message) => {
+    const existingIndex = merged.findIndex((item) => item.id === message.id);
+    if (existingIndex !== -1) {
+      merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
+      return merged;
+    }
+
     const last = merged.at(-1);
-    if (!last || (last.id !== message.id && !shouldMergeAssistantStreamChunk(last, message))) {
+    if (!last || !shouldMergeAssistantStreamChunk(last, message)) {
       return [...merged, message];
     }
 
-    return [
-      ...merged.slice(0, -1),
-      mergeAgentMessageChunk(last, message),
-    ];
+    merged[merged.length - 1] = mergeAgentMessageChunk(last, message);
+    return merged;
   }, []);
 }
 

@@ -90,6 +90,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         messages: page.messages,
         nextCursor: page.nextCursor,
         hasMore: page.hasMore,
+        before: payload.before,
       });
       return true;
     }

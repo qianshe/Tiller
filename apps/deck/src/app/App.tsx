@@ -36,7 +36,7 @@ import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, w
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
 import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
-import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity, sortAgentMessagesByTimeline } from "../features/logbook/timeline";
+import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -53,7 +53,7 @@ const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
 const DEFAULT_SESSION_PAGE_LIMIT = 25;
-const DEFAULT_HISTORY_PAGE_LIMIT = 50;
+const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
 const MODEL_OPTIONS = [
@@ -1221,7 +1221,7 @@ export function App() {
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.artifacts.get",
@@ -2027,7 +2027,7 @@ export function App() {
 case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
-          [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+          [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, { mode: payload.before ? "prepend" : "append" }),
         }));
         setMessageHistoryState((current) => ({
           ...current,
@@ -2811,7 +2811,7 @@ case "session.messages.list.result":
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId,
-      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
       before: historyState.nextCursor,
     });
   }
@@ -4573,7 +4573,7 @@ function isSessionExecutionPending(status: SessionStatus) {
 }
 
 function sortDisplayMessages(items: AgentMessage[]) {
-  return sortAgentMessagesByTimeline(items);
+  return items;
 }
 
 function resolveMessageRoleLabel(message: AgentMessage, assistantLabel: string, roleLabels: Record<AgentMessage["role"], string>) {
@@ -4591,36 +4591,6 @@ function mergeSessionSummaries(current: SessionSummary[], incoming: SessionSumma
     const createdDelta = right.createdAt.localeCompare(left.createdAt);
     return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
   });
-}
-
-function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) {
-  const merged = [...current];
-  for (const message of incoming) {
-    const index = merged.findIndex((item) => item.id === message.id);
-    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
-    if (index === -1 && equivalentIndex === -1) {
-      merged.push(message);
-      continue;
-    }
-
-    const mergeIndex = index === -1 ? equivalentIndex : index;
-    merged[mergeIndex] = {
-      ...merged[mergeIndex],
-      ...message,
-      text: merged[mergeIndex].text === message.text || merged[mergeIndex].text.endsWith(message.text) ? merged[mergeIndex].text : `${merged[mergeIndex].text}${message.text}`,
-      timestamp: merged[mergeIndex].timestamp,
-    };
-  }
-
-  return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-}
-
-function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
-  if (left.role !== right.role || left.text !== right.text) {
-    return false;
-  }
-  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
-  return Number.isFinite(delta) && delta < 10_000;
 }
 
 function mergeCommandHistory(current: CommandChunk[], incoming: CommandChunk[]) {

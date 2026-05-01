@@ -312,6 +312,7 @@ export type HelmToClient =
       messages: AgentMessage[];
       nextCursor?: string;
       hasMore?: boolean;
+      before?: string;
     }
   | {
       type: "session.artifacts.result";
