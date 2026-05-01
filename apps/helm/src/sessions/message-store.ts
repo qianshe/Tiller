@@ -102,31 +102,65 @@ function listSessionMessages(rootDir: string, sessionId: string) {
   try {
     const raw = readFileSync(getSessionMessageFilePath(rootDir, sessionId), "utf8");
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? sortAgentMessages(parsed.filter(isAgentMessage)) : [];
+    return Array.isArray(parsed) ? normalizeSessionMessages(parsed.filter(isAgentMessage)) : [];
   } catch {
     return [];
   }
 }
 
 function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
-  const index = messages.findIndex((item) => item.id === message.id);
-  if (index === -1) {
-    return sortAgentMessages([...messages, message]);
-  }
+  return normalizeSessionMessages([...messages, message]);
+}
 
-  return sortAgentMessages(messages.map((item, itemIndex) => {
-    if (itemIndex !== index) {
-      return item;
+function normalizeSessionMessages(messages: AgentMessage[]) {
+  return sortAgentMessages(messages).reduce<AgentMessage[]>((merged, message) => {
+    const last = merged.at(-1);
+    if (!last || (last.id !== message.id && !shouldMergeAssistantStreamChunk(last, message))) {
+      return [...merged, message];
     }
 
-    const isDuplicateText = item.text === message.text || item.text.endsWith(message.text);
-    return {
-      ...item,
-      ...message,
-      text: isDuplicateText ? item.text : `${item.text}${message.text}`,
-      timestamp: isDuplicateText && Date.parse(message.timestamp) > Date.parse(item.timestamp) ? message.timestamp : item.timestamp,
-    };
-  }));
+    return [
+      ...merged.slice(0, -1),
+      mergeAgentMessageChunk(last, message),
+    ];
+  }, []);
+}
+
+function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
+  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+}
+
+function isRuntimeGeneratedMessageId(id: string) {
+  return /-msg-\d+$/u.test(id);
+}
+
+function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
+  const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
+  const isCumulativeSnapshot = incoming.text.startsWith(current.text);
+  const nextText = isDuplicateText ? current.text : isCumulativeSnapshot ? incoming.text : `${current.text}${incoming.text}`;
+  return {
+    ...current,
+    ...incoming,
+    id: current.id,
+    text: collapseRepeatedAssistantText(nextText),
+    timestamp: isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp) ? incoming.timestamp : current.timestamp,
+  };
+}
+
+function collapseRepeatedAssistantText(text: string) {
+  const firstLine = text.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine || firstLine.length < 8) {
+    return text;
+  }
+
+  const repeatIndex = text.indexOf(firstLine, firstLine.length);
+  if (repeatIndex === -1) {
+    return text;
+  }
+
+  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
+  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  return text.slice(0, cutIndex).trimEnd();
 }
 
 function persistSessionMessages(rootDir: string, sessionId: string, messages: AgentMessage[]) {

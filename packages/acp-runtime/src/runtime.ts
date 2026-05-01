@@ -24,6 +24,7 @@ import type {
 } from "@tiller/shared";
 
 export const DEFAULT_ACP_REQUEST_TIMEOUT_MS = 30_000;
+export const DEFAULT_ACP_PROMPT_TIMEOUT_MS = 30 * 60_000;
 const ACP_INITIALIZE_TIMEOUT_MS = DEFAULT_ACP_REQUEST_TIMEOUT_MS;
 const ACP_EARLY_STDERR_FAILURE = /failed to start server|eaddrinuse|address already in use/i;
 
@@ -726,7 +727,8 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
     options.onEvent({ type: "status", status: "running", message: "ACP agent is responding" });
     try {
-      await sendRequest(buildSessionPromptRequest(nextRpcId(), sessionToken, text, preferredAgent, content), 30_000);
+      await sendRequest(buildSessionPromptRequest(nextRpcId(), sessionToken, text, preferredAgent, content), options.agent.promptTimeoutMs ?? DEFAULT_ACP_PROMPT_TIMEOUT_MS);
+      options.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
       options.onEvent({
         type: "error",

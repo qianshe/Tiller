@@ -27,6 +27,21 @@ export function buildConversationTimeline(messages: AgentMessage[], commandChunk
   return [...messageItems, ...toolItems].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
 }
 
+export function resolvePendingToolActivity(calls: AgentToolCall[]) {
+  const pending = calls
+    .filter((call) => call.status === "pending" || call.status === "running" || call.status === "waiting_for_permission")
+    .sort((left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt))
+    .at(-1);
+  if (!pending) {
+    return null;
+  }
+
+  return {
+    title: resolveDisplayToolTitle(pending, pending.commandId ?? pending.id),
+    status: pending.status,
+  };
+}
+
 export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem[] {
   const groups = new Map<string, ConversationToolCallItem>();
   for (const call of calls) {
@@ -177,11 +192,13 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   if (last.role === incoming.role && last.role !== "system") {
+    const isCumulativeSnapshot = incoming.text.startsWith(last.text);
+    const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
     return [
       ...items.slice(0, -1),
       {
         ...last,
-        text: `${last.text}${incoming.text}`,
+        text: collapseRepeatedAssistantText(nextText),
         timestamp: incoming.timestamp,
       },
     ];
@@ -192,4 +209,20 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   return [...items, incoming];
+}
+
+function collapseRepeatedAssistantText(text: string) {
+  const firstLine = text.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine || firstLine.length < 8) {
+    return text;
+  }
+
+  const repeatIndex = text.indexOf(firstLine, firstLine.length);
+  if (repeatIndex === -1) {
+    return text;
+  }
+
+  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
+  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  return text.slice(0, cutIndex).trimEnd();
 }

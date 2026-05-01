@@ -36,7 +36,7 @@ import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, w
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
 import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
-import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "../features/logbook/timeline";
+import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -1231,12 +1231,25 @@ export function App() {
     }
 
     const textarea = missionPromptRef.current;
-    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    let maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    const draftForm = textarea.closest<HTMLFormElement>(".mission-draft-chat .mission-order-editor");
+
+    if (draftForm) {
+      const formStyles = window.getComputedStyle(draftForm);
+      const rowGap = Number.parseFloat(formStyles.rowGap || formStyles.gap || "0") || 0;
+      const visibleSiblings = Array.from(draftForm.children).filter(
+        (element): element is HTMLElement => element instanceof HTMLElement && element !== textarea && window.getComputedStyle(element).display !== "none",
+      );
+      const visibleSiblingHeight = visibleSiblings.reduce((total, element) => total + element.getBoundingClientRect().height, 0);
+      const availableDraftHeight = Math.floor(draftForm.clientHeight - visibleSiblingHeight - rowGap * visibleSiblings.length);
+      maxHeight = Math.max(96, Math.min(maxHeight, availableDraftHeight));
+    }
+
     textarea.style.height = "auto";
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [activeView, prompt]);
+  }, [activeSessionId, activeView, imagePasteNotice, prompt, promptImages.length]);
 
   useEffect(() => {
     if (!promptEnhancerModelPickerOpen) {
@@ -3046,6 +3059,11 @@ case "session.messages.list.result":
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
     const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
     const activeToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
+    const activeSessionStatus = activeSession ? statuses[activeSession.id] ?? activeSession.status : "idle";
+    const pendingToolActivity = activeSession && isSessionExecutionPending(activeSessionStatus) ? resolvePendingToolActivity(activeToolCalls) : null;
+    const missionActivityLoading = activeSession && isSessionExecutionPending(activeSessionStatus)
+      ? pendingToolActivity ?? { title: "Agent 响应", status: activeSessionStatus }
+      : null;
     const activeDiffTree = buildMissionDiffTree(activeDiffs);
     const missionDiffCount = activeDiffs.length;
     const missionLogCount = activeToolCalls.length || activeOutputs.length;
@@ -3364,6 +3382,10 @@ case "session.messages.list.result":
                                             title="清理任务"
                                             onClick={(event) => {
                                               event.stopPropagation();
+                                              const sessionTitle = resolveDisplaySessionTitle(session);
+                                              if (!window.confirm(`确认清理任务「${sessionTitle}」？`)) {
+                                                return;
+                                              }
                                               cleanupSession(session.id);
                                             }}
                                           >
@@ -3406,6 +3428,12 @@ case "session.messages.list.result":
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
               <div className="chat-main" ref={chatMainRef}>
+                {cleanupFeedback ? (
+                  <div className="mission-session-feedback" role="status" aria-live="polite">
+                    <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p>
+                  </div>
+                ) : null}
+
                 {activeSession ? (
                   <>
                     {pendingPermission ? (
@@ -3424,6 +3452,15 @@ case "session.messages.list.result":
                     ) : null}
 
                     {renderPlainMessages(messages[activeSession.id] ?? [], activeSession.id)}
+                    {missionActivityLoading ? (
+                      <div className="mission-tool-loading" role="status" aria-live="polite">
+                        <span className="mission-tool-loading-dots" aria-hidden="true"><i /><i /><i /></span>
+                        <div>
+                          <strong>{pendingToolActivity ? "正在执行工具" : "Agent 正在处理"}</strong>
+                          <p className="compact muted">等待 {missionActivityLoading.title} 返回结果…</p>
+                        </div>
+                      </div>
+                    ) : null}
 
 
                   </>
@@ -3431,7 +3468,6 @@ case "session.messages.list.result":
                   <div className="chat-empty mission-draft-empty">
                     <p className="eyebrow">新任务</p>
                     <h2>{draftProject ? `${draftProject.name} · 新任务` : "先在左侧选择一个项目"}</h2>
-                    {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
               </div>
@@ -4429,6 +4465,10 @@ function resolveCleanupFeedback(result: Extract<HelmToClient, { type: "session.c
   return { tone: "info", message: result.message };
 }
 
+function isSessionExecutionPending(status: SessionStatus) {
+  return status === "starting" || status === "running" || status === "waiting_for_permission";
+}
+
 function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
   const last = items.at(-1);
   if (!last) {
@@ -4436,11 +4476,13 @@ function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
   }
 
   if (last.role === incoming.role && last.role !== "system") {
+    const isCumulativeSnapshot = incoming.text.startsWith(last.text);
+    const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
     return [
       ...items.slice(0, -1),
       {
         ...last,
-        text: `${last.text}${incoming.text}`,
+        text: collapseRepeatedAssistantText(nextText),
         timestamp: incoming.timestamp,
       },
     ];
@@ -4451,6 +4493,22 @@ function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
   }
 
   return [...items, incoming];
+}
+
+function collapseRepeatedAssistantText(text: string) {
+  const firstLine = text.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine || firstLine.length < 8) {
+    return text;
+  }
+
+  const repeatIndex = text.indexOf(firstLine, firstLine.length);
+  if (repeatIndex === -1) {
+    return text;
+  }
+
+  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
+  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  return text.slice(0, cutIndex).trimEnd();
 }
 
 function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) {

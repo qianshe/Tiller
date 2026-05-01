@@ -53,6 +53,7 @@ export type AcpAgentProvider = {
   env?: Record<string, string>;
   cwd?: string;
   initializeTimeoutMs?: number;
+  promptTimeoutMs?: number;
   defaultAgent?: string;
   transport: AgentTransport;
   protocol: "acp";

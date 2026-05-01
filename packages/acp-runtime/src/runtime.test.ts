@@ -20,6 +20,7 @@ import {
   listAcpAgentSessions,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
+  DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
@@ -28,6 +29,10 @@ import {
 
 test("default ACP request timeout allows slow session/new responses", () => {
   assert.equal(DEFAULT_ACP_REQUEST_TIMEOUT_MS, 30_000);
+});
+
+test("default ACP prompt timeout allows long-running agent turns", () => {
+  assert.equal(DEFAULT_ACP_PROMPT_TIMEOUT_MS, 30 * 60_000);
 });
 
 test("buildSessionNewRequest uses ACP session/new shape", () => {

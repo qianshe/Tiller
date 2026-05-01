@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
-import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "./timeline.js";
+import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeToolCallHistory, resolvePendingToolActivity } from "./timeline.js";
 
 const baseMessage: AgentMessage = {
   id: "msg-1",
@@ -140,6 +140,34 @@ test("commandChunkToToolCall provides a terminal fallback for legacy command out
   assert.equal(call.kind, "terminal");
   assert.equal(call.status, "failed");
   assert.equal(call.output, "ERR");
+});
+
+test("coalesceDisplayMessages collapses repeated assistant snapshots", () => {
+  const finalAnswer = "主人，已完成本轮最小改动喵~\n\n| 项目 | 内容 |";
+  const bridge = "我会按 `superpowers` 流程做最小定位与修改，并优先用 MCP 搜索/编辑，确保 typecheck 验证喵~";
+  const timeline = buildConversationTimeline([
+    { id: "msg-1", role: "assistant", text: finalAnswer, timestamp: "2026-04-28T10:00:01.000Z" },
+    { id: "msg-2", role: "assistant", text: `${finalAnswer}${bridge}${finalAnswer}`, timestamp: "2026-04-28T10:00:02.000Z" },
+  ], [], []);
+
+  assert.equal(timeline.length, 1);
+  assert.equal(timeline[0]?.kind, "message");
+  if (timeline[0]?.kind === "message") {
+    assert.equal(timeline[0].message.text, finalAnswer);
+  }
+});
+
+test("resolvePendingToolActivity reports the latest running tool", () => {
+  const calls: AgentToolCall[] = [
+    { id: "tool-done", kind: "tool", title: "completed", status: "completed", timestamp: "2026-04-30T10:00:00.000Z", updatedAt: "2026-04-30T10:00:01.000Z" },
+    { id: "tool-running", kind: "terminal", title: "pnpm test", status: "running", timestamp: "2026-04-30T10:00:02.000Z", updatedAt: "2026-04-30T10:00:03.000Z" },
+  ];
+
+  assert.deepEqual(resolvePendingToolActivity(calls), {
+    title: "pnpm test",
+    status: "running",
+  });
+  assert.equal(resolvePendingToolActivity([{ ...calls[0]!, status: "failed" }]), null);
 });
 
 test("mergeToolCallHistory appends output for existing tool calls", () => {
