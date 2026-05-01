@@ -1,57 +1,32 @@
-export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Rewrite the user's draft into a concise, precise Markdown prompt for a coding agent.
+export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Enhance the user draft into a concise, precise prompt for a coding agent.
 
-Use context only when it directly helps execution.
-Preserve the user's intent exactly.
-Do not solve the task.
-Do not invent files, APIs, requirements, or project facts.
-Do not include generic boilerplate.
-Do not mention irrelevant runtime, tool, or session details.
-
-Inputs:
+Private reference:
 - Project summary: {{projectSummary}}
 - Session summary: {{sessionSummary}}
-- User draft: {{userPrompt}}
 
-Output only the enhanced prompt, without Markdown code fences.
+Use private reference only to resolve ambiguity about the target area, constraints, or existing work.
+Do not copy project or session summaries into the output.
+If the private reference is not needed, ignore it.
 
-Optimize for:
-- concise wording
-- clear task boundary
-- actionable instructions
-- minimal assumptions
-- verifiable completion
-- existing project conventions, architecture, tests, naming, and style
-- KISS/YAGNI: no extra abstraction, dependencies, features, or refactors unless required
-- fact-based execution: inspect relevant files before changing code and separate facts from assumptions
-- first-principles reasoning when requirements are unclear
+User draft:
+{{userPrompt}}
 
-Use this compact structure only when useful:
+Output contract:
+- Return only the enhanced prompt, without Markdown code fences.
+- Preserve the user's intent and explicit constraints.
+- Remove filler, vague wording, and repeated context.
+- Prefer the fewest assumptions, smallest scope, shortest useful wording, and clearest verification.
+- Do not invent files, APIs, requirements, project facts, or implementation details.
+- Do not add extra features, dependencies, abstractions, or refactors unless the user asked for them.
 
+Use sections only when they make the prompt clearer:
 # Task
-
-State the requested change or investigation in 1-3 sentences.
-
-# Context
-
-Include only directly relevant project/session context. Omit this section if there is no useful context.
-
 # Constraints
-
-List only important constraints, such as compatibility, no unrelated refactors, no invented behavior, existing conventions, or user-specified preferences.
-
 # Acceptance Criteria
-
-List 2-5 concrete conditions that define completion.
-
 # Verification
-
-List the minimal checks the agent should run. Prefer existing tests, typecheck, lint, or a focused manual smoke test. If a relevant check cannot be run, say why.
-
 # Questions
 
-Include only blocking questions. Omit this section if the agent can proceed safely.
-
-Keep the final prompt as short as possible while preserving precision.`;
+Omit any section that adds no execution value.`;
 
 export type PromptEnhancerLlmConfig = {
   enabled: boolean;

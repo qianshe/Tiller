@@ -43,6 +43,28 @@ test("enhancePromptWithLlm calls an OpenAI-compatible endpoint when configured",
   assert.doesNotMatch(body, /Codex/);
 });
 
+test("default prompt enhancer treats project and session context as private reference", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+  }) as typeof fetch;
+
+  await enhancePromptWithLlm("帮我修一下任务页项目栏", basePreferences, {
+    projectSummary: "Tiller has a Deck frontend and Helm runtime.",
+    sessionSummary: "User is debugging mission Helm visibility.",
+  }, fetcher);
+
+  const body = String(calls[0]?.init.body);
+  assert.match(body, /Private reference/);
+  assert.match(body, /Use private reference only to resolve ambiguity/);
+  assert.match(body, /User draft/);
+  assert.match(body, /Output contract/);
+  assert.doesNotMatch(body, /AGENTS/);
+  assert.doesNotMatch(body, /# Context/);
+});
+
+
 test("enhancePromptWithLlm rejects when LLM config is missing", async () => {
   await assert.rejects(
     () => enhancePromptWithLlm("修设置页面", {

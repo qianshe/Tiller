@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   CommandChunk,
   FileDiffSummary,
+  HelmSummary,
   PermissionRequest,
   SessionConfigOption,
   SessionStatus,
@@ -64,6 +65,26 @@ export function resolveDraftSelectionId<T extends { id: string }>(
   }
 
   return availableItems[0]?.id ?? null;
+}
+
+export function resolveMissionHelms(
+  helms: HelmSummary[],
+  effectiveMissionHelmId: string | null | undefined,
+  activeHelm: HelmSummary | null = null,
+) {
+  const knownHelms = helms.length ? helms : activeHelm ? [activeHelm] : [];
+  if (!effectiveMissionHelmId) {
+    return knownHelms;
+  }
+
+  const selectedHelm = activeHelm?.id === effectiveMissionHelmId
+    ? activeHelm
+    : helms.find((helm) => helm.id === effectiveMissionHelmId) ?? null;
+  if (!selectedHelm || knownHelms.some((helm) => helm.id === selectedHelm.id)) {
+    return knownHelms;
+  }
+
+  return [...knownHelms, selectedHelm];
 }
 
 export function resolveModelOptionsFromConfig(

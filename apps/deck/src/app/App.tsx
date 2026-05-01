@@ -29,7 +29,7 @@ import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
 import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
@@ -48,6 +48,7 @@ const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
 const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
+const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
 const DEFAULT_HISTORY_PAGE_LIMIT = 50;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
@@ -284,6 +285,27 @@ function resolveSessionTitleChatCompletionsUrl(baseUrl: string) {
     return `${normalized}/chat/completions`;
   }
   return `${normalized}/v1/chat/completions`;
+}
+
+function daemonProfileToHelmSummary(profile: DaemonProfile): HelmSummary {
+  return {
+    id: profile.id,
+    name: profile.name,
+    host: profile.host,
+    port: Number(profile.port),
+  };
+}
+
+function mergeHelmSummariesByEndpoint(items: HelmSummary[]) {
+  const byEndpoint = new Map<string, HelmSummary>();
+  for (const item of items) {
+    byEndpoint.set(daemonProfileKey(item.host, String(item.port)), item);
+  }
+  return Array.from(byEndpoint.values());
+}
+
+function getDevelopmentMockHelmProfiles() {
+  return import.meta.env.DEV ? [DEV_MOCK_HELM_PROFILE] : [];
 }
 
 function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
@@ -825,19 +847,28 @@ export function App() {
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
+  const configuredHelms = useMemo(() => {
+    const currentHost = daemonHost.trim() || DEFAULT_DAEMON_HOST;
+    const currentPort = daemonPort.trim() || DEFAULT_DAEMON_PORT;
+    const currentSavedProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === daemonProfileKey(currentHost, currentPort));
+    const currentProfile: DaemonProfile = {
+      id: currentSavedProfile?.id ?? "current-helm",
+      name: currentSavedProfile?.name || "Local Helm",
+      host: currentHost,
+      port: currentPort,
+    };
+    return mergeHelmSummariesByEndpoint([
+      currentProfile,
+      ...daemonProfiles,
+      ...getDevelopmentMockHelmProfiles(),
+    ].map(daemonProfileToHelmSummary).concat(helms));
+  }, [daemonHost, daemonPort, daemonProfiles, helms]);
   const activeHelm = useMemo(() => {
     const helmId = activeSession?.helmId ?? draftProject?.helmId;
-    return helms.find((helm) => helm.id === helmId) ?? null;
-  }, [activeSession?.helmId, draftProject?.helmId, helms]);
-  const effectiveMissionHelmId = selectedMissionHelmId ?? activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? helms[0]?.id ?? null;
-  const missionHelms = useMemo(() => {
-    const projectHelmIds = new Set(projects.map((project) => project.helmId));
-    const knownHelms = helms.filter((helm) => projectHelmIds.has(helm.id) || helm.id === effectiveMissionHelmId);
-    if (knownHelms.length) {
-      return knownHelms;
-    }
-    return activeHelm ? [activeHelm] : helms;
-  }, [activeHelm, effectiveMissionHelmId, helms, projects]);
+    return configuredHelms.find((helm) => helm.id === helmId) ?? null;
+  }, [activeSession?.helmId, configuredHelms, draftProject?.helmId]);
+  const effectiveMissionHelmId = selectedMissionHelmId ?? activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? configuredHelms[0]?.id ?? null;
+  const missionHelms = useMemo(() => resolveMissionHelms(configuredHelms, effectiveMissionHelmId, activeHelm), [activeHelm, configuredHelms, effectiveMissionHelmId]);
   const missionProjects = useMemo(
     () => projects.filter((project) => !effectiveMissionHelmId || project.helmId === effectiveMissionHelmId),
     [effectiveMissionHelmId, projects],
@@ -3626,17 +3657,14 @@ case "session.messages.list.result":
   function renderAgents() {
     const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
     const currentSavedHelmProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === currentHelmKey);
-    const mockHelmProfile: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
-    const mockHelmCards = import.meta.env.DEV
-      ? [{
-          key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
-          name: mockHelmProfile.name,
-          host: mockHelmProfile.host,
-          port: mockHelmProfile.port,
-          isCurrent: false,
-          profile: mockHelmProfile,
-        }]
-      : [];
+    const mockHelmCards = getDevelopmentMockHelmProfiles().map((mockHelmProfile) => ({
+      key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
+      name: mockHelmProfile.name,
+      host: mockHelmProfile.host,
+      port: mockHelmProfile.port,
+      isCurrent: false,
+      profile: mockHelmProfile,
+    }));
     const rawHelmCards = [
       {
         key: currentHelmKey,
@@ -3670,7 +3698,7 @@ case "session.messages.list.result":
     const selectedHelmAgents = selectedHelmIsCurrent ? agents : selectedHelmInventory?.agents ?? [];
     const selectedHelmWorkspaces = selectedHelmIsCurrent ? workspaces : selectedHelmInventory?.workspaces ?? [];
     const selectedHelmSocket = selectedHelmIsCurrent ? socketRef.current : helmSocketRefs.current.get(selectedHelm.key) ?? null;
-    const selectedHelmSummary = helms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
+    const selectedHelmSummary = configuredHelms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
     const selectedHelmId = selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
     const selectedHelmSavedProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === selectedHelm.key) ?? null;
     const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
