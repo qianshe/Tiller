@@ -1,23 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applySessionLaunchOverrides,
   buildOpenCodeConfigOverride,
-  buildSessionCloseRequest,
-  buildSessionDeleteRequest,
-  buildSessionListRequest,
-  buildSessionLoadRequest,
-  buildSessionNewRequest,
-  buildSessionPromptRequest,
-  buildSessionResumeRequest,
-  buildSessionSetConfigOptionRequest,
-  buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
-  listAcpAgentSessions,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
@@ -38,32 +28,6 @@ test("default ACP prompt timeout allows long-running agent turns", () => {
   assert.equal(DEFAULT_ACP_PROMPT_TIMEOUT_MS, 30 * 60_000);
 });
 
-test("buildSessionNewRequest uses ACP session/new shape", () => {
-  assert.deepEqual(buildSessionNewRequest("req-1", "D:/myProject/tools/Tiller"), {
-    jsonrpc: "2.0",
-    id: "req-1",
-    method: "session/new",
-    params: {
-      cwd: "D:/myProject/tools/Tiller",
-      mcpServers: [],
-    },
-  });
-});
-
-test("buildSessionListRequest uses ACP session/list shape", () => {
-  assert.deepEqual(buildSessionListRequest("req-list", "D:/myProject/tools/Tiller", "codex", "cursor-1"), {
-    jsonrpc: "2.0",
-    id: "req-list",
-    method: "session/list",
-    params: {
-      cwd: "D:/myProject/tools/Tiller",
-      mcpServers: [],
-      cursor: "cursor-1",
-      agent: "codex",
-    },
-  });
-});
-
 test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP session entries", () => {
   assert.deepEqual(normalizeAcpAgentSessionListResult({
     sessions: [
@@ -80,121 +44,6 @@ test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP se
     ],
     nextCursor: "next-page",
     meta: { total: 2 },
-  });
-});
-
-test("listAcpAgentSessions reads sessions from a fake ACP agent", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-list-"));
-  const fakeAgentPath = join(tempDir, "fake-agent.mjs");
-  writeFileSync(fakeAgentPath, `
-import readline from "node:readline";
-const rl = readline.createInterface({ input: process.stdin });
-rl.on("line", (line) => {
-  const payload = JSON.parse(line);
-  if (payload.method === "initialize") {
-    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { capabilities: { session: { list: true } }, agentInfo: { name: "Fake ACP" } } }));
-    return;
-  }
-  if (payload.method === "session/list") {
-    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { sessions: [{ session_id: "remote-1", cwd: payload.params.cwd, title: "Remote history", updated_at: "2026-04-30T00:00:00Z" }], next_cursor: "next" } }));
-  }
-});
-`, "utf8");
-
-  try {
-    const result = await listAcpAgentSessions(
-      { id: "fake", name: "Fake ACP", command: process.execPath, args: [fakeAgentPath], transport: "stdio", protocol: "acp" },
-      { id: "workspace", name: "Workspace", path: tempDir },
-    );
-
-    assert.deepEqual(result, {
-      sessions: [{ sessionId: "remote-1", cwd: tempDir, title: "Remote history", updatedAt: "2026-04-30T00:00:00Z", meta: undefined }],
-      nextCursor: "next",
-      meta: undefined,
-    });
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {
-  assert.deepEqual(buildSessionSetModelRequest("req-model", "sess-1", "openai/gpt-5.4"), {
-    jsonrpc: "2.0",
-    id: "req-model",
-    method: "session/set_model",
-    params: {
-      sessionId: "sess-1",
-      modelId: "openai/gpt-5.4",
-    },
-  });
-});
-
-test("buildSessionSetConfigOptionRequest uses ACP session/set_config_option configId shape", () => {
-  assert.deepEqual(buildSessionSetConfigOptionRequest("req-config", "sess-1", "mode", "build"), {
-    jsonrpc: "2.0",
-    id: "req-config",
-    method: "session/set_config_option",
-    params: {
-      sessionId: "sess-1",
-      configId: "mode",
-      value: "build",
-    },
-  });
-});
-
-test("buildSessionNewRequest forwards provider MCP servers", () => {
-  assert.deepEqual(buildSessionNewRequest("req-mcp", "D:/repo", undefined, [{ name: "filesystem", command: "mcp-server-filesystem", args: ["D:/repo"], env: { ROOT: "D:/repo" } }]), {
-    jsonrpc: "2.0",
-    id: "req-mcp",
-    method: "session/new",
-    params: {
-      cwd: "D:/repo",
-      mcpServers: [{ name: "filesystem", command: "mcp-server-filesystem", args: ["D:/repo"], env: { ROOT: "D:/repo" } }],
-    },
-  });
-});
-
-test("buildSessionLoadRequest uses ACP session/load shape", () => {
-  assert.deepEqual(buildSessionLoadRequest("req-load", "sess_123", "D:/myProject/tools/Tiller"), {
-    jsonrpc: "2.0",
-    id: "req-load",
-    method: "session/load",
-    params: {
-      sessionId: "sess_123",
-      cwd: "D:/myProject/tools/Tiller",
-      mcpServers: [],
-    },
-  });
-});
-
-test("buildSessionResumeRequest uses ACP session/resume shape", () => {
-  assert.deepEqual(buildSessionResumeRequest("req-resume", "sess_123", "D:/myProject/tools/Tiller"), {
-    jsonrpc: "2.0",
-    id: "req-resume",
-    method: "session/resume",
-    params: {
-      sessionId: "sess_123",
-      cwd: "D:/myProject/tools/Tiller",
-      mcpServers: [],
-    },
-  });
-});
-
-test("buildSessionCloseRequest uses ACP session/close shape", () => {
-  assert.deepEqual(buildSessionCloseRequest("req-close", "sess_123"), {
-    jsonrpc: "2.0",
-    id: "req-close",
-    method: "session/close",
-    params: { sessionId: "sess_123" },
-  });
-});
-
-test("buildSessionDeleteRequest uses ACP session/delete shape", () => {
-  assert.deepEqual(buildSessionDeleteRequest("req-delete", "sess_123"), {
-    jsonrpc: "2.0",
-    id: "req-delete",
-    method: "session/delete",
-    params: { sessionId: "sess_123" },
   });
 });
 
@@ -297,36 +146,6 @@ test("resolveRuntimeSessionId prefers ACP native ids before fallback", () => {
   assert.equal(resolveRuntimeSessionId({ sessionId: "acp-session-1", id: "legacy-id" }, "tiller-session"), "acp-session-1");
   assert.equal(resolveRuntimeSessionId({ id: "legacy-id" }, "tiller-session"), "legacy-id");
   assert.equal(resolveRuntimeSessionId({}, "tiller-session"), "tiller-session");
-});
-
-test("buildSessionPromptRequest wraps text as ACP prompt content", () => {
-  assert.deepEqual(buildSessionPromptRequest("req-2", "sess_123", "你好"), {
-    jsonrpc: "2.0",
-    id: "req-2",
-    method: "session/prompt",
-    params: {
-      sessionId: "sess_123",
-      prompt: [{ type: "text", text: "你好" }],
-    },
-  });
-});
-
-test("buildSessionPromptRequest forwards ACP image content blocks", () => {
-  assert.deepEqual(buildSessionPromptRequest("req-image", "sess_123", "看图", undefined, [
-    { type: "text", text: "看图" },
-    { type: "image", data: "AQID", mimeType: "image/png", uri: "tiller:///agent/pasted-image?name=shot.png&index=0" },
-  ]), {
-    jsonrpc: "2.0",
-    id: "req-image",
-    method: "session/prompt",
-    params: {
-      sessionId: "sess_123",
-      prompt: [
-        { type: "text", text: "看图" },
-        { type: "image", data: "AQID", mimeType: "image/png", uri: "tiller:///agent/pasted-image?name=shot.png&index=0" },
-      ],
-    },
-  });
 });
 
 test("applySessionLaunchOverrides appends codex model and reasoning config flags", () => {

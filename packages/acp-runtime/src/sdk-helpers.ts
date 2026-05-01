@@ -1,13 +1,23 @@
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpMcpServer, AgentPromptContent, PermissionRequest } from "@tiller/shared";
 
-export const SDK_CLIENT_CAPABILITIES = {
+export const SDK_PROBE_CLIENT_CAPABILITIES = {
   fs: {
     readTextFile: false,
     writeTextFile: false,
   },
   terminal: false,
 } satisfies acp.ClientCapabilities;
+
+export const SDK_RUNTIME_CLIENT_CAPABILITIES = {
+  fs: {
+    readTextFile: true,
+    writeTextFile: true,
+  },
+  terminal: true,
+} satisfies acp.ClientCapabilities;
+
+export const SDK_CLIENT_CAPABILITIES = SDK_RUNTIME_CLIENT_CAPABILITIES;
 
 export type SdkPermissionDecision = "allow" | "deny" | "cancelled";
 

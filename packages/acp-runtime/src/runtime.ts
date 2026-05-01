@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { resolveAcpLaunchConfig, resolveAdapterCapabilities } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
-import { buildSessionListRequest, resolveRuntimeSessionId } from "./requests";
-import { SDK_CLIENT_CAPABILITIES, mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
+import { resolveRuntimeSessionId } from "./requests";
+import { SDK_PROBE_CLIENT_CAPABILITIES, SDK_RUNTIME_CLIENT_CAPABILITIES, mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
 import type {
   AcpAgentProvider,
   AcpAgentSessionInfo,
@@ -187,270 +188,87 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
   writeLogLine(
     logFile,
     "meta",
-    `Starting ACP connection test command=${launchSpec.command} args=${JSON.stringify(launchSpec.args)} cwd=${launchCwd}`,
+    `Starting ACP SDK connection test command=${launchSpec.command} args=${JSON.stringify(launchSpec.args)} cwd=${launchCwd}`,
   );
 
-  return new Promise<{ ok: boolean; message: string }>((resolve) => {
-    const child = spawn(launchSpec.command, launchSpec.args, {
-      cwd: launchCwd,
-      env: childEnv,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    let settled = false;
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
-
-    const finalize = (result: { ok: boolean; message: string }) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      terminateChildProcess(child.pid);
-      resolve(result);
-    };
-
-    const tryParseInitialize = (text: string) => {
-      if (!text.trim()) {
-        return false;
-      }
-
-      try {
-        const payload = JSON.parse(text);
-        if (payload.id === "tiller-init" && payload.result) {
-          const agentName = payload.result.agentInfo?.name ?? provider.name;
-          const version = payload.result.agentInfo?.version ? ` v${payload.result.agentInfo.version}` : "";
-          finalize({ ok: true, message: `ACP initialize passed for ${agentName}${version}.` });
-          return true;
-        }
-      } catch {
-        return false;
-      }
-
-      return false;
-    };
-
-    child.on("error", (error) => {
-      writeLogLine(logFile, "process-error", error.message);
-      finalize({ ok: false, message: `Failed to start ACP command: ${error.message}` });
-    });
-
-    child.stderr.on("data", (chunk) => {
-      const text = String(chunk);
-      stderrBuffer += text;
-      writeChunkLog(logFile, "stderr", text);
-      if (ACP_EARLY_STDERR_FAILURE.test(stderrBuffer)) {
-        finalize({ ok: false, message: stderrBuffer.trim() });
-      }
-    });
-
-    child.stdout.on("data", (chunk) => {
-      const text = String(chunk);
-      stdoutBuffer += text;
-      writeChunkLog(logFile, "stdout", text);
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (tryParseInitialize(line)) {
-          return;
-        }
-      }
-
-      tryParseInitialize(stdoutBuffer);
-    });
-
-    child.on("exit", (code) => {
-      writeLogLine(logFile, "exit", `code=${code ?? "unknown"}`);
-      if (!settled) {
-        if (tryParseInitialize(stdoutBuffer)) {
-          return;
-        }
-        finalize({
-          ok: false,
-          message: stderrBuffer.trim() || `ACP command exited before initialize completed (code ${code ?? "unknown"}).`,
-        });
-      }
-    });
-
-    const timeout = setTimeout(() => {
-      if (tryParseInitialize(stdoutBuffer)) {
-        return;
-      }
-      finalize({
-        ok: false,
-        message: stderrBuffer.trim() || "Timed out waiting for ACP initialize response.",
-      });
-    }, initializeTimeoutMs);
-
-    const initializePayload = {
-      jsonrpc: "2.0",
-      id: "tiller-init",
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: {
-            readTextFile: false,
-            writeTextFile: false,
-          },
-          terminal: false,
-        },
-        clientInfo: {
-          name: "tiller-helm",
-          version: "0.1.0",
-        },
-      },
-    };
-    writeProtocolLog(logFile, "stdin", initializePayload);
-    child.stdin.write(`${JSON.stringify(initializePayload)}\n`);
-  });
-}
-
-export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
-  if ((provider.mcpServers?.length ?? 0) === 0) {
-    return listAcpAgentSessionsWithSdk(provider, workspace, cursor);
-  }
-
-  return listAcpAgentSessionsWithManualRpc(provider, workspace, cursor);
-}
-
-async function listAcpAgentSessionsWithManualRpc(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
-  const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: workspace.path });
-  const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
-  const launchCwd = launchConfig.cwd;
-  const childEnv = { ...process.env, ...launchConfig.env };
-  delete childEnv.NODE_OPTIONS;
-  delete childEnv.TSX_TSCONFIG_PATH;
-  delete childEnv.TSX_DISABLE_CACHE;
-  const preferredAgent = resolvePreferredAgentId(provider);
-  const logFile = resolve(ACP_LOGS_DIR, `session-list-${sanitizeLogToken(provider.id)}.log`);
   const child = spawn(launchSpec.command, launchSpec.args, {
     cwd: launchCwd,
     env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   });
 
-  let stdoutBuffer = "";
   let stderrBuffer = "";
-  let closed = false;
-  const pending = new Map<string, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>();
-
-  const cleanup = () => {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    for (const waiter of pending.values()) {
-      waiter.reject(new Error("ACP process closed before request completed."));
-    }
-    pending.clear();
-  };
-
-  const sendRequest = async <T>(payload: Record<string, unknown>, timeoutMs = provider.initializeTimeoutMs ?? ACP_INITIALIZE_TIMEOUT_MS) => {
-    const id = String(payload.id);
-    return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(stderrBuffer.trim() || `Timed out waiting for ACP response: ${String(payload.method)}`));
-      }, timeoutMs);
-
-      pending.set(id, {
-        resolve: (value) => {
-          clearTimeout(timeout);
-          resolve(value as T);
-        },
-        reject: (reason) => {
-          clearTimeout(timeout);
-          reject(reason);
-        },
-      });
-
-      writeProtocolLog(logFile, "stdin", payload);
-      child.stdin.write(`${JSON.stringify(payload)}\n`);
+  const processClosed = new Promise<never>((_resolve, reject) => {
+    child.once("error", (error) => {
+      writeLogLine(logFile, "process-error", error.message);
+      reject(new Error(`Failed to start ACP command: ${error.message}`));
     });
-  };
-
-  const handleProtocolMessage = (line: string) => {
-    if (!line.trim()) {
-      return;
-    }
-
-    let payload: any;
-    try {
-      payload = JSON.parse(line);
-    } catch {
-      return;
-    }
-
-    if (payload.id && pending.has(String(payload.id))) {
-      writeProtocolLog(logFile, "stdout", payload);
-      const waiter = pending.get(String(payload.id))!;
-      pending.delete(String(payload.id));
-      if (payload.error) {
-        waiter.reject(new Error(formatAcpError(payload.error)));
-        return;
-      }
-      waiter.resolve(payload.result);
-    }
-  };
-
-  child.on("error", (error) => {
-    writeLogLine(logFile, "process-error", error.message);
-    cleanup();
+    child.once("exit", (code, signal) => {
+      const message = `ACP SDK connection test exited code=${code ?? "unknown"} signal=${signal ?? "unknown"}`;
+      writeLogLine(logFile, "exit", message);
+      reject(new Error(stderrBuffer.trim() ? `${message}: ${stderrBuffer.trim()}` : message));
+    });
   });
-  child.on("exit", (code) => {
-    writeLogLine(logFile, "exit", `code=${code ?? "unknown"}`);
-    cleanup();
-  });
+  processClosed.catch(() => {});
+
   child.stderr.on("data", (chunk) => {
     const text = String(chunk);
     stderrBuffer += text;
     writeChunkLog(logFile, "stderr", text);
   });
-  child.stdout.on("data", (chunk) => {
-    const text = String(chunk);
-    stdoutBuffer += text;
-    writeChunkLog(logFile, "stdout-raw", text);
-    const lines = stdoutBuffer.split(/\r?\n/);
-    stdoutBuffer = lines.pop() ?? "";
-    for (const line of lines) {
-      handleProtocolMessage(line);
-    }
-    if (stdoutBuffer.trim().startsWith("{") && stdoutBuffer.trim().endsWith("}")) {
-      handleProtocolMessage(stdoutBuffer.trim());
-      stdoutBuffer = "";
-    }
+
+  const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
+  const agent = new acp.ClientSideConnection(() => ({
+    async sessionUpdate() {
+      return undefined;
+    },
+    async requestPermission() {
+      return { outcome: { outcome: "cancelled" } } satisfies acp.RequestPermissionResponse;
+    },
+    async readTextFile() {
+      throw acp.RequestError.methodNotFound("fs/read_text_file");
+    },
+    async writeTextFile() {
+      throw acp.RequestError.methodNotFound("fs/write_text_file");
+    },
+  }), stream);
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(stderrBuffer.trim() || "Timed out waiting for ACP initialize response."));
+    }, initializeTimeoutMs);
   });
 
   try {
-    const initializeResult = await sendRequest<any>({
-      jsonrpc: "2.0",
-      id: "tiller-list-init",
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-        },
+    writeLogLine(logFile, "sdk-request", "initialize");
+    const initializeResult = await Promise.race([
+      agent.initialize({
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: SDK_PROBE_CLIENT_CAPABILITIES,
         clientInfo: { name: "tiller-helm", version: "0.1.0" },
-      },
-    });
-    const sessionCapabilities = resolveSessionCapabilities(initializeResult, provider);
-    if (!sessionCapabilities.sessionList) {
-      throw new Error("ACP agent does not advertise session/list capability.");
-    }
-    const result = await sendRequest<any>(buildSessionListRequest("tiller-list-sessions", launchCwd, preferredAgent, cursor, provider.mcpServers), 15_000);
-    return normalizeAcpAgentSessionListResult(result);
+      }),
+      timeout,
+      processClosed,
+    ]);
+    const agentName = initializeResult.agentInfo?.name ?? provider.name;
+    const version = initializeResult.agentInfo?.version ? ` v${initializeResult.agentInfo.version}` : "";
+    return { ok: true, message: `ACP initialize passed for ${agentName}${version}.` };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to initialize ACP agent.",
+    };
   } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
     terminateChildProcess(child.pid);
-    cleanup();
   }
 }
 
-async function listAcpAgentSessionsWithSdk(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
+export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
   const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: workspace.path });
   const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
   const launchCwd = launchConfig.cwd;
@@ -540,7 +358,7 @@ async function listAcpAgentSessionsWithSdk(provider: AcpAgentProvider, workspace
   try {
     const initializeResult = await withSdkRequest("initialize", agent.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: SDK_CLIENT_CAPABILITIES,
+      clientCapabilities: SDK_PROBE_CLIENT_CAPABILITIES,
       clientInfo: { name: "tiller-helm", version: "0.1.0" },
     }));
     const sessionCapabilities = resolveSessionCapabilities(initializeResult, provider);
@@ -592,18 +410,38 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   let currentConfigOptions: AcpSessionConfigOption[] = [];
   let currentModelState: AcpModelState | undefined;
   let permissionRequestCounter = 0;
+  let terminalCounter = 0;
   let exitError: Error | null = null;
-  const pendingPermissionReplies = new Map<string, {
-    allowOptionId?: string;
-    denyOptionId?: string;
-    resolve: (response: acp.RequestPermissionResponse) => void;
-  }>();
+  const pendingPermissionReplies = new Map<string,
+    | {
+        kind: "agent";
+        allowOptionId?: string;
+        denyOptionId?: string;
+        resolve: (response: acp.RequestPermissionResponse) => void;
+      }
+    | {
+        kind: "client";
+        resolve: (allowed: boolean) => void;
+      }
+  >();
+  const terminals = new Map<string, ManagedSdkTerminal>();
 
   const failPendingPermissions = () => {
     for (const pendingPermission of pendingPermissionReplies.values()) {
-      pendingPermission.resolve({ outcome: { outcome: "cancelled" } });
+      if (pendingPermission.kind === "agent") {
+        pendingPermission.resolve({ outcome: { outcome: "cancelled" } });
+      } else {
+        pendingPermission.resolve(false);
+      }
     }
     pendingPermissionReplies.clear();
+  };
+
+  const closeTerminals = () => {
+    for (const terminal of terminals.values()) {
+      terminateChildProcess(terminal.process.pid);
+    }
+    terminals.clear();
   };
 
   const cleanup = () => {
@@ -612,6 +450,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     }
     closed = true;
     failPendingPermissions();
+    closeTerminals();
   };
 
   const exited = new Promise<never>((_resolve, reject) => {
@@ -647,6 +486,36 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     }
   });
 
+  const ensureActiveSessionRequest = (requestSessionId: string) => {
+    if (sessionToken && requestSessionId !== sessionToken) {
+      throw new Error(`ACP client request targeted unknown session ${requestSessionId}.`);
+    }
+  };
+
+  const requestClientPermission = async (command: string, reason: string) => {
+    permissionRequestCounter += 1;
+    const id = `sdk-client-permission-${permissionRequestCounter}`;
+    options.onEvent({
+      type: "status",
+      status: "waiting_for_permission",
+      message: reason,
+    });
+    options.onEvent({
+      type: "permission-request",
+      request: {
+        id,
+        command,
+        reason,
+        workspacePath: options.workspace.path,
+      },
+    });
+    return await new Promise<boolean>((resolve) => {
+      pendingPermissionReplies.set(id, { kind: "client", resolve });
+    });
+  };
+
+  const resolveWorkspacePath = (requestPath: string) => resolveContainedWorkspacePath(options.workspace.path, requestPath);
+
   const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
   const agent = new acp.ClientSideConnection(() => ({
     async sessionUpdate(params) {
@@ -674,17 +543,145 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       });
       return await new Promise<acp.RequestPermissionResponse>((resolve) => {
         pendingPermissionReplies.set(mapped.id, {
+          kind: "agent",
           allowOptionId: mapped.allowOptionId,
           denyOptionId: mapped.denyOptionId,
           resolve,
         });
       });
     },
-    async readTextFile() {
-      throw acp.RequestError.methodNotFound("fs/read_text_file");
+    async readTextFile(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const filePath = resolveWorkspacePath(params.path);
+      const content = await readFile(filePath, "utf8");
+      return { content: sliceTextFileContent(content, params.line, params.limit) };
     },
-    async writeTextFile() {
-      throw acp.RequestError.methodNotFound("fs/write_text_file");
+    async writeTextFile(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const filePath = resolveWorkspacePath(params.path);
+      const relativePath = relative(options.workspace.path, filePath) || params.path;
+      const allowed = await requestClientPermission(
+        `Write file: ${relativePath}`,
+        "ACP agent requested workspace file write access.",
+      );
+      if (!allowed) {
+        throw new Error(`Denied ACP file write: ${relativePath}`);
+      }
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, params.content, "utf8");
+      const now = new Date().toISOString();
+      options.onEvent({
+        type: "tool-call",
+        toolCall: {
+          id: `fs-write-${Date.now()}`,
+          kind: "edit",
+          title: `Write file: ${relativePath}`,
+          status: "completed",
+          input: params.path,
+          output: `${params.content.length} chars written`,
+          timestamp: now,
+          updatedAt: now,
+        },
+      });
+      return {};
+    },
+    async createTerminal(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const cwd = params.cwd ? resolveWorkspacePath(params.cwd) : launchCwd;
+      const commandLine = formatTerminalCommand(params.command, params.args ?? []);
+      const allowed = await requestClientPermission(
+        commandLine,
+        "ACP agent requested terminal execution.",
+      );
+      if (!allowed) {
+        throw new Error(`Denied ACP terminal command: ${commandLine}`);
+      }
+
+      terminalCounter += 1;
+      const terminalId = `sdk-terminal-${terminalCounter}`;
+      const terminalProcess = spawn(params.command, params.args ?? [], {
+        cwd,
+        env: mergeTerminalEnv(childEnv, params.env ?? []),
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      const terminal: ManagedSdkTerminal = {
+        id: terminalId,
+        process: terminalProcess,
+        output: "",
+        truncated: false,
+        outputByteLimit: params.outputByteLimit ?? 64 * 1024,
+        exitPromise: Promise.resolve({ exitCode: null, signal: null }),
+      };
+      terminal.exitPromise = new Promise((resolve) => {
+        terminalProcess.once("exit", (code, signal) => {
+          terminal.exitStatus = { exitCode: code, signal };
+          const now = new Date().toISOString();
+          options.onEvent({
+            type: "tool-call",
+            toolCall: {
+              id: `tool-${terminalId}`,
+              kind: "terminal",
+              title: commandLine,
+              status: code === 0 ? "completed" : "failed",
+              commandId: terminalId,
+              output: terminal.output,
+              timestamp: now,
+              updatedAt: now,
+            },
+          });
+          resolve(terminal.exitStatus);
+        });
+      });
+      terminals.set(terminalId, terminal);
+
+      const startedAt = new Date().toISOString();
+      options.onEvent({
+        type: "tool-call",
+        toolCall: {
+          id: `tool-${terminalId}`,
+          kind: "terminal",
+          title: commandLine,
+          status: "running",
+          commandId: terminalId,
+          input: commandLine,
+          timestamp: startedAt,
+          updatedAt: startedAt,
+        },
+      });
+      terminalProcess.stdout.on("data", (chunk) => emitTerminalChunk(terminal, "stdout", String(chunk), options.onEvent));
+      terminalProcess.stderr.on("data", (chunk) => emitTerminalChunk(terminal, "stderr", String(chunk), options.onEvent));
+      terminalProcess.once("error", (error) => emitTerminalChunk(terminal, "stderr", error.message, options.onEvent));
+      return { terminalId };
+    },
+    async terminalOutput(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const terminal = requireTerminal(terminals, params.terminalId);
+      return {
+        output: terminal.output,
+        truncated: terminal.truncated,
+        exitStatus: terminal.exitStatus,
+      };
+    },
+    async waitForTerminalExit(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const terminal = requireTerminal(terminals, params.terminalId);
+      return await terminal.exitPromise;
+    },
+    async killTerminal(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const terminal = requireTerminal(terminals, params.terminalId);
+      terminateChildProcess(terminal.process.pid);
+      return {};
+    },
+    async releaseTerminal(params) {
+      ensureActiveSessionRequest(params.sessionId);
+      const terminal = requireTerminal(terminals, params.terminalId);
+      if (!terminal.exitStatus) {
+        terminateChildProcess(terminal.process.pid);
+      }
+      terminals.delete(params.terminalId);
+      return {};
     },
   }), stream);
 
@@ -717,7 +714,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
   const initializeResult = await withSdkRequest("initialize", agent.initialize({
     protocolVersion: acp.PROTOCOL_VERSION,
-    clientCapabilities: SDK_CLIENT_CAPABILITIES,
+    clientCapabilities: SDK_RUNTIME_CLIENT_CAPABILITIES,
     clientInfo: { name: "tiller-helm", version: "0.1.0" },
   }));
   const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
@@ -891,6 +888,17 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       return;
     }
 
+    pendingPermissionReplies.delete(requestId);
+    if (pendingPermission.kind === "client") {
+      pendingPermission.resolve(decision === "allow");
+      options.onEvent({
+        type: "status",
+        status: decision === "allow" ? "running" : "idle",
+        message: decision === "allow" ? "Client operation permission granted" : "Client operation permission denied",
+      });
+      return;
+    }
+
     const optionId = decision === "allow" ? pendingPermission.allowOptionId : pendingPermission.denyOptionId;
     if (!optionId) {
       options.onEvent({
@@ -901,7 +909,6 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       return;
     }
 
-    pendingPermissionReplies.delete(requestId);
     pendingPermission.resolve({
       outcome: {
         outcome: "selected",
@@ -971,8 +978,13 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   const cancel = () => {
     cancelled = true;
     failPendingPermissions();
-    void agent.cancel({ sessionId: sessionToken }).catch(() => undefined);
-    terminateChildProcess(child.pid);
+    const killTimeout = setTimeout(() => terminateChildProcess(child.pid), 1_000);
+    void agent.cancel({ sessionId: sessionToken })
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(killTimeout);
+        terminateChildProcess(child.pid);
+      });
     options.onEvent({ type: "status", status: "cancelled", message: "Cancelled by remote operator" });
   };
 
@@ -1038,6 +1050,92 @@ export function resolveSessionCapabilities(initializeResult: any, provider?: Acp
   };
 
   return provider ? resolveAdapterCapabilities(provider, initializeResult, detected) : detected;
+}
+
+type ManagedSdkTerminal = {
+  id: string;
+  process: ReturnType<typeof spawn>;
+  output: string;
+  truncated: boolean;
+  outputByteLimit: number;
+  exitStatus?: { exitCode: number | null; signal: string | null };
+  exitPromise: Promise<{ exitCode: number | null; signal: string | null }>;
+};
+
+function resolveContainedWorkspacePath(workspaceRoot: string, requestPath: string) {
+  const root = resolve(workspaceRoot);
+  const candidate = resolve(root, requestPath);
+  const relativePath = relative(root, candidate);
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`ACP client file path escapes workspace: ${requestPath}`);
+  }
+  return candidate;
+}
+
+function sliceTextFileContent(content: string, line?: number | null, limit?: number | null) {
+  if (!line && !limit) {
+    return content;
+  }
+  const lines = content.split(/\r?\n/u);
+  const start = Math.max((line ?? 1) - 1, 0);
+  const end = limit && limit > 0 ? start + limit : undefined;
+  return lines.slice(start, end).join("\n");
+}
+
+function formatTerminalCommand(command: string, args: string[]) {
+  return [command, ...args].map((value) => /\s/u.test(value) ? JSON.stringify(value) : value).join(" ");
+}
+
+function mergeTerminalEnv(baseEnv: NodeJS.ProcessEnv, env: acp.EnvVariable[]) {
+  const merged: NodeJS.ProcessEnv = { ...baseEnv };
+  for (const item of env) {
+    merged[item.name] = item.value;
+  }
+  return merged;
+}
+
+function requireTerminal(terminals: Map<string, ManagedSdkTerminal>, terminalId: string) {
+  const terminal = terminals.get(terminalId);
+  if (!terminal) {
+    throw new Error(`Unknown ACP terminal: ${terminalId}`);
+  }
+  return terminal;
+}
+
+function emitTerminalChunk(
+  terminal: ManagedSdkTerminal,
+  stream: "stdout" | "stderr",
+  text: string,
+  onEvent: (event: SessionRuntimeEvent) => void,
+) {
+  if (!text) {
+    return;
+  }
+  const retained = retainTerminalOutput(`${terminal.output}${text}`, terminal.outputByteLimit);
+  terminal.output = retained.output;
+  terminal.truncated = terminal.truncated || retained.truncated;
+  onEvent({
+    type: "command-output",
+    chunk: {
+      id: `${terminal.id}-${Date.now()}-${stream}`,
+      commandId: terminal.id,
+      text,
+      stream,
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
+
+function retainTerminalOutput(output: string, limit: number) {
+  if (limit <= 0 || Buffer.byteLength(output, "utf8") <= limit) {
+    return { output, truncated: false };
+  }
+
+  let retained = output;
+  while (retained.length > 0 && Buffer.byteLength(retained, "utf8") > limit) {
+    retained = retained.slice(1);
+  }
+  return { output: retained, truncated: true };
 }
 
 function formatAcpError(error: { message?: string; data?: unknown }) {
@@ -1112,7 +1210,7 @@ function sanitizeLogToken(value: string) {
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
 
 
-export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
+export { resolveRuntimeSessionId } from "./requests";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 

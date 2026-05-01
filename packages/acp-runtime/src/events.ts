@@ -580,34 +580,6 @@ function normalizeSessionStatus(updateType: string | undefined): SessionStatus |
   }
 }
 
-export function mapPermissionRequest(payload: any, fallbackSessionId: string, fallbackWorkspacePath: string) {
-  const requestId = String(payload?.id ?? "");
-  const params = payload?.params;
-  const options = Array.isArray(params?.options) ? params.options : [];
-  const toolCall = params?.toolCall ?? {};
-  const allowOptionId = options.find((option: any) => /allow/iu.test(String(option?.kind ?? option?.name ?? option?.id ?? "")))?.id;
-  const denyOptionId = options.find((option: any) => /reject|deny/iu.test(String(option?.kind ?? option?.name ?? option?.id ?? "")))?.id;
-  if (!requestId || (!allowOptionId && !denyOptionId)) {
-    return null;
-  }
-
-  const commandParts = [toolCall?.title, toolCall?.rawInput].filter((value) => typeof value === "string" && value.trim());
-  const command = commandParts.join(" :: ") || "ACP permission request";
-  const reasonParts = [params?.reason, toolCall?.kind, toolCall?.title].filter((value) => typeof value === "string" && value.trim());
-
-  return {
-    id: requestId,
-    allowOptionId: typeof allowOptionId === "string" ? allowOptionId : undefined,
-    denyOptionId: typeof denyOptionId === "string" ? denyOptionId : undefined,
-    request: {
-      id: requestId,
-      command,
-      reason: reasonParts.join(" · ") || "ACP agent requested permission.",
-      workspacePath: typeof params?.cwd === "string" ? params.cwd : fallbackWorkspacePath,
-    },
-  };
-}
-
 export function normalizeProviderCleanupResult(result: ProviderCleanupResult) {
   switch (result.kind) {
     case "remote-deleted":

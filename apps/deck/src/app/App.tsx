@@ -2791,6 +2791,20 @@ case "session.messages.list.result":
     });
   }
 
+  function cancelSession(sessionId: string) {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法取消任务。" });
+      return;
+    }
+
+    dispatch(socket, {
+      type: "session.cancel",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+    });
+  }
+
   function loadOlderSessions() {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || sessionHistoryState.loading || !sessionHistoryState.hasMore || !sessionHistoryState.nextCursor) {
       return;
@@ -3802,6 +3816,9 @@ case "session.messages.list.result":
                       ) : null}
                     </div>
                     <div className="mission-composer-actions">
+                      {activeSession && isSessionExecutionPending(activeSessionStatus) ? (
+                        <button className="secondary composer-icon-button" type="button" onClick={() => cancelSession(activeSession.id)} aria-label={copy.cancelSession} title={copy.cancelSession}>■</button>
+                      ) : null}
                       {deckPreferences.promptEnhancer.enabled ? (
                         <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">✦</button>
                       ) : null}
