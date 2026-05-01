@@ -22,15 +22,6 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 
-export type AcpDiscoveryCandidate = {
-  id: string;
-  name: string;
-  command: string;
-  args?: string[];
-  available: boolean;
-  configured: boolean;
-};
-
 export type ClientToHelm =
   | {
       type: "helm.list";
@@ -78,10 +69,6 @@ export type ClientToHelm =
     }
   | {
       type: "agent.list";
-      requestId: string;
-    }
-  | {
-      type: "agent.discover";
       requestId: string;
     }
   | {
@@ -257,14 +244,6 @@ export type HelmToClient =
       type: "agent.list.result";
       requestId: string;
       agents: AcpAgentProvider[];
-    }
-  | {
-      type: "agent.discover.result";
-      requestId: string;
-      agents: AcpAgentProvider[];
-      discoveredCount: number;
-      candidates: AcpDiscoveryCandidate[];
-      message: string;
     }
   | {
       type: "agent.test.result";

@@ -1,11 +1,11 @@
-import { exec, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { listAvailableProviders, readTillerConfig, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
 import { sortProjectFileSummaries } from "@tiller/shared";
-import type { AcpAgentProvider, ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
 
@@ -315,100 +315,6 @@ export async function refreshProjectGitBranches(projects: ProjectSummary[], work
 }
 
 
-const LOCAL_ACP_DISCOVERY_CANDIDATES: AcpAgentProvider[] = [
-  { id: "claude-acp", name: "Claude Agent", command: "claude-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install the Claude ACP adapter used by Zed (for example claude-acp / @zed-industries/claude-agent-acp) and make it available on PATH." },
-  { id: "claude-agent-acp", name: "Claude Agent ACP", command: "claude-agent-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install claude-agent-acp and make it available on PATH." },
-  { id: "cline", name: "Cline", command: "cline", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install cline and make it available on PATH." },
-  { id: "gemini", name: "Gemini", command: "gemini", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install gemini and make it available on PATH." },
-  { id: "openclaw", name: "OpenClaw", command: "openclaw", args: ["acp"], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install openclaw and ensure `openclaw acp` works. For Gateway auth, configure --url/--token-file/--session in args; do not paste tokens into Deck." },
-  { id: "droid", name: "Droid", command: "droid", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install droid and make it available on PATH." },
-  { id: "hermes", name: "Hermes", command: "hermes", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install hermes and make it available on PATH." },
-  { id: "codex-acp", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install codex-acp and make it available on PATH." },
-  { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install opencode and make it available on PATH." },
-];
-
-function normalizeRegistryCommand(command: string) {
-  const executable = command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
-  return executable.replace(/\.exe$/i, "");
-}
-
-function discoveryCommandKey(command: string) {
-  return normalizeRegistryCommand(command).toLowerCase();
-}
-
-function discoverProbeCommands(command: string, logInfo?: (message: string) => void) {
-  const normalized = normalizeRegistryCommand(command).trim();
-  if (!/^[A-Za-z0-9._-]+$/.test(normalized)) {
-    logInfo?.(`[tiller-helm] agent.discover.probe.skip command=${JSON.stringify(command)} reason="not-a-simple-global-command"`);
-    return [];
-  }
-  return [normalized];
-}
-
-async function commandHasHelpOutput(command: string, logInfo: (message: string) => void) {
-  const commands = discoverProbeCommands(command, logInfo);
-  const candidates = ["-h", "--help"];
-  for (const probeCommand of commands) {
-    for (const arg of candidates) {
-      const shellCommand = `${probeCommand} ${arg}`;
-      logInfo(`[tiller-helm] agent.discover.probe.start command=${JSON.stringify(shellCommand)}`);
-      const output = await new Promise<string>((resolve) => {
-        exec(shellCommand, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
-          logInfo(`[tiller-helm] agent.discover.probe.result command=${JSON.stringify(shellCommand)} ok=${error ? "false" : "true"} error=${JSON.stringify(error?.message ?? "")} stdout=${JSON.stringify(stdout ?? "")} stderr=${JSON.stringify(stderr ?? "")}`);
-          if (error) {
-            resolve("");
-            return;
-          }
-          resolve(`${stdout ?? ""}${stderr ?? ""}`.trim());
-        });
-      });
-      if (output) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function mergeDiscoveryCandidates(configuredAgents: AcpAgentProvider[]) {
-  const byCommand = new Map<string, AcpAgentProvider>();
-  [...LOCAL_ACP_DISCOVERY_CANDIDATES, ...configuredAgents].forEach((candidate) => {
-    const key = discoveryCommandKey(candidate.command);
-    if (!byCommand.has(key)) {
-      byCommand.set(key, candidate);
-    }
-  });
-  return Array.from(byCommand.values());
-}
-
-async function discoverAcpAgents(configuredAgents: AcpAgentProvider[], logInfo: (message: string) => void) {
-  const configuredById = new Map(configuredAgents.map((agent) => [agent.id, agent]));
-  const configuredCommands = new Set(configuredAgents.map((agent) => discoveryCommandKey(agent.command)));
-  const discoveryCandidates = mergeDiscoveryCandidates(configuredAgents);
-  const candidateResults = await Promise.all(
-    discoveryCandidates.map(async (candidate) => {
-      const configured = configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command));
-      return {
-        agent: candidate,
-        available: await commandHasHelpOutput(candidate.command, logInfo),
-        configured,
-      };
-    }),
-  );
-  const visibleResults = candidateResults.filter((result) => result.available || result.configured);
-  const discovered = visibleResults.filter((result) => result.available).map((result) => result.agent);
-  const candidates = visibleResults.map((result) => ({
-    id: result.agent.id,
-    name: result.agent.name,
-    command: result.agent.command,
-    args: result.agent.args,
-    available: result.available,
-    configured: result.configured,
-  }));
-
-  return { discovered, agents: configuredAgents, candidates };
-}
-
 export const handleConfigMessage: HelmMessageHandler = async (socket, payload, context) => {
   switch (payload.type) {
     case "helm.list": {
@@ -596,22 +502,6 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       const agents = context.loadAvailableAgents();
       context.setAgents(agents);
       context.emit(socket, { type: "agent.list.result", requestId: payload.requestId, agents });
-      return true;
-    }
-    case "agent.discover": {
-      const configuredAgents = context.loadAvailableAgents();
-      const result = await discoverAcpAgents(configuredAgents, context.logInfo);
-      context.setAgents(result.agents);
-      context.emit(socket, {
-        type: "agent.discover.result",
-        requestId: payload.requestId,
-        agents: result.agents,
-        discoveredCount: result.discovered.length,
-        candidates: result.candidates,
-        message: result.discovered.length
-          ? `Discovered ${result.discovered.length} ACP agent${result.discovered.length === 1 ? "" : "s"}.`
-          : "No ACP agents discovered on PATH.",
-      });
       return true;
     }
     case "agent.save": {

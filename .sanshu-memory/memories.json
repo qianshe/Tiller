@@ -19,14 +19,6 @@
       "updated_at": "2026-04-29T07:32:01.031178900Z"
     },
     {
-      "id": "955f6bac-7218-4770-9493-d9e813efd043",
-      "content": "Tiller 项目中 ACP Discover 的本地命令白名单当前硬编码在 `apps/helm/src/handlers/config.ts` 的 `LOCAL_ACP_DISCOVERY_CANDIDATES`；Discover 会通过 `commandHasHelpOutput` 执行 `<command> -h`，失败后尝试 `<command> --help`，仅保留可用或已配置的候选；已配置 agents 从 `~/.tiller/config.json` 的 `agents` 读取并合并。",
-      "content_normalized": "tiller 项目中 acp discover 的本地命令白名单当前硬编码在 `apps/helm/src/handlers/configts` 的 `local_acp_discovery_candidates`discover 会通过 `commandhashelpoutput` 执行 `<command> -h`失败后尝试 `<command> --help`仅保留可用或已配置的候选已配置 agents 从 `~/tiller/configjson` 的 `agents` 读取并合并",
-      "category": "Context",
-      "created_at": "2026-04-29T11:14:10.333409300Z",
-      "updated_at": "2026-04-29T11:14:10.333409300Z"
-    },
-    {
       "id": "b66b2d84-3b55-43cb-a890-801b35c07cb7",
       "content": "如果未来 ACP/provider 发一种全新的重复格式，最好继续按 Zed 的事件/状态模型补适配：优先依据 streamed SessionUpdate、ToolCallStatus、ThreadStatus/StopReason 等状态事件驱动 UI 与存储合并，不要靠短 timeout 或字符串拼接假设判断完成。",
       "content_normalized": "如果未来 acp/provider 发一种全新的重复格式最好继续按 zed 的事件/状态模型补适配优先依据 streamed sessionupdatetoolcallstatusthreadstatus/stopreason 等状态事件驱动 ui 与存储合并不要靠短 timeout 或字符串拼接假设判断完成",

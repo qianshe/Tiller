@@ -3,7 +3,7 @@ import "highlight.js/styles/github-dark.css";
 import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
 import geminiProviderIconUrl from "./assets/provider-icons/Gemini.svg";
-import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { resolveSessionConfigSupport, sortProjectFileSummaries } from "@tiller/shared";
 import type {
   AcpAgentProvider,
@@ -814,8 +814,6 @@ export function App() {
   const [fleetProjectSaveMessage, setFleetProjectSaveMessage] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
-  const [fleetAgentDiscoverMessage, setFleetAgentDiscoverMessage] = useState("");
-  const [fleetAgentDiscoveryCandidates, setFleetAgentDiscoveryCandidates] = useState<AcpDiscoveryCandidate[]>([]);
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
@@ -1362,28 +1360,12 @@ export function App() {
   }, [customMissionPanelPages]);
 
   useEffect(() => {
-    const transientMessages = [
-      [fleetProjectSaveMessage, setFleetProjectSaveMessage],
-      [fleetAgentDiscoverMessage, setFleetAgentDiscoverMessage],
-    ] as const;
-    const timers = transientMessages
-      .filter(([message]) => message && !message.startsWith("正在"))
-      .map(([, clearMessage]) => window.setTimeout(() => clearMessage(""), 3600));
-
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [fleetProjectSaveMessage, fleetAgentDiscoverMessage]);
-
-  useEffect(() => {
-    if (!fleetAgentDiscoverMessage.startsWith("正在发现")) {
+    if (!fleetProjectSaveMessage || fleetProjectSaveMessage.startsWith("正在")) {
       return;
     }
-
-    const timer = window.setTimeout(() => {
-      setFleetAgentDiscoverMessage("Discover 暂无响应，请确认 Helm 已加载最新代码。");
-    }, 12000);
-
+    const timer = window.setTimeout(() => setFleetProjectSaveMessage(""), 3600);
     return () => window.clearTimeout(timer);
-  }, [fleetAgentDiscoverMessage]);
+  }, [fleetProjectSaveMessage]);
 
   useEffect(() => {
     setTrustedDevice(readTrustedDeviceCache(window.localStorage, daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT));
@@ -1902,14 +1884,6 @@ export function App() {
           setAgents(payload.agents);
         }
         return;
-      case "agent.discover.result":
-        updateHelmInventory(sourceHelmKey, { agents: payload.agents });
-        setFleetAgentDiscoveryCandidates(payload.candidates);
-        setFleetAgentDiscoverMessage(payload.discoveredCount ? `已发现 ${payload.discoveredCount} 个本机 ACP` : "未发现新的本机 ACP");
-        if (sourceIsCurrentHelm) {
-          setAgents(payload.agents);
-        }
-        return;
       case "agent.test.result":
         setAgentTestResult(payload.message);
         return;
@@ -1952,8 +1926,6 @@ export function App() {
         return;
       case "agent.save.result":
         setConfigSaveMessage(payload.message);
-        setFleetAgentDiscoverMessage(payload.message);
-        setFleetAgentDiscoveryCandidates((current) => current.map((candidate) => candidate.id === payload.providerId ? { ...candidate, configured: true } : candidate));
         {
           const refreshSocket = sourceIsCurrentHelm ? socketRef.current : helmSocketRefs.current.get(sourceHelmKey) ?? null;
           if (refreshSocket?.readyState === WebSocket.OPEN) {
@@ -4182,32 +4154,6 @@ case "session.messages.list.result":
                 <div className="helm-inventory-section-head">
                   <h3>ACP 舰员</h3>
                   <div className="helm-section-actions-inline">
-                    <button
-                      className="secondary helm-discover-button"
-                      type="button"
-                      disabled={!selectedHelmIsConnected}
-                      onClick={() => {
-                        if (!selectedHelmSocket) {
-                          setFleetAgentDiscoverMessage("请先连接 Helm 后再 Discover。");
-                          return;
-                        }
-                        setFleetAgentDiscoverMessage("正在发现 ACP 舰员...");
-                        dispatch(selectedHelmSocket, { type: "agent.discover", requestId: nextRequestId(requestCounter) });
-                        const probeWorkspaceId = selectedHelmWorkspaces[0]?.id;
-                        if (probeWorkspaceId) {
-                          selectedHelmAgents.forEach((agent) => {
-                            dispatch(selectedHelmSocket, {
-                              type: "agent.model.options.get",
-                              requestId: nextRequestId(requestCounter),
-                              providerId: agent.id,
-                              workspaceId: probeWorkspaceId,
-                            });
-                          });
-                        }
-                      }}
-                    >
-                      Discover
-                    </button>
                     <button className="secondary helm-list-add-button" type="button" disabled={!selectedHelmIsConnected} aria-label="添加 ACP" title="添加 ACP" onClick={() => setFleetAgentFormOpen((current) => !current)}>+</button>
                   </div>
                 </div>
@@ -4280,17 +4226,6 @@ case "session.messages.list.result":
                       ))}
                     </div>
                   </form>
-                ) : null}
-                {fleetAgentDiscoverMessage ? <p className="muted compact helm-inline-save-message">{fleetAgentDiscoverMessage}</p> : null}
-                {fleetAgentDiscoveryCandidates.length ? (
-                  <div className="helm-discovery-candidates" aria-label="ACP Discover 结果">
-                    {fleetAgentDiscoveryCandidates.map((candidate) => (
-                      <span className={`helm-discovery-chip ${candidate.available ? "available" : "missing"}`} key={candidate.id} title={[candidate.command, ...(candidate.args ?? [])].join(" ")}>
-                        <strong>{candidate.name}</strong>
-                        {candidate.configured ? "已配置" : candidate.available ? "可添加" : "未安装"}
-                      </span>
-                    ))}
-                  </div>
                 ) : null}
                 {selectedHelmAgents.length ? (
                   <ul className="helm-simple-list">
