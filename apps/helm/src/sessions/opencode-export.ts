@@ -16,14 +16,41 @@ export async function loadOpenCodeExportHistory(agent: AcpAgentProvider, runtime
     return null;
   }
 
-  const { stdout } = await execFileAsync(agent.command, ["export", runtimeSessionId], {
+  const stdout = await runOpenCodeExport(agent, runtimeSessionId, cwd);
+  return parseOpenCodeExportHistory(stdout);
+}
+
+export async function loadProviderAuthoritativeHistory(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string): Promise<OpenCodeExportHistory | null> {
+  return loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+}
+
+async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
+  const options = {
     cwd,
     env: { ...process.env, ...agent.env },
     timeout: agent.initializeTimeoutMs ?? OPENCODE_EXPORT_TIMEOUT_MS,
     maxBuffer: OPENCODE_EXPORT_MAX_BUFFER,
     windowsHide: true,
-  });
-  return parseOpenCodeExportHistory(stdout);
+  };
+  try {
+    const { stdout } = await execFileAsync(agent.command, ["export", runtimeSessionId], options);
+    return stdout;
+  } catch (error) {
+    if (process.platform !== "win32" || !isNoEntryError(error)) {
+      throw error;
+    }
+    const command = `& ${quotePowerShellArg(agent.command)} ${quotePowerShellArg("export")} ${quotePowerShellArg(runtimeSessionId)}`;
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], options);
+    return stdout;
+  }
+}
+
+function isNoEntryError(error: unknown) {
+  return Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "ENOENT");
+}
+
+function quotePowerShellArg(value: string) {
+  return `'${value.replace(/'/gu, "''")}'`;
 }
 
 export function parseOpenCodeExportHistory(raw: string): OpenCodeExportHistory {

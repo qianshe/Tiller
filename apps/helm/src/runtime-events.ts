@@ -24,6 +24,24 @@ function formatLogValue(value: unknown, maxLength = 220) {
   }
 }
 
+
+function isDuplicateUserEcho(recorded: AgentMessage, incoming: AgentMessage) {
+  if (recorded.id === incoming.id || recorded.text === incoming.text || recorded.text.endsWith(incoming.text) || incoming.text.endsWith(recorded.text)) {
+    return true;
+  }
+
+  const delta = Math.abs(Date.parse(recorded.timestamp) - Date.parse(incoming.timestamp));
+  if (!Number.isFinite(delta) || delta > 60_000) {
+    return false;
+  }
+
+  return normalizePromptText(incoming.text).includes(normalizePromptText(recorded.text));
+}
+
+function normalizePromptText(text: string) {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
 export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent, context: HelmHandlerContext) {
   if (!context.sessions.has(sessionId) && !context.sessionStore.list().some((item: { id: string }) => item.id === sessionId)) {
     return;
@@ -42,11 +60,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
           return;
         }
         const alreadyRecorded = existingMessages.some((message) =>
-          message.role === "user" && (
-            message.id === event.message.id ||
-            message.text === event.message.text ||
-            message.text.endsWith(event.message.text)
-          ),
+          message.role === "user" && isDuplicateUserEcho(message, event.message),
         );
         if (alreadyRecorded) {
           return;
@@ -69,7 +83,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "permission.request", sessionId, permissionRequest: event.request });
       return;
     case "tool-call":
-      context.logInfo(`[tiller-helm] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
+      context.logDebug(`[tiller-helm] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
       return;

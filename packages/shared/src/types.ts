@@ -43,6 +43,13 @@ export type AgentCapabilities = {
   imageInput?: boolean;
 };
 
+export type AcpMcpServer = {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 export type AcpAgentProvider = {
   id: string;
   name: string;
@@ -51,8 +58,10 @@ export type AcpAgentProvider = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  mcpServers?: AcpMcpServer[];
   cwd?: string;
   initializeTimeoutMs?: number;
+  promptTimeoutMs?: number;
   defaultAgent?: string;
   transport: AgentTransport;
   protocol: "acp";
@@ -256,7 +265,23 @@ export type AgentMessage = {
   role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
+  attachments?: AgentPromptImageContent[];
 };
+
+export type AgentPromptTextContent = {
+  type: "text";
+  text: string;
+};
+
+export type AgentPromptImageContent = {
+  type: "image";
+  data: string;
+  mimeType: string;
+  uri?: string;
+  name?: string;
+};
+
+export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
 
 export type PermissionRequest = {
   id: string;

@@ -29,6 +29,7 @@ import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AgentPromptContent,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
@@ -43,8 +44,9 @@ import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
 import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
 import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
-import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
+import { loadProviderAuthoritativeHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
+import { alignSessionProjectBinding } from "./sessions/project-binding";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
 import { handleConfigMessage, refreshProjectGitBranches } from "./handlers/config";
@@ -102,6 +104,7 @@ projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const projectContextSummaryCache = new Map<string, string>();
+const openCodeHistoryRefreshes = new Map<string, number>();
 
 // --- Device pairing state ---
 let pairingCode: string | null = null;
@@ -368,6 +371,7 @@ function createHandlerContext(): HelmHandlerContext {
     emit,
     broadcastAuthenticated,
     logInfo,
+    logDebug,
     logError,
     getHelms: () => helms,
     setHelms: (items) => { helms = items; },
@@ -402,6 +406,7 @@ function createHandlerContext(): HelmHandlerContext {
     migrateStoredSessionSummary,
     buildResumeInfo,
     persistRuntimeDescriptor,
+    refreshAuthoritativeSessionHistory,
     updateSessionSummary,
     persistSessionMessage,
     publishDiffUpdate,
@@ -507,7 +512,7 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
 }
 
 function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-  const aligned = alignSessionProjectBinding(summary);
+  const aligned = alignSessionProjectBinding(summary, projects);
   const record = sessions.get(summary.id);
   const agent = record?.agent ?? resolveProviderById(aligned.agentId, agents);
   return {
@@ -526,77 +531,6 @@ function migrateStoredSessionSummary(summary: SessionSummary) {
     sessionStore.upsert(hydrated);
   }
   return hydrated;
-}
-
-function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
-  const inferredProject = inferProjectFromSessionHistory(summary.id);
-  if (inferredProject) {
-    return {
-      ...summary,
-      projectId: inferredProject.id,
-      projectName: inferredProject.name,
-      helmId: inferredProject.helmId,
-      workspaceId: inferredProject.defaultWorkspaceId ?? inferredProject.workspaceIds?.[0] ?? summary.workspaceId,
-    };
-  }
-
-  const exactProject = resolveProjectById(summary.projectId, projects);
-  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
-  if (exactProject && workspaceProject && workspaceProject.id !== exactProject.id) {
-    return {
-      ...summary,
-      projectId: workspaceProject.id,
-      projectName: workspaceProject.name,
-      helmId: workspaceProject.helmId,
-    };
-  }
-  if (exactProject) {
-    return {
-      ...summary,
-      projectName: exactProject.name,
-      helmId: exactProject.helmId,
-    };
-  }
-
-  const matchedProject =
-    projects.find((project) => project.name === summary.projectName) ??
-    workspaceProject;
-  if (!matchedProject) {
-    return summary;
-  }
-
-  return {
-    ...summary,
-    projectId: matchedProject.id,
-    projectName: matchedProject.name,
-    helmId: matchedProject.helmId,
-  };
-}
-
-function inferProjectFromSessionHistory(sessionId: string) {
-  const text = sessionMessageStore.list(sessionId).map((message) => message.text).join("\n").toLowerCase();
-  if (!text) {
-    return null;
-  }
-  const scored = projects
-    .map((project) => {
-      const name = project.name.toLowerCase();
-      const path = project.path?.toLowerCase().replaceAll("\\", "/");
-      const score =
-        (path && text.includes(path) ? 4 : 0) +
-        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
-      return { project, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score);
-  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
-    return null;
-  }
-  return scored[0].project;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {
@@ -657,6 +591,7 @@ function resolveSessionRestoreCapabilities(
     sessionList: Boolean(runtimeCapabilities?.sessionList ?? descriptor?.capabilities?.sessionList ?? agent?.capabilities?.sessionList),
     sessionClose: Boolean(runtimeCapabilities?.sessionClose ?? descriptor?.capabilities?.sessionClose ?? agent?.capabilities?.sessionClose),
     sessionDelete: Boolean(runtimeCapabilities?.sessionDelete ?? descriptor?.capabilities?.sessionDelete ?? agent?.capabilities?.sessionDelete),
+    imageInput: Boolean(runtimeCapabilities?.imageInput ?? descriptor?.capabilities?.imageInput ?? agent?.capabilities?.imageInput),
   };
 }
 
@@ -670,9 +605,9 @@ function resolveResumeMode(agent: AcpAgentProvider | undefined) {
 
 async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
   try {
-    const history = await loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+    const history = await loadProviderAuthoritativeHistory(agent, runtimeSessionId, cwd);
     if (!history) {
-      return;
+      return false;
     }
     if (history.messages.length) {
       sessionMessageStore.replace(sessionId, history.messages);
@@ -681,14 +616,41 @@ async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpA
       sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
     }
     logInfo(`[tiller-helm] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+    return true;
   } catch (error) {
     logError(`[tiller-helm] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+    return false;
+  }
+}
+
+async function refreshAuthoritativeSessionHistory(sessionId: string) {
+  const lastRefresh = openCodeHistoryRefreshes.get(sessionId);
+  if (lastRefresh && Date.now() - lastRefresh < 30_000) {
+    return;
+  }
+
+  const activeRecord = sessions.get(sessionId);
+  const summary = activeRecord?.summary ?? sessionStore.list().find((item) => item.id === sessionId);
+  if (!summary) {
+    return;
+  }
+  const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, agents);
+  const workspace = activeRecord?.workspace ?? workspaces.find((item) => item.id === summary.workspaceId);
+  const runtimeSessionId = activeRecord?.runtime.runtimeSessionId ?? summary.runtimeSessionId ?? sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
+  if (!agent || !workspace || !runtimeSessionId) {
+    return;
+  }
+
+  const refreshed = await importAuthoritativeOpenCodeHistory(sessionId, agent, runtimeSessionId, workspace.path);
+  if (refreshed) {
+    openCodeHistoryRefreshes.set(sessionId, Date.now());
   }
 }
 
 async function startSessionResume(sessionId: string) {
   const activeRecord = sessions.get(sessionId);
   if (activeRecord) {
+    await refreshAuthoritativeSessionHistory(sessionId);
     const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
     logInfo(`[tiller-helm] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
     return {
@@ -786,7 +748,8 @@ function persistRuntimeDescriptor(
     !resolvedCapabilities.sessionResume &&
     !resolvedCapabilities.sessionList &&
     !resolvedCapabilities.sessionClose &&
-    !resolvedCapabilities.sessionDelete
+    !resolvedCapabilities.sessionDelete &&
+    !resolvedCapabilities.imageInput
   ) {
     return;
   }
@@ -1062,12 +1025,24 @@ function logInfo(message: string) {
   console.log(message);
 }
 
+function logDebug(message: string) {
+  if (!isHelmDebugEnabled()) {
+    return;
+  }
+  writeLogLine("DEBUG", message);
+  console.debug(message);
+}
+
 function logError(message: string) {
   writeLogLine("ERROR", message);
   console.error(message);
 }
 
-function writeLogLine(level: "INFO" | "ERROR", message: string) {
+function isHelmDebugEnabled() {
+  return /^(1|true|yes)$/iu.test(process.env.TILLER_HELM_DEBUG ?? "");
+}
+
+function writeLogLine(level: "DEBUG" | "INFO" | "ERROR", message: string) {
   appendFileSync(HELM_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
 }
 
@@ -1083,7 +1058,7 @@ type SessionRecord = {
       reasoningEffort?: SessionReasoningEffort;
     };
     sessionModelState?: AcpModelState;
-    prompt: (text: string) => void;
+    prompt: (text: string, content?: AgentPromptContent[]) => void;
     configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
       runtimeApplied: boolean;
       state: { model?: string; reasoningEffort?: SessionReasoningEffort };

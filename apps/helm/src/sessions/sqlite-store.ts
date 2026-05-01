@@ -58,7 +58,7 @@ export function createSqliteSessionMessageStore(dbPath: string) {
       return next;
     },
     replace(sessionId: string, messages: AgentMessage[]) {
-      const next = sortAgentMessages(messages);
+      const next = normalizeSessionMessages(messages);
       replaceSessionMessages(db, sessionId, next);
       return next;
     },
@@ -212,6 +212,7 @@ function openSessionDatabase(dbPath: string) {
     CREATE TABLE IF NOT EXISTS session_messages(
       session_id TEXT NOT NULL,
       id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
       role TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       payload_json TEXT NOT NULL,
@@ -254,13 +255,43 @@ function openSessionDatabase(dbPath: string) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
-    CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
   `);
+  ensureSessionMessagePositions(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_messages_page");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, position, id)");
   db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(new Date().toISOString());
   return db;
+}
+
+function ensureSessionMessagePositions(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === "position")) {
+    return;
+  }
+
+  runTransaction(db, () => {
+    db.exec("ALTER TABLE session_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
+    const rows = db.prepare(`
+      SELECT session_id, id
+      FROM session_messages
+      ORDER BY session_id ASC, timestamp ASC, id ASC
+    `).all() as Array<{ session_id: string; id: string }>;
+    const update = db.prepare("UPDATE session_messages SET position = ? WHERE session_id = ? AND id = ?");
+    let currentSessionId = "";
+    let position = 0;
+    for (const row of rows) {
+      if (row.session_id !== currentSessionId) {
+        currentSessionId = row.session_id;
+        position = 0;
+      }
+      update.run(position, row.session_id, row.id);
+      position += 1;
+    }
+  });
+  recordMigrationVersion(db, 3);
 }
 
 function hasMigrationVersion(db: DatabaseSync, version: number) {
@@ -304,20 +335,20 @@ function listSessionMessages(db: DatabaseSync, sessionId: string) {
     SELECT payload_json
     FROM session_messages
     WHERE session_id = ?
-    ORDER BY timestamp ASC, id ASC
+    ORDER BY position ASC, id ASC
   `).all(sessionId) as Array<{ payload_json: string }>;
-  return rows.map((row) => parseJson<AgentMessage>(row.payload_json)).filter(isNotNull);
+  return normalizeSessionMessages(rows.map((row) => parseJson<AgentMessage>(row.payload_json)).filter(isNotNull));
 }
 
 function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: AgentMessage[]) {
   runTransaction(db, () => {
     db.prepare("DELETE FROM session_messages WHERE session_id = ?").run(sessionId);
     const insert = db.prepare(`
-      INSERT OR REPLACE INTO session_messages(session_id, id, role, timestamp, payload_json)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO session_messages(session_id, id, position, role, timestamp, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    for (const message of sortAgentMessages(messages)) {
-      insert.run(sessionId, message.id, message.role, message.timestamp, JSON.stringify(message));
+    for (const [position, message] of normalizeSessionMessages(messages).entries()) {
+      insert.run(sessionId, message.id, position, message.role, message.timestamp, JSON.stringify(message));
     }
   });
 }
@@ -438,24 +469,62 @@ function upsertRuntimeDescriptor(db: DatabaseSync, descriptor: StoredSessionRunt
 }
 
 function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
-  const index = messages.findIndex((item) => item.id === message.id);
-  if (index === -1) {
-    return sortAgentMessages([...messages, message]);
-  }
+  return normalizeSessionMessages([...messages, message]);
+}
 
-  return sortAgentMessages(messages.map((item, itemIndex) => {
-    if (itemIndex !== index) {
-      return item;
+function normalizeSessionMessages(messages: AgentMessage[]) {
+  return messages.reduce<AgentMessage[]>((merged, message) => {
+    const existingIndex = merged.findIndex((item) => item.id === message.id);
+    if (existingIndex !== -1) {
+      merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
+      return merged;
     }
 
-    const isDuplicateText = item.text === message.text || item.text.endsWith(message.text);
-    return {
-      ...item,
-      ...message,
-      text: isDuplicateText ? item.text : `${item.text}${message.text}`,
-      timestamp: isDuplicateText && Date.parse(message.timestamp) > Date.parse(item.timestamp) ? message.timestamp : item.timestamp,
-    };
-  }));
+    const last = merged.at(-1);
+    if (!last || !shouldMergeAssistantStreamChunk(last, message)) {
+      return [...merged, message];
+    }
+
+    merged[merged.length - 1] = mergeAgentMessageChunk(last, message);
+    return merged;
+  }, []);
+}
+
+function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
+  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+}
+
+function isRuntimeGeneratedMessageId(id: string) {
+  return /-msg-\d+$/u.test(id);
+}
+
+function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
+  const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
+  const isCumulativeSnapshot = incoming.text.startsWith(current.text);
+  const nextText = isDuplicateText ? current.text : isCumulativeSnapshot ? incoming.text : `${current.text}${incoming.text}`;
+  return {
+    ...current,
+    ...incoming,
+    id: current.id,
+    text: collapseRepeatedAssistantText(nextText),
+    timestamp: isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp) ? incoming.timestamp : current.timestamp,
+  };
+}
+
+function collapseRepeatedAssistantText(text: string) {
+  const firstLine = text.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine || firstLine.length < 8) {
+    return text;
+  }
+
+  const repeatIndex = text.indexOf(firstLine, firstLine.length);
+  if (repeatIndex === -1) {
+    return text;
+  }
+
+  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
+  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  return text.slice(0, cutIndex).trimEnd();
 }
 
 function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): AgentToolCall {
@@ -480,10 +549,6 @@ function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: s
 function isInformativeToolCallTitle(title: string | undefined, id: string) {
   const normalized = title?.trim();
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
-}
-
-function sortAgentMessages(messages: AgentMessage[]) {
-  return [...messages].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
 }
 
 function sortCommandChunks(items: CommandChunk[]) {

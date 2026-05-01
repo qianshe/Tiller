@@ -59,7 +59,7 @@ test("session message store appends messages per session and reloads them from d
   }
 });
 
-test("session message store returns messages sorted by timestamp", async () => {
+test("session message store preserves append order instead of sorting by timestamp", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-sort-"));
 
@@ -78,7 +78,7 @@ test("session message store returns messages sorted by timestamp", async () => {
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-early", "msg-late"]);
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-late", "msg-early"]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -114,6 +114,93 @@ test("session message store merges chunks with the same message id", async () =>
   }
 });
 
+test("session message store merges consecutive assistant stream chunks without a shared id", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-stream-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: "执行 pnpm ",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1001",
+      role: "assistant",
+      text: "typecheck 验证喵~",
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+
+    assert.deepEqual(store.list("session-1"), [{
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: "执行 pnpm typecheck 验证喵~",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    }]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store keeps the latest cumulative assistant stream snapshot", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-cumulative-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: "主人，已完成",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1001",
+      role: "assistant",
+      text: "主人，已完成本轮验证喵~",
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+
+    assert.deepEqual(store.list("session-1"), [{
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: "主人，已完成本轮验证喵~",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    }]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store collapses repeated assistant snapshots inside one merged payload", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-repeated-payload-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    const finalAnswer = "主人，已完成本轮最小改动喵~\n\n| 项目 | 内容 |\n|---|---|\n| **产物** | `apps/deck/src/app/App.tsx` |";
+    const bridge = "我会按 `superpowers` 流程做最小定位与修改，并优先用 MCP 搜索/编辑，确保 typecheck 验证喵~";
+    store.append("session-1", {
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: finalAnswer,
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1001",
+      role: "assistant",
+      text: `${finalAnswer}${bridge}${finalAnswer}`,
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+
+    assert.equal(store.list("session-1")[0]?.text, finalAnswer);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store refreshes duplicate replay timestamps without duplicating text", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replay-"));
@@ -144,7 +231,7 @@ test("session message store refreshes duplicate replay timestamps without duplic
   }
 });
 
-test("session message store replaces a session with authoritative history", async () => {
+test("session message store replaces a session with authoritative history order", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replace-"));
 
@@ -156,7 +243,7 @@ test("session message store replaces a session with authoritative history", asyn
       { id: "msg-1", role: "user", text: "hello", timestamp: "2026-04-30T09:58:57.000Z" },
     ]);
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-1", "msg-2"]);
+    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-2", "msg-1"]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -215,6 +302,31 @@ test("session message store pages latest messages and exposes an older cursor", 
     const older = store.listPage("session-1", { limit: 2, before: latest.nextCursor });
     assert.deepEqual(older.messages.map((message) => message.id), ["msg-2", "msg-3"]);
     assert.equal(older.hasMore, true);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store defaults to the latest twenty messages", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-default-page-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    for (let index = 1; index <= 25; index += 1) {
+      store.append("session-1", {
+        id: `msg-${index}`,
+        role: index % 2 ? "user" : "assistant",
+        text: `message ${index}`,
+        timestamp: `2026-04-27T08:00:${String(index).padStart(2, "0")}.000Z`,
+      });
+    }
+
+    const latest = store.listPage("session-1");
+    assert.equal(latest.messages.length, 20);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(0, 3), ["msg-6", "msg-7", "msg-8"]);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(-3), ["msg-23", "msg-24", "msg-25"]);
+    assert.equal(latest.hasMore, true);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }

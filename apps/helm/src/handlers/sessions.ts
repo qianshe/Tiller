@@ -5,15 +5,80 @@ import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 import type { SessionSummary } from "@tiller/shared";
 import type { HelmMessageHandler } from "./context";
 
+type SessionSummaryPageOptions = {
+  limit?: number;
+  before?: string;
+};
+
+function pageSessionSummaries(sessions: SessionSummary[], options: SessionSummaryPageOptions = {}) {
+  const sorted = sortSessionSummaries(sessions);
+  const limit = normalizePageLimit(options.limit, 25, 200);
+  const before = decodeHistoryCursor(options.before);
+  const eligible = before
+    ? sorted.filter((session) => compareSessionPosition(session, before) > 0)
+    : sorted;
+  const page = eligible.slice(0, limit);
+  const hasMore = eligible.length > page.length;
+  return {
+    sessions: page,
+    nextCursor: hasMore ? encodeHistoryCursor(page.at(-1)) : undefined,
+    hasMore,
+  };
+}
+
+function sortSessionSummaries(sessions: SessionSummary[]) {
+  return [...sessions].sort((left, right) => compareSessionPosition(left, right));
+}
+
+function compareSessionPosition(left: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">, right: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">) {
+  const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+  if (timeDelta !== 0) {
+    return timeDelta;
+  }
+  const createdDelta = right.createdAt.localeCompare(left.createdAt);
+  return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
+}
+
+function normalizePageLimit(limit: number | undefined, fallback: number, max: number) {
+  if (!Number.isFinite(limit) || !limit || limit < 1) {
+    return fallback;
+  }
+  return Math.min(Math.floor(limit), max);
+}
+
+function encodeHistoryCursor(session: SessionSummary | undefined) {
+  return session ? `${session.updatedAt}\t${session.createdAt}\t${session.id}` : undefined;
+}
+
+function decodeHistoryCursor(cursor: string | undefined) {
+  if (!cursor) {
+    return null;
+  }
+  const [updatedAt, createdAt, id] = cursor.split("\t");
+  if (!updatedAt || !createdAt || !id) {
+    return null;
+  }
+  return { updatedAt, createdAt, id };
+}
+
 export const handleSessionMessage: HelmMessageHandler = async (socket, payload, context) => {
   switch (payload.type) {
     case "session.list": {
       const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
-      context.logInfo(`[tiller-helm] session.list count=${normalizedSessions.length}`);
-      context.emit(socket, { type: "session.list.result", requestId: payload.requestId, sessions: normalizedSessions });
+      const page = pageSessionSummaries(normalizedSessions, { limit: payload.limit, before: payload.before });
+      context.logInfo(`[tiller-helm] session.list count=${normalizedSessions.length} page=${page.sessions.length} hasMore=${page.hasMore}`);
+      context.emit(socket, {
+        type: "session.list.result",
+        requestId: payload.requestId,
+        sessions: page.sessions,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        before: payload.before,
+      });
       return true;
     }
     case "session.messages.list": {
+      await context.refreshAuthoritativeSessionHistory(payload.sessionId);
       const page = context.sessionMessageStore.listPage(payload.sessionId, {
         limit: payload.limit,
         before: payload.before,
@@ -25,10 +90,12 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         messages: page.messages,
         nextCursor: page.nextCursor,
         hasMore: page.hasMore,
+        before: payload.before,
       });
       return true;
     }
     case "session.artifacts.get": {
+      await context.refreshAuthoritativeSessionHistory(payload.sessionId);
       const artifacts = context.sessionArtifactStore.getPage(payload.sessionId, {
         limit: payload.limit,
         before: payload.before,
@@ -189,15 +256,27 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         });
         return true;
       }
-      context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
+      const imageAttachments = payload.content?.filter((item) => item.type === "image") ?? [];
+      if (imageAttachments.length && !record.runtime.sessionCapabilities?.imageInput) {
+        context.emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          sessionId: payload.sessionId,
+          code: "ACP_IMAGE_INPUT_UNSUPPORTED",
+          message: "ACP agent does not advertise image prompt capability.",
+        });
+        return true;
+      }
+
+      context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length} images=${imageAttachments.length}`);
       const timestamp = new Date().toISOString();
       const userMessageId = payload.clientMessageId || `${payload.sessionId}-user-${Date.now()}`;
-      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp });
+      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp, ...(imageAttachments.length ? { attachments: imageAttachments } : {}) });
       const updated = context.updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
       if (updated) {
         context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: updated });
       }
-      record.runtime.prompt(payload.text);
+      record.runtime.prompt(payload.text, payload.content);
       return true;
     }
     case "session.configure": {

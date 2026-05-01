@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { HelmSummary, SessionSummary } from "@tiller/shared";
-import { applySessionListSnapshot, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "./sessions.js";
+import type { HelmSummary, ProjectSummary, SessionSummary } from "@tiller/shared";
+import {
+  applySessionListSnapshot,
+  resolveDraftSelectionId,
+  resolveMissionHelms,
+  resolveModelOptionsFromConfig,
+  resolvePromptPlaceholder,
+  resolveSessionProjectId,
+  resolveSessionTitle,
+  toggleExpandedIdSet,
+} from "./sessions.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
   return {
@@ -84,6 +93,44 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   assert.deepEqual(next.maps.diffs, {
     [live.id]: [{ path: "live.ts", status: "modified", additions: 2, deletions: 1 }],
   });
+});
+
+test("resolveSessionProjectId keeps the session project binding authoritative", () => {
+  const session = {
+    ...buildSession("session-authoritative", "2026-04-27T10:00:00.000Z"),
+    projectId: "project-alpha",
+    projectName: "Alpha",
+    workspaceId: "workspace-shared",
+  };
+  const projects: ProjectSummary[] = [
+    { id: "project-alpha", name: "Alpha", helmId: "helm-1", workspaceIds: ["workspace-alpha"] },
+    { id: "project-beta", name: "Beta", helmId: "helm-1", workspaceIds: ["workspace-shared"] },
+  ];
+
+  assert.equal(resolveSessionProjectId(session, projects), "project-alpha");
+});
+
+test("resolveSessionProjectId falls back for legacy sessions with unknown project ids", () => {
+  const session = {
+    ...buildSession("session-legacy", "2026-04-27T10:00:00.000Z"),
+    projectId: "legacy-project",
+    projectName: "Beta",
+    workspaceId: "workspace-beta",
+  };
+  const projects: ProjectSummary[] = [
+    { id: "project-alpha", name: "Alpha", helmId: "helm-1", workspaceIds: ["workspace-alpha"] },
+    { id: "project-beta", name: "Beta", helmId: "helm-1", workspaceIds: ["workspace-beta"] },
+  ];
+
+  assert.equal(resolveSessionProjectId(session, projects), "project-beta");
+});
+
+test("toggleExpandedIdSet changes only expanded project folder membership", () => {
+  const current = new Set(["project-alpha", "project-gamma"]);
+
+  assert.deepEqual([...toggleExpandedIdSet(current, "project-alpha")].sort(), ["project-gamma"]);
+  assert.deepEqual([...toggleExpandedIdSet(current, "project-beta")].sort(), ["project-alpha", "project-beta", "project-gamma"]);
+  assert.deepEqual([...current].sort(), ["project-alpha", "project-gamma"]);
 });
 
 test("resolveSessionTitle uses the first meaningful 5 chars of the user prompt preview", () => {

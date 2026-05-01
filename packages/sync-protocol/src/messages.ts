@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   AcpModelOption,
   AgentMessage,
+  AgentPromptContent,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -112,6 +113,8 @@ export type ClientToHelm =
   | {
       type: "session.list";
       requestId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.messages.list";
@@ -142,6 +145,7 @@ export type ClientToHelm =
       requestId: string;
       sessionId: string;
       text: string;
+      content?: AgentPromptContent[];
       clientMessageId?: string;
     }
   | {
@@ -297,6 +301,9 @@ export type HelmToClient =
       type: "session.list.result";
       requestId: string;
       sessions: SessionSummary[];
+      nextCursor?: string;
+      hasMore?: boolean;
+      before?: string;
     }
   | {
       type: "session.messages.list.result";
@@ -305,6 +312,7 @@ export type HelmToClient =
       messages: AgentMessage[];
       nextCursor?: string;
       hasMore?: boolean;
+      before?: string;
     }
   | {
       type: "session.artifacts.result";

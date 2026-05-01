@@ -1,5 +1,15 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 
+export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
+  return items
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+      return timestampDelta === 0 ? left.index - right.index : timestampDelta;
+    })
+    .map((entry) => entry.message);
+}
+
 export type ConversationTimelineItem =
   | { kind: "message"; timestamp: string; message: AgentMessage }
   | ConversationToolCallItem;
@@ -17,14 +27,32 @@ export type ConversationToolCallItem = {
 };
 
 export function buildConversationTimeline(messages: AgentMessage[], commandChunks: CommandChunk[], toolCalls: AgentToolCall[]): ConversationTimelineItem[] {
-  const messageItems: ConversationTimelineItem[] = coalesceDisplayMessages(messages).map((message) => ({
+  const sourceToolCalls = toolCalls.length ? toolCalls : commandChunks.map(commandChunkToToolCall);
+  const toolItems = groupToolCalls(sourceToolCalls);
+  const messageItems: ConversationTimelineItem[] = coalesceDisplayMessages(
+    messages,
+    toolItems.map((item) => item.timestamp),
+  ).map((message) => ({
     kind: "message",
     timestamp: message.timestamp,
     message,
   }));
-  const sourceToolCalls = toolCalls.length ? toolCalls : commandChunks.map(commandChunkToToolCall);
-  const toolItems = groupToolCalls(sourceToolCalls);
   return [...messageItems, ...toolItems].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+export function resolvePendingToolActivity(calls: AgentToolCall[]) {
+  const pending = calls
+    .filter((call) => call.status === "pending" || call.status === "running" || call.status === "waiting_for_permission")
+    .sort((left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt))
+    .at(-1);
+  if (!pending) {
+    return null;
+  }
+
+  return {
+    title: resolveDisplayToolTitle(pending, pending.commandId ?? pending.id),
+    status: pending.status,
+  };
 }
 
 export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem[] {
@@ -63,6 +91,12 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
 
 
 function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
+  if (call.kind !== "terminal") {
+    const openCodeSkillName = extractOpenCodeSkillNameFromToolOutput(call.output);
+    if (openCodeSkillName) {
+      return `Skill: ${openCodeSkillName}`;
+    }
+  }
   if (call.kind === "terminal") {
     return summarizeCommand(call.input ?? call.title ?? fallback);
   }
@@ -105,6 +139,28 @@ function extractSkillNameFromCommand(command: string) {
     return localSkill[1];
   }
   return undefined;
+}
+
+function extractOpenCodeSkillNameFromToolOutput(output: string | undefined) {
+  if (!output) {
+    return undefined;
+  }
+  const decoded = extractOutputPayload(output).replace(/\\n/gu, "\n");
+  const match = decoded.match(/^#+\s*Skill\s+([^\r\n"]+)|^Skill:\s*([^\r\n"]+)/imu);
+  const skillName = (match?.[1] ?? match?.[2])?.trim();
+  return skillName || undefined;
+}
+
+function extractOutputPayload(output: string) {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (typeof parsed.output === "string") {
+      return parsed.output;
+    }
+  } catch {
+    // OpenCode may already provide plain stdout text.
+  }
+  return output;
 }
 
 function extractCommandFromInput(input: string) {
@@ -166,25 +222,38 @@ export function mergeToolCallHistory(current: AgentToolCall[], incoming: AgentTo
   return merged.sort((left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt));
 }
 
-export function coalesceDisplayMessages(items: AgentMessage[]) {
-  return items.reduce<AgentMessage[]>((merged, item) => mergeAgentMessages(merged, item), []);
+export function coalesceDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
+  const boundaryTimes = boundaryTimestamps.map((timestamp) => Date.parse(timestamp)).filter(Number.isFinite);
+  return items.reduce<AgentMessage[]>((merged, item) => mergeAgentMessages(merged, item, boundaryTimes), []);
 }
 
-export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
+export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage, boundaryTimes: number[] = []) {
   const last = items.at(-1);
   if (!last) {
     return [incoming];
   }
 
   if (last.role === incoming.role && last.role !== "system") {
-    return [
-      ...items.slice(0, -1),
-      {
-        ...last,
-        text: `${last.text}${incoming.text}`,
-        timestamp: incoming.timestamp,
-      },
-    ];
+    if (last.id === incoming.id || shouldMergeAssistantStreamChunk(last, incoming)) {
+      const isCumulativeSnapshot = incoming.text.startsWith(last.text);
+      const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
+      return [
+        ...items.slice(0, -1),
+        {
+          ...last,
+          ...incoming,
+          id: last.id,
+          text: collapseRepeatedAssistantText(nextText),
+          timestamp: incoming.timestamp,
+        },
+      ];
+    }
+
+    const hasBoundary = hasTimelineBoundaryBetween(last.timestamp, incoming.timestamp, boundaryTimes);
+    if (hasBoundary && incoming.text.startsWith(last.text)) {
+      const deltaText = incoming.text.slice(last.text.length);
+      return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
+    }
   }
 
   if (last.role === "system" && incoming.role === "system" && last.text === incoming.text) {
@@ -192,4 +261,79 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   return [...items, incoming];
+}
+
+export type MergeMessageHistoryOptions = {
+  mode?: "append" | "prepend";
+};
+
+export function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[], options: MergeMessageHistoryOptions = {}) {
+  const merged = [...current];
+  const source = options.mode === "prepend" ? [...incoming].reverse() : incoming;
+
+  for (const message of source) {
+    const index = merged.findIndex((item) => item.id === message.id);
+    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
+    const mergeIndex = index === -1 ? equivalentIndex : index;
+    if (mergeIndex === -1) {
+      if (options.mode === "prepend") {
+        merged.unshift(message);
+      } else {
+        merged.push(message);
+      }
+      continue;
+    }
+
+    merged[mergeIndex] = {
+      ...merged[mergeIndex],
+      ...message,
+      text: merged[mergeIndex]!.text === message.text || merged[mergeIndex]!.text.endsWith(message.text) ? merged[mergeIndex]!.text : `${merged[mergeIndex]!.text}${message.text}`,
+      timestamp: merged[mergeIndex]!.timestamp,
+    };
+  }
+
+  return merged;
+}
+
+function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
+  if (left.role !== right.role || left.text !== right.text) {
+    return false;
+  }
+  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return Number.isFinite(delta) && delta < 10_000;
+}
+
+function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
+  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+}
+
+function isRuntimeGeneratedMessageId(id: string) {
+  return /-msg-\d+$/u.test(id);
+}
+
+function hasTimelineBoundaryBetween(leftTimestamp: string, rightTimestamp: string, boundaryTimes: number[]) {
+  const leftTime = Date.parse(leftTimestamp);
+  const rightTime = Date.parse(rightTimestamp);
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
+    return false;
+  }
+  const minTime = Math.min(leftTime, rightTime);
+  const maxTime = Math.max(leftTime, rightTime);
+  return boundaryTimes.some((boundaryTime) => boundaryTime > minTime && boundaryTime <= maxTime);
+}
+
+function collapseRepeatedAssistantText(text: string) {
+  const firstLine = text.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine || firstLine.length < 8) {
+    return text;
+  }
+
+  const repeatIndex = text.indexOf(firstLine, firstLine.length);
+  if (repeatIndex === -1) {
+    return text;
+  }
+
+  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
+  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  return text.slice(0, cutIndex).trimEnd();
 }

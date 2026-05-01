@@ -27,6 +27,7 @@ export type HelmHandlerContext = {
   emit: (socket: WebSocket, payload: HelmToClient) => void;
   broadcastAuthenticated: (payload: HelmToClient) => void;
   logInfo: (message: string) => void;
+  logDebug: (message: string) => void;
   logError: (message: string) => void;
 
   getHelms: () => HelmSummary[];
@@ -66,6 +67,7 @@ export type HelmHandlerContext = {
   migrateStoredSessionSummary: (summary: SessionSummary) => SessionSummary;
   buildResumeInfo: (summary: SessionSummary, agent: AcpAgentProvider | undefined) => NonNullable<SessionSummary["resume"]>;
   persistRuntimeDescriptor: (summary: SessionSummary, agent: AcpAgentProvider | undefined, capabilities?: StoredSessionRuntimeDescriptor["capabilities"]) => void;
+  refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
   updateSessionSummary: (sessionId: string, mutate: (summary: SessionSummary) => SessionSummary) => SessionSummary | undefined;
   persistSessionMessage: (sessionId: string, message: AgentMessage) => void;
   publishDiffUpdate: (sessionId: string, files: FileDiffSummary[]) => Promise<void>;

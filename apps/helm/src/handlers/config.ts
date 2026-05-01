@@ -316,10 +316,11 @@ export async function refreshProjectGitBranches(projects: ProjectSummary[], work
 
 
 const LOCAL_ACP_DISCOVERY_CANDIDATES: AcpAgentProvider[] = [
+  { id: "claude-acp", name: "Claude Agent", command: "claude-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install the Claude ACP adapter used by Zed (for example claude-acp / @zed-industries/claude-agent-acp) and make it available on PATH." },
   { id: "claude-agent-acp", name: "Claude Agent ACP", command: "claude-agent-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install claude-agent-acp and make it available on PATH." },
   { id: "cline", name: "Cline", command: "cline", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install cline and make it available on PATH." },
   { id: "gemini", name: "Gemini", command: "gemini", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install gemini and make it available on PATH." },
-  { id: "openclaw", name: "OpenClaw", command: "openclaw", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install openclaw and make it available on PATH." },
+  { id: "openclaw", name: "OpenClaw", command: "openclaw", args: ["acp"], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install openclaw and ensure `openclaw acp` works. For Gateway auth, configure --url/--token-file/--session in args; do not paste tokens into Deck." },
   { id: "droid", name: "Droid", command: "droid", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install droid and make it available on PATH." },
   { id: "hermes", name: "Hermes", command: "hermes", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install hermes and make it available on PATH." },
   { id: "codex-acp", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install codex-acp and make it available on PATH." },

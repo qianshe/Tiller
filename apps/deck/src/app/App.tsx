@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type FormEvent, type UIEvent as ReactUIEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import "highlight.js/styles/github-dark.css";
 import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
@@ -9,6 +9,8 @@ import type {
   AcpAgentProvider,
   AcpModelOption,
   AgentMessage,
+  AgentPromptContent,
+  AgentPromptImageContent,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -29,11 +31,12 @@ import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
 import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitle, toggleExpandedIdSet } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
-import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "../features/logbook/timeline";
+import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
+import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -49,9 +52,12 @@ const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
-const DEFAULT_HISTORY_PAGE_LIMIT = 50;
+const DEFAULT_SESSION_PAGE_LIMIT = 25;
+const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
+const COLLAPSED_MESSAGE_LINE_LIMIT = 10;
+const COLLAPSED_MESSAGE_CHAR_LIMIT = 600;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -206,28 +212,6 @@ function agentModelOptionsKey(providerId: string, workspaceId: string) {
 
 function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
   return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
-}
-
-function inferProjectFromText(text: string, projects: ProjectSummary[]) {
-  const scored = projects
-    .map((project) => {
-      const name = project.name.toLowerCase();
-      const path = project.path?.toLowerCase().replaceAll("\\", "/");
-      const score =
-        (path && text.includes(path) ? 4 : 0) +
-        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
-      return { project, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score);
-  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
-    return null;
-  }
-  return scored[0].project;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function readSessionTitles(): Record<string, string> {
@@ -696,9 +680,14 @@ export function App() {
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
+  const pendingPromptContentRef = useRef<AgentPromptContent[] | undefined>(undefined);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
+  const preserveChatScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const stickChatToBottomRef = useRef(true);
+  const lastAutoScrollSessionIdRef = useRef<string | null>(null);
+  const pendingSessionScrollToBottomRef = useRef<string | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -731,12 +720,16 @@ export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>(missionVisualFixture?.projects ?? []);
   const [agents, setAgents] = useState<AcpAgentProvider[]>(missionVisualFixture?.agents ?? []);
   const [sessions, setSessions] = useState<SessionSummary[]>(missionVisualFixture?.sessions ?? []);
+  const [sessionHistoryState, setSessionHistoryState] = useState<{ nextCursor?: string; hasMore: boolean; loading: boolean }>({ hasMore: false, loading: false });
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(() => new Set());
+  const [sessionOpenScrollTick, setSessionOpenScrollTick] = useState(0);
   const [messageHistoryState, setMessageHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
+  const toolCallsRef = useRef<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({});
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(() => readSessionTitles());
@@ -748,6 +741,8 @@ export function App() {
   const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>([]);
+  const [imagePasteNotice, setImagePasteNotice] = useState("");
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
   const [promptEnhancerModels, setPromptEnhancerModels] = useState<PromptEnhancerModelOption[]>([]);
   const [promptEnhancerModelFilter, setPromptEnhancerModelFilter] = useState("");
@@ -836,6 +831,10 @@ export function App() {
   const copy = UI_COPY[locale];
 
   useEffect(() => {
+    toolCallsRef.current = toolCalls;
+  }, [toolCalls]);
+
+  useEffect(() => {
     writeSessionTitles(sessionTitles);
   }, [sessionTitles]);
 
@@ -843,6 +842,16 @@ export function App() {
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
   );
+  const activeSessionMessages = activeSession ? messages[activeSession.id] ?? [] : [];
+  const activeConversationUpdateKey = useMemo(() => {
+    const lastMessage = activeSessionMessages.at(-1);
+    return [
+      activeSessionId ?? "",
+      activeSessionMessages.length,
+      lastMessage?.timestamp ?? "",
+      lastMessage?.text.length ?? 0,
+    ].join("|");
+  }, [activeSessionId, activeSessionMessages]);
   const draftProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -890,28 +899,18 @@ export function App() {
     }
     return agents.filter((agent) => allowedAgentIds.includes(agent.id));
   }, [agents, draftProject?.allowedAgentIds]);
-  function resolveSessionProjectId(session: SessionSummary) {
-    const evidenceText = (messages[session.id] ?? []).map((message) => message.text).join("\n").toLowerCase();
-    const evidenceProject = evidenceText ? inferProjectFromText(evidenceText, projects) : null;
-    if (evidenceProject) {
-      return evidenceProject.id;
-    }
-    const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
-    return workspaceProject?.id ?? session.projectId;
-  }
-
   const projectSessions = useMemo(
-    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session) === selectedProjectId),
-    [messages, projects, selectedProjectId, sessions],
+    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session, projects) === selectedProjectId),
+    [projects, selectedProjectId, sessions],
   );
   const sessionCountsByProject = useMemo(
     () => sessions.reduce<Record<string, number>>((counts, session) => {
-      const projectId = resolveSessionProjectId(session);
+      const projectId = resolveSessionProjectId(session, projects);
       return { ...counts, [projectId]: (counts[projectId] ?? 0) + 1 };
     }, {}),
-    [messages, projects, sessions],
+    [projects, sessions],
   );
-  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession) : null;
+  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession, projects) : null;
   const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
@@ -978,22 +977,7 @@ export function App() {
   }
 
   function toggleMissionProjectNode(projectId: string) {
-    const project = projects.find((item) => item.id === projectId);
-    if (project) {
-      setSelectedMissionHelmId(project.helmId);
-      setSelectedProjectId(project.id);
-      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
-      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
-    }
-    setExpandedMissionProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
+    setExpandedMissionProjectIds((current) => toggleExpandedIdSet(current, projectId));
   }
 
   function selectDraftWorkspace(workspaceId: string) {
@@ -1006,12 +990,20 @@ export function App() {
     setAgentPickerOpen(false);
   }
 
+  function requestChatScrollToBottom(sessionId: string | null) {
+    pendingSessionScrollToBottomRef.current = sessionId;
+    stickChatToBottomRef.current = true;
+    setSessionOpenScrollTick((current) => current + 1);
+  }
+
   function selectMissionHelm(helmId: string) {
     setSelectedMissionHelmId(helmId);
     setExpandedMissionHelmIds((current) => new Set([...current, helmId]));
     const nextProject = projects.find((project) => project.helmId === helmId) ?? null;
+    const nextSessionId = nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null;
+    requestChatScrollToBottom(nextSessionId);
     setSelectedProjectId(nextProject?.id ?? null);
-    setActiveSessionId(nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null);
+    setActiveSessionId(nextSessionId);
   }
 
   function selectProject(projectId: string) {
@@ -1024,12 +1016,11 @@ export function App() {
       setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
     setSelectedProjectId(projectId);
-    setActiveSessionId((current) => {
-      if (current && sessions.some((session) => session.id === current && session.projectId === projectId)) {
-        return current;
-      }
-      return sessions.find((session) => session.projectId === projectId)?.id ?? null;
-    });
+    const nextSessionId = activeSessionId && sessions.some((session) => session.id === activeSessionId && session.projectId === projectId)
+      ? activeSessionId
+      : sessions.find((session) => session.projectId === projectId)?.id ?? null;
+    requestChatScrollToBottom(nextSessionId);
+    setActiveSessionId(nextSessionId);
   }
 
   function openSession(sessionId: string) {
@@ -1039,10 +1030,11 @@ export function App() {
     }
 
     setSelectedMissionHelmId(session.helmId);
-    const projectId = resolveSessionProjectId(session);
+    const projectId = resolveSessionProjectId(session, projects);
     setSelectedProjectId(projectId);
     setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
     setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+    requestChatScrollToBottom(sessionId);
     setActiveSessionId(sessionId);
   }
 
@@ -1147,7 +1139,7 @@ export function App() {
     if (!activeSession || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
-    const projectId = resolveSessionProjectId(activeSession);
+    const projectId = resolveSessionProjectId(activeSession, projects);
     const key = projectFilesKey(projectId, activeSession.workspaceId);
     setProjectFilesByScope((current) => ({
       ...current,
@@ -1215,9 +1207,28 @@ export function App() {
       return;
     }
     requestAnimationFrame(() => {
+      const preserve = preserveChatScrollRef.current;
+      if (preserve) {
+        chatMain.scrollTop = chatMain.scrollHeight - preserve.scrollHeight + preserve.scrollTop;
+        preserveChatScrollRef.current = null;
+        return;
+      }
+
+      const sessionChanged = lastAutoScrollSessionIdRef.current !== activeSessionId;
+      const shouldForceSessionBottom = Boolean(activeSessionId && pendingSessionScrollToBottomRef.current === activeSessionId);
+      lastAutoScrollSessionIdRef.current = activeSessionId;
+      if (!sessionChanged && !shouldForceSessionBottom && !stickChatToBottomRef.current) {
+        return;
+      }
       chatMain.scrollTop = chatMain.scrollHeight;
+      requestAnimationFrame(() => {
+        chatMain.scrollTop = chatMain.scrollHeight;
+      });
+      if (shouldForceSessionBottom && activeSessionId && activeSessionMessages.length > 0 && !messageHistoryState[activeSessionId]?.loading) {
+        pendingSessionScrollToBottomRef.current = null;
+      }
     });
-  }, [activeView, activeSessionId, activeSession ? messages[activeSession.id]?.length : 0]);
+  }, [activeConversationUpdateKey, activeView, activeSessionId, activeSessionMessages.length, messageHistoryState, sessionOpenScrollTick]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -1230,7 +1241,7 @@ export function App() {
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.artifacts.get",
@@ -1272,12 +1283,25 @@ export function App() {
     }
 
     const textarea = missionPromptRef.current;
-    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    let maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    const draftForm = textarea.closest<HTMLFormElement>(".mission-draft-chat .mission-order-editor");
+
+    if (draftForm) {
+      const formStyles = window.getComputedStyle(draftForm);
+      const rowGap = Number.parseFloat(formStyles.rowGap || formStyles.gap || "0") || 0;
+      const visibleSiblings = Array.from(draftForm.children).filter(
+        (element): element is HTMLElement => element instanceof HTMLElement && element !== textarea && window.getComputedStyle(element).display !== "none",
+      );
+      const visibleSiblingHeight = visibleSiblings.reduce((total, element) => total + element.getBoundingClientRect().height, 0);
+      const availableDraftHeight = Math.floor(draftForm.clientHeight - visibleSiblingHeight - rowGap * visibleSiblings.length);
+      maxHeight = Math.max(96, Math.min(maxHeight, availableDraftHeight));
+    }
+
     textarea.style.height = "auto";
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [activeView, prompt]);
+  }, [activeSessionId, activeView, imagePasteNotice, prompt, promptImages.length]);
 
   useEffect(() => {
     if (!promptEnhancerModelPickerOpen) {
@@ -1556,7 +1580,8 @@ export function App() {
     dispatch(socket, { type: "project.list", requestId: nextRequestId(requestCounter) });
     dispatch(socket, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
     dispatch(socket, { type: "agent.list", requestId: nextRequestId(requestCounter) });
-    dispatch(socket, { type: "session.list", requestId: nextRequestId(requestCounter) });
+    setSessionHistoryState({ hasMore: false, loading: true });
+    dispatch(socket, { type: "session.list", requestId: nextRequestId(requestCounter), limit: DEFAULT_SESSION_PAGE_LIMIT });
     dispatch(socket, { type: "device.list", requestId: nextRequestId(requestCounter) });
   }
 
@@ -1574,6 +1599,17 @@ export function App() {
         ...patch,
       },
     }));
+  }
+
+  function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
+    setToolCalls((current) => {
+      const next = {
+        ...current,
+        [sessionId]: mergeToolCallHistory(current[sessionId] ?? [], incoming),
+      };
+      toolCallsRef.current = next;
+      return next;
+    });
   }
 
   function connectHelmSocket(profile: DaemonProfile) {
@@ -1642,6 +1678,7 @@ export function App() {
       setMessages({});
       setPermissionRequests({});
       setOutputs({});
+      toolCallsRef.current = {};
       setToolCalls({});
       setDiffs({});
       setSessionConfigOptions({});
@@ -1932,15 +1969,19 @@ export function App() {
           setActiveSessionId(payload.session.id);
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
+            const pendingContent = pendingPromptContentRef.current;
+            const pendingImages = pendingContent?.filter((item): item is AgentPromptImageContent => item.type === "image") ?? [];
             pendingPromptRef.current = null;
+            pendingPromptContentRef.current = undefined;
             assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
             const clientMessageId = createClientUserMessageId(payload.session.id);
-            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId);
+            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId, pendingImages);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
               text: pendingPrompt,
+              content: pendingContent,
               clientMessageId,
             });
           }
@@ -1980,27 +2021,33 @@ export function App() {
         );
         return;
       case "session.list.result": {
-        const nextStatuses = createSessionStatusMap(payload.sessions);
-        updateHelmInventory(sourceHelmKey, { sessions: payload.sessions, statuses: nextStatuses });
+        const nextSessions = payload.before ? mergeSessionSummaries(sessions, payload.sessions) : payload.sessions;
+        const nextStatuses = createSessionStatusMap(nextSessions);
+        updateHelmInventory(sourceHelmKey, { sessions: nextSessions, statuses: nextStatuses });
         if (sourceIsCurrentHelm) {
-          setSessions(payload.sessions);
+          setSessions(nextSessions);
+          setSessionHistoryState({ nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false });
           setStatuses(nextStatuses);
-          setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
-          setMessageHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
-          setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
-          setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
-          setToolCalls((current) => pruneSessionScopedMap(current, payload.sessions));
-          setActivityHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
-          setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
-          setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
-          setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
+          setMessages((current) => pruneSessionScopedMap(current, nextSessions));
+          setMessageHistoryState((current) => pruneSessionScopedMap(current, nextSessions));
+          setPermissionRequests((current) => pruneSessionScopedMap(current, nextSessions));
+          setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
+          setToolCalls((current) => {
+            const next = pruneSessionScopedMap(current, nextSessions);
+            toolCallsRef.current = next;
+            return next;
+          });
+          setActivityHistoryState((current) => pruneSessionScopedMap(current, nextSessions));
+          setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
+          setSessionConfigOptions((current) => pruneSessionScopedMap(current, nextSessions));
+          setActiveSessionId((current) => resolveActiveSessionId(current, nextSessions));
         }
         return;
       }
 case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
-          [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+          [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, { mode: payload.before ? "prepend" : "append" }),
         }));
         setMessageHistoryState((current) => ({
           ...current,
@@ -2012,13 +2059,10 @@ case "session.messages.list.result":
           ...current,
           [payload.sessionId]: mergeCommandHistory(current[payload.sessionId] ?? [], payload.outputs),
         }));
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [
-            ...payload.outputs.map(commandChunkToToolCall),
-            ...(payload.toolCalls ?? []),
-          ]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [
+          ...payload.outputs.map(commandChunkToToolCall),
+          ...(payload.toolCalls ?? []),
+        ]);
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
         setActivityHistoryState((current) => ({
           ...current,
@@ -2066,6 +2110,11 @@ case "session.messages.list.result":
         setMessages((current) => removeSessionRecord(current, payload.result.sessionId));
         setPermissionRequests((current) => removeSessionRecord(current, payload.result.sessionId));
         setOutputs((current) => removeSessionRecord(current, payload.result.sessionId));
+        setToolCalls((current) => {
+          const next = removeSessionRecord(current, payload.result.sessionId);
+          toolCallsRef.current = next;
+          return next;
+        });
         setDiffs((current) => removeSessionRecord(current, payload.result.sessionId));
         setSessionConfigOptions((current) => removeSessionRecord(current, payload.result.sessionId));
         setActiveSessionId((current) => (current === payload.result.sessionId ? null : current));
@@ -2084,10 +2133,11 @@ case "session.messages.list.result":
           ),
         );
         return;
-      case "agent.message":
+      case "agent.message": {
+        const toolBoundaryTimes = (toolCallsRef.current[payload.sessionId] ?? []).map((call) => Date.parse(call.timestamp)).filter(Number.isFinite);
         setMessages((current) => ({
           ...current,
-          [payload.sessionId]: mergeAgentMessages(current[payload.sessionId] ?? [], payload.message),
+          [payload.sessionId]: mergeAgentMessages(current[payload.sessionId] ?? [], payload.message, toolBoundaryTimes),
         }));
         setSessions((current) =>
           current.map((session) =>
@@ -2102,6 +2152,7 @@ case "session.messages.list.result":
           ),
         );
         return;
+      }
       case "permission.request":
         setPermissionRequests((current) => ({ ...current, [payload.sessionId]: payload.permissionRequest }));
         return;
@@ -2113,16 +2164,10 @@ case "session.messages.list.result":
           ...current,
           [payload.sessionId]: [...(current[payload.sessionId] ?? []), payload.chunk],
         }));
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [commandChunkToToolCall(payload.chunk)]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [commandChunkToToolCall(payload.chunk)]);
         return;
       case "tool.call":
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [payload.toolCall]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [payload.toolCall]);
         return;
       case "diff.update":
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.files }));
@@ -2172,7 +2217,7 @@ case "session.messages.list.result":
     return `${sessionId}-user-${Date.now()}`;
   }
 
-  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId)) {
+  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId), attachments: AgentPromptImageContent[] = []) {
     setMessages((current) => ({
       ...current,
       [sessionId]: mergeMessageHistory(current[sessionId] ?? [], [
@@ -2181,6 +2226,7 @@ case "session.messages.list.result":
           role: "user",
           text,
           timestamp: new Date().toISOString(),
+          ...(attachments.length ? { attachments } : {}),
         },
       ]),
     }));
@@ -2215,7 +2261,17 @@ case "session.messages.list.result":
       });
   }
 
-  function createSession(initialPrompt?: string) {
+  function buildPromptContent(text: string, images: AgentPromptImageContent[]): AgentPromptContent[] | undefined {
+    if (!images.length) {
+      return undefined;
+    }
+    return [
+      ...(text ? [{ type: "text" as const, text }] : []),
+      ...images,
+    ];
+  }
+
+  function createSession(initialPrompt?: string, initialContent?: AgentPromptContent[]) {
     const projectId = selectedProjectId || projects[0]?.id;
     const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
@@ -2224,6 +2280,7 @@ case "session.messages.list.result":
     }
 
     pendingPromptRef.current = initialPrompt ?? null;
+    pendingPromptContentRef.current = initialContent;
     dispatch(socketRef.current, {
       type: "session.create",
       requestId: nextRequestId(requestCounter),
@@ -2477,27 +2534,51 @@ case "session.messages.list.result":
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || !socketRef.current) {
+    if ((!nextPrompt && !promptImages.length) || !socketRef.current) {
       return;
     }
+    const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
+    const content = buildPromptContent(nextPrompt, promptImages);
+    const imagesToSend = promptImages;
+    setImagePasteNotice("");
 
     if (!activeSessionId) {
-      if (createSession(nextPrompt)) {
+      if (createSession(messageText, content)) {
         setPrompt("");
+        setPromptImages([]);
       }
       return;
     }
 
     const clientMessageId = createClientUserMessageId(activeSessionId);
-    appendUserMessage(activeSessionId, nextPrompt, clientMessageId);
+    appendUserMessage(activeSessionId, messageText, clientMessageId, imagesToSend);
     setPrompt("");
+    setPromptImages([]);
     dispatch(socketRef.current, {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      text: nextPrompt,
+      text: messageText,
+      content,
       clientMessageId,
     });
+  }
+
+  async function handleMissionPromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const images = extractClipboardImageItems(event.clipboardData);
+    if (!images.length) {
+      return;
+    }
+
+    event.preventDefault();
+    setImagePasteNotice(formatClipboardImageNotice(images));
+    try {
+      const startIndex = promptImages.length;
+      const nextImages = await Promise.all(images.map((file, index) => createClipboardImageContent(file, startIndex + index)));
+      setPromptImages((current) => [...current, ...nextImages]);
+    } catch {
+      setImagePasteNotice("图片粘贴失败：无法读取剪贴板图片内容。");
+    }
   }
 
   function submitPromptFromKeyboard(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -2710,10 +2791,51 @@ case "session.messages.list.result":
     });
   }
 
+  function cancelSession(sessionId: string) {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法取消任务。" });
+      return;
+    }
+
+    dispatch(socket, {
+      type: "session.cancel",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+    });
+  }
+
+  function loadOlderSessions() {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || sessionHistoryState.loading || !sessionHistoryState.hasMore || !sessionHistoryState.nextCursor) {
+      return;
+    }
+    setSessionHistoryState((current) => ({ ...current, loading: true }));
+    dispatch(socketRef.current, {
+      type: "session.list",
+      requestId: nextRequestId(requestCounter),
+      limit: DEFAULT_SESSION_PAGE_LIMIT,
+      before: sessionHistoryState.nextCursor,
+    });
+  }
+
+  function handleMissionTreeScroll(event: ReactUIEvent<HTMLElement>) {
+    const target = event.currentTarget;
+    const distanceToBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
+    if (target.scrollTop <= 24 || distanceToBottom <= 24) {
+      loadOlderSessions();
+    }
+  }
+
   function loadOlderMessages(sessionId: string) {
     const historyState = messageHistoryState[sessionId];
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
       return;
+    }
+    if (activeSessionId === sessionId && chatMainRef.current) {
+      preserveChatScrollRef.current = {
+        scrollHeight: chatMainRef.current.scrollHeight,
+        scrollTop: chatMainRef.current.scrollTop,
+      };
     }
     setMessageHistoryState((current) => ({
       ...current,
@@ -2723,7 +2845,7 @@ case "session.messages.list.result":
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId,
-      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
       before: historyState.nextCursor,
     });
   }
@@ -2746,8 +2868,34 @@ case "session.messages.list.result":
     });
   }
 
-  function renderPlainMessages(items: AgentMessage[], sessionId?: string) {
-    if (!items.length) {
+  function handleChatMainScroll(event: ReactUIEvent<HTMLDivElement>) {
+    const target = event.currentTarget;
+    const distanceToBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
+    stickChatToBottomRef.current = distanceToBottom <= 96;
+
+    if (!activeSessionId || target.scrollTop > 32) {
+      return;
+    }
+
+    const messageState = messageHistoryState[activeSessionId];
+    const activityState = activityHistoryState[activeSessionId];
+    const canLoadMessages = Boolean(messageState?.hasMore && !messageState.loading && messageState.nextCursor);
+    const canLoadActivities = Boolean(activityState?.hasMore && !activityState.loading && activityState.nextCursor);
+    if (!canLoadMessages && !canLoadActivities) {
+      return;
+    }
+
+    preserveChatScrollRef.current = {
+      scrollHeight: target.scrollHeight,
+      scrollTop: target.scrollTop,
+    };
+    loadOlderMessages(activeSessionId);
+    loadOlderActivities(activeSessionId);
+  }
+
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string, assistantLabel: string = copy.role.assistant) {
+    const displayMessages = sortDisplayMessages(items);
+    if (!displayMessages.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
     const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
@@ -2759,14 +2907,48 @@ case "session.messages.list.result":
             {historyState.loading ? "加载中..." : "加载更早消息"}
           </button>
         ) : null}
-        {items.map((message) => (
-          <article key={message.id} className={`plain-message plain-${message.role}`}>
-            <span className="plain-message-role">{copy.role[message.role]}</span>
-            <MarkdownMessage text={message.text} />
-          </article>
-        ))}
+        {displayMessages.map((message) => {
+          const isExpanded = expandedMessageIds.has(message.id);
+          const isCollapsible = message.role === "user" && shouldCollapsePlainMessage(message.text);
+          const markdownClassName = isCollapsible && !isExpanded ? "plain-message-body plain-message-body-collapsed" : "plain-message-body";
+          return (
+            <article key={message.id} className={`plain-message plain-${message.role}`}>
+              <span className="plain-message-role">{resolveMessageRoleLabel(message, assistantLabel, copy.role)}</span>
+              <div className={markdownClassName}>
+                <MarkdownMessage text={message.text} />
+              </div>
+              {isCollapsible ? (
+                <button className="plain-message-expand" type="button" onClick={() => toggleExpandedMessage(message.id)}>
+                  {isExpanded ? "收起消息" : "展开完整消息"}
+                </button>
+              ) : null}
+              {message.attachments?.length ? (
+                <div className="mission-message-attachments">
+                  {message.attachments.map((image, index) => (
+                    <figure key={`${message.id}-image-${index}`} className="mission-message-image">
+                      <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
+                      <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     );
+  }
+
+  function toggleExpandedMessage(messageId: string) {
+    setExpandedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
   }
 
   function summarizeActivityText(text: string) {
@@ -3028,7 +3210,7 @@ case "session.messages.list.result":
   }
 
   function renderSessions() {
-    const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
+    const canSend = Boolean((prompt.trim() || promptImages.length) && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
     const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
     const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
     const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
@@ -3037,6 +3219,11 @@ case "session.messages.list.result":
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
     const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
     const activeToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
+    const activeSessionStatus = activeSession ? statuses[activeSession.id] ?? activeSession.status : "idle";
+    const pendingToolActivity = activeSession && isSessionExecutionPending(activeSessionStatus) ? resolvePendingToolActivity(activeToolCalls) : null;
+    const missionActivityLoading = activeSession && isSessionExecutionPending(activeSessionStatus)
+      ? pendingToolActivity ?? { title: "Agent 响应", status: activeSessionStatus }
+      : null;
     const activeDiffTree = buildMissionDiffTree(activeDiffs);
     const missionDiffCount = activeDiffs.length;
     const missionLogCount = activeToolCalls.length || activeOutputs.length;
@@ -3235,7 +3422,7 @@ case "session.messages.list.result":
           </div>
         ) : (
           <>
-            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
+            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务" onScroll={handleMissionTreeScroll}>
               {!effectiveSidebarCollapsed ? (
                 <button
                   type="button"
@@ -3290,7 +3477,7 @@ case "session.messages.list.result":
                               {helmProjects.map((project) => {
                               const selectedProject = project.id === selectedProjectId;
                               const projectExpanded = expandedMissionProjectIds.has(project.id);
-                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session) === project.id);
+                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session, projects) === project.id);
                               return (
                                 <div key={project.id} className="mission-tree-group" role="group">
                                   <div className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}>
@@ -3355,6 +3542,10 @@ case "session.messages.list.result":
                                             title="清理任务"
                                             onClick={(event) => {
                                               event.stopPropagation();
+                                              const sessionTitle = resolveDisplaySessionTitle(session);
+                                              if (!window.confirm(`确认清理任务「${sessionTitle}」？`)) {
+                                                return;
+                                              }
                                               cleanupSession(session.id);
                                             }}
                                           >
@@ -3377,6 +3568,7 @@ case "session.messages.list.result":
                       );
                     })}
                     {!missionHelms.length ? <div className="empty-state sidebar-empty">暂无 Helm。</div> : null}
+                    {sessionHistoryState.loading ? <div className="mission-tree-empty">正在加载更多任务...</div> : null}
                   </div>
                 </div>
               )}
@@ -3396,7 +3588,13 @@ case "session.messages.list.result":
             {!effectiveSidebarCollapsed ? renderMissionPaneResizer("sidebar", "调整任务列表宽度") : null}
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
-              <div className="chat-main" ref={chatMainRef}>
+              <div className="chat-main" ref={chatMainRef} onScroll={handleChatMainScroll}>
+                {cleanupFeedback ? (
+                  <div className="mission-session-feedback" role="status" aria-live="polite">
+                    <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p>
+                  </div>
+                ) : null}
+
                 {activeSession ? (
                   <>
                     {pendingPermission ? (
@@ -3414,7 +3612,16 @@ case "session.messages.list.result":
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(messages[activeSession.id] ?? [], activeSession.id)}
+                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSession.agentName)}
+                    {missionActivityLoading ? (
+                      <div className="mission-tool-loading" role="status" aria-live="polite">
+                        <span className="mission-tool-loading-dots" aria-hidden="true"><i /><i /><i /></span>
+                        <div>
+                          <strong>{pendingToolActivity ? "正在执行工具" : "Agent 正在处理"}</strong>
+                          <p className="compact muted">等待 {missionActivityLoading.title} 返回结果…</p>
+                        </div>
+                      </div>
+                    ) : null}
 
 
                   </>
@@ -3422,7 +3629,6 @@ case "session.messages.list.result":
                   <div className="chat-empty mission-draft-empty">
                     <p className="eyebrow">新任务</p>
                     <h2>{draftProject ? `${draftProject.name} · 新任务` : "先在左侧选择一个项目"}</h2>
-                    {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
               </div>
@@ -3468,8 +3674,15 @@ case "session.messages.list.result":
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     onKeyDown={submitPromptFromKeyboard}
+                    onPaste={handleMissionPromptPaste}
                     placeholder={draftPromptPlaceholder}
                   />
+                  {imagePasteNotice ? <p className="subtle compact mission-composer-notice">{imagePasteNotice}</p> : null}
+                  {promptImages.length ? (
+                    <div className="mission-composer-attachments" aria-label="待发送图片">
+                      {promptImages.map((image, index) => <span key={`${image.uri ?? image.name}-${index}`}>{image.name ?? `粘贴图片 ${index + 1}`}</span>)}
+                    </div>
+                  ) : null}
                   <div className="mission-composer-sidecar">
                     <div className="mission-composer-tools" aria-hidden="true">
                       <span>＋</span>
@@ -3603,6 +3816,9 @@ case "session.messages.list.result":
                       ) : null}
                     </div>
                     <div className="mission-composer-actions">
+                      {activeSession && isSessionExecutionPending(activeSessionStatus) ? (
+                        <button className="secondary composer-icon-button" type="button" onClick={() => cancelSession(activeSession.id)} aria-label={copy.cancelSession} title={copy.cancelSession}>■</button>
+                      ) : null}
                       {deckPreferences.promptEnhancer.enabled ? (
                         <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">✦</button>
                       ) : null}
@@ -4413,58 +4629,34 @@ function resolveCleanupFeedback(result: Extract<HelmToClient, { type: "session.c
   return { tone: "info", message: result.message };
 }
 
-function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
-  const last = items.at(-1);
-  if (!last) {
-    return [incoming];
-  }
-
-  if (last.role === incoming.role && last.role !== "system") {
-    return [
-      ...items.slice(0, -1),
-      {
-        ...last,
-        text: `${last.text}${incoming.text}`,
-        timestamp: incoming.timestamp,
-      },
-    ];
-  }
-
-  if (last.role === "system" && incoming.role === "system" && last.text === incoming.text) {
-    return items;
-  }
-
-  return [...items, incoming];
+function isSessionExecutionPending(status: SessionStatus) {
+  return status === "starting" || status === "running" || status === "waiting_for_permission";
 }
 
-function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) {
-  const merged = [...current];
-  for (const message of incoming) {
-    const index = merged.findIndex((item) => item.id === message.id);
-    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
-    if (index === -1 && equivalentIndex === -1) {
-      merged.push(message);
-      continue;
+function sortDisplayMessages(items: AgentMessage[]) {
+  return items;
+}
+
+function shouldCollapsePlainMessage(text: string) {
+  const lineCount = text.split(/\r?\n/).length;
+  return lineCount > COLLAPSED_MESSAGE_LINE_LIMIT || text.length > COLLAPSED_MESSAGE_CHAR_LIMIT;
+}
+
+function resolveMessageRoleLabel(message: AgentMessage, assistantLabel: string, roleLabels: Record<AgentMessage["role"], string>) {
+  return message.role === "assistant" ? assistantLabel : roleLabels[message.role];
+}
+
+function mergeSessionSummaries(current: SessionSummary[], incoming: SessionSummary[]) {
+  const byId = new Map(current.map((session) => [session.id, session] as const));
+  incoming.forEach((session) => byId.set(session.id, session));
+  return Array.from(byId.values()).sort((left, right) => {
+    const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    if (timeDelta !== 0) {
+      return timeDelta;
     }
-
-    const mergeIndex = index === -1 ? equivalentIndex : index;
-    merged[mergeIndex] = {
-      ...merged[mergeIndex],
-      ...message,
-      text: merged[mergeIndex].text === message.text || merged[mergeIndex].text.endsWith(message.text) ? merged[mergeIndex].text : `${merged[mergeIndex].text}${message.text}`,
-      timestamp: merged[mergeIndex].timestamp,
-    };
-  }
-
-  return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-}
-
-function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
-  if (left.role !== right.role || left.text !== right.text) {
-    return false;
-  }
-  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
-  return Number.isFinite(delta) && delta < 10_000;
+    const createdDelta = right.createdAt.localeCompare(left.createdAt);
+    return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
+  });
 }
 
 function mergeCommandHistory(current: CommandChunk[], incoming: CommandChunk[]) {
