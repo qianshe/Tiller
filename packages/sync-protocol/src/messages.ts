@@ -113,6 +113,8 @@ export type ClientToHelm =
   | {
       type: "session.list";
       requestId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.messages.list";
@@ -299,6 +301,9 @@ export type HelmToClient =
       type: "session.list.result";
       requestId: string;
       sessions: SessionSummary[];
+      nextCursor?: string;
+      hasMore?: boolean;
+      before?: string;
     }
   | {
       type: "session.messages.list.result";

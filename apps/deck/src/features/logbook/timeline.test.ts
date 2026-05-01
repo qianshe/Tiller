@@ -116,6 +116,55 @@ test("groupToolCalls extracts skill names from terminal titles without input", (
   assert.equal(grouped[0]?.title, "Skill: openai-docs");
 });
 
+test("groupToolCalls recognizes OpenCode skill tools from tool stdout payloads", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "tool-opencode-skill",
+      kind: "tool",
+      title: "Tool: frontend-design",
+      status: "completed",
+      output: JSON.stringify({ output: "## Skill frontend-design\n\n**Base directory:** C:/Users/qjq/.claude/skills/frontend-design" }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: frontend-design");
+});
+
+test("groupToolCalls recognizes OpenCode skill tools from plain stdout payloads", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "tool-opencode-plain-skill",
+      kind: "tool",
+      title: "skill",
+      status: "completed",
+      output: "Skill: webapp-testing\nloaded",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: webapp-testing");
+});
+
+test("groupToolCalls does not classify Codex terminal output as a skill without a SKILL.md command", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "tool-codex-shell-output",
+      kind: "terminal",
+      title: "echo docs",
+      status: "completed",
+      input: JSON.stringify({ command: "echo docs" }),
+      output: "## Skill frontend-design\nthis is just stdout",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "echo docs");
+});
+
 test("groupToolCalls keeps the first timestamp for timeline placement", () => {
   const grouped = groupToolCalls([
     { id: "tool-1", kind: "tool", title: "search", status: "pending", commandId: "cmd", timestamp: "2026-04-30T13:22:46.627Z", updatedAt: "2026-04-30T13:22:46.627Z" },
@@ -154,6 +203,35 @@ test("coalesceDisplayMessages collapses repeated assistant snapshots", () => {
   assert.equal(timeline[0]?.kind, "message");
   if (timeline[0]?.kind === "message") {
     assert.equal(timeline[0].message.text, finalAnswer);
+  }
+});
+
+test("buildConversationTimeline keeps assistant messages split around inserted tool calls", () => {
+  const timeline = buildConversationTimeline(
+    [
+      { id: "msg-before-tool", role: "assistant", text: "先说明", timestamp: "2026-04-28T10:00:01.000Z" },
+      { id: "msg-after-tool", role: "assistant", text: "先说明再继续", timestamp: "2026-04-28T10:00:03.000Z" },
+    ],
+    [],
+    [
+      {
+        id: "tool-between-messages",
+        kind: "tool",
+        title: "Skill: frontend-design",
+        status: "completed",
+        timestamp: "2026-04-28T10:00:02.000Z",
+        updatedAt: "2026-04-28T10:00:02.000Z",
+      },
+    ],
+  );
+
+  assert.equal(timeline.length, 3);
+  assert.equal(timeline[0]?.kind, "message");
+  assert.equal(timeline[1]?.kind, "tool");
+  assert.equal(timeline[2]?.kind, "message");
+  if (timeline[0]?.kind === "message" && timeline[2]?.kind === "message") {
+    assert.equal(timeline[0].message.text, "先说明");
+    assert.equal(timeline[2].message.text, "再继续");
   }
 });
 

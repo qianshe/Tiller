@@ -119,6 +119,34 @@ test("runtime user echo messages are ignored because prompts are already persist
   assert.deepEqual(capture.broadcasts, []);
 });
 
+test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [{
+      id: "client-user-1",
+      role: "user",
+      text: "你深度检查一下前端还有什么缺陷？",
+      timestamp: "2026-04-30T00:00:01.000Z",
+    }],
+  } as HelmHandlerContext["sessionMessageStore"];
+
+  handleRuntimeEvent("session-1", {
+    type: "message",
+    message: {
+      id: "runtime-user-wrapper-1",
+      role: "user",
+      text: "[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\n你深度检查一下前端还有什么缺陷？",
+      timestamp: "2026-04-30T00:00:03.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  assert.deepEqual(logs, []);
+  assert.deepEqual(capture.persisted, []);
+  assert.deepEqual(capture.broadcasts, []);
+});
+
 test("runtime tool-call events are persisted and broadcast without noisy info logs", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type FormEvent, type UIEvent as ReactUIEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import "highlight.js/styles/github-dark.css";
 import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
@@ -36,7 +36,7 @@ import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, w
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
 import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
-import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
+import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -52,6 +52,7 @@ const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
+const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_HISTORY_PAGE_LIMIT = 50;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
@@ -681,6 +682,7 @@ export function App() {
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
+  const preserveChatScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -713,12 +715,14 @@ export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>(missionVisualFixture?.projects ?? []);
   const [agents, setAgents] = useState<AcpAgentProvider[]>(missionVisualFixture?.agents ?? []);
   const [sessions, setSessions] = useState<SessionSummary[]>(missionVisualFixture?.sessions ?? []);
+  const [sessionHistoryState, setSessionHistoryState] = useState<{ nextCursor?: string; hasMore: boolean; loading: boolean }>({ hasMore: false, loading: false });
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
   const [messageHistoryState, setMessageHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
+  const toolCallsRef = useRef<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
   const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({});
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(() => readSessionTitles());
@@ -820,6 +824,10 @@ export function App() {
   const copy = UI_COPY[locale];
 
   useEffect(() => {
+    toolCallsRef.current = toolCalls;
+  }, [toolCalls]);
+
+  useEffect(() => {
     writeSessionTitles(sessionTitles);
   }, [sessionTitles]);
 
@@ -827,6 +835,25 @@ export function App() {
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
   );
+  const activeSessionMessages = activeSession ? messages[activeSession.id] ?? [] : [];
+  const activeSessionToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
+  const activeSessionOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
+  const activeConversationUpdateKey = useMemo(() => {
+    const lastMessage = activeSessionMessages.at(-1);
+    const lastToolCall = activeSessionToolCalls.at(-1);
+    const lastOutput = activeSessionOutputs.at(-1);
+    return [
+      activeSessionId ?? "",
+      activeSessionMessages.length,
+      lastMessage?.timestamp ?? "",
+      lastMessage?.text.length ?? 0,
+      activeSessionToolCalls.length,
+      lastToolCall?.updatedAt ?? lastToolCall?.timestamp ?? "",
+      activeSessionOutputs.length,
+      lastOutput?.timestamp ?? "",
+      lastOutput?.text.length ?? 0,
+    ].join("|");
+  }, [activeSessionId, activeSessionMessages, activeSessionOutputs, activeSessionToolCalls]);
   const draftProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -1174,9 +1201,15 @@ export function App() {
       return;
     }
     requestAnimationFrame(() => {
+      const preserve = preserveChatScrollRef.current;
+      if (preserve) {
+        chatMain.scrollTop = chatMain.scrollHeight - preserve.scrollHeight + preserve.scrollTop;
+        preserveChatScrollRef.current = null;
+        return;
+      }
       chatMain.scrollTop = chatMain.scrollHeight;
     });
-  }, [activeView, activeSessionId, activeSession ? messages[activeSession.id]?.length : 0]);
+  }, [activeConversationUpdateKey, activeView, activeSessionId]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -1528,7 +1561,8 @@ export function App() {
     dispatch(socket, { type: "project.list", requestId: nextRequestId(requestCounter) });
     dispatch(socket, { type: "workspace.list", requestId: nextRequestId(requestCounter) });
     dispatch(socket, { type: "agent.list", requestId: nextRequestId(requestCounter) });
-    dispatch(socket, { type: "session.list", requestId: nextRequestId(requestCounter) });
+    setSessionHistoryState({ hasMore: false, loading: true });
+    dispatch(socket, { type: "session.list", requestId: nextRequestId(requestCounter), limit: DEFAULT_SESSION_PAGE_LIMIT });
     dispatch(socket, { type: "device.list", requestId: nextRequestId(requestCounter) });
   }
 
@@ -1546,6 +1580,17 @@ export function App() {
         ...patch,
       },
     }));
+  }
+
+  function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
+    setToolCalls((current) => {
+      const next = {
+        ...current,
+        [sessionId]: mergeToolCallHistory(current[sessionId] ?? [], incoming),
+      };
+      toolCallsRef.current = next;
+      return next;
+    });
   }
 
   function connectHelmSocket(profile: DaemonProfile) {
@@ -1614,6 +1659,7 @@ export function App() {
       setMessages({});
       setPermissionRequests({});
       setOutputs({});
+      toolCallsRef.current = {};
       setToolCalls({});
       setDiffs({});
       setSessionConfigOptions({});
@@ -1956,20 +2002,26 @@ export function App() {
         );
         return;
       case "session.list.result": {
-        const nextStatuses = createSessionStatusMap(payload.sessions);
-        updateHelmInventory(sourceHelmKey, { sessions: payload.sessions, statuses: nextStatuses });
+        const nextSessions = payload.before ? mergeSessionSummaries(sessions, payload.sessions) : payload.sessions;
+        const nextStatuses = createSessionStatusMap(nextSessions);
+        updateHelmInventory(sourceHelmKey, { sessions: nextSessions, statuses: nextStatuses });
         if (sourceIsCurrentHelm) {
-          setSessions(payload.sessions);
+          setSessions(nextSessions);
+          setSessionHistoryState({ nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false });
           setStatuses(nextStatuses);
-          setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
-          setMessageHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
-          setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
-          setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
-          setToolCalls((current) => pruneSessionScopedMap(current, payload.sessions));
-          setActivityHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
-          setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
-          setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
-          setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
+          setMessages((current) => pruneSessionScopedMap(current, nextSessions));
+          setMessageHistoryState((current) => pruneSessionScopedMap(current, nextSessions));
+          setPermissionRequests((current) => pruneSessionScopedMap(current, nextSessions));
+          setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
+          setToolCalls((current) => {
+            const next = pruneSessionScopedMap(current, nextSessions);
+            toolCallsRef.current = next;
+            return next;
+          });
+          setActivityHistoryState((current) => pruneSessionScopedMap(current, nextSessions));
+          setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
+          setSessionConfigOptions((current) => pruneSessionScopedMap(current, nextSessions));
+          setActiveSessionId((current) => resolveActiveSessionId(current, nextSessions));
         }
         return;
       }
@@ -1988,13 +2040,10 @@ case "session.messages.list.result":
           ...current,
           [payload.sessionId]: mergeCommandHistory(current[payload.sessionId] ?? [], payload.outputs),
         }));
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [
-            ...payload.outputs.map(commandChunkToToolCall),
-            ...(payload.toolCalls ?? []),
-          ]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [
+          ...payload.outputs.map(commandChunkToToolCall),
+          ...(payload.toolCalls ?? []),
+        ]);
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
         setActivityHistoryState((current) => ({
           ...current,
@@ -2042,6 +2091,11 @@ case "session.messages.list.result":
         setMessages((current) => removeSessionRecord(current, payload.result.sessionId));
         setPermissionRequests((current) => removeSessionRecord(current, payload.result.sessionId));
         setOutputs((current) => removeSessionRecord(current, payload.result.sessionId));
+        setToolCalls((current) => {
+          const next = removeSessionRecord(current, payload.result.sessionId);
+          toolCallsRef.current = next;
+          return next;
+        });
         setDiffs((current) => removeSessionRecord(current, payload.result.sessionId));
         setSessionConfigOptions((current) => removeSessionRecord(current, payload.result.sessionId));
         setActiveSessionId((current) => (current === payload.result.sessionId ? null : current));
@@ -2060,10 +2114,11 @@ case "session.messages.list.result":
           ),
         );
         return;
-      case "agent.message":
+      case "agent.message": {
+        const toolBoundaryTimes = (toolCallsRef.current[payload.sessionId] ?? []).map((call) => Date.parse(call.timestamp)).filter(Number.isFinite);
         setMessages((current) => ({
           ...current,
-          [payload.sessionId]: mergeAgentMessages(current[payload.sessionId] ?? [], payload.message),
+          [payload.sessionId]: mergeAgentMessages(current[payload.sessionId] ?? [], payload.message, toolBoundaryTimes),
         }));
         setSessions((current) =>
           current.map((session) =>
@@ -2078,6 +2133,7 @@ case "session.messages.list.result":
           ),
         );
         return;
+      }
       case "permission.request":
         setPermissionRequests((current) => ({ ...current, [payload.sessionId]: payload.permissionRequest }));
         return;
@@ -2089,16 +2145,10 @@ case "session.messages.list.result":
           ...current,
           [payload.sessionId]: [...(current[payload.sessionId] ?? []), payload.chunk],
         }));
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [commandChunkToToolCall(payload.chunk)]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [commandChunkToToolCall(payload.chunk)]);
         return;
       case "tool.call":
-        setToolCalls((current) => ({
-          ...current,
-          [payload.sessionId]: mergeToolCallHistory(current[payload.sessionId] ?? [], [payload.toolCall]),
-        }));
+        mergeSessionToolCalls(payload.sessionId, [payload.toolCall]);
         return;
       case "diff.update":
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.files }));
@@ -2722,10 +2772,37 @@ case "session.messages.list.result":
     });
   }
 
+  function loadOlderSessions() {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || sessionHistoryState.loading || !sessionHistoryState.hasMore || !sessionHistoryState.nextCursor) {
+      return;
+    }
+    setSessionHistoryState((current) => ({ ...current, loading: true }));
+    dispatch(socketRef.current, {
+      type: "session.list",
+      requestId: nextRequestId(requestCounter),
+      limit: DEFAULT_SESSION_PAGE_LIMIT,
+      before: sessionHistoryState.nextCursor,
+    });
+  }
+
+  function handleMissionTreeScroll(event: ReactUIEvent<HTMLElement>) {
+    const target = event.currentTarget;
+    const distanceToBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
+    if (target.scrollTop <= 24 || distanceToBottom <= 24) {
+      loadOlderSessions();
+    }
+  }
+
   function loadOlderMessages(sessionId: string) {
     const historyState = messageHistoryState[sessionId];
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
       return;
+    }
+    if (activeSessionId === sessionId && chatMainRef.current) {
+      preserveChatScrollRef.current = {
+        scrollHeight: chatMainRef.current.scrollHeight,
+        scrollTop: chatMainRef.current.scrollTop,
+      };
     }
     setMessageHistoryState((current) => ({
       ...current,
@@ -2758,8 +2835,17 @@ case "session.messages.list.result":
     });
   }
 
-  function renderPlainMessages(items: AgentMessage[], sessionId?: string) {
-    if (!items.length) {
+  function handleChatMainScroll(event: ReactUIEvent<HTMLDivElement>) {
+    if (!activeSessionId || event.currentTarget.scrollTop > 32) {
+      return;
+    }
+    loadOlderMessages(activeSessionId);
+    loadOlderActivities(activeSessionId);
+  }
+
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string, sessionToolCalls: AgentToolCall[] = [], commandChunks: CommandChunk[] = []) {
+    const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
+    if (!timelineItems.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
     const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
@@ -2771,22 +2857,41 @@ case "session.messages.list.result":
             {historyState.loading ? "加载中..." : "加载更早消息"}
           </button>
         ) : null}
-        {items.map((message) => (
-          <article key={message.id} className={`plain-message plain-${message.role}`}>
-            <span className="plain-message-role">{copy.role[message.role]}</span>
-            <MarkdownMessage text={message.text} />
-            {message.attachments?.length ? (
-              <div className="mission-message-attachments">
-                {message.attachments.map((image, index) => (
-                  <figure key={`${message.id}-image-${index}`} className="mission-message-image">
-                    <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
-                    <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
-                  </figure>
-                ))}
-              </div>
-            ) : null}
-          </article>
-        ))}
+        {timelineItems.map((timelineItem) => {
+          if (timelineItem.kind === "tool") {
+            const toolTone = resolveToolCallTone(timelineItem.toolKind, timelineItem.title);
+            const streamTone = timelineItem.streams.includes("stderr") ? "stderr" : "stdout";
+            return (
+              <details key={`tool-${timelineItem.id}`} className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}>
+                <summary className="tool-call-head">
+                  <span className="tool-call-icon" aria-hidden="true">{toolTone.icon}</span>
+                  <span className="tool-call-kind">{toolTone.label}</span>
+                  <strong>{timelineItem.title}</strong>
+                  <span className={`tool-call-stream tool-call-stream-${streamTone}`}>{streamTone}</span>
+                </summary>
+                {timelineItem.text.trim() ? <pre className="tool-call-output">{timelineItem.text}</pre> : null}
+              </details>
+            );
+          }
+
+          const message = timelineItem.message;
+          return (
+            <article key={message.id} className={`plain-message plain-${message.role}`}>
+              <span className="plain-message-role">{copy.role[message.role]}</span>
+              <MarkdownMessage text={message.text} />
+              {message.attachments?.length ? (
+                <div className="mission-message-attachments">
+                  {message.attachments.map((image, index) => (
+                    <figure key={`${message.id}-image-${index}`} className="mission-message-image">
+                      <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
+                      <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     );
   }
@@ -3262,7 +3367,7 @@ case "session.messages.list.result":
           </div>
         ) : (
           <>
-            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
+            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务" onScroll={handleMissionTreeScroll}>
               {!effectiveSidebarCollapsed ? (
                 <button
                   type="button"
@@ -3408,6 +3513,7 @@ case "session.messages.list.result":
                       );
                     })}
                     {!missionHelms.length ? <div className="empty-state sidebar-empty">暂无 Helm。</div> : null}
+                    {sessionHistoryState.loading ? <div className="mission-tree-empty">正在加载更多任务...</div> : null}
                   </div>
                 </div>
               )}
@@ -3427,7 +3533,7 @@ case "session.messages.list.result":
             {!effectiveSidebarCollapsed ? renderMissionPaneResizer("sidebar", "调整任务列表宽度") : null}
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
-              <div className="chat-main" ref={chatMainRef}>
+              <div className="chat-main" ref={chatMainRef} onScroll={handleChatMainScroll}>
                 {cleanupFeedback ? (
                   <div className="mission-session-feedback" role="status" aria-live="polite">
                     <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p>
@@ -3451,7 +3557,7 @@ case "session.messages.list.result":
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(messages[activeSession.id] ?? [], activeSession.id)}
+                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSessionToolCalls, activeSessionOutputs)}
                     {missionActivityLoading ? (
                       <div className="mission-tool-loading" role="status" aria-live="polite">
                         <span className="mission-tool-loading-dots" aria-hidden="true"><i /><i /><i /></span>
@@ -4469,46 +4575,17 @@ function isSessionExecutionPending(status: SessionStatus) {
   return status === "starting" || status === "running" || status === "waiting_for_permission";
 }
 
-function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage) {
-  const last = items.at(-1);
-  if (!last) {
-    return [incoming];
-  }
-
-  if (last.role === incoming.role && last.role !== "system") {
-    const isCumulativeSnapshot = incoming.text.startsWith(last.text);
-    const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
-    return [
-      ...items.slice(0, -1),
-      {
-        ...last,
-        text: collapseRepeatedAssistantText(nextText),
-        timestamp: incoming.timestamp,
-      },
-    ];
-  }
-
-  if (last.role === "system" && incoming.role === "system" && last.text === incoming.text) {
-    return items;
-  }
-
-  return [...items, incoming];
-}
-
-function collapseRepeatedAssistantText(text: string) {
-  const firstLine = text.split(/\r?\n/u)[0]?.trim();
-  if (!firstLine || firstLine.length < 8) {
-    return text;
-  }
-
-  const repeatIndex = text.indexOf(firstLine, firstLine.length);
-  if (repeatIndex === -1) {
-    return text;
-  }
-
-  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
-  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
-  return text.slice(0, cutIndex).trimEnd();
+function mergeSessionSummaries(current: SessionSummary[], incoming: SessionSummary[]) {
+  const byId = new Map(current.map((session) => [session.id, session] as const));
+  incoming.forEach((session) => byId.set(session.id, session));
+  return Array.from(byId.values()).sort((left, right) => {
+    const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    if (timeDelta !== 0) {
+      return timeDelta;
+    }
+    const createdDelta = right.createdAt.localeCompare(left.createdAt);
+    return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
+  });
 }
 
 function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) {
