@@ -104,6 +104,7 @@ projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const projectContextSummaryCache = new Map<string, string>();
+const openCodeHistoryRefreshes = new Map<string, number>();
 
 // --- Device pairing state ---
 let pairingCode: string | null = null;
@@ -405,6 +406,7 @@ function createHandlerContext(): HelmHandlerContext {
     migrateStoredSessionSummary,
     buildResumeInfo,
     persistRuntimeDescriptor,
+    refreshAuthoritativeSessionHistory,
     updateSessionSummary,
     persistSessionMessage,
     publishDiffUpdate,
@@ -605,7 +607,7 @@ async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpA
   try {
     const history = await loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
     if (!history) {
-      return;
+      return false;
     }
     if (history.messages.length) {
       sessionMessageStore.replace(sessionId, history.messages);
@@ -614,14 +616,41 @@ async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpA
       sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
     }
     logInfo(`[tiller-helm] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+    return true;
   } catch (error) {
     logError(`[tiller-helm] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+    return false;
+  }
+}
+
+async function refreshAuthoritativeSessionHistory(sessionId: string) {
+  const lastRefresh = openCodeHistoryRefreshes.get(sessionId);
+  if (lastRefresh && Date.now() - lastRefresh < 30_000) {
+    return;
+  }
+
+  const activeRecord = sessions.get(sessionId);
+  const summary = activeRecord?.summary ?? sessionStore.list().find((item) => item.id === sessionId);
+  if (!summary) {
+    return;
+  }
+  const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, agents);
+  const workspace = activeRecord?.workspace ?? workspaces.find((item) => item.id === summary.workspaceId);
+  const runtimeSessionId = activeRecord?.runtime.runtimeSessionId ?? summary.runtimeSessionId ?? sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
+  if (!agent || !workspace || !runtimeSessionId) {
+    return;
+  }
+
+  const refreshed = await importAuthoritativeOpenCodeHistory(sessionId, agent, runtimeSessionId, workspace.path);
+  if (refreshed) {
+    openCodeHistoryRefreshes.set(sessionId, Date.now());
   }
 }
 
 async function startSessionResume(sessionId: string) {
   const activeRecord = sessions.get(sessionId);
   if (activeRecord) {
+    await refreshAuthoritativeSessionHistory(sessionId);
     const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
     logInfo(`[tiller-helm] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
     return {

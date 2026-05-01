@@ -78,6 +78,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return true;
     }
     case "session.messages.list": {
+      await context.refreshAuthoritativeSessionHistory(payload.sessionId);
       const page = context.sessionMessageStore.listPage(payload.sessionId, {
         limit: payload.limit,
         before: payload.before,
@@ -93,6 +94,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return true;
     }
     case "session.artifacts.get": {
+      await context.refreshAuthoritativeSessionHistory(payload.sessionId);
       const artifacts = context.sessionArtifactStore.getPage(payload.sessionId, {
         limit: payload.limit,
         before: payload.before,

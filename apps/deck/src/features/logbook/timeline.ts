@@ -1,5 +1,15 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 
+export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
+  return items
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+      return timestampDelta === 0 ? left.index - right.index : timestampDelta;
+    })
+    .map((entry) => entry.message);
+}
+
 export type ConversationTimelineItem =
   | { kind: "message"; timestamp: string; message: AgentMessage }
   | ConversationToolCallItem;
@@ -224,21 +234,23 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   if (last.role === incoming.role && last.role !== "system") {
-    const hasBoundary = hasTimelineBoundaryBetween(last.timestamp, incoming.timestamp, boundaryTimes);
-    if (!hasBoundary) {
+    if (last.id === incoming.id || shouldMergeAssistantStreamChunk(last, incoming)) {
       const isCumulativeSnapshot = incoming.text.startsWith(last.text);
       const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
       return [
         ...items.slice(0, -1),
         {
           ...last,
+          ...incoming,
+          id: last.id,
           text: collapseRepeatedAssistantText(nextText),
           timestamp: incoming.timestamp,
         },
       ];
     }
 
-    if (incoming.text.startsWith(last.text)) {
+    const hasBoundary = hasTimelineBoundaryBetween(last.timestamp, incoming.timestamp, boundaryTimes);
+    if (hasBoundary && incoming.text.startsWith(last.text)) {
       const deltaText = incoming.text.slice(last.text.length);
       return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
     }
@@ -249,6 +261,14 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   return [...items, incoming];
+}
+
+function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
+  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+}
+
+function isRuntimeGeneratedMessageId(id: string) {
+  return /-msg-\d+$/u.test(id);
 }
 
 function hasTimelineBoundaryBetween(leftTimestamp: string, rightTimestamp: string, boundaryTimes: number[]) {

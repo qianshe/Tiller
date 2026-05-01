@@ -36,7 +36,7 @@ import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, w
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
 import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
-import { coalesceDisplayMessages, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
+import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity, sortAgentMessagesByTimeline } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -838,7 +838,6 @@ export function App() {
     [activeSessionId, sessions],
   );
   const activeSessionMessages = activeSession ? messages[activeSession.id] ?? [] : [];
-  const activeSessionToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
   const activeConversationUpdateKey = useMemo(() => {
     const lastMessage = activeSessionMessages.at(-1);
     return [
@@ -2860,8 +2859,8 @@ case "session.messages.list.result":
     loadOlderActivities(activeSessionId);
   }
 
-  function renderPlainMessages(items: AgentMessage[], sessionId?: string, sessionToolCalls: AgentToolCall[] = []) {
-    const displayMessages = coalesceDisplayMessages(items, sessionToolCalls.map((call) => call.timestamp));
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string, assistantLabel: string = copy.role.assistant) {
+    const displayMessages = sortDisplayMessages(items);
     if (!displayMessages.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
@@ -2876,7 +2875,7 @@ case "session.messages.list.result":
         ) : null}
         {displayMessages.map((message) => (
           <article key={message.id} className={`plain-message plain-${message.role}`}>
-            <span className="plain-message-role">{copy.role[message.role]}</span>
+            <span className="plain-message-role">{resolveMessageRoleLabel(message, assistantLabel, copy.role)}</span>
             <MarkdownMessage text={message.text} />
             {message.attachments?.length ? (
               <div className="mission-message-attachments">
@@ -3555,7 +3554,7 @@ case "session.messages.list.result":
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSessionToolCalls)}
+                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSession.agentName)}
                     {missionActivityLoading ? (
                       <div className="mission-tool-loading" role="status" aria-live="polite">
                         <span className="mission-tool-loading-dots" aria-hidden="true"><i /><i /><i /></span>
@@ -4571,6 +4570,14 @@ function resolveCleanupFeedback(result: Extract<HelmToClient, { type: "session.c
 
 function isSessionExecutionPending(status: SessionStatus) {
   return status === "starting" || status === "running" || status === "waiting_for_permission";
+}
+
+function sortDisplayMessages(items: AgentMessage[]) {
+  return sortAgentMessagesByTimeline(items);
+}
+
+function resolveMessageRoleLabel(message: AgentMessage, assistantLabel: string, roleLabels: Record<AgentMessage["role"], string>) {
+  return message.role === "assistant" ? assistantLabel : roleLabels[message.role];
 }
 
 function mergeSessionSummaries(current: SessionSummary[], incoming: SessionSummary[]) {

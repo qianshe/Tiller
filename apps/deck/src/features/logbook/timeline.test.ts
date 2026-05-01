@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
-import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeToolCallHistory, resolvePendingToolActivity } from "./timeline.js";
+import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity, sortAgentMessagesByTimeline } from "./timeline.js";
 
 const baseMessage: AgentMessage = {
   id: "msg-1",
@@ -9,6 +9,18 @@ const baseMessage: AgentMessage = {
   text: "Done",
   timestamp: "2026-04-28T10:00:02.000Z",
 };
+
+test("sortAgentMessagesByTimeline orders messages by timestamp and preserves source order for ties", () => {
+  const messages: AgentMessage[] = [
+    { ...baseMessage, id: "msg-c", text: "third", timestamp: "2026-04-28T10:00:02.000Z" },
+    { ...baseMessage, id: "msg-b", text: "first at tied timestamp", timestamp: "2026-04-28T10:00:01.000Z" },
+    { ...baseMessage, id: "msg-a", text: "second at tied timestamp", timestamp: "2026-04-28T10:00:01.000Z" },
+  ];
+
+  const sorted = sortAgentMessagesByTimeline(messages);
+
+  assert.deepEqual(sorted.map((message) => message.id), ["msg-b", "msg-a", "msg-c"]);
+});
 
 test("buildConversationTimeline interleaves messages and tool calls by timestamp", () => {
   const toolCall: AgentToolCall = {
@@ -196,7 +208,7 @@ test("coalesceDisplayMessages collapses repeated assistant snapshots", () => {
   const bridge = "我会按 `superpowers` 流程做最小定位与修改，并优先用 MCP 搜索/编辑，确保 typecheck 验证喵~";
   const timeline = buildConversationTimeline([
     { id: "msg-1", role: "assistant", text: finalAnswer, timestamp: "2026-04-28T10:00:01.000Z" },
-    { id: "msg-2", role: "assistant", text: `${finalAnswer}${bridge}${finalAnswer}`, timestamp: "2026-04-28T10:00:02.000Z" },
+    { id: "msg-1", role: "assistant", text: `${finalAnswer}${bridge}${finalAnswer}`, timestamp: "2026-04-28T10:00:02.000Z" },
   ], [], []);
 
   assert.equal(timeline.length, 1);
@@ -233,6 +245,40 @@ test("buildConversationTimeline keeps assistant messages split around inserted t
     assert.equal(timeline[0].message.text, "先说明");
     assert.equal(timeline[2].message.text, "再继续");
   }
+});
+
+test("mergeAgentMessages keeps consecutive user messages separate", () => {
+  const merged = mergeAgentMessages([
+    { id: "user-1", role: "user", text: "第一条", timestamp: "2026-04-28T10:00:01.000Z" },
+  ], { id: "user-2", role: "user", text: "第二条", timestamp: "2026-04-28T10:00:02.000Z" });
+
+  assert.deepEqual(merged.map((message) => message.text), ["第一条", "第二条"]);
+});
+
+test("mergeAgentMessages keeps distinct assistant messages separate", () => {
+  const merged = mergeAgentMessages([
+    { id: "assistant-1", role: "assistant", text: "第一段回复", timestamp: "2026-04-28T10:00:01.000Z" },
+  ], { id: "assistant-2", role: "assistant", text: "第二段回复", timestamp: "2026-04-28T10:00:02.000Z" });
+
+  assert.deepEqual(merged.map((message) => message.text), ["第一段回复", "第二段回复"]);
+});
+
+test("mergeAgentMessages merges chunks for the same assistant message id", () => {
+  const merged = mergeAgentMessages([
+    { id: "assistant-1", role: "assistant", text: "第一段", timestamp: "2026-04-28T10:00:01.000Z" },
+  ], { id: "assistant-1", role: "assistant", text: "回复", timestamp: "2026-04-28T10:00:02.000Z" });
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "第一段回复");
+});
+
+test("mergeAgentMessages merges runtime generated assistant chunks without shared ids", () => {
+  const merged = mergeAgentMessages([
+    { id: "session-1-msg-1000", role: "assistant", text: "流式", timestamp: "2026-04-28T10:00:01.000Z" },
+  ], { id: "session-1-msg-1001", role: "assistant", text: "回复", timestamp: "2026-04-28T10:00:02.000Z" });
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "流式回复");
 });
 
 test("resolvePendingToolActivity reports the latest running tool", () => {
