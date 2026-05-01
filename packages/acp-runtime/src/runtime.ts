@@ -431,7 +431,7 @@ export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace
     if (!sessionCapabilities.sessionList) {
       throw new Error("ACP agent does not advertise session/list capability.");
     }
-    const result = await sendRequest<any>(buildSessionListRequest("tiller-list-sessions", launchCwd, preferredAgent, cursor), 15_000);
+    const result = await sendRequest<any>(buildSessionListRequest("tiller-list-sessions", launchCwd, preferredAgent, cursor, provider.mcpServers), 15_000);
     return normalizeAcpAgentSessionListResult(result);
   } finally {
     terminateChildProcess(child.pid);
@@ -648,7 +648,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
         throw new Error("ACP agent does not advertise session/load capability.");
       }
       const loadResult = await sendRequest<AcpSessionResponseWithModels>(
-        buildSessionLoadRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
+        buildSessionLoadRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent, options.agent.mcpServers),
       );
       sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
       currentConfigOptions = extractSessionConfigOptions(loadResult);
@@ -658,7 +658,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
         throw new Error("ACP agent does not advertise session.resume capability.");
       }
       const resumeResult = await sendRequest<AcpSessionResponseWithModels>(
-        buildSessionResumeRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent),
+        buildSessionResumeRequest(nextRpcId(), options.restore.runtimeSessionId, launchCwd, preferredAgent, options.agent.mcpServers),
       );
       sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
       currentConfigOptions = extractSessionConfigOptions(resumeResult);
@@ -666,7 +666,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     }
   } else {
     const sessionResult = await sendRequest<AcpSessionResponseWithModels>(
-      buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent),
+      buildSessionNewRequest(nextRpcId(), launchCwd, preferredAgent, options.agent.mcpServers),
     );
     sessionToken = resolveRuntimeSessionId(sessionResult, options.sessionId);
     currentConfigOptions = extractSessionConfigOptions(sessionResult);
@@ -1030,4 +1030,4 @@ export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRe
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 
 export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
-export { createCodexAcpAdapter, createGenericAcpAdapter, createOpenCodeAcpAdapter, resolveAcpAgentAdapter, resolveAcpLaunchConfig, resolveAdapterCleanupPlan, type AcpAgentAdapter, type AcpLaunchContext, type AcpLaunchSpec, type ProviderCleanupPlan } from "./adapters";
+export { createClaudeAcpAdapter, createCodexAcpAdapter, createGenericAcpAdapter, createOpenClawAcpAdapter, createOpenCodeAcpAdapter, resolveAcpAgentAdapter, resolveAcpLaunchConfig, resolveAdapterCleanupPlan, type AcpAgentAdapter, type AcpLaunchContext, type AcpLaunchSpec, type ProviderCleanupPlan } from "./adapters";

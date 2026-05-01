@@ -1,4 +1,4 @@
-import type { AgentPromptContent } from "@tiller/shared";
+import type { AcpMcpServer, AgentPromptContent } from "@tiller/shared";
 
 type AcpSessionResponseWithModels = {
   sessionId?: string;
@@ -22,34 +22,34 @@ export function resolveRuntimeSessionId(sessionResult: unknown, fallbackSessionI
   return result?.sessionId ?? result?.session_id ?? result?.id ?? fallbackSessionId;
 }
 
-export function buildSessionNewRequest(id: string, cwd: string, agent?: string) {
+export function buildSessionNewRequest(id: string, cwd: string, agent?: string, mcpServers: AcpMcpServer[] = []) {
   return {
     jsonrpc: "2.0",
     id,
     method: "session/new",
     params: {
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(agent ? { agent } : {}),
     },
   };
 }
 
-export function buildSessionListRequest(id: string, cwd: string, agent?: string, cursor?: string) {
+export function buildSessionListRequest(id: string, cwd: string, agent?: string, cursor?: string, mcpServers: AcpMcpServer[] = []) {
   return {
     jsonrpc: "2.0",
     id,
     method: "session/list",
     params: {
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(cursor ? { cursor } : {}),
       ...(agent ? { agent } : {}),
     },
   };
 }
 
-export function buildSessionLoadRequest(id: string, sessionId: string, cwd: string, agent?: string) {
+export function buildSessionLoadRequest(id: string, sessionId: string, cwd: string, agent?: string, mcpServers: AcpMcpServer[] = []) {
   return {
     jsonrpc: "2.0",
     id,
@@ -57,13 +57,13 @@ export function buildSessionLoadRequest(id: string, sessionId: string, cwd: stri
     params: {
       sessionId,
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(agent ? { agent } : {}),
     },
   };
 }
 
-export function buildSessionResumeRequest(id: string, sessionId: string, cwd: string, agent?: string) {
+export function buildSessionResumeRequest(id: string, sessionId: string, cwd: string, agent?: string, mcpServers: AcpMcpServer[] = []) {
   return {
     jsonrpc: "2.0",
     id,
@@ -71,7 +71,7 @@ export function buildSessionResumeRequest(id: string, sessionId: string, cwd: st
     params: {
       sessionId,
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(agent ? { agent } : {}),
     },
   };

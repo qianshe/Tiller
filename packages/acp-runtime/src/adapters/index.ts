@@ -1,12 +1,16 @@
 import type { AcpAgentProvider, AgentCapabilities } from "@tiller/shared";
+import { createClaudeAcpAdapter } from "./claude";
 import { createCodexAcpAdapter } from "./codex";
 import { createGenericAcpAdapter } from "./generic";
+import { createOpenClawAcpAdapter } from "./openclaw";
 import { createOpenCodeAcpAdapter } from "./opencode";
 import type { AcpAgentAdapter, AcpLaunchContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
   createCodexAcpAdapter(),
+  createClaudeAcpAdapter(),
+  createOpenClawAcpAdapter(),
   createGenericAcpAdapter(),
 ];
 
@@ -26,7 +30,9 @@ export function resolveAdapterCleanupPlan(provider: AcpAgentProvider, runtimeSes
   return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
 }
 
+export { createClaudeAcpAdapter } from "./claude";
 export { createCodexAcpAdapter } from "./codex";
 export { createGenericAcpAdapter } from "./generic";
+export { createOpenClawAcpAdapter } from "./openclaw";
 export { createOpenCodeAcpAdapter } from "./opencode";
 export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, ProviderCleanupPlan } from "./types";

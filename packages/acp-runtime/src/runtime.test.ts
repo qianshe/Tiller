@@ -142,6 +142,18 @@ test("buildSessionSetConfigOptionRequest uses ACP session/set_config_option conf
   });
 });
 
+test("buildSessionNewRequest forwards provider MCP servers", () => {
+  assert.deepEqual(buildSessionNewRequest("req-mcp", "D:/repo", undefined, [{ name: "filesystem", command: "mcp-server-filesystem", args: ["D:/repo"], env: { ROOT: "D:/repo" } }]), {
+    jsonrpc: "2.0",
+    id: "req-mcp",
+    method: "session/new",
+    params: {
+      cwd: "D:/repo",
+      mcpServers: [{ name: "filesystem", command: "mcp-server-filesystem", args: ["D:/repo"], env: { ROOT: "D:/repo" } }],
+    },
+  });
+});
+
 test("buildSessionLoadRequest uses ACP session/load shape", () => {
   assert.deepEqual(buildSessionLoadRequest("req-load", "sess_123", "D:/myProject/tools/Tiller"), {
     jsonrpc: "2.0",
@@ -208,6 +220,8 @@ test("resolveSessionCapabilities reads initialize and provider capability hints"
 test("resolveAcpAgentAdapter chooses provider-specific adapters before generic fallback", () => {
   assert.equal(resolveAcpAgentAdapter({ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"], transport: "stdio", protocol: "acp" }).id, "opencode");
   assert.equal(resolveAcpAgentAdapter({ id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" }).id, "codex");
+  assert.equal(resolveAcpAgentAdapter({ id: "claude-acp", name: "Claude Agent", command: "claude-acp", transport: "stdio", protocol: "acp" }).id, "claude");
+  assert.equal(resolveAcpAgentAdapter({ id: "openclaw", name: "OpenClaw", command: "openclaw", transport: "stdio", protocol: "acp" }).id, "openclaw");
   assert.equal(resolveAcpAgentAdapter({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }).id, "generic");
 });
 
@@ -229,6 +243,20 @@ test("resolveAcpLaunchConfig keeps provider-specific command and env handling be
     );
     assert.deepEqual(codex.args, ["-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"']);
     assert.deepEqual(codex.env, {});
+
+    const claude = resolveAcpLaunchConfig(
+      { id: "claude-acp", name: "Claude Agent", command: "claude-acp", args: [], env: { CLAUDE_CODE_ENTRYPOINT: "sdk" }, transport: "stdio", protocol: "acp" },
+      { fallbackCwd: tempDir },
+    );
+    assert.deepEqual(claude.args, []);
+    assert.equal(claude.env.ANTHROPIC_API_KEY, "");
+    assert.equal(claude.env.CLAUDE_CODE_ENTRYPOINT, "sdk");
+
+    const openClaw = resolveAcpLaunchConfig(
+      { id: "openclaw", name: "OpenClaw", command: "openclaw", args: ["acp"], transport: "stdio", protocol: "acp" },
+      { fallbackCwd: tempDir },
+    );
+    assert.deepEqual(openClaw.args, ["acp"]);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -246,6 +274,16 @@ test("resolveAdapterCleanupPlan delegates provider-native cleanup to adapters", 
     kind: "unsupported",
     providerId: "codex",
     message: "Codex ACP does not expose remote session deletion yet.",
+  });
+  assert.deepEqual(resolveAdapterCleanupPlan({ id: "claude-acp", name: "Claude Agent", command: "claude-acp", transport: "stdio", protocol: "acp" }, "runtime-1"), {
+    kind: "unsupported",
+    providerId: "claude-acp",
+    message: "Claude Agent does not expose remote session deletion yet.",
+  });
+  assert.deepEqual(resolveAdapterCleanupPlan({ id: "openclaw", name: "OpenClaw", command: "openclaw", transport: "stdio", protocol: "acp" }, "runtime-1"), {
+    kind: "unsupported",
+    providerId: "openclaw",
+    message: "OpenClaw does not expose remote session deletion yet.",
   });
   assert.equal(resolveAdapterCleanupPlan({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }, "runtime-1").kind, "unsupported");
 });

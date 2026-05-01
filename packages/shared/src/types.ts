@@ -43,6 +43,13 @@ export type AgentCapabilities = {
   imageInput?: boolean;
 };
 
+export type AcpMcpServer = {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 export type AcpAgentProvider = {
   id: string;
   name: string;
@@ -51,6 +58,7 @@ export type AcpAgentProvider = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  mcpServers?: AcpMcpServer[];
   cwd?: string;
   initializeTimeoutMs?: number;
   promptTimeoutMs?: number;
