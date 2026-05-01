@@ -5,6 +5,7 @@ import type {
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
+  ProjectSummary,
   SessionConfigOption,
   SessionStatus,
   SessionSummary,
@@ -49,6 +50,31 @@ export function applySessionListSnapshot(
       diffs: pruneSessionScopedMap(snapshot.maps.diffs, sessions),
     } satisfies SessionScopedMaps,
   };
+}
+
+export function resolveSessionProjectId(session: SessionSummary, projects: ProjectSummary[]) {
+  const exactProject = projects.find((project) => project.id === session.projectId);
+  if (exactProject) {
+    return exactProject.id;
+  }
+
+  const nameProject = projects.find((project) => project.name === session.projectName);
+  if (nameProject) {
+    return nameProject.id;
+  }
+
+  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
+  return workspaceProject?.id ?? session.projectId;
+}
+
+export function toggleExpandedIdSet(current: Set<string>, id: string) {
+  const next = new Set(current);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  return next;
 }
 
 export function resolveDraftSelectionId<T extends { id: string }>(

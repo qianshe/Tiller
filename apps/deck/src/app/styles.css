@@ -7135,6 +7135,40 @@ textarea:focus,
   background: transparent;
 }
 
+.mission-composer-attachments,
+.mission-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mission-composer-attachments span {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.mission-message-image {
+  margin: 8px 0 0;
+  max-width: 220px;
+}
+
+.mission-message-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.mission-message-image figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
 /* Mission composer interaction polish: content-driven height and adaptive pickers. */
 .view-sessions .mission-order-editor.chat-input-form > textarea {
   min-height: 72px;

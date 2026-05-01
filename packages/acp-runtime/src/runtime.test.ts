@@ -181,15 +181,19 @@ test("buildSessionDeleteRequest uses ACP session/delete shape", () => {
 test("resolveSessionCapabilities reads initialize and provider capability hints", () => {
   assert.deepEqual(
     resolveSessionCapabilities({ capabilities: { session: { load: true, resume: true, list: true } } }),
-    { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: false, sessionDelete: false },
+    { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: false, sessionDelete: false, imageInput: false },
   );
   assert.deepEqual(
     resolveSessionCapabilities({}, { id: "agent", name: "Agent", command: "agent", transport: "stdio", protocol: "acp", capabilities: { sessionResume: true } }),
-    { sessionLoad: false, sessionResume: true, sessionList: false, sessionClose: false, sessionDelete: false },
+    { sessionLoad: false, sessionResume: true, sessionList: false, sessionClose: false, sessionDelete: false, imageInput: false },
   );
   assert.deepEqual(
     resolveSessionCapabilities({ capabilities: { session: { close: true, delete: true } } }),
-    { sessionLoad: false, sessionResume: false, sessionList: false, sessionClose: true, sessionDelete: true },
+    { sessionLoad: false, sessionResume: false, sessionList: false, sessionClose: true, sessionDelete: true, imageInput: false },
+  );
+  assert.deepEqual(
+    resolveSessionCapabilities({ promptCapabilities: { image: true } }),
+    { sessionLoad: false, sessionResume: false, sessionList: false, sessionClose: false, sessionDelete: false, imageInput: true },
   );
 });
 
@@ -212,6 +216,24 @@ test("buildSessionPromptRequest wraps text as ACP prompt content", () => {
     params: {
       sessionId: "sess_123",
       prompt: [{ type: "text", text: "你好" }],
+    },
+  });
+});
+
+test("buildSessionPromptRequest forwards ACP image content blocks", () => {
+  assert.deepEqual(buildSessionPromptRequest("req-image", "sess_123", "看图", undefined, [
+    { type: "text", text: "看图" },
+    { type: "image", data: "AQID", mimeType: "image/png", uri: "tiller:///agent/pasted-image?name=shot.png&index=0" },
+  ]), {
+    jsonrpc: "2.0",
+    id: "req-image",
+    method: "session/prompt",
+    params: {
+      sessionId: "sess_123",
+      prompt: [
+        { type: "text", text: "看图" },
+        { type: "image", data: "AQID", mimeType: "image/png", uri: "tiller:///agent/pasted-image?name=shot.png&index=0" },
+      ],
     },
   });
 });

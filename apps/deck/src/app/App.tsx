@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from "react";
 import "highlight.js/styles/github-dark.css";
 import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
@@ -9,6 +9,8 @@ import type {
   AcpAgentProvider,
   AcpModelOption,
   AgentMessage,
+  AgentPromptContent,
+  AgentPromptImageContent,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -29,10 +31,11 @@ import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
 import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitle, toggleExpandedIdSet } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
+import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
 import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
@@ -206,28 +209,6 @@ function agentModelOptionsKey(providerId: string, workspaceId: string) {
 
 function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
   return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
-}
-
-function inferProjectFromText(text: string, projects: ProjectSummary[]) {
-  const scored = projects
-    .map((project) => {
-      const name = project.name.toLowerCase();
-      const path = project.path?.toLowerCase().replaceAll("\\", "/");
-      const score =
-        (path && text.includes(path) ? 4 : 0) +
-        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
-      return { project, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score);
-  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
-    return null;
-  }
-  return scored[0].project;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function readSessionTitles(): Record<string, string> {
@@ -696,6 +677,7 @@ export function App() {
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
+  const pendingPromptContentRef = useRef<AgentPromptContent[] | undefined>(undefined);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
@@ -748,6 +730,8 @@ export function App() {
   const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>([]);
+  const [imagePasteNotice, setImagePasteNotice] = useState("");
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
   const [promptEnhancerModels, setPromptEnhancerModels] = useState<PromptEnhancerModelOption[]>([]);
   const [promptEnhancerModelFilter, setPromptEnhancerModelFilter] = useState("");
@@ -890,28 +874,18 @@ export function App() {
     }
     return agents.filter((agent) => allowedAgentIds.includes(agent.id));
   }, [agents, draftProject?.allowedAgentIds]);
-  function resolveSessionProjectId(session: SessionSummary) {
-    const evidenceText = (messages[session.id] ?? []).map((message) => message.text).join("\n").toLowerCase();
-    const evidenceProject = evidenceText ? inferProjectFromText(evidenceText, projects) : null;
-    if (evidenceProject) {
-      return evidenceProject.id;
-    }
-    const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
-    return workspaceProject?.id ?? session.projectId;
-  }
-
   const projectSessions = useMemo(
-    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session) === selectedProjectId),
-    [messages, projects, selectedProjectId, sessions],
+    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session, projects) === selectedProjectId),
+    [projects, selectedProjectId, sessions],
   );
   const sessionCountsByProject = useMemo(
     () => sessions.reduce<Record<string, number>>((counts, session) => {
-      const projectId = resolveSessionProjectId(session);
+      const projectId = resolveSessionProjectId(session, projects);
       return { ...counts, [projectId]: (counts[projectId] ?? 0) + 1 };
     }, {}),
-    [messages, projects, sessions],
+    [projects, sessions],
   );
-  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession) : null;
+  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession, projects) : null;
   const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
@@ -978,22 +952,7 @@ export function App() {
   }
 
   function toggleMissionProjectNode(projectId: string) {
-    const project = projects.find((item) => item.id === projectId);
-    if (project) {
-      setSelectedMissionHelmId(project.helmId);
-      setSelectedProjectId(project.id);
-      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
-      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
-    }
-    setExpandedMissionProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
+    setExpandedMissionProjectIds((current) => toggleExpandedIdSet(current, projectId));
   }
 
   function selectDraftWorkspace(workspaceId: string) {
@@ -1039,7 +998,7 @@ export function App() {
     }
 
     setSelectedMissionHelmId(session.helmId);
-    const projectId = resolveSessionProjectId(session);
+    const projectId = resolveSessionProjectId(session, projects);
     setSelectedProjectId(projectId);
     setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
     setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
@@ -1147,7 +1106,7 @@ export function App() {
     if (!activeSession || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
-    const projectId = resolveSessionProjectId(activeSession);
+    const projectId = resolveSessionProjectId(activeSession, projects);
     const key = projectFilesKey(projectId, activeSession.workspaceId);
     setProjectFilesByScope((current) => ({
       ...current,
@@ -1932,15 +1891,19 @@ export function App() {
           setActiveSessionId(payload.session.id);
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
+            const pendingContent = pendingPromptContentRef.current;
+            const pendingImages = pendingContent?.filter((item): item is AgentPromptImageContent => item.type === "image") ?? [];
             pendingPromptRef.current = null;
+            pendingPromptContentRef.current = undefined;
             assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
             const clientMessageId = createClientUserMessageId(payload.session.id);
-            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId);
+            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId, pendingImages);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
               text: pendingPrompt,
+              content: pendingContent,
               clientMessageId,
             });
           }
@@ -2172,7 +2135,7 @@ case "session.messages.list.result":
     return `${sessionId}-user-${Date.now()}`;
   }
 
-  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId)) {
+  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId), attachments: AgentPromptImageContent[] = []) {
     setMessages((current) => ({
       ...current,
       [sessionId]: mergeMessageHistory(current[sessionId] ?? [], [
@@ -2181,6 +2144,7 @@ case "session.messages.list.result":
           role: "user",
           text,
           timestamp: new Date().toISOString(),
+          ...(attachments.length ? { attachments } : {}),
         },
       ]),
     }));
@@ -2215,7 +2179,17 @@ case "session.messages.list.result":
       });
   }
 
-  function createSession(initialPrompt?: string) {
+  function buildPromptContent(text: string, images: AgentPromptImageContent[]): AgentPromptContent[] | undefined {
+    if (!images.length) {
+      return undefined;
+    }
+    return [
+      ...(text ? [{ type: "text" as const, text }] : []),
+      ...images,
+    ];
+  }
+
+  function createSession(initialPrompt?: string, initialContent?: AgentPromptContent[]) {
     const projectId = selectedProjectId || projects[0]?.id;
     const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
@@ -2224,6 +2198,7 @@ case "session.messages.list.result":
     }
 
     pendingPromptRef.current = initialPrompt ?? null;
+    pendingPromptContentRef.current = initialContent;
     dispatch(socketRef.current, {
       type: "session.create",
       requestId: nextRequestId(requestCounter),
@@ -2477,27 +2452,51 @@ case "session.messages.list.result":
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || !socketRef.current) {
+    if ((!nextPrompt && !promptImages.length) || !socketRef.current) {
       return;
     }
+    const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
+    const content = buildPromptContent(nextPrompt, promptImages);
+    const imagesToSend = promptImages;
+    setImagePasteNotice("");
 
     if (!activeSessionId) {
-      if (createSession(nextPrompt)) {
+      if (createSession(messageText, content)) {
         setPrompt("");
+        setPromptImages([]);
       }
       return;
     }
 
     const clientMessageId = createClientUserMessageId(activeSessionId);
-    appendUserMessage(activeSessionId, nextPrompt, clientMessageId);
+    appendUserMessage(activeSessionId, messageText, clientMessageId, imagesToSend);
     setPrompt("");
+    setPromptImages([]);
     dispatch(socketRef.current, {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      text: nextPrompt,
+      text: messageText,
+      content,
       clientMessageId,
     });
+  }
+
+  async function handleMissionPromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const images = extractClipboardImageItems(event.clipboardData);
+    if (!images.length) {
+      return;
+    }
+
+    event.preventDefault();
+    setImagePasteNotice(formatClipboardImageNotice(images));
+    try {
+      const startIndex = promptImages.length;
+      const nextImages = await Promise.all(images.map((file, index) => createClipboardImageContent(file, startIndex + index)));
+      setPromptImages((current) => [...current, ...nextImages]);
+    } catch {
+      setImagePasteNotice("图片粘贴失败：无法读取剪贴板图片内容。");
+    }
   }
 
   function submitPromptFromKeyboard(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -2763,6 +2762,16 @@ case "session.messages.list.result":
           <article key={message.id} className={`plain-message plain-${message.role}`}>
             <span className="plain-message-role">{copy.role[message.role]}</span>
             <MarkdownMessage text={message.text} />
+            {message.attachments?.length ? (
+              <div className="mission-message-attachments">
+                {message.attachments.map((image, index) => (
+                  <figure key={`${message.id}-image-${index}`} className="mission-message-image">
+                    <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
+                    <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : null}
           </article>
         ))}
       </div>
@@ -3028,7 +3037,7 @@ case "session.messages.list.result":
   }
 
   function renderSessions() {
-    const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
+    const canSend = Boolean((prompt.trim() || promptImages.length) && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
     const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
     const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
     const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
@@ -3290,7 +3299,7 @@ case "session.messages.list.result":
                               {helmProjects.map((project) => {
                               const selectedProject = project.id === selectedProjectId;
                               const projectExpanded = expandedMissionProjectIds.has(project.id);
-                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session) === project.id);
+                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session, projects) === project.id);
                               return (
                                 <div key={project.id} className="mission-tree-group" role="group">
                                   <div className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}>
@@ -3468,8 +3477,15 @@ case "session.messages.list.result":
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     onKeyDown={submitPromptFromKeyboard}
+                    onPaste={handleMissionPromptPaste}
                     placeholder={draftPromptPlaceholder}
                   />
+                  {imagePasteNotice ? <p className="subtle compact mission-composer-notice">{imagePasteNotice}</p> : null}
+                  {promptImages.length ? (
+                    <div className="mission-composer-attachments" aria-label="待发送图片">
+                      {promptImages.map((image, index) => <span key={`${image.uri ?? image.name}-${index}`}>{image.name ?? `粘贴图片 ${index + 1}`}</span>)}
+                    </div>
+                  ) : null}
                   <div className="mission-composer-sidecar">
                     <div className="mission-composer-tools" aria-hidden="true">
                       <span>＋</span>

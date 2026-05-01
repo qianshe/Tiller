@@ -1,3 +1,5 @@
+import type { AgentPromptContent } from "@tiller/shared";
+
 type AcpSessionResponseWithModels = {
   sessionId?: string;
   session_id?: string;
@@ -75,14 +77,17 @@ export function buildSessionResumeRequest(id: string, sessionId: string, cwd: st
   };
 }
 
-export function buildSessionPromptRequest(id: string, sessionId: string, text: string, agent?: string) {
+export function buildSessionPromptRequest(id: string, sessionId: string, text: string, agent?: string, content?: AgentPromptContent[]) {
+  const prompt = content?.length ? content : [{ type: "text", text } satisfies AgentPromptContent];
   return {
     jsonrpc: "2.0",
     id,
     method: "session/prompt",
     params: {
       sessionId,
-      prompt: [{ type: "text", text }],
+      prompt: prompt.map((item) => item.type === "image"
+        ? { type: "image", data: item.data, mimeType: item.mimeType, ...(item.uri ? { uri: item.uri } : {}) }
+        : item),
       ...(agent ? { agent } : {}),
     },
   };

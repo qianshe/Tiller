@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   AcpModelOption,
   AgentMessage,
+  AgentPromptContent,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -142,6 +143,7 @@ export type ClientToHelm =
       requestId: string;
       sessionId: string;
       text: string;
+      content?: AgentPromptContent[];
       clientMessageId?: string;
     }
   | {

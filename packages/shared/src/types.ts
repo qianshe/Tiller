@@ -256,7 +256,23 @@ export type AgentMessage = {
   role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
+  attachments?: AgentPromptImageContent[];
 };
+
+export type AgentPromptTextContent = {
+  type: "text";
+  text: string;
+};
+
+export type AgentPromptImageContent = {
+  type: "image";
+  data: string;
+  mimeType: string;
+  uri?: string;
+  name?: string;
+};
+
+export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
 
 export type PermissionRequest = {
   id: string;

@@ -29,6 +29,7 @@ import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AgentPromptContent,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
@@ -45,6 +46,7 @@ import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
 import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
+import { alignSessionProjectBinding } from "./sessions/project-binding";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
 import { handleConfigMessage, refreshProjectGitBranches } from "./handlers/config";
@@ -507,7 +509,7 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
 }
 
 function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-  const aligned = alignSessionProjectBinding(summary);
+  const aligned = alignSessionProjectBinding(summary, projects);
   const record = sessions.get(summary.id);
   const agent = record?.agent ?? resolveProviderById(aligned.agentId, agents);
   return {
@@ -526,77 +528,6 @@ function migrateStoredSessionSummary(summary: SessionSummary) {
     sessionStore.upsert(hydrated);
   }
   return hydrated;
-}
-
-function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
-  const inferredProject = inferProjectFromSessionHistory(summary.id);
-  if (inferredProject) {
-    return {
-      ...summary,
-      projectId: inferredProject.id,
-      projectName: inferredProject.name,
-      helmId: inferredProject.helmId,
-      workspaceId: inferredProject.defaultWorkspaceId ?? inferredProject.workspaceIds?.[0] ?? summary.workspaceId,
-    };
-  }
-
-  const exactProject = resolveProjectById(summary.projectId, projects);
-  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
-  if (exactProject && workspaceProject && workspaceProject.id !== exactProject.id) {
-    return {
-      ...summary,
-      projectId: workspaceProject.id,
-      projectName: workspaceProject.name,
-      helmId: workspaceProject.helmId,
-    };
-  }
-  if (exactProject) {
-    return {
-      ...summary,
-      projectName: exactProject.name,
-      helmId: exactProject.helmId,
-    };
-  }
-
-  const matchedProject =
-    projects.find((project) => project.name === summary.projectName) ??
-    workspaceProject;
-  if (!matchedProject) {
-    return summary;
-  }
-
-  return {
-    ...summary,
-    projectId: matchedProject.id,
-    projectName: matchedProject.name,
-    helmId: matchedProject.helmId,
-  };
-}
-
-function inferProjectFromSessionHistory(sessionId: string) {
-  const text = sessionMessageStore.list(sessionId).map((message) => message.text).join("\n").toLowerCase();
-  if (!text) {
-    return null;
-  }
-  const scored = projects
-    .map((project) => {
-      const name = project.name.toLowerCase();
-      const path = project.path?.toLowerCase().replaceAll("\\", "/");
-      const score =
-        (path && text.includes(path) ? 4 : 0) +
-        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
-      return { project, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score);
-  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
-    return null;
-  }
-  return scored[0].project;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {
@@ -657,6 +588,7 @@ function resolveSessionRestoreCapabilities(
     sessionList: Boolean(runtimeCapabilities?.sessionList ?? descriptor?.capabilities?.sessionList ?? agent?.capabilities?.sessionList),
     sessionClose: Boolean(runtimeCapabilities?.sessionClose ?? descriptor?.capabilities?.sessionClose ?? agent?.capabilities?.sessionClose),
     sessionDelete: Boolean(runtimeCapabilities?.sessionDelete ?? descriptor?.capabilities?.sessionDelete ?? agent?.capabilities?.sessionDelete),
+    imageInput: Boolean(runtimeCapabilities?.imageInput ?? descriptor?.capabilities?.imageInput ?? agent?.capabilities?.imageInput),
   };
 }
 
@@ -786,7 +718,8 @@ function persistRuntimeDescriptor(
     !resolvedCapabilities.sessionResume &&
     !resolvedCapabilities.sessionList &&
     !resolvedCapabilities.sessionClose &&
-    !resolvedCapabilities.sessionDelete
+    !resolvedCapabilities.sessionDelete &&
+    !resolvedCapabilities.imageInput
   ) {
     return;
   }
@@ -1083,7 +1016,7 @@ type SessionRecord = {
       reasoningEffort?: SessionReasoningEffort;
     };
     sessionModelState?: AcpModelState;
-    prompt: (text: string) => void;
+    prompt: (text: string, content?: AgentPromptContent[]) => void;
     configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
       runtimeApplied: boolean;
       state: { model?: string; reasoningEffort?: SessionReasoningEffort };

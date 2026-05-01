@@ -12,6 +12,7 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  AgentPromptContent,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -104,6 +105,7 @@ export type DetectedAcpSessionCapabilities = {
   sessionList?: boolean;
   sessionClose?: boolean;
   sessionDelete?: boolean;
+  imageInput?: boolean;
 };
 
 export type AcpAgentSessionListResult = {
@@ -710,10 +712,21 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   }
   options.onEvent({ type: "status", status: "idle", message: "ACP session ready" });
 
-  const prompt = async (text: string) => {
+  const prompt = async (text: string, content?: AgentPromptContent[]) => {
+    const hasImages = content?.some((item) => item.type === "image") ?? false;
+    if (hasImages && !sessionCapabilities.imageInput) {
+      options.onEvent({
+        type: "error",
+        code: "ACP_IMAGE_INPUT_UNSUPPORTED",
+        message: "ACP agent does not advertise image prompt capability.",
+      });
+      options.onEvent({ type: "status", status: "error", message: "ACP image prompt unsupported" });
+      return;
+    }
+
     options.onEvent({ type: "status", status: "running", message: "ACP agent is responding" });
     try {
-      await sendRequest(buildSessionPromptRequest(nextRpcId(), sessionToken, text, preferredAgent), 30_000);
+      await sendRequest(buildSessionPromptRequest(nextRpcId(), sessionToken, text, preferredAgent, content), 30_000);
     } catch (error) {
       options.onEvent({
         type: "error",
@@ -887,6 +900,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 export function resolveSessionCapabilities(initializeResult: any, provider?: AcpAgentProvider): DetectedAcpSessionCapabilities {
   const capabilities = initializeResult?.capabilities ?? initializeResult?.agentCapabilities ?? initializeResult?.sessionCapabilities ?? {};
   const nestedSession = capabilities.session ?? capabilities.sessions ?? capabilities.sessionCapabilities ?? initializeResult?.sessionCapabilities ?? {};
+  const promptCapabilities = initializeResult?.promptCapabilities ?? capabilities.promptCapabilities ?? capabilities.prompt ?? {};
   const providerCapabilities = provider?.capabilities ?? {};
 
   return {
@@ -924,6 +938,12 @@ export function resolveSessionCapabilities(initializeResult: any, provider?: Acp
         capabilities.sessionDelete ??
         nestedSession.delete ??
         nestedSession.deleteSession,
+    ),
+    imageInput: Boolean(
+      providerCapabilities.imageInput ??
+        capabilities.imageInput ??
+        promptCapabilities.image ??
+        promptCapabilities.images,
     ),
   };
 }

@@ -189,15 +189,27 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         });
         return true;
       }
-      context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
+      const imageAttachments = payload.content?.filter((item) => item.type === "image") ?? [];
+      if (imageAttachments.length && !record.runtime.sessionCapabilities?.imageInput) {
+        context.emit(socket, {
+          type: "error",
+          requestId: payload.requestId,
+          sessionId: payload.sessionId,
+          code: "ACP_IMAGE_INPUT_UNSUPPORTED",
+          message: "ACP agent does not advertise image prompt capability.",
+        });
+        return true;
+      }
+
+      context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length} images=${imageAttachments.length}`);
       const timestamp = new Date().toISOString();
       const userMessageId = payload.clientMessageId || `${payload.sessionId}-user-${Date.now()}`;
-      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp });
+      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp, ...(imageAttachments.length ? { attachments: imageAttachments } : {}) });
       const updated = context.updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
       if (updated) {
         context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: updated });
       }
-      record.runtime.prompt(payload.text);
+      record.runtime.prompt(payload.text, payload.content);
       return true;
     }
     case "session.configure": {
