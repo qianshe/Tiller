@@ -44,7 +44,7 @@ import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
 import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
 import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
-import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
+import { loadProviderAuthoritativeHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
 import { alignSessionProjectBinding } from "./sessions/project-binding";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
@@ -605,7 +605,7 @@ function resolveResumeMode(agent: AcpAgentProvider | undefined) {
 
 async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
   try {
-    const history = await loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+    const history = await loadProviderAuthoritativeHistory(agent, runtimeSessionId, cwd);
     if (!history) {
       return false;
     }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseOpenCodeExportHistory } from "./opencode-export.js";
+import { loadProviderAuthoritativeHistory, parseOpenCodeExportHistory } from "./opencode-export.js";
 
 test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode export", () => {
   const history = parseOpenCodeExportHistory(JSON.stringify({
@@ -60,4 +60,17 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
       updatedAt: "2026-04-30T09:59:10.482Z",
     },
   ]);
+});
+
+test("loadProviderAuthoritativeHistory returns null for providers without native export", async () => {
+  assert.equal(await loadProviderAuthoritativeHistory(
+    { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
+    "runtime-1",
+    "D:/repo",
+  ), null);
+  assert.equal(await loadProviderAuthoritativeHistory(
+    { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
+    "runtime-1",
+    "D:/repo",
+  ), null);
 });

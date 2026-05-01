@@ -23,6 +23,26 @@ test("resolveProviderCleanupPlan returns an OpenCode remote delete command when 
   assert.deepEqual(plan.args, ["session", "delete", "ses_123", "--pure"]);
 });
 
+test("resolveProviderCleanupPlan delegates unknown ACP providers to generic adapter fallback", async () => {
+  const mod = await import("./cleanup.js");
+  const provider: AcpAgentProvider = {
+    id: "custom-agent",
+    name: "Custom Agent",
+    command: "custom-acp",
+    args: ["serve"],
+    transport: "stdio",
+    protocol: "acp",
+  };
+
+  const plan = mod.resolveProviderCleanupPlan(provider, "runtime-unknown");
+
+  assert.equal(plan.kind, "unsupported");
+  if (plan.kind !== "unsupported") {
+    throw new Error("Expected unsupported plan");
+  }
+  assert.match(plan.message, /Custom Agent/);
+});
+
 test("resolveProviderCleanupPlan returns unsupported for Codex ACP", async () => {
   const mod = await import("./cleanup.js");
   const provider: AcpAgentProvider = {

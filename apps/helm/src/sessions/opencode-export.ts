@@ -20,6 +20,10 @@ export async function loadOpenCodeExportHistory(agent: AcpAgentProvider, runtime
   return parseOpenCodeExportHistory(stdout);
 }
 
+export async function loadProviderAuthoritativeHistory(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string): Promise<OpenCodeExportHistory | null> {
+  return loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+}
+
 async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
   const options = {
     cwd,

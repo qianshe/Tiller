@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
-import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "./config-adapters";
+import { resolveAcpLaunchConfig, resolveAdapterCapabilities } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasOpenCodePortArg, hasSessionConfigOptionValue, mapPermissionRequest, mapSessionUpdateNotification, normalizeProviderCleanupResult, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
 import { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRequest, buildSessionLoadRequest, buildSessionNewRequest, buildSessionPromptRequest, buildSessionResumeRequest, buildSessionSetConfigOptionRequest, buildSessionSetModelRequest, resolveRuntimeSessionId } from "./requests";
 import type {
@@ -171,9 +171,10 @@ type AcpSessionResponseWithModels = {
 };
 
 export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
-  const launchSpec = resolveLaunchSpec(provider.command, provider.args ?? []);
-  const launchCwd = existsSync(provider.cwd ?? "") ? provider.cwd! : existsSync(cwd) ? cwd : process.cwd();
-  const childEnv = { ...process.env, ...provider.env };
+  const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: cwd });
+  const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
+  const launchCwd = launchConfig.cwd;
+  const childEnv = { ...process.env, ...launchConfig.env };
   delete childEnv.NODE_OPTIONS;
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
@@ -305,9 +306,10 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
 }
 
 export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace: WorkspaceSummary, cursor?: string): Promise<AcpAgentSessionListResult> {
-  const launchSpec = resolveLaunchSpec(provider.command, provider.args ?? []);
-  const launchCwd = existsSync(provider.cwd ?? "") ? provider.cwd! : existsSync(workspace.path) ? workspace.path : process.cwd();
-  const childEnv = { ...process.env, ...provider.env };
+  const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: workspace.path });
+  const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
+  const launchCwd = launchConfig.cwd;
+  const childEnv = { ...process.env, ...launchConfig.env };
   delete childEnv.NODE_OPTIONS;
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
@@ -438,10 +440,10 @@ export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace
 }
 
 export async function createAcpRuntime(options: AcpRuntimeOptions) {
-  const launchSpec = resolveLaunchSpec(options.agent.command, options.agent.args ?? [], options.sessionConfig);
-  const launchCwd = existsSync(options.agent.cwd ?? "") ? options.agent.cwd! : existsSync(options.workspace.path) ? options.workspace.path : process.cwd();
-  const sessionEnvOverrides = resolveSessionEnvOverrides(options.agent.command, options.sessionConfig);
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...options.agent.env, ...sessionEnvOverrides };
+  const launchConfig = resolveAcpLaunchConfig(options.agent, { fallbackCwd: options.workspace.path, sessionConfig: options.sessionConfig });
+  const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
+  const launchCwd = launchConfig.cwd;
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...launchConfig.env };
   delete childEnv.NODE_OPTIONS;
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
@@ -905,7 +907,7 @@ export function resolveSessionCapabilities(initializeResult: any, provider?: Acp
   const promptCapabilities = initializeResult?.promptCapabilities ?? capabilities.promptCapabilities ?? capabilities.prompt ?? {};
   const providerCapabilities = provider?.capabilities ?? {};
 
-  return {
+  const detected = {
     sessionLoad: Boolean(
       providerCapabilities.sessionLoad ??
         capabilities.loadSession ??
@@ -941,13 +943,10 @@ export function resolveSessionCapabilities(initializeResult: any, provider?: Acp
         nestedSession.delete ??
         nestedSession.deleteSession,
     ),
-    imageInput: Boolean(
-      providerCapabilities.imageInput ??
-        capabilities.imageInput ??
-        promptCapabilities.image ??
-        promptCapabilities.images,
-    ),
+    imageInput: Boolean(providerCapabilities.imageInput ?? promptCapabilities.image ?? promptCapabilities.images ?? capabilities.imageInput),
   };
+
+  return provider ? resolveAdapterCapabilities(provider, initializeResult, detected) : detected;
 }
 
 function timestamp() {
@@ -1031,3 +1030,4 @@ export { buildSessionCloseRequest, buildSessionDeleteRequest, buildSessionListRe
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 
 export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
+export { createCodexAcpAdapter, createGenericAcpAdapter, createOpenCodeAcpAdapter, resolveAcpAgentAdapter, resolveAcpLaunchConfig, resolveAdapterCleanupPlan, type AcpAgentAdapter, type AcpLaunchContext, type AcpLaunchSpec, type ProviderCleanupPlan } from "./adapters";

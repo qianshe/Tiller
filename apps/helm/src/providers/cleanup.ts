@@ -2,11 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { AcpAgentProvider } from "@tiller/shared";
-import type { ProviderCleanupResult } from "@tiller/acp-runtime";
-
-export type ProviderCleanupPlan =
-  | { kind: "remote-delete"; command: string; args: string[]; providerId: string; runtimeSessionId: string }
-  | { kind: "unsupported"; providerId: string; message: string };
+import { resolveAdapterCleanupPlan, type ProviderCleanupPlan, type ProviderCleanupResult } from "@tiller/acp-runtime";
 
 type CleanupExecutor = {
   exec?: (command: string, args: string[]) => string;
@@ -63,30 +59,7 @@ function runCleanupCommand(command: string, args: string[]) {
 }
 
 export function resolveProviderCleanupPlan(provider: AcpAgentProvider, runtimeSessionId: string): ProviderCleanupPlan {
-  if (provider.command === "opencode") {
-    const pureArgs = provider.args?.includes("--pure") ? ["--pure"] : [];
-    return {
-      kind: "remote-delete",
-      providerId: provider.id,
-      runtimeSessionId,
-      command: "opencode",
-      args: ["session", "delete", runtimeSessionId, ...pureArgs],
-    };
-  }
-
-  if (provider.command === "codex-acp" || provider.id === "codex") {
-    return {
-      kind: "unsupported",
-      providerId: provider.id,
-      message: "Codex ACP does not expose remote session deletion yet.",
-    };
-  }
-
-  return {
-    kind: "unsupported",
-    providerId: provider.id,
-    message: `${provider.name} does not expose remote session deletion yet.`,
-  };
+  return resolveAdapterCleanupPlan(provider, runtimeSessionId);
 }
 
 export function executeProviderCleanup(provider: AcpAgentProvider, runtimeSessionId: string, executor: CleanupExecutor = {}): ProviderCleanupResult {

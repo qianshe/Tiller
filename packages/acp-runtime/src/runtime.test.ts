@@ -22,6 +22,9 @@ import {
   normalizeProviderCleanupResult,
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
+  resolveAcpAgentAdapter,
+  resolveAcpLaunchConfig,
+  resolveAdapterCleanupPlan,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
@@ -200,6 +203,51 @@ test("resolveSessionCapabilities reads initialize and provider capability hints"
     resolveSessionCapabilities({ promptCapabilities: { image: true } }),
     { sessionLoad: false, sessionResume: false, sessionList: false, sessionClose: false, sessionDelete: false, imageInput: true },
   );
+});
+
+test("resolveAcpAgentAdapter chooses provider-specific adapters before generic fallback", () => {
+  assert.equal(resolveAcpAgentAdapter({ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"], transport: "stdio", protocol: "acp" }).id, "opencode");
+  assert.equal(resolveAcpAgentAdapter({ id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" }).id, "codex");
+  assert.equal(resolveAcpAgentAdapter({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }).id, "generic");
+});
+
+test("resolveAcpLaunchConfig keeps provider-specific command and env handling behind adapters", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-adapter-"));
+  try {
+    const openCode = resolveAcpLaunchConfig(
+      { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], env: { EXISTING: "1" }, transport: "stdio", protocol: "acp" },
+      { fallbackCwd: tempDir, sessionConfig: { model: "openai/gpt-5.4", reasoningEffort: "high" } },
+    );
+    assert.deepEqual(openCode.args, ["acp", "--pure", "--port", "0"]);
+    assert.equal(openCode.cwd, tempDir);
+    assert.equal(openCode.env.EXISTING, "1");
+    assert.equal(typeof openCode.env.OPENCODE_CONFIG_CONTENT, "string");
+
+    const codex = resolveAcpLaunchConfig(
+      { id: "codex", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp" },
+      { fallbackCwd: tempDir, sessionConfig: { model: "gpt-5.4-mini", reasoningEffort: "high" } },
+    );
+    assert.deepEqual(codex.args, ["-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"']);
+    assert.deepEqual(codex.env, {});
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveAdapterCleanupPlan delegates provider-native cleanup to adapters", () => {
+  assert.deepEqual(resolveAdapterCleanupPlan({ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], transport: "stdio", protocol: "acp" }, "ses_1"), {
+    kind: "remote-delete",
+    providerId: "opencode",
+    runtimeSessionId: "ses_1",
+    command: "opencode",
+    args: ["session", "delete", "ses_1", "--pure"],
+  });
+  assert.deepEqual(resolveAdapterCleanupPlan({ id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" }, "runtime-1"), {
+    kind: "unsupported",
+    providerId: "codex",
+    message: "Codex ACP does not expose remote session deletion yet.",
+  });
+  assert.equal(resolveAdapterCleanupPlan({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }, "runtime-1").kind, "unsupported");
 });
 
 test("resolvePreferredAgentId normalizes configured display agents", () => {
