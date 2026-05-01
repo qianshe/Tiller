@@ -56,6 +56,8 @@ const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
+const COLLAPSED_MESSAGE_LINE_LIMIT = 10;
+const COLLAPSED_MESSAGE_CHAR_LIMIT = 600;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -685,6 +687,7 @@ export function App() {
   const preserveChatScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const stickChatToBottomRef = useRef(true);
   const lastAutoScrollSessionIdRef = useRef<string | null>(null);
+  const pendingSessionScrollToBottomRef = useRef<string | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -720,6 +723,8 @@ export function App() {
   const [sessionHistoryState, setSessionHistoryState] = useState<{ nextCursor?: string; hasMore: boolean; loading: boolean }>({ hasMore: false, loading: false });
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(() => new Set());
+  const [sessionOpenScrollTick, setSessionOpenScrollTick] = useState(0);
   const [messageHistoryState, setMessageHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
@@ -985,12 +990,20 @@ export function App() {
     setAgentPickerOpen(false);
   }
 
+  function requestChatScrollToBottom(sessionId: string | null) {
+    pendingSessionScrollToBottomRef.current = sessionId;
+    stickChatToBottomRef.current = true;
+    setSessionOpenScrollTick((current) => current + 1);
+  }
+
   function selectMissionHelm(helmId: string) {
     setSelectedMissionHelmId(helmId);
     setExpandedMissionHelmIds((current) => new Set([...current, helmId]));
     const nextProject = projects.find((project) => project.helmId === helmId) ?? null;
+    const nextSessionId = nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null;
+    requestChatScrollToBottom(nextSessionId);
     setSelectedProjectId(nextProject?.id ?? null);
-    setActiveSessionId(nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null);
+    setActiveSessionId(nextSessionId);
   }
 
   function selectProject(projectId: string) {
@@ -1003,12 +1016,11 @@ export function App() {
       setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
     setSelectedProjectId(projectId);
-    setActiveSessionId((current) => {
-      if (current && sessions.some((session) => session.id === current && session.projectId === projectId)) {
-        return current;
-      }
-      return sessions.find((session) => session.projectId === projectId)?.id ?? null;
-    });
+    const nextSessionId = activeSessionId && sessions.some((session) => session.id === activeSessionId && session.projectId === projectId)
+      ? activeSessionId
+      : sessions.find((session) => session.projectId === projectId)?.id ?? null;
+    requestChatScrollToBottom(nextSessionId);
+    setActiveSessionId(nextSessionId);
   }
 
   function openSession(sessionId: string) {
@@ -1022,6 +1034,7 @@ export function App() {
     setSelectedProjectId(projectId);
     setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
     setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+    requestChatScrollToBottom(sessionId);
     setActiveSessionId(sessionId);
   }
 
@@ -1202,13 +1215,20 @@ export function App() {
       }
 
       const sessionChanged = lastAutoScrollSessionIdRef.current !== activeSessionId;
+      const shouldForceSessionBottom = Boolean(activeSessionId && pendingSessionScrollToBottomRef.current === activeSessionId);
       lastAutoScrollSessionIdRef.current = activeSessionId;
-      if (!sessionChanged && !stickChatToBottomRef.current) {
+      if (!sessionChanged && !shouldForceSessionBottom && !stickChatToBottomRef.current) {
         return;
       }
       chatMain.scrollTop = chatMain.scrollHeight;
+      requestAnimationFrame(() => {
+        chatMain.scrollTop = chatMain.scrollHeight;
+      });
+      if (shouldForceSessionBottom && activeSessionId && activeSessionMessages.length > 0 && !messageHistoryState[activeSessionId]?.loading) {
+        pendingSessionScrollToBottomRef.current = null;
+      }
     });
-  }, [activeConversationUpdateKey, activeView, activeSessionId]);
+  }, [activeConversationUpdateKey, activeView, activeSessionId, activeSessionMessages.length, messageHistoryState, sessionOpenScrollTick]);
 
   useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -2873,24 +2893,48 @@ case "session.messages.list.result":
             {historyState.loading ? "加载中..." : "加载更早消息"}
           </button>
         ) : null}
-        {displayMessages.map((message) => (
-          <article key={message.id} className={`plain-message plain-${message.role}`}>
-            <span className="plain-message-role">{resolveMessageRoleLabel(message, assistantLabel, copy.role)}</span>
-            <MarkdownMessage text={message.text} />
-            {message.attachments?.length ? (
-              <div className="mission-message-attachments">
-                {message.attachments.map((image, index) => (
-                  <figure key={`${message.id}-image-${index}`} className="mission-message-image">
-                    <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
-                    <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
-                  </figure>
-                ))}
+        {displayMessages.map((message) => {
+          const isExpanded = expandedMessageIds.has(message.id);
+          const isCollapsible = message.role === "user" && shouldCollapsePlainMessage(message.text);
+          const markdownClassName = isCollapsible && !isExpanded ? "plain-message-body plain-message-body-collapsed" : "plain-message-body";
+          return (
+            <article key={message.id} className={`plain-message plain-${message.role}`}>
+              <span className="plain-message-role">{resolveMessageRoleLabel(message, assistantLabel, copy.role)}</span>
+              <div className={markdownClassName}>
+                <MarkdownMessage text={message.text} />
               </div>
-            ) : null}
-          </article>
-        ))}
+              {isCollapsible ? (
+                <button className="plain-message-expand" type="button" onClick={() => toggleExpandedMessage(message.id)}>
+                  {isExpanded ? "收起消息" : "展开完整消息"}
+                </button>
+              ) : null}
+              {message.attachments?.length ? (
+                <div className="mission-message-attachments">
+                  {message.attachments.map((image, index) => (
+                    <figure key={`${message.id}-image-${index}`} className="mission-message-image">
+                      <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
+                      <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     );
+  }
+
+  function toggleExpandedMessage(messageId: string) {
+    setExpandedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
   }
 
   function summarizeActivityText(text: string) {
@@ -4574,6 +4618,11 @@ function isSessionExecutionPending(status: SessionStatus) {
 
 function sortDisplayMessages(items: AgentMessage[]) {
   return items;
+}
+
+function shouldCollapsePlainMessage(text: string) {
+  const lineCount = text.split(/\r?\n/).length;
+  return lineCount > COLLAPSED_MESSAGE_LINE_LIMIT || text.length > COLLAPSED_MESSAGE_CHAR_LIMIT;
 }
 
 function resolveMessageRoleLabel(message: AgentMessage, assistantLabel: string, roleLabels: Record<AgentMessage["role"], string>) {

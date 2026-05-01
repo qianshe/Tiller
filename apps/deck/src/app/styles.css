@@ -1158,6 +1158,43 @@ textarea:focus,
   overflow-wrap: anywhere;
 }
 
+.plain-message-body {
+  min-width: 0;
+}
+
+.plain-message-body-collapsed {
+  position: relative;
+  max-height: 17.2em;
+  overflow: hidden;
+}
+
+.plain-message-body-collapsed::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3.2em;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--surface, #fff) 86%);
+}
+
+.plain-message-expand {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #2067d8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0;
+}
+
+.plain-message-expand:hover {
+  text-decoration: underline;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4968,6 +5005,14 @@ textarea:focus,
 
 .view-sessions .plain-assistant {
   background: rgba(10, 18, 31, 0.18);
+}
+
+.view-sessions .plain-message-body-collapsed::after {
+  background: linear-gradient(180deg, rgba(7, 12, 22, 0), rgba(7, 12, 22, 0.98) 86%);
+}
+
+.view-sessions .plain-message-expand {
+  color: #93c5fd;
 }
 
 .view-sessions .mission-display-panel {
