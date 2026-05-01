@@ -1,22 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   applySessionLaunchOverrides,
   buildOpenCodeConfigOverride,
   buildSessionCloseRequest,
   buildSessionDeleteRequest,
+  buildSessionListRequest,
   buildSessionLoadRequest,
   buildSessionNewRequest,
   buildSessionPromptRequest,
   buildSessionResumeRequest,
+  buildSessionSetConfigOptionRequest,
   buildSessionSetModelRequest,
   resolveSessionEnvOverrides,
   mapSessionUpdateNotification,
+  listAcpAgentSessions,
+  normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
+  DEFAULT_ACP_REQUEST_TIMEOUT_MS,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
 } from "./runtime";
+
+test("default ACP request timeout allows slow session/new responses", () => {
+  assert.equal(DEFAULT_ACP_REQUEST_TIMEOUT_MS, 30_000);
+});
 
 test("buildSessionNewRequest uses ACP session/new shape", () => {
   assert.deepEqual(buildSessionNewRequest("req-1", "D:/myProject/tools/Tiller"), {
@@ -30,6 +42,73 @@ test("buildSessionNewRequest uses ACP session/new shape", () => {
   });
 });
 
+test("buildSessionListRequest uses ACP session/list shape", () => {
+  assert.deepEqual(buildSessionListRequest("req-list", "D:/myProject/tools/Tiller", "codex", "cursor-1"), {
+    jsonrpc: "2.0",
+    id: "req-list",
+    method: "session/list",
+    params: {
+      cwd: "D:/myProject/tools/Tiller",
+      mcpServers: [],
+      cursor: "cursor-1",
+      agent: "codex",
+    },
+  });
+});
+
+test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP session entries", () => {
+  assert.deepEqual(normalizeAcpAgentSessionListResult({
+    sessions: [
+      { session_id: "sess_1", cwd: "D:/repo", title: "Fix bug", updated_at: "2026-04-30T00:00:00Z", meta: { source: "agent" } },
+      { sessionId: "sess_2", updatedAt: "2026-04-30T01:00:00Z" },
+      { title: "missing id" },
+    ],
+    next_cursor: "next-page",
+    meta: { total: 2 },
+  }), {
+    sessions: [
+      { sessionId: "sess_1", cwd: "D:/repo", title: "Fix bug", updatedAt: "2026-04-30T00:00:00Z", meta: { source: "agent" } },
+      { sessionId: "sess_2", cwd: undefined, title: undefined, updatedAt: "2026-04-30T01:00:00Z", meta: undefined },
+    ],
+    nextCursor: "next-page",
+    meta: { total: 2 },
+  });
+});
+
+test("listAcpAgentSessions reads sessions from a fake ACP agent", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-list-"));
+  const fakeAgentPath = join(tempDir, "fake-agent.mjs");
+  writeFileSync(fakeAgentPath, `
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  const payload = JSON.parse(line);
+  if (payload.method === "initialize") {
+    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { capabilities: { session: { list: true } }, agentInfo: { name: "Fake ACP" } } }));
+    return;
+  }
+  if (payload.method === "session/list") {
+    console.log(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: { sessions: [{ session_id: "remote-1", cwd: payload.params.cwd, title: "Remote history", updated_at: "2026-04-30T00:00:00Z" }], next_cursor: "next" } }));
+  }
+});
+`, "utf8");
+
+  try {
+    const result = await listAcpAgentSessions(
+      { id: "fake", name: "Fake ACP", command: process.execPath, args: [fakeAgentPath], transport: "stdio", protocol: "acp" },
+      { id: "workspace", name: "Workspace", path: tempDir },
+    );
+
+    assert.deepEqual(result, {
+      sessions: [{ sessionId: "remote-1", cwd: tempDir, title: "Remote history", updatedAt: "2026-04-30T00:00:00Z", meta: undefined }],
+      nextCursor: "next",
+      meta: undefined,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {
   assert.deepEqual(buildSessionSetModelRequest("req-model", "sess-1", "openai/gpt-5.4"), {
     jsonrpc: "2.0",
@@ -38,6 +117,19 @@ test("buildSessionSetModelRequest uses ACP session/set_model shape", () => {
     params: {
       sessionId: "sess-1",
       modelId: "openai/gpt-5.4",
+    },
+  });
+});
+
+test("buildSessionSetConfigOptionRequest uses ACP session/set_config_option configId shape", () => {
+  assert.deepEqual(buildSessionSetConfigOptionRequest("req-config", "sess-1", "mode", "build"), {
+    jsonrpc: "2.0",
+    id: "req-config",
+    method: "session/set_config_option",
+    params: {
+      sessionId: "sess-1",
+      configId: "mode",
+      value: "build",
     },
   });
 });
@@ -359,6 +451,63 @@ test("normalizeProviderCleanupResult preserves unsupported provider responses", 
   );
 });
 
+
+test("mapSessionUpdateNotification derives generic tool names from nested tool fields", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_tool_name",
+      update: {
+        type: "tool_call_update",
+        toolCall: {
+          id: "call_generic",
+          title: "call_generic",
+          input: { toolName: "mcp_router/find_symbol", arguments: { name: "App" } },
+          output: "found",
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+});
+
+test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput server and tool", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_codex_tool",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_codex_mcp",
+        title: "call_codex_mcp",
+        status: "in_progress",
+        rawInput: {
+          server: "mcp_router",
+          tool: "activate_project",
+          arguments: { project: "D:\\myProject\\tools\\Tiller" },
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/activate_project");
+  assert.equal(mapped.event.toolCall.input, JSON.stringify({
+    server: "mcp_router",
+    tool: "activate_project",
+    arguments: { project: "D:\\myProject\\tools\\Tiller" },
+  }));
+});
 
 test("mapSessionUpdateNotification maps explicit tool call updates", () => {
   const mapped = mapSessionUpdateNotification({

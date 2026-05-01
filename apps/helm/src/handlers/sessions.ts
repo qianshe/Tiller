@@ -1,6 +1,7 @@
-import { normalizeProviderCleanupResult, type ProviderCleanupResult } from "@tiller/acp-runtime";
+import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
+import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 import type { SessionSummary } from "@tiller/shared";
 import type { HelmMessageHandler } from "./context";
 
@@ -12,16 +13,26 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       context.emit(socket, { type: "session.list.result", requestId: payload.requestId, sessions: normalizedSessions });
       return true;
     }
-    case "session.messages.list":
+    case "session.messages.list": {
+      const page = context.sessionMessageStore.listPage(payload.sessionId, {
+        limit: payload.limit,
+        before: payload.before,
+      });
       context.emit(socket, {
         type: "session.messages.list.result",
         requestId: payload.requestId,
         sessionId: payload.sessionId,
-        messages: context.sessionMessageStore.list(payload.sessionId),
+        messages: page.messages,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
       });
       return true;
+    }
     case "session.artifacts.get": {
-      const artifacts = context.sessionArtifactStore.get(payload.sessionId);
+      const artifacts = context.sessionArtifactStore.getPage(payload.sessionId, {
+        limit: payload.limit,
+        before: payload.before,
+      });
       const diffs = await context.hydrateDiffsFromWorkspaceGit(payload.sessionId, artifacts.diffs);
       context.emit(socket, {
         type: "session.artifacts.result",
@@ -30,6 +41,8 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         outputs: artifacts.outputs,
         diffs,
         toolCalls: artifacts.toolCalls,
+        nextCursor: artifacts.nextCursor,
+        hasMore: artifacts.hasMore,
       });
       return true;
     }
@@ -93,7 +106,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
 
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
-      context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} agent=${agent.id}`);
+      context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`);
       const summaryBase: SessionSummary = {
         id: sessionId,
         projectId: project.id,
@@ -103,6 +116,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         workspaceName: workspace.name,
         agentId: agent.id,
         agentName: agent.name,
+        agentMode: payload.agentMode,
         model: payload.model,
         reasoningEffort: payload.reasoningEffort,
         status: "starting" as const,
@@ -120,11 +134,12 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           sessionId,
           workspace,
           agent,
-          sessionConfig: { model: summary.model, reasoningEffort: summary.reasoningEffort },
+          sessionConfig: { agentMode: summary.agentMode, model: summary.model, reasoningEffort: summary.reasoningEffort },
           onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
         });
         const summaryWithRuntime = context.hydrateSessionSummary({
           ...summary,
+          agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
           model: runtime.sessionConfigState?.model ?? summary.model,
           modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
           reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
@@ -142,7 +157,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           sessionId,
           message: error instanceof Error ? error.message : "Failed to create session runtime",
         });
-        context.logError(`[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
+        context.logError(`[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
         context.updateSessionSummary(sessionId, (current) => ({ ...current, status: "error", updatedAt: new Date().toISOString(), lastMessagePreview: "Session startup failed" }));
         context.broadcastAuthenticated({ type: "session.status", sessionId, status: "error", message: "Session startup failed" });
       }
@@ -176,7 +191,8 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       }
       context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length}`);
       const timestamp = new Date().toISOString();
-      context.persistSessionMessage(payload.sessionId, { id: `${payload.sessionId}-user-${Date.now()}`, role: "user", text: payload.text, timestamp });
+      const userMessageId = payload.clientMessageId || `${payload.sessionId}-user-${Date.now()}`;
+      context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp });
       const updated = context.updateSessionSummary(payload.sessionId, (current) => applyUserPromptToSummary(current, payload.text, timestamp));
       if (updated) {
         context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: updated });
@@ -191,12 +207,13 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         return true;
       }
       const activeRecord = context.sessions.get(payload.sessionId);
-      const runtimeResult = activeRecord ? await activeRecord.runtime.configure({ model: payload.model, reasoningEffort: payload.reasoningEffort }) : null;
+      const runtimeResult = activeRecord ? await activeRecord.runtime.configure({ agentMode: payload.agentMode, model: payload.model, reasoningEffort: payload.reasoningEffort }) : null;
+      const nextAgentMode = runtimeResult?.state.agentMode ?? payload.agentMode ?? current.agentMode;
       const nextModel = runtimeResult?.state.model ?? payload.model;
       const nextReasoning = runtimeResult?.state.reasoningEffort ?? payload.reasoningEffort;
       const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-      context.updateSessionSummary(payload.sessionId, (summary) => ({ ...summary, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() }));
-      const next = context.hydrateSessionSummary({ ...current, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() });
+      context.updateSessionSummary(payload.sessionId, (summary) => ({ ...summary, agentMode: nextAgentMode, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() }));
+      const next = context.hydrateSessionSummary({ ...current, agentMode: nextAgentMode, model: nextModel, modelOptions: nextModelOptions, reasoningEffort: nextReasoning, updatedAt: new Date().toISOString() });
       context.broadcastAuthenticated({ type: "session.updated", requestId: payload.requestId, session: next });
       return true;
     }

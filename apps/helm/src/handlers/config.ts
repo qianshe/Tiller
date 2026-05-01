@@ -1,17 +1,20 @@
 import { exec, execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { mkdir, readdir } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { listAvailableProviders, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
-import type { AcpAgentProvider, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import { listAvailableProviders, readTillerConfig, saveHelmToConfig, saveProjectToConfig, saveProviderToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
+import { sortProjectFileSummaries } from "@tiller/shared";
+import type { AcpAgentProvider, ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { HelmMessageHandler } from "./context";
 
 
-const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
+const PROJECT_FILES_MAX_BUFFER = 8 * 1024 * 1024;
+const PROJECT_FILE_FALLBACK_LIMIT = 5000;
+const IGNORED_PROJECT_FILE_DIRECTORIES = new Set([".git", "node_modules", ".tiller", "dist", "build", ".next", "coverage"]);
 
 function normalizeGitBranchName(input: string) {
   return input.trim().replace(/\s+/g, "-");
@@ -29,6 +32,102 @@ function safeWorktreeSlug(branchName: string) {
 
 async function runGit(cwd: string, args: string[]) {
   return execFileAsync("git", ["-C", cwd, ...args], { timeout: GIT_COMMAND_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 });
+}
+
+async function runGitForProjectFiles(cwd: string) {
+  return execFileAsync("git", ["-C", cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+    windowsHide: true,
+    maxBuffer: PROJECT_FILES_MAX_BUFFER,
+  });
+}
+
+function normalizeProjectFilePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function isPathInsideRoot(root: string, candidate: string) {
+  const relativePath = relative(root, candidate);
+  return relativePath === "" || (Boolean(relativePath) && !relativePath.startsWith("..") && !resolve(relativePath).startsWith(".."));
+}
+
+function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
+  const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
+  return workspace?.path ?? resolveProjectRoot(project, workspaces);
+}
+
+function buildProjectFileSummaries(filePaths: string[]) {
+  const directories = new Set<string>();
+  const files = new Set<string>();
+  filePaths.forEach((filePath) => {
+    const normalized = normalizeProjectFilePath(filePath).replace(/\/$/, "");
+    if (!normalized) {
+      return;
+    }
+    files.add(normalized);
+    const parts = normalized.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      directories.add(parts.slice(0, index).join("/"));
+    }
+  });
+  return [
+    ...Array.from(directories).map<ProjectFileSummary>((path) => ({ path, kind: "directory" })),
+    ...Array.from(files).map<ProjectFileSummary>((path) => ({ path, kind: "file" })),
+  ].sort(sortProjectFileSummaries);
+}
+
+async function listProjectFilesFromDirectory(rootPath: string) {
+  const root = resolve(rootPath);
+  const files: ProjectFileSummary[] = [];
+
+  async function walk(directory: string) {
+    if (files.length >= PROJECT_FILE_FALLBACK_LIMIT) {
+      return;
+    }
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (files.length >= PROJECT_FILE_FALLBACK_LIMIT) {
+        return;
+      }
+      const absolutePath = resolve(directory, entry.name);
+      if (!isPathInsideRoot(root, absolutePath)) {
+        continue;
+      }
+      const projectPath = normalizeProjectFilePath(relative(root, absolutePath));
+      if (entry.isDirectory()) {
+        if (!IGNORED_PROJECT_FILE_DIRECTORIES.has(entry.name)) {
+          files.push({ path: projectPath, kind: "directory" });
+          await walk(absolutePath);
+        }
+      } else if (entry.isFile()) {
+        files.push({ path: projectPath, kind: "file" });
+      }
+    }
+  }
+
+  await walk(root);
+  return files.sort(sortProjectFileSummaries);
+}
+
+async function listProjectFiles(rootPath: string) {
+  try {
+    const gitRoot = await resolveGitRoot(rootPath);
+    const result = await runGitForProjectFiles(gitRoot);
+    const files = buildProjectFileSummaries(
+      result.stdout
+        .split("\0")
+        .map((path) => normalizeProjectFilePath(path.trim()))
+        .filter(Boolean),
+    );
+    return { files, message: `Loaded ${files.length} Git entries` };
+  } catch (error) {
+    if (!isNonGitRepositoryError(error)) {
+      throw error;
+    }
+    const files = await listProjectFilesFromDirectory(rootPath);
+    const truncated = files.length >= PROJECT_FILE_FALLBACK_LIMIT;
+    return { files, message: truncated ? `Loaded first ${files.length} files` : `Loaded ${files.length} files` };
+  }
 }
 
 async function resolveGitRoot(path: string) {
@@ -62,6 +161,95 @@ function projectWorkspaceItems(project: ProjectSummary, workspaces: WorkspaceSum
   return workspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id));
 }
 
+function isNonGitRepositoryError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not a git repository|not a git repo|outside repository/i.test(message);
+}
+
+export function resolveProjectWorkspaceId(project: Pick<ProjectSummary, "id" | "gitCurrentBranch">, currentBranch?: string) {
+  return currentBranch?.trim() || project.gitCurrentBranch?.trim() || `${project.id}-workspace`;
+}
+
+function isProjectRootWorkspaceId(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, workspaceId: string) {
+  return workspaceId === `${project.id}-workspace` || workspaceId === project.gitCurrentBranch || gitInfo.branches.includes(workspaceId);
+}
+
+function stripRuntimeProjectSummary(project: ProjectSummary) {
+  const { summary: _runtimeSummary, ...persistableProject } = project;
+  return persistableProject;
+}
+
+export function persistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, projectRoot: string, configPath: string) {
+  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
+  const previousWorkspaceIds = project.workspaceIds ?? [];
+  const workspaceIds = Array.from(new Set([
+    workspaceId,
+    ...previousWorkspaceIds.filter((id) => id === workspaceId || !isProjectRootWorkspaceId(project, gitInfo, id)),
+  ]));
+  saveProjectToConfig({
+    ...stripRuntimeProjectSummary(project),
+    workspaceIds,
+    defaultWorkspaceId: workspaceId,
+    gitBranches: gitInfo.branches,
+    gitCurrentBranch: gitInfo.currentBranch,
+  }, configPath);
+  if (gitInfo.currentBranch) {
+    saveProjectRootWorkspaceToConfig({
+      id: workspaceId,
+      name: gitInfo.currentBranch,
+      path: projectRoot.replace(/\\/g, "/"),
+    }, project, gitInfo, configPath);
+  }
+}
+
+function saveProjectRootWorkspaceToConfig(workspace: WorkspaceSummary, project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }, configPath: string) {
+  const current = readTillerConfig(configPath);
+  const retainedWorkspaces = (current.workspaces ?? []).filter((item) => (
+    item.id !== workspace.id && !isProjectRootWorkspaceId(project, gitInfo, item.id)
+  ));
+  writeFileSync(configPath, JSON.stringify({
+    ...current,
+    workspaces: [...retainedWorkspaces, workspace],
+  }, null, 2), "utf8");
+}
+
+export function shouldPersistProjectGitInfo(project: ProjectSummary, gitInfo: { branches: string[]; currentBranch?: string }) {
+  const previous = project.gitBranches ?? [];
+  const branchChanged = previous.length !== gitInfo.branches.length || previous.some((branch, index) => branch !== gitInfo.branches[index]);
+  const currentChanged = project.gitCurrentBranch !== gitInfo.currentBranch;
+  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
+  const workspaceChanged = project.defaultWorkspaceId !== workspaceId ||
+    !(project.workspaceIds ?? []).includes(workspaceId) ||
+    (project.workspaceIds ?? []).some((id) => id !== workspaceId && isProjectRootWorkspaceId(project, gitInfo, id));
+  return branchChanged || currentChanged || workspaceChanged;
+}
+
+async function persistProjectGitInfoIfAvailable(project: ProjectSummary, workspaces: WorkspaceSummary[], configPath: string) {
+  const projectRoot = resolveProjectRoot(project, workspaces);
+  if (!projectRoot) {
+    return false;
+  }
+
+  try {
+    const gitRoot = await resolveGitRoot(projectRoot);
+    const gitInfo = await listGitBranches(gitRoot);
+    if (!gitInfo.branches.length) {
+      return false;
+    }
+
+    if (shouldPersistProjectGitInfo(project, gitInfo)) {
+      persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    if (isNonGitRepositoryError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 async function createProjectWorktree(project: ProjectSummary, workspaces: WorkspaceSummary[], branchNameInput: string, configPath: string) {
   const branchName = normalizeGitBranchName(branchNameInput);
   validateGitBranchName(branchName);
@@ -72,9 +260,12 @@ async function createProjectWorktree(project: ProjectSummary, workspaces: Worksp
   const gitRoot = await resolveGitRoot(projectRoot);
   const { branches } = await listGitBranches(gitRoot);
   const branchExists = branches.includes(branchName);
+  if (!branchExists) {
+    throw new Error(`Branch ${branchName} does not exist. Create the branch in Git first, then reload project branches.`);
+  }
   const worktreePath = join(gitRoot, ".tiller", "worktrees", safeWorktreeSlug(branchName));
   await mkdir(join(gitRoot, ".tiller", "worktrees"), { recursive: true });
-  await runGit(gitRoot, branchExists ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath]);
+  await runGit(gitRoot, ["worktree", "add", worktreePath, branchName]);
 
   const workspaceId = `${project.id}-worktree-${safeWorktreeSlug(branchName)}`;
   const workspace: WorkspaceSummary = { id: workspaceId, name: branchName, path: worktreePath.replace(/\\/g, "/") };
@@ -87,20 +278,53 @@ async function createProjectWorktree(project: ProjectSummary, workspaces: Worksp
   return workspace;
 }
 
+export async function refreshProjectGitBranches(projects: ProjectSummary[], workspaces: WorkspaceSummary[], configPath: string) {
+  let updated = 0;
+  let skipped = 0;
+  const failures: Array<{ projectId: string; message: string }> = [];
 
-type RegistryAgent = {
-  id?: string;
-  name?: string;
-  distribution?: {
-    binary?: Record<string, { cmd?: string; args?: string[] }>;
-  };
-};
+  for (const project of projects) {
+    const projectRoot = resolveProjectRoot(project, workspaces);
+    if (!projectRoot) {
+      skipped += 1;
+      continue;
+    }
 
-function currentRegistryPlatformKey() {
-  const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
-  return `${os}-${arch}`;
+    try {
+      const gitRoot = await resolveGitRoot(projectRoot);
+      const gitInfo = await listGitBranches(gitRoot);
+      if (!gitInfo.branches.length) {
+        skipped += 1;
+        continue;
+      }
+
+      if (shouldPersistProjectGitInfo(project, gitInfo)) {
+        persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+        updated += 1;
+      }
+    } catch (error) {
+      if (isNonGitRepositoryError(error)) {
+        skipped += 1;
+        continue;
+      }
+      failures.push({ projectId: project.id, message: error instanceof Error ? error.message : "Failed to refresh Git branches" });
+    }
+  }
+
+  return { updated, skipped, failures };
 }
+
+
+const LOCAL_ACP_DISCOVERY_CANDIDATES: AcpAgentProvider[] = [
+  { id: "claude-agent-acp", name: "Claude Agent ACP", command: "claude-agent-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install claude-agent-acp and make it available on PATH." },
+  { id: "cline", name: "Cline", command: "cline", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install cline and make it available on PATH." },
+  { id: "gemini", name: "Gemini", command: "gemini", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install gemini and make it available on PATH." },
+  { id: "openclaw", name: "OpenClaw", command: "openclaw", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install openclaw and make it available on PATH." },
+  { id: "droid", name: "Droid", command: "droid", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install droid and make it available on PATH." },
+  { id: "hermes", name: "Hermes", command: "hermes", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install hermes and make it available on PATH." },
+  { id: "codex-acp", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install codex-acp and make it available on PATH." },
+  { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], transport: "stdio", protocol: "acp", kind: "custom", installHint: "Install opencode and make it available on PATH." },
+];
 
 function normalizeRegistryCommand(command: string) {
   const executable = command.replace(/^\.\\?/, "").replace(/^\.\//, "").split(/[\\/]/).pop() ?? command;
@@ -111,58 +335,25 @@ function discoveryCommandKey(command: string) {
   return normalizeRegistryCommand(command).toLowerCase();
 }
 
-function providerFromRegistryAgent(agent: RegistryAgent): AcpAgentProvider | null {
-  if (!agent.id || !agent.name) {
-    return null;
-  }
-
-  const platformBinary = agent.distribution?.binary?.[currentRegistryPlatformKey()];
-  if (!platformBinary?.cmd) {
-    return null;
-  }
-
-  const command = normalizeRegistryCommand(platformBinary.cmd);
-  return {
-    id: agent.id,
-    name: agent.name,
-    kind: "custom",
-    command,
-    args: platformBinary.args ?? [],
-    transport: "stdio",
-    protocol: "acp",
-    installHint: `Install ${agent.name} and make \`${command}\` available on PATH.`,
-  };
-}
-
-async function loadRegistryDiscoveryCandidates() {
-  try {
-    const response = await fetch(ACP_REGISTRY_URL, { signal: AbortSignal.timeout(3500) });
-    if (!response.ok) {
-      throw new Error(`ACP registry responded ${response.status}`);
-    }
-    const registry = (await response.json()) as { agents?: RegistryAgent[] };
-    const providers = (registry.agents ?? []).map(providerFromRegistryAgent).filter((agent): agent is AcpAgentProvider => Boolean(agent));
-    return providers;
-  } catch {
-    return [];
-  }
-}
-
-function discoverProbeCommands(command: string) {
+function discoverProbeCommands(command: string, logInfo?: (message: string) => void) {
   const normalized = normalizeRegistryCommand(command).trim();
-  if (!normalized || /[\/:]/.test(normalized)) {
+  if (!/^[A-Za-z0-9._-]+$/.test(normalized)) {
+    logInfo?.(`[tiller-helm] agent.discover.probe.skip command=${JSON.stringify(command)} reason="not-a-simple-global-command"`);
     return [];
   }
   return [normalized];
 }
 
-async function commandHasHelpOutput(command: string) {
-  const commands = discoverProbeCommands(command);
+async function commandHasHelpOutput(command: string, logInfo: (message: string) => void) {
+  const commands = discoverProbeCommands(command, logInfo);
   const candidates = ["-h", "--help"];
   for (const probeCommand of commands) {
     for (const arg of candidates) {
+      const shellCommand = `${probeCommand} ${arg}`;
+      logInfo(`[tiller-helm] agent.discover.probe.start command=${JSON.stringify(shellCommand)}`);
       const output = await new Promise<string>((resolve) => {
-        exec(`${probeCommand} ${arg}`, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
+        exec(shellCommand, { timeout: 2500, windowsHide: true }, (error, stdout, stderr) => {
+          logInfo(`[tiller-helm] agent.discover.probe.result command=${JSON.stringify(shellCommand)} ok=${error ? "false" : "true"} error=${JSON.stringify(error?.message ?? "")} stdout=${JSON.stringify(stdout ?? "")} stderr=${JSON.stringify(stderr ?? "")}`);
           if (error) {
             resolve("");
             return;
@@ -178,19 +369,34 @@ async function commandHasHelpOutput(command: string) {
   return false;
 }
 
-async function discoverAcpAgents(configuredAgents: AcpAgentProvider[]) {
+function mergeDiscoveryCandidates(configuredAgents: AcpAgentProvider[]) {
+  const byCommand = new Map<string, AcpAgentProvider>();
+  [...LOCAL_ACP_DISCOVERY_CANDIDATES, ...configuredAgents].forEach((candidate) => {
+    const key = discoveryCommandKey(candidate.command);
+    if (!byCommand.has(key)) {
+      byCommand.set(key, candidate);
+    }
+  });
+  return Array.from(byCommand.values());
+}
+
+async function discoverAcpAgents(configuredAgents: AcpAgentProvider[], logInfo: (message: string) => void) {
   const configuredById = new Map(configuredAgents.map((agent) => [agent.id, agent]));
   const configuredCommands = new Set(configuredAgents.map((agent) => discoveryCommandKey(agent.command)));
-  const registryCandidates = await loadRegistryDiscoveryCandidates();
+  const discoveryCandidates = mergeDiscoveryCandidates(configuredAgents);
   const candidateResults = await Promise.all(
-    registryCandidates.map(async (candidate) => ({
-      agent: candidate,
-      available: await commandHasHelpOutput(candidate.command),
-      configured: configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command)),
-    })),
+    discoveryCandidates.map(async (candidate) => {
+      const configured = configuredById.has(candidate.id) || configuredCommands.has(discoveryCommandKey(candidate.command));
+      return {
+        agent: candidate,
+        available: await commandHasHelpOutput(candidate.command, logInfo),
+        configured,
+      };
+    }),
   );
-  const discovered = candidateResults.filter((result) => result.available).map((result) => result.agent);
-  const candidates = candidateResults.map((result) => ({
+  const visibleResults = candidateResults.filter((result) => result.available || result.configured);
+  const discovered = visibleResults.filter((result) => result.available).map((result) => result.agent);
+  const candidates = visibleResults.map((result) => ({
     id: result.agent.id,
     name: result.agent.name,
     command: result.agent.command,
@@ -229,9 +435,40 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       context.emit(socket, { type: "project.list.result", requestId: payload.requestId, projects });
       return true;
     }
+    case "project.files.list": {
+      const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      const workspaces = context.loadAvailableWorkspaces();
+      context.setProjects(projects);
+      context.setWorkspaces(workspaces);
+      const project = context.resolveProjectById(payload.projectId, projects);
+      if (!project) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: payload.projectId, workspaceId: payload.workspaceId, files: [], message: "Project not found" });
+        return true;
+      }
+      const projectRoot = resolveProjectFileRoot(project, workspaces, payload.workspaceId);
+      if (!projectRoot) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: project.id, workspaceId: payload.workspaceId, files: [], message: "Project has no path or workspace path" });
+        return true;
+      }
+      try {
+        const result = await listProjectFiles(projectRoot);
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: true, projectId: project.id, workspaceId: payload.workspaceId, files: result.files, message: result.message });
+      } catch (error) {
+        context.emit(socket, { type: "project.files.result", requestId: payload.requestId, ok: false, projectId: project.id, workspaceId: payload.workspaceId, files: [], message: error instanceof Error ? error.message : "Failed to list project files" });
+      }
+      return true;
+    }
     case "project.save": {
       try {
         const result = saveProjectToConfig(payload.project, context.configPath);
+        const savedWorkspaces = context.loadAvailableWorkspaces();
+        try {
+          await persistProjectGitInfoIfAvailable(payload.project, savedWorkspaces, context.configPath);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to refresh project Git branches";
+          context.logError(`[tiller-helm] project.save.git.refresh.failed project=${payload.project.id} message=${message}`);
+        }
+
         const workspaces = context.loadAvailableWorkspaces();
         const projects = await context.loadAvailableProjectsWithSemanticSummaries();
         context.setWorkspaces(workspaces);
@@ -290,12 +527,16 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
       try {
         const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
         const gitInfo = gitRoot ? await listGitBranches(gitRoot) : { branches: [], currentBranch: undefined };
-        if (gitInfo.branches.length) {
-          saveProjectToConfig({ ...project, gitBranches: gitInfo.branches }, context.configPath);
+        if (gitInfo.branches.length && projectRoot) {
+          persistProjectGitInfo(project, gitInfo, projectRoot, context.configPath);
           const nextProjects = await context.loadAvailableProjectsWithSemanticSummaries();
+          const nextWorkspaces = context.loadAvailableWorkspaces();
           context.setProjects(nextProjects);
+          context.setWorkspaces(nextWorkspaces);
           context.emit(socket, { type: "project.list.result", requestId: `project-list-${Date.now()}`, projects: nextProjects });
+          context.emit(socket, { type: "workspace.list.result", requestId: `workspace-list-${Date.now()}`, workspaces: nextWorkspaces });
         }
+        const latestWorkspaces = context.loadAvailableWorkspaces();
         context.emit(socket, {
           type: "workspace.git.result",
           requestId: payload.requestId,
@@ -303,8 +544,8 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
           projectId: project.id,
           branches: gitInfo.branches,
           currentBranch: gitInfo.currentBranch,
-          workspaces: projectWorkspaceItems(project, workspaces),
-          selectedWorkspaceId: project.defaultWorkspaceId,
+          workspaces: projectWorkspaceItems(context.resolveProjectById(project.id, context.getProjects()) ?? project, latestWorkspaces),
+          selectedWorkspaceId: gitInfo.currentBranch ?? project.defaultWorkspaceId,
           message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
         });
       } catch (error) {
@@ -330,7 +571,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
         const gitInfo = await listGitBranches(gitRoot);
         const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
         if (gitInfo.branches.length) {
-          saveProjectToConfig({ ...nextProject, gitBranches: gitInfo.branches }, context.configPath);
+          persistProjectGitInfo(nextProject, gitInfo, workspace.path, context.configPath);
         }
         context.emit(socket, {
           type: "workspace.git.result",
@@ -358,7 +599,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
     }
     case "agent.discover": {
       const configuredAgents = context.loadAvailableAgents();
-      const result = await discoverAcpAgents(configuredAgents);
+      const result = await discoverAcpAgents(configuredAgents, context.logInfo);
       context.setAgents(result.agents);
       context.emit(socket, {
         type: "agent.discover.result",

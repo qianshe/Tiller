@@ -47,3 +47,4 @@ docs/
 .sisyphus/
 
 output/
+.tmp/

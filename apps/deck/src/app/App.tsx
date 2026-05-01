@@ -4,7 +4,7 @@ import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
 import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
 import geminiProviderIconUrl from "./assets/provider-icons/Gemini.svg";
 import type { AcpDiscoveryCandidate, ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
-import { resolveSessionConfigSupport } from "@tiller/shared";
+import { resolveSessionConfigSupport, sortProjectFileSummaries } from "@tiller/shared";
 import type {
   AcpAgentProvider,
   AcpModelOption,
@@ -15,6 +15,7 @@ import type {
   HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectFileSummary,
   ProjectSummary,
   SessionConfigOption,
   SessionReasoningEffort,
@@ -26,13 +27,13 @@ import type {
 import { DAEMON_PROFILE_STORAGE_KEY, daemonProfileKey, formatConnectionStatus, formatDaemonProfileLine, formatPairingState, readDaemonProfiles, type DaemonProfile } from "./daemon-profiles";
 import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, DECK_PREFERENCES_STORAGE_KEY, isRecord, readDeckPreferences, type DeckLanguage, type DeckPreferences, type DeckTheme, type TechnicalPanelPreferences } from "./preferences";
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
-import { buildEnhancedPrompt, enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
+import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
-import { buildConversationTimeline, commandChunkToToolCall, mergeToolCallHistory } from "../features/logbook/timeline";
+import { commandChunkToToolCall, groupToolCalls, mergeToolCallHistory } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -43,9 +44,14 @@ const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
 const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
 const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
+const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
 const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
+const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
+const DEFAULT_HISTORY_PAGE_LIMIT = 50;
+const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
+const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -174,11 +180,9 @@ type CleanupFeedback = {
   message: string;
 };
 
-type MissionPaneWidths = {
-  sidebar: number;
-  display: number;
-  inspector: number;
-};
+type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
+
+type MissionPaneWidths = Record<MissionPaneId, number>;
 
 type MissionResizeHandle = "sidebar" | "display" | "inspector";
 
@@ -187,11 +191,135 @@ type AgentModelOptionsEntry = {
   message?: string;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
-  state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+  state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
+};
+
+type ProjectFilesEntry = {
+  loading?: boolean;
+  message?: string;
+  files: ProjectFileSummary[];
 };
 
 function agentModelOptionsKey(providerId: string, workspaceId: string) {
   return `${providerId}::${workspaceId}`;
+}
+
+function projectFilesKey(projectId: string | null | undefined, workspaceId: string | null | undefined) {
+  return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
+}
+
+function inferProjectFromText(text: string, projects: ProjectSummary[]) {
+  const scored = projects
+    .map((project) => {
+      const name = project.name.toLowerCase();
+      const path = project.path?.toLowerCase().replaceAll("\\", "/");
+      const score =
+        (path && text.includes(path) ? 4 : 0) +
+        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
+      return { project, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
+    return null;
+  }
+  return scored[0].project;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readSessionTitles(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SESSION_TITLES_STORAGE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object"
+      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionTitles(titles: Record<string, string>) {
+  window.localStorage.setItem(SESSION_TITLES_STORAGE_KEY, JSON.stringify(titles));
+}
+
+function createFallbackSessionTitle(prompt: string) {
+  return prompt.replace(/[\p{P}\p{S}\s]+/gu, "").slice(0, 5) || "新任务";
+}
+
+function normalizeGeneratedSessionTitle(value: string) {
+  return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
+}
+
+async function generateSessionTitleWithLlm(prompt: string, llm: PromptEnhancerPreferences["llm"]) {
+  const response = await fetch(resolveSessionTitleChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "你是会话命名器。根据用户输入生成一个中文短标题，只输出标题本身，5到10个字，不要标点。" },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Session title LLM failed: ${response.status}`);
+  }
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return normalizeGeneratedSessionTitle(data.choices?.[0]?.message?.content ?? "");
+}
+
+function resolveSessionTitleChatCompletionsUrl(baseUrl: string) {
+  const normalized = baseUrl.trim().replace(/\/+$/u, "");
+  if (normalized.endsWith("/chat/completions")) {
+    return normalized;
+  }
+  if (normalized.endsWith("/v1")) {
+    return `${normalized}/chat/completions`;
+  }
+  return `${normalized}/v1/chat/completions`;
+}
+
+function daemonProfileToHelmSummary(profile: DaemonProfile): HelmSummary {
+  return {
+    id: profile.id,
+    name: profile.name,
+    host: profile.host,
+    port: Number(profile.port),
+  };
+}
+
+function mergeHelmSummariesByEndpoint(items: HelmSummary[]) {
+  const byEndpoint = new Map<string, HelmSummary>();
+  for (const item of items) {
+    byEndpoint.set(daemonProfileKey(item.host, String(item.port)), item);
+  }
+  return Array.from(byEndpoint.values());
+}
+
+function getDevelopmentMockHelmProfiles() {
+  return import.meta.env.DEV ? [DEV_MOCK_HELM_PROFILE] : [];
+}
+
+function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
+  const normalized = summary?.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "暂无项目摘要";
+  }
+
+  const generatedPrefix = `Project: ${projectName} Configured summary:`;
+  const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
+    ? normalized.split(generatedPrefix).map((part) => part.trim()).filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim()
+    : normalized;
+  const compact = withoutGeneratedPrefix || normalized;
+  return compact.length > 360 ? `${compact.slice(0, 360)}…` : compact;
 }
 
 
@@ -255,37 +383,80 @@ function resolvePreferredModel(currentModel: string | undefined, modelOptions: s
   return modelOptions[0];
 }
 
-const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, display: 520, inspector: 320 };
-const MISSION_PANE_LIMITS: Record<keyof MissionPaneWidths, { min: number; max: number }> = {
+const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = { sidebar: 320, chat: 500, display: 420, inspector: 320 };
+const MISSION_PANE_LIMITS: Record<MissionPaneId, { min: number; max?: number }> = {
   sidebar: { min: 240, max: 400 },
-  display: { min: 240, max: 640 },
-  inspector: { min: 220, max: 360 },
+  chat: { min: 420, max: 820 },
+  display: { min: 320 },
+  inspector: { min: 320, max: 520 },
 };
-const MISSION_RESIZER_TOTAL_WIDTH = 24;
-const MISSION_MIN_CHAT_WIDTH = 300;
-const MISSION_OUTER_GUTTER = 24;
+const MISSION_RESIZER_WIDTH = 8;
+const MISSION_OUTER_GUTTER = 0;
+const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1584;
+const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1156;
 
-function clampPaneWidth(value: number, pane: keyof MissionPaneWidths) {
-  const limits = MISSION_PANE_LIMITS[pane];
-  return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
+function getMissionPaneMax(pane: MissionPaneId) {
+  return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
 }
 
-function clampMissionPaneSet(widths: MissionPaneWidths, sidebarCollapsed = false): MissionPaneWidths {
-  if (typeof window === "undefined") {
-    return widths;
-  }
-  const sidebarWidth = sidebarCollapsed ? 0 : widths.sidebar;
-  const fixedBudget = sidebarWidth + widths.display + widths.inspector + MISSION_RESIZER_TOTAL_WIDTH + MISSION_OUTER_GUTTER;
-  const overflow = fixedBudget + MISSION_MIN_CHAT_WIDTH - window.innerWidth;
-  if (overflow <= 0) {
-    return widths;
+function clampPaneWidth(value: number, pane: MissionPaneId) {
+  const limits = MISSION_PANE_LIMITS[pane];
+  const max = getMissionPaneMax(pane);
+  return Math.min(max, Math.max(limits.min, Math.round(value)));
+}
+
+function normalizeMissionPaneWidths(widths: MissionPaneWidths, sidebarCollapsed: boolean, inspectorCollapsed: boolean, viewportWidth: number): MissionPaneWidths {
+  const next: MissionPaneWidths = {
+    sidebar: sidebarCollapsed ? 0 : clampPaneWidth(widths.sidebar, "sidebar"),
+    chat: clampPaneWidth(widths.chat, "chat"),
+    display: clampPaneWidth(widths.display, "display"),
+    inspector: inspectorCollapsed ? 0 : clampPaneWidth(widths.inspector, "inspector"),
+  };
+  const visibleResizerCount = 1 + (sidebarCollapsed ? 0 : 1) + (inspectorCollapsed ? 0 : 1);
+  const availableWidth = Math.max(0, viewportWidth - MISSION_OUTER_GUTTER - visibleResizerCount * MISSION_RESIZER_WIDTH);
+  const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
+
+  if (totalWidth < availableWidth) {
+    return { ...next, display: next.display + availableWidth - totalWidth };
   }
 
-  const displayReduction = Math.min(overflow, Math.max(0, widths.display - MISSION_PANE_LIMITS.display.min));
-  const nextDisplay = widths.display - displayReduction;
-  const remainingOverflow = overflow - displayReduction;
-  const inspectorReduction = Math.min(remainingOverflow, Math.max(0, widths.inspector - MISSION_PANE_LIMITS.inspector.min));
-  return { ...widths, display: nextDisplay, inspector: widths.inspector - inspectorReduction };
+  let overflow = totalWidth - availableWidth;
+  if (overflow <= 0) {
+    return next;
+  }
+
+  if (!inspectorCollapsed) {
+    const inspectorReduction = Math.min(overflow, Math.max(0, next.inspector - MISSION_PANE_LIMITS.inspector.min));
+    next.inspector -= inspectorReduction;
+    overflow -= inspectorReduction;
+  }
+
+  const displayReduction = Math.min(overflow, Math.max(0, next.display - MISSION_PANE_LIMITS.display.min));
+  next.display -= displayReduction;
+  overflow -= displayReduction;
+
+  if (!sidebarCollapsed && overflow > 0) {
+    const sidebarReduction = Math.min(overflow, Math.max(0, next.sidebar - MISSION_PANE_LIMITS.sidebar.min));
+    next.sidebar -= sidebarReduction;
+  }
+
+  return next;
+}
+
+function resizeMissionPanePair(widths: MissionPaneWidths, left: MissionPaneId, right: MissionPaneId, delta: number): MissionPaneWidths {
+  const total = widths[left] + widths[right];
+  const leftMin = MISSION_PANE_LIMITS[left].min;
+  const rightMin = MISSION_PANE_LIMITS[right].min;
+  const leftMax = getMissionPaneMax(left);
+  const rightMax = getMissionPaneMax(right);
+  const lowerLeft = Math.max(leftMin, total - rightMax);
+  const upperLeft = Math.min(leftMax, total - rightMin);
+  const nextLeft = Math.round(Math.min(upperLeft, Math.max(lowerLeft, widths[left] + delta)));
+  return {
+    ...widths,
+    [left]: nextLeft,
+    [right]: Math.round(total - nextLeft),
+  };
 }
 
 type AppView = "overview" | "sessions" | "agents" | "settings";
@@ -343,7 +514,7 @@ function TopNav({
             key={item.id}
             type="button"
             className={`top-nav-item ${activeView === item.id ? "active" : ""}`}
-            onClick={() => onNavigate(item.id)}
+            onClick={(event) => { onNavigate(item.id); event.currentTarget.blur(); }}
           >
             {item.label}
           </button>
@@ -382,19 +553,47 @@ function TopNav({
 
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
+  const normalized = title.toLowerCase();
+  if (kind === "subagent" || /\b(subagent|delegate|explore|librarian|worker|oracle|metis|momus)\b/iu.test(title)) {
+    return "Subagent";
+  }
+  if (/\b(skill|execute_skill|load_skill)\b|[\\/](skills?|plugins)[\\/].*skill\.md|skill\.md/iu.test(title)) {
+    return "Skill";
+  }
+  if (/(^|[\s:/_-])mcp([\s:/_-]|$)|mcp_router|mcp-router|mcp__[a-z0-9_-]+/iu.test(title) || isKnownMcpRouterTool(normalized)) {
+    return "MCP";
+  }
   if (kind === "terminal") {
-    return "Terminal";
+    return "Shell";
   }
   if (kind === "edit") {
     return "File";
   }
-  if (kind === "tool") {
-    return /mcp/iu.test(title) ? "MCP" : "Tool";
+  if (/\b(apply_patch|update_plan|todos?|background_output|read_thread_terminal|shell_command|webfetch)\b|websearch|web_search/iu.test(normalized)) {
+    return "Built-in";
   }
-  if (kind === "subagent") {
-    return "Agent";
+  if (kind === "tool") {
+    return "Tool";
   }
   return "Tool";
+}
+
+function resolveToolCallTone(kind: AgentToolCall["kind"], title: string) {
+  const label = resolveToolCallLabel(kind, title);
+  const toneByLabel: Record<string, { className: string; icon: string }> = {
+    MCP: { className: "tool-call-mcp", icon: "◇" },
+    Shell: { className: "tool-call-shell", icon: "⌁" },
+    File: { className: "tool-call-file", icon: "□" },
+    Skill: { className: "tool-call-skill", icon: "✦" },
+    Subagent: { className: "tool-call-subagent", icon: "◎" },
+    "Built-in": { className: "tool-call-builtin", icon: "▵" },
+    Tool: { className: "tool-call-generic", icon: "·" },
+  };
+  return { label, ...(toneByLabel[label] ?? toneByLabel.Tool) };
+}
+
+function isKnownMcpRouterTool(normalizedTitle: string) {
+  return /^(activate_project|check_onboarding_performed|list_dir|find_file|read_file|read_memory|write_memory|search_context|search_for_pattern|find_symbol|find_referencing_symbols|get_symbols_overview|edit_file|replace_content|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_symbol|safe_delete_symbol|tavily_|resolve_library_id|get_library_docs|ask_question|read_wiki_|zhi|ji|tu)(\b|$)/u.test(normalizedTitle);
 }
 
 type MissionVisualFixture = {
@@ -496,9 +695,10 @@ export function App() {
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
-  const pendingPromptRef = useRef<{ raw: string; enhanced: string } | null>(null);
+  const pendingPromptRef = useRef<string | null>(null);
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatMainRef = useRef<HTMLDivElement | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -533,12 +733,19 @@ export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>(missionVisualFixture?.sessions ?? []);
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(missionVisualFixture?.statuses ?? {});
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(missionVisualFixture?.messages ?? {});
+  const [messageHistoryState, setMessageHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
   const [permissionRequests, setPermissionRequests] = useState<Record<string, PermissionRequest | null>>({});
   const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(missionVisualFixture?.outputs ?? {});
   const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(missionVisualFixture?.toolCalls ?? {});
+  const [activityHistoryState, setActivityHistoryState] = useState<Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>>({});
+  const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({});
+  const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(() => readSessionTitles());
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
+  const [projectFilesByScope, setProjectFilesByScope] = useState<Record<string, ProjectFilesEntry>>({});
+  const [projectFileFilter, setProjectFileFilter] = useState("");
+  const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
@@ -551,10 +758,9 @@ export function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [branchCreateModalOpen, setBranchCreateModalOpen] = useState(false);
   const [worktreeGitByProject, setWorktreeGitByProject] = useState<Record<string, { branches: string[]; currentBranch?: string; message?: string; loading?: boolean }>>({});
-  const [newGitBranchName, setNewGitBranchName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
+  const [selectedAgentMode, setSelectedAgentMode] = useState<string>(missionVisualFixture?.sessions[0]?.agentMode ?? "");
   const [selectedModel, setSelectedModel] = useState<string>(missionVisualFixture?.sessions[0]?.model ?? MODEL_OPTIONS[0]);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
@@ -567,11 +773,32 @@ export function App() {
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<string | null>(null);
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(DEFAULT_MISSION_PANE_WIDTHS);
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
+  const [missionInspectorCollapsed, setMissionInspectorCollapsed] = useState(false);
+  const missionLayoutRef = useRef<HTMLElement | null>(null);
+  const [missionViewportWidth, setMissionViewportWidth] = useState(() => typeof document === "undefined" ? 1440 : document.documentElement.clientWidth);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
-  const [missionConfigPicker, setMissionConfigPicker] = useState<"model" | "reasoning" | null>(null);
+  const [missionConfigPicker, setMissionConfigPicker] = useState<"agentMode" | "model" | "reasoning" | null>(null);
   const [activeView, setActiveView] = useState<AppView>(() => resolveViewFromPath(window.location.pathname));
+
+  useEffect(() => {
+    const measureMissionLayout = () => {
+      const width = missionLayoutRef.current?.getBoundingClientRect().width ?? document.documentElement.clientWidth;
+      setMissionViewportWidth(Math.max(0, Math.round(width)));
+    };
+    measureMissionLayout();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureMissionLayout);
+    if (missionLayoutRef.current) {
+      resizeObserver?.observe(missionLayoutRef.current);
+    }
+    window.addEventListener("resize", measureMissionLayout);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureMissionLayout);
+    };
+  }, [activeView]);
+
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
     command: "opencode",
@@ -608,6 +835,10 @@ export function App() {
 
   const copy = UI_COPY[locale];
 
+  useEffect(() => {
+    writeSessionTitles(sessionTitles);
+  }, [sessionTitles]);
+
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
@@ -616,19 +847,28 @@ export function App() {
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
+  const configuredHelms = useMemo(() => {
+    const currentHost = daemonHost.trim() || DEFAULT_DAEMON_HOST;
+    const currentPort = daemonPort.trim() || DEFAULT_DAEMON_PORT;
+    const currentSavedProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === daemonProfileKey(currentHost, currentPort));
+    const currentProfile: DaemonProfile = {
+      id: currentSavedProfile?.id ?? "current-helm",
+      name: currentSavedProfile?.name || "Local Helm",
+      host: currentHost,
+      port: currentPort,
+    };
+    return mergeHelmSummariesByEndpoint([
+      currentProfile,
+      ...daemonProfiles,
+      ...getDevelopmentMockHelmProfiles(),
+    ].map(daemonProfileToHelmSummary).concat(helms));
+  }, [daemonHost, daemonPort, daemonProfiles, helms]);
   const activeHelm = useMemo(() => {
     const helmId = activeSession?.helmId ?? draftProject?.helmId;
-    return helms.find((helm) => helm.id === helmId) ?? null;
-  }, [activeSession?.helmId, draftProject?.helmId, helms]);
-  const effectiveMissionHelmId = selectedMissionHelmId ?? activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? helms[0]?.id ?? null;
-  const missionHelms = useMemo(() => {
-    const projectHelmIds = new Set(projects.map((project) => project.helmId));
-    const knownHelms = helms.filter((helm) => projectHelmIds.has(helm.id) || helm.id === effectiveMissionHelmId);
-    if (knownHelms.length) {
-      return knownHelms;
-    }
-    return activeHelm ? [activeHelm] : helms;
-  }, [activeHelm, effectiveMissionHelmId, helms, projects]);
+    return configuredHelms.find((helm) => helm.id === helmId) ?? null;
+  }, [activeSession?.helmId, configuredHelms, draftProject?.helmId]);
+  const effectiveMissionHelmId = selectedMissionHelmId ?? activeSession?.helmId ?? draftProject?.helmId ?? projects[0]?.helmId ?? configuredHelms[0]?.id ?? null;
+  const missionHelms = useMemo(() => resolveMissionHelms(configuredHelms, effectiveMissionHelmId, activeHelm), [activeHelm, configuredHelms, effectiveMissionHelmId]);
   const missionProjects = useMemo(
     () => projects.filter((project) => !effectiveMissionHelmId || project.helmId === effectiveMissionHelmId),
     [effectiveMissionHelmId, projects],
@@ -641,9 +881,8 @@ export function App() {
     return workspaces.filter((workspace) => workspaceIds.includes(workspace.id));
   }, [draftProject?.workspaceIds, workspaces]);
   const selectedWorkspace = filteredWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? filteredWorkspaces[0] ?? null;
-  const draftWorktreeGit = selectedProjectId ? worktreeGitByProject[selectedProjectId] : undefined;
-  const draftGitBranchOptions = Array.from(new Set([draftWorktreeGit?.currentBranch, ...(draftWorktreeGit?.branches ?? []), ...(draftProject?.gitBranches ?? []), "main", "master"].filter(Boolean) as string[]));
-  const selectedGitBranch = selectedWorkspace?.id.includes("-worktree-") ? selectedWorkspace.name : draftWorktreeGit?.currentBranch ?? "main";
+  const draftWorkspaceOptions = filteredWorkspaces;
+  const selectedWorkspaceName = selectedWorkspace?.name ?? "";
   const filteredAgents = useMemo(() => {
     const allowedAgentIds = draftProject?.allowedAgentIds;
     if (!allowedAgentIds?.length) {
@@ -651,19 +890,35 @@ export function App() {
     }
     return agents.filter((agent) => allowedAgentIds.includes(agent.id));
   }, [agents, draftProject?.allowedAgentIds]);
+  function resolveSessionProjectId(session: SessionSummary) {
+    const evidenceText = (messages[session.id] ?? []).map((message) => message.text).join("\n").toLowerCase();
+    const evidenceProject = evidenceText ? inferProjectFromText(evidenceText, projects) : null;
+    if (evidenceProject) {
+      return evidenceProject.id;
+    }
+    const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
+    return workspaceProject?.id ?? session.projectId;
+  }
+
   const projectSessions = useMemo(
-    () => sessions.filter((session) => !selectedProjectId || session.projectId === selectedProjectId),
-    [selectedProjectId, sessions],
+    () => sessions.filter((session) => !selectedProjectId || resolveSessionProjectId(session) === selectedProjectId),
+    [messages, projects, selectedProjectId, sessions],
   );
   const sessionCountsByProject = useMemo(
-    () => sessions.reduce<Record<string, number>>((counts, session) => ({ ...counts, [session.projectId]: (counts[session.projectId] ?? 0) + 1 }), {}),
-    [sessions],
+    () => sessions.reduce<Record<string, number>>((counts, session) => {
+      const projectId = resolveSessionProjectId(session);
+      return { ...counts, [projectId]: (counts[projectId] ?? 0) + 1 };
+    }, {}),
+    [messages, projects, sessions],
   );
+  const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession) : null;
+  const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
   const selectedDraftAgent = filteredAgents.find((agent) => agent.id === selectedAgentId) ?? filteredAgents[0] ?? null;
   const draftAgent = agents.find((agent) => agent.id === (activeSession?.agentId ?? selectedAgentId)) ?? null;
+  const draftAgentMode = activeSession ? activeSession.agentMode ?? "" : selectedAgentMode;
   const draftModel = activeSession ? activeSession.model ?? MODEL_OPTIONS[0] : selectedModel;
   const draftReasoningEffort = activeSession ? activeSession.reasoningEffort ?? "medium" : selectedReasoningEffort;
   const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
@@ -676,6 +931,14 @@ export function App() {
     : draftAgentModelOptions?.configOptions ?? resolveDraftConfigOptions(activeSession, sessions, sessionConfigOptions, selectedAgentId);
   const cachedModelSession = activeSession ? null : sessions.find((session) => session.agentId === selectedAgentId && (session.modelOptions?.length ?? 0) > 0);
   const draftNativeModelOptions = activeSession?.modelOptions ?? draftAgentModelOptions?.modelOptions ?? cachedModelSession?.modelOptions ?? [];
+  const draftAgentModeOptions = resolveAgentModeOptions(draftConfigOptions);
+  const effectiveDraftAgentMode = resolveCurrentAgentMode(draftAgentMode, draftConfigOptions, draftAgentModelOptions?.state.agentMode);
+  const showDraftAgentModeSelect = draftAgentModeOptions.length > 0;
+  const draftAgentModePickerLabel = showDraftAgentModeSelect
+    ? draftAgentModeOptions.find((option) => option.value === effectiveDraftAgentMode)?.label ?? effectiveDraftAgentMode ?? "选择 Agent"
+    : draftAgentModelOptions?.loading
+      ? "加载 Agents..."
+      : "暂无 Agent 列表";
   const draftModelOptions = resolveModelOptions(draftModel, draftConfigOptions, draftNativeModelOptions);
   const draftAllModelOptions = Array.from(new Set([...draftModelOptions, ...draftNativeModelOptions.map((option) => option.id)]));
   const draftModelParts = splitModelReasoning(draftModel);
@@ -703,7 +966,6 @@ export function App() {
   }
 
   function toggleMissionHelmNode(helmId: string) {
-    setSelectedMissionHelmId(helmId);
     setExpandedMissionHelmIds((current) => {
       const next = new Set(current);
       if (next.has(helmId)) {
@@ -719,51 +981,29 @@ export function App() {
     const project = projects.find((item) => item.id === projectId);
     if (project) {
       setSelectedMissionHelmId(project.helmId);
-      setSelectedProjectId(projectId);
+      setSelectedProjectId(project.id);
+      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
-    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+    setExpandedMissionProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
   }
 
-  function selectDraftWorktreeBranch(branch: string) {
-    const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
-    const fallbackWorkspace = filteredWorkspaces.find((workspace) => workspace.id === draftProject?.defaultWorkspaceId) ?? filteredWorkspaces[0];
-    setSelectedWorkspaceId(matchingWorkspace?.id ?? fallbackWorkspace?.id ?? selectedWorkspaceId);
-    setWorktreeGitByProject((current) => selectedProjectId ? {
-      ...current,
-      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), currentBranch: branch },
-    } : current);
+  function selectDraftWorkspace(workspaceId: string) {
+    setSelectedWorkspaceId(workspaceId);
     setWorktreePickerOpen(false);
   }
 
   function selectDraftAgent(agentId: string) {
     setSelectedAgentId(agentId);
     setAgentPickerOpen(false);
-  }
-
-  function openBranchCreateModal() {
-    setWorktreePickerOpen(false);
-    setBranchCreateModalOpen(true);
-  }
-
-  function closeBranchCreateModal() {
-    setBranchCreateModalOpen(false);
-    setNewGitBranchName("");
-  }
-
-  function createDraftGitBranch(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    if (!selectedProjectId || !socketRef.current) {
-      return;
-    }
-    const branch = newGitBranchName.trim().replace(/\s+/g, "-");
-    if (!branch) {
-      return;
-    }
-    setWorktreeGitByProject((current) => ({
-      ...current,
-      [selectedProjectId]: { ...(current[selectedProjectId] ?? { branches: [] }), loading: true, message: `正在创建 worktree：${branch}...` },
-    }));
-    dispatch(socketRef.current, { type: "workspace.git.create", requestId: nextRequestId(requestCounter), projectId: selectedProjectId, branchName: branch });
   }
 
   function selectMissionHelm(helmId: string) {
@@ -780,6 +1020,8 @@ export function App() {
       setSelectedMissionHelmId(project.helmId);
       setExpandedMissionHelmIds((current) => new Set([...current, project.helmId]));
       setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
+      setSelectedWorkspaceId((current) => project.workspaceIds?.includes(current ?? "") ? current : project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+      setSelectedAgentId((current) => project.allowedAgentIds?.includes(current ?? "") ? current : project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
     }
     setSelectedProjectId(projectId);
     setActiveSessionId((current) => {
@@ -797,22 +1039,29 @@ export function App() {
     }
 
     setSelectedMissionHelmId(session.helmId);
-    setSelectedProjectId(session.projectId);
+    const projectId = resolveSessionProjectId(session);
+    setSelectedProjectId(projectId);
+    setExpandedMissionHelmIds((current) => new Set([...current, session.helmId]));
+    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
     setActiveSessionId(sessionId);
   }
 
-  function updateSessionDraftPreferences(next: { model?: string; reasoningEffort?: SessionReasoningEffort }) {
+  function updateSessionDraftPreferences(next: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) {
     if (activeSession && socketRef.current) {
       dispatch(socketRef.current, {
         type: "session.configure",
         requestId: nextRequestId(requestCounter),
         sessionId: activeSession.id,
+        agentMode: next.agentMode ?? activeSession.agentMode ?? effectiveDraftAgentMode,
         model: normalizeModelSelection(next.model ?? activeSession.model ?? draftModel),
         reasoningEffort: next.reasoningEffort ?? activeSession.reasoningEffort ?? selectedReasoningEffort,
       });
       return;
     }
 
+    if (typeof next.agentMode === "string") {
+      setSelectedAgentMode(next.agentMode);
+    }
     if (typeof next.model === "string") {
       setSelectedModel(next.model);
     }
@@ -873,12 +1122,6 @@ export function App() {
   }, [effectiveMissionHelmId]);
 
   useEffect(() => {
-    if (selectedProjectId) {
-      setExpandedMissionProjectIds((current) => current.has(selectedProjectId) ? current : new Set([...current, selectedProjectId]));
-    }
-  }, [selectedProjectId]);
-
-  useEffect(() => {
     if (!draftProject) {
       return;
     }
@@ -899,6 +1142,19 @@ export function App() {
     }));
     dispatch(socketRef.current, { type: "workspace.git.list", requestId: nextRequestId(requestCounter), projectId: selectedProjectId });
   }, [pairingState, selectedProjectId]);
+
+  useEffect(() => {
+    if (!activeSession || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const projectId = resolveSessionProjectId(activeSession);
+    const key = projectFilesKey(projectId, activeSession.workspaceId);
+    setProjectFilesByScope((current) => ({
+      ...current,
+      [key]: { loading: true, files: current[key]?.files ?? [], message: "正在加载项目文件..." },
+    }));
+    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId, workspaceId: activeSession.workspaceId });
+  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -925,6 +1181,9 @@ export function App() {
       if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
         setSelectedModel(nextModel);
       }
+      if (cached.state.agentMode) {
+        setSelectedAgentMode(cached.state.agentMode);
+      }
       if (cached.state.reasoningEffort) {
         setSelectedReasoningEffort(cached.state.reasoningEffort);
       }
@@ -948,19 +1207,36 @@ export function App() {
   }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedModel, selectedWorkspaceId]);
 
   useEffect(() => {
+    if (activeView !== "sessions") {
+      return;
+    }
+    const chatMain = chatMainRef.current;
+    if (!chatMain) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      chatMain.scrollTop = chatMain.scrollHeight;
+    });
+  }, [activeView, activeSessionId, activeSession ? messages[activeSession.id]?.length : 0]);
+
+  useEffect(() => {
     if (!activeSessionId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
 
+    setMessageHistoryState((current) => ({ ...current, [activeSessionId]: { hasMore: false, loading: true } }));
+    setActivityHistoryState((current) => ({ ...current, [activeSessionId]: { hasMore: false, loading: true } }));
     dispatch(socketRef.current, {
       type: "session.messages.list",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
+      limit: DEFAULT_HISTORY_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.artifacts.get",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
+      limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
     });
     dispatch(socketRef.current, {
       type: "session.resume.check",
@@ -1554,6 +1830,14 @@ export function App() {
           setProjects(payload.projects);
         }
         return;
+      case "project.files.result": {
+        const key = projectFilesKey(payload.projectId, payload.workspaceId);
+        setProjectFilesByScope((current) => ({
+          ...current,
+          [key]: { loading: false, files: payload.files, message: payload.message },
+        }));
+        return;
+      }
       case "workspace.list.result":
         updateHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
         if (sourceIsCurrentHelm) {
@@ -1575,8 +1859,6 @@ export function App() {
         if (payload.selectedWorkspaceId) {
           setSelectedWorkspaceId(payload.selectedWorkspaceId);
           setWorktreePickerOpen(false);
-          setBranchCreateModalOpen(false);
-          setNewGitBranchName("");
         }
         return;
       case "agent.list.result":
@@ -1617,6 +1899,9 @@ export function App() {
           if (nextModel && (!selectedModel || selectedModel === "provider-default" || !allOptions.includes(selectedModel))) {
             setSelectedModel(nextModel);
           }
+          if (payload.state.agentMode) {
+            setSelectedAgentMode(payload.state.agentMode);
+          }
           if (payload.state.reasoningEffort) {
             setSelectedReasoningEffort(payload.state.reasoningEffort);
           }
@@ -1648,12 +1933,15 @@ export function App() {
           if (pendingPromptRef.current && socketRef.current) {
             const pendingPrompt = pendingPromptRef.current;
             pendingPromptRef.current = null;
-            appendUserMessage(payload.session.id, pendingPrompt.raw);
+            assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
+            const clientMessageId = createClientUserMessageId(payload.session.id);
+            appendUserMessage(payload.session.id, pendingPrompt, clientMessageId);
             dispatch(socketRef.current, {
               type: "session.prompt",
               requestId: nextRequestId(requestCounter),
               sessionId: payload.session.id,
-              text: pendingPrompt.enhanced,
+              text: pendingPrompt,
+              clientMessageId,
             });
           }
         }
@@ -1669,6 +1957,7 @@ export function App() {
               ? {
                   ...session,
                   model: payload.state.model ?? session.model,
+                  agentMode: payload.state.agentMode ?? session.agentMode,
                   reasoningEffort: payload.state.reasoningEffort ?? session.reasoningEffort,
                   updatedAt: new Date().toISOString(),
                 }
@@ -1697,18 +1986,25 @@ export function App() {
           setSessions(payload.sessions);
           setStatuses(nextStatuses);
           setMessages((current) => pruneSessionScopedMap(current, payload.sessions));
+          setMessageHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
           setPermissionRequests((current) => pruneSessionScopedMap(current, payload.sessions));
           setOutputs((current) => pruneSessionScopedMap(current, payload.sessions));
+          setToolCalls((current) => pruneSessionScopedMap(current, payload.sessions));
+          setActivityHistoryState((current) => pruneSessionScopedMap(current, payload.sessions));
           setDiffs((current) => pruneSessionScopedMap(current, payload.sessions));
           setSessionConfigOptions((current) => pruneSessionScopedMap(current, payload.sessions));
           setActiveSessionId((current) => resolveActiveSessionId(current, payload.sessions));
         }
         return;
       }
-      case "session.messages.list.result":
+case "session.messages.list.result":
         setMessages((current) => ({
           ...current,
           [payload.sessionId]: mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+        }));
+        setMessageHistoryState((current) => ({
+          ...current,
+          [payload.sessionId]: { nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false },
         }));
         return;
       case "session.artifacts.result":
@@ -1724,6 +2020,10 @@ export function App() {
           ]),
         }));
         setDiffs((current) => ({ ...current, [payload.sessionId]: payload.diffs }));
+        setActivityHistoryState((current) => ({
+          ...current,
+          [payload.sessionId]: { nextCursor: payload.nextCursor, hasMore: Boolean(payload.hasMore), loading: false },
+        }));
         return;
       case "session.resume.result":
         setSessions((current) =>
@@ -1868,24 +2168,56 @@ export function App() {
     }));
   }
 
-  function appendUserMessage(sessionId: string, text: string) {
+  function createClientUserMessageId(sessionId: string) {
+    return `${sessionId}-user-${Date.now()}`;
+  }
+
+  function appendUserMessage(sessionId: string, text: string, id = createClientUserMessageId(sessionId)) {
     setMessages((current) => ({
       ...current,
-      [sessionId]: [
-        ...(current[sessionId] ?? []),
+      [sessionId]: mergeMessageHistory(current[sessionId] ?? [], [
         {
-          id: `${sessionId}-user-${Date.now()}`,
+          id,
           role: "user",
           text,
           timestamp: new Date().toISOString(),
         },
-      ],
+      ]),
     }));
   }
 
-  function createSession(initialPrompt?: { raw: string; enhanced: string }) {
+  function resolveDisplaySessionTitle(session: SessionSummary) {
+    const firstUserMessage = messages[session.id]?.find((message) => message.role === "user")?.text;
+    return resolveSessionTitle(session, sessionTitles[session.id] ?? firstUserMessage);
+  }
+
+  function assignSessionTitleFromPrompt(sessionId: string, rawPrompt: string) {
+    const promptText = rawPrompt.trim();
+    if (!promptText) {
+      return;
+    }
+    const fallbackTitle = createFallbackSessionTitle(promptText);
+    setSessionTitles((current) => current[sessionId] ? current : { ...current, [sessionId]: fallbackTitle });
+
+    const llm = deckPreferences.promptEnhancer.llm;
+    if (!llm.enabled || !llm.baseUrl.trim() || !llm.model.trim()) {
+      return;
+    }
+
+    void generateSessionTitleWithLlm(promptText, llm)
+      .then((title) => {
+        if (title) {
+          setSessionTitles((current) => ({ ...current, [sessionId]: title }));
+        }
+      })
+      .catch(() => {
+        // Keep deterministic fallback title when the optional naming model is unavailable.
+      });
+  }
+
+  function createSession(initialPrompt?: string) {
     const projectId = selectedProjectId || projects[0]?.id;
-    const workspaceId = selectedWorkspaceId || filteredWorkspaces[0]?.id;
+    const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
     const agentId = selectedAgentId || filteredAgents[0]?.id;
     if (!projectId || !workspaceId || !agentId || !socketRef.current) {
       return false;
@@ -1898,6 +2230,7 @@ export function App() {
       projectId,
       workspaceId,
       agentId,
+      agentMode: effectiveDraftAgentMode,
       model: normalizeModelSelection(selectedModel),
       reasoningEffort: selectedReasoningEffort,
     });
@@ -2148,22 +2481,22 @@ export function App() {
       return;
     }
 
-    const enhancedPrompt = buildEnhancedPrompt(nextPrompt, deckPreferences.promptEnhancer);
-
     if (!activeSessionId) {
-      if (createSession({ raw: nextPrompt, enhanced: enhancedPrompt })) {
+      if (createSession(nextPrompt)) {
         setPrompt("");
       }
       return;
     }
 
-    appendUserMessage(activeSessionId, nextPrompt);
+    const clientMessageId = createClientUserMessageId(activeSessionId);
+    appendUserMessage(activeSessionId, nextPrompt, clientMessageId);
     setPrompt("");
     dispatch(socketRef.current, {
       type: "session.prompt",
       requestId: nextRequestId(requestCounter),
       sessionId: activeSessionId,
-      text: enhancedPrompt,
+      text: nextPrompt,
+      clientMessageId,
     });
   }
 
@@ -2278,304 +2611,300 @@ export function App() {
     });
   }
 
-  function cancelSession() {
-    if (!activeSessionId || !socketRef.current) {
-      return;
-    }
-
-    dispatch(socketRef.current, {
-      type: "session.cancel",
-      requestId: nextRequestId(requestCounter),
-      sessionId: activeSessionId,
+  function toggleProjectFileDirectory(path: string) {
+    setCollapsedProjectFileDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
     });
   }
 
-  function cleanupSession(targetSessionId = activeSessionId) {
-    if (!targetSessionId || !socketRef.current) {
-      return;
-    }
+  function openDiffDetail(path: string) {
+    setSelectedMissionDiffFilePath(path);
+    setSelectedMissionPanelPageId("diff-detail");
+  }
 
-    const confirmed = window.confirm("将清理当前任务的本地记录；若该任务由 Tiller 创建且 provider 支持，也会尝试删除远端 ACP session。确认继续吗？");
-    if (!confirmed) {
-      return;
-    }
-
-    setCleanupFeedback({ tone: "info", message: "正在清理当前任务..." });
-    dispatch(socketRef.current, {
-      type: "session.cleanup",
-      requestId: nextRequestId(requestCounter),
-      sessionId: targetSessionId,
+  function toggleMissionDiffDirectory(path: string) {
+    setCollapsedMissionDiffDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
     });
-  }
-
-  function renderConnectionPanel() {
-    return (
-      <section className="card pairing-card">
-        <h2>{showConnectionCard ? copy.connectDaemon : copy.pairingTitle}</h2>
-        <p className="muted">{showConnectionCard ? copy.connectHint : copy.pairingHint}</p>
-
-        {showConnectionCard && (
-          <div className="stack-gap">
-            <form className="connect-form" onSubmit={connectToDaemon}>
-              <label>
-                <span>{copy.daemonAddress}</span>
-                <input value={fleetAddHelmHost} onChange={(event) => setFleetAddHelmHost(event.target.value)} placeholder={DEFAULT_DAEMON_HOST} />
-              </label>
-              <label>
-                <span>{copy.daemonPort}</span>
-                <input value={fleetAddHelmPort} onChange={(event) => setFleetAddHelmPort(event.target.value.replace(/[^0-9]/g, ""))} placeholder={DEFAULT_DAEMON_PORT} />
-              </label>
-              <button className="primary" type="submit">
-                {connection === "connecting" ? copy.connection.connecting : copy.connectDaemon}
-              </button>
-            </form>
-
-            <div className="note-box compact-note">
-              <strong>多 Helm 预设</strong>
-              <label>
-                <span>预设名称</span>
-                <input value={daemonProfileName} onChange={(event) => setDaemonProfileName(event.target.value)} placeholder="工作室 Helm" />
-              </label>
-              <div className="section-actions">
-                <button className="secondary" type="button" onClick={saveDaemonProfile}>
-                  保存当前 Helm
-                </button>
-              </div>
-              {daemonProfiles.length ? (
-                <div className="stack-gap">
-                  {daemonProfiles.map((profile) => (
-                    <button key={profile.id} className="secondary" type="button" onClick={() => applyDaemonProfile(profile)}>
-                      {profile.name} · {profile.host}:{profile.port}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted compact">还没有保存的 Helm 预设。</p>
-              )}
-              {daemonProfileMessage ? <p className="subtle compact">{daemonProfileMessage}</p> : null}
-            </div>
-          </div>
-        )}
-
-        {showPairingCard && (
-          <form className="pairing-form" onSubmit={submitPairingCode}>
-            <PairingBoxes
-              refs={pairInputRefs}
-              value={pairingCodeInput}
-              disabled={pairingState === "waiting"}
-              onChange={updatePairingDigit}
-              onKeyDown={handlePairingKeyDown}
-              onPaste={pastePairingDigits}
-            />
-            <button className="primary" type="button" onClick={sendPairingRequest} disabled={pairingCodeInput.length !== 6 || pairingState === "waiting"}>
-              {pairingState === "waiting" ? "配对中..." : "配对"}
-            </button>
-          </form>
-        )}
-
-        <div className="note-box compact-note">
-          <strong>{showConnectionCard ? copy.connectDaemon : copy.pairingTitle}</strong>
-          <p>{showConnectionCard ? connectFeedback : pairingFeedback}</p>
-        </div>
-
-        {deckPreferences.technicalPanels.showConnectionDebug ? (
-          <div className="note-box compact-note">
-            <strong>{copy.pairingDebug}</strong>
-            <p>
-              连接次数={debugTrace.connectClicks} · 配对次数={debugTrace.pairClicks} · 请求数={debugTrace.requestsSent}
-            </p>
-            <p className="muted compact">最近请求类型={debugTrace.lastRequestType}</p>
-          </div>
-        ) : null}
-
-        {pairingState === "rejected" && <p className="error-text">配对失败，请检查配对码后重试。</p>}
-      </section>
-    );
-  }
-
-  const showConnectionCard = connection !== "connected" && pairingState !== "paired";
-  const showPairingCard = connection === "connected" && pairingState !== "paired";
-
-  function renderOverview() {
-    const recentSessions = sessions.slice(0, 5);
-    return (
-      <section className="workspace-single">
-        <header className="hero card hero-panel">
-          <div>
-            <p className="eyebrow">ACP Coding Agent 舰队指挥甲板</p>
-            <h1>Tiller Deck</h1>
-            <p className="muted hero-copy">Tiller 是你的 ACP Coding Agent 舰队指挥甲板：调度任务、审批权限、追踪航行日志与文件变更。</p>
-          </div>
-          <div className="hero-metrics overview-stats">
-            <StatCard label="项目" value={String(projects.length)} meta={projects[0]?.name ?? "暂无项目"} />
-            <StatCard label="工作区" value={String(workspaces.length)} meta={workspaces[0]?.name ?? copy.noWorkspaces} />
-            <StatCard label="舰员" value={String(agents.length)} meta={agents[0]?.name ?? copy.noAgents} />
-            <StatCard label="活跃任务" value={String(sessions.length)} meta={activeStatus} />
-          </div>
-        </header>
-
-        <div className="meta-grid">
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>项目列表</h2>
-                <p className="muted compact">只读展示当前 Deck 可见的项目 及其绑定 Helm。</p>
-              </div>
-            </div>
-            <InfoList items={projects.map((project) => `${project.name} · ${helms.find((helm) => helm.id === project.helmId)?.name ?? project.helmId}`)} empty="暂无项目" />
-          </section>
-
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>工作区列表</h2>
-                <p className="muted compact">只读展示当前 Helm 暴露的 Workspace。</p>
-              </div>
-            </div>
-            <InfoList items={workspaces.map((workspace) => `${workspace.name} · ${workspace.path}`)} empty={copy.noWorkspaces} />
-          </section>
-
-          <section className="card surface-card stack-gap">
-            <div className="section-head section-head-soft">
-              <div>
-                <h2>舰员列表</h2>
-                <p className="muted compact">只读展示当前可用的 ACP 舰员。</p>
-              </div>
-            </div>
-            <InfoList items={agents.map((agent) => `${agent.name} · ${agent.command} ${(agent.args ?? []).join(" ")}`.trim())} empty={copy.noAgents} />
-          </section>
-        </div>
-
-        <section className="card surface-card stack-gap">
-          <div className="section-head section-head-soft">
-            <div>
-              <h2>最近任务</h2>
-              <p className="muted compact">最近 5 条任务记录，只读展示。</p>
-            </div>
-          </div>
-          {recentSessions.length ? (
-            <div className="session-history-list read-only-list">
-              {recentSessions.map((session) => (
-                <article key={session.id} className="session-item session-history-item read-only-item">
-                  <span className="session-item-main">
-                    <strong>{session.projectName}</strong>
-                    <span className="subtle">{session.workspaceName} · {session.agentName} · {formatSessionTime(session.updatedAt)}</span>
-                    <span className="subtle">{session.lastMessagePreview ?? "暂无消息预览"}</span>
-                  </span>
-                  <span className="session-history-meta">
-                    <span className="status-chip">{copy.status[statuses[session.id] ?? session.status]}</span>
-                    <span className="subtle">{session.messageCount} 条消息</span>
-                  </span>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">{copy.noSessions}</div>
-          )}
-        </section>
-      </section>
-    );
   }
 
   function addMissionPanelPage() {
-    const id = `custom-${Date.now().toString(36)}`;
-    const page = { id, title: `展示页 ${customMissionPanelPages.length + 1}` };
-    setCustomMissionPanelPages((current) => [...current, page]);
+    const id = `custom-${Date.now()}`;
+    setCustomMissionPanelPages((current) => [...current, { id, title: `展示页 ${current.length + 1}` }]);
     setSelectedMissionPanelPageId(id);
+  }
+
+  function dropMissionPanelPage(targetPageId: string) {
+    if (!draggedMissionPanelPageId || draggedMissionPanelPageId === targetPageId) {
+      return;
+    }
+    setCustomMissionPanelPages((current) => {
+      const fromIndex = current.findIndex((page) => page.id === draggedMissionPanelPageId);
+      const toIndex = current.findIndex((page) => page.id === targetPageId);
+      if (fromIndex < 0 || toIndex < 0) {
+        return current;
+      }
+      const next = [...current];
+      const [dragged] = next.splice(fromIndex, 1);
+      if (!dragged) {
+        return current;
+      }
+      next.splice(toIndex, 0, dragged);
+      return next;
+    });
+    setDraggedMissionPanelPageId(null);
   }
 
   function renameMissionPanelPage(pageId: string, title: string) {
     setCustomMissionPanelPages((current) => current.map((page) => page.id === pageId ? { ...page, title } : page));
   }
 
-  function deleteMissionPanelPage(pageId: string) {
-    setCustomMissionPanelPages((current) => current.filter((page) => page.id !== pageId));
-    setSelectedMissionPanelPageId("overview");
-  }
-
   function moveMissionPanelPage(pageId: string, direction: -1 | 1) {
-    setCustomMissionPanelPages((current) => moveMissionPanelPageInList(current, pageId, direction));
-  }
-
-  function dropMissionPanelPage(targetPageId: string) {
-    if (!draggedMissionPanelPageId || draggedMissionPanelPageId === targetPageId) {
-      setDraggedMissionPanelPageId(null);
-      return;
-    }
-    setCustomMissionPanelPages((current) => reorderMissionPanelPage(current, draggedMissionPanelPageId, targetPageId));
-    setDraggedMissionPanelPageId(null);
-  }
-
-  function toggleMissionDiffDirectory(directory: string) {
-    setCollapsedMissionDiffDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(directory)) {
-        next.delete(directory);
-      } else {
-        next.add(directory);
+    setCustomMissionPanelPages((current) => {
+      const index = current.findIndex((page) => page.id === pageId);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) {
+        return current;
       }
+      const next = [...current];
+      const [page] = next.splice(index, 1);
+      if (!page) {
+        return current;
+      }
+      next.splice(targetIndex, 0, page);
       return next;
     });
   }
 
-  function openDiffDetail(filePath: string) {
-    setSelectedMissionDiffFilePath(filePath);
-    setSelectedMissionPanelPageId("diff-detail");
+  function deleteMissionPanelPage(pageId: string) {
+    setCustomMissionPanelPages((current) => current.filter((page) => page.id !== pageId));
+    if (selectedMissionPanelPageId === pageId) {
+      setSelectedMissionPanelPageId("overview");
+    }
   }
 
-  function renderPlainMessages(items: AgentMessage[], commandChunks: CommandChunk[], sessionToolCalls: AgentToolCall[]) {
-    const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
-    if (!timelineItems.length) {
+  function cleanupSession(sessionId: string) {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法清理任务。" });
+      return;
+    }
+
+    setCleanupFeedback({ tone: "info", message: "正在清理任务..." });
+    dispatch(socket, {
+      type: "session.cleanup",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+    });
+  }
+
+  function loadOlderMessages(sessionId: string) {
+    const historyState = messageHistoryState[sessionId];
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
+      return;
+    }
+    setMessageHistoryState((current) => ({
+      ...current,
+      [sessionId]: { ...current[sessionId], loading: true },
+    }));
+    dispatch(socketRef.current, {
+      type: "session.messages.list",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+      limit: DEFAULT_HISTORY_PAGE_LIMIT,
+      before: historyState.nextCursor,
+    });
+  }
+
+  function loadOlderActivities(sessionId: string) {
+    const historyState = activityHistoryState[sessionId];
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || historyState?.loading || !historyState?.hasMore || !historyState.nextCursor) {
+      return;
+    }
+    setActivityHistoryState((current) => ({
+      ...current,
+      [sessionId]: { ...current[sessionId], loading: true },
+    }));
+    dispatch(socketRef.current, {
+      type: "session.artifacts.get",
+      requestId: nextRequestId(requestCounter),
+      sessionId,
+      limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
+      before: historyState.nextCursor,
+    });
+  }
+
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string) {
+    if (!items.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
+    const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
 
     return (
       <div className="plain-message-list conversation-timeline">
-        {timelineItems.map((item) =>
-          item.kind === "message" ? (
-            <article key={item.message.id} className={`plain-message plain-${item.message.role}`}>
-              <span className="plain-message-role">{copy.role[item.message.role]}</span>
-              <MarkdownMessage text={item.message.text} />
-            </article>
-          ) : (
-            <details key={item.id} className={`tool-call-card tool-call-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>
-              <summary className="tool-call-head">
-                <span className="tool-call-icon" aria-hidden="true">$</span>
-                <span className="tool-call-kind">{resolveToolCallLabel(item.toolKind, item.title)}</span>
-                <strong>{item.title}</strong>
-                <span className={`tool-call-stream tool-call-stream-${item.streams.includes("stderr") ? "stderr" : "stdout"}`}>{item.streams.includes("stderr") ? "stderr" : "stdout"}</span>
-              </summary>
-              {item.text.trim() ? <pre className="tool-call-output">{item.text}</pre> : null}
-            </details>
-          ),
-        )}
+        {historyState?.hasMore ? (
+          <button className="secondary load-more-history" type="button" onClick={() => loadOlderMessages(sessionId!)} disabled={historyState.loading}>
+            {historyState.loading ? "加载中..." : "加载更早消息"}
+          </button>
+        ) : null}
+        {items.map((message) => (
+          <article key={message.id} className={`plain-message plain-${message.role}`}>
+            <span className="plain-message-role">{copy.role[message.role]}</span>
+            <MarkdownMessage text={message.text} />
+          </article>
+        ))}
       </div>
     );
   }
 
-  function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
-    setMissionPaneWidths(() => {
-      if (handle === "sidebar") {
-        return clampMissionPaneSet({ ...base, sidebar: clampPaneWidth(base.sidebar + delta, "sidebar") }, missionSidebarCollapsed);
-      }
-      if (handle === "display") {
-        return clampMissionPaneSet({ ...base, display: clampPaneWidth(base.display - delta, "display") }, missionSidebarCollapsed);
-      }
+  function summarizeActivityText(text: string) {
+    const compact = text.replace(/\s+/g, " ").trim();
+    return compact.length > 72 ? `${compact.slice(0, 72)}…` : compact || "发送给 ACP";
+  }
 
-      const nextDisplay = clampPaneWidth(base.display + delta, "display");
-      const displayDelta = nextDisplay - base.display;
-      return clampMissionPaneSet({
-        ...base,
-        display: nextDisplay,
-        inspector: clampPaneWidth(base.inspector - displayDelta, "inspector"),
-      }, missionSidebarCollapsed);
-    });
+  function renderActivityLog(sessionId: string | undefined, sessionToolCalls: AgentToolCall[], commandChunks: CommandChunk[], sessionMessages: AgentMessage[]) {
+    const toolItems = groupToolCalls(sessionToolCalls.length ? sessionToolCalls : commandChunks.map(commandChunkToToolCall));
+    const promptItems = sessionMessages
+      .filter((message) => message.role === "user")
+      .map((message) => ({ kind: "prompt" as const, id: message.id, timestamp: message.timestamp, text: message.text }));
+    const timelineItems = [
+      ...promptItems,
+      ...toolItems.map((item) => ({ kind: "tool" as const, timestamp: item.timestamp, item })),
+    ].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    const historyState = sessionId ? activityHistoryState[sessionId] : undefined;
+    const visibleCount = sessionId ? activityVisibleCounts[sessionId] ?? DEFAULT_LOGBOOK_VISIBLE_LIMIT : DEFAULT_LOGBOOK_VISIBLE_LIMIT;
+    const visibleTimelineItems = timelineItems.slice(0, visibleCount);
+    const hiddenCount = Math.max(0, timelineItems.length - visibleTimelineItems.length);
+    if (!timelineItems.length) {
+      return <CommandOutput items={commandChunks} emptyLabel={copy.noCommandOutput} />;
+    }
+
+    return (
+      <section className="info-list mission-activity-log">
+        <div className="section-head section-head-soft">
+          <div>
+            <h3>{copy.commandOutput}</h3>
+
+          </div>
+        </div>
+        <div className="plain-message-list conversation-timeline activity-timeline">
+          {visibleTimelineItems.map((timelineItem) => {
+            if (timelineItem.kind === "prompt") {
+              return (
+                <details key={timelineItem.id} className="tool-call-card acp-prompt-card">
+                  <summary className="tool-call-head">
+                    <span className="tool-call-icon" aria-hidden="true">↗</span>
+                    <span className="tool-call-kind">Prompt</span>
+                    <strong>{summarizeActivityText(timelineItem.text)}</strong>
+                    <span className="tool-call-stream">user</span>
+                  </summary>
+                  <pre className="tool-call-output">{timelineItem.text}</pre>
+                </details>
+              );
+            }
+
+            const toolTone = resolveToolCallTone(timelineItem.item.toolKind, timelineItem.item.title);
+            const streamTone = timelineItem.item.streams.includes("stderr") ? "stderr" : "stdout";
+            return (
+              <details key={timelineItem.item.id} className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}>
+                <summary className="tool-call-head">
+                  <span className="tool-call-icon" aria-hidden="true">{toolTone.icon}</span>
+                  <span className="tool-call-kind">{toolTone.label}</span>
+                  <strong>{timelineItem.item.title}</strong>
+                  <span className={`tool-call-stream tool-call-stream-${streamTone}`}>{streamTone}</span>
+                </summary>
+                {timelineItem.item.text.trim() ? <pre className="tool-call-output">{timelineItem.item.text}</pre> : null}
+              </details>
+            );
+          })}
+          {hiddenCount > 0 ? (
+            <button
+              className="secondary load-more-history"
+              type="button"
+              onClick={() => sessionId ? setActivityVisibleCounts((current) => ({ ...current, [sessionId]: visibleCount + DEFAULT_LOGBOOK_VISIBLE_LIMIT })) : undefined}
+            >
+              展开更多（剩余 {hiddenCount} 条）
+            </button>
+          ) : historyState?.hasMore ? (
+            <button className="secondary load-more-history" type="button" onClick={() => loadOlderActivities(sessionId!)} disabled={historyState.loading}>
+              {historyState.loading ? "加载中..." : "加载更早活动"}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  function renderSessionOverview(diffCount: number, logCount: number) {
+    const statusLabel = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : "待创建";
+    const cards = activeSession ? [
+      { label: "状态", value: statusLabel, meta: "Session state" },
+      { label: "消息", value: `${activeSession.messageCount} 条`, meta: "Conversation" },
+      { label: "变更", value: `${diffCount} 个文件`, meta: "Git diff" },
+      { label: "航行日志", value: `${logCount} 条`, meta: "Activity" },
+    ] : [
+      { label: "状态", value: "待创建", meta: "Session state" },
+      { label: "会话", value: "未创建", meta: "发送首条指令后创建" },
+    ];
+
+    return (
+      <section className="session-overview-card">
+        <div className="section-head section-head-soft">
+          <div>
+            <h3>{activeSession ? "会话信息" : "新任务"}</h3>
+
+          </div>
+        </div>
+        <div className="session-overview-grid">
+          {cards.map((card) => (
+            <article key={card.label} className="session-overview-metric">
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.meta}</small>
+            </article>
+          ))}
+        </div>
+        <div className="session-overview-preview">
+          <span>最近活动</span>
+          <strong>{activeSession?.lastMessagePreview || "暂无预览"}</strong>
+        </div>
+      </section>
+    );
+  }
+
+  function resolveMissionResizePair(handle: MissionResizeHandle): [MissionPaneId, MissionPaneId] {
+    if (handle === "sidebar") {
+      return ["sidebar", "chat"];
+    }
+    if (handle === "display") {
+      return ["chat", "display"];
+    }
+    return ["display", "inspector"];
+  }
+
+  function applyMissionPaneDelta(handle: MissionResizeHandle, delta: number, base: MissionPaneWidths) {
+    const [left, right] = resolveMissionResizePair(handle);
+    setMissionPaneWidths(resizeMissionPanePair(base, left, right, delta));
   }
 
   function startMissionPaneResize(handle: MissionResizeHandle, event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const base = missionPaneWidths;
+    const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
+    const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
+    const base = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
     const onMove = (moveEvent: MouseEvent) => {
       applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
     };
@@ -2591,7 +2920,7 @@ export function App() {
   }
 
   function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
-    applyMissionPaneDelta(handle, direction * 24, missionPaneWidths);
+    applyMissionPaneDelta(handle, direction * 24, normalizeMissionPaneWidths(missionPaneWidths, missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH, missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH, missionViewportWidth));
   }
 
   function renderMissionPaneResizer(handle: MissionResizeHandle, label: string) {
@@ -2645,16 +2974,72 @@ export function App() {
     return <span className="mission-tree-agent-initials">{resolveMissionAgentInitials(agentName)}</span>;
   }
 
+  function renderOverview() {
+    const recentSessions = sessions.slice(0, 5);
+    const activeHelmLabel = activeHelm ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}` : `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+    const overviewItems = [
+      `Helm · ${activeHelmLabel}`,
+      `连接 · ${copy.connection[connection]}`,
+      `项目 · ${projects.length}`,
+      `工作区 · ${workspaces.length}`,
+      `ACP 舰员 · ${agents.length}`,
+      `任务 · ${sessions.length}`,
+    ];
+
+    return (
+      <section className="stack-gap overview-page">
+        <section className="card hero-card">
+          <div>
+            <p className="eyebrow">{copy.heroEyebrow}</p>
+            <h1>Tiller Command Deck</h1>
+            <p>{copy.heroBody}</p>
+          </div>
+          <div className="section-actions">
+            <button className="primary" type="button" onClick={() => navigateToView("sessions")}>进入任务</button>
+            <button className="secondary" type="button" onClick={() => navigateToView("agents")}>管理舰队</button>
+          </div>
+        </section>
+        <section className="card surface-card overview-grid">
+          <InfoList title="当前总览" items={overviewItems} empty="暂无总览信息" />
+          <div className="info-list">
+            <div className="section-head section-head-soft">
+              <div>
+                <h3>最近任务</h3>
+                <p className="muted compact">按 Helm 返回顺序展示最近会话。</p>
+              </div>
+            </div>
+            {recentSessions.length ? (
+              <div className="session-list compact-session-list">
+                {recentSessions.map((session) => (
+                  <button key={session.id} type="button" className="session-row" onClick={() => { openSession(session.id); navigateToView("sessions"); }}>
+                    <strong>{resolveDisplaySessionTitle(session)}</strong>
+                    <span>{session.projectName} · {session.agentName}</span>
+                    <small>{formatRelativeTime(session.updatedAt)}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">还没有任务，先进入任务页创建一个。</div>
+            )}
+          </div>
+        </section>
+      </section>
+    );
+  }
+
   function renderSessions() {
     const canSend = Boolean(prompt.trim() && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
-    const missionSidebarWidth = missionSidebarCollapsed ? 0 : missionPaneWidths.sidebar;
+    const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
+    const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
+    const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
     const activeMissionHelm = missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ?? activeHelm;
     const activeMissionHelmProjectCount = missionProjects.length;
     const activeDiffs = activeSession ? diffs[activeSession.id] ?? [] : [];
     const activeOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
+    const activeToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
     const activeDiffTree = buildMissionDiffTree(activeDiffs);
     const missionDiffCount = activeDiffs.length;
-    const missionLogCount = activeOutputs.length;
+    const missionLogCount = activeToolCalls.length || activeOutputs.length;
     const missionPanelPages = [
       { id: "overview", title: "概览" },
       { id: "changes", title: `Git Diff (${missionDiffCount})` },
@@ -2664,10 +3049,77 @@ export function App() {
     ];
     const selectedMissionPanelPage = missionPanelPages.find((page) => page.id === selectedMissionPanelPageId) ?? missionPanelPages[0];
     const missionLayoutStyle = {
-      "--mission-sidebar-width": `${missionSidebarWidth}px`,
-      "--mission-display-width": `${missionPaneWidths.display}px`,
-      "--mission-inspector-width": `${missionPaneWidths.inspector}px`,
+      "--mission-sidebar-width": `${resolvedMissionPaneWidths.sidebar}px`,
+      "--mission-chat-width": `${resolvedMissionPaneWidths.chat}px`,
+      "--mission-display-width": `${resolvedMissionPaneWidths.display}px`,
+      "--mission-inspector-width": `${resolvedMissionPaneWidths.inspector}px`,
     } as CSSProperties;
+    const missionSidebarPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.sidebar}px` } as CSSProperties;
+    const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
+    const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
+    const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
+    const projectFilesEntry = activeSession && activeSessionProjectId ? projectFilesByScope[projectFilesKey(activeSessionProjectId, activeSession.workspaceId)] : undefined;
+    const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
+    const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? draftProject?.name ?? "未选项目";
+    const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
+    const overviewAgentName = activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
+    const projectOverviewItems = [
+      `Helm · ${activeMissionHelm?.name ?? draftProject?.helmId ?? "未选择"}`,
+      `Project · ${overviewProjectName}`,
+      `Workspace · ${overviewWorkspaceName}`,
+      `ACP · ${overviewAgentName}`,
+      draftProject?.path ? `路径 · ${draftProject.path}` : "路径 · 等待 Helm 返回",
+      `摘要 · ${formatProjectSummaryForDisplay(draftProject?.summary, overviewProjectName)}`,
+    ];
+    const projectFileFilterText = projectFileFilter.trim().toLowerCase();
+    const visibleProjectFiles = projectFiles.filter((file) => {
+      if (projectFileFilterText) {
+        return file.path.toLowerCase().includes(projectFileFilterText);
+      }
+      const parts = file.path.split("/");
+      return !parts.slice(1).some((_, index) => collapsedProjectFileDirectories.has(parts.slice(0, index + 1).join("/")));
+    });
+    const renderProjectFileList = () => {
+      if (projectFilesEntry?.loading && !projectFiles.length) {
+        return <div className="empty-state">正在加载项目文件...</div>;
+      }
+      if (!projectFiles.length) {
+        return <div className="empty-state">{projectFilesEntry?.message || "暂无项目文件"}</div>;
+      }
+      if (!visibleProjectFiles.length) {
+        return <div className="empty-state">没有匹配的项目文件</div>;
+      }
+      return (
+        <div className="mission-project-file-list" role="tree" aria-label="项目文件列表">
+          {visibleProjectFiles.map((file) => {
+            const isDirectory = file.kind === "directory";
+            const collapsed = collapsedProjectFileDirectories.has(file.path);
+            const depth = Math.max(file.path.split("/").length - 1, 0);
+            return (
+              <button
+                key={`${file.kind}:${file.path}`}
+                type="button"
+                className={`mission-project-file-row mission-project-file-${file.kind}`}
+                role="treeitem"
+                aria-expanded={isDirectory ? !collapsed : undefined}
+                title={file.path}
+                style={{ paddingLeft: `${8 + depth * 12}px` }}
+                onClick={() => {
+                  if (isDirectory) {
+                    toggleProjectFileDirectory(file.path);
+                  }
+                }}
+              >
+                <span className="mission-project-file-caret">{isDirectory ? (collapsed ? "▸" : "▾") : ""}</span>
+                <span className="mission-project-file-icon" aria-hidden="true">{isDirectory ? (collapsed ? "📁" : "📂") : "📄"}</span>
+                <strong>{file.path.split("/").slice(-1)[0] ?? file.path}</strong>
+              </button>
+            );
+          })}
+        </div>
+      );
+    };
+
     const renderMissionDiffTreeNode = (node: MissionDiffTreeNode, depth = 0): ReactNode => {
       if (node.kind === "file" && node.file) {
         const file = node.file;
@@ -2705,92 +3157,77 @@ export function App() {
       );
     };
     const renderMissionDisplayPanel = () => (
-      <aside className={`mission-display-panel ${activeSession ? "" : "mission-display-empty"}`.trim()} aria-label="任务展示容器">
+      <aside className="mission-display-panel mission-pane mission-pane-display" style={missionDisplayPaneStyle} aria-label="任务展示容器">
         <div className="mission-panel-head">
           <div>
             <p className="eyebrow">展示</p>
-            <h3>{activeSession ? "任务展示" : "草稿展示"}</h3>
+            <h3>任务展示</h3>
           </div>
           <button className="mission-panel-add" type="button" onClick={addMissionPanelPage} aria-label="增加展示页">＋</button>
         </div>
-        {activeSession ? (
-          <div className="mission-panel-body">
-            <MissionPanelNav
-              pages={missionPanelPages}
-              selectedPageId={selectedMissionPanelPage.id}
-              onSelect={setSelectedMissionPanelPageId}
-              onDragStart={setDraggedMissionPanelPageId}
-              onDrop={dropMissionPanelPage}
-            />
-            <section className="mission-panel-content">
-              {selectedMissionPanelPage.id === "changes" ? (
-                <div className="mission-panel-page mission-change-tree">
-                  {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
-                </div>
-              ) : selectedMissionPanelPage.id === "diff-detail" ? (
-                <div className="mission-panel-page mission-diff-detail">
-                  {activeDiffs.length ? (
-                    activeDiffs.map((file) => (
-                      <details key={file.path} className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}>
-                        <summary className="mission-file-row mission-diff-file-summary">
-                          <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
-                          <strong>{file.path}</strong>
-                          {renderDiffStats(file)}
-                          <span className="mission-diff-expand-icon" aria-hidden="true">▸</span>
-                        </summary>
-                        {file.patch ? renderDiffPatch(file.patch) : <div className="mission-diff-patch-empty">该 diff 事件没有携带 patch/hunk 内容。</div>}
-                      </details>
-                    ))
-                  ) : (
-                    <div className="empty-state">{copy.noDiffSummary}</div>
-                  )}
-                </div>
-              ) : selectedMissionPanelPage.id === "logbook" ? (
-                <div className="mission-panel-page"><CommandOutput items={activeOutputs} emptyLabel={copy.noCommandOutput} /></div>
-              ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
-                <div className="mission-panel-page mission-custom-page">
-                  <div className="mission-custom-page-tools">
-                    <label>
-                      <span>展示页名称</span>
-                      <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
-                    </label>
-                    <div className="mission-custom-page-actions">
-                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
-                      <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
-                      <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
-                    </div>
+        <div className="mission-panel-body">
+          <MissionPanelNav
+            pages={missionPanelPages}
+            selectedPageId={selectedMissionPanelPage.id}
+            onSelect={setSelectedMissionPanelPageId}
+            onDragStart={setDraggedMissionPanelPageId}
+            onDrop={dropMissionPanelPage}
+          />
+          <section className="mission-panel-content">
+            {selectedMissionPanelPage.id === "changes" ? (
+              <div className="mission-panel-page mission-change-tree">
+                {activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
+              </div>
+            ) : selectedMissionPanelPage.id === "diff-detail" ? (
+              <div className="mission-panel-page mission-diff-detail">
+                {activeDiffs.length ? (
+                  activeDiffs.map((file) => (
+                    <details key={file.path} className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}>
+                      <summary className="mission-file-row mission-diff-file-summary">
+                        <span className={`mission-file-status status-${file.status}`}>{formatDiffStatus(file.status)}</span>
+                        <strong>{file.path}</strong>
+                        {renderDiffStats(file)}
+                        <span className="mission-diff-expand-icon" aria-hidden="true">▸</span>
+                      </summary>
+                      {file.patch ? renderDiffPatch(file.patch) : <div className="mission-diff-patch-empty">该 diff 事件没有携带 patch/hunk 内容。</div>}
+                    </details>
+                  ))
+                ) : (
+                  <div className="empty-state">{copy.noDiffSummary}</div>
+                )}
+              </div>
+            ) : selectedMissionPanelPage.id === "logbook" ? (
+              <div className="mission-panel-page mission-logbook-page">
+                {renderSessionOverview(missionDiffCount, missionLogCount)}
+                {renderActivityLog(activeSession?.id, activeToolCalls, activeOutputs, activeSession ? messages[activeSession.id] ?? [] : [])}
+              </div>
+            ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
+              <div className="mission-panel-page mission-custom-page">
+                <div className="mission-custom-page-tools">
+                  <label>
+                    <span>展示页名称</span>
+                    <input value={selectedMissionPanelPage.title} onChange={(event) => renameMissionPanelPage(selectedMissionPanelPage.id, event.target.value)} />
+                  </label>
+                  <div className="mission-custom-page-actions">
+                    <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, -1)}>上移</button>
+                    <button className="secondary" type="button" onClick={() => moveMissionPanelPage(selectedMissionPanelPage.id, 1)}>下移</button>
+                    <button className="secondary danger-button" type="button" onClick={() => deleteMissionPanelPage(selectedMissionPanelPage.id)}>删除展示页</button>
                   </div>
-                  <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
                 </div>
-              ) : (
-                <div className="mission-panel-page">
-                  <InfoList
-                    title="任务概览"
-                    items={[
-                      `状态 · ${copy.status[statuses[activeSession.id] ?? activeSession.status]}`,
-                      `消息 · ${activeSession.messageCount} 条`,
-                      `变更 · ${missionDiffCount} 个文件`,
-                      `航行日志 · ${missionLogCount} 条`,
-                      activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
-                    ]}
-                    empty="暂无概览"
-                  />
-                </div>
-              )}
-            </section>
-          </div>
-        ) : (
-          <div className="mission-panel-page mission-panel-empty-page">
-            <p className="eyebrow">等待任务</p>
-            <h3>创建任务后显示变更、日志与摘要</h3>
-            <p className="muted compact">这里会作为 Zed-like 第三栏，承载 Diff、航行日志和自定义展示页。</p>
-          </div>
-        )}
+                <div className="empty-state">自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。</div>
+              </div>
+            ) : (
+              <div className="mission-panel-page mission-overview-page">
+                <InfoList title="项目信息" items={projectOverviewItems} empty="暂无项目信息" />
+              </div>
+            )}
+          </section>
+        </div>
       </aside>
     );
 
     return (
-      <section className={`card surface-card chat-layout chat-layout-sidebar ${missionSidebarCollapsed ? "mission-sidebar-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
+      <section ref={missionLayoutRef} className={`card surface-card chat-layout chat-layout-sidebar ${effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : ""} ${effectiveInspectorCollapsed ? "mission-inspector-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
         {pairingState !== "paired" ? (
           <div className="note-box compact-note">
             <strong>任务视图待连接</strong>
@@ -2798,8 +3235,8 @@ export function App() {
           </div>
         ) : (
           <>
-            <aside className={`chat-session-sidebar ${missionSidebarCollapsed ? "collapsed" : ""}`.trim()} aria-label="任务导航：Helm、项目与任务">
-              {!missionSidebarCollapsed ? (
+            <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务">
+              {!effectiveSidebarCollapsed ? (
                 <button
                   type="button"
                   className="mission-sidebar-toggle"
@@ -2824,7 +3261,9 @@ export function App() {
                     {missionHelms.map((helm) => {
                       const selectedHelm = helm.id === effectiveMissionHelmId;
                       const helmExpanded = expandedMissionHelmIds.has(helm.id);
-                      const helmProjects = projects.filter((project) => project.helmId === helm.id);
+                      const helmProjects = [...projects]
+                        .filter((project) => project.helmId === helm.id)
+                        .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.id.localeCompare(right.id));
                       const helmKey = daemonProfileKey(helm.host, String(helm.port));
                       const helmConnectionState = helmConnectionStates[helmKey] ?? (helmKey === activeProfileId ? connection : "disconnected");
                       return (
@@ -2851,7 +3290,7 @@ export function App() {
                               {helmProjects.map((project) => {
                               const selectedProject = project.id === selectedProjectId;
                               const projectExpanded = expandedMissionProjectIds.has(project.id);
-                              const projectNodeSessions = sessions.filter((session) => session.projectId === project.id);
+                              const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session) === project.id);
                               return (
                                 <div key={project.id} className="mission-tree-group" role="group">
                                   <div className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}>
@@ -2877,6 +3316,8 @@ export function App() {
                                         onClick={() => {
                                           setSelectedMissionHelmId(project.helmId);
                                           setSelectedProjectId(project.id);
+                                          setSelectedWorkspaceId(project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null);
+                                          setSelectedAgentId(project.defaultAgentId ?? project.allowedAgentIds?.[0] ?? null);
                                           setExpandedMissionProjectIds((current) => new Set([...current, project.id]));
                                           setActiveSessionId(null);
                                         }}
@@ -2902,7 +3343,7 @@ export function App() {
                                             <span className="mission-tree-caret" />
                                             <span className="mission-tree-agent-icon" title={session.agentName}>{renderMissionAgentIcon(session.agentName)}</span>
                                             <span className="mission-tree-main">
-                                              <strong>{resolveSessionTitle(session)}</strong>
+                                              <strong>{resolveDisplaySessionTitle(session)}</strong>
                                               <span>ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
                                             </span>
                                             <span className="mission-tree-time">{formatRelativeTime(session.updatedAt)}</span>
@@ -2910,7 +3351,7 @@ export function App() {
                                           <button
                                             type="button"
                                             className="session-inline-action mission-tree-cleanup"
-                                            aria-label={`清理 ${resolveSessionTitle(session)}`}
+                                            aria-label={`清理 ${resolveDisplaySessionTitle(session)}`}
                                             title="清理任务"
                                             onClick={(event) => {
                                               event.stopPropagation();
@@ -2952,10 +3393,10 @@ export function App() {
                 ›
               </button>
             ) : null}
-            {missionSidebarCollapsed ? null : renderMissionPaneResizer("sidebar", "调整任务列表宽度")}
+            {!effectiveSidebarCollapsed ? renderMissionPaneResizer("sidebar", "调整任务列表宽度") : null}
 
-            <div className={`chat-conversation ${!activeSession ? "mission-draft-chat" : ""}`.trim()}>
-              <div className="chat-main">
+            <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
+              <div className="chat-main" ref={chatMainRef}>
                 {activeSession ? (
                   <>
                     {pendingPermission ? (
@@ -2973,14 +3414,14 @@ export function App() {
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(messages[activeSession.id] ?? [], outputs[activeSession.id] ?? [], toolCalls[activeSession.id] ?? [])}
+                    {renderPlainMessages(messages[activeSession.id] ?? [], activeSession.id)}
 
 
                   </>
                 ) : (
                   <div className="chat-empty mission-draft-empty">
                     <p className="eyebrow">新任务</p>
-                    <h2>{draftProject ? `${draftProject.name} · 草稿` : "先在左侧选择一个项目"}</h2>
+                    <h2>{draftProject ? `${draftProject.name} · 新任务` : "先在左侧选择一个项目"}</h2>
                     {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
                   </div>
                 )}
@@ -2992,24 +3433,15 @@ export function App() {
                     <div ref={worktreePickerRef} className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}>
                       <span>Workspace</span>
                       <button type="button" className="mission-worktree-trigger" onClick={() => { setAgentPickerOpen(false); setWorktreePickerOpen((current) => !current); }} aria-haspopup="listbox" aria-expanded={worktreePickerOpen}>
-                        <strong>{selectedGitBranch}</strong>
+                        <strong>{selectedWorkspaceName}</strong>
                       </button>
                       {worktreePickerOpen ? (
-                        <div className="mission-worktree-menu" role="listbox" aria-label="Workspace / Git worktree">
-                          {draftGitBranchOptions.map((branch) => {
-                            const matchingWorkspace = filteredWorkspaces.find((workspace) => workspace.name === branch);
-                            const branchHint = matchingWorkspace ? "已配置 workspace" : branch === (draftWorktreeGit?.currentBranch ?? "main") ? "当前项目 workspace" : "新建后生成独立 Git worktree";
-                            return (
-                              <button key={branch} type="button" role="option" aria-selected={branch === selectedGitBranch} className={branch === selectedGitBranch ? "active" : ""} onClick={() => selectDraftWorktreeBranch(branch)}>
-                                <strong>{branch}</strong>
-                                <span>{branchHint}</span>
-                              </button>
-                            );
-                          })}
-                          <button className="mission-worktree-create-button" type="button" onClick={openBranchCreateModal} disabled={!selectedProjectId || Boolean(draftWorktreeGit?.loading)}>
-                            {draftWorktreeGit?.loading ? "创建中..." : "新建 Git worktree"}
-                          </button>
-                          {draftWorktreeGit?.message ? <p className="mission-worktree-message">{draftWorktreeGit.message}</p> : null}
+                        <div className="mission-worktree-menu" role="listbox" aria-label="Workspace">
+                          {draftWorkspaceOptions.map((workspace) => (
+                            <button key={workspace.id} type="button" role="option" aria-selected={workspace.id === selectedWorkspaceId} className={workspace.id === selectedWorkspaceId ? "active" : ""} onClick={() => selectDraftWorkspace(workspace.id)}>
+                              <strong>{workspace.name}</strong>
+                            </button>
+                          ))}
                         </div>
                       ) : null}
                     </div>
@@ -3030,22 +3462,6 @@ export function App() {
                     </div>
                   </div>
                 ) : null}
-                {branchCreateModalOpen ? (
-                  <div className="mission-branch-modal-backdrop" role="presentation">
-                    <form className="mission-branch-modal" role="dialog" aria-modal="true" aria-label="新建 Git worktree" onSubmit={createDraftGitBranch}>
-                      <h3>新建 Git worktree</h3>
-                      <p className="muted compact">输入要创建或复用的 Git branch 名称，Helm 会创建独立 worktree 并记录到项目配置。</p>
-                      <input list="mission-git-branches" value={newGitBranchName} onChange={(event) => setNewGitBranchName(event.target.value)} placeholder="feature/mission" autoFocus />
-                      <datalist id="mission-git-branches">
-                        {draftGitBranchOptions.map((branch) => <option key={branch} value={branch} />)}
-                      </datalist>
-                      <div className="section-actions">
-                        <button className="secondary" type="button" onClick={closeBranchCreateModal}>取消</button>
-                        <button className="primary" type="submit" disabled={!selectedProjectId || !newGitBranchName.trim() || Boolean(draftWorktreeGit?.loading)}>{draftWorktreeGit?.loading ? "创建中..." : "创建并使用"}</button>
-                      </div>
-                    </form>
-                  </div>
-                ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
                   <textarea
                     ref={missionPromptRef}
@@ -3060,6 +3476,46 @@ export function App() {
                       <span>◎</span>
                     </div>
                     <div className="mission-composer-config" aria-label="当前任务模型配置">
+                      {showDraftAgentModeSelect ? (
+                        <div
+                          className={`mission-config-picker mission-config-picker-agent ${missionConfigPicker === "agentMode" ? "open" : ""}`}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setMissionConfigPicker(null);
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="mission-config-trigger"
+                            aria-haspopup="listbox"
+                            aria-expanded={missionConfigPicker === "agentMode"}
+                            onClick={() => setMissionConfigPicker((current) => current === "agentMode" ? null : "agentMode")}
+                          >
+                            <span>{draftAgentModePickerLabel}</span>
+                          </button>
+                          {missionConfigPicker === "agentMode" ? (
+                            <div className="mission-config-menu" role="listbox" aria-label="Agent 列表">
+                              {draftAgentModeOptions.map((option) => (
+                                <button
+                                  key={String(option.value)}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={option.value === effectiveDraftAgentMode}
+                                  className={option.value === effectiveDraftAgentMode ? "active" : ""}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSessionDraftPreferences({ agentMode: option.value });
+                                    setMissionConfigPicker(null);
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div
                         className={`mission-config-picker mission-config-picker-model ${missionConfigPicker === "model" ? "open" : ""}`}
                         onBlur={(event) => {
@@ -3161,93 +3617,37 @@ export function App() {
 
             {renderMissionDisplayPanel()}
 
-            {renderMissionPaneResizer("inspector", "调整检视器宽度")}
+            {!effectiveInspectorCollapsed ? renderMissionPaneResizer("inspector", "调整检视器宽度") : null}
 
-            <aside className="mission-inspector" aria-label="任务检视器">
-              <section className="inspector-section">
-                <p className="eyebrow">上下文</p>
-                <h3>{activeSession ? resolveSessionTitle(activeSession) : "草稿任务"}</h3>
-                <p className="subtle compact">{draftProject?.name ?? "未选项目"} · {activeSession?.workspaceName ?? `Git branch: ${selectedGitBranch}`}</p>
-                <div className="inspector-pills">
-                  <span>{activeSession ? activeStatus : "草稿"}</span>
-                  <span>{activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}</span>
-                </div>
-                {activeSession && deckPreferences.technicalPanels.showSessionRuntimeMeta ? (
-                  <>
-                    <p className="subtle compact">Helm：{helms.find((helm) => helm.id === activeSession.helmId)?.name ?? activeSession.helmId}</p>
-                    <p className="subtle compact">ACP：{activeSession.agentName} · 模型：{activeSession.model ?? "等待 provider 返回"} · 推理：{activeSession.reasoningEffort ?? "medium"}</p>
-                    <p className="subtle compact">ACP 任务 ID：{activeSession.runtimeSessionId ?? activeSession.resume?.runtimeSessionId ?? "等待 runtime 返回"}</p>
-                  </>
-                ) : null}
-                {cleanupFeedback ? <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p> : null}
-                {resumeFeedback ? <p className="subtle compact">{resumeFeedback}</p> : null}
-                {activeSession ? (
-                  <div className="section-actions">
-                    <button className="secondary" type="button" onClick={startResume}>恢复/重连</button>
-                    <button className="secondary" type="button" onClick={cancelSession}>取消任务</button>
+            {effectiveInspectorCollapsed ? (
+              <button className="mission-inspector-toggle mission-inspector-floating-toggle" type="button" onClick={() => setMissionInspectorCollapsed(false)} aria-label="展开任务检视器" title="展开任务检视器">›</button>
+            ) : null}
+
+            {!effectiveInspectorCollapsed ? (
+            <aside className="mission-inspector mission-pane mission-pane-inspector" style={missionInspectorPaneStyle} aria-label="任务检视器">
+              <section className="inspector-section inspector-scroll mission-project-files-section">
+                <div className="section-head section-head-soft mission-inspector-section-head">
+                  <div>
+                    <p className="eyebrow">项目文件</p>
+                    <h3>{projectFiles.length} 个文件</h3>
                   </div>
-                ) : null}
-              </section>
-
-              <section className="inspector-section inspector-scroll">
-                <p className="eyebrow">文件树</p>
-                <div className="mission-change-tree">
-                  {activeSession && activeDiffTree.length ? activeDiffTree.map((node) => renderMissionDiffTreeNode(node)) : <div className="empty-state">{copy.noDiffSummary}</div>}
+                  {projectFilesEntry?.loading ? <span className="mission-inline-loading">加载中</span> : null}
                 </div>
-              </section>
-
-              <section className="inspector-section">
-                <p className="eyebrow">项目摘要</p>
-                <InfoList
-                  items={[
-                    `项目 · ${draftProject?.name ?? "未选项目"}`,
-                    `Git branch · ${selectedGitBranch}`,
-                    `舰员 · ${activeSession?.agentName ?? filteredAgents.find((agent) => agent.id === selectedAgentId)?.name ?? "未选舰员"}`,
-                  ]}
-                  empty="暂无项目摘要"
+                <p className="subtle compact">{projectFilesEntry?.message ?? "完整文件列表由 Helm 按当前 Project / Workspace 返回。"}</p>
+                <input
+                  className="mission-project-file-search"
+                  value={projectFileFilter}
+                  onChange={(event) => setProjectFileFilter(event.target.value)}
+                  placeholder="搜索文件路径"
+                  aria-label="搜索项目文件"
                 />
+                {renderProjectFileList()}
               </section>
 
-              <section className="inspector-section">
-                <p className="eyebrow">会话摘要</p>
-                <InfoList
-                  items={activeSession ? [
-                    `状态 · ${activeStatus}`,
-                    `消息 · ${activeSession.messageCount} 条`,
-                    `变更 · ${missionDiffCount} 个文件`,
-                    `航行日志 · ${missionLogCount} 条`,
-                    activeSession.lastMessagePreview ? `最近活动 · ${activeSession.lastMessagePreview}` : "最近活动 · 暂无预览",
-                  ] : ["草稿 · 尚未创建会话"]}
-                  empty="暂无会话摘要"
-                />
-              </section>
 
-              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.diffDefaultOpen}>
-                <summary>{copy.diffSummary}</summary>
-                <DiffSummary items={activeSession ? diffs[activeSession.id] ?? [] : []} emptyLabel={copy.noDiffSummary} />
-              </details>
-
-              <details className="inspector-section inspector-scroll" open={deckPreferences.technicalPanels.logbookDefaultOpen}>
-                <summary>{copy.commandOutput}</summary>
-                <CommandOutput items={activeSession ? outputs[activeSession.id] ?? [] : []} emptyLabel={copy.noCommandOutput} />
-              </details>
-
-              <section className="inspector-section model-inspector-section">
-                <p className="eyebrow">模型 / 推理</p>
-                <div className="model-inspector-hero">
-                  <span className="model-inspector-label">MODEL</span>
-                  <strong title={draftModel}>{draftModelBaseOptions.length ? effectiveDraftModelBase : draftModelPickerLabel}</strong>
-                </div>
-                <div className="model-inspector-grid">
-                  <span>推理</span>
-                  <strong>{showDraftReasoningSelect ? effectiveDraftReasoningEffort : "—"}</strong>
-                  <span>候选</span>
-                  <strong>{draftModelOptions.length}</strong>
-                </div>
-                <p className="subtle compact">ACP configOptions 可用时优先展示 provider 的真实模型列表。</p>
-              </section>
 
             </aside>
+            ) : null}
           </>
         )}
       </section>
@@ -3257,17 +3657,14 @@ export function App() {
   function renderAgents() {
     const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
     const currentSavedHelmProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === currentHelmKey);
-    const mockHelmProfile: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
-    const mockHelmCards = import.meta.env.DEV
-      ? [{
-          key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
-          name: mockHelmProfile.name,
-          host: mockHelmProfile.host,
-          port: mockHelmProfile.port,
-          isCurrent: false,
-          profile: mockHelmProfile,
-        }]
-      : [];
+    const mockHelmCards = getDevelopmentMockHelmProfiles().map((mockHelmProfile) => ({
+      key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
+      name: mockHelmProfile.name,
+      host: mockHelmProfile.host,
+      port: mockHelmProfile.port,
+      isCurrent: false,
+      profile: mockHelmProfile,
+    }));
     const rawHelmCards = [
       {
         key: currentHelmKey,
@@ -3301,7 +3698,7 @@ export function App() {
     const selectedHelmAgents = selectedHelmIsCurrent ? agents : selectedHelmInventory?.agents ?? [];
     const selectedHelmWorkspaces = selectedHelmIsCurrent ? workspaces : selectedHelmInventory?.workspaces ?? [];
     const selectedHelmSocket = selectedHelmIsCurrent ? socketRef.current : helmSocketRefs.current.get(selectedHelm.key) ?? null;
-    const selectedHelmSummary = helms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
+    const selectedHelmSummary = configuredHelms.find((helm) => helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port);
     const selectedHelmId = selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
     const selectedHelmSavedProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === selectedHelm.key) ?? null;
     const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
@@ -3493,7 +3890,7 @@ export function App() {
             <div className="helm-detail-facts" aria-label="Helm 配置范围">
               <span><strong>{selectedHelmProjects.length}</strong> 项目配置</span>
               <span><strong>{selectedHelmAgents.length}</strong> ACP 舰员</span>
-              <span><strong>{selectedHelmWorkspaces.length}</strong> 运行入口</span>
+              <span><strong>{selectedHelmWorkspaces.length}</strong> 分支</span>
             </div>
             <div className="helm-inventory-list-stack">
               <section className="helm-inventory-list-section">
@@ -3512,7 +3909,7 @@ export function App() {
                       const projectPath = fleetProjectDraft.path.trim().replace(/\\/g, "/");
                       const fallbackProjectName = projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
                       const projectName = fleetProjectDraft.name.trim() || fallbackProjectName;
-                      const projectId = createProjectId(projectName, projectPath);
+                      const projectId = createProjectId(selectedHelmProjects);
                       const workspaceId = `${projectId}-workspace`;
                       setFleetProjectSaveMessage(`正在保存项目：${projectName}...`);
                       dispatch(selectedHelmSocket, {
@@ -3526,7 +3923,7 @@ export function App() {
                           workspaceIds: [workspaceId],
                           allowedAgentIds: selectedHelmAgents.map((agent) => agent.id),
                           defaultWorkspaceId: workspaceId,
-                          defaultAgentId: selectedHelmAgents[0]?.id,
+                          defaultAgentId: defaultAgentId(selectedHelmAgents) ?? undefined,
                         },
                       });
                       setFleetProjectDraft({ name: "", path: "" });
@@ -3549,10 +3946,10 @@ export function App() {
                             <span>{project.path ? `路径 · ${project.path}` : `项目 · ${project.id}`}</span>
                           </summary>
                           <dl>
-                            <div><dt>Project ID</dt><dd>{project.id}</dd></div>
+                            <div><dt>Project ID</dt><dd>{resolveProjectDisplayId(project, selectedHelmProjects)}</dd></div>
                             <div><dt>Path</dt><dd>{project.path ?? "-"}</dd></div>
                             <div><dt>Helm ID</dt><dd>{project.helmId}</dd></div>
-                            <div><dt>运行入口</dt><dd>{project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? "由项目路径派生"}</dd></div>
+                            <div><dt>默认分支</dt><dd>{resolveProjectWorkspaceLabel(project, selectedHelmWorkspaces)}</dd></div>
                             <div><dt>Default Agent</dt><dd>{project.defaultAgentId ?? "-"}</dd></div>
                           </dl>
                         </details>
@@ -4044,20 +4441,30 @@ function mergeMessageHistory(current: AgentMessage[], incoming: AgentMessage[]) 
   const merged = [...current];
   for (const message of incoming) {
     const index = merged.findIndex((item) => item.id === message.id);
-    if (index === -1) {
+    const equivalentIndex = index === -1 ? merged.findIndex((item) => isEquivalentMessage(item, message)) : -1;
+    if (index === -1 && equivalentIndex === -1) {
       merged.push(message);
       continue;
     }
 
-    merged[index] = {
-      ...merged[index],
+    const mergeIndex = index === -1 ? equivalentIndex : index;
+    merged[mergeIndex] = {
+      ...merged[mergeIndex],
       ...message,
-      text: merged[index].text === message.text || merged[index].text.endsWith(message.text) ? merged[index].text : `${merged[index].text}${message.text}`,
-      timestamp: merged[index].timestamp,
+      text: merged[mergeIndex].text === message.text || merged[mergeIndex].text.endsWith(message.text) ? merged[mergeIndex].text : `${merged[mergeIndex].text}${message.text}`,
+      timestamp: merged[mergeIndex].timestamp,
     };
   }
 
   return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
+  if (left.role !== right.role || left.text !== right.text) {
+    return false;
+  }
+  const delta = Math.abs(Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return Number.isFinite(delta) && delta < 10_000;
 }
 
 function mergeCommandHistory(current: CommandChunk[], incoming: CommandChunk[]) {
@@ -4131,14 +4538,32 @@ function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "custom-agent";
 }
 
-function createProjectId(name: string, path: string) {
-  const base = slugify(name) || "project";
-  const normalizedPath = path.trim().replace(/\\/g, "/").toLowerCase();
-  let hash = 0;
-  for (let index = 0; index < normalizedPath.length; index += 1) {
-    hash = (hash * 31 + normalizedPath.charCodeAt(index)) >>> 0;
+function createProjectId(projects: ProjectSummary[]) {
+  const usedIds = new Set(projects.map((project) => project.id));
+  const maxNumericId = projects.reduce((max, project) => {
+    const match = /^project-(\d+)$/u.exec(project.id);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  let next = Math.max(maxNumericId, projects.length) + 1;
+  while (usedIds.has(`project-${next}`)) {
+    next += 1;
   }
-  return `${base}-${hash.toString(36).slice(0, 6)}`;
+  return `project-${next}`;
+}
+
+function resolveProjectWorkspaceLabel(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
+  const workspaceId = project.defaultWorkspaceId ?? project.workspaceIds?.[0];
+  const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
+  return workspace?.name ?? project.gitCurrentBranch ?? workspaceId ?? "-";
+}
+
+function resolveProjectDisplayId(project: ProjectSummary, projects: ProjectSummary[]) {
+  const numericId = /^project-\d+$/u.test(project.id) ? project.id : null;
+  if (numericId) {
+    return numericId;
+  }
+  const index = projects.findIndex((item) => item.id === project.id);
+  return `project-${index >= 0 ? index + 1 : projects.length + 1}`;
 }
 
 function splitArgs(value: string) {
@@ -4148,17 +4573,37 @@ function splitArgs(value: string) {
     .filter(Boolean);
 }
 
-function resolveSessionTitle(session: SessionSummary) {
-  const preview = session.lastMessagePreview?.trim();
-  if (preview && /[A-Za-z0-9一-鿿]/u.test(preview)) {
-    return preview.replaceAll("`r", " ").replaceAll("`n", " ").slice(0, 36);
-  }
 
-  return `${session.projectName} 任务`;
+function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");
+  return (option?.options ?? [])
+    .map((item) => ({
+      value: typeof item.value === "string" ? item.value : "",
+      label: item.label ?? item.name ?? String(item.value ?? ""),
+    }))
+    .filter((item) => item.value.trim().length > 0);
 }
 
-function resolveModelOptions(_currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
-  return resolveModelOptionsFromConfig(undefined, configOptions, nativeOptions);
+function resolveCurrentAgentMode(currentAgentMode: string | undefined, configOptions: SessionConfigOption[] = [], probedAgentMode?: string) {
+  const option = configOptions.find((item) => item.category?.toLowerCase() === "mode");
+  const modeOptions = resolveAgentModeOptions(configOptions);
+  const validModes = new Set(modeOptions.map((item) => item.value));
+  const currentValue = typeof option?.currentValue === "string" ? option.currentValue : undefined;
+  const selectedValue = typeof option?.selectedValue === "string" ? option.selectedValue : undefined;
+  const value = typeof option?.value === "string" ? option.value : undefined;
+  const candidates = [currentAgentMode, currentValue, selectedValue, value, probedAgentMode]
+    .map((candidate) => candidate?.trim())
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  if (validModes.size) {
+    return candidates.find((candidate) => validModes.has(candidate));
+  }
+
+  return currentValue || selectedValue || value || undefined;
+}
+
+function resolveModelOptions(currentModel?: string, configOptions: SessionConfigOption[] = [], nativeOptions: AcpModelOption[] = []) {
+  return resolveModelOptionsFromConfig(currentModel, configOptions, nativeOptions);
 }
 
 function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
@@ -4193,7 +4638,12 @@ function resolveReasoningOptionsForModel(model: string, modelOptions: string[], 
     .map((option) => splitModelReasoning(option))
     .filter((option) => option.model === model && option.reasoning)
     .map((option) => option.reasoning as SessionReasoningEffort);
-  return fromModel.length ? Array.from(new Set(fromModel)) : resolveReasoningOptions(configOptions);
+  if (fromModel.length) {
+    return Array.from(new Set(fromModel));
+  }
+
+  const fromConfig = resolveReasoningOptions(configOptions);
+  return fromConfig.length ? fromConfig : model.trim() ? REASONING_OPTIONS.map((option) => option.value) : [];
 }
 
 function resolveCombinedModelValue(model: string, reasoning: SessionReasoningEffort | undefined, modelOptions: string[]) {
@@ -4229,7 +4679,7 @@ function normalizeModelSelection(model: string | undefined) {
 }
 
 function defaultAgentId(agents: AcpAgentProvider[]) {
-  return agents[0]?.id ?? null;
+  return agents.find((agent) => agent.id === "codex")?.id ?? agents[0]?.id ?? null;
 }
 
 function formatRelativeTime(value: string) {
@@ -4367,5 +4817,3 @@ function formatDeviceTime(value: string) {
 function deckLocale() {
   return document.documentElement.lang || "zh-CN";
 }
-
-

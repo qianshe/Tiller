@@ -43,6 +43,89 @@ test("groupToolCalls merges chunks for the same command id", () => {
   assert.deepEqual(grouped[0]?.streams, ["stdout", "stderr"]);
 });
 
+test("groupToolCalls uses shell command prefix as title and expands only output", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell",
+      kind: "terminal",
+      title: "Tool: shell",
+      status: "completed",
+      input: JSON.stringify({ command: "pnpm --filter @tiller/helm test -- --reporter spec" }),
+      output: "PASS",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "pnpm --filter @tiller/helm test -- --reporter spec");
+  assert.equal(grouped[0]?.text, "PASS");
+});
+
+test("groupToolCalls summarizes Codex rawInput shell command arrays", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-raw",
+      kind: "terminal",
+      title: "call-shell-raw",
+      status: "completed",
+      input: JSON.stringify({
+        command: ["powershell.exe", "-Command", "Get-Content -Raw 'C:/Users/qjq/.codex/skills/foo/SKILL.md'"],
+        parsed_cmd: [{ type: "unknown", cmd: "Get-Content -Raw 'C:/Users/qjq/.codex/skills/foo/SKILL.md'" }],
+      }),
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: foo");
+  assert.equal(grouped[0]?.text, "skill docs");
+});
+
+test("groupToolCalls shows SKILL.md shell reads as skill names", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-skill-read",
+      kind: "terminal",
+      title: "Get-Content -Raw 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/56bcc02e/skills/brainstorming/SKILL.md'",
+      status: "completed",
+      input: JSON.stringify({ command: "Get-Content -Raw 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/56bcc02e/skills/brainstorming/SKILL.md'" }),
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: superpowers:brainstorming");
+  assert.equal(grouped[0]?.text, "skill docs");
+});
+
+test("groupToolCalls extracts skill names from terminal titles without input", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-skill-title",
+      kind: "terminal",
+      title: "Get-Content -Raw 'C:/Users/qjq/.codex/skills/.system/openai-docs/SKILL.md'",
+      status: "completed",
+      output: "skill docs",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: openai-docs");
+});
+
+test("groupToolCalls keeps the first timestamp for timeline placement", () => {
+  const grouped = groupToolCalls([
+    { id: "tool-1", kind: "tool", title: "search", status: "pending", commandId: "cmd", timestamp: "2026-04-30T13:22:46.627Z", updatedAt: "2026-04-30T13:22:46.627Z" },
+    { id: "tool-1", kind: "tool", title: "search", status: "completed", commandId: "cmd", output: "ok", timestamp: "2026-04-30T13:22:46.630Z", updatedAt: "2026-04-30T13:22:46.630Z" },
+  ]);
+
+  assert.equal(grouped[0]?.timestamp, "2026-04-30T13:22:46.627Z");
+  assert.equal(grouped[0]?.status, "completed");
+});
+
 test("commandChunkToToolCall provides a terminal fallback for legacy command output", () => {
   const chunk: CommandChunk = {
     id: "chunk-1",
@@ -67,4 +150,14 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
 
   assert.equal(merged[0]?.output, "AB");
   assert.equal(merged[0]?.status, "completed");
+});
+
+test("mergeToolCallHistory keeps the earliest start timestamp across replay merges", () => {
+  const current: AgentToolCall[] = [{ id: "tool-1", kind: "tool", title: "cmd", status: "completed", output: "A", timestamp: "2026-04-30T10:22:14.142Z", updatedAt: "2026-04-30T10:22:14.240Z" }];
+  const incoming: AgentToolCall[] = [{ id: "tool-1", kind: "tool", title: "cmd", status: "completed", output: "B", timestamp: "2026-04-30T13:22:46.672Z", updatedAt: "2026-04-30T13:22:46.678Z" }];
+
+  const merged = mergeToolCallHistory(current, incoming);
+
+  assert.equal(merged[0]?.timestamp, "2026-04-30T10:22:14.142Z");
+  assert.equal(merged[0]?.updatedAt, "2026-04-30T13:22:46.678Z");
 });

@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,15 +40,14 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
-import { createSessionArtifactStore } from "./sessions/artifact-store";
-import { createSessionMessageStore } from "./sessions/message-store";
-import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
-import { createSessionStore } from "./sessions/summary-store";
+import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
+import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
+import { loadOpenCodeExportHistory } from "./sessions/opencode-export";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary-updates";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
-import { handleConfigMessage } from "./handlers/config";
+import { handleConfigMessage, refreshProjectGitBranches } from "./handlers/config";
 import { handleDeviceMessage } from "./handlers/devices";
 import { handleSessionMessage } from "./handlers/sessions";
 import type { HelmHandlerContext } from "./handlers/context";
@@ -68,20 +67,38 @@ const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
 const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
 const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
+const sessionsSqlitePath = resolve(dirname(configPath), "sessions.sqlite");
 const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
-const sessionStore = createSessionStore(sessionHistoryPath);
-const sessionMessageStore = createSessionMessageStore(sessionMessagesPath);
-const sessionArtifactStore = createSessionArtifactStore(sessionArtifactsPath);
-const sessionRuntimeStore = createSessionRuntimeStore(sessionRuntimesPath);
+const {
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionRuntimeStore,
+} = createHelmSessionStores({
+  backend: resolveSessionStoreBackend(),
+  sqlitePath: sessionsSqlitePath,
+  jsonPaths: {
+    sessionHistoryPath,
+    sessionMessagesPath,
+    sessionArtifactsPath,
+    sessionRuntimesPath,
+  },
+  logInfo,
+  logError,
+});
 const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
 const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
 const socketIds = new WeakMap<WebSocket, string>();
 let nextSocketSequence = 0;
 const configStub = loadTillerConfigStub(configPath);
+normalizeProjectIdsOnStartup();
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
 let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
+await refreshProjectGitBranchesOnStartup();
+normalizeProjectAgentDefaultsOnStartup();
+projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const projectContextSummaryCache = new Map<string, string>();
@@ -108,6 +125,96 @@ function showPairingCode() {
   qrcode.generate(pairUrl, { small: true }, (qr: string) => {
     console.log(qr);
   });
+}
+
+async function refreshProjectGitBranchesOnStartup() {
+  const result = await refreshProjectGitBranches(projects, workspaces, configPath);
+  projects = loadAvailableProjects();
+  workspaces = loadAvailableWorkspaces();
+  if (result.updated || result.failures.length) {
+    logInfo(`[tiller-helm] project.git.refresh updated=${result.updated} skipped=${result.skipped} failed=${result.failures.length}`);
+  }
+  for (const failure of result.failures) {
+    logError(`[tiller-helm] project.git.refresh.failed project=${failure.projectId} message=${failure.message}`);
+  }
+}
+
+function normalizeProjectIdsOnStartup() {
+  const config = readTillerConfig(configPath);
+  const configuredProjects = config.projects ?? [];
+  if (!configuredProjects.length) {
+    return;
+  }
+
+  const idMap = new Map<string, string>();
+  const nextProjects = configuredProjects.map((project, index) => {
+    const nextId = `project-${index + 1}`;
+    idMap.set(project.id, nextId);
+    if (project.id === nextId) {
+      return project;
+    }
+    return {
+      ...project,
+      id: nextId,
+      workspaceIds: project.workspaceIds?.map((workspaceId) => remapProjectScopedId(workspaceId, project.id, nextId)),
+      defaultWorkspaceId: project.defaultWorkspaceId ? remapProjectScopedId(project.defaultWorkspaceId, project.id, nextId) : project.defaultWorkspaceId,
+    };
+  });
+
+  const changed = nextProjects.some((project, index) => project.id !== configuredProjects[index]?.id);
+  if (!changed) {
+    return;
+  }
+
+  const nextWorkspaces = (config.workspaces ?? []).map((workspace) => {
+    for (const [oldId, nextId] of idMap) {
+      const remappedId = remapProjectScopedId(workspace.id, oldId, nextId);
+      if (remappedId !== workspace.id) {
+        return { ...workspace, id: remappedId };
+      }
+    }
+    return workspace;
+  });
+
+  writeFileSync(configPath, JSON.stringify({ ...config, projects: nextProjects, workspaces: nextWorkspaces }, null, 2), "utf8");
+  for (const summary of sessionStore.list()) {
+    const nextProjectId = idMap.get(summary.projectId);
+    if (nextProjectId && nextProjectId !== summary.projectId) {
+      sessionStore.upsert({ ...summary, projectId: nextProjectId });
+    }
+  }
+  for (const descriptor of sessionRuntimeStore.list()) {
+    const nextProjectId = descriptor.projectId ? idMap.get(descriptor.projectId) : undefined;
+    if (nextProjectId && nextProjectId !== descriptor.projectId) {
+      sessionRuntimeStore.upsert({ ...descriptor, projectId: nextProjectId });
+    }
+  }
+  logInfo(`[tiller-helm] project.id.normalize updated=${nextProjects.length}`);
+}
+
+function remapProjectScopedId(value: string, oldProjectId: string, nextProjectId: string) {
+  if (value === `${oldProjectId}-workspace`) {
+    return `${nextProjectId}-workspace`;
+  }
+  if (value.startsWith(`${oldProjectId}-worktree-`)) {
+    return `${nextProjectId}${value.slice(oldProjectId.length)}`;
+  }
+  return value;
+}
+
+function normalizeProjectAgentDefaultsOnStartup() {
+  const availableAgents = listAvailableProviders(configPath);
+  let updated = 0;
+  for (const project of listConfiguredProjects(configPath)) {
+    const nextDefaultAgentId = resolveDefaultProjectAgentId(project, availableAgents);
+    if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
+      saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
+      updated += 1;
+    }
+  }
+  if (updated) {
+    logInfo(`[tiller-helm] project.agent.default updated=${updated} default=codex`);
+  }
 }
 
 const server = new WebSocketServer({ host: HOST, port: PORT });
@@ -422,7 +529,27 @@ function migrateStoredSessionSummary(summary: SessionSummary) {
 }
 
 function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
+  const inferredProject = inferProjectFromSessionHistory(summary.id);
+  if (inferredProject) {
+    return {
+      ...summary,
+      projectId: inferredProject.id,
+      projectName: inferredProject.name,
+      helmId: inferredProject.helmId,
+      workspaceId: inferredProject.defaultWorkspaceId ?? inferredProject.workspaceIds?.[0] ?? summary.workspaceId,
+    };
+  }
+
   const exactProject = resolveProjectById(summary.projectId, projects);
+  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+  if (exactProject && workspaceProject && workspaceProject.id !== exactProject.id) {
+    return {
+      ...summary,
+      projectId: workspaceProject.id,
+      projectName: workspaceProject.name,
+      helmId: workspaceProject.helmId,
+    };
+  }
   if (exactProject) {
     return {
       ...summary,
@@ -433,7 +560,7 @@ function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
 
   const matchedProject =
     projects.find((project) => project.name === summary.projectName) ??
-    projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+    workspaceProject;
   if (!matchedProject) {
     return summary;
   }
@@ -444,6 +571,32 @@ function alignSessionProjectBinding(summary: SessionSummary): SessionSummary {
     projectName: matchedProject.name,
     helmId: matchedProject.helmId,
   };
+}
+
+function inferProjectFromSessionHistory(sessionId: string) {
+  const text = sessionMessageStore.list(sessionId).map((message) => message.text).join("\n").toLowerCase();
+  if (!text) {
+    return null;
+  }
+  const scored = projects
+    .map((project) => {
+      const name = project.name.toLowerCase();
+      const path = project.path?.toLowerCase().replaceAll("\\", "/");
+      const score =
+        (path && text.includes(path) ? 4 : 0) +
+        (name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}([^\\p{L}\\p{N}]|$)`, "iu").test(text) ? 2 : 0);
+      return { project, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (!scored.length || scored[0].score < 2 || scored[0].score === scored[1]?.score) {
+    return null;
+  }
+  return scored[0].project;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {
@@ -515,6 +668,24 @@ function resolveResumeMode(agent: AcpAgentProvider | undefined) {
   return agent?.capabilities?.resumeMode ?? "none";
 }
 
+async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
+  try {
+    const history = await loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
+    if (!history) {
+      return;
+    }
+    if (history.messages.length) {
+      sessionMessageStore.replace(sessionId, history.messages);
+    }
+    if (history.toolCalls.length) {
+      sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+    }
+    logInfo(`[tiller-helm] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+  } catch (error) {
+    logError(`[tiller-helm] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+  }
+}
+
 async function startSessionResume(sessionId: string) {
   const activeRecord = sessions.get(sessionId);
   if (activeRecord) {
@@ -581,6 +752,7 @@ async function startSessionResume(sessionId: string) {
     sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
     sessionStore.upsert(restoredSummary);
     persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
+    await importAuthoritativeOpenCodeHistory(sessionId, agent, runtime.runtimeSessionId, workspace.path);
     logInfo(`[tiller-helm] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
     return {
       ok: true,
@@ -747,11 +919,14 @@ function loadAvailableWorkspaces() {
   const configuredWorkspaces = config.workspaces ?? [];
   const projectWorkspaces = (config.projects ?? [])
     .filter((project) => project.path?.trim())
-    .map((project) => ({
-      id: project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? `${project.id}-workspace`,
-      name: project.name,
-      path: project.path!.replace(/\\/g, "/"),
-    } satisfies WorkspaceSummary));
+    .map((project) => {
+      const branchWorkspaceId = project.gitCurrentBranch?.trim();
+      return {
+        id: branchWorkspaceId || project.defaultWorkspaceId || project.workspaceIds?.[0] || `${project.id}-workspace`,
+        name: branchWorkspaceId || project.name,
+        path: project.path!.replace(/\\/g, "/"),
+      } satisfies WorkspaceSummary;
+    });
   const mergedWorkspaces = dedupeWorkspaces([...configuredWorkspaces, ...projectWorkspaces]);
   if (mergedWorkspaces.length) {
     return mergedWorkspaces;
@@ -766,26 +941,35 @@ function loadAvailableWorkspaces() {
   ];
 }
 
-function loadAvailableProjects() {
+function loadAvailableProjects(): ProjectSummary[] {
   const configuredProjects = listConfiguredProjects(configPath);
+  const availableAgents = listAvailableProviders(configPath);
   if (configuredProjects.length) {
-    return configuredProjects;
+    return configuredProjects.map((project) => ({
+      ...project,
+      defaultAgentId: resolveDefaultProjectAgentId(project, availableAgents),
+    }));
   }
 
   const fallbackHelm = loadAvailableHelms()[0];
   const fallbackWorkspaces = loadAvailableWorkspaces();
-  const fallbackAgents = listAvailableProviders(configPath);
   return [
     {
       id: "current-project",
       name: basename(REPO_ROOT),
       helmId: fallbackHelm.id,
       workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
-      allowedAgentIds: fallbackAgents.map((agent) => agent.id),
+      allowedAgentIds: availableAgents.map((agent) => agent.id),
       defaultWorkspaceId: fallbackWorkspaces[0]?.id,
-      defaultAgentId: fallbackAgents[0]?.id,
+      defaultAgentId: resolveDefaultProjectAgentId({ allowedAgentIds: availableAgents.map((agent) => agent.id) } as ProjectSummary, availableAgents),
     },
   ] satisfies ProjectSummary[];
+}
+
+function resolveDefaultProjectAgentId(project: ProjectSummary, agents: AcpAgentProvider[]) {
+  const allowedAgentIds = project.allowedAgentIds?.length ? new Set(project.allowedAgentIds) : null;
+  const codex = agents.find((agent) => agent.id === "codex" && (!allowedAgentIds || allowedAgentIds.has(agent.id)));
+  return codex?.id ?? project.defaultAgentId ?? agents.find((agent) => !allowedAgentIds || allowedAgentIds.has(agent.id))?.id;
 }
 
 
@@ -817,7 +1001,21 @@ function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: 
     : availableWorkspaces;
 }
 
+function sanitizeConfiguredProjectSummary(projectName: string, summary: string | undefined) {
+  const normalized = summary?.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  const generatedPrefix = `Project: ${projectName} Configured summary:`;
+  const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
+    ? normalized.split(generatedPrefix).map((part) => part.trim()).filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim()
+    : normalized;
+  const compact = withoutGeneratedPrefix || normalized;
+  return compact.length > 900 ? `${compact.slice(0, 900)}…` : compact;
+}
+
 async function collectProjectSummarySource(project: ProjectSummary, projectWorkspaces: WorkspaceSummary[]) {
+  const configuredSummary = sanitizeConfiguredProjectSummary(project.name, project.summary);
   const snippets = await Promise.all(projectWorkspaces.slice(0, 3).map(async (workspace) => {
     const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
     const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
@@ -836,7 +1034,7 @@ async function collectProjectSummarySource(project: ProjectSummary, projectWorks
 
   return [
     `Project: ${project.name}`,
-    project.summary ? `Configured summary: ${project.summary}` : "",
+    configuredSummary ? `Configured summary: ${configuredSummary}` : "",
     ...snippets,
   ].filter(Boolean).join("\n\n").slice(0, 9000);
 }
@@ -896,6 +1094,3 @@ type SessionRecord = {
     supportsPermissionResponses: boolean;
   };
 };
-
-
-

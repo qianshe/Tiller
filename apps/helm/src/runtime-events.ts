@@ -1,5 +1,6 @@
 import { applyAgentMessageToSummary } from "./sessions/summary-updates";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "./handlers/context";
 
 
@@ -35,7 +36,23 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "session.status", sessionId, status: event.status, message: event.message });
       return;
     case "message":
-      context.logInfo(`[tiller-helm] session.message ${runtimeLogScope(sessionId, context)} role=${event.message.role} chars=${event.message.text.length} preview=${formatLogValue(event.message.text)}`);
+      if (event.message.role === "user") {
+        const existingMessages = context.sessionMessageStore?.list(sessionId) as AgentMessage[] | undefined;
+        if (!existingMessages) {
+          return;
+        }
+        const alreadyRecorded = existingMessages.some((message) =>
+          message.role === "user" && (
+            message.id === event.message.id ||
+            message.text === event.message.text ||
+            message.text.endsWith(event.message.text)
+          ),
+        );
+        if (alreadyRecorded) {
+          return;
+        }
+      }
+      process.stdout.write(event.message.text);
       context.persistSessionMessage(sessionId, event.message);
       context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, event.message));
       context.broadcastAuthenticated({ type: "agent.message", sessionId, message: event.message });
@@ -70,9 +87,10 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
-      context.logInfo(`[tiller-helm] session.config.options ${runtimeLogScope(sessionId, context)} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
+      context.logInfo(`[tiller-helm] session.config.options ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
+        agentMode: event.state.agentMode ?? current.agentMode,
         model: event.state.model ?? current.model,
         reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
         updatedAt: new Date().toISOString(),

@@ -1,4 +1,32 @@
-export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = "Rewrite the user's draft into a direct, repo-aware Markdown prompt for an autonomous coding agent.\n\nUse the project/session context only to clarify the task. Preserve the user's intent exactly. Do not answer or implement the task yourself.\n\nInputs:\n- Project summary: {{projectSummary}}\n- Session summary: {{sessionSummary}}\n- User draft: {{userPrompt}}\n\nOutput only the enhanced prompt, without Markdown code fences.\n\nThe enhanced prompt should:\n- Be written as instructions to a coding agent working in the current repository.\n- Make the task concrete, scoped, and verifiable.\n- Encourage the agent to inspect the codebase before editing.\n- Encourage the agent to follow existing conventions, naming, architecture, tests, and style.\n- Prefer minimal, targeted changes over broad rewrites.\n- Separate facts from assumptions.\n- Include goals, constraints, acceptance criteria, and verification steps when useful.\n- Ask clarifying questions only when the task cannot be safely executed without them.\n- Avoid invented details, fake file paths, fake APIs, or unsupported assumptions.\n- Avoid irrelevant runtime/tool/session details.\n- Avoid explaining that the prompt was enhanced.\n\nUse this structure when applicable:\n\n# Objective\n\nState the user’s intended outcome clearly.\n\n# Relevant Context\n\nInclude only context that helps the coding agent complete the task.\n\n# Goals\n\nList the expected outcomes.\n\n# Scope\n\nDefine what is included and what is out of scope.\n\n# Constraints\n\nList important limits, compatibility requirements, user preferences, or things the agent must avoid.\n\n# Instructions\n\nGive direct execution guidance:\n1. Inspect the relevant parts of the repository before making changes.\n2. Identify existing patterns, APIs, tests, and conventions related to the task.\n3. Make the smallest safe change that satisfies the objective.\n4. Avoid unrelated refactors, formatting churn, dependency changes, or behavior changes.\n5. Update or add tests only where they directly verify the requested behavior.\n6. Keep user-facing behavior, compatibility, and existing contracts intact unless the user explicitly requested otherwise.\n\n# Acceptance Criteria\n\nList measurable conditions that indicate the task is complete.\n\n# Verification\n\nList concrete checks the agent should run or explain if unavailable.\n\n# Questions / Assumptions\n\nInclude this section only if the draft is ambiguous or missing critical information.\nState assumptions explicitly and keep them minimal.\n\nReturn only the final enhanced Markdown prompt.";
+export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Enhance the user draft into a concise, precise prompt for a coding agent.
+
+Private reference:
+- Project summary: {{projectSummary}}
+- Session summary: {{sessionSummary}}
+
+Use private reference only to resolve ambiguity about the target area, constraints, or existing work.
+Do not copy project or session summaries into the output.
+If the private reference is not needed, ignore it.
+
+User draft:
+{{userPrompt}}
+
+Output contract:
+- Return only the enhanced prompt, without Markdown code fences.
+- Preserve the user's intent and explicit constraints.
+- Remove filler, vague wording, and repeated context.
+- Prefer the fewest assumptions, smallest scope, shortest useful wording, and clearest verification.
+- Do not invent files, APIs, requirements, project facts, or implementation details.
+- Do not add extra features, dependencies, abstractions, or refactors unless the user asked for them.
+
+Use sections only when they make the prompt clearer:
+# Task
+# Constraints
+# Acceptance Criteria
+# Verification
+# Questions
+
+Omit any section that adds no execution value.`;
 
 export type PromptEnhancerLlmConfig = {
   enabled: boolean;

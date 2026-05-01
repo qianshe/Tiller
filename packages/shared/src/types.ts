@@ -13,6 +13,14 @@ export type SessionCleanupResult = {
   message: string;
 };
 
+export type AcpAgentSessionInfo = {
+  sessionId: string;
+  cwd?: string;
+  title?: string;
+  updatedAt?: string;
+  meta?: unknown;
+};
+
 export type AgentCapabilities = {
   streaming?: boolean;
   permissionRequests?: boolean;
@@ -75,6 +83,44 @@ export type HelmSummary = {
   modelConfig?: HelmModelConfig;
 };
 
+export type ProjectFileSummary = {
+  path: string;
+  kind: "file" | "directory";
+};
+
+export function sortProjectFileSummaries(left: ProjectFileSummary, right: ProjectFileSummary) {
+  const leftParts = left.path.split("/");
+  const rightParts = right.path.split("/");
+  const maxDepth = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxDepth; index += 1) {
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    if (leftPart === rightPart) {
+      continue;
+    }
+    if (leftPart === undefined) {
+      return -1;
+    }
+    if (rightPart === undefined) {
+      return 1;
+    }
+
+    const leftSegmentIsDirectory = index < leftParts.length - 1 || left.kind === "directory";
+    const rightSegmentIsDirectory = index < rightParts.length - 1 || right.kind === "directory";
+    if (leftSegmentIsDirectory !== rightSegmentIsDirectory) {
+      return leftSegmentIsDirectory ? -1 : 1;
+    }
+
+    const compare = leftPart.localeCompare(rightPart, undefined, { numeric: true, sensitivity: "base" });
+    if (compare !== 0) {
+      return compare;
+    }
+  }
+
+  return left.kind === right.kind ? 0 : left.kind === "directory" ? -1 : 1;
+}
+
 export type ProjectSummary = {
   id: string;
   name: string;
@@ -86,6 +132,8 @@ export type ProjectSummary = {
   workspaceIds?: string[];
   /** Last Git branches discovered by Helm for this project root. */
   gitBranches?: string[];
+  /** Current Git branch discovered by Helm for this project root. */
+  gitCurrentBranch?: string;
   allowedAgentIds?: string[];
   defaultWorkspaceId?: string;
   defaultAgentId?: string;
@@ -188,6 +236,8 @@ export type SessionSummary = {
   workspaceName: string;
   agentId: string;
   agentName: string;
+  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
+  agentMode?: string;
   model?: string;
   modelOptions?: AcpModelOption[];
   reasoningEffort?: SessionReasoningEffort;
@@ -196,6 +246,7 @@ export type SessionSummary = {
   updatedAt: string;
   messageCount: number;
   runtimeSessionId?: string;
+  title?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
 };
@@ -247,3 +298,4 @@ export type FileDiffSummary = {
   /** Unified patch/hunk text when the ACP provider includes file-level diff content. */
   patch?: string;
 };
+

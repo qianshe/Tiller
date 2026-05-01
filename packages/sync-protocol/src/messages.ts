@@ -8,6 +8,7 @@ import type {
   HelmSummary,
   PermissionDecision,
   PermissionRequest,
+  ProjectFileSummary,
   ProjectSummary,
   SessionCleanupResult,
   SessionConfigOption,
@@ -42,6 +43,12 @@ export type ClientToHelm =
   | {
       type: "project.list";
       requestId: string;
+    }
+  | {
+      type: "project.files.list";
+      requestId: string;
+      projectId: string;
+      workspaceId?: string;
     }
   | {
       type: "project.save";
@@ -98,6 +105,7 @@ export type ClientToHelm =
       projectId: string;
       workspaceId: string;
       agentId: string;
+      agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     }
@@ -109,11 +117,15 @@ export type ClientToHelm =
       type: "session.messages.list";
       requestId: string;
       sessionId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.artifacts.get";
       requestId: string;
       sessionId: string;
+      limit?: number;
+      before?: string;
     }
   | {
       type: "session.resume.check";
@@ -130,11 +142,13 @@ export type ClientToHelm =
       requestId: string;
       sessionId: string;
       text: string;
+      clientMessageId?: string;
     }
   | {
       type: "session.configure";
       requestId: string;
       sessionId: string;
+      agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     }
@@ -197,6 +211,15 @@ export type HelmToClient =
       projects: ProjectSummary[];
     }
   | {
+      type: "project.files.result";
+      requestId: string;
+      ok: boolean;
+      projectId: string;
+      workspaceId?: string;
+      files: ProjectFileSummary[];
+      message: string;
+    }
+  | {
       type: "project.save.result";
       requestId: string;
       ok: boolean;
@@ -256,7 +279,7 @@ export type HelmToClient =
       currentModelId?: string;
       modelOptions: AcpModelOption[];
       configOptions: SessionConfigOption[];
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
     }
   | {
       type: "agent.save.result";
@@ -280,6 +303,8 @@ export type HelmToClient =
       requestId: string;
       sessionId: string;
       messages: AgentMessage[];
+      nextCursor?: string;
+      hasMore?: boolean;
     }
   | {
       type: "session.artifacts.result";
@@ -288,6 +313,8 @@ export type HelmToClient =
       outputs: CommandChunk[];
       diffs: FileDiffSummary[];
       toolCalls: AgentToolCall[];
+      nextCursor?: string;
+      hasMore?: boolean;
     }
   | {
       type: "session.resume.result";
@@ -316,7 +343,7 @@ export type HelmToClient =
   | {
       type: "session.config.options";
       sessionId: string;
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
+      state: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort };
       options: SessionConfigOption[];
     }
   | {

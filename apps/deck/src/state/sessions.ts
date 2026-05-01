@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   CommandChunk,
   FileDiffSummary,
+  HelmSummary,
   PermissionRequest,
   SessionConfigOption,
   SessionStatus,
@@ -66,8 +67,28 @@ export function resolveDraftSelectionId<T extends { id: string }>(
   return availableItems[0]?.id ?? null;
 }
 
+export function resolveMissionHelms(
+  helms: HelmSummary[],
+  effectiveMissionHelmId: string | null | undefined,
+  activeHelm: HelmSummary | null = null,
+) {
+  const knownHelms = helms.length ? helms : activeHelm ? [activeHelm] : [];
+  if (!effectiveMissionHelmId) {
+    return knownHelms;
+  }
+
+  const selectedHelm = activeHelm?.id === effectiveMissionHelmId
+    ? activeHelm
+    : helms.find((helm) => helm.id === effectiveMissionHelmId) ?? null;
+  if (!selectedHelm || knownHelms.some((helm) => helm.id === selectedHelm.id)) {
+    return knownHelms;
+  }
+
+  return [...knownHelms, selectedHelm];
+}
+
 export function resolveModelOptionsFromConfig(
-  _currentModel: string | undefined,
+  currentModel: string | undefined,
   configOptions: SessionConfigOption[] = [],
   nativeOptions: AcpModelOption[] = [],
 ) {
@@ -81,9 +102,25 @@ export function resolveModelOptionsFromConfig(
   }
 
   const nativeModels = nativeOptions.map((option) => option.id).filter((value) => value.trim().length > 0);
-  return Array.from(new Set(nativeModels));
+  if (nativeModels.length) {
+    return Array.from(new Set(nativeModels));
+  }
+
+  const fallbackModel = currentModel?.trim();
+  return fallbackModel ? [fallbackModel] : [];
 }
 
+
+export function resolveSessionTitle(session: SessionSummary, preview = session.lastMessagePreview) {
+  if (session.title?.trim()) {
+    return session.title.trim();
+  }
+  const title = preview
+    ?.replace(/[\p{P}\p{S}\s]+/gu, "")
+    .slice(0, 5);
+
+  return title || `${session.projectName} 任务`;
+}
 
 export function resolvePromptPlaceholder(agent?: { command?: string; args?: string[] } | null) {
   const command = [agent?.command, ...(agent?.args ?? [])]

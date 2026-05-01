@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SessionSummary } from "@tiller/shared";
-import { applySessionListSnapshot, resolveDraftSelectionId, resolveModelOptionsFromConfig, resolvePromptPlaceholder } from "./sessions.js";
+import type { HelmSummary, SessionSummary } from "@tiller/shared";
+import { applySessionListSnapshot, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionTitle } from "./sessions.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
   return {
@@ -86,6 +86,15 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   });
 });
 
+test("resolveSessionTitle uses the first meaningful 5 chars of the user prompt preview", () => {
+  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "【紧急】修复 session.message 日志"), "紧急修复s");
+  assert.equal(resolveSessionTitle(buildSession("session-2", "2026-04-27T10:00:00.000Z"), "  你好！！！  "), "你好");
+});
+
+test("resolveSessionTitle falls back to project task name when preview has no readable characters", () => {
+  assert.equal(resolveSessionTitle(buildSession("session-1", "2026-04-27T10:00:00.000Z"), "!!! ---"), "Tiller 任务");
+});
+
 test("resolveDraftSelectionId preserves a valid manual selection instead of forcing the project default", () => {
   const available = [
     { id: "opencode" },
@@ -129,6 +138,19 @@ test("resolveModelOptionsFromConfig prefers ACP config options over legacy model
   ]);
 
   assert.deepEqual(options, ["openai/gpt-5.4", "openai/gpt-5.4/high"]);
+});
+
+test("resolveModelOptionsFromConfig falls back to current model when no option list is available", () => {
+  const options = resolveModelOptionsFromConfig("gpt-5.5", [], []);
+
+  assert.deepEqual(options, ["gpt-5.5"]);
+});
+
+
+test("resolveMissionHelms keeps configured helms even when they have no projects", () => {
+  const connectedHelm: HelmSummary = { id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 };
+  const mockHelm: HelmSummary = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: 47632 };
+  assert.deepEqual(resolveMissionHelms([connectedHelm, mockHelm], connectedHelm.id), [connectedHelm, mockHelm]);
 });
 
 
