@@ -56,12 +56,34 @@ test("default prompt enhancer treats project and session context as private refe
   }, fetcher);
 
   const body = String(calls[0]?.init.body);
-  assert.match(body, /Private reference/);
-  assert.match(body, /Use private reference only to resolve ambiguity/);
-  assert.match(body, /User draft/);
+  assert.match(body, /<private_reference>/);
+  assert.match(body, /Treat private reference as non-output context/);
+  assert.match(body, /<user_draft>/);
   assert.match(body, /Output contract/);
+  assert.match(body, /Use the user's language/);
+  assert.match(body, /If the draft is already actionable/);
+  assert.match(body, /Preserve the task mode/);
+  assert.match(body, /Do not mention private reference/);
+  assert.match(body, /If the user asks to plan a new product or app/);
+  assert.match(body, /If the user asks to adjust an existing screen/);
+  assert.match(body, /ask the coding agent to inspect the relevant files/);
+  assert.match(body, /Do not name files, components, APIs, or repository facts unless/);
+  assert.match(body, /For new product ideas, label inferred features as options/);
+  assert.match(body, /not fixed requirements/);
+  assert.match(body, /Do not add constraints unless/);
+  assert.match(body, /Do not turn planning or discussion into implementation/);
+  assert.match(body, /Apply the internal workflow silently/);
+  assert.match(body, /Keep → Drop → Clarify → Inspect → Propose → Verify → Defer/);
+  assert.match(body, /Enhancement patterns/);
+  assert.match(body, /Existing project change/);
+  assert.match(body, /New product or app/);
+  assert.match(body, /phrase them as options or questions/);
+  assert.match(body, /directly usable as the user's next message/);
+  assert.match(body, /Do not prefix it with meta commentary/);
+  assert.match(body, /Do not output guessed file paths/);
   assert.doesNotMatch(body, /AGENTS/);
   assert.doesNotMatch(body, /# Context/);
+  assert.doesNotMatch(body, /# Constraints/);
 });
 
 

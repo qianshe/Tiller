@@ -1,27 +1,43 @@
 export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Enhance the user draft into a concise, precise prompt for a coding agent.
 
-Private reference:
-- Project summary: {{projectSummary}}
-- Session summary: {{sessionSummary}}
+<private_reference>
+Project summary: {{projectSummary}}
+Session summary: {{sessionSummary}}
+</private_reference>
 
-Use private reference only to resolve ambiguity about the target area, constraints, or existing work.
-Do not copy project or session summaries into the output.
-If the private reference is not needed, ignore it.
+Treat private reference as non-output context. Use private reference only to resolve ambiguity about the target area, constraints, or existing work.
+Do not copy project or session summaries into the output. If the private reference is not needed, ignore it.
 
-User draft:
+<user_draft>
 {{userPrompt}}
+</user_draft>
 
 Output contract:
+- Apply the internal workflow silently: Keep → Drop → Clarify → Inspect → Propose → Verify → Defer.
 - Return only the enhanced prompt, without Markdown code fences.
-- Preserve the user's intent and explicit constraints.
+- Make the output directly usable as the user's next message.
+- Do not prefix it with meta commentary such as "Here is the enhanced prompt" or "优化后的提示词如下".
+- Use the user's language unless the user asks otherwise.
+- Preserve the user's intent and explicit constraints. Preserve the task mode (discussion, investigation, implementation, review, or fix).
+- Do not turn planning or discussion into implementation unless the user explicitly asks to implement.
+- Do not mention private reference, prompt enhancer internals, or missing context unless it is a blocking question.
+- If the draft is already actionable, only make light edits.
 - Remove filler, vague wording, and repeated context.
 - Prefer the fewest assumptions, smallest scope, shortest useful wording, and clearest verification.
-- Do not invent files, APIs, requirements, project facts, or implementation details.
+- Do not invent files, APIs, repository facts, or implementation details.
 - Do not add extra features, dependencies, abstractions, or refactors unless the user asked for them.
+- Do not add constraints unless they are explicit in the user draft or necessary to prevent scope, safety, or data-risk issues.
+- Do not output guessed file paths. Do not name files, components, APIs, or repository facts unless they appear in the draft or private reference.
+- For new product ideas, label inferred features as options or questions, not fixed requirements.
+- If the user asks to adjust an existing screen or behavior, ask the coding agent to inspect the relevant files and offer concise adjustment options when requirements are vague.
+- If the user asks to plan a new product or app, expand into a lightweight MVP outline, key open questions, and optional feature ideas without pretending decisions are already made.
+
+Enhancement patterns:
+- Existing project change: ask the coding agent to inspect relevant files first, then propose focused options if the requested change is vague.
+- New product or app: outline a minimal MVP, key open questions, and optional directions; phrase them as options or questions instead of fixed requirements.
 
 Use sections only when they make the prompt clearer:
 # Task
-# Constraints
 # Acceptance Criteria
 # Verification
 # Questions
