@@ -370,6 +370,7 @@ function createHandlerContext(): HelmHandlerContext {
     emit,
     broadcastAuthenticated,
     logInfo,
+    logDebug,
     logError,
     getHelms: () => helms,
     setHelms: (items) => { helms = items; },
@@ -995,12 +996,24 @@ function logInfo(message: string) {
   console.log(message);
 }
 
+function logDebug(message: string) {
+  if (!isHelmDebugEnabled()) {
+    return;
+  }
+  writeLogLine("DEBUG", message);
+  console.debug(message);
+}
+
 function logError(message: string) {
   writeLogLine("ERROR", message);
   console.error(message);
 }
 
-function writeLogLine(level: "INFO" | "ERROR", message: string) {
+function isHelmDebugEnabled() {
+  return /^(1|true|yes)$/iu.test(process.env.TILLER_HELM_DEBUG ?? "");
+}
+
+function writeLogLine(level: "DEBUG" | "INFO" | "ERROR", message: string) {
   appendFileSync(HELM_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
 }
 

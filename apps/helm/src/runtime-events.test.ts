@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "./handlers/context";
 import { handleRuntimeEvent } from "./runtime-events.js";
 
@@ -34,6 +34,7 @@ function createTestContext(logs: string[], capture: TestContextCapture = { broad
     }]]),
     sessionStore: { list: () => [summary] },
     logInfo: (message: string) => logs.push(message),
+    logDebug: () => undefined,
     logError: (message: string) => logs.push(message),
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => { capture.persisted.push(message); },
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => mutate(summary),
@@ -116,6 +117,64 @@ test("runtime user echo messages are ignored because prompts are already persist
   assert.deepEqual(writes, []);
   assert.deepEqual(capture.persisted, []);
   assert.deepEqual(capture.broadcasts, []);
+});
+
+test("runtime tool-call events are persisted and broadcast without noisy info logs", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const appendedToolCalls: unknown[] = [];
+  const context = createTestContext(logs, capture);
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+  };
+
+  handleRuntimeEvent("session-1", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-1",
+      kind: "tool",
+      title: "zhi",
+      status: "running",
+      timestamp: "2026-04-30T00:00:01.000Z",
+      updatedAt: "2026-04-30T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  assert.deepEqual(logs, []);
+  assert.equal(appendedToolCalls.length, 1);
+  assert.deepEqual(capture.broadcasts, [{
+    type: "tool.call",
+    sessionId: "session-1",
+    toolCall: {
+      id: "call-1",
+      kind: "tool",
+      title: "zhi",
+      status: "running",
+      timestamp: "2026-04-30T00:00:01.000Z",
+      updatedAt: "2026-04-30T00:00:01.000Z",
+    },
+  }]);
+});
+
+test("runtime tool-call debug logs are routed through debug logger", () => {
+  const logs: string[] = [];
+  const context = createTestContext(logs);
+  context.logDebug = (message: string) => { logs.push(message); };
+
+  handleRuntimeEvent("session-1", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-1",
+      kind: "tool",
+      title: "zhi",
+      status: "running",
+      timestamp: "2026-04-30T00:00:01.000Z",
+      updatedAt: "2026-04-30T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /^\[tiller-helm\] session\.tool\.call session=session-1 agent=opencode workspace=workspace-1 id=call-1 title=zhi$/);
 });
 
 test("runtime non-streaming event logs keep existing tiller helm prefix", () => {

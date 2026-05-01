@@ -24,6 +24,7 @@ function formatLogValue(value: unknown, maxLength = 220) {
   }
 }
 
+
 export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent, context: HelmHandlerContext) {
   if (!context.sessions.has(sessionId) && !context.sessionStore.list().some((item: { id: string }) => item.id === sessionId)) {
     return;
@@ -69,7 +70,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "permission.request", sessionId, permissionRequest: event.request });
       return;
     case "tool-call":
-      context.logInfo(`[tiller-helm] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
+      context.logDebug(`[tiller-helm] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
       return;
