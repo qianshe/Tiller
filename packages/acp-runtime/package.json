@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.0",
     "@tiller/shared": "workspace:*"
   },
   "devDependencies": {
