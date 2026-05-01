@@ -36,7 +36,7 @@ import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, w
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
 import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
-import { buildConversationTimeline, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
+import { coalesceDisplayMessages, commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 
@@ -683,6 +683,8 @@ export function App() {
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
   const preserveChatScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const stickChatToBottomRef = useRef(true);
+  const lastAutoScrollSessionIdRef = useRef<string | null>(null);
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
@@ -837,23 +839,15 @@ export function App() {
   );
   const activeSessionMessages = activeSession ? messages[activeSession.id] ?? [] : [];
   const activeSessionToolCalls = activeSession ? toolCalls[activeSession.id] ?? [] : [];
-  const activeSessionOutputs = activeSession ? outputs[activeSession.id] ?? [] : [];
   const activeConversationUpdateKey = useMemo(() => {
     const lastMessage = activeSessionMessages.at(-1);
-    const lastToolCall = activeSessionToolCalls.at(-1);
-    const lastOutput = activeSessionOutputs.at(-1);
     return [
       activeSessionId ?? "",
       activeSessionMessages.length,
       lastMessage?.timestamp ?? "",
       lastMessage?.text.length ?? 0,
-      activeSessionToolCalls.length,
-      lastToolCall?.updatedAt ?? lastToolCall?.timestamp ?? "",
-      activeSessionOutputs.length,
-      lastOutput?.timestamp ?? "",
-      lastOutput?.text.length ?? 0,
     ].join("|");
-  }, [activeSessionId, activeSessionMessages, activeSessionOutputs, activeSessionToolCalls]);
+  }, [activeSessionId, activeSessionMessages]);
   const draftProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -1205,6 +1199,12 @@ export function App() {
       if (preserve) {
         chatMain.scrollTop = chatMain.scrollHeight - preserve.scrollHeight + preserve.scrollTop;
         preserveChatScrollRef.current = null;
+        return;
+      }
+
+      const sessionChanged = lastAutoScrollSessionIdRef.current !== activeSessionId;
+      lastAutoScrollSessionIdRef.current = activeSessionId;
+      if (!sessionChanged && !stickChatToBottomRef.current) {
         return;
       }
       chatMain.scrollTop = chatMain.scrollHeight;
@@ -2836,16 +2836,33 @@ case "session.messages.list.result":
   }
 
   function handleChatMainScroll(event: ReactUIEvent<HTMLDivElement>) {
-    if (!activeSessionId || event.currentTarget.scrollTop > 32) {
+    const target = event.currentTarget;
+    const distanceToBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
+    stickChatToBottomRef.current = distanceToBottom <= 96;
+
+    if (!activeSessionId || target.scrollTop > 32) {
       return;
     }
+
+    const messageState = messageHistoryState[activeSessionId];
+    const activityState = activityHistoryState[activeSessionId];
+    const canLoadMessages = Boolean(messageState?.hasMore && !messageState.loading && messageState.nextCursor);
+    const canLoadActivities = Boolean(activityState?.hasMore && !activityState.loading && activityState.nextCursor);
+    if (!canLoadMessages && !canLoadActivities) {
+      return;
+    }
+
+    preserveChatScrollRef.current = {
+      scrollHeight: target.scrollHeight,
+      scrollTop: target.scrollTop,
+    };
     loadOlderMessages(activeSessionId);
     loadOlderActivities(activeSessionId);
   }
 
-  function renderPlainMessages(items: AgentMessage[], sessionId?: string, sessionToolCalls: AgentToolCall[] = [], commandChunks: CommandChunk[] = []) {
-    const timelineItems = buildConversationTimeline(items, commandChunks, sessionToolCalls);
-    if (!timelineItems.length) {
+  function renderPlainMessages(items: AgentMessage[], sessionId?: string, sessionToolCalls: AgentToolCall[] = []) {
+    const displayMessages = coalesceDisplayMessages(items, sessionToolCalls.map((call) => call.timestamp));
+    if (!displayMessages.length) {
       return <div className="empty-state">{copy.waitingForAgent}</div>;
     }
     const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
@@ -2857,41 +2874,22 @@ case "session.messages.list.result":
             {historyState.loading ? "加载中..." : "加载更早消息"}
           </button>
         ) : null}
-        {timelineItems.map((timelineItem) => {
-          if (timelineItem.kind === "tool") {
-            const toolTone = resolveToolCallTone(timelineItem.toolKind, timelineItem.title);
-            const streamTone = timelineItem.streams.includes("stderr") ? "stderr" : "stdout";
-            return (
-              <details key={`tool-${timelineItem.id}`} className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}>
-                <summary className="tool-call-head">
-                  <span className="tool-call-icon" aria-hidden="true">{toolTone.icon}</span>
-                  <span className="tool-call-kind">{toolTone.label}</span>
-                  <strong>{timelineItem.title}</strong>
-                  <span className={`tool-call-stream tool-call-stream-${streamTone}`}>{streamTone}</span>
-                </summary>
-                {timelineItem.text.trim() ? <pre className="tool-call-output">{timelineItem.text}</pre> : null}
-              </details>
-            );
-          }
-
-          const message = timelineItem.message;
-          return (
-            <article key={message.id} className={`plain-message plain-${message.role}`}>
-              <span className="plain-message-role">{copy.role[message.role]}</span>
-              <MarkdownMessage text={message.text} />
-              {message.attachments?.length ? (
-                <div className="mission-message-attachments">
-                  {message.attachments.map((image, index) => (
-                    <figure key={`${message.id}-image-${index}`} className="mission-message-image">
-                      <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
-                      <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
+        {displayMessages.map((message) => (
+          <article key={message.id} className={`plain-message plain-${message.role}`}>
+            <span className="plain-message-role">{copy.role[message.role]}</span>
+            <MarkdownMessage text={message.text} />
+            {message.attachments?.length ? (
+              <div className="mission-message-attachments">
+                {message.attachments.map((image, index) => (
+                  <figure key={`${message.id}-image-${index}`} className="mission-message-image">
+                    <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? `粘贴图片 ${index + 1}`} />
+                    <figcaption>{image.name ?? `粘贴图片 ${index + 1}`}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
       </div>
     );
   }
@@ -3557,7 +3555,7 @@ case "session.messages.list.result":
                       </section>
                     ) : null}
 
-                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSessionToolCalls, activeSessionOutputs)}
+                    {renderPlainMessages(activeSessionMessages, activeSession.id, activeSessionToolCalls)}
                     {missionActivityLoading ? (
                       <div className="mission-tool-loading" role="status" aria-live="polite">
                         <span className="mission-tool-loading-dots" aria-hidden="true"><i /><i /><i /></span>
