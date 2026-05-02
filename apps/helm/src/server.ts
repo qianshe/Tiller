@@ -2,8 +2,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { networkInterfaces } from "node:os";
 import { basename, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   getDefaultConfigPath,
   listAvailableHelms as listConfiguredHelms,
@@ -54,17 +55,22 @@ import { handleDeviceMessage } from "./handlers/devices";
 import { handleSessionMessage } from "./handlers/sessions";
 import type { HelmHandlerContext } from "./handlers/context";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime-events";
+import { assertHelmPortAvailable } from "./port-availability";
+import { resolveTillerRuntimeOptions } from "./runtime-options";
+import { resolveDeckStaticDir, resolveStaticAsset } from "./static-assets";
 
 // Tiller verification ping by Antigravity 🐾
-const HOST = "127.0.0.1";
-const PORT = 47631;
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const LOGS_DIR = resolve(REPO_ROOT, "logs");
-const HELM_LOG_FILE = resolve(LOGS_DIR, "helm.log");
+const configPath = getDefaultConfigPath();
+const configStub = loadTillerConfigStub(configPath);
+const tillerConfig = readTillerConfig(configPath);
+const { host: HOST, port: PORT } = resolveTillerRuntimeOptions({ config: tillerConfig });
+const DEFAULT_WORKSPACE_ROOT = process.cwd();
+const LOGS_DIR = resolve(dirname(configPath), "logs");
+const TILLER_LOG_FILE = resolve(LOGS_DIR, "tiller.log");
+const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
 
 mkdirSync(LOGS_DIR, { recursive: true });
 
-const configPath = getDefaultConfigPath();
 const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
 const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
@@ -92,7 +98,6 @@ const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
 const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
 const socketIds = new WeakMap<WebSocket, string>();
 let nextSocketSequence = 0;
-const configStub = loadTillerConfigStub(configPath);
 normalizeProjectIdsOnStartup();
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
@@ -122,9 +127,9 @@ function showPairingCode() {
   if (!pairingCode) {
     pairingCode = generatePairingCode();
   }
-  const pairUrl = `ws://${HOST}:${PORT}?pair=${pairingCode}`;
-  console.log(`[tiller-helm] Pairing code: ${pairingCode}`);
-  console.log("[tiller-helm] Scan QR code or enter pairing code to connect:");
+  const pairUrl = `http://${resolvePrimaryDisplayHost()}:${PORT}?pair=${pairingCode}`;
+  console.log(`[tiller] Pairing code: ${pairingCode}`);
+  console.log("[tiller] Scan QR code or enter pairing code to connect:");
   qrcode.generate(pairUrl, { small: true }, (qr: string) => {
     console.log(qr);
   });
@@ -135,10 +140,10 @@ async function refreshProjectGitBranchesOnStartup() {
   projects = loadAvailableProjects();
   workspaces = loadAvailableWorkspaces();
   if (result.updated || result.failures.length) {
-    logInfo(`[tiller-helm] project.git.refresh updated=${result.updated} skipped=${result.skipped} failed=${result.failures.length}`);
+    logInfo(`[tiller] project.git.refresh updated=${result.updated} skipped=${result.skipped} failed=${result.failures.length}`);
   }
   for (const failure of result.failures) {
-    logError(`[tiller-helm] project.git.refresh.failed project=${failure.projectId} message=${failure.message}`);
+    logError(`[tiller] project.git.refresh.failed project=${failure.projectId} message=${failure.message}`);
   }
 }
 
@@ -192,7 +197,7 @@ function normalizeProjectIdsOnStartup() {
       sessionRuntimeStore.upsert({ ...descriptor, projectId: nextProjectId });
     }
   }
-  logInfo(`[tiller-helm] project.id.normalize updated=${nextProjects.length}`);
+  logInfo(`[tiller] project.id.normalize updated=${nextProjects.length}`);
 }
 
 function remapProjectScopedId(value: string, oldProjectId: string, nextProjectId: string) {
@@ -216,21 +221,57 @@ function normalizeProjectAgentDefaultsOnStartup() {
     }
   }
   if (updated) {
-    logInfo(`[tiller-helm] project.agent.default updated=${updated} default=codex`);
+    logInfo(`[tiller] project.agent.default updated=${updated} default=codex`);
   }
 }
 
-const server = new WebSocketServer({ host: HOST, port: PORT });
+try {
+  await assertHelmPortAvailable({ host: HOST, port: PORT });
+} catch (error) {
+  logError(`[tiller] startup blocked: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+
+const httpServer = createServer(handleHttpRequest);
+const server = new WebSocketServer({ server: httpServer });
 
 server.on("connection", (socket) => {
-  logInfo("[tiller-helm] client connected");
+  logInfo("[tiller] client connected");
 
   socket.on("close", () => {
-    logInfo("[tiller-helm] client disconnected");
+    logInfo("[tiller] client disconnected");
     authenticatedSockets.remove(getSocketId(socket));
   });
 
   beginAuthenticationFlow(socket);
+});
+
+httpServer.listen(PORT, HOST);
+
+httpServer.on("listening", () => {
+  logInfo(`[tiller] listening on http://${HOST}:${PORT}`);
+  for (const url of resolveDisplayUrls()) {
+    logInfo(`[tiller] Deck available at ${url}`);
+  }
+  logInfo(`[tiller] WebSocket available on the same origin`);
+  logInfo(`[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
+  logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
+});
+
+httpServer.on("error", (error) => {
+  logError(`[tiller] server error: ${error.message}`);
+});
+
+server.on("error", (error) => {
+  logError(`[tiller] websocket error: ${error.message}`);
+});
+
+process.on("uncaughtException", (error) => {
+  logError(`[tiller] uncaught exception: ${error.stack ?? error.message}`);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logError(`[tiller] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
 });
 
 function beginAuthenticationFlow(socket: WebSocket) {
@@ -267,7 +308,7 @@ function beginAuthenticationFlow(socket: WebSocket) {
         authenticated = true;
         clearTimeout(pairingPromptTimer);
         authenticateSocket(socket, payload.deviceId);
-        logInfo(`[tiller-helm] Beacon authenticated device=${payload.deviceId} ✓`);
+        logInfo(`[tiller] Beacon authenticated device=${payload.deviceId} ✓`);
         reply(socket, {
           type: "device.auth.result",
           requestId: payload.requestId,
@@ -310,22 +351,6 @@ function authenticateSocket(socket: WebSocket, deviceId: string) {
     }
   });
 }
-server.on("listening", () => {
-  logInfo(`[tiller-helm] listening on ws://${HOST}:${PORT}`);
-  logInfo(`[tiller-helm] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
-});
-
-server.on("error", (error) => {
-  logError(`[tiller-helm] server error: ${error.message}`);
-});
-
-process.on("uncaughtException", (error) => {
-  logError(`[tiller-helm] uncaught exception: ${error.stack ?? error.message}`);
-});
-
-process.on("unhandledRejection", (reason) => {
-  logError(`[tiller-helm] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
-});
 
 function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type: "device.pair" }>) {
   if (!pairingCode || payload.pairingCode.toUpperCase() !== pairingCode) {
@@ -345,7 +370,7 @@ function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type:
   });
   pairingCode = null;
   authenticateSocket(socket, payload.deviceId);
-  logInfo(`[tiller-helm] Beacon paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
+  logInfo(`[tiller] Beacon paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
 
   reply(socket, {
     type: "device.pair.result",
@@ -421,7 +446,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
   let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
 
-  logInfo(`[tiller-helm] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`);
+  logInfo(`[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`);
 
   try {
     const runtime = await createAcpRuntime({
@@ -438,7 +463,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
           configState = event.state;
           configOptions = event.options;
         } else if (event.type === "error") {
-          logError(`[tiller-helm] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
+          logError(`[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
         }
       },
     });
@@ -446,7 +471,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
     runtime.cancel();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
-    logError(`[tiller-helm] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`);
+    logError(`[tiller] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`);
     return {
       ok: false,
       message,
@@ -459,7 +484,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
 
   const modelCount = modelState?.options.length ?? 0;
   logInfo(
-    `[tiller-helm] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length}`,
+    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length}`,
   );
 
   return {
@@ -618,10 +643,10 @@ async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpA
     if (history.toolCalls.length) {
       sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
     }
-    logInfo(`[tiller-helm] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+    logInfo(`[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
     return true;
   } catch (error) {
-    logError(`[tiller-helm] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+    logError(`[tiller] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
     return false;
   }
 }
@@ -655,7 +680,7 @@ async function startSessionResume(sessionId: string) {
   if (activeRecord) {
     await refreshAuthoritativeSessionHistory(sessionId);
     const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
-    logInfo(`[tiller-helm] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
+    logInfo(`[tiller] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
     return {
       ok: true,
       resume,
@@ -690,7 +715,7 @@ async function startSessionResume(sessionId: string) {
   }
 
   try {
-    logInfo(`[tiller-helm] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
+    logInfo(`[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
     const runtime = await createAcpRuntime({
       sessionId,
       workspace,
@@ -718,14 +743,14 @@ async function startSessionResume(sessionId: string) {
     sessionStore.upsert(restoredSummary);
     persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
     await importAuthoritativeOpenCodeHistory(sessionId, agent, runtime.runtimeSessionId, workspace.path);
-    logInfo(`[tiller-helm] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
+    logInfo(`[tiller] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
     return {
       ok: true,
       resume: buildResumeInfo(restoredSummary, agent),
       message: `ACP ${resume.restoreMethod} completed for this session.`,
     };
   } catch (error) {
-    logError(`[tiller-helm] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
+    logError(`[tiller] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
     return {
       ok: false,
       resume: {
@@ -881,28 +906,16 @@ function dedupeWorkspaces(items: WorkspaceSummary[]) {
 }
 
 function loadAvailableWorkspaces() {
-  const config = readTillerConfig(configPath);
-  const configuredWorkspaces = config.workspaces ?? [];
-  const projectWorkspaces = (config.projects ?? [])
-    .filter((project) => project.path?.trim())
-    .map((project) => {
-      const branchWorkspaceId = project.gitCurrentBranch?.trim();
-      return {
-        id: branchWorkspaceId || project.defaultWorkspaceId || project.workspaceIds?.[0] || `${project.id}-workspace`,
-        name: branchWorkspaceId || project.name,
-        path: project.path!.replace(/\\/g, "/"),
-      } satisfies WorkspaceSummary;
-    });
-  const mergedWorkspaces = dedupeWorkspaces([...configuredWorkspaces, ...projectWorkspaces]);
-  if (mergedWorkspaces.length) {
-    return mergedWorkspaces;
+  const configuredWorkspaces = dedupeWorkspaces(readTillerConfig(configPath).workspaces ?? []);
+  if (configuredWorkspaces.length) {
+    return configuredWorkspaces;
   }
 
   return [
     {
       id: "current-workspace",
-      name: basename(REPO_ROOT),
-      path: REPO_ROOT.replace(/\\/g, "/"),
+      name: basename(DEFAULT_WORKSPACE_ROOT),
+      path: DEFAULT_WORKSPACE_ROOT.replace(/\\/g, "/"),
     },
   ];
 }
@@ -917,12 +930,18 @@ function loadAvailableProjects(): ProjectSummary[] {
     }));
   }
 
-  const fallbackHelm = loadAvailableHelms()[0];
-  const fallbackWorkspaces = loadAvailableWorkspaces();
+  const fallbackHelm = helms[0] ?? { id: "local-helm", name: "Local Helm", host: HOST, port: PORT };
+  const fallbackWorkspaces = workspaces.length ? workspaces : [
+    {
+      id: "current-workspace",
+      name: basename(DEFAULT_WORKSPACE_ROOT),
+      path: DEFAULT_WORKSPACE_ROOT.replace(/\\/g, "/"),
+    },
+  ];
   return [
     {
       id: "current-project",
-      name: basename(REPO_ROOT),
+      name: basename(DEFAULT_WORKSPACE_ROOT),
       helmId: fallbackHelm.id,
       workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
       defaultWorkspaceId: fallbackWorkspaces[0]?.id,
@@ -1021,6 +1040,44 @@ async function readOptionalSnippet(path: string, maxLength: number) {
   }
 }
 
+async function handleHttpRequest(request: IncomingMessage, response: ServerResponse) {
+  const asset = resolveStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
+  if (!asset.ok) {
+    response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
+    response.end(asset.statusCode === 404 ? "Tiller Deck assets not found. Run pnpm --filter @qianshe/tiller build." : "Forbidden");
+    return;
+  }
+
+  try {
+    const body = await readFile(asset.filePath);
+    response.writeHead(200, {
+      "cache-control": asset.filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+      "content-type": asset.contentType,
+    });
+    response.end(body);
+  } catch (error) {
+    logError(`[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`);
+    response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Failed to serve Tiller Deck asset.");
+  }
+}
+
+function resolveDisplayUrls() {
+  const hosts = HOST === "0.0.0.0" || HOST === "::" ? ["127.0.0.1", ...resolveLanAddresses()] : [HOST];
+  return hosts.map((host) => `http://${host}:${PORT}`);
+}
+
+function resolvePrimaryDisplayHost() {
+  return HOST === "0.0.0.0" || HOST === "::" ? resolveLanAddresses()[0] ?? "127.0.0.1" : HOST;
+}
+
+function resolveLanAddresses() {
+  return Object.values(networkInterfaces())
+    .flatMap((items) => items ?? [])
+    .filter((item) => item.family === "IPv4" && !item.internal)
+    .map((item) => item.address);
+}
+
 function logInfo(message: string) {
   writeLogLine("INFO", message);
   console.log(message);
@@ -1040,11 +1097,11 @@ function logError(message: string) {
 }
 
 function isHelmDebugEnabled() {
-  return /^(1|true|yes)$/iu.test(process.env.TILLER_HELM_DEBUG ?? "");
+  return /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? "");
 }
 
 function writeLogLine(level: "DEBUG" | "INFO" | "ERROR", message: string) {
-  appendFileSync(HELM_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
+  appendFileSync(TILLER_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
 }
 
 type SessionRecord = {

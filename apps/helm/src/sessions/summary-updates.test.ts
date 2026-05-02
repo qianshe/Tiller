@@ -45,7 +45,7 @@ test("applyAgentMessageToSummary keeps the user prompt preview stable across str
 });
 
 
-test("Helm summary count remains send-based across streamed agent chunks", () => {
+test("Tiller summary count remains send-based across streamed agent chunks", () => {
   let summary = createSummary({ messageCount: 0 });
   summary = applyUserPromptToSummary(summary, "第一轮任务", "2026-04-28T01:00:00.000Z");
 

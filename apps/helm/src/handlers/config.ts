@@ -373,7 +373,7 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
           await persistProjectGitInfoIfAvailable(payload.project, savedWorkspaces, context.configPath);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to refresh project Git branches";
-          context.logError(`[tiller-helm] project.save.git.refresh.failed project=${payload.project.id} message=${message}`);
+          context.logError(`[tiller] project.save.git.refresh.failed project=${payload.project.id} message=${message}`);
         }
 
         const workspaces = context.loadAvailableWorkspaces();

@@ -90,9 +90,9 @@ Remaining compatibility boundary:
 Verified commands:
 
 ```powershell
-pnpm --filter @tiller/helm exec tsx --test ../../packages/acp-runtime/src/sdk-runtime.test.ts
+pnpm --filter @qianshe/tiller exec tsx --test ../../packages/acp-runtime/src/sdk-runtime.test.ts
 pnpm --filter @tiller/acp-runtime typecheck
-pnpm --filter @tiller/helm test
+pnpm --filter @qianshe/tiller test
 pnpm typecheck
 git diff --check
 ```

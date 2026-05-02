@@ -49,7 +49,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
 
   switch (event.type) {
     case "status":
-      context.logInfo(`[tiller-helm] session.status ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`);
+      context.logInfo(`[tiller] session.status ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`);
       context.updateSessionSummary(sessionId, (current) => ({ ...current, status: event.status, updatedAt: new Date().toISOString() }));
       context.broadcastAuthenticated({ type: "session.status", sessionId, status: event.status, message: event.message });
       return;
@@ -72,7 +72,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "agent.message", sessionId, message: event.message });
       return;
     case "permission-request":
-      context.logInfo(`[tiller-helm] session.permission.request ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`);
+      context.logInfo(`[tiller] session.permission.request ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`);
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         status: "waiting_for_permission",
@@ -83,12 +83,12 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "permission.request", sessionId, permissionRequest: event.request });
       return;
     case "tool-call":
-      context.logDebug(`[tiller-helm] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
+      context.logDebug(`[tiller] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`);
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
       return;
     case "command-output":
-      context.logInfo(`[tiller-helm] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} preview=${formatLogValue(event.chunk.text)}`);
+      context.logInfo(`[tiller] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} preview=${formatLogValue(event.chunk.text)}`);
       context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
       context.broadcastAuthenticated({ type: "command.output", sessionId, commandId: event.chunk.commandId, chunk: event.chunk });
       if (event.toolCall) {
@@ -97,11 +97,11 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       }
       return;
     case "diff-update":
-      context.logInfo(`[tiller-helm] session.diff.update ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`);
+      context.logInfo(`[tiller] session.diff.update ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`);
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
-      context.logInfo(`[tiller-helm] session.config.options ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
+      context.logInfo(`[tiller] session.config.options ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`);
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         agentMode: event.state.agentMode ?? current.agentMode,
@@ -116,7 +116,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       return;
     }
     case "model-options": {
-      context.logInfo(`[tiller-helm] session.model.options ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`);
+      context.logInfo(`[tiller] session.model.options ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`);
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         model: event.state.currentModelId ?? current.model,
@@ -133,7 +133,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "session.commands", sessionId, commands: event.commands });
       return;
     case "error":
-      context.logError(`[tiller-helm] session.error ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`);
+      context.logError(`[tiller] session.error ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`);
       context.persistSessionMessage(sessionId, { id: `${sessionId}-system-${Date.now()}`, role: "system", text: event.message, timestamp: new Date().toISOString() });
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,

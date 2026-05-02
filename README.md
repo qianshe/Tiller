@@ -1,379 +1,153 @@
 # Tiller
 
-> Tiller is a command deck for your ACP coding-agent fleet.
+Tiller 是一个 **local-first command deck**：把运行在你电脑或服务器上的 Coding Agent，整理成一个可以在浏览器里查看、恢复、推进和审查的工作台。
 
-Tiller 是你的 ACP Coding Agent 舰队指挥甲板。
+它不试图做一个公网 Bot Hub，也不默认把你的内网运行时暴露给云端。Tiller 的核心思路是：
 
-## 它解决什么问题
+- **运行时在你这里**：Agent、工作区、日志和会话数据默认保存在本机/服务器的 `~/.tiller`。
+- **Web 与运行时同源**：启动 Tiller 后直接访问它内置的 Web UI，不需要单独部署前端。
+- **默认支持局域网**：适合放在个人电脑、家用服务器、办公室机器或私有服务器上运行。
+- **先配对再控制**：局域网可访问不等于裸奔控制，首次设备需要 pairing code。
+- **面向 ACP 生态**：Tiller 通过 ACP-compatible agent 工作，不把产品绑定到某一个模型或某一个 Agent。
 
-Tiller 关注的不是“跟 AI 聊天”，而是“远程控制 Coding Agent 工作流”：
+## 适合什么场景
 
-- Agent 需要执行命令，但你不在电脑前
-- Agent 改了一批文件，你想先看 diff
-- Agent 卡在权限审批上，任务停住了
-- 你想在手机端恢复、推进、取消或审查开发任务
+- 你在一台机器上跑 Coding Agent，希望从浏览器查看任务状态。
+- 你希望在局域网里从另一台设备访问同一个 Agent 工作台。
+- 你希望保留 session、消息、命令输出、diff 摘要和运行记录。
+- 你希望后续把多个 Tiller 节点纳入一个更大的私有化控制台。
 
-所以 Tiller 是 **Command Deck（指挥甲板）**，不是 Bot Hub。
+## 安装
 
-品牌隐喻保持轻量：
+当前建议先使用 tarball 试用：
 
-```text
-Commander
-  ↓
-Command Deck
-  ↓
-Fleet
-  ↓
-Helm Node A
-     ├── Crew: opencode acp
-     └── Crew: codex-acp
+```bash
+npm install -g ./qianshe-tiller-0.1.0.tgz
 ```
 
-对应关系：Deck = Web/App，Fleet = 多 Helm 集合，Helm = 单机 host process，Crew = ACP Agent，Mission = Session/Task，Logbook = event / command output，Beacon = relay / notification channel。
+如果后续发布到 npm，安装方式会是：
 
-### 当前会话绑定模型
-
-当前 Deck 创建 Mission 的选择链路为：
-
-```text
-Project -> Helm -> Workspace -> ACP Agent -> runtimeSessionId
+```bash
+npm install -g @qianshe/tiller
+# 或
+npx @qianshe/tiller start
 ```
 
-- **Project**：业务归属对象；一个 Project 绑定一个 Helm
-- **Helm**：服务器/宿主节点；一个 Helm 可承载多个 Project
-- **Workspace**：Project 下的执行目录 / cwd
-- **ACP Agent**：归属于 Helm，Project 仅约束 allowed/default agent
-- **runtimeSessionId**：ACP 返回的真实会话身份；一旦出现即锁定绑定关系
-
-## 为什么是 ACP-first
-
-Tiller 不硬编码 Codex、Claude、Gemini、OpenCode 或任何特定 Agent。
-
-```text
-Command Deck (Web / Mobile)
-    ↓
-Tiller Sync Protocol
-    ↓
-Tiller Helm
-    ↓
-ACP Client Runtime
-    ↓
-ACP-compatible Crew Process
-```
-
-- **ACP**：Agent 协议层
-- **Tiller Sync**：Command Deck 与 Helm 的同步协议层
-
-## 当前 MVP 范围
-
-当前仓库实现的是 **真实 ACP 本地闭环优先**：
-
-```text
-Command Deck → localhost Helm → ACP Crew Runtime
-```
-
-包含：
-
-- pnpm monorepo skeleton
-- `apps/deck`：Vite + React，Command Deck
-- `apps/helm`：Node.js + ws，Helm host process
-- `packages/shared`：共享类型
-- `packages/sync-protocol`：Deck ↔ Helm 协议
-- `packages/agent-registry`：provider 配置与本地加载
-- `packages/acp-runtime`：ACP session runtime 与事件归一化
-- real mission / permission request / logbook / diff summary 的统一 UI 入口
-
-## 本地开发
-
-### 环境
+要求：
 
 - Node.js 22+
-- pnpm 10+
 
-### 启动
+## 启动
+
+```bash
+tiller start
+```
+
+默认监听：
+
+- Host: `0.0.0.0`
+- Port: `47631`
+
+打开：
+
+```text
+http://127.0.0.1:47631
+```
+
+如果在局域网其他设备访问，使用启动日志里打印的 LAN 地址，例如：
+
+```text
+http://192.168.1.9:47631
+```
+
+## 端口和监听地址
+
+锁定本机：
+
+```bash
+tiller start --host 127.0.0.1 --port 47631
+```
+
+指定局域网/服务器监听：
+
+```bash
+tiller start --host 0.0.0.0 --port 47631
+```
+
+也可以使用环境变量：
+
+```bash
+TILLER_HOST=0.0.0.0 TILLER_PORT=47631 tiller start
+```
+
+如果端口已被另一个 Tiller 或旧开发进程占用，Tiller 会阻止启动并提示换端口或停止旧进程。
+
+## 第一次连接
+
+启动后终端会打印：
+
+- Web 访问地址
+- pairing code
+- 配置路径
+- 日志路径
+
+第一次打开 Web UI 时输入 pairing code 完成设备配对。之后同一浏览器会保存受信任设备信息；过期或撤销后需要重新配对。
+
+## 数据位置
+
+Tiller 默认把运行期数据写入用户目录：
+
+```text
+~/.tiller/
+  config.json
+  sessions.sqlite
+  trusted-devices.json
+  logs/tiller.log
+```
+
+这让它可以脱离源码仓库运行，更适合 npm 分发和服务器部署。
+
+默认使用 SQLite 存储。Node.js 22 可能会打印 `node:sqlite` 的 ExperimentalWarning；这是 Node 对内置 SQLite API 的提示，不影响 Tiller 正常运行。若需要回退到 JSON 存储，可显式设置：
+
+```bash
+TILLER_SESSION_STORE=json tiller start
+```
+
+## 当前产品边界
+
+当前内置 Web 只管理 **当前这个 Tiller 进程**。
+
+后续可以扩展为两条产品线：
+
+1. **Tiller 本地/服务器运行时**：通过 npm 分发，用户自己运行。
+2. **私有化 Web 控制台**：部署在用户自己的网络中，可管理多个 Tiller 节点。
+
+默认不建议让公网 SaaS 页面直接连接用户内网运行时；浏览器安全策略和私网访问限制会让这条路线复杂且不稳定。
+
+## 开发
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-- Web: [http://127.0.0.1:5173](http://127.0.0.1:5173)
-- Helm WebSocket: `ws://127.0.0.1:47631`
-- 运行期 Helm 日志：`D:/myProject/tools/Tiller/logs/helm.log`
-
-### 第一次连接 / 配对
-
-当前 Helm 启动后会在终端里打印：
-
-- 6 位 pairing code
-- 一段可扫码的本地 QR code
-
-第一次打开 Web UI 时，先做这一步：
-
-1. 在 Helm 终端里查看 6 位 pairing code
-2. 在 Web 的 **设备配对** 区输入 pairing code
-3. 配对成功后，Deck 会在当前浏览器保存一枚 **信标（Beacon）**：
-   - 稳定 `deviceId`
-   - 当前 Helm 的 beacon token（内部仍按 trusted-device token 存储）
-4. Helm 会把这枚信标登记到本地 beacon registry，并给它 **7 天滑动续期**
-5. 之后同一设备在 7 天内再次打开 Deck，会自动用信标执行 `device.auth`
-
-### 信标认证（Beacon Authentication）
-
-信标表示一台 Deck / App 在当前 Helm 星图里的位置锚点：Helm 通过它识别“这是不是之前已经配对过的位置”。
-
-- 第一次连接仍然需要 pairing code
-- Helm 会按信标维度记住 Web / App，而不是只记住一次性内存 token
-- 每次 `device.auth` 成功，都会把信标有效期顺延 7 天
-- 如果某枚信标连续 7 天没有使用，下一次连接必须重新配对
-- Helm 重启后仍能识别已有信标；新设备首次连接仍需重新认证
-
-### Hybrid Reconnect
-
-- Deck 刷新后会先恢复最近一次成功同步的本地 snapshot cache
-- 如果当前 Helm 的信标 token 仍有效，Deck 会在后台静默尝试恢复 websocket 连接
-- `Mission` / `Crew` 视图需要实时数据；进入这些页面时，Deck 会自动确保 live connection
-- 如果 Helm 暂时离线，Overview 仍可先展示缓存，不需要刷新后立刻手动重连
-
-如果你清除了浏览器本地存储、信标超过 7 天未使用，或 Helm 侧信标记录已失效，就重新输入 pairing code 即可。
-
-### 信标管理
-
-- 进入 **Settings** 页面后，Deck 会请求当前 Helm 的信标列表
-- 列表会显示：
-  - `deviceName`
-  - 信标类型（Web / App）
-  - `deviceId`
-  - 最近认证时间
-  - 信标到期时间
-- 点击 **撤销** 后，Helm 会删除对应 beacon record
-- 如果撤销的是“当前信标”，这个浏览器里的 token 会被清掉，并在下一次连接时要求重新配对
-- 这个列表是 **按 Helm profile 隔离** 的；切换到另一个 Helm，只会看到它自己的信标
-
-### 日志约定
-
-- 仓库内统一使用 `D:/myProject/tools/Tiller/logs/` 存放本地调试日志
-- Helm 启动、监听失败、未处理异常等会自动追加到 `logs/helm.log`
-- ACP connection test 与 real mission 运行日志会自动写到 `logs/acp/`
-- 手动重定向出来的调试日志也建议统一写到 `logs/` 下，避免散落在仓库根目录
-
-当前默认约定示例：
-
-- `logs/helm.log`
-- `logs/acp/connection-test-opencode.log`
-- `logs/acp/session-session-1712345678901.log`
-
-### 验证 happy path
-
-1. 打开 Web 页面
-2. 先完成 Helm 配对
-3. 确认显示 `connected`
-4. 在 Mission 页依次选择 `Project -> Workspace -> Crew`
-5. 点击 `Create Mission` 或直接发送第一条 Order
-6. 等状态进入 `idle / running / waiting`
-7. 输入 order / prompt 并发送
-8. 观察真实流式输出
-9. 如 agent 发出权限卡片，则点击 `Allow once` 或 `Deny`
-10. 观察 Logbook、diff summary 和最终状态
-
-> 注意：是否真的出现权限卡片，还取决于 ACP Agent 自己的权限策略。
-> 以 OpenCode 为例，只有当对应工具权限被配置成 `ask` 时，才会弹审批；如果当前权限默认是 `allow`，那 Tiller UI 不出现权限卡片并不一定是前端故障。
-
-### 手动验证 permission 卡片（不改仓库代码）
-
-如果你想专门验证 Tiller 的权限卡片链路，建议按这个顺序手动测试：
-
-1. 先确认 Web 已完成 Helm 配对，并且能正常 `Create Mission`
-2. 先发一个普通 prompt，确认 `Crew message` / `agent.message` 正常返回
-3. 再发一个更明确要求工具执行的 prompt，例如：
-   - `请先运行 pwd（或等价命令）确认当前工作目录，再告诉我结果`
-   - `请列出当前工作区根目录文件名，再总结目录结构`
-4. 如果仍然没有权限卡片，优先检查 ACP Agent 本身的权限策略是不是默认 `allow`
-5. 只有在 Agent 对应工具权限被设成 `ask` 的情况下，Tiller 才有机会收到真实 `permission.request`
-
-如果你后续要**强测**这条链路，最稳的是临时把 OpenCode 某类工具权限改成 `ask`，再重复上面的 prompt。
-
-## Monorepo 结构
-
-```text
-tiller/
-  apps/
-    deck/
-    helm/
-  packages/
-    shared/
-    sync-protocol/
-    agent-registry/
-    acp-runtime/
-```
-
-## 未来配置文件
-
-计划配置路径：
-
-```text
-~/.tiller/config.json
-```
-
-示例：
-
-```json
-{
-  "workspaces": [
-    {
-      "id": "my-app",
-      "name": "My App",
-      "path": "D:/projects/my-app"
-    }
-  ],
-  "agents": [
-    {
-      "id": "opencode",
-      "name": "OpenCode",
-      "kind": "native-acp",
-      "command": "opencode",
-      "args": ["acp"],
-      "transport": "stdio",
-      "protocol": "acp"
-    }
-  ],
-  "daemon": {
-    "host": "127.0.0.1",
-    "port": 47631
-  }
-}
-```
-
-## 怎么接入 ACP（以 OpenCode 为例）
-
-Tiller 的接入方式不是硬编码某个 Agent，而是让 Helm 读取 provider 配置，然后按统一插槽启动一个 **ACP-compatible process**。
-
-以 OpenCode 为例：
-
-```json
-{
-  "id": "opencode",
-  "name": "OpenCode",
-  "kind": "native-acp",
-  "command": "opencode",
-  "args": ["acp", "--port", "0"],
-  "transport": "stdio",
-  "protocol": "acp",
-  "installHint": "Install OpenCode and ensure `opencode acp --port 0` works in your terminal."
-}
-```
-
-> OpenCode ACP 会启动本地 server；如果不显式传 `--port 0`，本机配置或默认端口可能撞到 `4096`，表现为 ACP `initialize` 超时。Tiller 的 OpenCode adapter 会在 `args` 包含 `acp` 且未显式声明 `--port` 时自动追加 `--port 0`。
-
-模型列表遵循 Zed 的 ACP 思路：
-
-1. **ACP `session.models`**：优先读取 `session/new` / `session/load` / `session/resume` 返回的 `models.availableModels` 与 `models.currentModelId`。
-2. **ACP `configOptions`**：若 agent 同时返回 model 类 `configOptions`，切换模型优先使用标准 `session/set_config_option`；否则才回退到 `session/set_model`。
-3. **Provider adapter fallback**：只有当 agent 没暴露标准模型/配置能力时，才走 provider adapter 或 stored-only fallback。
-
-可用下面的探针脚本直接检查 agent 返回的模型列表：
+常用验证：
 
 ```bash
-pnpm --filter @tiller/helm probe:codex-models -- --cwd D:/myProject/tools/Tiller --timeout 30000
-pnpm --filter @tiller/helm probe:opencode-models -- --cwd D:/myProject/tools/Tiller --timeout 30000
-pnpm --filter @tiller/helm probe:acp-models -- --command opencode --arg acp --arg --port --arg 0
+pnpm --filter @qianshe/tiller test
+pnpm typecheck
+pnpm --filter @qianshe/tiller build
 ```
 
-探针原始 JSON-RPC 日志会写入 `logs/acp/probe-codex-models-*.ndjson`；真实 Helm session 收到模型配置事件时，会在 `logs/helm.log` 记录 `session.model.options` / `session.config.options` 的当前模型与 options 数量。
+## 发布状态
 
-未来真实接入路径会是：
+当前仍是早期产品化阶段。正式发布 npm、创建 GitHub tag 或开放源码协议前，应先确认：
 
-1. Helm 读取 `~/.tiller/config.json`
-2. `agent-registry` 解析 provider
-3. `acp-runtime` 用 `command + args + env + cwd` 启动进程
-4. 通过 stdio 完成 ACP initialize / request / notification
-5. 再把 ACP 原始事件规范化成 Tiller 的 sync events 给 Web UI
+- 包名、版本号和 dist-tag
+- README 与 package metadata
+- 是否公开源码，以及采用哪种许可证
+- GitHub release 与 npm publish 是否指向同一个 commit
 
-当前仓库已经具备真实 ACP provider slot；如果某个 provider 在插件态下存在 agent 语义兼容问题，可先用可工作的纯净命令（例如 `opencode acp --pure`）验证主链路。
+## License
 
-如果后续需要快速验证一个外部 ACP adapter / wrapper，推荐把 **adapter 原型** 用 Python 编写；但 **Tiller 核心仓库本身仍保持 TypeScript + pnpm monorepo**，不改变当前架构边界。
-
-## Session config / capability matrix
-
-Tiller 现在把 `Model / Reasoning` 能力拆成三层，尽量复用标准 ACP，再兜底 provider 特化：
-
-1. **ACP-native path**：如果 agent 在 `session/new` / `session/load` / `session/resume` 返回 `configOptions`，或后续通过 `config_option_update` 推送配置变化，Tiller 会优先走标准 ACP `session/set_config_option`。
-2. **Provider adapter path**：如果 agent 没暴露标准 `configOptions`，就走 `acp-runtime` 里的 provider adapter：
-   - `codex-acp`：通过 `-c model=...` / `-c model_reasoning_effort=...`
-   - `opencode`：启动时移除陈旧 `-m/--model`，通过 `OPENCODE_CONFIG_CONTENT` 注入模型配置，并在 ACP args 缺少显式 `--port` 时追加 `--port 0`
-3. **Stored-only fallback**：如果既没有标准 ACP config option，也没有 provider adapter，Tiller 仍会把配置保存在 session summary 中，等待后续 provider 支持。
-
-当前推荐的分层职责：
-
-- `shared`：定义通用 session-config 语义与 `SessionConfigSupport`
-- `agent-registry`：给 provider 注入 `capabilities.sessionConfig`
-- `acp-runtime`：维护 `SessionConfigAdapter` 映射和 ACP-native bridge
-- `deck`：消费通用能力，不直接绑定某个 provider 的命令细节
-
-这条路径参考了 ACP 官方文档里对 `configOptions` / `session/set_config_option` 的约定，以及 Zed 对 ACP `session config options` 的通用 UI/adapter 处理思路。
-
-## 安全提醒
-
-MVP 默认保持保守：
-
-- Helm 仅监听 `127.0.0.1`
-- workspace 走 allowlist 思路
-- 不默认静默批准危险操作
-- 日志避免记录敏感代码细节
-
-## Roadmap
-
-- `v0.1` ACP 本地真实闭环 ✅
-- `v0.2` 真实 ACP provider slot + config loading
-- `v0.3` 更完整的 cancel / diff / git / error recovery
-- `v0.4` 远程访问、认证、E2EE 设计
-- `v0.5` preset / adapter / quirks layer
-
-## Mission persistence / reconnect model
-
-Tiller 把 Mission 的“重连/恢复”拆成两层，避免把 UI history 误当成 ACP runtime resume：
-
-### A. Command Deck ↔ Helm 重连
-
-这是手机断网、锁屏、WebSocket 断开后的常见路径。只要 Helm 和 ACP Crew 进程仍然存活：
-
-- session summary 持久化到 `~/.tiller/sessions.json`
-- 每个 session 的消息流持久化到 `~/.tiller/session-messages/<sessionId>.json`
-- 每个 session 的 command output / diff snapshot 持久化到 `~/.tiller/session-artifacts/<sessionId>.json`
-- Web 重新连接后请求 `session.list`，再读取消息与 artifacts
-- Helm 对仍在内存中的 active mission 返回 `restoreMethod: "client-reconnect"`
-
-这属于 Tiller Sync Protocol 职责，不需要 ACP `session/load`。
-
-### B. Helm ↔ ACP Crew 恢复
-
-只有 Helm/Crew 也重启或 runtime 丢失时，才进入 ACP 层恢复。Tiller 会保存 provider-aware runtime descriptor 到 `~/.tiller/session-runtimes.json`，包含 ACP 原生 `runtimeSessionId` 与能力快照：
-
-- `sessionLoad`: agent 支持 ACP `session/load`，通常期望恢复并回放历史
-- `sessionResume`: agent 支持 ACP `session/resume`，恢复上下文但不返回旧消息
-- `sessionList`: agent 支持列出 agent 侧 sessions
-
-恢复策略：
-
-1. 如果 Mission 仍在当前 Helm 进程中：走 `client-reconnect`
-2. 如果有 `runtimeSessionId` 且 agent 支持 `session/load`：优先调用 ACP `session/load`
-3. 否则如果支持 `session/resume`：调用 ACP `session/resume`
-4. 都不支持时：只恢复 Tiller UI history，不能假装 agent 上下文已恢复
-
-当前**仍需真实联调**的边界：
-
-- 不同 ACP 实现对 initialize capability 字段的差异
-- `session/load` 历史回放事件与本地消息去重
-- `session/resume` 恢复后首条 prompt 的上下文连续性
-- 外部 Crew 进程存活但 Helm 重启时的重新附着策略
-
-Helm 终端会输出低噪声调试日志：连接/断开、认证、`session.list/create`、runtime id、capability、`resume.check/start`、状态变更与错误；完整日志仍写入 `logs/helm.log`。
-
-## Crew Provider 策略
-
-Tiller 提供的是标准 ACP 插槽：
-
-- 用户带来 ACP-compatible agent command
-- registry 管 provider schema / preset / config
-- runtime 管 session 生命周期与协议
-- UI 消费结构化 sync events，而不是直接依赖具体 Agent
+暂未开放开源授权。当前 npm 包元数据使用 `UNLICENSED`，避免在产品策略未定前意外授予开源使用权。

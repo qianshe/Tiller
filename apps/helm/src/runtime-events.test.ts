@@ -202,10 +202,10 @@ test("runtime tool-call debug logs are routed through debug logger", () => {
   } satisfies SessionRuntimeEvent, context);
 
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /^\[tiller-helm\] session\.tool\.call session=session-1 agent=opencode workspace=workspace-1 id=call-1 title=zhi$/);
+  assert.match(logs[0], /^\[tiller\] session\.tool\.call session=session-1 agent=opencode workspace=workspace-1 id=call-1 title=zhi$/);
 });
 
-test("runtime non-streaming event logs keep existing tiller helm prefix", () => {
+test("runtime non-streaming event logs keep existing tiller prefix", () => {
   const logs: string[] = [];
   const context = createTestContext(logs);
 
@@ -216,5 +216,5 @@ test("runtime non-streaming event logs keep existing tiller helm prefix", () => 
   } satisfies SessionRuntimeEvent, context);
 
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /^\[tiller-helm\] session\.status session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/);
+  assert.match(logs[0], /^\[tiller\] session\.status session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/);
 });
