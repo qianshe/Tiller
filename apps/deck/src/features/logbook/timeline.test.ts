@@ -160,6 +160,22 @@ test("groupToolCalls recognizes OpenCode skill tools from plain stdout payloads"
   assert.equal(grouped[0]?.title, "Skill: webapp-testing");
 });
 
+test("groupToolCalls recognizes OpenCode skill tools that combine heading and colon", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "tool-opencode-heading-colon",
+      kind: "tool",
+      title: "Tool: review-work",
+      status: "completed",
+      output: JSON.stringify({ output: "## Skill: review-work\n\n**Base directory:** C:/Users/qjq/.claude/skills/review-work" }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: review-work");
+});
+
 test("groupToolCalls does not classify Codex terminal output as a skill without a SKILL.md command", () => {
   const grouped = groupToolCalls([
     {

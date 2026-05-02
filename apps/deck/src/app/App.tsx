@@ -40,6 +40,7 @@ import { createClipboardImageContent, extractClipboardImageItems } from "../feat
 import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
+import { toast } from "../features/toast/toast";
 import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint } from "./helm-endpoint";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
@@ -184,10 +185,7 @@ type DebugTrace = {
   lastRequestType: string;
 };
 
-type CleanupFeedback = {
-  tone: "success" | "warning" | "info";
-  message: string;
-};
+
 
 type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
 
@@ -809,7 +807,6 @@ export function App() {
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
-  const [cleanupFeedback, setCleanupFeedback] = useState<CleanupFeedback | null>(null);
   const [customMissionPanelPages, setCustomMissionPanelPages] = useState<MissionPanelPage[]>(() => readMissionPanelPages());
   const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] = useState("overview");
   const [selectedMissionDiffFilePath, setSelectedMissionDiffFilePath] = useState<string | null>(null);
@@ -864,6 +861,7 @@ export function App() {
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
+  const [pendingSessionCleanup, setPendingSessionCleanup] = useState<SessionSummary | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
   const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(() =>
@@ -1715,7 +1713,6 @@ export function App() {
       setActiveSessionId(null);
       setSelectedProjectId(null);
       setResumeFeedback("");
-      setCleanupFeedback(null);
     }
     setDebugTrace((current) => ({ ...current, connectClicks: current.connectClicks + 1 }));
     setHelmConnectionState(daemonProfileKey(host, port), "connecting");
@@ -2128,7 +2125,13 @@ case "session.messages.list.result":
         );
         return;
       case "session.cleanup.result":
-        setCleanupFeedback(resolveCleanupFeedback(payload.result));
+        if (payload.result.remoteDeleted) {
+          toast.success("会话已删除");
+        } else if (payload.result.remoteDeletionAttempted) {
+          toast.warning(payload.result.message);
+        } else {
+          toast.info(payload.result.message);
+        }
         setResumeFeedback("");
         setSessions((current) => current.filter((session) => session.id !== payload.result.sessionId));
         setStatuses((current) => removeSessionRecord(current, payload.result.sessionId));
@@ -2905,11 +2908,11 @@ case "session.messages.list.result":
   function cleanupSession(sessionId: string) {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法清理任务。" });
+      toast.warning("Helm 未连接，无法清理任务。");
       return;
     }
 
-    setCleanupFeedback({ tone: "info", message: "正在清理任务..." });
+    toast.info("正在清理任务...", { id: "session-cleanup", duration: 2000 });
     dispatch(socket, {
       type: "session.cleanup",
       requestId: nextRequestId(requestCounter),
@@ -2920,7 +2923,7 @@ case "session.messages.list.result":
   function cancelSession(sessionId: string) {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setCleanupFeedback({ tone: "warning", message: "Helm 未连接，无法取消任务。" });
+      toast.warning("Helm 未连接，无法取消任务。");
       return;
     }
 
@@ -3673,11 +3676,7 @@ case "session.messages.list.result":
                                             title="清理任务"
                                             onClick={(event) => {
                                               event.stopPropagation();
-                                              const sessionTitle = resolveDisplaySessionTitle(session);
-                                              if (!window.confirm(`确认清理任务「${sessionTitle}」？`)) {
-                                                return;
-                                              }
-                                              cleanupSession(session.id);
+                                              setPendingSessionCleanup(session);
                                             }}
                                           >
                                             ×
@@ -3720,12 +3719,6 @@ case "session.messages.list.result":
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
               <div className="chat-main" ref={chatMainRef} onScroll={handleChatMainScroll}>
-                {cleanupFeedback ? (
-                  <div className="mission-session-feedback" role="status" aria-live="polite">
-                    <p className={`compact cleanup-feedback cleanup-${cleanupFeedback.tone}`}>{cleanupFeedback.message}</p>
-                  </div>
-                ) : null}
-
                 {activeSession ? (
                   <>
                     {pendingPermission ? (
@@ -4127,6 +4120,37 @@ case "session.messages.list.result":
           </div>
         ) : null}
 
+        {pendingSessionCleanup ? (
+          <div className="fleet-modal-backdrop" role="presentation">
+            <section className="card surface-card fleet-delete-helm-modal" role="dialog" aria-modal="true" aria-label="确认删除会话">
+              <div className="fleet-dialog-head fleet-dialog-head-simple">
+                <h3>确认删除会话？</h3>
+                <button className="secondary fleet-dialog-close" type="button" onClick={() => setPendingSessionCleanup(null)}>关闭</button>
+              </div>
+              <div className="fleet-delete-confirm-body">
+                <p>此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。</p>
+                <div className="fleet-delete-target">
+                  <strong>{resolveDisplaySessionTitle(pendingSessionCleanup)}</strong>
+                  <span>{pendingSessionCleanup.agentName}</span>
+                </div>
+              </div>
+              <div className="section-actions fleet-delete-actions">
+                <button className="secondary" type="button" onClick={() => setPendingSessionCleanup(null)}>取消</button>
+                <button
+                  className="secondary helm-destroy-button"
+                  type="button"
+                  onClick={() => {
+                    cleanupSession(pendingSessionCleanup.id);
+                    setPendingSessionCleanup(null);
+                  }}
+                >
+                  确认删除
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         {pendingHelmDeleteProfile ? (
           <div className="fleet-modal-backdrop" role="presentation">
             <section className="card surface-card fleet-delete-helm-modal" role="dialog" aria-modal="true" aria-label="删除 Helm 前端配置">
@@ -4460,7 +4484,6 @@ case "session.messages.list.result":
           diffOpen: "Open diff summary by default",
           runtimeMeta: "Show Session runtime metadata",
           permissionWorkspace: "Show permission request workspace path",
-          orderHints: "Show composer configuration hints",
           connectionDebug: "Show connection/pairing debug echo",
           enhancerEyebrow: "Prompt enhancement",
           enhancerTitle: "Wrap casual chat as a standard prompt",
@@ -4504,7 +4527,6 @@ case "session.messages.list.result":
           diffOpen: "默认展开变更摘要",
           runtimeMeta: "显示任务 runtime 元信息",
           permissionWorkspace: "显示权限请求工作区路径",
-          orderHints: "显示发送区配置提示",
           connectionDebug: "显示连接/配对调试回显",
           enhancerEyebrow: "提示词增强",
           enhancerTitle: "把普通对话包装成标准提示词",
@@ -4598,10 +4620,6 @@ case "session.messages.list.result":
                 <label className="toggle-row">
                   <input type="checkbox" checked={deckPreferences.technicalPanels.showPermissionWorkspace} onChange={(event) => updateTechnicalPanelPreference("showPermissionWorkspace", event.target.checked)} />
                   <span>{settingsCopy.permissionWorkspace}</span>
-                </label>
-                <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.showOrderHints} onChange={(event) => updateTechnicalPanelPreference("showOrderHints", event.target.checked)} />
-                  <span>{settingsCopy.orderHints}</span>
                 </label>
                 <label className="toggle-row">
                   <input type="checkbox" checked={deckPreferences.technicalPanels.showConnectionDebug} onChange={(event) => updateTechnicalPanelPreference("showConnectionDebug", event.target.checked)} />
@@ -4727,18 +4745,6 @@ function nextRequestId(counter: MutableRefObject<number>) {
 function removeSessionRecord<T>(records: Record<string, T>, sessionId: string) {
   const { [sessionId]: _removed, ...rest } = records;
   return rest;
-}
-
-function resolveCleanupFeedback(result: Extract<HelmToClient, { type: "session.cleanup.result" }>['result']): CleanupFeedback {
-  if (result.remoteDeleted) {
-    return { tone: "success", message: result.message };
-  }
-
-  if (result.remoteDeletionAttempted) {
-    return { tone: "warning", message: result.message };
-  }
-
-  return { tone: "info", message: result.message };
 }
 
 function isSessionExecutionPending(status: SessionStatus) {

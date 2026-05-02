@@ -12,7 +12,6 @@ export type TechnicalPanelPreferences = {
   diffDefaultOpen: boolean;
   showSessionRuntimeMeta: boolean;
   showPermissionWorkspace: boolean;
-  showOrderHints: boolean;
   showConnectionDebug: boolean;
 };
 
@@ -73,7 +72,6 @@ export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
     diffDefaultOpen: false,
     showSessionRuntimeMeta: true,
     showPermissionWorkspace: true,
-    showOrderHints: true,
     showConnectionDebug: false,
   },
   promptEnhancer: {
@@ -109,7 +107,6 @@ export function readDeckPreferences(): DeckPreferences {
         diffDefaultOpen: typeof technicalPanels.diffDefaultOpen === "boolean" ? technicalPanels.diffDefaultOpen : legacyTechnicalPanelsOpen,
         showSessionRuntimeMeta: typeof technicalPanels.showSessionRuntimeMeta === "boolean" ? technicalPanels.showSessionRuntimeMeta : DEFAULT_DECK_PREFERENCES.technicalPanels.showSessionRuntimeMeta,
         showPermissionWorkspace: typeof technicalPanels.showPermissionWorkspace === "boolean" ? technicalPanels.showPermissionWorkspace : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorkspace,
-        showOrderHints: typeof technicalPanels.showOrderHints === "boolean" ? technicalPanels.showOrderHints : DEFAULT_DECK_PREFERENCES.technicalPanels.showOrderHints,
         showConnectionDebug: typeof technicalPanels.showConnectionDebug === "boolean" ? technicalPanels.showConnectionDebug : DEFAULT_DECK_PREFERENCES.technicalPanels.showConnectionDebug,
       },
       promptEnhancer: {

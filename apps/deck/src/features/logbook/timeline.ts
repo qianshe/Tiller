@@ -146,7 +146,7 @@ function extractOpenCodeSkillNameFromToolOutput(output: string | undefined) {
     return undefined;
   }
   const decoded = extractOutputPayload(output).replace(/\\n/gu, "\n");
-  const match = decoded.match(/^#+\s*Skill\s+([^\r\n"]+)|^Skill:\s*([^\r\n"]+)/imu);
+  const match = decoded.match(/^#+\s*Skill[:\s]\s*([^\r\n"]+)|^Skill:\s*([^\r\n"]+)/imu);
   const skillName = (match?.[1] ?? match?.[2])?.trim();
   return skillName || undefined;
 }

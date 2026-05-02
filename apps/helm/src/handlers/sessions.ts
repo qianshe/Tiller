@@ -330,6 +330,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       const record = context.sessions.get(payload.sessionId);
       const summary = record?.summary ?? context.sessionStore.list().find((item: any) => item.id === payload.sessionId);
       if (!summary) {
+        context.logError(`[tiller] session.cleanup.failed session=${payload.sessionId} reason=Session not found`);
         context.emit(socket, { type: "error", requestId: payload.requestId, message: "Session not found" });
         return true;
       }
@@ -338,8 +339,10 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       if (record) {
         context.sessions.delete(summary.id);
         remoteResult = normalizeProviderCleanupResult(await cleanupActiveRuntime(record.runtime, provider?.id ?? summary.agentId));
+        context.logInfo(`[tiller] session.cleanup runtime session=${summary.id} provider=${provider?.id ?? summary.agentId} remoteDeleted=${remoteResult.remoteDeleted} remoteDeletionAttempted=${remoteResult.remoteDeletionAttempted}`);
       } else {
         remoteResult = resolveSessionCleanupOutcome(summary, provider);
+        context.logInfo(`[tiller] session.cleanup local-only session=${summary.id} provider=${provider?.id ?? summary.agentId} remoteDeleted=${remoteResult.remoteDeleted}`);
       }
       context.clearPermissionRequestsForSession(summary.id);
       context.deleteLocalSessionData(summary.id);
