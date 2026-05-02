@@ -40,9 +40,11 @@ import { createClipboardImageContent, extractClipboardImageItems } from "../feat
 import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
+import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint } from "./helm-endpoint";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";
+const IS_EMBEDDED_HELM_DECK = import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true";
 const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
 const DAEMON_HOST_KEY = "tiller.daemon-host";
 const DAEMON_PORT_KEY = "tiller.daemon-port";
@@ -736,6 +738,13 @@ export function App() {
   const manualDisconnectRef = useRef<string | null>(null);
 
   const locale: Locale = "zh-CN";
+  const defaultHelmEndpoint = useMemo(() => resolveDefaultHelmEndpoint({
+    embedded: IS_EMBEDDED_HELM_DECK,
+    location: window.location,
+    storage: window.localStorage,
+    fallbackHost: DEFAULT_DAEMON_HOST,
+    fallbackPort: DEFAULT_DAEMON_PORT,
+  }), []);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">(missionVisualFixture ? "connected" : "disconnected");
   const [helmConnectionStates, setHelmConnectionStates] = useState<Record<string, "connecting" | "connected" | "disconnected">>({});
   const [helmInventories, setHelmInventories] = useState<Record<string, HelmInventoryBucket>>({});
@@ -743,8 +752,8 @@ export function App() {
   const [pairingCodeInput, setPairingCodeInput] = useState("");
   const [pairingFeedback, setPairingFeedback] = useState("");
   const [connectFeedback, setConnectFeedback] = useState("");
-  const [daemonHost, setDaemonHost] = useState(() => window.localStorage.getItem(DAEMON_HOST_KEY) ?? DEFAULT_DAEMON_HOST);
-  const [daemonPort, setDaemonPort] = useState(() => window.localStorage.getItem(DAEMON_PORT_KEY) ?? DEFAULT_DAEMON_PORT);
+  const [daemonHost, setDaemonHost] = useState(() => defaultHelmEndpoint.host);
+  const [daemonPort, setDaemonPort] = useState(() => defaultHelmEndpoint.port);
   const [debugTrace, setDebugTrace] = useState<DebugTrace>({
     connectClicks: 0,
     pairClicks: 0,
@@ -841,7 +850,7 @@ export function App() {
   });
   const [draftSaveMessage, setDraftSaveMessage] = useState<string>("草稿未保存");
   const [configSaveMessage, setConfigSaveMessage] = useState<string>("尚未写入 Helm 配置");
-  const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>(() => readDaemonProfiles());
+  const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>(() => IS_EMBEDDED_HELM_DECK ? [] : readDaemonProfiles());
   const [selectedHelmKey, setSelectedHelmKey] = useState<string>("");
   const [agentConfigExpanded, setAgentConfigExpanded] = useState(false);
   const [fleetAddHelmModalOpen, setFleetAddHelmModalOpen] = useState(false);
@@ -1642,7 +1651,7 @@ export function App() {
     }
     existing?.close();
 
-    const wsUrl = `ws://${profile.host}:${profile.port}`;
+    const wsUrl = createHelmWebSocketUrl({ embedded: IS_EMBEDDED_HELM_DECK, host: profile.host, port: profile.port, location: window.location });
     const socket = new WebSocket(wsUrl);
     helmSocketRefs.current.set(helmKey, socket);
     setHelmConnectionState(helmKey, "connecting");
@@ -1681,13 +1690,13 @@ export function App() {
     const preserveState = options?.preserveState ?? false;
     const host = options?.host?.trim() || daemonHost.trim() || DEFAULT_DAEMON_HOST;
     const port = options?.port?.trim() || daemonPort.trim() || DEFAULT_DAEMON_PORT;
-    const wsUrl = `ws://${host}:${port}`;
+    const wsUrl = createHelmWebSocketUrl({ embedded: IS_EMBEDDED_HELM_DECK, host, port, location: window.location });
 
     if (!options?.auto) {
       manualDisconnectRef.current = null;
     }
 
-    if (options?.persistEndpoint ?? true) {
+    if (!IS_EMBEDDED_HELM_DECK && (options?.persistEndpoint ?? true)) {
       window.localStorage.setItem(DAEMON_HOST_KEY, host);
       window.localStorage.setItem(DAEMON_PORT_KEY, port);
     }
@@ -4019,15 +4028,7 @@ case "session.messages.list.result":
       isCurrent: false,
       profile: mockHelmProfile,
     }));
-    const rawHelmCards = [
-      {
-        key: currentHelmKey,
-        name: currentSavedHelmProfile?.name || "Local Helm",
-        host: daemonHost.trim() || DEFAULT_DAEMON_HOST,
-        port: daemonPort.trim() || DEFAULT_DAEMON_PORT,
-        isCurrent: true,
-        profile: null as DaemonProfile | null,
-      },
+    const additionalHelmCards = IS_EMBEDDED_HELM_DECK ? [] : [
       ...daemonProfiles
         .filter((profile) => daemonProfileKey(profile.host, profile.port) !== currentHelmKey)
         .map((profile) => ({
@@ -4039,6 +4040,17 @@ case "session.messages.list.result":
           profile,
         })),
       ...mockHelmCards,
+    ];
+    const rawHelmCards = [
+      {
+        key: currentHelmKey,
+        name: currentSavedHelmProfile?.name || "Local Helm",
+        host: daemonHost.trim() || DEFAULT_DAEMON_HOST,
+        port: daemonPort.trim() || DEFAULT_DAEMON_PORT,
+        isCurrent: true,
+        profile: null as DaemonProfile | null,
+      },
+      ...additionalHelmCards,
     ];
     const helmCards = dedupeHelmCards(rawHelmCards);
     const selectedKey = selectedHelmKey || currentHelmKey;
@@ -4161,10 +4173,10 @@ case "session.messages.list.result":
                   <span>{helmCards.length} Helm</span>
                 </div>
               </div>
-              <button className="primary" type="button" onClick={openFleetAddHelmModal}>添加</button>
+              {!IS_EMBEDDED_HELM_DECK ? <button className="primary" type="button" onClick={openFleetAddHelmModal}>添加</button> : null}
             </div>
 
-            <p className="fleet-hub-copy">管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。</p>
+            <p className="fleet-hub-copy">{IS_EMBEDDED_HELM_DECK ? "当前内置 Deck 只管理这个 Helm；多 Helm 控制台由公版 Web 承载。" : "管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。"}</p>
 
             <div className="fleet-hub-node-list" role="list" aria-label="Helm 节点列表">
               {helmCards.map((helm) => (
@@ -4228,7 +4240,7 @@ case "session.messages.list.result":
                     连接 Helm
                   </button>
                 )}
-                {selectedHelmSavedProfile ? (
+                {selectedHelmSavedProfile && !IS_EMBEDDED_HELM_DECK ? (
                   <button
                     className="secondary helm-destroy-button"
                     type="button"

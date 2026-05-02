@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint } from "./helm-endpoint.js";
+
+const storage = {
+  getItem(key: string) {
+    return key === "tiller.daemon-host" ? "10.0.0.8" : key === "tiller.daemon-port" ? "49000" : null;
+  },
+};
+
+test("resolveDefaultHelmEndpoint ignores saved endpoints in embedded single Helm mode", () => {
+  const endpoint = resolveDefaultHelmEndpoint({
+    embedded: true,
+    location: { protocol: "http:", hostname: "192.168.1.50", host: "192.168.1.50:47631", port: "47631" },
+    storage,
+    fallbackHost: "127.0.0.1",
+    fallbackPort: "47631",
+  });
+
+  assert.deepEqual(endpoint, { host: "192.168.1.50", port: "47631" });
+});
+
+test("resolveDefaultHelmEndpoint keeps saved endpoints in development multi Helm mode", () => {
+  const endpoint = resolveDefaultHelmEndpoint({
+    embedded: false,
+    location: { protocol: "http:", hostname: "192.168.1.50", host: "192.168.1.50:47631", port: "47631" },
+    storage,
+    fallbackHost: "127.0.0.1",
+    fallbackPort: "47631",
+  });
+
+  assert.deepEqual(endpoint, { host: "10.0.0.8", port: "49000" });
+});
+
+test("createHelmWebSocketUrl uses same origin in embedded mode", () => {
+  assert.equal(createHelmWebSocketUrl({ embedded: true, host: "ignored", port: "1", location: { protocol: "https:", host: "helm.example.com" } }), "wss://helm.example.com");
+});

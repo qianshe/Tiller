@@ -76,13 +76,13 @@ export function resolveSessionStoreBackend(env: NodeJS.ProcessEnv = process.env)
 export function createHelmSessionStores(options: HelmSessionStoreFactoryOptions): HelmSessionStores {
   const requestedBackend = options.backend ?? resolveSessionStoreBackend();
   if (requestedBackend === "json") {
-    options.logInfo?.("[tiller-helm] session.store backend=json reason=env");
+    options.logInfo?.("[tiller] session.store backend=json reason=env");
     return createJsonHelmSessionStores(options.jsonPaths);
   }
 
   try {
     migrateJsonSessionDataToSqlite({ sqlitePath: options.sqlitePath, jsonPaths: options.jsonPaths });
-    options.logInfo?.(`[tiller-helm] session.store backend=sqlite path=${options.sqlitePath}`);
+    options.logInfo?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
     return {
       backend: "sqlite",
       sessionStore: createSqliteSessionStore(options.sqlitePath),
@@ -92,7 +92,7 @@ export function createHelmSessionStores(options: HelmSessionStoreFactoryOptions)
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    options.logError?.(`[tiller-helm] session.store backend=json reason=sqlite-fallback detail=${reason}`);
+    options.logError?.(`[tiller] session.store backend=json reason=sqlite-fallback detail=${reason}`);
     return createJsonHelmSessionStores(options.jsonPaths);
   }
 }

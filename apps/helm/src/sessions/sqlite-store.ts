@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary, SessionSummary } from "@tiller/shared";
@@ -6,6 +6,9 @@ import { createSessionArtifactStore, pageSessionArtifacts, type SessionArtifactP
 import { createSessionMessageStore, pageSessionMessages, type SessionMessagePageOptions } from "./message-store.js";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
 import { createSessionStore } from "./summary-store.js";
+
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+type DatabaseSync = import("node:sqlite").DatabaseSync;
 
 type SessionArtifacts = {
   outputs: CommandChunk[];

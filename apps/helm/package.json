@@ -1,11 +1,23 @@
 {
-  "name": "@tiller/helm",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@qianshe/tiller",
+  "version": "0.1.0-alpha.0",
+  "private": false,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "tiller": "./dist/index.js"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "node scripts/build-package.mjs",
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
     "dev": "pnpm run clean-port && tsx watch src/index.ts",
+    "prepack": "pnpm run build",
     "test": "tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
@@ -13,10 +25,7 @@
     "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
   },
   "dependencies": {
-    "@tiller/acp-runtime": "workspace:*",
-    "@tiller/agent-registry": "workspace:*",
-    "@tiller/shared": "workspace:*",
-    "@tiller/sync-protocol": "workspace:*",
+    "@agentclientprotocol/sdk": "^0.21.0",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.3"
   },
@@ -24,7 +33,31 @@
     "@types/node": "^24.10.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
+    "tsup": "^8.5.1",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3"
+  },
+  "description": "Tiller local command deck runtime for ACP coding agents",
+  "keywords": [
+    "tiller",
+    "agent",
+    "acp",
+    "coding-agent",
+    "command-deck",
+    "local-first"
+  ],
+  "license": "UNLICENSED",
+  "author": "qianshe",
+  "homepage": "https://github.com/qianshe/Tiller#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qianshe/Tiller.git"
+  },
+  "bugs": {
+    "url": "https://github.com/qianshe/Tiller/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

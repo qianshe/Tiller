@@ -66,7 +66,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
     case "session.list": {
       const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
       const page = pageSessionSummaries(normalizedSessions, { limit: payload.limit, before: payload.before });
-      context.logInfo(`[tiller-helm] session.list count=${normalizedSessions.length} page=${page.sessions.length} hasMore=${page.hasMore}`);
+      context.logInfo(`[tiller] session.list count=${normalizedSessions.length} page=${page.sessions.length} hasMore=${page.hasMore}`);
       context.emit(socket, {
         type: "session.list.result",
         requestId: payload.requestId,
@@ -114,7 +114,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return true;
     }
     case "session.resume.check": {
-      context.logInfo(`[tiller-helm] session.resume.check session=${payload.sessionId}`);
+      context.logInfo(`[tiller] session.resume.check session=${payload.sessionId}`);
       const summary = context.sessionStore.list().find((item: any) => item.id === payload.sessionId);
       if (!summary) {
         context.emit(socket, { type: "error", requestId: payload.requestId, sessionId: payload.sessionId, message: "Session not found" });
@@ -130,9 +130,9 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return true;
     }
     case "session.resume.start": {
-      context.logInfo(`[tiller-helm] session.resume.start session=${payload.sessionId}`);
+      context.logInfo(`[tiller] session.resume.start session=${payload.sessionId}`);
       const result = await context.startSessionResume(payload.sessionId);
-      context.logInfo(`[tiller-helm] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
+      context.logInfo(`[tiller] session.resume.start.result session=${payload.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`);
       context.emit(socket, {
         type: "session.resume.start.result",
         requestId: payload.requestId,
@@ -168,7 +168,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       }
       const sessionId = `session-${Date.now()}`;
       const createdAt = new Date().toISOString();
-      context.logInfo(`[tiller-helm] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`);
+      context.logInfo(`[tiller] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`);
       const summaryBase: SessionSummary = {
         id: sessionId,
         projectId: project.id,
@@ -207,7 +207,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           runtimeSessionId: runtime.runtimeSessionId,
         });
-        context.logInfo(`[tiller-helm] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`);
+        context.logInfo(`[tiller] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`);
         context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, workspace, runtime });
         context.sessionStore.upsert(summaryWithRuntime);
         context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
@@ -219,7 +219,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           sessionId,
           message: error instanceof Error ? error.message : "Failed to create session runtime",
         });
-        context.logError(`[tiller-helm] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
+        context.logError(`[tiller] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${error instanceof Error ? error.message : "Failed to create session runtime"}`);
         context.updateSessionSummary(sessionId, (current) => ({ ...current, status: "error", updatedAt: new Date().toISOString(), lastMessagePreview: "Session startup failed" }));
         context.broadcastAuthenticated({ type: "session.status", sessionId, status: "error", message: "Session startup failed" });
       }
@@ -228,9 +228,9 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
     case "session.prompt": {
       let record = context.sessions.get(payload.sessionId);
       if (!record) {
-        context.logInfo(`[tiller-helm] session.prompt restore-required session=${payload.sessionId} chars=${payload.text.length}`);
+        context.logInfo(`[tiller] session.prompt restore-required session=${payload.sessionId} chars=${payload.text.length}`);
         const restore = await context.startSessionResume(payload.sessionId);
-        context.logInfo(`[tiller-helm] session.prompt restore-result session=${payload.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`);
+        context.logInfo(`[tiller] session.prompt restore-result session=${payload.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`);
         context.emit(socket, {
           type: "session.resume.start.result",
           requestId: `session-prompt-restore-${Date.now()}`,
@@ -242,7 +242,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         record = context.sessions.get(payload.sessionId);
       }
       if (!record) {
-        context.logError(`[tiller-helm] session.prompt failed session=${payload.sessionId} reason=Session runtime not available`);
+        context.logError(`[tiller] session.prompt failed session=${payload.sessionId} reason=Session runtime not available`);
         context.emit(socket, {
           type: "error",
           requestId: payload.requestId,
@@ -263,7 +263,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         return true;
       }
 
-      context.logInfo(`[tiller-helm] session.prompt session=${payload.sessionId} chars=${payload.text.length} images=${imageAttachments.length}`);
+      context.logInfo(`[tiller] session.prompt session=${payload.sessionId} chars=${payload.text.length} images=${imageAttachments.length}`);
       const timestamp = new Date().toISOString();
       const userMessageId = payload.clientMessageId || `${payload.sessionId}-user-${Date.now()}`;
       context.persistSessionMessage(payload.sessionId, { id: userMessageId, role: "user", text: payload.text, timestamp, ...(imageAttachments.length ? { attachments: imageAttachments } : {}) });

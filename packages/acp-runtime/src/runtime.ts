@@ -252,7 +252,7 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
       agent.initialize({
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: SDK_PROBE_CLIENT_CAPABILITIES,
-        clientInfo: { name: "tiller-helm", version: "0.1.0" },
+        clientInfo: { name: "tiller", version: "0.1.0" },
       }),
       timeout,
       processClosed,
@@ -364,7 +364,7 @@ export async function listAcpAgentSessions(provider: AcpAgentProvider, workspace
     const initializeResult = await withSdkRequest("initialize", agent.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: SDK_PROBE_CLIENT_CAPABILITIES,
-      clientInfo: { name: "tiller-helm", version: "0.1.0" },
+      clientInfo: { name: "tiller", version: "0.1.0" },
     }));
     const sessionCapabilities = resolveSessionCapabilities(initializeResult, provider);
     if (!sessionCapabilities.sessionList) {
@@ -720,7 +720,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   const initializeResult = await withSdkRequest("initialize", agent.initialize({
     protocolVersion: acp.PROTOCOL_VERSION,
     clientCapabilities: SDK_RUNTIME_CLIENT_CAPABILITIES,
-    clientInfo: { name: "tiller-helm", version: "0.1.0" },
+    clientInfo: { name: "tiller", version: "0.1.0" },
   }));
   const sessionCapabilities = resolveSessionCapabilities(initializeResult, options.agent);
 
