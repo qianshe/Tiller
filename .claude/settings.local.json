@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__mcp-router__list_dir",
+      "mcp__morph__codebase_search"
+    ],
+    "defaultMode": "bypassPermissions"
+  }
+}

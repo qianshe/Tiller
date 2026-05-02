@@ -258,7 +258,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           requestId: payload.requestId,
           sessionId: payload.sessionId,
           code: "ACP_IMAGE_INPUT_UNSUPPORTED",
-          message: "ACP agent does not advertise image prompt capability.",
+          message: "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~",
         });
         return true;
       }

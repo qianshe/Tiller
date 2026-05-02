@@ -1965,6 +1965,84 @@ textarea:focus,
   font-size: 0.82rem;
 }
 
+.slash-command-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  margin-bottom: 4px;
+  z-index: 20;
+}
+.slash-command-wrapper {
+  position: relative;
+}
+.slash-command-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #1e293b;
+}
+.slash-command-item:hover,
+.slash-command-item.selected {
+  background: rgba(59, 130, 246, 0.08);
+}
+.slash-command-item.selected {
+  background: rgba(59, 130, 246, 0.12);
+}
+.slash-command-name {
+  font-weight: 600;
+  white-space: nowrap;
+  color: #3b82f6;
+  min-width: 80px;
+}
+.slash-command-desc {
+  flex: 1;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-command-hint {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+[data-deck-theme="dark"] .slash-command-popup {
+  background: #1e293b;
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+[data-deck-theme="dark"] .slash-command-item {
+  color: #e2e8f0;
+}
+[data-deck-theme="dark"] .slash-command-item:hover,
+[data-deck-theme="dark"] .slash-command-item.selected {
+  background: rgba(59, 130, 246, 0.14);
+}
+[data-deck-theme="dark"] .slash-command-name {
+  color: #60a5fa;
+}
+[data-deck-theme="dark"] .slash-command-desc {
+  color: #94a3b8;
+}
+[data-deck-theme="dark"] .slash-command-hint {
+  color: #64748b;
+}
+
 @media (max-width: 860px) {
   .chat-layout.chat-layout-sidebar {
     gap: 0;
@@ -7067,6 +7145,16 @@ textarea:focus,
   color: #ffffff;
 }
 
+.view-sessions .mission-composer-actions .composer-cancel-icon {
+  background: #dc2626;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.view-sessions .mission-composer-actions .composer-cancel-icon:hover {
+  background: #b91c1c;
+}
+
 .view-sessions .mission-order-editor .order-editor-hint {
   margin: 0;
   padding: 0 10px 8px;
@@ -7357,6 +7445,36 @@ textarea:focus,
   font-size: 12px;
   color: #64748b;
   background: rgba(148, 163, 184, 0.12);
+}
+
+.mission-composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mission-composer-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.mission-composer-attachment-remove:hover {
+  background: rgba(220, 38, 38, 0.18);
+  color: #dc2626;
+  opacity: 1;
 }
 
 .mission-message-image {
@@ -9516,6 +9634,81 @@ textarea:focus,
     max-width: max-content;
     justify-self: end;
   }
+}
+
+/* Mission attachment strip: keep pasted images inside the editor instead of adding a tall block above the footer. */
+.view-sessions .mission-order-editor.chat-input-form .slash-command-wrapper {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.view-sessions .mission-order-editor.chat-input-form .slash-command-wrapper > textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 86px;
+  max-height: 180px;
+  padding: 12px 16px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d6d9df;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.view-sessions .mission-order-editor.chat-input-form .slash-command-wrapper > textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.view-sessions .mission-order-editor.chat-input-form .slash-command-wrapper > textarea::placeholder {
+  color: #8b8275;
+}
+
+.view-sessions .mission-draft-chat .mission-order-editor.chat-input-form .slash-command-wrapper > textarea {
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  padding-inline: 12px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.view-sessions .mission-attachment-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.view-sessions .mission-attachment-chip {
+  flex: 0 0 auto;
+  height: 28px;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.view-sessions .mission-attachment-chip .mission-composer-attachment-remove {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin-left: 1px;
+  font-size: 12px;
+}
+
+.view-sessions .mission-attachment-chip .mission-composer-attachment-remove:hover {
+  background: rgba(220, 38, 38, 0.12);
 }
 
 /* Mission inspector progressive collapse control. */

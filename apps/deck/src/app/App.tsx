@@ -12,6 +12,7 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
+  AvailableCommand,
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
@@ -35,7 +36,7 @@ import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, 
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
-import { createClipboardImageContent, extractClipboardImageItems, formatClipboardImageNotice } from "../features/mission/clipboard";
+import { createClipboardImageContent, extractClipboardImageItems } from "../features/mission/clipboard";
 import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessageHistory, mergeToolCallHistory, resolvePendingToolActivity } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
@@ -673,6 +674,41 @@ function createMissionVisualFixture(): MissionVisualFixture {
   };
 }
 
+function SlashCommandPopup({
+  commands,
+  selectedIndex,
+  onSelect,
+  onHover,
+}: {
+  commands: AvailableCommand[];
+  selectedIndex: number;
+  onSelect: (cmd: AvailableCommand) => void;
+  onHover: (index: number) => void;
+}) {
+  return (
+    <div className="slash-command-popup" role="listbox">
+      {commands.map((cmd, index) => (
+        <button
+          key={cmd.name}
+          type="button"
+          role="option"
+          aria-selected={index === selectedIndex}
+          className={`slash-command-item ${index === selectedIndex ? "selected" : ""}`}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onSelect(cmd);
+          }}
+          onMouseEnter={() => onHover(index)}
+        >
+          <span className="slash-command-name">/{cmd.name}</span>
+          {cmd.description ? <span className="slash-command-desc">{cmd.description}</span> : null}
+          {cmd.input?.hint ? <span className="slash-command-hint">{cmd.input.hint}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const helmSocketRefs = useRef<Map<string, WebSocket>>(new Map());
@@ -735,6 +771,7 @@ export function App() {
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(() => readSessionTitles());
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(missionVisualFixture?.diffs ?? {});
   const [sessionConfigOptions, setSessionConfigOptions] = useState<Record<string, SessionConfigOption[]>>({});
+  const [sessionAvailableCommands, setSessionAvailableCommands] = useState<Record<string, AvailableCommand[]>>({});
   const [agentModelOptions, setAgentModelOptions] = useState<Record<string, AgentModelOptionsEntry>>(() => readAgentModelOptionsCache());
   const [projectFilesByScope, setProjectFilesByScope] = useState<Record<string, ProjectFilesEntry>>({});
   const [projectFileFilter, setProjectFileFilter] = useState("");
@@ -742,6 +779,9 @@ export function App() {
   const [deckPreferences, setDeckPreferences] = useState<DeckPreferences>(initialPreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>([]);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+  const [slashSuppressedFor, setSlashSuppressedFor] = useState<string | null>(null);
+  const slashWrapperRef = useRef<HTMLDivElement | null>(null);
   const [imagePasteNotice, setImagePasteNotice] = useState("");
   const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
   const [promptEnhancerModels, setPromptEnhancerModels] = useState<PromptEnhancerModelOption[]>([]);
@@ -1286,7 +1326,7 @@ export function App() {
       const formStyles = window.getComputedStyle(draftForm);
       const rowGap = Number.parseFloat(formStyles.rowGap || formStyles.gap || "0") || 0;
       const visibleSiblings = Array.from(draftForm.children).filter(
-        (element): element is HTMLElement => element instanceof HTMLElement && element !== textarea && window.getComputedStyle(element).display !== "none",
+        (element): element is HTMLElement => element instanceof HTMLElement && !element.contains(textarea) && window.getComputedStyle(element).display !== "none",
       );
       const visibleSiblingHeight = visibleSiblings.reduce((total, element) => total + element.getBoundingClientRect().height, 0);
       const availableDraftHeight = Math.floor(draftForm.clientHeight - visibleSiblingHeight - rowGap * visibleSiblings.length);
@@ -1979,6 +2019,9 @@ export function App() {
           ),
         );
         return;
+      case "session.commands":
+        setSessionAvailableCommands((current) => ({ ...current, [payload.sessionId]: payload.commands }));
+        return;
       case "session.model.options":
         setSessions((current) =>
           current.map((session) =>
@@ -2544,14 +2587,24 @@ case "session.messages.list.result":
     }
 
     event.preventDefault();
-    setImagePasteNotice(formatClipboardImageNotice(images));
+
+    if (activeSession && activeSession.imageInput === false) {
+      setImagePasteNotice("当前 Agent 不支持图片输入，无法粘贴图片喵~");
+      return;
+    }
+
     try {
       const startIndex = promptImages.length;
       const nextImages = await Promise.all(images.map((file, index) => createClipboardImageContent(file, startIndex + index)));
       setPromptImages((current) => [...current, ...nextImages]);
+      setImagePasteNotice("");
     } catch {
       setImagePasteNotice("图片粘贴失败：无法读取剪贴板图片内容。");
     }
+  }
+
+  function removePromptImage(index: number) {
+    setPromptImages((current) => current.filter((_, i) => i !== index));
   }
 
   function submitPromptFromKeyboard(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -2568,6 +2621,97 @@ case "session.messages.list.result":
 
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
+  }
+
+  const slashCommandToken = useMemo(() => {
+    const match = /^\/(\S*)$/.exec(prompt);
+    return match ? match[1].toLowerCase() : null;
+  }, [prompt]);
+
+  const filteredSlashCommands = useMemo(() => {
+    if (slashCommandToken === null || !activeSessionId) {
+      return [] as AvailableCommand[];
+    }
+    const all = sessionAvailableCommands[activeSessionId] ?? [];
+    if (!slashCommandToken) {
+      return all;
+    }
+    return all.filter((cmd) => cmd.name.toLowerCase().startsWith(slashCommandToken));
+  }, [slashCommandToken, activeSessionId, sessionAvailableCommands]);
+
+  const slashPopupOpen = filteredSlashCommands.length > 0 && slashSuppressedFor !== prompt;
+
+  useEffect(() => {
+    setSlashSelectedIndex(0);
+  }, [slashCommandToken, activeSessionId]);
+
+  useEffect(() => {
+    if (slashSelectedIndex >= filteredSlashCommands.length && filteredSlashCommands.length > 0) {
+      setSlashSelectedIndex(0);
+    }
+  }, [filteredSlashCommands, slashSelectedIndex]);
+
+  useEffect(() => {
+    if (!slashPopupOpen) {
+      return;
+    }
+    function handlePointerDown(event: PointerEvent) {
+      if (slashWrapperRef.current && !slashWrapperRef.current.contains(event.target as Node)) {
+        setSlashSuppressedFor(prompt);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [slashPopupOpen, prompt]);
+
+  function applySlashCommand(cmd: AvailableCommand) {
+    setPrompt(`/${cmd.name} `);
+    setSlashSuppressedFor(null);
+    missionPromptRef.current?.focus();
+  }
+
+  function handleMissionPromptKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (slashPopupOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashSelectedIndex((i) => (i + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashSelectedIndex((i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.nativeEvent.isComposing
+      ) {
+        event.preventDefault();
+        const cmd = filteredSlashCommands[slashSelectedIndex];
+        if (cmd) {
+          applySlashCommand(cmd);
+        }
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const cmd = filteredSlashCommands[slashSelectedIndex];
+        if (cmd) {
+          applySlashCommand(cmd);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlashSuppressedFor(prompt);
+        return;
+      }
+    }
+    submitPromptFromKeyboard(event);
   }
 
   function respondToPermission(decision: PermissionDecision) {
@@ -3183,7 +3327,12 @@ case "session.messages.list.result":
   }
 
   function renderSessions() {
-    const canSend = Boolean((prompt.trim() || promptImages.length) && socketRef.current && (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)));
+    const canSend = Boolean(
+      (prompt.trim() || promptImages.length) &&
+      socketRef.current &&
+      (activeSessionId || (selectedProjectId && selectedWorkspaceId && selectedAgentId)) &&
+      (!promptImages.length || !activeSession || activeSession.imageInput !== false)
+    );
     const effectiveSidebarCollapsed = missionSidebarCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
     const effectiveInspectorCollapsed = missionInspectorCollapsed || missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
     const resolvedMissionPaneWidths = normalizeMissionPaneWidths(missionPaneWidths, effectiveSidebarCollapsed, effectiveInspectorCollapsed, missionViewportWidth);
@@ -3642,20 +3791,35 @@ case "session.messages.list.result":
                   </div>
                 ) : null}
                 <form className="chat-input-form mission-order-editor" onSubmit={submitPrompt}>
-                  <textarea
-                    ref={missionPromptRef}
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={submitPromptFromKeyboard}
-                    onPaste={handleMissionPromptPaste}
-                    placeholder={draftPromptPlaceholder}
-                  />
-                  {imagePasteNotice ? <p className="subtle compact mission-composer-notice">{imagePasteNotice}</p> : null}
-                  {promptImages.length ? (
-                    <div className="mission-composer-attachments" aria-label="待发送图片">
-                      {promptImages.map((image, index) => <span key={`${image.uri ?? image.name}-${index}`}>{image.name ?? `粘贴图片 ${index + 1}`}</span>)}
-                    </div>
-                  ) : null}
+                  <div ref={slashWrapperRef} className="slash-command-wrapper">
+                    {promptImages.length ? (
+                      <div className="mission-composer-attachments mission-attachment-strip" aria-label="待发送图片">
+                        {promptImages.map((image, index) => (
+                          <span key={`${image.uri ?? image.name}-${index}`} className="mission-composer-attachment mission-attachment-chip">
+                            image {index + 1}
+                            <button type="button" className="mission-composer-attachment-remove" onClick={() => removePromptImage(index)} aria-label={`移除 image ${index + 1}`} title="移除">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {imagePasteNotice ? <p className="subtle compact mission-composer-notice">{imagePasteNotice}</p> : null}
+                    <textarea
+                      ref={missionPromptRef}
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      onKeyDown={handleMissionPromptKeyDown}
+                      onPaste={handleMissionPromptPaste}
+                      placeholder={draftPromptPlaceholder}
+                    />
+                    {slashPopupOpen ? (
+                      <SlashCommandPopup
+                        commands={filteredSlashCommands}
+                        selectedIndex={slashSelectedIndex}
+                        onSelect={applySlashCommand}
+                        onHover={setSlashSelectedIndex}
+                      />
+                    ) : null}
+                  </div>
                   <div className="mission-composer-sidecar">
                     <div className="mission-composer-tools" aria-hidden="true">
                       <span>＋</span>
@@ -3789,13 +3953,14 @@ case "session.messages.list.result":
                       ) : null}
                     </div>
                     <div className="mission-composer-actions">
-                      {activeSession && isSessionExecutionPending(activeSessionStatus) ? (
-                        <button className="secondary composer-icon-button" type="button" onClick={() => cancelSession(activeSession.id)} aria-label={copy.cancelSession} title={copy.cancelSession}>■</button>
-                      ) : null}
                       {deckPreferences.promptEnhancer.enabled ? (
                         <button className="secondary composer-icon-button" type="button" onClick={enhancePromptDraft} disabled={!prompt.trim() || promptEnhancerBusy} aria-label="增强提示词" title="增强提示词">✦</button>
                       ) : null}
-                      <button className="primary composer-send-icon" type="submit" disabled={!canSend} aria-label="发送" title="发送">➤</button>
+                      {activeSession && isSessionExecutionPending(activeSessionStatus) ? (
+                        <button className="composer-send-icon composer-cancel-icon" type="button" onClick={() => cancelSession(activeSession.id)} aria-label={copy.cancelSession} title={copy.cancelSession}>■</button>
+                      ) : (
+                        <button className="primary composer-send-icon" type="submit" disabled={!canSend} aria-label="发送" title="发送">➤</button>
+                      )}
                     </div>
                   </div>
                 </form>

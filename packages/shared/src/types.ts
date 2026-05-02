@@ -208,6 +208,12 @@ export type AcpModelState = {
   options: AcpModelOption[];
 };
 
+export type AvailableCommand = {
+  name: string;
+  description?: string;
+  input?: { hint?: string };
+};
+
 export type SessionConfigSupport = {
   model: SessionConfigApplyMode;
   reasoningEffort: SessionConfigApplyMode;
@@ -257,6 +263,8 @@ export type SessionSummary = {
   title?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
+  /** Whether the underlying ACP agent supports image content in prompts. */
+  imageInput?: boolean;
 };
 
 export type AgentMessage = {

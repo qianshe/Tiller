@@ -18,6 +18,7 @@ import type {
   AgentMessage,
   AgentPromptContent,
   AgentToolCall,
+  AvailableCommand,
   CommandChunk,
   FileDiffSummary,
   PermissionDecision,
@@ -79,6 +80,10 @@ export type SessionRuntimeEvent =
   | {
       type: "model-options";
       state: AcpModelState;
+    }
+  | {
+      type: "available-commands";
+      commands: AvailableCommand[];
     }
   | {
       type: "error";
@@ -807,9 +812,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       options.onEvent({
         type: "error",
         code: "ACP_IMAGE_INPUT_UNSUPPORTED",
-        message: "ACP agent does not advertise image prompt capability.",
+        message: "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~",
       });
-      options.onEvent({ type: "status", status: "error", message: "ACP image prompt unsupported" });
+      options.onEvent({ type: "status", status: "error", message: "ACP 不支持图片输入" });
       return;
     }
 

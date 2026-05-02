@@ -515,8 +515,11 @@ function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
   const aligned = alignSessionProjectBinding(summary, projects);
   const record = sessions.get(summary.id);
   const agent = record?.agent ?? resolveProviderById(aligned.agentId, agents);
+  const descriptor = sessionRuntimeStore.get(summary.id);
+  const capabilities = resolveSessionRestoreCapabilities(agent, descriptor, record?.runtime.sessionCapabilities);
   return {
     ...aligned,
+    imageInput: capabilities.imageInput,
     resume: buildResumeInfo(aligned, agent),
   };
 }

@@ -4,6 +4,7 @@ import type {
   AgentMessage,
   AgentPromptContent,
   AgentToolCall,
+  AvailableCommand,
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
@@ -344,6 +345,11 @@ export type HelmToClient =
       sessionId: string;
       status: SessionStatus;
       message?: string;
+    }
+  | {
+      type: "session.commands";
+      sessionId: string;
+      commands: AvailableCommand[];
     }
   | {
       type: "agent.message";

@@ -1,4 +1,4 @@
-import type { AcpModelOption, AcpModelState, AgentToolCall, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
+import type { AcpModelOption, AcpModelState, AgentToolCall, AvailableCommand, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime";
 
 type AcpProtocolModelInfo = {
@@ -61,6 +61,24 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
         type: "config-options",
         state: resolveSessionConfigState(configOptions),
         options: configOptions,
+      },
+    };
+  }
+
+  if (updateType === "available_commands_update") {
+    const rawCommands = Array.isArray(update.availableCommands) ? update.availableCommands : [];
+    const commands: AvailableCommand[] = rawCommands
+      .filter((cmd: any) => cmd && typeof cmd.name === "string")
+      .map((cmd: any) => ({
+        name: cmd.name,
+        description: typeof cmd.description === "string" ? cmd.description : undefined,
+        input: cmd.input && typeof cmd.input === "object" ? { hint: typeof cmd.input.hint === "string" ? cmd.input.hint : undefined } : undefined,
+      }));
+    return {
+      sessionId,
+      event: {
+        type: "available-commands",
+        commands,
       },
     };
   }

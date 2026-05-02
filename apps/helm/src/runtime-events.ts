@@ -129,6 +129,9 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       }
       return;
     }
+    case "available-commands":
+      context.broadcastAuthenticated({ type: "session.commands", sessionId, commands: event.commands });
+      return;
     case "error":
       context.logError(`[tiller-helm] session.error ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`);
       context.persistSessionMessage(sessionId, { id: `${sessionId}-system-${Date.now()}`, role: "system", text: event.message, timestamp: new Date().toISOString() });
