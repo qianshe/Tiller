@@ -1,8 +1,11 @@
 import type { TillerConfig } from "@tiller/agent-registry";
 
+export type TillerAuthMode = "none" | "pairing";
+
 export type TillerRuntimeOptions = {
   host: string;
   port: number;
+  authMode: TillerAuthMode;
 };
 
 export type ResolveTillerRuntimeOptionsInput = {
@@ -13,6 +16,7 @@ export type ResolveTillerRuntimeOptionsInput = {
 
 const DEFAULT_TILLER_HOST = "0.0.0.0";
 const DEFAULT_TILLER_PORT = 47631;
+const DEFAULT_TILLER_AUTH_MODE: TillerAuthMode = "none";
 
 export function resolveTillerRuntimeOptions(input: ResolveTillerRuntimeOptionsInput = {}): TillerRuntimeOptions {
   const argv = normalizeArgv(input.argv ?? process.argv.slice(2));
@@ -22,8 +26,9 @@ export function resolveTillerRuntimeOptions(input: ResolveTillerRuntimeOptionsIn
 
   const host = firstNonEmpty(args.host, env.TILLER_HOST, configDaemon?.host, DEFAULT_TILLER_HOST);
   const port = parsePort(firstNonEmpty(args.port, env.TILLER_PORT, configDaemon?.port === undefined ? undefined : String(configDaemon.port), String(DEFAULT_TILLER_PORT)));
+  const authMode = parseAuthMode(firstNonEmpty(env.TILLER_AUTH, configDaemon?.auth, DEFAULT_TILLER_AUTH_MODE));
 
-  return { host, port };
+  return { host, port, authMode };
 }
 
 function normalizeArgv(argv: string[]) {
@@ -59,4 +64,15 @@ function parsePort(value: string) {
     throw new Error(`Invalid Tiller port: ${value}`);
   }
   return port;
+}
+
+function parseAuthMode(value: string): TillerAuthMode {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "none" || normalized === "off" || normalized === "disabled") {
+    return "none";
+  }
+  if (normalized === "pairing" || normalized === "beacon") {
+    return "pairing";
+  }
+  throw new Error(`Invalid Tiller auth mode: ${value}`);
 }

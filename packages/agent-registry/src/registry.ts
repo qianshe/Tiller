@@ -11,6 +11,7 @@ export type TillerConfig = {
   daemon?: {
     host?: string;
     port?: number;
+    auth?: "none" | "pairing";
   };
 };
 

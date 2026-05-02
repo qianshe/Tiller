@@ -39,6 +39,10 @@ export function createHelmWebSocketUrl(input: CreateHelmWebSocketUrlInput) {
   return `ws://${input.host}:${input.port}`;
 }
 
+export function shouldRequestInitialSyncOnOpen(input: { embedded: boolean; hasTrustedDeviceCache: boolean }) {
+  return input.embedded || input.hasTrustedDeviceCache;
+}
+
 function defaultPortForProtocol(protocol: string) {
   if (protocol === "https:") {
     return "443";

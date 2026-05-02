@@ -41,7 +41,7 @@ import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessag
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 import { toast } from "../features/toast/toast";
-import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint } from "./helm-endpoint";
+import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";
@@ -1450,12 +1450,13 @@ export function App() {
   }, [activeProfileId, agents, pairingState, projects, sessions, workspaces]);
 
   useEffect(() => {
-    if (missionVisualMode || !trustedDevice?.token) {
+    if (missionVisualMode || (!trustedDevice?.token && !IS_EMBEDDED_HELM_DECK)) {
       return;
     }
     if (!shouldAttemptSilentReconnect({
       connection,
-      tokenPresent: true,
+      tokenPresent: Boolean(trustedDevice?.token),
+      embedded: IS_EMBEDDED_HELM_DECK,
       host: daemonHost,
       port: daemonPort,
     })) {
@@ -1473,7 +1474,7 @@ export function App() {
   }, [activeProfileId, connection, daemonHost, daemonPort, missionVisualMode, trustedDevice?.token]);
 
   useEffect(() => {
-    if (missionVisualMode || !trustedDevice?.token || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
+    if (missionVisualMode || (!trustedDevice?.token && !IS_EMBEDDED_HELM_DECK) || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
       return;
     }
     if (manualDisconnectRef.current === activeProfileId) {
@@ -1659,9 +1660,15 @@ export function App() {
       setHelmConnectionState(helmKey, "connected");
       setDaemonProfileMessage(`已连接 ${profile.name}`);
       const cache = readTrustedDeviceCache(window.localStorage, profile.host, profile.port);
+      if (IS_EMBEDDED_HELM_DECK) {
+        requestInitialSync(socket);
+        return;
+      }
       if (cache?.token) {
         dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
-        requestInitialSync(socket);
+        if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: true })) {
+          requestInitialSync(socket);
+        }
       }
     });
 
@@ -1730,6 +1737,12 @@ export function App() {
       setConnection("connected");
       setConnectFeedback(`已连接到 ${wsUrl}`);
       const cache = readTrustedDeviceCache(window.localStorage, host, port);
+      if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: false })) {
+        setPairingState("paired");
+        setPairingFeedback("个人版本机模式已连接。");
+        requestInitialSync(socket);
+        return;
+      }
       if (cache?.token) {
         setTrustedDevice(cache);
         dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });

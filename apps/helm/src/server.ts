@@ -63,7 +63,7 @@ import { resolveDeckStaticDir, resolveStaticAsset } from "./static-assets";
 const configPath = getDefaultConfigPath();
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
-const { host: HOST, port: PORT } = resolveTillerRuntimeOptions({ config: tillerConfig });
+const { host: HOST, port: PORT, authMode: AUTH_MODE } = resolveTillerRuntimeOptions({ config: tillerConfig });
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 const LOGS_DIR = resolve(dirname(configPath), "logs");
 const TILLER_LOG_FILE = resolve(LOGS_DIR, "tiller.log");
@@ -254,6 +254,7 @@ httpServer.on("listening", () => {
     logInfo(`[tiller] Deck available at ${url}`);
   }
   logInfo(`[tiller] WebSocket available on the same origin`);
+  logInfo(`[tiller] auth mode: ${AUTH_MODE}`);
   logInfo(`[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
   logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
 });
@@ -275,6 +276,12 @@ process.on("unhandledRejection", (reason) => {
 });
 
 function beginAuthenticationFlow(socket: WebSocket) {
+  if (AUTH_MODE === "none") {
+    authenticateSocket(socket, "local-deck");
+    logInfo("[tiller] personal auth disabled; client accepted");
+    return;
+  }
+
   let authenticated = false;
   const pairingPromptTimer = setTimeout(() => {
     if (!authenticated && socket.readyState === WebSocket.OPEN) {

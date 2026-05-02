@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint } from "./helm-endpoint.js";
+import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint.js";
 
 const storage = {
   getItem(key: string) {
@@ -34,4 +34,12 @@ test("resolveDefaultHelmEndpoint keeps saved endpoints in development multi Helm
 
 test("createHelmWebSocketUrl uses same origin in embedded mode", () => {
   assert.equal(createHelmWebSocketUrl({ embedded: true, host: "ignored", port: "1", location: { protocol: "https:", host: "helm.example.com" } }), "wss://helm.example.com");
+});
+
+test("shouldRequestInitialSyncOnOpen syncs embedded Helm even without trusted cache", () => {
+  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: true, hasTrustedDeviceCache: false }), true);
+});
+
+test("shouldRequestInitialSyncOnOpen waits for pairing in non-embedded mode without trusted cache", () => {
+  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: false }), false);
 });

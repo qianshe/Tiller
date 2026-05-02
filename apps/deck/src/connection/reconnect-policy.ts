@@ -7,11 +7,12 @@ export function shouldEnsureLiveConnection(view: AppView) {
 export function shouldAttemptSilentReconnect(input: {
   connection: "connecting" | "connected" | "disconnected";
   tokenPresent: boolean;
+  embedded?: boolean;
   host: string;
   port: string;
 }) {
   return input.connection === "disconnected"
-    && input.tokenPresent
+    && (input.tokenPresent || input.embedded === true)
     && Boolean(input.host.trim())
     && Boolean(input.port.trim());
 }
