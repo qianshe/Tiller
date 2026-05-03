@@ -22,15 +22,15 @@ Tiller 是一个 **local-first command deck**：把运行在你电脑或服务�
 当前建议先使用 tarball 试用：
 
 ```bash
-npm install -g ./tiller-helm-0.1.0.tgz
+npm install -g ./qianshe-tiller-0.1.0-alpha.0.tgz
 ```
 
 如果后续发布到 npm，安装方式会是：
 
 ```bash
-npm install -g @tiller/helm
+npm install -g @qianshe/tiller
 # 或
-npx @tiller/helm start
+npx @qianshe/tiller start
 ```
 
 要求：

@@ -264,6 +264,48 @@ test("mapSessionUpdateNotification maps user text chunks into Tiller message eve
   assert.equal(mapped.event.message.text, "中午好");
 });
 
+test("mapSessionUpdateNotification preserves snake_case message ids", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_123",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        message_id: "msg_snake_1",
+        content: { type: "text", text: "继续处理" },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(mapped.event.message.id, "msg_snake_1");
+});
+
+test("mapSessionUpdateNotification preserves nested message ids", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_123",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        message: { id: "msg_nested_1", content: { type: "text", text: "嵌套消息" } },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(mapped.event.message.id, "msg_nested_1");
+  assert.equal(mapped.event.message.text, "嵌套消息");
+});
+
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

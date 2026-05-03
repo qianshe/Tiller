@@ -355,6 +355,9 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
         remoteResult = resolveSessionCleanupOutcome(summary, provider);
         context.logInfo(`[tiller] session.cleanup local-only session=${summary.id} provider=${provider?.id ?? summary.agentId} remoteDeleted=${remoteResult.remoteDeleted}`);
       }
+      if (!remoteResult.remoteDeleted) {
+        context.logWarn(`[tiller] session.cleanup.warning session=${summary.id} provider=${remoteResult.providerId ?? provider?.id ?? summary.agentId} message=${remoteResult.message}`);
+      }
       context.clearPermissionRequestsForSession(summary.id);
       context.deleteLocalSessionData(summary.id);
       context.broadcastAuthenticated({

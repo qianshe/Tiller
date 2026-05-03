@@ -207,6 +207,13 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
+const DEFAULT_TECHNICAL_PANEL_PREFERENCES: TechnicalPanelPreferences = DEFAULT_DECK_PREFERENCES.technicalPanels;
+
+function resolveTechnicalPanelPreferences(preferences: DeckPreferences): TechnicalPanelPreferences {
+  const legacy = (preferences as DeckPreferences & { technicalPanels?: Partial<TechnicalPanelPreferences> }).technicalPanels ?? {};
+  return { ...DEFAULT_TECHNICAL_PANEL_PREFERENCES, ...legacy };
+}
+
 function agentModelOptionsKey(providerId: string, workspaceId: string) {
   return `${providerId}::${workspaceId}`;
 }
@@ -959,6 +966,7 @@ export function App() {
   const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
+  const technicalPanels = resolveTechnicalPanelPreferences(deckPreferences);
   const pendingPermission = activeSession ? permissionRequests[activeSession.id] ?? null : null;
   const selectedDraftAgent = filteredAgents.find((agent) => agent.id === selectedAgentId) ?? filteredAgents[0] ?? null;
   const draftAgent = agents.find((agent) => agent.id === (activeSession?.agentId ?? selectedAgentId)) ?? null;
@@ -1506,7 +1514,7 @@ export function App() {
   function updateTechnicalPanelPreference<K extends keyof TechnicalPanelPreferences>(key: K, value: TechnicalPanelPreferences[K]) {
     setDeckPreferences((current) => ({
       ...current,
-      technicalPanels: { ...current.technicalPanels, [key]: value },
+      technicalPanels: { ...resolveTechnicalPanelPreferences(current), [key]: value },
     }));
   }
 
@@ -3670,8 +3678,11 @@ case "session.messages.list.result":
                                   {projectExpanded ? (
                                     <div className="mission-tree-children mission-tree-children-sessions" role="group">
                                     {projectNodeSessions.length ? (
-                                      projectNodeSessions.map((session) => (
-                                        <div key={session.id} className={`mission-tree-session-row ${session.id === activeSessionId ? "active" : ""}`}>
+                                      projectNodeSessions.map((session) => {
+                                        const sessionStatus = statuses[session.id] ?? session.status;
+                                        const sessionPending = isSessionExecutionPending(sessionStatus);
+                                        return (
+                                        <div key={session.id} className={`mission-tree-session-row ${session.id === activeSessionId ? "active" : ""} ${sessionPending ? "is-running" : ""}`.trim()}>
                                           <button
                                             type="button"
                                             className="mission-tree-row mission-tree-row-session"
@@ -3684,8 +3695,14 @@ case "session.messages.list.result":
                                             <span className="mission-tree-agent-icon" title={session.agentName}>{renderMissionAgentIcon(session.agentName)}</span>
                                             <span className="mission-tree-main">
                                               <strong>{resolveDisplaySessionTitle(session)}</strong>
-                                              <span>ACP · {session.agentName} · {copy.status[statuses[session.id] ?? session.status]}</span>
+                                              <span>ACP · {session.agentName} · {copy.status[sessionStatus]}</span>
                                             </span>
+                                            {sessionPending ? (
+                                              <span className={`mission-tree-session-status mission-tree-session-status-${sessionStatus}`} aria-label={copy.status[sessionStatus]}>
+                                                <i aria-hidden="true" />
+                                                {copy.status[sessionStatus]}
+                                              </span>
+                                            ) : null}
                                             <span className="mission-tree-time">{formatRelativeTime(session.updatedAt)}</span>
                                           </button>
                                           <button
@@ -3702,7 +3719,8 @@ case "session.messages.list.result":
                                             ×
                                           </button>
                                         </div>
-                                      ))
+                                        );
+                                      })
                                       ) : (
                                         <div className="mission-tree-empty">这个项目还没有任务。</div>
                                       )}
@@ -3747,21 +3765,6 @@ case "session.messages.list.result":
                 ) : null}
                 {activeSession ? (
                   <>
-                    {pendingPermission ? (
-                      <section className="permission-card">
-                        <div>
-                          <p className="eyebrow">{copy.permissionRequest}</p>
-                          <strong>{pendingPermission.command}</strong>
-                          <p className="muted compact">{pendingPermission.reason}</p>
-                          {deckPreferences.technicalPanels.showPermissionWorkspace ? <p className="subtle compact">{pendingPermission.workspacePath}</p> : null}
-                        </div>
-                        <div className="permission-actions">
-                          <button className="primary" type="button" onClick={() => respondToPermission("allow")}>{copy.allowOnce}</button>
-                          <button className="secondary" type="button" onClick={() => respondToPermission("deny")}>{copy.deny}</button>
-                        </div>
-                      </section>
-                    ) : null}
-
                     {renderPlainMessages(activeSessionMessages, activeSession.id, activeSession.agentName)}
                     {missionActivityLoading ? (
                       <div className="mission-tool-loading" role="status" aria-live="polite">
@@ -3782,6 +3785,21 @@ case "session.messages.list.result":
                   </div>
                 )}
               </div>
+
+              {activeSession && pendingPermission ? (
+                <section className="mission-permission-drawer" role="region" aria-live="polite" aria-label={copy.permissionRequest}>
+                  <div className="mission-permission-copy">
+                    <p className="eyebrow">{copy.permissionRequest}</p>
+                    <strong>{pendingPermission.command}</strong>
+                    <p className="muted compact">{pendingPermission.reason}</p>
+                    {technicalPanels.showPermissionWorkspace ? <p className="subtle compact">{pendingPermission.workspacePath}</p> : null}
+                  </div>
+                  <div className="permission-actions mission-permission-actions">
+                    <button className="primary" type="button" onClick={() => respondToPermission("allow")}>{copy.allowOnce}</button>
+                    <button className="secondary" type="button" onClick={() => respondToPermission("deny")}>{copy.deny}</button>
+                  </div>
+                </section>
+              ) : null}
 
               <div className="chat-input-area draft-toolbar">
                 {!activeSession ? (
@@ -4600,23 +4618,23 @@ case "session.messages.list.result":
               <h3>{settingsCopy.technicalTitle}</h3>
               <div className="settings-control-grid">
                 <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.logbookDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("logbookDefaultOpen", event.target.checked)} />
+                  <input type="checkbox" checked={technicalPanels.logbookDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("logbookDefaultOpen", event.target.checked)} />
                   <span>{settingsCopy.logbookOpen}</span>
                 </label>
                 <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.diffDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("diffDefaultOpen", event.target.checked)} />
+                  <input type="checkbox" checked={technicalPanels.diffDefaultOpen} onChange={(event) => updateTechnicalPanelPreference("diffDefaultOpen", event.target.checked)} />
                   <span>{settingsCopy.diffOpen}</span>
                 </label>
                 <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.showSessionRuntimeMeta} onChange={(event) => updateTechnicalPanelPreference("showSessionRuntimeMeta", event.target.checked)} />
+                  <input type="checkbox" checked={technicalPanels.showSessionRuntimeMeta} onChange={(event) => updateTechnicalPanelPreference("showSessionRuntimeMeta", event.target.checked)} />
                   <span>{settingsCopy.runtimeMeta}</span>
                 </label>
                 <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.showPermissionWorkspace} onChange={(event) => updateTechnicalPanelPreference("showPermissionWorkspace", event.target.checked)} />
+                  <input type="checkbox" checked={technicalPanels.showPermissionWorkspace} onChange={(event) => updateTechnicalPanelPreference("showPermissionWorkspace", event.target.checked)} />
                   <span>{settingsCopy.permissionWorkspace}</span>
                 </label>
                 <label className="toggle-row">
-                  <input type="checkbox" checked={deckPreferences.technicalPanels.showConnectionDebug} onChange={(event) => updateTechnicalPanelPreference("showConnectionDebug", event.target.checked)} />
+                  <input type="checkbox" checked={technicalPanels.showConnectionDebug} onChange={(event) => updateTechnicalPanelPreference("showConnectionDebug", event.target.checked)} />
                   <span>{settingsCopy.connectionDebug}</span>
                 </label>
               </div>

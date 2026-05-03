@@ -276,11 +276,18 @@ function authenticateSocket(socket: WebSocket, deviceId: string) {
   });
   socket.removeAllListeners("message");
   socket.on("message", (raw) => {
+    let payload: ClientToHelm;
     try {
-      void handleMessage(socket, JSON.parse(String(raw)) as ClientToHelm);
+      payload = JSON.parse(String(raw)) as ClientToHelm;
     } catch (error) {
       reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      return;
     }
+
+    void handleMessage(socket, payload).catch((error) => {
+      logError(`[tiller] message handler failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Message handler failed" });
+    });
   });
 }
 
@@ -329,6 +336,7 @@ function createHandlerContext(): HelmHandlerContext {
     broadcastAuthenticated,
     logInfo,
     logDebug,
+    logWarn,
     logError,
     getHelms: () => helms,
     setHelms: (items) => { helms = items; },
@@ -1023,6 +1031,11 @@ function logDebug(message: string) {
   console.debug(message);
 }
 
+function logWarn(message: string) {
+  writeLogLine("WARN", message);
+  console.warn(message);
+}
+
 function logError(message: string) {
   writeLogLine("ERROR", message);
   console.error(message);
@@ -1032,7 +1045,7 @@ function isHelmDebugEnabled() {
   return /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? "");
 }
 
-function writeLogLine(level: "DEBUG" | "INFO" | "ERROR", message: string) {
+function writeLogLine(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string) {
   appendFileSync(TILLER_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
 }
 

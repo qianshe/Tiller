@@ -56,4 +56,4 @@ The packaged runtime must not depend on monorepo source paths. It should include
 - Final LAN authentication default.
 - Final open-source/commercial license strategy.
 - Versioning and dist-tag policy.
-- Whether the package name remains `@qianshe/tiller` for public release.
+- Whether the package name `@qianshe/tiller` with CLI command `tiller` is the final public convention.

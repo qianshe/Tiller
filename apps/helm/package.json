@@ -1,7 +1,7 @@
 {
   "name": "@tiller/helm",
   "version": "0.1.0-alpha.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -17,8 +17,9 @@
     "build": "node scripts/build-package.mjs",
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
     "dev": "pnpm run clean-port && tsx watch src/index.ts",
-    "prepack": "pnpm run build",
-    "test": "tsx --test src/**/*.test.ts",
+    "pack:npm": "pnpm run build && npm pack ./dist-package",
+    "publish:npm": "pnpm run build && npm publish ./dist-package --access public",
+    "test": "tsx --test src/**/*.test.ts scripts/**/*.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",

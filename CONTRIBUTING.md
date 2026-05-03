@@ -27,7 +27,7 @@ pnpm typecheck
 Package smoke check:
 
 ```bash
-pnpm --filter @tiller/helm pack
+pnpm --filter @tiller/helm pack:npm
 ```
 
 ## Change rules

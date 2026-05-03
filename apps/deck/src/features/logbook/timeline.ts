@@ -91,6 +91,15 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
 
 
 function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
+  // Some agents (notably Codex) report a SKILL.md read as kind:"tool" with the
+  // `Get-Content -Raw 'C:\...\skills\<name>\SKILL.md'` shell command stuffed
+  // into either the title or a JSON-encoded `input`. Try to recognise the skill
+  // name from those fields regardless of the reported tool kind first, so the
+  // timeline does not show a truncated raw command.
+  const skillNameFromCommand = extractSkillNameFromCommandSources(call);
+  if (skillNameFromCommand) {
+    return `Skill: ${skillNameFromCommand}`;
+  }
   if (call.kind !== "terminal") {
     const openCodeSkillName = extractOpenCodeSkillNameFromToolOutput(call.output);
     if (openCodeSkillName) {
@@ -101,6 +110,52 @@ function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     return summarizeCommand(call.input ?? call.title ?? fallback);
   }
   return isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
+}
+
+function extractSkillNameFromCommandSources(call: AgentToolCall) {
+  // Claude Code (and any ACP bridge that mirrors the Anthropic tool_use shape)
+  // invokes a built-in `Skill` tool whose input is `{skill: "<name>"}`. The tool
+  // name itself does not carry a path and there is no shell command to scan, so
+  // we have to read the structured input directly.
+  const skillNameFromInput = extractSkillNameFromStructuredInput(call.input);
+  if (skillNameFromInput) {
+    return skillNameFromInput;
+  }
+  const inputCommand = call.input ? extractCommandFromInput(call.input) : undefined;
+  const candidates = [inputCommand, call.title].filter((value): value is string => Boolean(value));
+  for (const candidate of candidates) {
+    const skillName = extractSkillNameFromCommand(candidate);
+    if (skillName) {
+      return skillName;
+    }
+  }
+  return undefined;
+}
+
+function extractSkillNameFromStructuredInput(input: string | undefined) {
+  if (!input) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const record = parsed as Record<string, unknown>;
+  const candidate = record.skill ?? record.skill_name ?? record.skillName;
+  if (typeof candidate === "string") {
+    const trimmed = candidate.trim();
+    if (trimmed && !/[\\/]/u.test(trimmed)) {
+      // Avoid swallowing values that are themselves paths or commands - those
+      // belong to the path-based fallback below.
+      return trimmed;
+    }
+  }
+  return undefined;
 }
 
 function resolveMergedToolTitle(currentTitle: string, incomingTitle: string, id: string) {
@@ -148,7 +203,22 @@ function extractOpenCodeSkillNameFromToolOutput(output: string | undefined) {
   const decoded = extractOutputPayload(output).replace(/\\n/gu, "\n");
   const match = decoded.match(/^#+\s*Skill[:\s]\s*([^\r\n"]+)|^Skill:\s*([^\r\n"]+)/imu);
   const skillName = (match?.[1] ?? match?.[2])?.trim();
-  return skillName || undefined;
+  if (skillName) {
+    return skillName;
+  }
+  // Codex `Get-Content -Raw '...\SKILL.md'` returns the file body whose YAML
+  // frontmatter starts with `name: <skill>`. Recognise that pattern as a
+  // last-ditch hint when the tool name itself does not carry a path.
+  const frontmatter = decoded.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/u);
+  const frontmatterBody = frontmatter?.[1];
+  if (frontmatterBody) {
+    const nameMatch = frontmatterBody.match(/^\s*name\s*:\s*["']?([^"'\r\n]+?)["']?\s*$/imu);
+    const frontmatterName = nameMatch?.[1]?.trim();
+    if (frontmatterName) {
+      return frontmatterName;
+    }
+  }
+  return undefined;
 }
 
 function extractOutputPayload(output: string) {
@@ -234,6 +304,15 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
   }
 
   if (last.role === incoming.role && last.role !== "system") {
+    const hasBoundary = hasTimelineBoundaryBetween(last.timestamp, incoming.timestamp, boundaryTimes);
+    if (hasBoundary) {
+      if (incoming.text.startsWith(last.text)) {
+        const deltaText = incoming.text.slice(last.text.length);
+        return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
+      }
+      return [...items, incoming];
+    }
+
     if (last.id === incoming.id || shouldMergeAssistantStreamChunk(last, incoming)) {
       const isCumulativeSnapshot = incoming.text.startsWith(last.text);
       const nextText = isCumulativeSnapshot ? incoming.text : `${last.text}${incoming.text}`;
@@ -247,12 +326,6 @@ export function mergeAgentMessages(items: AgentMessage[], incoming: AgentMessage
           timestamp: incoming.timestamp,
         },
       ];
-    }
-
-    const hasBoundary = hasTimelineBoundaryBetween(last.timestamp, incoming.timestamp, boundaryTimes);
-    if (hasBoundary && incoming.text.startsWith(last.text)) {
-      const deltaText = incoming.text.slice(last.text.length);
-      return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
     }
   }
 

@@ -176,6 +176,78 @@ test("groupToolCalls recognizes OpenCode skill tools that combine heading and co
   assert.equal(grouped[0]?.title, "Skill: review-work");
 });
 
+test("groupToolCalls extracts Claude Code Skill tool invocations from structured input", () => {
+  // Real payload from C:/Users/qjq/.claude/projects/.../*.jsonl: tool_use
+  // entries with name="Skill" and input={"skill":"<name>"}, transported through
+  // ACP as kind:"tool" with title="Tool: Skill" and a JSON-encoded input.
+  const grouped = groupToolCalls([
+    {
+      id: "call-claude-skill",
+      kind: "tool",
+      title: "Tool: Skill",
+      status: "completed",
+      input: JSON.stringify({ skill: "update-config" }),
+      output: "Skill loaded.",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: update-config");
+});
+
+test("groupToolCalls ignores generic 'name' input fields to avoid false skill matches", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-not-skill",
+      kind: "tool",
+      title: "Tool: read_resource",
+      status: "completed",
+      input: JSON.stringify({ name: "config.json" }),
+      output: "{...}",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Tool: read_resource");
+});
+
+test("groupToolCalls extracts Codex skill names when kind is 'tool' (not terminal)", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-skill-tool-kind",
+      kind: "tool",
+      title: "Get-Content -Raw 'C:\\Users\\qjq\\.codex\\plugins\\cache\\openai-curated\\superpowers\\3c463363\\skills\\brainstorming\\SKILL.md'",
+      status: "completed",
+      input: JSON.stringify({
+        command: ["powershell.exe", "-Command", "Get-Content -Raw 'C:\\Users\\qjq\\.codex\\plugins\\cache\\openai-curated\\superpowers\\3c463363\\skills\\brainstorming\\SKILL.md'"],
+      }),
+      output: "---\nname: brainstorming\ndescription: ...\n---",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: superpowers:brainstorming");
+});
+
+test("groupToolCalls falls back to SKILL.md frontmatter name when path is unavailable", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-frontmatter-only",
+      kind: "tool",
+      title: "Tool: read_file",
+      status: "completed",
+      output: "---\nname: brainstorming\ndescription: design ideation\n---\n\n# Brainstorming",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: brainstorming");
+});
+
 test("groupToolCalls does not classify Codex terminal output as a skill without a SKILL.md command", () => {
   const grouped = groupToolCalls([
     {
@@ -246,6 +318,35 @@ test("buildConversationTimeline keeps assistant messages split around inserted t
         id: "tool-between-messages",
         kind: "tool",
         title: "Skill: frontend-design",
+        status: "completed",
+        timestamp: "2026-04-28T10:00:02.000Z",
+        updatedAt: "2026-04-28T10:00:02.000Z",
+      },
+    ],
+  );
+
+  assert.equal(timeline.length, 3);
+  assert.equal(timeline[0]?.kind, "message");
+  assert.equal(timeline[1]?.kind, "tool");
+  assert.equal(timeline[2]?.kind, "message");
+  if (timeline[0]?.kind === "message" && timeline[2]?.kind === "message") {
+    assert.equal(timeline[0].message.text, "先说明");
+    assert.equal(timeline[2].message.text, "再继续");
+  }
+});
+
+test("buildConversationTimeline splits runtime assistant chunks across tool boundaries", () => {
+  const timeline = buildConversationTimeline(
+    [
+      { id: "session-1-msg-1000", role: "assistant", text: "先说明", timestamp: "2026-04-28T10:00:01.000Z" },
+      { id: "session-1-msg-1001", role: "assistant", text: "再继续", timestamp: "2026-04-28T10:00:03.000Z" },
+    ],
+    [],
+    [
+      {
+        id: "tool-between-runtime-chunks",
+        kind: "tool",
+        title: "Tool: mcp_router/search_context",
         status: "completed",
         timestamp: "2026-04-28T10:00:02.000Z",
         updatedAt: "2026-04-28T10:00:02.000Z",

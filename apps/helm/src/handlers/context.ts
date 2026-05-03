@@ -28,6 +28,7 @@ export type HelmHandlerContext = {
   broadcastAuthenticated: (payload: HelmToClient) => void;
   logInfo: (message: string) => void;
   logDebug: (message: string) => void;
+  logWarn: (message: string) => void;
   logError: (message: string) => void;
 
   getHelms: () => HelmSummary[];

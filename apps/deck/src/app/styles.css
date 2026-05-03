@@ -1880,6 +1880,59 @@ textarea:focus,
   color: #667085;
 }
 
+.mission-permission-drawer {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #e5eefc;
+}
+
+.mission-permission-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.mission-permission-copy strong {
+  overflow-wrap: anywhere;
+}
+
+.mission-permission-actions {
+  flex-shrink: 0;
+}
+
+.theme-light .mission-permission-drawer,
+[data-deck-theme="light"] .mission-permission-drawer {
+  background: rgba(255, 255, 255, 0.96);
+  color: #172033;
+  box-shadow: 0 -12px 34px rgba(30, 41, 59, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+@media (max-width: 720px) {
+  .mission-permission-drawer {
+    width: calc(100% - 20px);
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mission-permission-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .mission-permission-actions button {
+    flex: 1;
+  }
+}
+
 .mission-tool-loading {
   display: inline-flex;
   align-items: center;
@@ -8638,7 +8691,7 @@ textarea:focus,
 
 .view-sessions .mission-tree-row-session {
   min-height: 24px;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   padding-left: 28px;
   padding-right: 6px;
 }
@@ -9433,6 +9486,53 @@ textarea:focus,
   margin-left: 0;
   padding-left: 24px;
   padding-right: 28px;
+}
+
+.view-sessions .mission-tree-session-row.is-running .mission-tree-row-session {
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.view-sessions .mission-tree-session-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid rgba(96, 165, 250, 0.26);
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.16);
+  color: #bfdbfe;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-tree-session-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #60a5fa;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.12);
+  animation: mission-session-status-pulse 1.2s ease-in-out infinite;
+}
+
+.view-sessions .mission-tree-session-status-waiting_for_permission {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.view-sessions .mission-tree-session-status-waiting_for_permission i {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+}
+
+@keyframes mission-session-status-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+.motion-reduced .view-sessions .mission-tree-session-status i {
+  animation: none;
 }
 
 .view-sessions .mission-logbook-page {

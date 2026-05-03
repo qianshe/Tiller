@@ -44,7 +44,7 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
       event: {
         type: "message",
         message: {
-          id: update.messageId ?? `${sessionId}-msg-${Date.now()}`,
+          id: resolveMessageId(sessionId, update),
           role: updateType === "user_message_chunk" ? "user" : "assistant",
           text,
           timestamp: timestamp(),
@@ -416,6 +416,10 @@ function stringFrom(value: unknown): string | undefined {
   return undefined;
 }
 
+function resolveMessageId(sessionId: string, update: any) {
+  return stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ?? `${sessionId}-msg-${Date.now()}`;
+}
+
 function extractPermissionRequest(sessionId: string, updateType: string | undefined, update: any): PermissionRequest | null {
   if (!/permission/iu.test(updateType ?? "")) {
     return null;
@@ -574,7 +578,7 @@ function extractTextContent(content: any): string | null {
     return content.content;
   }
 
-  return null;
+  return extractTextContent(content.content) ?? null;
 }
 
 function normalizeSessionStatus(updateType: string | undefined): SessionStatus | null {

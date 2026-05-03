@@ -16,11 +16,11 @@ or announce a public release until every required gate is complete.
 ## 2. Package gates
 
 - [ ] `pnpm --filter @tiller/deck build`
-- [ ] `pnpm --filter @qianshe/tiller test`
-- [ ] `pnpm --filter @qianshe/tiller typecheck`
+- [ ] `pnpm --filter @tiller/helm test`
+- [ ] `pnpm --filter @tiller/helm typecheck`
 - [ ] `pnpm --filter @tiller/deck typecheck`
-- [ ] `pnpm --filter @qianshe/tiller build`
-- [ ] `pnpm --filter @qianshe/tiller pack`
+- [ ] `pnpm --filter @tiller/helm build`
+- [ ] `pnpm --filter @tiller/helm pack:npm`
 - [ ] Install tarball in a clean temp directory.
 - [ ] Run `tiller` from the tarball without monorepo source access.
 - [ ] Confirm package contains only expected files.

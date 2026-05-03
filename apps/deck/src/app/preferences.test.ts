@@ -1,7 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE as ENGINE_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE } from "../features/prompt-enhancer/enhancer.js";
-import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT } from "./preferences.js";
+import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, DECK_PREFERENCES_STORAGE_KEY, readDeckPreferences } from "./preferences.js";
+
+function withStoredPreferences(raw: string, callback: () => void) {
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  const store = new Map([[DECK_PREFERENCES_STORAGE_KEY, raw]]);
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+      },
+    },
+  });
+  try {
+    callback();
+  } finally {
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+    }
+  }
+}
+
+test("default technical panel preferences keep approval workspace visible", () => {
+  assert.equal(DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorkspace, true);
+});
+
+test("readDeckPreferences preserves stored technical panel preferences", () => {
+  withStoredPreferences(JSON.stringify({
+    technicalPanels: {
+      logbookDefaultOpen: true,
+      diffDefaultOpen: true,
+      showSessionRuntimeMeta: false,
+      showPermissionWorkspace: false,
+      showConnectionDebug: true,
+    },
+  }), () => {
+    const preferences = readDeckPreferences();
+
+    assert.deepEqual(preferences.technicalPanels, {
+      logbookDefaultOpen: true,
+      diffDefaultOpen: true,
+      showSessionRuntimeMeta: false,
+      showPermissionWorkspace: false,
+      showConnectionDebug: true,
+    });
+  });
+});
+
 
 test("default preferences use the prompt enhancer engine template", () => {
   assert.equal(DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate, ENGINE_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE);

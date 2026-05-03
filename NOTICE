@@ -5,7 +5,7 @@ Tiller is a local-first command deck runtime for ACP coding agents.
 
 This repository includes first-party workspace packages under apps/ and
 packages/. Runtime builds may bundle first-party workspace code and the Deck
-static assets into the @tiller/helm package.
+static assets into the @qianshe/tiller npm package.
 
 Third-party dependencies retain their own licenses. Review package manifests
 and lockfiles before publishing a release artifact.
