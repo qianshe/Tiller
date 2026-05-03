@@ -32,7 +32,7 @@ import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
 import { shouldAttemptSilentReconnect, shouldEnsureLiveConnection } from "../connection/reconnect-policy";
 import { enhancePromptWithLlm, listPromptEnhancerModels, testPromptEnhancerConnectivity, type PromptEnhancerModelOption, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
-import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveModelOptionsFromConfig, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitle, toggleExpandedIdSet } from "../state/sessions";
+import { createSessionStatusMap, pruneSessionScopedMap, resolveActiveSessionId, resolveDraftSelectionId, resolveMissionHelms, resolveMissionSelectedProjectId, resolveModelOptionsFromConfig, resolveProjectFilesScope, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitle, toggleExpandedIdSet } from "../state/sessions";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache, type TrustedDeviceCache } from "../auth/beacon-cache";
 import { MissionPanelNav, type MissionPanelPage } from "../features/mission/panels";
 import { buildMissionDiffTree, formatDiffStatus, renderDiffPatch, renderDiffStats, type MissionDiffTreeNode } from "../features/mission/diff-tree";
@@ -41,7 +41,7 @@ import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessag
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 import { toast } from "../features/toast/toast";
-import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint";
+import { createHelmWebSocketUrl, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";
@@ -83,7 +83,7 @@ const UI_COPY = {
   "zh-CN": {
     localeLabel: "中文",
     heroEyebrow: "ACP Coding Agent 舰队指挥甲板",
-    heroBody: "一个 Command Deck，可连接多个 Helm，管理多个 ACP 舰员。先选项目，再进入该项目下的任务，会话成立后 ACP 舰员会被锁定。",
+    heroBody: "一个同源内置 Deck，管理当前 Tiller 的项目、工作区与 ACP 舰员。先选项目，再进入该项目下的任务，会话成立后 ACP 舰员会被锁定。",
     connection: {
       connecting: "连接中",
       connected: "已连接",
@@ -915,7 +915,12 @@ export function App() {
       currentProfile,
       ...daemonProfiles,
       ...getDevelopmentMockHelmProfiles(),
-    ].map(daemonProfileToHelmSummary).concat(helms));
+    ].map(daemonProfileToHelmSummary).concat(normalizeEmbeddedHelmSummaries({
+      embedded: IS_EMBEDDED_HELM_DECK,
+      host: currentHost,
+      port: currentPort,
+      helms,
+    })));
   }, [daemonHost, daemonPort, daemonProfiles, helms]);
   const activeHelm = useMemo(() => {
     const helmId = activeSession?.helmId ?? draftProject?.helmId;
@@ -950,6 +955,7 @@ export function App() {
     [projects, sessions],
   );
   const activeSessionProjectId = activeSession ? resolveSessionProjectId(activeSession, projects) : null;
+  const missionSelectedProjectId = resolveMissionSelectedProjectId({ activeSessionProjectId, selectedProjectId });
   const activeSessionProject = activeSessionProjectId ? projects.find((project) => project.id === activeSessionProjectId) ?? null : null;
   const activeStatus = activeSession ? copy.status[statuses[activeSession.id] ?? activeSession.status] : copy.status.idle;
   const activeResumeLabel = formatResumeLabel(activeSession?.resume, locale);
@@ -1179,17 +1185,22 @@ export function App() {
   }, [pairingState, selectedProjectId]);
 
   useEffect(() => {
-    if (!activeSession || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+    const scope = resolveProjectFilesScope({
+      activeSession,
+      activeSessionProjectId: activeSession ? resolveSessionProjectId(activeSession, projects) : null,
+      selectedProjectId,
+      selectedWorkspaceId,
+    });
+    if (!scope.projectId || !scope.workspaceId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
-    const projectId = resolveSessionProjectId(activeSession, projects);
-    const key = projectFilesKey(projectId, activeSession.workspaceId);
+    const key = projectFilesKey(scope.projectId, scope.workspaceId);
     setProjectFilesByScope((current) => ({
       ...current,
       [key]: { loading: true, files: current[key]?.files ?? [], message: "正在加载项目文件..." },
     }));
-    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId, workspaceId: activeSession.workspaceId });
-  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects]);
+    dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId: scope.projectId, workspaceId: scope.workspaceId });
+  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects, selectedProjectId, selectedWorkspaceId]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -3392,7 +3403,8 @@ case "session.messages.list.result":
     const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
     const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
     const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
-    const projectFilesEntry = activeSession && activeSessionProjectId ? projectFilesByScope[projectFilesKey(activeSessionProjectId, activeSession.workspaceId)] : undefined;
+    const projectFilesScope = resolveProjectFilesScope({ activeSession, activeSessionProjectId, selectedProjectId, selectedWorkspaceId });
+    const projectFilesEntry = projectFilesScope.projectId && projectFilesScope.workspaceId ? projectFilesByScope[projectFilesKey(projectFilesScope.projectId, projectFilesScope.workspaceId)] : undefined;
     const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
     const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? draftProject?.name ?? "未选项目";
     const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
@@ -3622,7 +3634,7 @@ case "session.messages.list.result":
                           {helmExpanded ? (
                             <div className="mission-tree-children mission-tree-children-projects" role="group">
                               {helmProjects.map((project) => {
-                              const selectedProject = project.id === selectedProjectId;
+                              const selectedProject = project.id === missionSelectedProjectId;
                               const projectExpanded = expandedMissionProjectIds.has(project.id);
                               const projectNodeSessions = sessions.filter((session) => resolveSessionProjectId(session, projects) === project.id);
                               return (

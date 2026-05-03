@@ -113,6 +113,25 @@ export function resolveMissionHelms(
   return [...knownHelms, selectedHelm];
 }
 
+export function resolveProjectFilesScope(input: {
+  activeSession: Pick<SessionSummary, "workspaceId"> | null | undefined;
+  activeSessionProjectId: string | null | undefined;
+  selectedProjectId: string | null | undefined;
+  selectedWorkspaceId: string | null | undefined;
+}) {
+  if (input.activeSession && input.activeSessionProjectId) {
+    return { projectId: input.activeSessionProjectId, workspaceId: input.activeSession.workspaceId };
+  }
+  return { projectId: input.selectedProjectId ?? null, workspaceId: input.selectedWorkspaceId ?? null };
+}
+
+export function resolveMissionSelectedProjectId(input: {
+  activeSessionProjectId: string | null | undefined;
+  selectedProjectId: string | null | undefined;
+}) {
+  return input.activeSessionProjectId ?? input.selectedProjectId ?? null;
+}
+
 export function resolveModelOptionsFromConfig(
   currentModel: string | undefined,
   configOptions: SessionConfigOption[] = [],

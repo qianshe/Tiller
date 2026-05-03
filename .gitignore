@@ -42,7 +42,11 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 .serena/
-docs/
+**/docs/*
+!/docs/
+!/docs/RELEASE_CHECKLIST.md
+!/docs/LICENSE_STRATEGY.md
+!/docs/PRODUCTIZATION.md
 .ace-tool/
 .sisyphus/
 

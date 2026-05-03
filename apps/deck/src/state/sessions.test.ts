@@ -5,11 +5,13 @@ import {
   applySessionListSnapshot,
   resolveDraftSelectionId,
   resolveMissionHelms,
+  resolveProjectFilesScope,
   resolveModelOptionsFromConfig,
   resolvePromptPlaceholder,
   resolveSessionProjectId,
   resolveSessionTitle,
   toggleExpandedIdSet,
+  resolveMissionSelectedProjectId,
 } from "./sessions.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
@@ -198,6 +200,30 @@ test("resolveMissionHelms keeps configured helms even when they have no projects
   const connectedHelm: HelmSummary = { id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 };
   const mockHelm: HelmSummary = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: 47632 };
   assert.deepEqual(resolveMissionHelms([connectedHelm, mockHelm], connectedHelm.id), [connectedHelm, mockHelm]);
+});
+
+test("resolveProjectFilesScope uses active session scope when a session is open", () => {
+  const activeSession = { ...buildSession("session-1", "2026-04-27T10:00:00.000Z"), projectId: "session-project", workspaceId: "session-workspace" };
+
+  assert.deepEqual(resolveProjectFilesScope({ activeSession, activeSessionProjectId: "resolved-session-project", selectedProjectId: "draft-project", selectedWorkspaceId: "draft-workspace" }), {
+    projectId: "resolved-session-project",
+    workspaceId: "session-workspace",
+  });
+});
+
+test("resolveProjectFilesScope uses draft project and workspace before a session starts", () => {
+  assert.deepEqual(resolveProjectFilesScope({ activeSession: null, activeSessionProjectId: null, selectedProjectId: "draft-project", selectedWorkspaceId: "draft-workspace" }), {
+    projectId: "draft-project",
+    workspaceId: "draft-workspace",
+  });
+});
+
+test("resolveMissionSelectedProjectId prefers the active session project over stale draft selection", () => {
+  assert.equal(resolveMissionSelectedProjectId({ activeSessionProjectId: "session-project", selectedProjectId: "draft-project" }), "session-project");
+});
+
+test("resolveMissionSelectedProjectId falls back to the draft project before a session starts", () => {
+  assert.equal(resolveMissionSelectedProjectId({ activeSessionProjectId: null, selectedProjectId: "draft-project" }), "draft-project");
 });
 
 

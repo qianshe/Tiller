@@ -1,3 +1,5 @@
+import type { HelmSummary } from "@tiller/shared";
+
 type StorageLike = Pick<Storage, "getItem">;
 
 type LocationLike = Pick<Location, "protocol" | "hostname" | "host" | "port">;
@@ -41,6 +43,24 @@ export function createHelmWebSocketUrl(input: CreateHelmWebSocketUrlInput) {
 
 export function shouldRequestInitialSyncOnOpen(input: { embedded: boolean; hasTrustedDeviceCache: boolean }) {
   return input.embedded || input.hasTrustedDeviceCache;
+}
+
+export function normalizeEmbeddedHelmSummaries(input: {
+  embedded: boolean;
+  host: string;
+  port: string;
+  helms: HelmSummary[];
+}) {
+  if (!input.embedded) {
+    return input.helms;
+  }
+
+  const endpointPort = Number(input.port);
+  return input.helms.map((helm) => ({
+    ...helm,
+    host: input.host,
+    port: Number.isFinite(endpointPort) ? endpointPort : helm.port,
+  }));
 }
 
 function defaultPortForProtocol(protocol: string) {

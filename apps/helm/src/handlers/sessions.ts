@@ -2,7 +2,7 @@ import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
-import type { SessionSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
 import type { HelmMessageHandler } from "./context";
 
 type SessionSummaryPageOptions = {
@@ -59,6 +59,17 @@ function decodeHistoryCursor(cursor: string | undefined) {
     return null;
   }
   return { updatedAt, createdAt, id };
+}
+
+export function resolveProjectSessionWorkspace(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId: string) {
+  const workspace = workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    return undefined;
+  }
+  if (project.path && (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch)) {
+    return { ...workspace, path: project.path };
+  }
+  return workspace;
 }
 
 export const handleSessionMessage: HelmMessageHandler = async (socket, payload, context) => {
@@ -154,7 +165,7 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       context.setProjects(projects);
 
       const project = context.resolveProjectById(payload.projectId, projects);
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      const workspace = project ? resolveProjectSessionWorkspace(project, workspaces, payload.workspaceId) : undefined;
       const agent = context.resolveProviderById(payload.agentId, agents);
       const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
@@ -371,15 +382,33 @@ export async function cleanupActiveRuntime(runtime: {
   cancel: () => void;
 }, providerId: string): Promise<ProviderCleanupResult> {
   if (runtime.sessionCapabilities?.sessionDelete && runtime.deleteSession) {
-    const deleted = await runtime.deleteSession();
-    runtime.cancel();
-    if (deleted.kind === "remote-deleted") {
-      return deleted;
+    try {
+      const deleted = await runtime.deleteSession();
+      runtime.cancel();
+      if (deleted.kind === "remote-deleted") {
+        return deleted;
+      }
+    } catch (error) {
+      runtime.cancel();
+      return {
+        kind: "remote-delete-failed",
+        providerId,
+        message: error instanceof Error ? error.message : "Failed to delete remote ACP session.",
+      };
     }
   }
 
   if (runtime.sessionCapabilities?.sessionClose && runtime.close) {
-    return runtime.close();
+    try {
+      return await runtime.close();
+    } catch (error) {
+      runtime.cancel();
+      return {
+        kind: "remote-close-failed",
+        providerId,
+        message: error instanceof Error ? error.message : "Failed to close remote ACP session.",
+      };
+    }
   }
 
   runtime.cancel();

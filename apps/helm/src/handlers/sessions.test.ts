@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
-import { cleanupActiveRuntime } from "./sessions";
+import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import { cleanupActiveRuntime, resolveProjectSessionWorkspace } from "./sessions";
 
 test("cleanupActiveRuntime prefers ACP session/delete over close", async () => {
   const calls: string[] = [];
@@ -21,6 +22,25 @@ test("cleanupActiveRuntime prefers ACP session/delete over close", async () => {
   }, "agent");
 
   assert.equal(result.kind, "remote-deleted");
+  assert.deepEqual(calls, ["delete", "cancel"]);
+});
+
+test("cleanupActiveRuntime still terminates local runtime when ACP delete throws", async () => {
+  const calls: string[] = [];
+  const result = await cleanupActiveRuntime({
+    sessionCapabilities: { sessionDelete: true },
+    async deleteSession() {
+      calls.push("delete");
+      throw new Error("Session not found: ses_missing");
+    },
+    cancel() {
+      calls.push("cancel");
+    },
+  }, "opencode");
+
+  assert.equal(result.kind, "remote-delete-failed");
+  assert.equal(result.providerId, "opencode");
+  assert.match(result.message, /Session not found: ses_missing/);
   assert.deepEqual(calls, ["delete", "cancel"]);
 });
 
@@ -52,4 +72,35 @@ test("cleanupActiveRuntime terminates local runtime when ACP cleanup is unsuppor
 
   assert.equal(result.kind, "unsupported");
   assert.deepEqual(calls, ["cancel"]);
+});
+
+const project: ProjectSummary = {
+  id: "project-1",
+  name: "Project One",
+  helmId: "local-helm",
+  path: "D:/repo/project-one",
+  workspaceIds: ["main", "project-1-worktree-feature"],
+  defaultWorkspaceId: "main",
+  gitCurrentBranch: "main",
+};
+
+const workspaces: WorkspaceSummary[] = [
+  { id: "main", name: "main", path: "D:/repo/project-two" },
+  { id: "project-1-worktree-feature", name: "feature", path: "D:/repo/project-one/.tiller/worktrees/feature" },
+];
+
+test("resolveProjectSessionWorkspace uses project path for root branch workspace", () => {
+  assert.deepEqual(resolveProjectSessionWorkspace(project, workspaces, "main"), {
+    id: "main",
+    name: "main",
+    path: "D:/repo/project-one",
+  });
+});
+
+test("resolveProjectSessionWorkspace keeps explicit worktree path", () => {
+  assert.deepEqual(resolveProjectSessionWorkspace(project, workspaces, "project-1-worktree-feature"), {
+    id: "project-1-worktree-feature",
+    name: "feature",
+    path: "D:/repo/project-one/.tiller/worktrees/feature",
+  });
 });

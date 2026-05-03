@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHelmWebSocketUrl, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint.js";
+import { createHelmWebSocketUrl, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint.js";
 
 const storage = {
   getItem(key: string) {
@@ -42,4 +42,26 @@ test("shouldRequestInitialSyncOnOpen syncs embedded Helm even without trusted ca
 
 test("shouldRequestInitialSyncOnOpen waits for pairing in non-embedded mode without trusted cache", () => {
   assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: false }), false);
+});
+
+test("normalizeEmbeddedHelmSummaries rewrites embedded Helm endpoint to current browser endpoint", () => {
+  const helms = normalizeEmbeddedHelmSummaries({
+    embedded: true,
+    host: "127.0.0.1",
+    port: "47631",
+    helms: [{ id: "local-helm", name: "Local Helm", host: "0.0.0.0", port: 47631 }],
+  });
+
+  assert.deepEqual(helms, [{ id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 }]);
+});
+
+test("normalizeEmbeddedHelmSummaries keeps public web endpoints unchanged", () => {
+  const helms = normalizeEmbeddedHelmSummaries({
+    embedded: false,
+    host: "127.0.0.1",
+    port: "47631",
+    helms: [{ id: "local-helm", name: "Local Helm", host: "0.0.0.0", port: 47631 }],
+  });
+
+  assert.deepEqual(helms, [{ id: "local-helm", name: "Local Helm", host: "0.0.0.0", port: 47631 }]);
 });

@@ -141,13 +141,20 @@ pnpm --filter @qianshe/tiller build
 
 ## 发布状态
 
-当前仍是早期产品化阶段。正式发布 npm、创建 GitHub tag 或开放源码协议前，应先确认：
+当前仍是早期产品化阶段，**暂缓 npm 发布和 GitHub tag**。正式发布前必须先通过：
+
+- [Release Checklist](docs/RELEASE_CHECKLIST.md)
+- [Productization Notes](docs/PRODUCTIZATION.md)
+- [License Strategy](docs/LICENSE_STRATEGY.md)
+
+发布前至少确认：
 
 - 包名、版本号和 dist-tag
 - README 与 package metadata
-- 是否公开源码，以及采用哪种许可证
-- GitHub release 与 npm publish 是否指向同一个 commit
+- 许可证文本与 package `license` 字段一致
+- GitHub release 与 npm publish 指向同一个 commit
+- 打包产物脱离 monorepo 后可独立运行
 
 ## License
 
-暂未开放开源授权。当前 npm 包元数据使用 `UNLICENSED`，避免在产品策略未定前意外授予开源使用权。
+暂未开放开源授权。当前仓库使用 all-rights-reserved `LICENSE`，npm 包元数据继续使用 `UNLICENSED`，避免在产品策略未定前意外授予开源使用权。

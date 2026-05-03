@@ -51,8 +51,11 @@ function isPathInsideRoot(root: string, candidate: string) {
   return relativePath === "" || (Boolean(relativePath) && !relativePath.startsWith("..") && !resolve(relativePath).startsWith(".."));
 }
 
-function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
+export function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
   const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
+  if (project.path && (!workspace || workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch)) {
+    return project.path;
+  }
   return workspace?.path ?? resolveProjectRoot(project, workspaces);
 }
 

@@ -5,12 +5,43 @@ import { join } from "node:path";
 import test from "node:test";
 import { readTillerConfig } from "@tiller/agent-registry";
 import type { ProjectSummary } from "@tiller/shared";
-import { persistProjectGitInfo, resolveProjectWorkspaceId, shouldPersistProjectGitInfo } from "./config.js";
+import { persistProjectGitInfo, resolveProjectFileRoot, resolveProjectWorkspaceId, shouldPersistProjectGitInfo } from "./config.js";
 
 test("resolveProjectWorkspaceId prefers current Git branch over project-scoped fallback", () => {
   assert.equal(resolveProjectWorkspaceId({ id: "project-1" }, "main"), "main");
   assert.equal(resolveProjectWorkspaceId({ id: "project-1", gitCurrentBranch: "develop" }), "develop");
   assert.equal(resolveProjectWorkspaceId({ id: "project-1" }), "project-1-workspace");
+});
+
+test("resolveProjectFileRoot prefers project path for root branch workspace ids", () => {
+  const project: ProjectSummary = {
+    id: "project-1",
+    name: "Project One",
+    helmId: "local-helm",
+    path: "D:/repo/project-one",
+    workspaceIds: ["main"],
+    defaultWorkspaceId: "main",
+    gitCurrentBranch: "main",
+  };
+
+  assert.equal(resolveProjectFileRoot(project, [{ id: "main", name: "main", path: "D:/repo/project-two" }], "main"), "D:/repo/project-one");
+});
+
+test("resolveProjectFileRoot keeps explicit worktree workspace paths", () => {
+  const project: ProjectSummary = {
+    id: "project-1",
+    name: "Project One",
+    helmId: "local-helm",
+    path: "D:/repo/project-one",
+    workspaceIds: ["main", "project-1-worktree-feature"],
+    defaultWorkspaceId: "main",
+    gitCurrentBranch: "main",
+  };
+
+  assert.equal(
+    resolveProjectFileRoot(project, [{ id: "project-1-worktree-feature", name: "feature", path: "D:/repo/project-one/.tiller/worktrees/feature" }], "project-1-worktree-feature"),
+    "D:/repo/project-one/.tiller/worktrees/feature",
+  );
 });
 
 test("shouldPersistProjectGitInfo detects legacy project workspace ids even when branches are unchanged", () => {
