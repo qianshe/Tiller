@@ -562,7 +562,12 @@ export const handleConfigMessage: HelmMessageHandler = async (socket, payload, c
     }
     case "agent.model.options.get": {
       const agent = context.resolveProviderById(payload.providerId, context.getAgents());
-      const workspace = context.getWorkspaces().find((item) => item.id === payload.workspaceId);
+      const workspaces = context.getWorkspaces();
+      const baseWorkspace = workspaces.find((item) => item.id === payload.workspaceId);
+      const project = payload.projectId ? context.resolveProjectById(payload.projectId, context.getProjects()) : undefined;
+      const workspace = project && baseWorkspace && isProjectRootBranchWorkspace(project, baseWorkspace)
+        ? { ...baseWorkspace, path: project.path }
+        : baseWorkspace;
       if (!agent || !workspace) {
         context.emit(socket, {
           type: "agent.model.options.result",

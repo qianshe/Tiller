@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createPublishPackageManifest } from "./package-manifest.mjs";
@@ -10,6 +10,15 @@ const packagedDeck = resolve(helmRoot, "dist/deck");
 const publishRoot = resolve(helmRoot, "dist-package");
 const publishDist = resolve(publishRoot, "dist");
 const packageJsonPath = resolve(helmRoot, "package.json");
+
+const TOP_LEVEL_DOC_FILES = [
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "SECURITY.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+];
 
 run("pnpm", ["--filter", "@tiller/deck", "build"], {
   cwd: root,
@@ -30,6 +39,12 @@ function writePublishPackage() {
   mkdirSync(publishRoot, { recursive: true });
   cpSync(resolve(helmRoot, "dist"), publishDist, { recursive: true });
   writeFileSync(resolve(publishRoot, "package.json"), `${JSON.stringify(publishManifest, null, 2)}\n`, "utf8");
+  for (const fileName of TOP_LEVEL_DOC_FILES) {
+    const sourcePath = resolve(root, fileName);
+    if (existsSync(sourcePath)) {
+      cpSync(sourcePath, resolve(publishRoot, fileName));
+    }
+  }
 }
 
 function run(command, args, options) {

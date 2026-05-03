@@ -82,6 +82,7 @@ export type ClientToHelm =
       requestId: string;
       providerId: string;
       workspaceId: string;
+      projectId?: string;
     }
   | {
       type: "agent.save";

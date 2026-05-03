@@ -1261,8 +1261,9 @@ export function App() {
       requestId: nextRequestId(requestCounter),
       providerId: selectedAgentId,
       workspaceId: selectedWorkspaceId,
+      projectId: selectedProjectId ?? undefined,
     });
-  }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedModel, selectedWorkspaceId]);
+  }, [activeSession, agentModelOptions, pairingState, selectedAgentId, selectedModel, selectedProjectId, selectedWorkspaceId]);
 
   useEffect(() => {
     if (activeView !== "sessions") {
