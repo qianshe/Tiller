@@ -7,6 +7,7 @@ import { listAvailableProviders, readTillerConfig, saveHelmToConfig, saveProject
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type { ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
+import { isProjectRootBranchWorkspace } from "../sessions/project-binding";
 import type { HelmMessageHandler } from "./context";
 
 
@@ -53,8 +54,10 @@ function isPathInsideRoot(root: string, candidate: string) {
 
 export function resolveProjectFileRoot(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId?: string) {
   const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
-  if (project.path && (!workspace || workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch)) {
-    return project.path;
+  if (!workspace || isProjectRootBranchWorkspace(project, workspace)) {
+    if (project.path) {
+      return project.path;
+    }
   }
   return workspace?.path ?? resolveProjectRoot(project, workspaces);
 }

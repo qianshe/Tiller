@@ -116,8 +116,6 @@ export function resolveMissionHelms(
 export function resolveProjectFilesScope(input: {
   activeSession: Pick<SessionSummary, "workspaceId"> | null | undefined;
   activeSessionProjectId: string | null | undefined;
-  selectedProjectId: string | null | undefined;
-  selectedWorkspaceId: string | null | undefined;
 }) {
   if (input.activeSession && input.activeSessionProjectId) {
     return { projectId: input.activeSessionProjectId, workspaceId: input.activeSession.workspaceId };

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import { compareTimestampIdPosition, decodeCursor, encodeCursor, normalizePageLimit } from "./pagination";
 
 type SessionArtifacts = {
   outputs: CommandChunk[];
@@ -102,13 +103,13 @@ function isInformativeToolCallTitle(title: string | undefined, id: string) {
 
 export function pageSessionArtifacts(artifacts: SessionArtifacts, options: SessionArtifactPageOptions = {}): SessionArtifactPage {
   const limit = normalizePageLimit(options.limit, DEFAULT_ARTIFACT_PAGE_LIMIT, MAX_ARTIFACT_PAGE_LIMIT);
-  const before = decodeHistoryCursor(options.before);
+  const before = decodeArtifactCursor(options.before);
   const activities = [
     ...artifacts.outputs.map((item) => ({ kind: "output" as const, timestamp: item.timestamp, id: item.id, item })),
     ...artifacts.toolCalls.map((item) => ({ kind: "toolCall" as const, timestamp: item.updatedAt || item.timestamp, id: item.id, item })),
-  ].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
+  ].sort((left, right) => compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id));
   const eligible = before
-    ? activities.filter((activity) => compareHistoryPosition(activity.timestamp, activity.id, before.timestamp, before.id) < 0)
+    ? activities.filter((activity) => compareTimestampIdPosition(activity.timestamp, activity.id, before.timestamp, before.id) < 0)
     : activities;
   const pageActivities = eligible.slice(Math.max(eligible.length - limit, 0));
   const outputIds = new Set(pageActivities.filter((activity) => activity.kind === "output").map((activity) => activity.id));
@@ -119,39 +120,14 @@ export function pageSessionArtifacts(artifacts: SessionArtifacts, options: Sessi
     outputs: artifacts.outputs.filter((item) => outputIds.has(item.id)),
     diffs: artifacts.diffs,
     toolCalls: artifacts.toolCalls.filter((item) => toolCallIds.has(item.id)),
-    nextCursor: hasMore ? encodeHistoryCursor(pageActivities[0]?.timestamp, pageActivities[0]?.id) : undefined,
+    nextCursor: hasMore ? encodeCursor(pageActivities[0]?.timestamp, pageActivities[0]?.id) : undefined,
     hasMore,
   };
 }
 
-function normalizePageLimit(limit: number | undefined, fallback: number, max: number) {
-  if (!Number.isFinite(limit) || !limit || limit < 1) {
-    return fallback;
-  }
-  return Math.min(Math.floor(limit), max);
-}
-
-function encodeHistoryCursor(timestamp: string | undefined, id: string | undefined) {
-  return timestamp && id ? `${timestamp}\t${id}` : undefined;
-}
-
-function decodeHistoryCursor(cursor: string | undefined) {
-  if (!cursor) {
-    return null;
-  }
-  const [timestamp, id] = cursor.split("\t");
-  if (!timestamp || !id) {
-    return null;
-  }
-  return { timestamp, id };
-}
-
-function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTimestamp: string, rightId: string) {
-  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return leftId.localeCompare(rightId);
+function decodeArtifactCursor(cursor: string | undefined) {
+  const parts = decodeCursor(cursor, 2);
+  return parts ? { timestamp: parts[0], id: parts[1] } : null;
 }
 
 function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifacts {
@@ -169,11 +145,11 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
 }
 
 function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
+  return [...items].sort((left, right) => compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id));
 }
 
 function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) => compareHistoryPosition(left.updatedAt || left.timestamp, left.id, right.updatedAt || right.timestamp, right.id));
+  return [...items].sort((left, right) => compareTimestampIdPosition(left.updatedAt || left.timestamp, left.id, right.updatedAt || right.timestamp, right.id));
 }
 
 function persistSessionArtifacts(rootDir: string, sessionId: string, artifacts: SessionArtifacts) {

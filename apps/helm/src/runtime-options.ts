@@ -35,23 +35,39 @@ function normalizeArgv(argv: string[]) {
   return argv[0] === "start" ? argv.slice(1) : argv;
 }
 
-function parseArgs(argv: string[]) {
-  const parsed: { host?: string; port?: string } = {};
+export type TillerArgvTokens = {
+  positional: string[];
+  host?: string;
+  port?: string;
+};
+
+/** Single source of truth for tokenizing Tiller's `--host`/`--port` flags and positional commands. */
+export function tokenizeTillerArgv(argv: string[]): TillerArgvTokens {
+  const positional: string[] = [];
+  let host: string | undefined;
+  let port: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--host") {
-      parsed.host = argv[index + 1];
+      host = argv[index + 1];
       index += 1;
     } else if (arg.startsWith("--host=")) {
-      parsed.host = arg.slice("--host=".length);
+      host = arg.slice("--host=".length);
     } else if (arg === "--port") {
-      parsed.port = argv[index + 1];
+      port = argv[index + 1];
       index += 1;
     } else if (arg.startsWith("--port=")) {
-      parsed.port = arg.slice("--port=".length);
+      port = arg.slice("--port=".length);
+    } else if (!arg.startsWith("--")) {
+      positional.push(arg);
     }
   }
-  return parsed;
+  return { positional, host, port };
+}
+
+function parseArgs(argv: string[]) {
+  const { host, port } = tokenizeTillerArgv(argv);
+  return { host, port };
 }
 
 function firstNonEmpty(...values: Array<string | undefined>) {

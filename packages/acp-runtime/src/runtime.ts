@@ -10,6 +10,10 @@ import { resolveAcpLaunchConfig, resolveAdapterCapabilities } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
 import { resolveRuntimeSessionId } from "./requests";
 import { SDK_PROBE_CLIENT_CAPABILITIES, SDK_RUNTIME_CLIENT_CAPABILITIES, mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
+import {
+  ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
+  ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
+} from "@tiller/shared";
 import type {
   AcpAgentProvider,
   AcpAgentSessionInfo,
@@ -811,8 +815,8 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     if (hasImages && !sessionCapabilities.imageInput) {
       options.onEvent({
         type: "error",
-        code: "ACP_IMAGE_INPUT_UNSUPPORTED",
-        message: "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~",
+        code: ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
+        message: ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
       });
       options.onEvent({ type: "status", status: "error", message: "ACP 不支持图片输入" });
       return;
@@ -1199,6 +1203,9 @@ function writeProtocolLog(logFile: string, stream: "stdin" | "stdout", payload: 
 }
 
 export function sanitizeProtocolLogPayload(payload: unknown): unknown {
+  if (!payloadHasRedactableField(payload)) {
+    return payload;
+  }
   if (Array.isArray(payload)) {
     return payload.map((item) => sanitizeProtocolLogPayload(item));
   }
@@ -1211,6 +1218,24 @@ export function sanitizeProtocolLogPayload(payload: unknown): unknown {
     sanitized[key] = shouldRedactProtocolLogField(key, value) ? redactProtocolLogValue(value) : sanitizeProtocolLogPayload(value);
   }
   return sanitized;
+}
+
+function payloadHasRedactableField(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(payloadHasRedactableField);
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (shouldRedactProtocolLogField(key, child)) {
+      return true;
+    }
+    if (payloadHasRedactableField(child)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function shouldRedactProtocolLogField(key: string, value: unknown) {

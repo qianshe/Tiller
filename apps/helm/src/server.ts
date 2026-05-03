@@ -1,9 +1,8 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { createWriteStream, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { networkInterfaces } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import {
   getDefaultConfigPath,
@@ -26,20 +25,21 @@ import {
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
-import type {
-  AcpAgentProvider,
-  AcpModelState,
-  AgentMessage,
-  AgentPromptContent,
-  FileDiffSummary,
-  HelmSummary,
-  PermissionRequest,
-  ProjectSummary,
-  SessionReasoningEffort,
-  SessionResumeInfo,
-  SessionSummary,
-  TrustedDeviceSummary,
-  WorkspaceSummary,
+import {
+  isWildcardHost,
+  type AcpAgentProvider,
+  type AcpModelState,
+  type AgentMessage,
+  type AgentPromptContent,
+  type FileDiffSummary,
+  type HelmSummary,
+  type PermissionRequest,
+  type ProjectSummary,
+  type SessionReasoningEffort,
+  type SessionResumeInfo,
+  type SessionSummary,
+  type TrustedDeviceSummary,
+  type WorkspaceSummary,
 } from "@tiller/shared";
 import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
 import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
@@ -55,9 +55,9 @@ import { handleDeviceMessage } from "./handlers/devices";
 import { handleSessionMessage } from "./handlers/sessions";
 import type { HelmHandlerContext } from "./handlers/context";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime-events";
-import { assertHelmPortAvailable } from "./port-availability";
+import { assertHelmPortAvailable, resolveLanAddresses } from "./port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime-options";
-import { resolveDeckStaticDir, resolveStaticAsset } from "./static-assets";
+import { loadStaticAsset, resolveDeckStaticDir } from "./static-assets";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
@@ -68,8 +68,10 @@ const DEFAULT_WORKSPACE_ROOT = process.cwd();
 const LOGS_DIR = resolve(dirname(configPath), "logs");
 const TILLER_LOG_FILE = resolve(LOGS_DIR, "tiller.log");
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
+const TILLER_DEBUG_ENABLED = /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? "");
 
 mkdirSync(LOGS_DIR, { recursive: true });
+const tillerLogStream = createWriteStream(TILLER_LOG_FILE, { flags: "a" });
 
 const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
@@ -981,7 +983,7 @@ async function readOptionalSnippet(path: string, maxLength: number) {
 }
 
 async function handleHttpRequest(request: IncomingMessage, response: ServerResponse) {
-  const asset = resolveStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
+  const asset = await loadStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
   if (!asset.ok) {
     response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
     response.end(asset.statusCode === 404 ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build." : "Forbidden");
@@ -989,12 +991,11 @@ async function handleHttpRequest(request: IncomingMessage, response: ServerRespo
   }
 
   try {
-    const body = await readFile(asset.filePath);
     response.writeHead(200, {
-      "cache-control": asset.filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+      "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
       "content-type": asset.contentType,
     });
-    response.end(body);
+    response.end(asset.body);
   } catch (error) {
     logError(`[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`);
     response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
@@ -1003,19 +1004,12 @@ async function handleHttpRequest(request: IncomingMessage, response: ServerRespo
 }
 
 function resolveDisplayUrls() {
-  const hosts = HOST === "0.0.0.0" || HOST === "::" ? ["127.0.0.1", ...resolveLanAddresses()] : [HOST];
+  const hosts = isWildcardHost(HOST) ? ["127.0.0.1", ...resolveLanAddresses()] : [HOST];
   return hosts.map((host) => `http://${host}:${PORT}`);
 }
 
 function resolvePrimaryDisplayHost() {
-  return HOST === "0.0.0.0" || HOST === "::" ? resolveLanAddresses()[0] ?? "127.0.0.1" : HOST;
-}
-
-function resolveLanAddresses() {
-  return Object.values(networkInterfaces())
-    .flatMap((items) => items ?? [])
-    .filter((item) => item.family === "IPv4" && !item.internal)
-    .map((item) => item.address);
+  return isWildcardHost(HOST) ? resolveLanAddresses()[0] ?? "127.0.0.1" : HOST;
 }
 
 function logInfo(message: string) {
@@ -1024,7 +1018,7 @@ function logInfo(message: string) {
 }
 
 function logDebug(message: string) {
-  if (!isHelmDebugEnabled()) {
+  if (!TILLER_DEBUG_ENABLED) {
     return;
   }
   writeLogLine("DEBUG", message);
@@ -1041,12 +1035,8 @@ function logError(message: string) {
   console.error(message);
 }
 
-function isHelmDebugEnabled() {
-  return /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? "");
-}
-
 function writeLogLine(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string) {
-  appendFileSync(TILLER_LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, "utf8");
+  tillerLogStream.write(`${new Date().toISOString()} [${level}] ${message}\n`);
 }
 
 type SessionRecord = {

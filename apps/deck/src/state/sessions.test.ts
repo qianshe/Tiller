@@ -214,14 +214,14 @@ test("resolveMissionHelms keeps configured helms even when they have no projects
 test("resolveProjectFilesScope uses active session scope when a session is open", () => {
   const activeSession = { ...buildSession("session-1", "2026-04-27T10:00:00.000Z"), projectId: "session-project", workspaceId: "session-workspace" };
 
-  assert.deepEqual(resolveProjectFilesScope({ activeSession, activeSessionProjectId: "resolved-session-project", selectedProjectId: "draft-project", selectedWorkspaceId: "draft-workspace" }), {
+  assert.deepEqual(resolveProjectFilesScope({ activeSession, activeSessionProjectId: "resolved-session-project" }), {
     projectId: "resolved-session-project",
     workspaceId: "session-workspace",
   });
 });
 
 test("resolveProjectFilesScope ignores draft project before a session starts", () => {
-  assert.deepEqual(resolveProjectFilesScope({ activeSession: null, activeSessionProjectId: null, selectedProjectId: "draft-project", selectedWorkspaceId: "draft-workspace" }), {
+  assert.deepEqual(resolveProjectFilesScope({ activeSession: null, activeSessionProjectId: null }), {
     projectId: null,
     workspaceId: null,
   });

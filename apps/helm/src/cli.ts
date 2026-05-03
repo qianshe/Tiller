@@ -1,3 +1,5 @@
+import { tokenizeTillerArgv } from "./runtime-options";
+
 export type TillerCliAction =
   | { kind: "start" }
   | { kind: "help" }
@@ -10,29 +12,11 @@ export function resolveTillerCliAction(argv = process.argv.slice(2)): TillerCliA
     return { kind: "help" };
   }
 
-  const command = positionalArgs(argv)[0];
+  const command = tokenizeTillerArgv(argv).positional[0];
   if (!command || command === "start") {
     return { kind: "start" };
   }
-  if (HELP_FLAGS.has(command)) {
-    return { kind: "help" };
-  }
   return { kind: "error", message: `Unknown command: ${command}` };
-}
-
-function positionalArgs(argv: string[]) {
-  const positional: string[] = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--host" || arg === "--port") {
-      index += 1;
-    } else if (arg.startsWith("--")) {
-      continue;
-    } else {
-      positional.push(arg);
-    }
-  }
-  return positional;
 }
 
 export function tillerCliHelp() {

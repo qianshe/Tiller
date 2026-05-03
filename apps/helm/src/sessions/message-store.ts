@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentMessage } from "@tiller/shared";
+import { normalizePageLimit } from "./pagination";
 
 export type SessionMessagePageOptions = {
   limit?: number;
@@ -59,13 +60,6 @@ export function pageSessionMessages(messages: AgentMessage[], options: SessionMe
     nextCursor: hasMore ? encodeOrderCursor(startIndex, page[0]?.id) : undefined,
     hasMore,
   };
-}
-
-function normalizePageLimit(limit: number | undefined, fallback: number, max: number) {
-  if (!Number.isFinite(limit) || !limit || limit < 1) {
-    return fallback;
-  }
-  return Math.min(Math.floor(limit), max);
 }
 
 function encodeOrderCursor(position: number | undefined, id: string | undefined) {

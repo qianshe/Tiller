@@ -1,8 +1,16 @@
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
+import { isProjectRootBranchWorkspace } from "../sessions/project-binding";
 import { applyUserPromptToSummary } from "../sessions/summary-updates";
+import { compareTimestampIdPosition, decodeCursor, encodeCursor, normalizePageLimit } from "../sessions/pagination";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
-import type { ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+import {
+  ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
+  ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
+  type ProjectSummary,
+  type SessionSummary,
+  type WorkspaceSummary,
+} from "@tiller/shared";
 import type { HelmMessageHandler } from "./context";
 
 type SessionSummaryPageOptions = {
@@ -13,7 +21,7 @@ type SessionSummaryPageOptions = {
 function pageSessionSummaries(sessions: SessionSummary[], options: SessionSummaryPageOptions = {}) {
   const sorted = sortSessionSummaries(sessions);
   const limit = normalizePageLimit(options.limit, 25, 200);
-  const before = decodeHistoryCursor(options.before);
+  const before = decodeSessionCursor(options.before);
   const eligible = before
     ? sorted.filter((session) => compareSessionPosition(session, before) > 0)
     : sorted;
@@ -21,7 +29,7 @@ function pageSessionSummaries(sessions: SessionSummary[], options: SessionSummar
   const hasMore = eligible.length > page.length;
   return {
     sessions: page,
-    nextCursor: hasMore ? encodeHistoryCursor(page.at(-1)) : undefined,
+    nextCursor: hasMore ? encodeSessionCursor(page.at(-1)) : undefined,
     hasMore,
   };
 }
@@ -30,7 +38,10 @@ function sortSessionSummaries(sessions: SessionSummary[]) {
   return [...sessions].sort((left, right) => compareSessionPosition(left, right));
 }
 
-function compareSessionPosition(left: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">, right: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">) {
+function compareSessionPosition(
+  left: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">,
+  right: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">,
+) {
   const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
   if (timeDelta !== 0) {
     return timeDelta;
@@ -39,26 +50,13 @@ function compareSessionPosition(left: Pick<SessionSummary, "id" | "createdAt" | 
   return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
 }
 
-function normalizePageLimit(limit: number | undefined, fallback: number, max: number) {
-  if (!Number.isFinite(limit) || !limit || limit < 1) {
-    return fallback;
-  }
-  return Math.min(Math.floor(limit), max);
+function encodeSessionCursor(session: SessionSummary | undefined) {
+  return session ? encodeCursor(session.updatedAt, session.createdAt, session.id) : undefined;
 }
 
-function encodeHistoryCursor(session: SessionSummary | undefined) {
-  return session ? `${session.updatedAt}\t${session.createdAt}\t${session.id}` : undefined;
-}
-
-function decodeHistoryCursor(cursor: string | undefined) {
-  if (!cursor) {
-    return null;
-  }
-  const [updatedAt, createdAt, id] = cursor.split("\t");
-  if (!updatedAt || !createdAt || !id) {
-    return null;
-  }
-  return { updatedAt, createdAt, id };
+function decodeSessionCursor(cursor: string | undefined) {
+  const parts = decodeCursor(cursor, 3);
+  return parts ? { updatedAt: parts[0], createdAt: parts[1], id: parts[2] } : null;
 }
 
 export function resolveProjectSessionWorkspace(project: ProjectSummary, workspaces: WorkspaceSummary[], workspaceId: string) {
@@ -66,7 +64,7 @@ export function resolveProjectSessionWorkspace(project: ProjectSummary, workspac
   if (!workspace) {
     return undefined;
   }
-  if (project.path && (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch)) {
+  if (isProjectRootBranchWorkspace(project, workspace)) {
     return { ...workspace, path: project.path };
   }
   return workspace;
@@ -268,8 +266,8 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
           type: "error",
           requestId: payload.requestId,
           sessionId: payload.sessionId,
-          code: "ACP_IMAGE_INPUT_UNSUPPORTED",
-          message: "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~",
+          code: ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
+          message: ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
         });
         return true;
       }

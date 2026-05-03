@@ -1,5 +1,6 @@
 import { connect } from "node:net";
 import { networkInterfaces } from "node:os";
+import { isWildcardHost } from "@tiller/shared";
 
 export type HelmPortAvailabilityInput = {
   host: string;
@@ -8,12 +9,11 @@ export type HelmPortAvailabilityInput = {
 };
 
 export async function assertHelmPortAvailable({ host, port, timeoutMs = 250 }: HelmPortAvailabilityInput) {
-  const occupiedHosts: string[] = [];
-  for (const probeHost of resolvePortProbeHosts(host)) {
-    if (await canConnect(probeHost, port, timeoutMs)) {
-      occupiedHosts.push(probeHost);
-    }
-  }
+  const probeHosts = resolvePortProbeHosts(host);
+  const probeResults = await Promise.all(
+    probeHosts.map(async (probeHost) => ((await canConnect(probeHost, port, timeoutMs)) ? probeHost : null)),
+  );
+  const occupiedHosts = probeResults.filter((value): value is string => value !== null);
 
   if (occupiedHosts.length) {
     throw new Error(
@@ -27,7 +27,7 @@ export async function assertHelmPortAvailable({ host, port, timeoutMs = 250 }: H
 
 export function resolvePortProbeHosts(host: string) {
   const normalizedHost = host.trim().toLowerCase();
-  if (normalizedHost === "0.0.0.0" || normalizedHost === "::") {
+  if (isWildcardHost(normalizedHost)) {
     return unique(["127.0.0.1", "::1", ...resolveLanAddresses()]);
   }
   if (normalizedHost === "localhost") {
@@ -36,11 +36,16 @@ export function resolvePortProbeHosts(host: string) {
   return [host];
 }
 
-function resolveLanAddresses() {
-  return Object.values(networkInterfaces())
-    .flatMap((items) => items ?? [])
-    .filter((item) => item.family === "IPv4" && !item.internal)
-    .map((item) => item.address);
+let cachedLanAddresses: string[] | null = null;
+
+export function resolveLanAddresses() {
+  if (!cachedLanAddresses) {
+    cachedLanAddresses = Object.values(networkInterfaces())
+      .flatMap((items) => items ?? [])
+      .filter((item) => item.family === "IPv4" && !item.internal)
+      .map((item) => item.address);
+  }
+  return cachedLanAddresses;
 }
 
 function canConnect(host: string, port: number, timeoutMs: number) {

@@ -41,14 +41,12 @@ import { commandChunkToToolCall, groupToolCalls, mergeAgentMessages, mergeMessag
 import { MarkdownMessage } from "../components/markdown";
 import { CommandOutput, DiffSummary, InfoList, PairingBoxes, StatCard } from "../components/primitives";
 import { toast } from "../features/toast/toast";
-import { createHelmWebSocketUrl, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint";
+import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint } from "./helm-endpoint";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";
 const IS_EMBEDDED_HELM_DECK = import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true";
 const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
-const DAEMON_HOST_KEY = "tiller.daemon-host";
-const DAEMON_PORT_KEY = "tiller.daemon-port";
 const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
 const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
 const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
@@ -712,6 +710,23 @@ function SlashCommandPopup({
   );
 }
 
+function availableCommandListsEqual(left: AvailableCommand[] | undefined, right: AvailableCommand[]): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a.name !== b.name || a.description !== b.description || a.input?.hint !== b.input?.hint) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const helmSocketRefs = useRef<Map<string, WebSocket>>(new Map());
@@ -1187,8 +1202,6 @@ export function App() {
     const scope = resolveProjectFilesScope({
       activeSession,
       activeSessionProjectId: activeSession ? resolveSessionProjectId(activeSession, projects) : null,
-      selectedProjectId,
-      selectedWorkspaceId,
     });
     if (!scope.projectId || !scope.workspaceId || pairingState !== "paired" || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       return;
@@ -1199,7 +1212,7 @@ export function App() {
       [key]: { loading: true, files: current[key]?.files ?? [], message: "正在加载项目文件..." },
     }));
     dispatch(socketRef.current, { type: "project.files.list", requestId: nextRequestId(requestCounter), projectId: scope.projectId, workspaceId: scope.workspaceId });
-  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects, selectedProjectId, selectedWorkspaceId]);
+  }, [activeSession?.id, activeSession?.projectId, activeSession?.workspaceId, pairingState, projects]);
 
   useEffect(() => {
     if (!draftProject) {
@@ -1685,9 +1698,7 @@ export function App() {
       }
       if (cache?.token) {
         dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
-        if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: true })) {
-          requestInitialSync(socket);
-        }
+        requestInitialSync(socket);
       }
     });
 
@@ -1773,14 +1784,9 @@ export function App() {
       // helm on :47631) to populate projects/sessions. Pairing-auth helms will
       // reply with `error: not authenticated` and the error handler below will
       // surface the pairing input.
-      if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: false })) {
-        setPairingState("paired");
-        setPairingFeedback("已连接,正在加载...");
-        requestInitialSync(socket);
-        return;
-      }
-      setPairingState("input");
-      setPairingFeedback(copy.pairingHint);
+      setPairingState("paired");
+      setPairingFeedback("已连接,正在加载...");
+      requestInitialSync(socket);
     });
 
     socket.addEventListener("close", () => {
@@ -2068,7 +2074,12 @@ export function App() {
         );
         return;
       case "session.commands":
-        setSessionAvailableCommands((current) => ({ ...current, [payload.sessionId]: payload.commands }));
+        setSessionAvailableCommands((current) => {
+          if (availableCommandListsEqual(current[payload.sessionId], payload.commands)) {
+            return current;
+          }
+          return { ...current, [payload.sessionId]: payload.commands };
+        });
         return;
       case "session.model.options":
         setSessions((current) =>
@@ -2702,10 +2713,10 @@ case "session.messages.list.result":
   }, [slashCommandToken, activeSessionId]);
 
   useEffect(() => {
-    if (slashSelectedIndex >= filteredSlashCommands.length && filteredSlashCommands.length > 0) {
-      setSlashSelectedIndex(0);
-    }
-  }, [filteredSlashCommands, slashSelectedIndex]);
+    setSlashSelectedIndex((current) =>
+      filteredSlashCommands.length > 0 && current >= filteredSlashCommands.length ? 0 : current,
+    );
+  }, [filteredSlashCommands.length]);
 
   useEffect(() => {
     if (!slashPopupOpen) {
@@ -3423,7 +3434,7 @@ case "session.messages.list.result":
     const missionChatPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.chat}px` } as CSSProperties;
     const missionDisplayPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.display}px` } as CSSProperties;
     const missionInspectorPaneStyle = { flexBasis: `${resolvedMissionPaneWidths.inspector}px` } as CSSProperties;
-    const projectFilesScope = resolveProjectFilesScope({ activeSession, activeSessionProjectId, selectedProjectId, selectedWorkspaceId });
+    const projectFilesScope = resolveProjectFilesScope({ activeSession, activeSessionProjectId });
     const projectFilesEntry = projectFilesScope.projectId && projectFilesScope.workspaceId ? projectFilesByScope[projectFilesKey(projectFilesScope.projectId, projectFilesScope.workspaceId)] : undefined;
     const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
     const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? "未选项目";

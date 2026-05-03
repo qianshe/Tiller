@@ -91,11 +91,8 @@ export function groupToolCalls(calls: AgentToolCall[]): ConversationToolCallItem
 
 
 function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
-  // Some agents (notably Codex) report a SKILL.md read as kind:"tool" with the
-  // `Get-Content -Raw 'C:\...\skills\<name>\SKILL.md'` shell command stuffed
-  // into either the title or a JSON-encoded `input`. Try to recognise the skill
-  // name from those fields regardless of the reported tool kind first, so the
-  // timeline does not show a truncated raw command.
+  // Codex reports SKILL.md reads as a generic `tool` kind with the shell command
+  // stuffed into title/input — so always probe for a skill name first.
   const skillNameFromCommand = extractSkillNameFromCommandSources(call);
   if (skillNameFromCommand) {
     return `Skill: ${skillNameFromCommand}`;
@@ -113,15 +110,14 @@ function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
 }
 
 function extractSkillNameFromCommandSources(call: AgentToolCall) {
-  // Claude Code (and any ACP bridge that mirrors the Anthropic tool_use shape)
-  // invokes a built-in `Skill` tool whose input is `{skill: "<name>"}`. The tool
-  // name itself does not carry a path and there is no shell command to scan, so
-  // we have to read the structured input directly.
-  const skillNameFromInput = extractSkillNameFromStructuredInput(call.input);
+  // Anthropic tool_use shape: input is `{skill: "<name>"}` with no path/command,
+  // so the structured probe runs before the shell-command fallbacks.
+  const parsedInput = parseToolCallInputObject(call.input);
+  const skillNameFromInput = extractSkillNameFromStructuredInput(parsedInput);
   if (skillNameFromInput) {
     return skillNameFromInput;
   }
-  const inputCommand = call.input ? extractCommandFromInput(call.input) : undefined;
+  const inputCommand = parsedInput ? extractCommandFromParsedInput(parsedInput) : call.input;
   const candidates = [inputCommand, call.title].filter((value): value is string => Boolean(value));
   for (const candidate of candidates) {
     const skillName = extractSkillNameFromCommand(candidate);
@@ -132,26 +128,31 @@ function extractSkillNameFromCommandSources(call: AgentToolCall) {
   return undefined;
 }
 
-function extractSkillNameFromStructuredInput(input: string | undefined) {
+function parseToolCallInputObject(input: string | undefined): Record<string, unknown> | null {
   if (!input) {
-    return undefined;
+    return null;
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(input);
   } catch {
-    return undefined;
+    return null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function extractSkillNameFromStructuredInput(parsed: Record<string, unknown> | null) {
+  if (!parsed) {
     return undefined;
   }
-  const record = parsed as Record<string, unknown>;
-  const candidate = record.skill ?? record.skill_name ?? record.skillName;
+  const candidate = parsed.skill ?? parsed.skill_name ?? parsed.skillName;
   if (typeof candidate === "string") {
     const trimmed = candidate.trim();
+    // Skip values that are themselves paths or commands — those belong to the path-based fallback.
     if (trimmed && !/[\\/]/u.test(trimmed)) {
-      // Avoid swallowing values that are themselves paths or commands - those
-      // belong to the path-based fallback below.
       return trimmed;
     }
   }
@@ -234,20 +235,26 @@ function extractOutputPayload(output: string) {
 }
 
 function extractCommandFromInput(input: string) {
-  try {
-    const parsed = JSON.parse(input) as Record<string, unknown>;
-    const parsedCommand = Array.isArray(parsed.parsed_cmd) ? parsed.parsed_cmd[0] : undefined;
-    const command = parsed.command ?? parsed.cmd ?? parsed.script ?? parsed.shell ?? parsed.args ?? (isRecord(parsedCommand) ? parsedCommand.cmd : undefined);
-    if (Array.isArray(command)) {
-      return command.map((item) => String(item)).join(" ");
+  const parsed = parseToolCallInputObject(input);
+  if (parsed) {
+    const command = extractCommandFromParsedInput(parsed);
+    if (command !== undefined) {
+      return command;
     }
-    if (typeof command === "string" || typeof command === "number" || typeof command === "boolean") {
-      return String(command);
-    }
-  } catch {
-    // Plain shell commands are already displayable.
   }
   return input;
+}
+
+function extractCommandFromParsedInput(parsed: Record<string, unknown>): string | undefined {
+  const parsedCommand = Array.isArray(parsed.parsed_cmd) ? parsed.parsed_cmd[0] : undefined;
+  const command = parsed.command ?? parsed.cmd ?? parsed.script ?? parsed.shell ?? parsed.args ?? (isRecord(parsedCommand) ? parsedCommand.cmd : undefined);
+  if (Array.isArray(command)) {
+    return command.map((item) => String(item)).join(" ");
+  }
+  if (typeof command === "string" || typeof command === "number" || typeof command === "boolean") {
+    return String(command);
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

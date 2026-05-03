@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHelmWebSocketUrl, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint, shouldRequestInitialSyncOnOpen } from "./helm-endpoint.js";
+import { createHelmWebSocketUrl, normalizeEmbeddedHelmSummaries, resolveDefaultHelmEndpoint } from "./helm-endpoint.js";
 
 const storage = {
   getItem(key: string) {
@@ -34,22 +34,6 @@ test("resolveDefaultHelmEndpoint keeps saved endpoints in development multi Helm
 
 test("createHelmWebSocketUrl uses same origin in embedded mode", () => {
   assert.equal(createHelmWebSocketUrl({ embedded: true, host: "ignored", port: "1", location: { protocol: "https:", host: "helm.example.com" } }), "wss://helm.example.com");
-});
-
-test("shouldRequestInitialSyncOnOpen syncs embedded Helm even without trusted cache", () => {
-  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: true, hasTrustedDeviceCache: false }), true);
-});
-
-test("shouldRequestInitialSyncOnOpen optimistically syncs non-embedded Helm without cache (covers personal-auth mode)", () => {
-  // Personal-auth helms admit the socket immediately; the deck must request
-  // initial sync instead of stalling on a pairing handshake. Pairing-auth
-  // helms reply with `error: not authenticated`, which the error handler
-  // catches to surface the pairing input.
-  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: false }), true);
-});
-
-test("shouldRequestInitialSyncOnOpen still syncs when a trusted cache is present (parallel device.auth)", () => {
-  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: true }), true);
 });
 
 test("normalizeEmbeddedHelmSummaries rewrites embedded Helm endpoint to current browser endpoint", () => {

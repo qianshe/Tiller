@@ -1,4 +1,15 @@
-import type { ProjectSummary, SessionSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+
+/** True when `workspace` represents the project's root branch — its path should fall back to `project.path`. */
+export function isProjectRootBranchWorkspace<P extends ProjectSummary>(
+  project: P,
+  workspace: Pick<WorkspaceSummary, "id">,
+): project is P & { path: string } {
+  return Boolean(
+    project.path &&
+      (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch),
+  );
+}
 
 export function alignSessionProjectBinding(summary: SessionSummary, projects: ProjectSummary[]): SessionSummary {
   const exactProject = projects.find((project) => project.id === summary.projectId);
