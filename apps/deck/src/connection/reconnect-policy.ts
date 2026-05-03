@@ -12,7 +12,6 @@ export function shouldAttemptSilentReconnect(input: {
   port: string;
 }) {
   return input.connection === "disconnected"
-    && (input.tokenPresent || input.embedded === true)
     && Boolean(input.host.trim())
     && Boolean(input.port.trim());
 }

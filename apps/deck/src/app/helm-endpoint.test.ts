@@ -63,7 +63,7 @@ test("normalizeEmbeddedHelmSummaries rewrites embedded Helm endpoint to current 
   assert.deepEqual(helms, [{ id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 }]);
 });
 
-test("normalizeEmbeddedHelmSummaries keeps public web endpoints unchanged", () => {
+test("normalizeEmbeddedHelmSummaries rewrites wildcard Helm endpoint to current dev connection endpoint", () => {
   const helms = normalizeEmbeddedHelmSummaries({
     embedded: false,
     host: "127.0.0.1",
@@ -71,5 +71,16 @@ test("normalizeEmbeddedHelmSummaries keeps public web endpoints unchanged", () =
     helms: [{ id: "local-helm", name: "Local Helm", host: "0.0.0.0", port: 47631 }],
   });
 
-  assert.deepEqual(helms, [{ id: "local-helm", name: "Local Helm", host: "0.0.0.0", port: 47631 }]);
+  assert.deepEqual(helms, [{ id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 }]);
+});
+
+test("normalizeEmbeddedHelmSummaries keeps non-wildcard public web endpoints unchanged", () => {
+  const helms = normalizeEmbeddedHelmSummaries({
+    embedded: false,
+    host: "127.0.0.1",
+    port: "47631",
+    helms: [{ id: "remote-helm", name: "Remote Helm", host: "10.0.0.8", port: 47631 }],
+  });
+
+  assert.deepEqual(helms, [{ id: "remote-helm", name: "Remote Helm", host: "10.0.0.8", port: 47631 }]);
 });

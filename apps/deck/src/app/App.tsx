@@ -55,7 +55,6 @@ const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
 const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
-const DEV_MOCK_HELM_PROFILE: DaemonProfile = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: "47632" };
 const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
@@ -296,9 +295,6 @@ function mergeHelmSummariesByEndpoint(items: HelmSummary[]) {
   return Array.from(byEndpoint.values());
 }
 
-function getDevelopmentMockHelmProfiles() {
-  return import.meta.env.DEV ? [DEV_MOCK_HELM_PROFILE] : [];
-}
 
 function formatProjectSummaryForDisplay(summary: string | undefined, projectName: string) {
   const normalized = summary?.replace(/\s+/g, " ").trim();
@@ -734,6 +730,7 @@ export function App() {
   const worktreePickerRef = useRef<HTMLDivElement | null>(null);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
+  const primaryHelmKeyRef = useRef<string | null>(null);
   const resumeStartRequestsRef = useRef<Set<string>>(new Set());
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
@@ -921,7 +918,6 @@ export function App() {
     return mergeHelmSummariesByEndpoint([
       currentProfile,
       ...daemonProfiles,
-      ...getDevelopmentMockHelmProfiles(),
     ].map(daemonProfileToHelmSummary).concat(normalizeEmbeddedHelmSummaries({
       embedded: IS_EMBEDDED_HELM_DECK,
       host: currentHost,
@@ -1053,10 +1049,9 @@ export function App() {
     setSelectedMissionHelmId(helmId);
     setExpandedMissionHelmIds((current) => new Set([...current, helmId]));
     const nextProject = projects.find((project) => project.helmId === helmId) ?? null;
-    const nextSessionId = nextProject ? sessions.find((session) => session.projectId === nextProject.id)?.id ?? null : null;
-    requestChatScrollToBottom(nextSessionId);
+    requestChatScrollToBottom(null);
     setSelectedProjectId(nextProject?.id ?? null);
-    setActiveSessionId(nextSessionId);
+    setActiveSessionId(null);
   }
 
   function selectProject(projectId: string) {
@@ -1069,11 +1064,8 @@ export function App() {
       setSelectedAgentId((current) => agents.some((agent) => agent.id === current) ? current : project.defaultAgentId ?? agents[0]?.id ?? null);
     }
     setSelectedProjectId(projectId);
-    const nextSessionId = activeSessionId && sessions.some((session) => session.id === activeSessionId && session.projectId === projectId)
-      ? activeSessionId
-      : sessions.find((session) => session.projectId === projectId)?.id ?? null;
-    requestChatScrollToBottom(nextSessionId);
-    setActiveSessionId(nextSessionId);
+    requestChatScrollToBottom(null);
+    setActiveSessionId(null);
   }
 
   function openSession(sessionId: string) {
@@ -1157,12 +1149,11 @@ export function App() {
   useEffect(() => {
     if (!selectedProjectId && missionProjects.length) {
       const nextProject = missionProjects[0];
-      const nextSessionId = sessions.find((session) => resolveSessionProjectId(session, projects) === nextProject.id)?.id ?? null;
       setSelectedProjectId(nextProject.id);
-      requestChatScrollToBottom(nextSessionId);
-      setActiveSessionId(nextSessionId);
+      requestChatScrollToBottom(null);
+      setActiveSessionId(null);
     }
-  }, [missionProjects, projects, selectedProjectId, sessions]);
+  }, [missionProjects, selectedProjectId]);
 
   useEffect(() => {
     if (effectiveMissionHelmId) {
@@ -1493,7 +1484,16 @@ export function App() {
   }, [activeProfileId, connection, daemonHost, daemonPort, missionVisualMode, trustedDevice?.token]);
 
   useEffect(() => {
-    if (missionVisualMode || (!trustedDevice?.token && !IS_EMBEDDED_HELM_DECK) || !shouldEnsureLiveConnection(activeView) || connection !== "disconnected") {
+    if (missionVisualMode || !shouldEnsureLiveConnection(activeView)) {
+      return;
+    }
+    if (!shouldAttemptSilentReconnect({
+      connection,
+      tokenPresent: Boolean(trustedDevice?.token),
+      embedded: IS_EMBEDDED_HELM_DECK,
+      host: daemonHost,
+      port: daemonPort,
+    })) {
       return;
     }
     if (manualDisconnectRef.current === activeProfileId) {
@@ -1505,7 +1505,7 @@ export function App() {
     }
     autoConnectAttemptRef.current = attemptKey;
     connectToDaemon(undefined, { preserveState: true, auto: true });
-  }, [activeProfileId, activeView, connection, missionVisualMode, trustedDevice?.token]);
+  }, [activeProfileId, activeView, connection, daemonHost, daemonPort, missionVisualMode, trustedDevice?.token]);
 
   function updateDeckPreference<K extends keyof DeckPreferences>(key: K, value: DeckPreferences[K]) {
     setDeckPreferences((current) => ({ ...current, [key]: value }));
@@ -1714,7 +1714,9 @@ export function App() {
     const preserveState = options?.preserveState ?? false;
     const host = options?.host?.trim() || daemonHost.trim() || DEFAULT_DAEMON_HOST;
     const port = options?.port?.trim() || daemonPort.trim() || DEFAULT_DAEMON_PORT;
+    const helmKey = daemonProfileKey(host, port);
     const wsUrl = createHelmWebSocketUrl({ embedded: IS_EMBEDDED_HELM_DECK, host, port, location: window.location });
+    primaryHelmKeyRef.current = helmKey;
 
     if (!options?.auto) {
       manualDisconnectRef.current = null;
@@ -1741,7 +1743,7 @@ export function App() {
       setResumeFeedback("");
     }
     setDebugTrace((current) => ({ ...current, connectClicks: current.connectClicks + 1 }));
-    setHelmConnectionState(daemonProfileKey(host, port), "connecting");
+    setHelmConnectionState(helmKey, "connecting");
     setConnection("connecting");
     setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
     setPairingState("idle");
@@ -1752,7 +1754,7 @@ export function App() {
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
-      setHelmConnectionState(daemonProfileKey(host, port), "connected");
+      setHelmConnectionState(helmKey, "connected");
       setConnection("connected");
       setConnectFeedback(`已连接到 ${wsUrl}`);
       const cache = readTrustedDeviceCache(window.localStorage, host, port);
@@ -1782,7 +1784,7 @@ export function App() {
     });
 
     socket.addEventListener("close", () => {
-      setHelmConnectionState(daemonProfileKey(host, port), "disconnected");
+      setHelmConnectionState(helmKey, "disconnected");
       setConnection("disconnected");
       if (socketRef.current === socket) {
         socketRef.current = null;
@@ -1803,7 +1805,7 @@ export function App() {
 
     socket.addEventListener("message", (event) => {
       const payload = JSON.parse(String(event.data)) as HelmToClient;
-      handleServerEvent(payload, daemonProfileKey(host, port));
+      handleServerEvent(payload, helmKey);
     });
   }
 
@@ -1817,7 +1819,7 @@ export function App() {
   }
 
   function handleServerEvent(payload: HelmToClient, sourceHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT)) {
-    const currentEventHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
+    const currentEventHelmKey = primaryHelmKeyRef.current ?? daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
     const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
     switch (payload.type) {
       case "device.pair.result":
@@ -2573,7 +2575,9 @@ case "session.messages.list.result":
   }
 
   function connectDaemonProfile(profile: DaemonProfile) {
-    connectHelmSocket(profile);
+    applyDaemonProfile(profile);
+    setSelectedHelmKey(daemonProfileKey(profile.host, profile.port));
+    void connectToDaemon(undefined, { preserveState: true, host: profile.host, port: profile.port });
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {
@@ -4064,14 +4068,6 @@ case "session.messages.list.result":
   function renderAgents() {
     const currentHelmKey = daemonProfileKey(daemonHost.trim() || DEFAULT_DAEMON_HOST, daemonPort.trim() || DEFAULT_DAEMON_PORT);
     const currentSavedHelmProfile = daemonProfiles.find((profile) => daemonProfileKey(profile.host, profile.port) === currentHelmKey);
-    const mockHelmCards = getDevelopmentMockHelmProfiles().map((mockHelmProfile) => ({
-      key: daemonProfileKey(mockHelmProfile.host, mockHelmProfile.port),
-      name: mockHelmProfile.name,
-      host: mockHelmProfile.host,
-      port: mockHelmProfile.port,
-      isCurrent: false,
-      profile: mockHelmProfile,
-    }));
     const additionalHelmCards = IS_EMBEDDED_HELM_DECK ? [] : [
       ...daemonProfiles
         .filter((profile) => daemonProfileKey(profile.host, profile.port) !== currentHelmKey)
@@ -4083,7 +4079,6 @@ case "session.messages.list.result":
           isCurrent: false,
           profile,
         })),
-      ...mockHelmCards,
     ];
     const rawHelmCards = [
       {

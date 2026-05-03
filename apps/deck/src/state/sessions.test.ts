@@ -3,6 +3,7 @@ import test from "node:test";
 import type { HelmSummary, ProjectSummary, SessionSummary } from "@tiller/shared";
 import {
   applySessionListSnapshot,
+  resolveActiveSessionId,
   resolveDraftSelectionId,
   resolveMissionHelms,
   resolveProjectFilesScope,
@@ -83,7 +84,7 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   );
 
   assert.deepEqual(next.sessions, [live]);
-  assert.equal(next.activeSessionId, live.id);
+  assert.equal(next.activeSessionId, null);
   assert.deepEqual(next.maps.statuses, { [live.id]: live.status });
   assert.deepEqual(next.maps.messages, {
     [live.id]: [{ id: "msg-live", role: "assistant", text: "new", timestamp: live.updatedAt }],
@@ -95,6 +96,14 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
   assert.deepEqual(next.maps.diffs, {
     [live.id]: [{ path: "live.ts", status: "modified", additions: 2, deletions: 1 }],
   });
+});
+
+test("resolveActiveSessionId preserves only an explicitly open live session", () => {
+  const live = buildSession("session-live", "2026-04-27T11:00:00.000Z");
+
+  assert.equal(resolveActiveSessionId(live.id, [live]), live.id);
+  assert.equal(resolveActiveSessionId(null, [live]), null);
+  assert.equal(resolveActiveSessionId("missing", [live]), null);
 });
 
 test("resolveSessionProjectId keeps the session project binding authoritative", () => {
@@ -198,8 +207,8 @@ test("resolveModelOptionsFromConfig falls back to current model when no option l
 
 test("resolveMissionHelms keeps configured helms even when they have no projects", () => {
   const connectedHelm: HelmSummary = { id: "local-helm", name: "Local Helm", host: "127.0.0.1", port: 47631 };
-  const mockHelm: HelmSummary = { id: "mock-helm", name: "Mock Helm", host: "127.0.0.2", port: 47632 };
-  assert.deepEqual(resolveMissionHelms([connectedHelm, mockHelm], connectedHelm.id), [connectedHelm, mockHelm]);
+  const remoteHelm: HelmSummary = { id: "remote-helm", name: "Remote Helm", host: "127.0.0.2", port: 47632 };
+  assert.deepEqual(resolveMissionHelms([connectedHelm, remoteHelm], connectedHelm.id), [connectedHelm, remoteHelm]);
 });
 
 test("resolveProjectFilesScope uses active session scope when a session is open", () => {

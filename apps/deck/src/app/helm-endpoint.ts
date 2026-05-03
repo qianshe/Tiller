@@ -61,16 +61,25 @@ export function normalizeEmbeddedHelmSummaries(input: {
   port: string;
   helms: HelmSummary[];
 }) {
-  if (!input.embedded) {
-    return input.helms;
-  }
-
   const endpointPort = Number(input.port);
-  return input.helms.map((helm) => ({
-    ...helm,
-    host: input.host,
-    port: Number.isFinite(endpointPort) ? endpointPort : helm.port,
-  }));
+  return input.helms.map((helm) => {
+    const endpointPortMatches = Number.isFinite(endpointPort) && helm.port === endpointPort;
+    const shouldUseCurrentEndpoint = input.embedded || (isWildcardHost(helm.host) && endpointPortMatches);
+    if (!shouldUseCurrentEndpoint) {
+      return helm;
+    }
+
+    return {
+      ...helm,
+      host: input.host,
+      port: Number.isFinite(endpointPort) ? endpointPort : helm.port,
+    };
+  });
+}
+
+function isWildcardHost(host: string) {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "0.0.0.0" || normalized === "::" || normalized === "[::]";
 }
 
 function defaultPortForProtocol(protocol: string) {

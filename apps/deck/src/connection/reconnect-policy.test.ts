@@ -8,7 +8,7 @@ test("hybrid connection policy requires live connect for Mission and Crew views"
   assert.equal(shouldEnsureLiveConnection("overview"), false);
 });
 
-test("silent reconnect is skipped when token is missing even if a profile exists", () => {
+test("silent reconnect is allowed without a token so personal-auth Helm can sync", () => {
   assert.equal(
     shouldAttemptSilentReconnect({
       connection: "disconnected",
@@ -16,7 +16,7 @@ test("silent reconnect is skipped when token is missing even if a profile exists
       host: "127.0.0.1",
       port: "47631",
     }),
-    false,
+    true,
   );
 });
 

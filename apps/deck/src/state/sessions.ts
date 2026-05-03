@@ -32,7 +32,7 @@ export function resolveActiveSessionId(current: string | null, sessions: Session
   if (current && sessions.some((session) => session.id === current)) {
     return current;
   }
-  return sessions[0]?.id ?? null;
+  return null;
 }
 
 export function applySessionListSnapshot(
