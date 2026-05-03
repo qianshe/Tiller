@@ -62,14 +62,14 @@ test("groupToolCalls uses shell command prefix as title and expands only output"
       kind: "terminal",
       title: "Tool: shell",
       status: "completed",
-      input: JSON.stringify({ command: "pnpm --filter @qianshe/tiller test -- --reporter spec" }),
+      input: JSON.stringify({ command: "pnpm --filter @tiller/helm test -- --reporter spec" }),
       output: "PASS",
       timestamp: "2026-04-30T13:22:46.627Z",
       updatedAt: "2026-04-30T13:22:46.630Z",
     },
   ]);
 
-  assert.equal(grouped[0]?.title, "pnpm --filter @qianshe/tiller test -- --reporter spec");
+  assert.equal(grouped[0]?.title, "pnpm --filter @tiller/helm test -- --reporter spec");
   assert.equal(grouped[0]?.text, "PASS");
 });
 

@@ -414,11 +414,11 @@ function requireValue(args: string[], index: number, flag: string) {
 
 function printUsageAndExit(): never {
   console.log(`Usage:
-  pnpm --filter @qianshe/tiller probe:acp-models
-  pnpm --filter @qianshe/tiller probe:codex-models -- --cwd D:/repo --timeout 30000
-  pnpm --filter @qianshe/tiller probe:opencode-models -- --cwd D:/repo --timeout 30000
-  pnpm --filter @qianshe/tiller probe:acp-models -- --command codex-acp --arg -c --arg model=gpt-5.4
-  pnpm --filter @qianshe/tiller probe:acp-models -- --command opencode --arg acp
+  pnpm --filter @tiller/helm probe:acp-models
+  pnpm --filter @tiller/helm probe:codex-models -- --cwd D:/repo --timeout 30000
+  pnpm --filter @tiller/helm probe:opencode-models -- --cwd D:/repo --timeout 30000
+  pnpm --filter @tiller/helm probe:acp-models -- --command codex-acp --arg -c --arg model=gpt-5.4
+  pnpm --filter @tiller/helm probe:acp-models -- --command opencode --arg acp
 
 Environment:
   ACP_PROBE_COMMAND      default: codex-acp

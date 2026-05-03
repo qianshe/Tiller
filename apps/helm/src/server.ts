@@ -976,7 +976,7 @@ async function handleHttpRequest(request: IncomingMessage, response: ServerRespo
   const asset = resolveStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
   if (!asset.ok) {
     response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
-    response.end(asset.statusCode === 404 ? "Tiller Deck assets not found. Run pnpm --filter @qianshe/tiller build." : "Forbidden");
+    response.end(asset.statusCode === 404 ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build." : "Forbidden");
     return;
   }
 

@@ -11,7 +11,7 @@ tagging are paused until the release checklist is complete.
 
 - Productization documents for contribution, security, release readiness, and
   license strategy.
-- Embedded single-Helm Deck packaging direction for `@qianshe/tiller`.
+- Embedded single-Helm Deck packaging direction for `@tiller/helm`.
 
 ### Changed
 

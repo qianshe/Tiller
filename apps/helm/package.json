@@ -1,5 +1,5 @@
 {
-  "name": "@qianshe/tiller",
+  "name": "@tiller/helm",
   "version": "0.1.0-alpha.0",
   "private": false,
   "type": "module",

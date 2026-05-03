@@ -48,8 +48,8 @@ git stash list
 
 已验证过：
 
-- `pnpm --filter @qianshe/tiller test`：82 pass
-- `pnpm --filter @qianshe/tiller typecheck`：pass
+- `pnpm --filter @tiller/helm test`：82 pass
+- `pnpm --filter @tiller/helm typecheck`：pass
 - `pnpm --filter @tiller/deck typecheck`：pass
 - 浏览器 smoke 一次成功：总览显示 2 项目 / 1 工作区 / 3 ACP 舰员。
 

@@ -18,8 +18,8 @@ release candidates.
 Common checks:
 
 ```bash
-pnpm --filter @qianshe/tiller test
-pnpm --filter @qianshe/tiller typecheck
+pnpm --filter @tiller/helm test
+pnpm --filter @tiller/helm typecheck
 pnpm --filter @tiller/deck typecheck
 pnpm typecheck
 ```
@@ -27,7 +27,7 @@ pnpm typecheck
 Package smoke check:
 
 ```bash
-pnpm --filter @qianshe/tiller pack
+pnpm --filter @tiller/helm pack
 ```
 
 ## Change rules
