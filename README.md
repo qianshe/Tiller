@@ -107,6 +107,8 @@ Tiller 默认把运行期数据写入用户目录：
 
 这让它可以脱离源码仓库运行，更适合 npm 分发和服务器部署。
 
+Helm 日志默认只保留流式事件元数据，不打印 assistant message 或 command output 正文。需要排查正文时，优先查看 `sessions.sqlite`：消息在 `session_messages.payload_json`，命令输出在 `session_outputs.payload_json`。
+
 默认使用 SQLite 存储。Node.js 22 可能会打印 `node:sqlite` 的 ExperimentalWarning；这是 Node 对内置 SQLite API 的提示，不影响 Tiller 正常运行。若需要回退到 JSON 存储，可显式设置：
 
 ```bash
@@ -130,6 +132,8 @@ TILLER_SESSION_STORE=json tiller start
 pnpm install
 pnpm dev
 ```
+
+前端更新、内置 Deck 验证和 npm 打包流程见 [Frontend Development Guide](docs/FRONTEND_DEVELOPMENT.md)。
 
 常用验证：
 

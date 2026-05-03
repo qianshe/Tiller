@@ -18,6 +18,7 @@ import {
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
+  sanitizeProtocolLogPayload,
 } from "./runtime";
 
 test("default ACP request timeout allows slow session/new responses", () => {
@@ -513,4 +514,24 @@ test("mapSessionUpdateNotification maps explicit tool call updates", () => {
   assert.equal(mapped.event.toolCall.kind, "terminal");
   assert.equal(mapped.event.toolCall.status, "completed");
   assert.equal(mapped.event.toolCall.output, "PASS src/index.test.ts");
+});
+
+test("sanitizeProtocolLogPayload redacts streamed session update text", () => {
+  const sanitized = sanitizeProtocolLogPayload({
+    method: "session/update",
+    params: {
+      sessionId: "sess_123",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_1",
+        content: { type: "text", text: "SECRET_STREAM_TEXT" },
+      },
+    },
+  });
+  const serialized = JSON.stringify(sanitized);
+
+  assert.doesNotMatch(serialized, /SECRET_STREAM_TEXT/);
+  assert.match(serialized, /agent_message_chunk/);
+  assert.match(serialized, /msg_1/);
+  assert.match(serialized, /chars=18/);
 });

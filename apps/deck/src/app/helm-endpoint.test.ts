@@ -40,8 +40,16 @@ test("shouldRequestInitialSyncOnOpen syncs embedded Helm even without trusted ca
   assert.equal(shouldRequestInitialSyncOnOpen({ embedded: true, hasTrustedDeviceCache: false }), true);
 });
 
-test("shouldRequestInitialSyncOnOpen waits for pairing in non-embedded mode without trusted cache", () => {
-  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: false }), false);
+test("shouldRequestInitialSyncOnOpen optimistically syncs non-embedded Helm without cache (covers personal-auth mode)", () => {
+  // Personal-auth helms admit the socket immediately; the deck must request
+  // initial sync instead of stalling on a pairing handshake. Pairing-auth
+  // helms reply with `error: not authenticated`, which the error handler
+  // catches to surface the pairing input.
+  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: false }), true);
+});
+
+test("shouldRequestInitialSyncOnOpen still syncs when a trusted cache is present (parallel device.auth)", () => {
+  assert.equal(shouldRequestInitialSyncOnOpen({ embedded: false, hasTrustedDeviceCache: true }), true);
 });
 
 test("normalizeEmbeddedHelmSummaries rewrites embedded Helm endpoint to current browser endpoint", () => {

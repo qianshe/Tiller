@@ -60,8 +60,8 @@ const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
-const COLLAPSED_MESSAGE_LINE_LIMIT = 10;
-const COLLAPSED_MESSAGE_CHAR_LIMIT = 600;
+const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
+const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -1756,17 +1756,25 @@ export function App() {
       setConnection("connected");
       setConnectFeedback(`已连接到 ${wsUrl}`);
       const cache = readTrustedDeviceCache(window.localStorage, host, port);
-      if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: false })) {
-        setPairingState("paired");
-        setPairingFeedback("个人版本机模式已连接。");
-        requestInitialSync(socket);
-        return;
-      }
+      // Prefer the cached trusted-device path - it lets pairing-auth helms
+      // re-authenticate silently and sync after `device.auth.result` arrives.
       if (cache?.token) {
         setTrustedDevice(cache);
         dispatch(socket, { type: "device.auth", requestId: nextRequestId(requestCounter), deviceId: cache.deviceId, token: cache.token });
         setPairingState("waiting");
         setPairingFeedback("正在使用已保存令牌认证...");
+        return;
+      }
+      // No cached token: optimistically pull initial state. Personal-auth helms
+      // (`AUTH_MODE === "none"`) admit the socket immediately, so this is the
+      // only way for a fresh deck (e.g. vite dev on :5173 talking to local
+      // helm on :47631) to populate projects/sessions. Pairing-auth helms will
+      // reply with `error: not authenticated` and the error handler below will
+      // surface the pairing input.
+      if (shouldRequestInitialSyncOnOpen({ embedded: IS_EMBEDDED_HELM_DECK, hasTrustedDeviceCache: false })) {
+        setPairingState("paired");
+        setPairingFeedback("已连接,正在加载...");
+        requestInitialSync(socket);
         return;
       }
       setPairingState("input");
@@ -2234,7 +2242,7 @@ case "session.messages.list.result":
         return;
       case "error":
         setPairingFeedback(payload.message);
-        if (payload.message.toLowerCase().includes("not paired")) {
+        if (/not paired|not authenticated/iu.test(payload.message)) {
           setPairingState("input");
         }
         if (payload.sessionId) {

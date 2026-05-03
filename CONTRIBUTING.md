@@ -10,6 +10,10 @@ pnpm install
 pnpm dev
 ```
 
+## Frontend and packaging workflow
+
+See docs/FRONTEND_DEVELOPMENT.md for Deck frontend iteration, embedded Helm verification, package smoke tests, and npm publish gates.
+
 ## Verification before completion
 
 Run the smallest relevant checks for your change, then run broader checks before

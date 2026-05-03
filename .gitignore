@@ -48,6 +48,7 @@ pnpm-debug.log*
 !/docs/RELEASE_CHECKLIST.md
 !/docs/LICENSE_STRATEGY.md
 !/docs/PRODUCTIZATION.md
+!/docs/FRONTEND_DEVELOPMENT.md
 .ace-tool/
 .sisyphus/
 

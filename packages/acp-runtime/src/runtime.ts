@@ -1195,7 +1195,30 @@ function normalizePreferredAgentId(agent: string | undefined) {
 
 
 function writeProtocolLog(logFile: string, stream: "stdin" | "stdout", payload: unknown) {
-  writeLogLine(logFile, stream, JSON.stringify(payload));
+  writeLogLine(logFile, stream, JSON.stringify(sanitizeProtocolLogPayload(payload)));
+}
+
+export function sanitizeProtocolLogPayload(payload: unknown): unknown {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => sanitizeProtocolLogPayload(item));
+  }
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    sanitized[key] = shouldRedactProtocolLogField(key, value) ? redactProtocolLogValue(value) : sanitizeProtocolLogPayload(value);
+  }
+  return sanitized;
+}
+
+function shouldRedactProtocolLogField(key: string, value: unknown) {
+  return typeof value === "string" && /^(text|output|patch|content)$/iu.test(key);
+}
+
+function redactProtocolLogValue(value: unknown) {
+  return typeof value === "string" ? `[redacted chars=${value.length}]` : "[redacted]";
 }
 
 function writeChunkLog(logFile: string, stream: string, chunk: string) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, CommandChunk, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "./handlers/context";
 import { handleRuntimeEvent } from "./runtime-events.js";
 
@@ -49,9 +49,10 @@ function createTestContext(logs: string[], capture: TestContextCapture = { broad
   } as unknown as HelmHandlerContext;
 }
 
-test("runtime session.message writes streaming text chunks directly to stdout without metadata wrappers", () => {
+test("runtime session.message persists and broadcasts streaming chunks without printing content", () => {
   const logs: string[] = [];
-  const context = createTestContext(logs);
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
   const writes: string[] = [];
   const originalWrite = process.stdout.write;
   process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -84,8 +85,10 @@ test("runtime session.message writes streaming text chunks directly to stdout wi
   }
 
   assert.deepEqual(logs, []);
-  assert.deepEqual(writes, ["你", "好\n主人"]);
-  assert.equal(writes.join(""), "你好\n主人");
+  assert.deepEqual(writes, []);
+  assert.equal(capture.persisted.length, 2);
+  assert.deepEqual(capture.persisted.map((message) => message.text), ["你", "好\n主人"]);
+  assert.equal(capture.broadcasts.length, 2);
 });
 
 test("runtime user echo messages are ignored because prompts are already persisted before sending", () => {
@@ -217,4 +220,34 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
 
   assert.equal(logs.length, 1);
   assert.match(logs[0], /^\[tiller\] session\.status session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/);
+});
+
+test("runtime command-output logs metadata without streaming content", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const appendedOutputs: unknown[] = [];
+  const context = createTestContext(logs, capture);
+  context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
+    appendedOutputs.push(chunk);
+  };
+
+  handleRuntimeEvent("session-1", {
+    type: "command-output",
+    chunk: {
+      id: "chunk-1",
+      commandId: "cmd-1",
+      stream: "stdout",
+      text: "SECRET_STREAM_TEXT\nwith details",
+      timestamp: "2026-04-30T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /session\.command\.output/);
+  assert.match(logs[0], /command=cmd-1/);
+  assert.match(logs[0], /stream=stdout/);
+  assert.match(logs[0], /chars=31/);
+  assert.doesNotMatch(logs[0], /SECRET_STREAM_TEXT|with details|preview=/);
+  assert.equal(appendedOutputs.length, 1);
+  assert.equal(capture.broadcasts.length, 1);
 });

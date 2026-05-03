@@ -41,8 +41,18 @@ export function createHelmWebSocketUrl(input: CreateHelmWebSocketUrlInput) {
   return `ws://${input.host}:${input.port}`;
 }
 
-export function shouldRequestInitialSyncOnOpen(input: { embedded: boolean; hasTrustedDeviceCache: boolean }) {
-  return input.embedded || input.hasTrustedDeviceCache;
+export function shouldRequestInitialSyncOnOpen(_input: { embedded: boolean; hasTrustedDeviceCache: boolean }) {
+  // Always opt into an initial sync as soon as the WebSocket opens:
+  // - embedded helm has already accepted the socket without pairing.
+  // - non-embedded personal-auth helm (`AUTH_MODE === "none"`) also admits the
+  //   socket immediately - the deck should pull helm/project/session data
+  //   instead of stalling on a pairing handshake that will never come.
+  // - non-embedded pairing-auth helm will reply with an `error: not authenticated`
+  //   message; the deck's error handler picks that up and surfaces the pairing
+  //   input. The optimistic sync request is harmless in that case.
+  // Trusted-device caches still trigger a parallel `device.auth` upgrade in the
+  // caller, so this returns true regardless of cache state.
+  return true;
 }
 
 export function normalizeEmbeddedHelmSummaries(input: {

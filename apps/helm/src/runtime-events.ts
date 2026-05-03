@@ -66,7 +66,6 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
           return;
         }
       }
-      process.stdout.write(event.message.text);
       context.persistSessionMessage(sessionId, event.message);
       context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, event.message));
       context.broadcastAuthenticated({ type: "agent.message", sessionId, message: event.message });
@@ -88,7 +87,7 @@ export function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent
       context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
       return;
     case "command-output":
-      context.logInfo(`[tiller] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} preview=${formatLogValue(event.chunk.text)}`);
+      context.logInfo(`[tiller] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length}`);
       context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
       context.broadcastAuthenticated({ type: "command.output", sessionId, commandId: event.chunk.commandId, chunk: event.chunk });
       if (event.toolCall) {
