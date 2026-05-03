@@ -9410,7 +9410,18 @@ textarea:focus,
 }
 
 .view-sessions .mission-tree-session-row {
-  padding-right: 4px;
+  position: relative;
+  display: block;
+  padding-right: 0;
+}
+
+.view-sessions .mission-tree-cleanup {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 2;
+  pointer-events: auto;
+  transform: translateY(-50%);
 }
 
 .view-sessions .mission-tree-row-project {
@@ -9418,9 +9429,10 @@ textarea:focus,
 }
 
 .view-sessions .mission-tree-row-session {
-  width: calc(100% - 18px);
-  margin-left: 18px;
-  padding-left: 6px;
+  width: 100%;
+  margin-left: 0;
+  padding-left: 24px;
+  padding-right: 28px;
 }
 
 .view-sessions .mission-logbook-page {

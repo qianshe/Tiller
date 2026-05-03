@@ -3574,13 +3574,7 @@ case "session.messages.list.result":
 
     return (
       <section ref={missionLayoutRef} className={`card surface-card chat-layout chat-layout-sidebar ${effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : ""} ${effectiveInspectorCollapsed ? "mission-inspector-collapsed" : ""}`.trim()} style={missionLayoutStyle}>
-        {pairingState !== "paired" ? (
-          <div className="note-box compact-note">
-            <strong>任务视图待连接</strong>
-            <p>请先在舰队页连接并配对 Helm，再返回这里下达指令。</p>
-          </div>
-        ) : (
-          <>
+        <>
             <aside className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()} style={missionSidebarPaneStyle} aria-label="任务导航：Helm、项目与任务" onScroll={handleMissionTreeScroll}>
               {!effectiveSidebarCollapsed ? (
                 <button
@@ -3699,6 +3693,7 @@ case "session.messages.list.result":
                                             className="session-inline-action mission-tree-cleanup"
                                             aria-label={`清理 ${resolveDisplaySessionTitle(session)}`}
                                             title="清理任务"
+                                            onPointerDown={(event) => event.stopPropagation()}
                                             onClick={(event) => {
                                               event.stopPropagation();
                                               setPendingSessionCleanup(session);
@@ -3744,6 +3739,12 @@ case "session.messages.list.result":
 
             <div className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()} style={missionChatPaneStyle}>
               <div className="chat-main" ref={chatMainRef} onScroll={handleChatMainScroll}>
+                {pairingState !== "paired" ? (
+                  <div className="note-box compact-note mission-session-feedback">
+                    <strong>Helm 未连接</strong>
+                    <p>任务页会继续展示本地缓存；连接 Helm 后即可刷新项目、任务与文件。</p>
+                  </div>
+                ) : null}
                 {activeSession ? (
                   <>
                     {pendingPermission ? (
@@ -4030,7 +4031,6 @@ case "session.messages.list.result":
             </aside>
             ) : null}
           </>
-        )}
       </section>
     );
   }
@@ -4140,37 +4140,6 @@ case "session.messages.list.result":
                     </div>
                   </form>
                 )}
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        {pendingSessionCleanup ? (
-          <div className="fleet-modal-backdrop" role="presentation">
-            <section className="card surface-card fleet-delete-helm-modal" role="dialog" aria-modal="true" aria-label="确认删除会话">
-              <div className="fleet-dialog-head fleet-dialog-head-simple">
-                <h3>确认删除会话？</h3>
-                <button className="secondary fleet-dialog-close" type="button" onClick={() => setPendingSessionCleanup(null)}>关闭</button>
-              </div>
-              <div className="fleet-delete-confirm-body">
-                <p>此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。</p>
-                <div className="fleet-delete-target">
-                  <strong>{resolveDisplaySessionTitle(pendingSessionCleanup)}</strong>
-                  <span>{pendingSessionCleanup.agentName}</span>
-                </div>
-              </div>
-              <div className="section-actions fleet-delete-actions">
-                <button className="secondary" type="button" onClick={() => setPendingSessionCleanup(null)}>取消</button>
-                <button
-                  className="secondary helm-destroy-button"
-                  type="button"
-                  onClick={() => {
-                    cleanupSession(pendingSessionCleanup.id);
-                    setPendingSessionCleanup(null);
-                  }}
-                >
-                  确认删除
-                </button>
               </div>
             </section>
           </div>
@@ -4749,6 +4718,36 @@ case "session.messages.list.result":
         {activeView === "agents" && renderAgents()}
         {activeView === "settings" && renderSettings()}
       </div>
+      {pendingSessionCleanup ? (
+        <div className="fleet-modal-backdrop" role="presentation">
+          <section className="card surface-card fleet-delete-helm-modal" role="dialog" aria-modal="true" aria-label="确认删除会话">
+            <div className="fleet-dialog-head fleet-dialog-head-simple">
+              <h3>确认删除会话？</h3>
+              <button className="secondary fleet-dialog-close" type="button" onClick={() => setPendingSessionCleanup(null)}>关闭</button>
+            </div>
+            <div className="fleet-delete-confirm-body">
+              <p>此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。</p>
+              <div className="fleet-delete-target">
+                <strong>{resolveDisplaySessionTitle(pendingSessionCleanup)}</strong>
+                <span>{pendingSessionCleanup.agentName}</span>
+              </div>
+            </div>
+            <div className="section-actions fleet-delete-actions">
+              <button className="secondary" type="button" onClick={() => setPendingSessionCleanup(null)}>取消</button>
+              <button
+                className="secondary helm-destroy-button"
+                type="button"
+                onClick={() => {
+                  cleanupSession(pendingSessionCleanup.id);
+                  setPendingSessionCleanup(null);
+                }}
+              >
+                确认删除
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
