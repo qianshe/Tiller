@@ -3426,17 +3426,17 @@ case "session.messages.list.result":
     const projectFilesScope = resolveProjectFilesScope({ activeSession, activeSessionProjectId, selectedProjectId, selectedWorkspaceId });
     const projectFilesEntry = projectFilesScope.projectId && projectFilesScope.workspaceId ? projectFilesByScope[projectFilesKey(projectFilesScope.projectId, projectFilesScope.workspaceId)] : undefined;
     const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(sortProjectFileSummaries);
-    const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? draftProject?.name ?? "未选项目";
-    const overviewWorkspaceName = (activeSession?.workspaceName ?? selectedWorkspaceName) || "未选择";
-    const overviewAgentName = activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
-    const projectOverviewItems = [
-      `Helm · ${activeMissionHelm?.name ?? draftProject?.helmId ?? "未选择"}`,
+    const overviewProjectName = activeSessionProject?.name ?? activeSession?.projectName ?? "未选项目";
+    const overviewWorkspaceName = activeSession?.workspaceName ?? "未选择";
+    const overviewAgentName = activeSession?.agentName ?? "未选舰员";
+    const projectOverviewItems = activeSession ? [
+      `Helm · ${activeMissionHelm?.name ?? activeSession.helmId ?? "未选择"}`,
       `Project · ${overviewProjectName}`,
       `Workspace · ${overviewWorkspaceName}`,
       `ACP · ${overviewAgentName}`,
-      draftProject?.path ? `路径 · ${draftProject.path}` : "路径 · 等待 Helm 返回",
-      `摘要 · ${formatProjectSummaryForDisplay(draftProject?.summary, overviewProjectName)}`,
-    ];
+      activeSessionProject?.path ? `路径 · ${activeSessionProject.path}` : "路径 · 等待 Helm 返回",
+      `摘要 · ${formatProjectSummaryForDisplay(activeSessionProject?.summary, overviewProjectName)}`,
+    ] : [];
     const projectFileFilterText = projectFileFilter.trim().toLowerCase();
     const visibleProjectFiles = projectFiles.filter((file) => {
       if (projectFileFilterText) {
@@ -3446,6 +3446,9 @@ case "session.messages.list.result":
       return !parts.slice(1).some((_, index) => collapsedProjectFileDirectories.has(parts.slice(0, index + 1).join("/")));
     });
     const renderProjectFileList = () => {
+      if (!activeSession) {
+        return <div className="empty-state">选择左侧任务后显示项目文件。</div>;
+      }
       if (projectFilesEntry?.loading && !projectFiles.length) {
         return <div className="empty-state">正在加载项目文件...</div>;
       }
@@ -3584,7 +3587,7 @@ case "session.messages.list.result":
               </div>
             ) : (
               <div className="mission-panel-page mission-overview-page">
-                <InfoList title="项目信息" items={projectOverviewItems} empty="暂无项目信息" />
+                <InfoList title="项目信息" items={projectOverviewItems} empty="选择左侧任务后显示项目信息" />
               </div>
             )}
           </section>
@@ -3672,7 +3675,7 @@ case "session.messages.list.result":
                                     </button>
                                     <button
                                         type="button"
-                                        className={`mission-tree-new-inline ${selectedProject && !activeSession ? "active" : ""}`}
+                                        className="mission-tree-new-inline"
                                         onClick={() => {
                                           setSelectedMissionHelmId(project.helmId);
                                           setSelectedProjectId(project.id);
@@ -3790,12 +3793,7 @@ case "session.messages.list.result":
 
 
                   </>
-                ) : (
-                  <div className="chat-empty mission-draft-empty">
-                    <p className="eyebrow">新任务</p>
-                    <h2>{draftProject ? `${draftProject.name} · 新任务` : "先在左侧选择一个项目"}</h2>
-                  </div>
-                )}
+                ) : null}
               </div>
 
               {activeSession && pendingPermission ? (
@@ -4041,11 +4039,11 @@ case "session.messages.list.result":
                 <div className="section-head section-head-soft mission-inspector-section-head">
                   <div>
                     <p className="eyebrow">项目文件</p>
-                    <h3>{projectFiles.length} 个文件</h3>
+                    <h3>{activeSession ? `${projectFiles.length} 个文件` : "未选择任务"}</h3>
                   </div>
                   {projectFilesEntry?.loading ? <span className="mission-inline-loading">加载中</span> : null}
                 </div>
-                <p className="subtle compact">{projectFilesEntry?.message ?? "完整文件列表由 Helm 按当前 Project / Workspace 返回。"}</p>
+                <p className="subtle compact">{activeSession ? (projectFilesEntry?.message ?? "完整文件列表由 Helm 按当前任务的 Project / Workspace 返回。") : "选择任务后才显示项目文件。"}</p>
                 <input
                   className="mission-project-file-search"
                   value={projectFileFilter}

@@ -8653,13 +8653,11 @@ textarea:focus,
 }
 
 .view-sessions .mission-tree-project-row:hover .mission-tree-new-inline,
-.view-sessions .mission-tree-project-row.active .mission-tree-new-inline,
 .view-sessions .mission-tree-new-inline:focus-visible {
   opacity: 1;
 }
 
-.view-sessions .mission-tree-new-inline:hover,
-.view-sessions .mission-tree-new-inline.active {
+.view-sessions .mission-tree-new-inline:hover {
   background: rgba(96, 165, 250, 0.18);
   color: #ffffff;
 }
@@ -8850,7 +8848,6 @@ textarea:focus,
 }
 
 .view-sessions .mission-tree-project-row:hover .mission-tree-new-inline,
-.view-sessions .mission-tree-project-row.active .mission-tree-new-inline,
 .view-sessions .mission-tree-new-inline:focus-visible {
   opacity: 1;
 }

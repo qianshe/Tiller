@@ -122,7 +122,7 @@ export function resolveProjectFilesScope(input: {
   if (input.activeSession && input.activeSessionProjectId) {
     return { projectId: input.activeSessionProjectId, workspaceId: input.activeSession.workspaceId };
   }
-  return { projectId: input.selectedProjectId ?? null, workspaceId: input.selectedWorkspaceId ?? null };
+  return { projectId: null, workspaceId: null };
 }
 
 export function resolveMissionSelectedProjectId(input: {

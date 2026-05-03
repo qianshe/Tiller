@@ -220,10 +220,10 @@ test("resolveProjectFilesScope uses active session scope when a session is open"
   });
 });
 
-test("resolveProjectFilesScope uses draft project and workspace before a session starts", () => {
+test("resolveProjectFilesScope ignores draft project before a session starts", () => {
   assert.deepEqual(resolveProjectFilesScope({ activeSession: null, activeSessionProjectId: null, selectedProjectId: "draft-project", selectedWorkspaceId: "draft-workspace" }), {
-    projectId: "draft-project",
-    workspaceId: "draft-workspace",
+    projectId: null,
+    workspaceId: null,
   });
 });
 
