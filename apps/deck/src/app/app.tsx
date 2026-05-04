@@ -16,12 +16,10 @@ import claudeProviderIconUrl from "../shared/assets/provider-icons/claude-code.s
 import geminiProviderIconUrl from "../shared/assets/provider-icons/gemini.svg";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import {
-  resolveSessionConfigSupport,
   sortProjectFileSummaries,
 } from "@tiller/shared";
 import type {
   AcpAgentProvider,
-  AcpModelOption,
   AgentMessage,
   AgentPromptContent,
   AgentPromptImageContent,
@@ -29,7 +27,6 @@ import type {
   AvailableCommand,
   CommandChunk,
   FileDiffSummary,
-  HelmSummary,
   PermissionDecision,
   PermissionRequest,
   ProjectFileSummary,
@@ -55,7 +52,6 @@ import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-  isRecord,
   type DeckLanguage,
   type DeckPreferences,
   type DeckTheme,
@@ -63,6 +59,73 @@ import {
 } from "../features/preferences/preferences-storage";
 import { UI_COPY, type Locale } from "../shared/utils/copy";
 import { usePreferencesEffects } from "../features/preferences/hooks/use-preferences-effects";
+import { resolveTechnicalPanelPreferences } from "../features/preferences/utils/preferences-helpers";
+import {
+  agentModelOptionsKey,
+  readAgentModelOptionsCache,
+  writeAgentModelOptionsCache,
+  type AgentModelOptionsEntry,
+} from "../features/agents/utils/agent-model-options-cache";
+import {
+  createProjectId,
+  slugify,
+  splitArgs,
+} from "../features/agents/utils/agent-identity";
+import {
+  MODEL_OPTIONS,
+  defaultAgentId,
+  normalizeModelSelection,
+  resolveAgentModeOptions,
+  resolveBaseModelOptions,
+  resolveCombinedModelValue,
+  resolveCurrentAgentMode,
+  resolveDraftConfigOptions,
+  resolveModelInputPlaceholder,
+  resolveModelOptions,
+  resolvePreferredModel,
+  resolveReasoningLabel,
+  resolveReasoningOptionsForModel,
+  resolveSessionConfigHint,
+  splitModelReasoning,
+  summarizeSessionContext,
+} from "../features/mission/utils/composer-options";
+import {
+  createFallbackSessionTitle,
+  generateSessionTitleWithLlm,
+} from "../features/mission/utils/session-title";
+import {
+  readSessionTitles,
+  writeSessionTitles,
+} from "../features/mission/utils/session-titles-storage";
+import { projectFilesKey } from "../features/mission/utils/project-files-key";
+import {
+  formatProjectSummaryForDisplay,
+  resolveProjectDisplayId,
+  resolveProjectWorkspaceLabel,
+} from "../features/mission/utils/project-display";
+import {
+  moveMissionPanelPageInList,
+  readMissionPanelPages,
+  reorderMissionPanelPage,
+  writeMissionPanelPages,
+} from "../features/mission/utils/mission-panel-pages";
+import {
+  formatResumeLabel,
+  isSessionExecutionPending,
+} from "../features/mission/utils/session-state";
+import {
+  daemonProfileToHelmSummary,
+  mergeHelmSummariesByEndpoint,
+} from "../features/helm-connection/utils/daemon-helpers";
+import {
+  dedupeHelmCards,
+  resolveHelmConnectionState,
+} from "../features/helm-connection/utils/connection-helpers";
+import {
+  formatDeviceTime,
+  formatRelativeTime,
+  formatSessionTime,
+} from "../shared/utils/format-time";
 import {
   handleActivityServerEvent,
   handleDeviceServerEvent,
@@ -70,7 +133,7 @@ import {
   handleSessionServerEvent,
 } from "../features/server-events/index";
 import { AgentsPage } from "../features/agents/ui/agents-page";
-import { NAV_LABELS, VIEW_PATHS, type AppView } from "./routes";
+import { NAV_LABELS, VIEW_PATHS, resolveViewFromPath, type AppView } from "./routes";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
@@ -178,36 +241,12 @@ const DEFAULT_DAEMON_PORT = "47631";
 const IS_EMBEDDED_HELM_DECK =
   import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true";
 const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
-const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
-const AGENT_MODEL_OPTIONS_CACHE_KEY = "tiller.agent-model-options-cache";
-const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
-const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DECK_DEVICE_NAME = "Tiller Deck";
 const DEFAULT_PROMPT = "";
 const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
-const MODEL_OPTIONS = [
-  "provider-default",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.2",
-  "openai/gpt-5.4",
-  "openai/gpt-5.4-mini",
-  "openai/gpt-5.2",
-  "anthropic/claude-sonnet-4",
-] as const;
-const REASONING_OPTIONS: Array<{
-  value: SessionReasoningEffort;
-  label: string;
-}> = [
-  { value: "minimal", label: "Minimal" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "XHigh" },
-];
 type AgentDraft = {
   name: string;
   command: string;
@@ -216,252 +255,20 @@ type AgentDraft = {
 
 
 
-type AgentModelOptionsEntry = {
-  loading?: boolean;
-  message?: string;
-  modelOptions: AcpModelOption[];
-  configOptions: SessionConfigOption[];
-  state: {
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  };
-};
-
 type ProjectFilesEntry = {
   loading?: boolean;
   message?: string;
   files: ProjectFileSummary[];
 };
 
-const DEFAULT_TECHNICAL_PANEL_PREFERENCES: TechnicalPanelPreferences =
-  DEFAULT_DECK_PREFERENCES.technicalPanels;
-
-function resolveTechnicalPanelPreferences(
-  preferences: DeckPreferences,
-): TechnicalPanelPreferences {
-  const legacy =
-    (
-      preferences as DeckPreferences & {
-        technicalPanels?: Partial<TechnicalPanelPreferences>;
-      }
-    ).technicalPanels ?? {};
-  return { ...DEFAULT_TECHNICAL_PANEL_PREFERENCES, ...legacy };
-}
-
-function agentModelOptionsKey(providerId: string, workspaceId: string) {
-  return `${providerId}::${workspaceId}`;
-}
-
-function projectFilesKey(
-  projectId: string | null | undefined,
-  workspaceId: string | null | undefined,
-) {
-  return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
-}
-
-function readSessionTitles(): Record<string, string> {
-  try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(SESSION_TITLES_STORAGE_KEY) ?? "{}",
-    );
-    return parsed && typeof parsed === "object"
-      ? Object.fromEntries(
-          Object.entries(parsed).filter(
-            (entry): entry is [string, string] => typeof entry[1] === "string",
-          ),
-        )
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeSessionTitles(titles: Record<string, string>) {
-  window.localStorage.setItem(
-    SESSION_TITLES_STORAGE_KEY,
-    JSON.stringify(titles),
-  );
-}
-
-function createFallbackSessionTitle(prompt: string) {
-  return prompt.replace(/[\p{P}\p{S}\s]+/gu, "").slice(0, 5) || "新任务";
-}
-
 function normalizeGeneratedSessionTitle(value: string) {
   return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
-}
-
-async function generateSessionTitleWithLlm(
-  prompt: string,
-  llm: PromptEnhancerPreferences["llm"],
-) {
-  const response = await fetch(
-    resolveSessionTitleChatCompletionsUrl(llm.baseUrl),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(llm.apiKey.trim()
-          ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
-          : {}),
-      },
-      body: JSON.stringify({
-        model: llm.model.trim(),
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content:
-              "你是会话命名器。根据用户输入生成一个中文短标题，只输出标题本身，5到10个字，不要标点。",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Session title LLM failed: ${response.status}`);
-  }
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return normalizeGeneratedSessionTitle(
-    data.choices?.[0]?.message?.content ?? "",
-  );
-}
-
-function resolveSessionTitleChatCompletionsUrl(baseUrl: string) {
-  const normalized = baseUrl.trim().replace(/\/+$/u, "");
-  if (normalized.endsWith("/chat/completions")) {
-    return normalized;
-  }
-  if (normalized.endsWith("/v1")) {
-    return `${normalized}/chat/completions`;
-  }
-  return `${normalized}/v1/chat/completions`;
-}
-
-function daemonProfileToHelmSummary(profile: DaemonProfile): HelmSummary {
-  return {
-    id: profile.id,
-    name: profile.name,
-    host: profile.host,
-    port: Number(profile.port),
-  };
-}
-
-function mergeHelmSummariesByEndpoint(items: HelmSummary[]) {
-  const byEndpoint = new Map<string, HelmSummary>();
-  for (const item of items) {
-    byEndpoint.set(daemonProfileKey(item.host, String(item.port)), item);
-  }
-  return Array.from(byEndpoint.values());
-}
-
-function formatProjectSummaryForDisplay(
-  summary: string | undefined,
-  projectName: string,
-) {
-  const normalized = summary?.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return "暂无项目摘要";
-  }
-
-  const generatedPrefix = `Project: ${projectName} Configured summary:`;
-  const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
-    ? (normalized
-        .split(generatedPrefix)
-        .map((part) => part.trim())
-        .filter(Boolean)[0] ??
-      normalized.replaceAll(generatedPrefix, "").trim())
-    : normalized;
-  const compact = withoutGeneratedPrefix || normalized;
-  return compact.length > 360 ? `${compact.slice(0, 360)}…` : compact;
 }
 
 type AgentModelOptionsCache = Record<
   string,
   AgentModelOptionsEntry & { cachedAt: number }
 >;
-
-function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEntry> {
-  try {
-    const raw = window.localStorage.getItem(AGENT_MODEL_OPTIONS_CACHE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    const parsed = JSON.parse(raw) as AgentModelOptionsCache;
-    const now = Date.now();
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(
-          ([, entry]) =>
-            now - entry.cachedAt < AGENT_MODEL_OPTIONS_CACHE_TTL_MS,
-        )
-        .map(([key, entry]) => [
-          key,
-          {
-            loading: false,
-            message: entry.message,
-            modelOptions: entry.modelOptions ?? [],
-            configOptions: entry.configOptions ?? [],
-            state: entry.state ?? {},
-          } satisfies AgentModelOptionsEntry,
-        ]),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function writeAgentModelOptionsCache(
-  nextEntries: Record<string, AgentModelOptionsEntry>,
-) {
-  try {
-    const now = Date.now();
-    const cache = Object.fromEntries(
-      Object.entries(nextEntries)
-        .filter(
-          ([, entry]) =>
-            !entry.loading &&
-            ((entry.modelOptions?.length ?? 0) > 0 ||
-              (entry.configOptions?.length ?? 0) > 0),
-        )
-        .map(([key, entry]) => [key, { ...entry, cachedAt: now }]),
-    );
-    window.localStorage.setItem(
-      AGENT_MODEL_OPTIONS_CACHE_KEY,
-      JSON.stringify(cache),
-    );
-  } catch {
-    // localStorage can be unavailable in private contexts; ignore cache failures.
-  }
-}
-
-function resolvePreferredModel(
-  currentModel: string | undefined,
-  modelOptions: string[],
-) {
-  if (currentModel && modelOptions.includes(currentModel)) {
-    return currentModel;
-  }
-
-  if (currentModel) {
-    const currentBase = splitModelReasoning(currentModel).model;
-    const matchingBase = modelOptions.find(
-      (option) => splitModelReasoning(option).model === currentBase,
-    );
-    if (matchingBase) {
-      return matchingBase;
-    }
-  }
-
-  return modelOptions[0];
-}
-
-
 
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
@@ -1646,10 +1453,7 @@ export function App() {
   }
 
   useEffect(() => {
-    window.localStorage.setItem(
-      MISSION_PANEL_PAGES_STORAGE_KEY,
-      JSON.stringify(customMissionPanelPages),
-    );
+    writeMissionPanelPages(customMissionPanelPages);
   }, [customMissionPanelPages]);
 
   useEffect(() => {
@@ -3852,475 +3656,4 @@ export function App() {
       ) : null}
     </main>
   );
-}
-
-function resolveViewFromPath(pathname: string): AppView {
-  const normalized = pathname.replace(/\/+$/g, "") || "/";
-  if (normalized === "/sessions") {
-    return "sessions";
-  }
-  const matched = (Object.entries(VIEW_PATHS) as Array<[AppView, string]>).find(
-    ([, path]) => path === normalized,
-  );
-  return matched?.[0] ?? "overview";
-}
-
-
-function isSessionExecutionPending(status: SessionStatus) {
-  return (
-    status === "starting" ||
-    status === "running" ||
-    status === "waiting_for_permission"
-  );
-}
-
-
-
-function formatResumeLabel(resume: SessionSummary["resume"], locale: Locale) {
-  if (!resume) {
-    return "恢复状态待检查";
-  }
-
-  switch (resume.state) {
-    case "resume-available":
-      return "可恢复";
-    case "resume-unavailable":
-      return "暂不可恢复";
-    case "history-only":
-    default:
-      return "仅历史记录";
-  }
-}
-
-function readMissionPanelPages(): MissionPanelPage[] {
-  try {
-    const raw = window.localStorage.getItem(MISSION_PANEL_PAGES_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter(isRecord).map((page, index) => ({
-          id:
-            typeof page.id === "string" && page.id
-              ? page.id
-              : `custom-${index + 1}`,
-          title:
-            typeof page.title === "string" && page.title
-              ? page.title
-              : `展示页 ${index + 1}`,
-        }))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function moveMissionPanelPageInList(
-  pages: MissionPanelPage[],
-  pageId: string,
-  direction: -1 | 1,
-) {
-  const index = pages.findIndex((page) => page.id === pageId);
-  const nextIndex = index + direction;
-  if (index < 0 || nextIndex < 0 || nextIndex >= pages.length) return pages;
-  const next = [...pages];
-  const [page] = next.splice(index, 1);
-  next.splice(nextIndex, 0, page);
-  return next;
-}
-
-function reorderMissionPanelPage(
-  pages: MissionPanelPage[],
-  sourceId: string,
-  targetId: string,
-) {
-  const sourceIndex = pages.findIndex((page) => page.id === sourceId);
-  const targetIndex = pages.findIndex((page) => page.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0) return pages;
-  const next = [...pages];
-  const [page] = next.splice(sourceIndex, 1);
-  next.splice(targetIndex, 0, page);
-  return next;
-}
-
-function slugify(value: string) {
-  return (
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "custom-agent"
-  );
-}
-
-function createProjectId(projects: ProjectSummary[]) {
-  const usedIds = new Set(projects.map((project) => project.id));
-  const maxNumericId = projects.reduce((max, project) => {
-    const match = /^project-(\d+)$/u.exec(project.id);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  let next = Math.max(maxNumericId, projects.length) + 1;
-  while (usedIds.has(`project-${next}`)) {
-    next += 1;
-  }
-  return `project-${next}`;
-}
-
-function resolveProjectWorkspaceLabel(
-  project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
-) {
-  const workspaceId = project.defaultWorkspaceId ?? project.workspaceIds?.[0];
-  const workspace = workspaceId
-    ? workspaces.find((item) => item.id === workspaceId)
-    : undefined;
-  return workspace?.name ?? project.gitCurrentBranch ?? workspaceId ?? "-";
-}
-
-function resolveProjectDisplayId(
-  project: ProjectSummary,
-  projects: ProjectSummary[],
-) {
-  const numericId = /^project-\d+$/u.test(project.id) ? project.id : null;
-  if (numericId) {
-    return numericId;
-  }
-  const index = projects.findIndex((item) => item.id === project.id);
-  return `project-${index >= 0 ? index + 1 : projects.length + 1}`;
-}
-
-function splitArgs(value: string) {
-  return value
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
-  const option = configOptions.find(
-    (item) => item.category?.toLowerCase() === "mode",
-  );
-  return (option?.options ?? [])
-    .map((item) => ({
-      value: typeof item.value === "string" ? item.value : "",
-      label: item.label ?? item.name ?? String(item.value ?? ""),
-    }))
-    .filter((item) => item.value.trim().length > 0);
-}
-
-function resolveCurrentAgentMode(
-  currentAgentMode: string | undefined,
-  configOptions: SessionConfigOption[] = [],
-  probedAgentMode?: string,
-) {
-  const option = configOptions.find(
-    (item) => item.category?.toLowerCase() === "mode",
-  );
-  const modeOptions = resolveAgentModeOptions(configOptions);
-  const validModes = new Set(modeOptions.map((item) => item.value));
-  const currentValue =
-    typeof option?.currentValue === "string" ? option.currentValue : undefined;
-  const selectedValue =
-    typeof option?.selectedValue === "string"
-      ? option.selectedValue
-      : undefined;
-  const value = typeof option?.value === "string" ? option.value : undefined;
-  const candidates = [
-    currentAgentMode,
-    currentValue,
-    selectedValue,
-    value,
-    probedAgentMode,
-  ]
-    .map((candidate) => candidate?.trim())
-    .filter((candidate): candidate is string => Boolean(candidate));
-
-  if (validModes.size) {
-    return candidates.find((candidate) => validModes.has(candidate));
-  }
-
-  return currentValue || selectedValue || value || undefined;
-}
-
-function resolveModelOptions(
-  currentModel?: string,
-  configOptions: SessionConfigOption[] = [],
-  nativeOptions: AcpModelOption[] = [],
-) {
-  return resolveModelOptionsFromConfig(
-    currentModel,
-    configOptions,
-    nativeOptions,
-  );
-}
-
-function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
-  const option = configOptions.find((item) =>
-    ["thought_level", "reasoning", "reasoning_effort"].includes(
-      item.category?.toLowerCase() ?? "",
-    ),
-  );
-  const values = (option?.options ?? [])
-    .map((item) => item.value)
-    .filter(
-      (value): value is SessionReasoningEffort =>
-        typeof value === "string" &&
-        REASONING_OPTIONS.some((candidate) => candidate.value === value),
-    );
-  return Array.from(new Set(values));
-}
-
-function resolveReasoningLabel(value: SessionReasoningEffort) {
-  return (
-    REASONING_OPTIONS.find((option) => option.value === value)?.label ?? value
-  );
-}
-
-function splitModelReasoning(value: string | undefined) {
-  const raw = value?.trim() ?? "";
-  const index = raw.lastIndexOf("/");
-  if (index <= 0) {
-    return {
-      model: raw,
-      reasoning: undefined as SessionReasoningEffort | undefined,
-    };
-  }
-  const suffix = raw.slice(index + 1).toLowerCase();
-  const reasoning = REASONING_OPTIONS.find(
-    (option) => option.value === suffix,
-  )?.value;
-  return reasoning
-    ? { model: raw.slice(0, index), reasoning }
-    : {
-        model: raw,
-        reasoning: undefined as SessionReasoningEffort | undefined,
-      };
-}
-
-function resolveBaseModelOptions(modelOptions: string[]) {
-  return Array.from(
-    new Set(
-      modelOptions
-        .map((model) => splitModelReasoning(model).model)
-        .filter(Boolean),
-    ),
-  );
-}
-
-function resolveReasoningOptionsForModel(
-  model: string,
-  modelOptions: string[],
-  configOptions: SessionConfigOption[] = [],
-) {
-  const fromModel = modelOptions
-    .map((option) => splitModelReasoning(option))
-    .filter((option) => option.model === model && option.reasoning)
-    .map((option) => option.reasoning as SessionReasoningEffort);
-  if (fromModel.length) {
-    return Array.from(new Set(fromModel));
-  }
-
-  const fromConfig = resolveReasoningOptions(configOptions);
-  return fromConfig.length
-    ? fromConfig
-    : model.trim()
-      ? REASONING_OPTIONS.map((option) => option.value)
-      : [];
-}
-
-function resolveCombinedModelValue(
-  model: string,
-  reasoning: SessionReasoningEffort | undefined,
-  modelOptions: string[],
-) {
-  if (reasoning) {
-    const combined = modelOptions.find((option) => {
-      const parsed = splitModelReasoning(option);
-      return parsed.model === model && parsed.reasoning === reasoning;
-    });
-    if (combined) {
-      return combined;
-    }
-  }
-
-  return (
-    modelOptions.find(
-      (option) => splitModelReasoning(option).model === model,
-    ) ?? model
-  );
-}
-
-function resolveDraftConfigOptions(
-  activeSession: SessionSummary | null,
-  sessions: SessionSummary[],
-  sessionConfigOptions: Record<string, SessionConfigOption[]>,
-  selectedAgentId?: string | null,
-) {
-  if (activeSession) {
-    return sessionConfigOptions[activeSession.id] ?? [];
-  }
-
-  const cachedSession = sessions.find(
-    (session) =>
-      session.agentId === selectedAgentId &&
-      (sessionConfigOptions[session.id]?.length ?? 0) > 0,
-  );
-  return cachedSession ? (sessionConfigOptions[cachedSession.id] ?? []) : [];
-}
-
-function normalizeModelSelection(model: string | undefined) {
-  return model && model !== "provider-default" ? model : undefined;
-}
-
-function defaultAgentId(agents: AcpAgentProvider[]) {
-  return (
-    agents.find((agent) => agent.id === "codex")?.id ?? agents[0]?.id ?? null
-  );
-}
-
-function formatRelativeTime(value: string) {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-
-  const diffMinutes = Math.max(1, Math.round((Date.now() - parsed) / 60000));
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m`;
-  }
-
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) {
-    return `${diffHours}h`;
-  }
-
-  const diffDays = Math.round(diffHours / 24);
-  return `${diffDays}d`;
-}
-
-function resolveSessionConfigHint(
-  activeSession: SessionSummary | null,
-  agents: AcpAgentProvider[],
-  draftAgentId?: string | null,
-) {
-  const provider = agents.find(
-    (agent) => agent.id === (activeSession?.agentId ?? draftAgentId),
-  );
-  const support = resolveSessionConfigSupport(provider);
-
-  if (support.model === "startup" && support.reasoningEffort === "startup") {
-    return activeSession
-      ? " 该 provider 会在下次 runtime 启动/恢复时应用模型与推理 覆盖。"
-      : " 该 provider 的新会话会直接写入 模型 / 推理。";
-  }
-
-  if (support.model === "startup" && support.reasoningEffort === "none") {
-    return activeSession
-      ? " 该 provider 会在下次 runtime 启动/恢复时应用模型覆盖；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仍只保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。"
-      : " 该 provider 的新会话支持写入模型；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仅保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。";
-  }
-
-  return activeSession
-    ? " 当前 provider 暂未暴露通用的运行时 模型/推理热切换接口，Tiller 会先保存为 session 配置。"
-    : " 新会话会尽量把这些配置带入 provider。";
-}
-
-function resolveModelInputPlaceholder(
-  activeSession: SessionSummary | null,
-  agents: AcpAgentProvider[],
-  draftAgentId?: string | null,
-) {
-  const provider = agents.find(
-    (agent) => agent.id === (activeSession?.agentId ?? draftAgentId),
-  );
-  const support = resolveSessionConfigSupport(provider);
-  return support.modelFormat === "provider/model"
-    ? "provider-default 或 openai/gpt-5.4"
-    : "provider-default 或 gpt-5.4";
-}
-
-function summarizeSessionContext(
-  session: SessionSummary | null,
-  sessionMessages: AgentMessage[],
-) {
-  if (!session) {
-    return "暂无活跃任务；请先增强新任务草稿。";
-  }
-  const recentMessages = sessionMessages
-    .slice(-4)
-    .map(
-      (message) =>
-        `${message.role}: ${message.text.replace(/\s+/g, " ").trim().slice(0, 180)}`,
-    );
-  return [
-    `Session ${session.id} is ${session.status}; messages: ${session.messageCount}.`,
-    session.lastMessagePreview
-      ? `最近意图/结果：${session.lastMessagePreview}`
-      : "",
-    recentMessages.length
-      ? ["最近消息：", ...recentMessages.map((message) => `- ${message}`)].join(
-          "\n",
-        )
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function resolveHelmConnectionState(
-  helm: { key: string; isCurrent: boolean },
-  currentHelmKey: string,
-  globalConnection: ConnectionState,
-  helmConnectionStates: Record<string, ConnectionState>,
-) {
-  return (
-    helmConnectionStates[helm.key] ??
-    (helm.key === currentHelmKey ? globalConnection : "disconnected")
-  );
-}
-
-function dedupeHelmCards<T extends { key: string; isCurrent: boolean }>(
-  cards: T[],
-) {
-  const seen = new Set<string>();
-  const result: T[] = [];
-  for (const card of cards) {
-    if (seen.has(card.key)) {
-      continue;
-    }
-    seen.add(card.key);
-    result.push(card);
-  }
-  return result;
-}
-
-
-function formatSessionTime(value: string) {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-
-  return new Date(parsed).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDeviceTime(value: string) {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-
-  return new Date(parsed).toLocaleString(deckLocale(), {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function deckLocale() {
-  return document.documentElement.lang || "zh-CN";
 }
