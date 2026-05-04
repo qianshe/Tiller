@@ -79,19 +79,19 @@ import { TopNav } from "../components/layout/TopNav";
 import {
   createMissionVisualFixture,
   shouldUseMissionVisualFixture,
-} from "../features/mission/mission-visual-fixture";
+} from "../features/mission/utils/mission-visual-fixture";
 import { OverviewPage } from "../pages/overview/OverviewPage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
-import { MissionDisplayPanel } from "../features/mission/mission-display-panel";
-import { PlainMessages } from "../features/mission/plain-messages";
-import { MissionSidebar } from "../features/mission/mission-sidebar";
-import { MissionInspector } from "../features/mission/mission-inspector";
-import { MissionComposer } from "../features/mission/mission-composer";
+import { MissionDisplayPanel } from "../features/mission/ui/mission-display-panel";
+import { PlainMessages } from "../features/mission/ui/plain-messages";
+import { MissionSidebar } from "../features/mission/ui/mission-sidebar";
+import { MissionInspector } from "../features/mission/ui/mission-inspector";
+import { MissionComposer } from "../features/mission/ui/mission-composer";
 import { resolveToolCallTone } from "../features/logbook/tool-call-tone";
 import {
   useMissionLayout,
   type MissionResizeHandle,
-} from "../features/mission/use-mission-layout";
+} from "../features/mission/hooks/use-mission-layout";
 import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
@@ -115,7 +115,7 @@ import {
   resolveSessionProjectId,
   resolveSessionTitle,
   toggleExpandedIdSet,
-} from "../state/sessions";
+} from "../features/mission/utils/session-derivations";
 import {
   clearTrustedDeviceCache,
   getOrCreateDeviceId,
@@ -123,11 +123,11 @@ import {
   writeTrustedDeviceCache,
   type TrustedDeviceCache,
 } from "../auth/beacon-cache";
-import { type MissionPanelPage } from "../features/mission/panels";
+import { type MissionPanelPage } from "../features/mission/ui/panels";
 import {
   createClipboardImageContent,
   extractClipboardImageItems,
-} from "../features/mission/clipboard";
+} from "../features/mission/utils/clipboard";
 import {
   commandChunkToToolCall,
   groupToolCalls,
@@ -164,7 +164,7 @@ import {
   requestSessionResumeStart as requestSessionResumeStartImpl,
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
-} from "./session-actions";
+} from "../features/mission/actions/session-actions";
 import {
   handlePairingKeyDown as handlePairingKeyDownImpl,
   pastePairingDigits as pastePairingDigitsImpl,

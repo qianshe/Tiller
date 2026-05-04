@@ -13,7 +13,7 @@ import {
   resolveSessionTitle,
   toggleExpandedIdSet,
   resolveMissionSelectedProjectId,
-} from "./sessions.js";
+} from "./session-derivations.js";
 
 function buildSession(id: string, updatedAt: string): SessionSummary {
   return {

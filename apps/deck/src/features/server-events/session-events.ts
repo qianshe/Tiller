@@ -4,7 +4,7 @@ import {
   createSessionStatusMap,
   pruneSessionScopedMap,
   resolveActiveSessionId,
-} from "../../state/sessions";
+} from "../mission/utils/session-derivations";
 import {
   availableCommandListsEqual,
   mergeCommandHistory,

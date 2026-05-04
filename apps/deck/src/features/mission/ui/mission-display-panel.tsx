@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { FileDiffSummary } from "@tiller/shared";
-import { InfoList } from "../../components/primitives";
+import { InfoList } from "../../../components/primitives";
 import {
   buildMissionDiffTree,
   formatDiffStatus,

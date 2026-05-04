@@ -3,7 +3,7 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
 } from "@tiller/shared";
-import { nextRequestId } from "../features/helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/request-dispatch";
 
 export function buildPromptContent(
   text: string,
