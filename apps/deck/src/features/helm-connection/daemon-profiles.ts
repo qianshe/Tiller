@@ -11,6 +11,19 @@ export function daemonProfileKey(host: string, port: string) {
   return `${host}:${port}`;
 }
 
+export function mergeDaemonProfile(
+  profiles: DaemonProfile[],
+  profile: DaemonProfile,
+) {
+  const profileKey = daemonProfileKey(profile.host, profile.port);
+  return [
+    ...profiles.filter(
+      (item) => daemonProfileKey(item.host, item.port) !== profileKey,
+    ),
+    profile,
+  ];
+}
+
 export function formatDaemonProfileLine(
   profile: DaemonProfile,
   currentHost: string,

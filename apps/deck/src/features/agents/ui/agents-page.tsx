@@ -96,7 +96,7 @@ type AgentsPageProps = {
   pendingHelmDeleteProfile: DaemonProfile | null;
   setPendingHelmDeleteProfile: Dispatch<SetStateAction<DaemonProfile | null>>;
   removeDaemonProfile: (profile: DaemonProfile) => void;
-  setSelectedHelmKey: Dispatch<SetStateAction<string>>;
+  setSelectedHelmKey: (key: string) => void;
   openFleetAddHelmModal: () => void;
   manualDisconnectRef: MutableRefObject<string | null>;
   setConnection: Dispatch<SetStateAction<ConnectionState>>;

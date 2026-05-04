@@ -44,3 +44,17 @@ export function writeDeckSnapshot(storage: StorageLike, snapshot: DeckSnapshotCa
 export function clearDeckSnapshot(storage: StorageLike, profileId: string) {
   storage.removeItem(snapshotStorageKey(profileId));
 }
+
+export function persistAdapter(storage: StorageLike) {
+  return {
+    getItem(name: string) {
+      return storage.getItem(name);
+    },
+    setItem(name: string, value: string) {
+      storage.setItem(name, value);
+    },
+    removeItem(name: string) {
+      storage.removeItem(name);
+    },
+  };
+}

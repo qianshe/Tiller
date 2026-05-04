@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import "highlight.js/styles/github-dark.css";
+import { useDeckStore } from "../store";
 import codexProviderIconUrl from "../shared/assets/provider-icons/codex.svg";
 import claudeProviderIconUrl from "../shared/assets/provider-icons/claude-code.svg";
 import geminiProviderIconUrl from "../shared/assets/provider-icons/gemini.svg";
@@ -41,12 +42,10 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import {
-  DAEMON_PROFILE_STORAGE_KEY,
   daemonProfileKey,
   formatConnectionStatus,
   formatDaemonProfileLine,
   formatPairingState,
-  readDaemonProfiles,
   type DaemonProfile,
 } from "../features/helm-connection/daemon-profiles";
 import {
@@ -58,15 +57,14 @@ import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-  DECK_PREFERENCES_STORAGE_KEY,
   isRecord,
-  readDeckPreferences,
   type DeckLanguage,
   type DeckPreferences,
   type DeckTheme,
   type TechnicalPanelPreferences,
 } from "../features/preferences/preferences-storage";
 import { UI_COPY, type Locale } from "../shared/utils/copy";
+import { usePreferencesEffects } from "../features/preferences/hooks/use-preferences-effects";
 import {
   handleActivityServerEvent,
   handleDeviceServerEvent,
@@ -493,7 +491,6 @@ export function App() {
   const pendingAddHelmProfileRef = useRef<DaemonProfile | null>(null);
   const primaryHelmKeyRef = useRef<string | null>(null);
   const resumeStartRequestsRef = useRef<Set<string>>(new Set());
-  const initialPreferences = useMemo(() => readDeckPreferences(), []);
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(
     () =>
@@ -621,8 +618,8 @@ export function App() {
   const [projectFileFilter, setProjectFileFilter] = useState("");
   const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] =
     useState<Set<string>>(() => new Set());
-  const [deckPreferences, setDeckPreferences] =
-    useState<DeckPreferences>(initialPreferences);
+  const deckPreferences = useDeckStore((state) => state.preferences);
+  const updatePreferences = useDeckStore((state) => state.updatePreferences);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>(
     [],
@@ -709,6 +706,7 @@ export function App() {
     startMissionPaneResize,
     nudgeMissionPane,
   } = useMissionLayout(activeView);
+  usePreferencesEffects();
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<
     string | null
   >(missionVisualFixture?.sessions[0]?.helmId ?? null);
@@ -731,10 +729,15 @@ export function App() {
     useState<string>("草稿未保存");
   const [configSaveMessage, setConfigSaveMessage] =
     useState<string>("尚未写入 Helm 配置");
-  const [daemonProfiles, setDaemonProfiles] = useState<DaemonProfile[]>(() =>
-    IS_EMBEDDED_HELM_DECK ? [] : readDaemonProfiles(),
+  const daemonProfiles = useDeckStore((state) =>
+    IS_EMBEDDED_HELM_DECK ? [] : state.daemonProfiles,
   );
-  const [selectedHelmKey, setSelectedHelmKey] = useState<string>("");
+  const addDaemonProfile = useDeckStore((state) => state.addDaemonProfile);
+  const removeDaemonProfileFromStore = useDeckStore(
+    (state) => state.removeDaemonProfile,
+  );
+  const selectedHelmKey = useDeckStore((state) => state.selectedHelmKey);
+  const selectHelmKey = useDeckStore((state) => state.selectHelmKey);
   const [agentConfigExpanded, setAgentConfigExpanded] = useState(false);
   const [fleetAddHelmModalOpen, setFleetAddHelmModalOpen] = useState(false);
   const [fleetAddHelmStage, setFleetAddHelmStage] = useState<
@@ -1519,17 +1522,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      DECK_PREFERENCES_STORAGE_KEY,
-      JSON.stringify(deckPreferences),
-    );
-    document.documentElement.dataset.deckTheme = deckPreferences.theme;
-    document.documentElement.dataset.deckReduceMotion = String(
-      deckPreferences.reduceMotion,
-    );
-  }, [deckPreferences]);
-
-  useEffect(() => {
     if (activeView !== "sessions" || !missionPromptRef.current) {
       return;
     }
@@ -1785,54 +1777,50 @@ export function App() {
     key: K,
     value: DeckPreferences[K],
   ) {
-    setDeckPreferences((current) => ({ ...current, [key]: value }));
+    updatePreferences({ [key]: value } as Partial<DeckPreferences>);
   }
 
   function updateTechnicalPanelPreference<
     K extends keyof TechnicalPanelPreferences,
   >(key: K, value: TechnicalPanelPreferences[K]) {
-    setDeckPreferences((current) => ({
-      ...current,
+    updatePreferences({
       technicalPanels: {
-        ...resolveTechnicalPanelPreferences(current),
+        ...resolveTechnicalPanelPreferences(deckPreferences),
         [key]: value,
       },
-    }));
+    });
   }
 
   function updatePromptEnhancerPreference<
     K extends keyof PromptEnhancerPreferences,
   >(key: K, value: PromptEnhancerPreferences[K]) {
-    setDeckPreferences((current) => ({
-      ...current,
-      promptEnhancer: { ...current.promptEnhancer, [key]: value },
-    }));
+    updatePreferences({
+      promptEnhancer: { ...deckPreferences.promptEnhancer, [key]: value },
+    });
   }
 
   function updatePromptEnhancerLlmPreference<
     K extends keyof PromptEnhancerPreferences["llm"],
   >(key: K, value: PromptEnhancerPreferences["llm"][K]) {
-    setDeckPreferences((current) => ({
-      ...current,
+    updatePreferences({
       promptEnhancer: {
-        ...current.promptEnhancer,
-        llm: { ...current.promptEnhancer.llm, [key]: value },
+        ...deckPreferences.promptEnhancer,
+        llm: { ...deckPreferences.promptEnhancer.llm, [key]: value },
       },
-    }));
+    });
   }
 
   function resetPromptEnhancerDefaults() {
-    setDeckPreferences((current) => ({
-      ...current,
+    updatePreferences({
       promptEnhancer: {
-        ...current.promptEnhancer,
+        ...deckPreferences.promptEnhancer,
         llm: {
-          ...current.promptEnhancer.llm,
+          ...deckPreferences.promptEnhancer.llm,
           systemPrompt: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
           instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
         },
       },
-    }));
+    });
     setPromptEnhancerStatus("已恢复默认增强器 System Prompt 与指令模板。");
   }
 
@@ -1927,7 +1915,7 @@ export function App() {
   }
 
   function resetDeckPreferences() {
-    setDeckPreferences(DEFAULT_DECK_PREFERENCES);
+    updatePreferences(DEFAULT_DECK_PREFERENCES);
   }
 
   function requestInitialSync(socket: WebSocket) {
@@ -2074,7 +2062,7 @@ export function App() {
         setDaemonPort,
         daemonHostStorageKey: DAEMON_HOST_KEY,
         daemonPortStorageKey: DAEMON_PORT_KEY,
-        setSelectedHelmKey,
+        setSelectedHelmKey: selectHelmKey,
         setFleetAddHelmModalOpen,
         setFleetAddHelmStage,
         setTrustedDevice,
@@ -2336,20 +2324,9 @@ export function App() {
   }
 
   function persistDaemonProfile(profile: DaemonProfile) {
-    const profileKey = daemonProfileKey(profile.host, profile.port);
-    const nextProfiles = [
-      ...daemonProfiles.filter(
-        (item) => daemonProfileKey(item.host, item.port) !== profileKey,
-      ),
-      profile,
-    ];
-    setDaemonProfiles(nextProfiles);
+    addDaemonProfile(profile);
     setDaemonProfileName(profile.name);
     setDaemonProfileMessage(`已保存 Helm：${profile.name}`);
-    window.localStorage.setItem(
-      DAEMON_PROFILE_STORAGE_KEY,
-      JSON.stringify(nextProfiles),
-    );
   }
 
   function saveDaemonProfile() {
@@ -2394,18 +2371,14 @@ export function App() {
       setDaemonPort(fallbackPort);
       window.localStorage.setItem(DAEMON_HOST_KEY, fallbackHost);
       window.localStorage.setItem(DAEMON_PORT_KEY, fallbackPort);
-      setSelectedHelmKey(
+      selectHelmKey(
         fallbackProfile ? daemonProfileKey(fallbackHost, fallbackPort) : "",
       );
     } else if (selectedHelmKey === profileKey) {
-      setSelectedHelmKey(currentHelmKey);
+      selectHelmKey(currentHelmKey);
     }
 
-    setDaemonProfiles(nextProfiles);
-    window.localStorage.setItem(
-      DAEMON_PROFILE_STORAGE_KEY,
-      JSON.stringify(nextProfiles),
-    );
+    removeDaemonProfileFromStore(profile);
     setDaemonProfileMessage(`已删除 Helm 前端配置：${profile.name}`);
   }
 
@@ -2540,7 +2513,7 @@ export function App() {
 
   function connectDaemonProfile(profile: DaemonProfile) {
     applyDaemonProfile(profile);
-    setSelectedHelmKey(daemonProfileKey(profile.host, profile.port));
+    selectHelmKey(daemonProfileKey(profile.host, profile.port));
     void connectToDaemon(undefined, {
       preserveState: true,
       host: profile.host,
@@ -3821,7 +3794,7 @@ export function App() {
         pendingHelmDeleteProfile={pendingHelmDeleteProfile}
         setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
         removeDaemonProfile={removeDaemonProfile}
-        setSelectedHelmKey={setSelectedHelmKey}
+        setSelectedHelmKey={selectHelmKey}
         openFleetAddHelmModal={openFleetAddHelmModal}
         manualDisconnectRef={manualDisconnectRef}
         setConnection={setConnection}
