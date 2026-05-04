@@ -48,11 +48,9 @@ import {
   formatPairingState,
   type DaemonProfile,
 } from "../features/helm-connection/daemon-profiles";
-import {
-  useHelmConnectionState,
-  type ConnectionState,
-  type HelmInventoryBucket,
-} from "../features/helm-connection/use-helm-connection-state";
+import { useHelmConnection } from "../features/helm-connection/hooks/use-helm-connection";
+import type { ConnectionState } from "../store/slices/connection-slice";
+import type { HelmInventoryBucket } from "../store/slices/helms-slice";
 import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
@@ -119,7 +117,6 @@ import {
   getOrCreateDeviceId,
   readTrustedDeviceCache,
   writeTrustedDeviceCache,
-  type TrustedDeviceCache,
 } from "../features/auth/beacon-cache";
 import { type MissionPanelPage } from "../features/mission/ui/panels";
 import {
@@ -537,7 +534,7 @@ export function App() {
     setDaemonPort,
     debugTrace,
     setDebugTrace,
-  } = useHelmConnectionState({
+  } = useHelmConnection({
     defaultHelmEndpoint,
     fixtureConnected: Boolean(missionVisualFixture),
   });
@@ -779,17 +776,10 @@ export function App() {
     useState<SessionSummary | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
-  const [trustedDevice, setTrustedDevice] = useState<TrustedDeviceCache | null>(
-    () =>
-      readTrustedDeviceCache(
-        window.localStorage,
-        window.localStorage.getItem(DAEMON_HOST_KEY) ?? DEFAULT_DAEMON_HOST,
-        window.localStorage.getItem(DAEMON_PORT_KEY) ?? DEFAULT_DAEMON_PORT,
-      ),
-  );
-  const [trustedDevices, setTrustedDevices] = useState<TrustedDeviceSummary[]>(
-    [],
-  );
+  const trustedDevice = useDeckStore((state) => state.trustedDevice);
+  const setTrustedDevice = useDeckStore((state) => state.setTrustedDevice);
+  const trustedDevices = useDeckStore((state) => state.trustedDevices);
+  const setTrustedDevices = useDeckStore((state) => state.setTrustedDevices);
 
   const copy = UI_COPY[locale];
 
@@ -2056,45 +2046,28 @@ export function App() {
         pendingAddHelmProfileRef,
         writeTrustedDeviceCache,
         persistDaemonProfile,
-        setDaemonHost,
-        setDaemonPort,
         daemonHostStorageKey: DAEMON_HOST_KEY,
         daemonPortStorageKey: DAEMON_PORT_KEY,
         setSelectedHelmKey: selectHelmKey,
         setFleetAddHelmModalOpen,
         setFleetAddHelmStage,
-        setTrustedDevice,
         autoConnectAttemptRef,
-        setPairingFeedback,
-        setPairingState,
         socketRef,
         requestInitialSync,
         readTrustedDeviceCache,
         clearTrustedDeviceCache,
-        setTrustedDevices,
-        updateHelmInventory,
-        helmInventories,
-        trustedDevices,
-        setConnectFeedback,
       })
     ) {
       return;
     }
     if (
       handleInventoryServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-        setHelms,
-        updateHelmInventory,
-        setProjects,
         projectFilesKey,
         setProjectFilesByScope,
-        setWorkspaces,
-        setWorktreeGitByProject,
         setSelectedWorkspaceId,
         setWorktreePickerOpen,
-        setAgents,
         setAgentTestResult,
         agentModelOptionsKey,
-        setAgentModelOptions,
         writeAgentModelOptionsCache,
         selectedAgentId,
         selectedWorkspaceId,
@@ -2118,11 +2091,7 @@ export function App() {
     }
     if (
       handleSessionServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-        sessions,
-        setSessions,
-        setStatuses,
         setSelectedProjectId,
-        setActiveSessionId,
         pendingPromptRef,
         pendingPromptContentRef,
         socketRef,
@@ -2132,18 +2101,7 @@ export function App() {
         dispatch,
         nextRequestId,
         requestCounter,
-        setSessionConfigOptions,
-        setSessionAvailableCommands,
-        updateHelmInventory,
-        setSessionHistoryState,
-        setMessages,
-        setMessageHistoryState,
-        setPermissionRequests,
-        setOutputs,
-        setToolCalls,
         toolCallsRef,
-        setActivityHistoryState,
-        setDiffs,
         mergeSessionToolCalls,
         shouldAutoStartSessionResume,
         requestSessionResumeStart,
@@ -2156,14 +2114,7 @@ export function App() {
     if (
       handleActivityServerEvent(payload, {
         toolCallsRef,
-        setMessages,
-        setSessions,
-        setPermissionRequests,
-        setOutputs,
         mergeSessionToolCalls,
-        setDiffs,
-        setPairingFeedback,
-        setPairingState,
         appendSystemMessage,
       })
     ) {

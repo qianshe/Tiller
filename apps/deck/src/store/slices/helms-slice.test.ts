@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { HelmSummary, ProjectSummary } from "@tiller/shared";
 import { createStore } from "zustand/vanilla";
-import type { ConnectionState } from "../../features/helm-connection/use-helm-connection-state";
+import type { ConnectionState } from "./connection-slice";
 import { createHelmsSlice, type HelmsSlice } from "./helms-slice.js";
 
 function createTestStore() {

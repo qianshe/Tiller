@@ -1,4 +1,5 @@
 import { toast } from "../../features/toast/toast";
+import { useDeckStore } from "../../store";
 import { commandChunkToToolCall, mergeMessageHistory } from "../../features/logbook/timeline";
 import {
   createSessionStatusMap,
@@ -20,11 +21,7 @@ export function handleSessionServerEvent(
   context: any,
 ) {
   const {
-    sessions,
-    setSessions,
-    setStatuses,
     setSelectedProjectId,
-    setActiveSessionId,
     pendingPromptRef,
     pendingPromptContentRef,
     socketRef,
@@ -34,37 +31,28 @@ export function handleSessionServerEvent(
     dispatch,
     nextRequestId,
     requestCounter,
-    setSessionConfigOptions,
-    setSessionAvailableCommands,
-    updateHelmInventory,
-    setSessionHistoryState,
-    setMessages,
-    setMessageHistoryState,
-    setPermissionRequests,
-    setOutputs,
-    setToolCalls,
     toolCallsRef,
-    setActivityHistoryState,
-    setDiffs,
     mergeSessionToolCalls,
     shouldAutoStartSessionResume,
     requestSessionResumeStart,
     setResumeFeedback,
     resumeStartRequestsRef,
   } = context;
+  const store = useDeckStore.getState();
+  const currentSessions = store.sessions;
 
   switch (payload.type) {
     case "session.created":
-      setSessions((current: any) =>
+      store.setSessions((current: any) =>
         upsertSessionSummary(current, payload.session),
       );
-      setStatuses((current: any) => ({
+      store.setStatuses((current: any) => ({
         ...current,
         [payload.session.id]: payload.session.status,
       }));
       setSelectedProjectId(payload.session.projectId);
       if (payload.session.runtimeSessionId) {
-        setActiveSessionId(payload.session.id);
+        store.setActiveSessionId(payload.session.id);
         if (pendingPromptRef.current && socketRef.current) {
           const pendingPrompt = pendingPromptRef.current;
           const pendingContent = pendingPromptContentRef.current;
@@ -92,16 +80,16 @@ export function handleSessionServerEvent(
       }
       return true;
     case "session.updated":
-      setSessions((current: any) =>
+      store.setSessions((current: any) =>
         upsertSessionSummary(current, payload.session),
       );
       return true;
     case "session.config.options":
-      setSessionConfigOptions((current: any) => ({
+      store.setSessionConfigOptions((current: any) => ({
         ...current,
         [payload.sessionId]: payload.options,
       }));
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -117,7 +105,7 @@ export function handleSessionServerEvent(
       );
       return true;
     case "session.commands":
-      setSessionAvailableCommands((current: any) => {
+      store.setSessionAvailableCommands((current: any) => {
         if (
           availableCommandListsEqual(current[payload.sessionId], payload.commands)
         ) {
@@ -127,7 +115,7 @@ export function handleSessionServerEvent(
       });
       return true;
     case "session.model.options":
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -142,49 +130,49 @@ export function handleSessionServerEvent(
       return true;
     case "session.list.result": {
       const nextSessions = payload.before
-        ? mergeSessionSummaries(sessions, payload.sessions)
+        ? mergeSessionSummaries(currentSessions, payload.sessions)
         : payload.sessions;
       const nextStatuses = createSessionStatusMap(nextSessions);
-      updateHelmInventory(sourceHelmKey, {
+      store.applyHelmInventory(sourceHelmKey, {
         sessions: nextSessions,
         statuses: nextStatuses,
       });
       if (sourceIsCurrentHelm) {
-        setSessions(nextSessions);
-        setSessionHistoryState({
+        store.setSessions(nextSessions);
+        store.setSessionHistoryState({
           nextCursor: payload.nextCursor,
           hasMore: Boolean(payload.hasMore),
           loading: false,
         });
-        setStatuses(nextStatuses);
-        setMessages((current: any) => pruneSessionScopedMap(current, nextSessions));
-        setMessageHistoryState((current: any) =>
+        store.setStatuses(nextStatuses);
+        store.setMessages((current: any) => pruneSessionScopedMap(current, nextSessions));
+        store.setMessageHistoryState((current: any) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        setPermissionRequests((current: any) =>
+        store.setPermissionRequests((current: any) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        setOutputs((current: any) => pruneSessionScopedMap(current, nextSessions));
-        setToolCalls((current: any) => {
+        store.setOutputs((current: any) => pruneSessionScopedMap(current, nextSessions));
+        store.setToolCalls((current) => {
           const next = pruneSessionScopedMap(current, nextSessions);
           toolCallsRef.current = next;
           return next;
         });
-        setActivityHistoryState((current: any) =>
+        store.setActivityHistoryState((current: any) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        setDiffs((current: any) => pruneSessionScopedMap(current, nextSessions));
-        setSessionConfigOptions((current: any) =>
+        store.setDiffs((current: any) => pruneSessionScopedMap(current, nextSessions));
+        store.setSessionConfigOptions((current: any) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        setActiveSessionId((current: string | null) =>
+        store.setActiveSessionId((current: string | null) =>
           resolveActiveSessionId(current, nextSessions),
         );
       }
       return true;
     }
     case "session.messages.list.result":
-      setMessages((current: any) => ({
+      store.setMessages((current: any) => ({
         ...current,
         [payload.sessionId]: mergeMessageHistory(
           current[payload.sessionId] ?? [],
@@ -192,7 +180,7 @@ export function handleSessionServerEvent(
           { mode: payload.before ? "prepend" : "append" },
         ),
       }));
-      setMessageHistoryState((current: any) => ({
+      store.setMessageHistoryState((current: any) => ({
         ...current,
         [payload.sessionId]: {
           nextCursor: payload.nextCursor,
@@ -202,7 +190,7 @@ export function handleSessionServerEvent(
       }));
       return true;
     case "session.artifacts.result":
-      setOutputs((current: any) => ({
+      store.setOutputs((current: any) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
           current[payload.sessionId] ?? [],
@@ -213,11 +201,11 @@ export function handleSessionServerEvent(
         ...payload.outputs.map(commandChunkToToolCall),
         ...(payload.toolCalls ?? []),
       ]);
-      setDiffs((current: any) => ({
+      store.setDiffs((current: any) => ({
         ...current,
         [payload.sessionId]: payload.diffs,
       }));
-      setActivityHistoryState((current: any) => ({
+      store.setActivityHistoryState((current: any) => ({
         ...current,
         [payload.sessionId]: {
           nextCursor: payload.nextCursor,
@@ -227,7 +215,7 @@ export function handleSessionServerEvent(
       }));
       return true;
     case "session.resume.result":
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -251,7 +239,7 @@ export function handleSessionServerEvent(
       if (!payload.ok) {
         resumeStartRequestsRef.current.delete(payload.sessionId);
       }
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -273,42 +261,42 @@ export function handleSessionServerEvent(
         toast.info(payload.result.message);
       }
       setResumeFeedback("");
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.filter((session) => session.id !== payload.result.sessionId),
       );
-      setStatuses((current: any) =>
+      store.setStatuses((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setMessages((current: any) =>
+      store.setMessages((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setPermissionRequests((current: any) =>
+      store.setPermissionRequests((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setOutputs((current: any) =>
+      store.setOutputs((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setToolCalls((current: any) => {
+      store.setToolCalls((current) => {
         const next = removeSessionRecord(current, payload.result.sessionId);
         toolCallsRef.current = next;
         return next;
       });
-      setDiffs((current: any) =>
+      store.setDiffs((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setSessionConfigOptions((current: any) =>
+      store.setSessionConfigOptions((current: any) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      setActiveSessionId((current: string | null) =>
+      store.setActiveSessionId((current: string | null) =>
         current === payload.result.sessionId ? null : current,
       );
       return true;
     case "session.status":
-      setStatuses((current: any) => ({
+      store.setStatuses((current: any) => ({
         ...current,
         [payload.sessionId]: payload.status,
       }));
-      setSessions((current: any[]) =>
+      store.setSessions((current: any[]) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {

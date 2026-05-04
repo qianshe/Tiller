@@ -1,3 +1,5 @@
+import { useDeckStore } from "../../store";
+
 export function handleInventoryServerEvent(
   payload: { type: string; [key: string]: any },
   sourceHelmKey: string,
@@ -5,19 +7,12 @@ export function handleInventoryServerEvent(
   context: any,
 ) {
   const {
-    setHelms,
-    updateHelmInventory,
-    setProjects,
     projectFilesKey,
     setProjectFilesByScope,
-    setWorkspaces,
-    setWorktreeGitByProject,
     setSelectedWorkspaceId,
     setWorktreePickerOpen,
-    setAgents,
     setAgentTestResult,
     agentModelOptionsKey,
-    setAgentModelOptions,
     writeAgentModelOptionsCache,
     selectedAgentId,
     selectedWorkspaceId,
@@ -36,15 +31,16 @@ export function handleInventoryServerEvent(
     nextRequestId,
     requestCounter,
   } = context;
+  const store = useDeckStore.getState();
 
   switch (payload.type) {
     case "helm.list.result":
-      setHelms(payload.helms);
+      store.setHelms(payload.helms);
       return true;
     case "project.list.result":
-      updateHelmInventory(sourceHelmKey, { projects: payload.projects });
+      store.applyHelmInventory(sourceHelmKey, { projects: payload.projects });
       if (sourceIsCurrentHelm) {
-        setProjects(payload.projects);
+        store.setProjects(payload.projects);
       }
       return true;
     case "project.files.result": {
@@ -60,13 +56,13 @@ export function handleInventoryServerEvent(
       return true;
     }
     case "workspace.list.result":
-      updateHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
+      store.applyHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
       if (sourceIsCurrentHelm) {
-        setWorkspaces(payload.workspaces);
+        store.setWorkspaces(payload.workspaces);
       }
       return true;
     case "workspace.git.result":
-      setWorktreeGitByProject((current: any) => ({
+      store.setWorktreeGitByProject((current: any) => ({
         ...current,
         [payload.projectId]: {
           branches: payload.branches,
@@ -76,7 +72,7 @@ export function handleInventoryServerEvent(
         },
       }));
       if (sourceIsCurrentHelm && payload.workspaces.length) {
-        setWorkspaces((current: any[]) => {
+        store.setWorkspaces((current: any[]) => {
           const nextById = new Map(
             current.map((workspace) => [workspace.id, workspace]),
           );
@@ -92,9 +88,9 @@ export function handleInventoryServerEvent(
       }
       return true;
     case "agent.list.result":
-      updateHelmInventory(sourceHelmKey, { agents: payload.agents });
+      store.applyHelmInventory(sourceHelmKey, { agents: payload.agents });
       if (sourceIsCurrentHelm) {
-        setAgents(payload.agents);
+        store.setAgents(payload.agents);
       }
       return true;
     case "agent.test.result":
@@ -109,7 +105,7 @@ export function handleInventoryServerEvent(
         configOptions: payload.configOptions,
         state: payload.state,
       };
-      setAgentModelOptions((current: any) => {
+      store.setAgentModelOptions((current: any) => {
         const next = { ...current, [key]: nextEntry };
         writeAgentModelOptionsCache(next);
         return next;

@@ -1,9 +1,24 @@
-import type { HelmSummary } from "@tiller/shared";
-import type { StateCreator } from "zustand";
 import type {
-  ConnectionState,
-  HelmInventoryBucket,
-} from "../../features/helm-connection/use-helm-connection-state";
+  AcpAgentProvider,
+  HelmSummary,
+  ProjectSummary,
+  SessionStatus,
+  SessionSummary,
+  TrustedDeviceSummary,
+  WorkspaceSummary,
+} from "@tiller/shared";
+import type { StateCreator } from "zustand";
+import type { ConnectionState } from "./connection-slice";
+
+export type HelmInventoryBucket = {
+  helms?: HelmSummary[];
+  projects: ProjectSummary[];
+  workspaces: WorkspaceSummary[];
+  agents: AcpAgentProvider[];
+  sessions: SessionSummary[];
+  statuses: Record<string, SessionStatus>;
+  trustedDevices: TrustedDeviceSummary[];
+};
 
 export type HelmListUpdater =
   | HelmSummary[]

@@ -1,3 +1,5 @@
+import { useDeckStore } from "../../store";
+
 export function handleDeviceServerEvent(
   payload: { type: string; [key: string]: any },
   sourceHelmKey: string,
@@ -14,27 +16,17 @@ export function handleDeviceServerEvent(
     pendingAddHelmProfileRef,
     writeTrustedDeviceCache,
     persistDaemonProfile,
-    setDaemonHost,
-    setDaemonPort,
     daemonHostStorageKey,
     daemonPortStorageKey,
-    setSelectedHelmKey,
     setFleetAddHelmModalOpen,
     setFleetAddHelmStage,
-    setTrustedDevice,
     autoConnectAttemptRef,
-    setPairingFeedback,
-    setPairingState,
     socketRef,
     requestInitialSync,
     readTrustedDeviceCache,
     clearTrustedDeviceCache,
-    setTrustedDevices,
-    updateHelmInventory,
-    helmInventories,
-    trustedDevices,
-    setConnectFeedback,
   } = context;
+  const store = useDeckStore.getState();
   const currentEventHelmKey =
     primaryHelmKeyRef.current ??
     daemonProfileKey(
@@ -58,25 +50,25 @@ export function handleDeviceServerEvent(
         writeTrustedDeviceCache(window.localStorage, pairedHost, pairedPort, nextCache);
         if (pairedProfile) {
           persistDaemonProfile(pairedProfile);
-          setDaemonHost(pairedProfile.host);
-          setDaemonPort(pairedProfile.port);
+          store.setDaemonHost(pairedProfile.host);
+          store.setDaemonPort(pairedProfile.port);
           window.localStorage.setItem(daemonHostStorageKey, pairedProfile.host);
           window.localStorage.setItem(daemonPortStorageKey, pairedProfile.port);
-          setSelectedHelmKey(daemonProfileKey(pairedProfile.host, pairedProfile.port));
+          store.selectHelmKey(daemonProfileKey(pairedProfile.host, pairedProfile.port));
           pendingAddHelmProfileRef.current = null;
           setFleetAddHelmModalOpen(false);
           setFleetAddHelmStage("connect");
         }
-        setTrustedDevice(nextCache);
+        store.setTrustedDevice(nextCache);
         autoConnectAttemptRef.current = null;
-        setPairingFeedback(payload.message);
-        setPairingState("paired");
+        store.setPairingFeedback(payload.message);
+        store.setPairingState("paired");
         if (socketRef.current) {
           requestInitialSync(socketRef.current);
         }
       } else {
-        setPairingFeedback(payload.message);
-        setPairingState("rejected");
+        store.setPairingFeedback(payload.message);
+        store.setPairingState("rejected");
       }
       return true;
     case "device.auth.result":
@@ -98,11 +90,11 @@ export function handleDeviceServerEvent(
             daemonPort.trim() || defaultDaemonPort,
             nextCache,
           );
-          setTrustedDevice(nextCache);
+          store.setTrustedDevice(nextCache);
         }
         autoConnectAttemptRef.current = null;
-        setPairingFeedback(payload.message);
-        setPairingState("paired");
+        store.setPairingFeedback(payload.message);
+        store.setPairingState("paired");
         if (socketRef.current) {
           requestInitialSync(socketRef.current);
         }
@@ -112,39 +104,39 @@ export function handleDeviceServerEvent(
           daemonHost.trim() || defaultDaemonHost,
           daemonPort.trim() || defaultDaemonPort,
         );
-        setTrustedDevice(null);
-        setTrustedDevices([]);
-        setPairingFeedback(payload.message);
-        setPairingState(payload.requiresPairing ? "input" : "rejected");
+        store.setTrustedDevice(null);
+        store.setTrustedDevices([]);
+        store.setPairingFeedback(payload.message);
+        store.setPairingState(payload.requiresPairing ? "input" : "rejected");
       }
       return true;
     case "device.list.result":
-      updateHelmInventory(sourceHelmKey, { trustedDevices: payload.devices });
+      store.applyHelmInventory(sourceHelmKey, { trustedDevices: payload.devices });
       if (sourceIsCurrentHelm) {
-        setTrustedDevices(payload.devices);
+        store.setTrustedDevices(payload.devices);
       }
       return true;
     case "device.revoke.result":
-      updateHelmInventory(sourceHelmKey, {
+      store.applyHelmInventory(sourceHelmKey, {
         trustedDevices: (
-          helmInventories[sourceHelmKey]?.trustedDevices ?? trustedDevices
+          store.helmInventories[sourceHelmKey]?.trustedDevices ?? store.trustedDevices
         ).filter((device: any) => device.deviceId !== payload.deviceId),
       });
       if (sourceIsCurrentHelm) {
-        setTrustedDevices((current: any[]) =>
+        store.setTrustedDevices((current: any[]) =>
           current.filter((device) => device.deviceId !== payload.deviceId),
         );
       }
-      setPairingFeedback(payload.message);
+      store.setPairingFeedback(payload.message);
       if (payload.ok && payload.deviceId === deckDeviceId) {
         clearTrustedDeviceCache(
           window.localStorage,
           daemonHost.trim() || defaultDaemonHost,
           daemonPort.trim() || defaultDaemonPort,
         );
-        setTrustedDevice(null);
-        setConnectFeedback("当前设备已被撤销，请重新连接并输入配对码。");
-        setPairingState("input");
+        store.setTrustedDevice(null);
+        store.setConnectFeedback("当前设备已被撤销，请重新连接并输入配对码。");
+        store.setPairingState("input");
       }
       return true;
     default:
