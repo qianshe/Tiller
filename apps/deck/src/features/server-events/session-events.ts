@@ -6,9 +6,12 @@ import type {
   AgentToolCall,
   SessionSummary,
 } from "@tiller/shared";
-import { toast } from "../../features/toast/toast";
+import { toast } from "../../features/toast/store";
 import { useDeckStore } from "../../store";
-import { commandChunkToToolCall, mergeMessageHistory } from "../../features/logbook/timeline";
+import {
+  commandChunkToToolCall,
+  mergeMessageHistory,
+} from "../../features/logbook/timeline";
 import {
   createSessionStatusMap,
   pruneSessionScopedMap,
@@ -143,7 +146,10 @@ export function handleSessionServerEvent(
     case "session.commands":
       store.setSessionAvailableCommands((current) => {
         if (
-          availableCommandListsEqual(current[payload.sessionId], payload.commands)
+          availableCommandListsEqual(
+            current[payload.sessionId],
+            payload.commands,
+          )
         ) {
           return current;
         }
@@ -181,14 +187,18 @@ export function handleSessionServerEvent(
           loading: false,
         });
         store.setStatuses(nextStatuses);
-        store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setMessages((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
         store.setPermissionRequests((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setOutputs((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setToolCalls((current) => {
           const next = pruneSessionScopedMap(current, nextSessions);
           toolCallsRef.current = next;
@@ -197,7 +207,9 @@ export function handleSessionServerEvent(
         store.setActivityHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setDiffs((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setSessionConfigOptions((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );

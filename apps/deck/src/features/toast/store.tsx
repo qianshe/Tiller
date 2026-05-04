@@ -64,17 +64,27 @@ function removeToast(id: ToastId) {
 
 function scheduleRemoval(id: ToastId) {
   clearTimer(removalTimers, id);
-  removalTimers.set(id, globalThis.setTimeout(() => removeToast(id), TOAST_EXIT_ANIMATION_MS));
+  removalTimers.set(
+    id,
+    globalThis.setTimeout(() => removeToast(id), TOAST_EXIT_ANIMATION_MS),
+  );
 }
 
 function scheduleAutoDismiss(id: ToastId, duration: number) {
   clearTimer(autoDismissTimers, id);
   if (duration <= 0 || !Number.isFinite(duration)) return;
 
-  autoDismissTimers.set(id, globalThis.setTimeout(() => dismissToast(id), duration));
+  autoDismissTimers.set(
+    id,
+    globalThis.setTimeout(() => dismissToast(id), duration),
+  );
 }
 
-function showToast(variant: ToastVariant, message: string, options: ToastOptions = {}) {
+function showToast(
+  variant: ToastVariant,
+  message: string,
+  options: ToastOptions = {},
+) {
   const id = options.id ?? createToastId();
   const duration = options.duration ?? DEFAULT_TOAST_DURATION_MS;
   const item: ToastItem = { id, message, variant, duration, state: "visible" };
@@ -180,7 +190,12 @@ export function ToastViewport() {
             <span className="toast-label">{toastLabels[item.variant]}</span>
             <p>{item.message}</p>
           </div>
-          <button type="button" className="toast-close" aria-label={`关闭通知：${item.message}`} onClick={() => toast.dismiss(item.id)}>
+          <button
+            type="button"
+            className="toast-close"
+            aria-label={`关闭通知：${item.message}`}
+            onClick={() => toast.dismiss(item.id)}
+          >
             ×
           </button>
         </article>

@@ -1,6 +1,5 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { createWriteStream, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { basename, dirname, resolve } from "node:path";
@@ -37,7 +36,6 @@ import {
   type TrustedDeviceSummary,
   type WorkspaceSummary,
 } from "@tiller/shared";
-import { createAuthenticatedSocketRegistry } from "./auth/socket-registry";
 import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
 import { type StoredSessionRuntimeDescriptor } from "./sessions/runtime-store";
 import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
@@ -54,6 +52,9 @@ import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime/events";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
+import { createTillerLogger } from "./logging/logger";
+import { createPairingState } from "./state/pairing";
+import { createSocketState } from "./state/socket";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
@@ -66,12 +67,11 @@ const {
 } = resolveTillerRuntimeOptions({ config: tillerConfig });
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 const LOGS_DIR = resolve(dirname(configPath), "logs");
-const TILLER_LOG_FILE = resolve(LOGS_DIR, "tiller.log");
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
-const TILLER_DEBUG_ENABLED = /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? "");
 
-mkdirSync(LOGS_DIR, { recursive: true });
-const tillerLogStream = createWriteStream(TILLER_LOG_FILE, { flags: "a" });
+const logger = createTillerLogger({ logsDir: LOGS_DIR });
+const { logInfo, logDebug, logWarn, logError } = logger;
+const TILLER_LOG_FILE = logger.logFile;
 
 const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
 const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
@@ -93,9 +93,8 @@ const { sessionStore, sessionMessageStore, sessionArtifactStore, sessionRuntimeS
     logError,
   });
 const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
-const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
-const socketIds = new WeakMap<WebSocket, string>();
-let nextSocketSequence = 0;
+const socketState = createSocketState<WebSocket>();
+const { registry: authenticatedSockets, getSocketId } = socketState;
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
 let agents = listAvailableProviders(configPath);
@@ -108,23 +107,12 @@ const projectContextSummaryCache = new Map<string, string>();
 const openCodeHistoryRefreshes = new Map<string, number>();
 
 // --- Device pairing state ---
-let pairingCode: string | null = null;
-
-function generatePairingCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
-}
+const pairingState = createPairingState();
 
 function showPairingCode() {
-  if (!pairingCode) {
-    pairingCode = generatePairingCode();
-  }
-  const pairUrl = `http://${resolvePrimaryDisplayHost()}:${PORT}?pair=${pairingCode}`;
-  console.log(`[tiller] Pairing code: ${pairingCode}`);
+  const code = pairingState.ensureCode();
+  const pairUrl = `http://${resolvePrimaryDisplayHost()}:${PORT}?pair=${code}`;
+  console.log(`[tiller] Pairing code: ${code}`);
   console.log("[tiller] Scan QR code or enter pairing code to connect:");
   qrcode.generate(pairUrl, { small: true }, (qr: string) => {
     console.log(qr);
@@ -312,7 +300,8 @@ function authenticateSocket(socket: WebSocket, deviceId: string) {
 }
 
 function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type: "device.pair" }>) {
-  if (!pairingCode || payload.pairingCode.toUpperCase() !== pairingCode) {
+  const activeCode = pairingState.getCode();
+  if (!activeCode || payload.pairingCode.toUpperCase() !== activeCode) {
     reply(socket, {
       type: "device.pair.result",
       requestId: payload.requestId,
@@ -327,7 +316,7 @@ function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type:
     deviceName: payload.deviceName,
     clientKind: payload.clientKind,
   });
-  pairingCode = null;
+  pairingState.reset();
   authenticateSocket(socket, payload.deviceId);
   logInfo(`[tiller] Beacon paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
 
@@ -938,17 +927,6 @@ function broadcastAuthenticated(payload: HelmToClient) {
   for (const record of authenticatedSockets.listAll()) {
     emit(record.socket, payload);
   }
-}
-
-function getSocketId(socket: WebSocket) {
-  const existing = socketIds.get(socket);
-  if (existing) {
-    return existing;
-  }
-  nextSocketSequence += 1;
-  const next = `socket-${nextSocketSequence}`;
-  socketIds.set(socket, next);
-  return next;
 }
 
 function loadAvailableHelms() {

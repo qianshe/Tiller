@@ -129,12 +129,14 @@ test("inventory events hydrate projects for the current helm", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, workspaceId) =>
+        `${projectId}:${workspaceId ?? ""}`,
       setProjectFilesByScope: () => undefined,
       setSelectedWorkspaceId: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, workspaceId) =>
+        `${providerId}:${workspaceId}`,
       writeAgentModelOptionsCache: () => undefined,
       selectedAgentId: null,
       selectedWorkspaceId: null,
@@ -162,7 +164,9 @@ test("inventory events hydrate projects for the current helm", () => {
 test("session events apply session list results and prune scoped maps", () => {
   resetStore();
   useDeckStore.setState({
-    messages: { stale: [{ id: "m", role: "assistant", text: "old", timestamp: "t" }] },
+    messages: {
+      stale: [{ id: "m", role: "assistant", text: "old", timestamp: "t" }],
+    },
   });
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
     current: { stale: [] },

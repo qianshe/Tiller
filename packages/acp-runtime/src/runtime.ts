@@ -1268,4 +1268,17 @@ export { resolveRuntimeSessionId } from "./requests";
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 
 export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
-export { createClaudeAcpAdapter, createCodexAcpAdapter, createGenericAcpAdapter, createOpenClawAcpAdapter, createOpenCodeAcpAdapter, resolveAcpAgentAdapter, resolveAcpLaunchConfig, resolveAdapterCleanupPlan, type AcpAgentAdapter, type AcpLaunchContext, type AcpLaunchSpec, type ProviderCleanupPlan } from "./adapters";
+export {
+  createClaudeAcpAdapter,
+  createCodexAcpAdapter,
+  createGenericAcpAdapter,
+  createOpenClawAcpAdapter,
+  createOpenCodeAcpAdapter,
+  resolveAcpAgentAdapter,
+  resolveAcpLaunchConfig,
+  resolveAdapterCleanupPlan,
+  type AcpAgentAdapter,
+  type AcpLaunchContext,
+  type AcpLaunchSpec,
+  type ProviderCleanupPlan,
+} from "./adapters";

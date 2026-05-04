@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createStore } from "zustand/vanilla";
 import type { DaemonProfile } from "../../features/helm-connection/daemon-profiles";
-import { DEFAULT_DECK_PREFERENCES } from "../../features/preferences/preferences-storage";
+import { DEFAULT_DECK_PREFERENCES } from "../../features/preferences/storage";
 import {
   createPreferencesSlice,
   type PreferencesSlice,
@@ -54,7 +54,9 @@ test("removeDaemonProfile deletes by endpoint key", () => {
 
   store.getState().addDaemonProfile(first);
   store.getState().addDaemonProfile(second);
-  store.getState().removeDaemonProfile(profile({ host: "127.0.0.1", port: "47631" }));
+  store
+    .getState()
+    .removeDaemonProfile(profile({ host: "127.0.0.1", port: "47631" }));
 
   assert.deepEqual(store.getState().daemonProfiles, [second]);
 });

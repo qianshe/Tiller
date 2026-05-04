@@ -2,7 +2,7 @@ import {
   DEFAULT_DECK_PREFERENCES,
   type DeckPreferences,
   type TechnicalPanelPreferences,
-} from "../preferences-storage";
+} from "../storage";
 
 const DEFAULT_TECHNICAL_PANEL_PREFERENCES: TechnicalPanelPreferences =
   DEFAULT_DECK_PREFERENCES.technicalPanels;

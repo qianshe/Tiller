@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_TOAST_DURATION_MS, TOAST_EXIT_ANIMATION_MS, toast, type ToastSnapshot } from "./toast.js";
+import {
+  DEFAULT_TOAST_DURATION_MS,
+  TOAST_EXIT_ANIMATION_MS,
+  toast,
+  type ToastSnapshot,
+} from "./store.js";
 
 function delay(ms: number) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
@@ -65,8 +70,16 @@ test("toast variants are recorded in stacking order", () => {
     toast.warning("警告", { duration: 0 });
     toast.info("提示", { duration: 0 });
 
-    assert.deepEqual(toast.getSnapshot().map((item) => item.variant), ["success", "error", "warning", "info"]);
-    assert.deepEqual(messages(toast.getSnapshot()), ["成功", "错误", "警告", "提示"]);
+    assert.deepEqual(
+      toast.getSnapshot().map((item) => item.variant),
+      ["success", "error", "warning", "info"],
+    );
+    assert.deepEqual(messages(toast.getSnapshot()), [
+      "成功",
+      "错误",
+      "警告",
+      "提示",
+    ]);
   } finally {
     toast.clear();
   }
@@ -80,7 +93,10 @@ test("custom ids replace existing toasts at the newest stack position", () => {
     toast.error("第二版", { id: "same-id", duration: 0 });
 
     assert.deepEqual(messages(toast.getSnapshot()), ["保留", "第二版"]);
-    assert.deepEqual(toast.getSnapshot().map((item) => item.variant), ["success", "error"]);
+    assert.deepEqual(
+      toast.getSnapshot().map((item) => item.variant),
+      ["success", "error"],
+    );
   } finally {
     toast.clear();
   }
@@ -118,7 +134,11 @@ test("listeners receive stack updates and can unsubscribe", () => {
     toast.warning("第三条", { duration: 0 });
 
     assert.deepEqual(updates, [["第一条"], ["第一条", "第二条"]]);
-    assert.deepEqual(messages(toast.getSnapshot()), ["第一条", "第二条", "第三条"]);
+    assert.deepEqual(messages(toast.getSnapshot()), [
+      "第一条",
+      "第二条",
+      "第三条",
+    ]);
   } finally {
     toast.clear();
   }

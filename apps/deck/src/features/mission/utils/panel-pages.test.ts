@@ -5,7 +5,7 @@ import {
   readMissionPanelPages,
   reorderMissionPanelPage,
   writeMissionPanelPages,
-} from "./mission-panel-pages.js";
+} from "./panel-pages.js";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -21,8 +21,9 @@ class MemoryStorage {
 
 function withStorage(run: () => void) {
   const previousWindow = globalThis.window;
-  globalThis.window = { localStorage: new MemoryStorage() } as unknown as Window &
-    typeof globalThis;
+  globalThis.window = {
+    localStorage: new MemoryStorage(),
+  } as unknown as Window & typeof globalThis;
   try {
     run();
   } finally {
@@ -34,7 +35,9 @@ test("mission panel pages persist and sanitize stored records", () => {
   withStorage(() => {
     writeMissionPanelPages([{ id: "display", title: "展示" }]);
 
-    assert.deepEqual(readMissionPanelPages(), [{ id: "display", title: "展示" }]);
+    assert.deepEqual(readMissionPanelPages(), [
+      { id: "display", title: "展示" },
+    ]);
   });
 });
 

@@ -1,5 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { SessionConfigOption, SessionReasoningEffort } from "@tiller/shared";
+import type {
+  SessionConfigOption,
+  SessionReasoningEffort,
+} from "@tiller/shared";
 
 export type MissionConfigPicker = "agentMode" | "model" | "reasoning" | null;
 export type AgentModeOption = { value: string; label: string };
@@ -67,7 +70,9 @@ export function MissionConfigControls({
         <div
           className={`mission-config-picker mission-config-picker-agent ${picker === "agentMode" ? "open" : ""}`}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            ) {
               setPicker(null);
             }
           }}
@@ -97,7 +102,9 @@ export function MissionConfigControls({
                   type="button"
                   role="option"
                   aria-selected={option.value === effectiveAgentMode}
-                  className={option.value === effectiveAgentMode ? "active" : ""}
+                  className={
+                    option.value === effectiveAgentMode ? "active" : ""
+                  }
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     updatePreferences({ agentMode: option.value });
@@ -114,7 +121,9 @@ export function MissionConfigControls({
       <div
         className={`mission-config-picker mission-config-picker-model ${picker === "model" ? "open" : ""}`}
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
             setPicker(null);
           }
         }}
@@ -183,7 +192,9 @@ export function MissionConfigControls({
         <div
           className={`mission-config-picker mission-config-picker-reasoning ${picker === "reasoning" ? "open" : ""}`}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            ) {
               setPicker(null);
             }
           }}
@@ -213,7 +224,9 @@ export function MissionConfigControls({
                   type="button"
                   role="option"
                   aria-selected={option === effectiveReasoningEffort}
-                  className={option === effectiveReasoningEffort ? "active" : ""}
+                  className={
+                    option === effectiveReasoningEffort ? "active" : ""
+                  }
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     updatePreferences({

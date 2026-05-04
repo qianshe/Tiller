@@ -32,8 +32,13 @@ export function updatePairingDigit(
   rawValue: string,
   context: PairingInputContext,
 ) {
-  const { pairingCodeInput, setPairingCodeInput, pairInputRefs, pairingState, setPairingState } =
-    context;
+  const {
+    pairingCodeInput,
+    setPairingCodeInput,
+    pairInputRefs,
+    pairingState,
+    setPairingState,
+  } = context;
   const nextChar = rawValue
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
@@ -55,8 +60,13 @@ export function pastePairingDigits(
   rawValue: string,
   context: PairingInputContext,
 ) {
-  const { pairingCodeInput, setPairingCodeInput, pairInputRefs, pairingState, setPairingState } =
-    context;
+  const {
+    pairingCodeInput,
+    setPairingCodeInput,
+    pairInputRefs,
+    pairingState,
+    setPairingState,
+  } = context;
   const charsOnly = rawValue
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")

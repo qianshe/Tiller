@@ -1,4 +1,4 @@
-import type { DeckLanguage } from "../../../features/preferences/preferences-storage";
+import type { DeckLanguage } from "../../../features/preferences/storage";
 import { NAV_LABELS, type AppView } from "../../../app/routes";
 
 type TopNavProps = {

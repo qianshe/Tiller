@@ -1,6 +1,9 @@
 import type { AgentToolCall } from "@tiller/shared";
 
-export function resolveToolCallTone(kind: AgentToolCall["kind"], title: string) {
+export function resolveToolCallTone(
+  kind: AgentToolCall["kind"],
+  title: string,
+) {
   const label = resolveToolCallLabel(kind, title);
   const toneByLabel: Record<string, { className: string; icon: string }> = {
     MCP: { className: "tool-call-mcp", icon: "◇" },
@@ -56,7 +59,37 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
 }
 
 function isKnownMcpRouterTool(normalizedTitle: string) {
-  return /^(activate_project|check_onboarding_performed|list_dir|find_file|read_file|read_memory|write_memory|search_context|search_for_pattern|find_symbol|find_referencing_symbols|get_symbols_overview|edit_file|replace_content|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_symbol|safe_delete_symbol|tavily_|resolve_library_id|get_library_docs|ask_question|read_wiki_|zhi|ji|tu)(\b|$)/u.test(
+  const knownMcpRouterTools = [
+    "activate_project",
+    "check_onboarding_performed",
+    "list_dir",
+    "find_file",
+    "read_file",
+    "read_memory",
+    "write_memory",
+    "search_context",
+    "search_for_pattern",
+    "find_symbol",
+    "find_referencing_symbols",
+    "get_symbols_overview",
+    "edit_file",
+    "replace_content",
+    "replace_symbol_body",
+    "insert_before_symbol",
+    "insert_after_symbol",
+    "rename_symbol",
+    "safe_delete_symbol",
+    "tavily_",
+    "resolve_library_id",
+    "get_library_docs",
+    "ask_question",
+    "read_wiki_",
+    "zhi",
+    "ji",
+    "tu",
+  ];
+
+  return new RegExp(`^(${knownMcpRouterTools.join("|")})(\\b|$)`, "u").test(
     normalizedTitle,
   );
 }

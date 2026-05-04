@@ -1,18 +1,26 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
+import {
+  dirname,
+  extname,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const srcRoot = join(root, "src");
 const allowedStoreFeatureImports = new Set([
   normalize("features/auth/beacon-cache"),
   normalize("features/helm-connection/daemon-profiles"),
-  normalize("features/preferences/preferences-storage"),
+  normalize("features/preferences/storage"),
 ]);
 const allowedBoundaryImports = new Set([
-  `${normalize("features/overview/ui/overview-page.tsx")} -> ${normalize("app/routes")}`,
+  `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routes")}`,
   `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routes")}`,
-  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/preferences-storage")}`,
+  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/storage")}`,
 ]);
 
 function walk(dir) {
@@ -45,7 +53,8 @@ function sourceArea(path) {
 const sourceFiles = walk(srcRoot).filter((file) =>
   [".ts", ".tsx"].includes(extname(file)),
 );
-const importPattern = /(?:import|export)\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?["']([^"']+)["']/gu;
+const importPattern =
+  /(?:import|export)\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?["']([^"']+)["']/gu;
 const failures = [];
 
 for (const file of sourceFiles) {
@@ -61,7 +70,10 @@ for (const file of sourceFiles) {
     if (allowedBoundaryImports.has(`${fromRel} -> ${imported}`)) {
       continue;
     }
-    if (fromArea === "shared" && ["app", "features", "store"].includes(importedArea)) {
+    if (
+      fromArea === "shared" &&
+      ["app", "features", "store"].includes(importedArea)
+    ) {
       failures.push(`${fromRel} must not import ${imported} from shared`);
     }
     if (fromArea === "store" && importedArea === "app") {

@@ -77,7 +77,9 @@ export function resolveProjectDisplayId(
   project: ProjectSummary,
   siblings: ProjectSummary[],
 ) {
-  const sameNameProjects = siblings.filter((item) => item.name === project.name);
+  const sameNameProjects = siblings.filter(
+    (item) => item.name === project.name,
+  );
   return sameNameProjects.length > 1 ? project.id : project.name;
 }
 
@@ -89,6 +91,9 @@ export function resolveProjectWorkspaceLabel(
     (item) => item.id === project.defaultWorkspaceId,
   );
   return (
-    workspace?.name ?? project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? "-"
+    workspace?.name ??
+    project.defaultWorkspaceId ??
+    project.workspaceIds?.[0] ??
+    "-"
   );
 }

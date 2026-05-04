@@ -9,7 +9,7 @@ import {
   DEFAULT_DECK_PREFERENCES,
   readDeckPreferences,
   type DeckPreferences,
-} from "../../features/preferences/preferences-storage";
+} from "../../features/preferences/storage";
 
 export type PreferencesSlice = {
   preferences: DeckPreferences;
@@ -26,14 +26,18 @@ function canReadBrowserStorage() {
 }
 
 function initialPreferences() {
-  return canReadBrowserStorage() ? readDeckPreferences() : DEFAULT_DECK_PREFERENCES;
+  return canReadBrowserStorage()
+    ? readDeckPreferences()
+    : DEFAULT_DECK_PREFERENCES;
 }
 
 function initialDaemonProfiles() {
   return canReadBrowserStorage() ? readDaemonProfiles() : [];
 }
 
-export const createPreferencesSlice: StateCreator<PreferencesSlice> = (set) => ({
+export const createPreferencesSlice: StateCreator<PreferencesSlice> = (
+  set,
+) => ({
   preferences: initialPreferences(),
   daemonProfiles: initialDaemonProfiles(),
   selectedHelmKey: "",

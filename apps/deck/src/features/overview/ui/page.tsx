@@ -112,7 +112,9 @@ export function OverviewPage({
               ))}
             </div>
           ) : (
-            <div className="empty-state">还没有任务，先进入任务页创建一个。</div>
+            <div className="empty-state">
+              还没有任务，先进入任务页创建一个。
+            </div>
           )}
         </div>
       </section>
