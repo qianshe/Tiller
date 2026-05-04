@@ -551,15 +551,15 @@ export function App() {
   const applyHelmInventory = useDeckStore((state) => state.applyHelmInventory);
   const setHelmConnection = useDeckStore((state) => state.setHelmConnection);
   const removeHelm = useDeckStore((state) => state.removeHelm);
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>(
-    missionVisualFixture?.workspaces ?? [],
-  );
-  const [projects, setProjects] = useState<ProjectSummary[]>(
-    missionVisualFixture?.projects ?? [],
-  );
-  const [agents, setAgents] = useState<AcpAgentProvider[]>(
-    missionVisualFixture?.agents ?? [],
-  );
+  const storedWorkspaces = useDeckStore((state) => state.workspaces);
+  const workspaces = missionVisualFixture?.workspaces ?? storedWorkspaces;
+  const setWorkspaces = useDeckStore((state) => state.setWorkspaces);
+  const storedProjects = useDeckStore((state) => state.projects);
+  const projects = missionVisualFixture?.projects ?? storedProjects;
+  const setProjects = useDeckStore((state) => state.setProjects);
+  const storedAgents = useDeckStore((state) => state.agents);
+  const agents = missionVisualFixture?.agents ?? storedAgents;
+  const setAgents = useDeckStore((state) => state.setAgents);
   const [sessions, setSessions] = useState<SessionSummary[]>(
     missionVisualFixture?.sessions ?? [],
   );
@@ -611,9 +611,10 @@ export function App() {
   const [sessionAvailableCommands, setSessionAvailableCommands] = useState<
     Record<string, AvailableCommand[]>
   >({});
-  const [agentModelOptions, setAgentModelOptions] = useState<
-    Record<string, AgentModelOptionsEntry>
-  >(() => readAgentModelOptionsCache());
+  const agentModelOptions = useDeckStore((state) => state.agentModelOptions);
+  const setAgentModelOptions = useDeckStore(
+    (state) => state.setAgentModelOptions,
+  );
   const [projectFilesByScope, setProjectFilesByScope] = useState<
     Record<string, ProjectFilesEntry>
   >({});
@@ -653,17 +654,12 @@ export function App() {
   );
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [worktreeGitByProject, setWorktreeGitByProject] = useState<
-    Record<
-      string,
-      {
-        branches: string[];
-        currentBranch?: string;
-        message?: string;
-        loading?: boolean;
-      }
-    >
-  >({});
+  const worktreeGitByProject = useDeckStore(
+    (state) => state.worktreeGitByProject,
+  );
+  const setWorktreeGitByProject = useDeckStore(
+    (state) => state.setWorktreeGitByProject,
+  );
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     missionVisualFixture?.selectedAgentId ?? null,
   );
@@ -710,6 +706,12 @@ export function App() {
     nudgeMissionPane,
   } = useMissionLayout(activeView);
   usePreferencesEffects();
+  useEffect(() => {
+    if (Object.keys(agentModelOptions).length > 0) {
+      return;
+    }
+    setAgentModelOptions(readAgentModelOptionsCache());
+  }, [agentModelOptions, setAgentModelOptions]);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<
     string | null
   >(missionVisualFixture?.sessions[0]?.helmId ?? null);
