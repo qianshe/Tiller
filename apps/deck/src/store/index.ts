@@ -11,8 +11,16 @@ import {
   createProjectsSlice,
   type ProjectsSlice,
 } from "./slices/projects-slice";
+import {
+  createSessionsSlice,
+  type SessionsSlice,
+} from "./slices/sessions-slice";
 
-export type DeckStore = AgentsSlice & HelmsSlice & PreferencesSlice & ProjectsSlice;
+export type DeckStore = AgentsSlice &
+  HelmsSlice &
+  PreferencesSlice &
+  ProjectsSlice &
+  SessionsSlice;
 
 export const useDeckStore = create<DeckStore>()(
   devtools(
@@ -22,6 +30,7 @@ export const useDeckStore = create<DeckStore>()(
         ...createHelmsSlice(...args),
         ...createPreferencesSlice(...args),
         ...createProjectsSlice(...args),
+        ...createSessionsSlice(...args),
       }),
       createDeckStorePersistOptions(),
     ),

@@ -560,17 +560,16 @@ export function App() {
   const storedAgents = useDeckStore((state) => state.agents);
   const agents = missionVisualFixture?.agents ?? storedAgents;
   const setAgents = useDeckStore((state) => state.setAgents);
-  const [sessions, setSessions] = useState<SessionSummary[]>(
-    missionVisualFixture?.sessions ?? [],
+  const storedSessions = useDeckStore((state) => state.sessions);
+  const sessions = missionVisualFixture?.sessions ?? storedSessions;
+  const setSessions = useDeckStore((state) => state.setSessions);
+  const sessionHistoryState = useDeckStore((state) => state.sessionHistoryState);
+  const setSessionHistoryState = useDeckStore(
+    (state) => state.setSessionHistoryState,
   );
-  const [sessionHistoryState, setSessionHistoryState] = useState<{
-    nextCursor?: string;
-    hasMore: boolean;
-    loading: boolean;
-  }>({ hasMore: false, loading: false });
-  const [statuses, setStatuses] = useState<Record<string, SessionStatus>>(
-    missionVisualFixture?.statuses ?? {},
-  );
+  const storedStatuses = useDeckStore((state) => state.statuses);
+  const statuses = missionVisualFixture?.statuses ?? storedStatuses;
+  const setStatuses = useDeckStore((state) => state.setStatuses);
   const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(
     missionVisualFixture?.messages ?? {},
   );
@@ -599,18 +598,23 @@ export function App() {
   const [activityVisibleCounts, setActivityVisibleCounts] = useState<
     Record<string, number>
   >({});
-  const [sessionTitles, setSessionTitles] = useState<Record<string, string>>(
-    () => readSessionTitles(),
-  );
+  const sessionTitles = useDeckStore((state) => state.sessionTitles);
+  const setSessionTitles = useDeckStore((state) => state.setSessionTitles);
   const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(
     missionVisualFixture?.diffs ?? {},
   );
-  const [sessionConfigOptions, setSessionConfigOptions] = useState<
-    Record<string, SessionConfigOption[]>
-  >({});
-  const [sessionAvailableCommands, setSessionAvailableCommands] = useState<
-    Record<string, AvailableCommand[]>
-  >({});
+  const sessionConfigOptions = useDeckStore(
+    (state) => state.sessionConfigOptions,
+  );
+  const setSessionConfigOptions = useDeckStore(
+    (state) => state.setSessionConfigOptions,
+  );
+  const sessionAvailableCommands = useDeckStore(
+    (state) => state.sessionAvailableCommands,
+  );
+  const setSessionAvailableCommands = useDeckStore(
+    (state) => state.setSessionAvailableCommands,
+  );
   const agentModelOptions = useDeckStore((state) => state.agentModelOptions);
   const setAgentModelOptions = useDeckStore(
     (state) => state.setAgentModelOptions,
@@ -643,9 +647,9 @@ export function App() {
   const [promptEnhancerModelPickerOpen, setPromptEnhancerModelPickerOpen] =
     useState(false);
   const [promptEnhancerBusy, setPromptEnhancerBusy] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(
-    missionVisualFixture?.activeSessionId ?? null,
-  );
+  const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
+  const activeSessionId = missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
+  const setActiveSessionId = useDeckStore((state) => state.setActiveSessionId);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     missionVisualFixture?.selectedProjectId ?? null,
   );
