@@ -39,7 +39,9 @@ export function createAuthenticatedSocketRegistry<TSocket extends SocketLike = S
       if (!ids) {
         return [];
       }
-      return [...ids].map((socketId) => socketsById.get(socketId)).filter((record): record is AuthenticatedSocketRecord<TSocket> => Boolean(record));
+      return [...ids]
+        .map((socketId) => socketsById.get(socketId))
+        .filter((record): record is AuthenticatedSocketRecord<TSocket> => Boolean(record));
     },
   };
 }

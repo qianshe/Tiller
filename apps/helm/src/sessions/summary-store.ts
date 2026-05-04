@@ -1,6 +1,11 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { RuntimeResumeMode, SessionResumeInfo, SessionResumeState, SessionSummary } from "@tiller/shared";
+import type {
+  RuntimeResumeMode,
+  SessionResumeInfo,
+  SessionResumeState,
+  SessionSummary,
+} from "@tiller/shared";
 
 export function createSessionStore(filePath: string) {
   let summaries = loadSessionSummaries(filePath);
@@ -27,7 +32,11 @@ function loadSessionSummaries(filePath: string) {
     const raw = readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
-      ? sortSessionSummaries(parsed.map(normalizeSessionSummary).filter((item): item is SessionSummary => item !== null))
+      ? sortSessionSummaries(
+          parsed
+            .map(normalizeSessionSummary)
+            .filter((item): item is SessionSummary => item !== null),
+        )
       : [];
   } catch {
     return [];
@@ -86,9 +95,11 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.createdAt === "string" &&
     typeof candidate.updatedAt === "string" &&
     typeof candidate.messageCount === "number" &&
-    (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
+    (typeof candidate.runtimeSessionId === "string" ||
+      typeof candidate.runtimeSessionId === "undefined") &&
     (typeof candidate.title === "string" || typeof candidate.title === "undefined") &&
-    (typeof candidate.lastMessagePreview === "string" || typeof candidate.lastMessagePreview === "undefined") &&
+    (typeof candidate.lastMessagePreview === "string" ||
+      typeof candidate.lastMessagePreview === "undefined") &&
     (typeof candidate.resume === "undefined" || isSessionResumeInfo(candidate.resume))
   );
 }
@@ -120,14 +131,21 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
   return {
     id: candidate.id as string,
     projectId: typeof candidate.projectId === "string" ? candidate.projectId : "legacy-project",
-    projectName: typeof candidate.projectName === "string" ? candidate.projectName : String(candidate.workspaceName),
+    projectName:
+      typeof candidate.projectName === "string"
+        ? candidate.projectName
+        : String(candidate.workspaceName),
     helmId: typeof candidate.helmId === "string" ? candidate.helmId : "legacy-helm",
     workspaceId: candidate.workspaceId as string,
     workspaceName: candidate.workspaceName as string,
     agentId: candidate.agentId as string,
     agentName: candidate.agentName as string,
-    agentMode: typeof candidate.agentMode === "string" && candidate.agentMode.trim() ? candidate.agentMode : undefined,
-    model: typeof candidate.model === "string" && candidate.model.trim() ? candidate.model : undefined,
+    agentMode:
+      typeof candidate.agentMode === "string" && candidate.agentMode.trim()
+        ? candidate.agentMode
+        : undefined,
+    model:
+      typeof candidate.model === "string" && candidate.model.trim() ? candidate.model : undefined,
     reasoningEffort:
       candidate.reasoningEffort === "minimal" ||
       candidate.reasoningEffort === "low" ||
@@ -140,9 +158,11 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
     createdAt: candidate.createdAt as string,
     updatedAt: candidate.updatedAt as string,
     messageCount: candidate.messageCount as number,
-    runtimeSessionId: typeof candidate.runtimeSessionId === "string" ? candidate.runtimeSessionId : undefined,
+    runtimeSessionId:
+      typeof candidate.runtimeSessionId === "string" ? candidate.runtimeSessionId : undefined,
     title: typeof candidate.title === "string" ? candidate.title : undefined,
-    lastMessagePreview: typeof candidate.lastMessagePreview === "string" ? candidate.lastMessagePreview : undefined,
+    lastMessagePreview:
+      typeof candidate.lastMessagePreview === "string" ? candidate.lastMessagePreview : undefined,
     resume: normalizeResumeInfo(candidate.resume),
   };
 }
@@ -159,7 +179,8 @@ function isSessionResumeInfo(value: unknown): value is SessionResumeInfo {
     typeof candidate.reason === "string" &&
     typeof candidate.checkedAt === "string" &&
     (typeof candidate.providerId === "string" || typeof candidate.providerId === "undefined") &&
-    (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
+    (typeof candidate.runtimeSessionId === "string" ||
+      typeof candidate.runtimeSessionId === "undefined") &&
     (typeof candidate.lastSeenAt === "string" || typeof candidate.lastSeenAt === "undefined")
   );
 }

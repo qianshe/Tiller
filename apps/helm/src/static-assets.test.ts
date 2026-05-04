@@ -25,14 +25,14 @@ test("loadStaticAsset serves requested files under the Deck root", async () => {
 test("loadStaticAsset falls back to index.html for app routes", async () => {
   const root = mkdtempSync(join(tmpdir(), "tiller-deck-"));
   try {
-    writeFileSync(join(root, "index.html"), "<div id=\"root\"></div>");
+    writeFileSync(join(root, "index.html"), '<div id="root"></div>');
 
     const asset = await loadStaticAsset(root, "/missions/abc");
 
     assert.equal(asset.ok, true);
     assert.equal(asset.ok && asset.contentType, "text/html; charset=utf-8");
     assert.equal(asset.ok && asset.immutable, false);
-    assert.equal(asset.ok && asset.body.toString("utf8"), "<div id=\"root\"></div>");
+    assert.equal(asset.ok && asset.body.toString("utf8"), '<div id="root"></div>');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

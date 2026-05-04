@@ -32,7 +32,10 @@ test("store factory honors explicit json backend", () => {
     });
 
     assert.equal(stores.backend, "json");
-    assert.equal(logs.some((message) => message.includes("backend=json")), true);
+    assert.equal(
+      logs.some((message) => message.includes("backend=json")),
+      true,
+    );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -50,7 +53,10 @@ test("store factory falls back to json when sqlite cannot open", () => {
     });
 
     assert.equal(stores.backend, "json");
-    assert.equal(errors.some((message) => message.includes("sqlite-fallback")), true);
+    assert.equal(
+      errors.some((message) => message.includes("sqlite-fallback")),
+      true,
+    );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }

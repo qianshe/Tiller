@@ -6,20 +6,31 @@ import { cleanupActiveRuntime, resolveProjectSessionWorkspace } from "./sessions
 
 test("cleanupActiveRuntime prefers ACP session/delete over close", async () => {
   const calls: string[] = [];
-  const result = await cleanupActiveRuntime({
-    sessionCapabilities: { sessionDelete: true, sessionClose: true },
-    async deleteSession() {
-      calls.push("delete");
-      return { kind: "remote-deleted", providerId: "agent", message: "deleted" } satisfies ProviderCleanupResult;
+  const result = await cleanupActiveRuntime(
+    {
+      sessionCapabilities: { sessionDelete: true, sessionClose: true },
+      async deleteSession() {
+        calls.push("delete");
+        return {
+          kind: "remote-deleted",
+          providerId: "agent",
+          message: "deleted",
+        } satisfies ProviderCleanupResult;
+      },
+      async close() {
+        calls.push("close");
+        return {
+          kind: "remote-closed",
+          providerId: "agent",
+          message: "closed",
+        } satisfies ProviderCleanupResult;
+      },
+      cancel() {
+        calls.push("cancel");
+      },
     },
-    async close() {
-      calls.push("close");
-      return { kind: "remote-closed", providerId: "agent", message: "closed" } satisfies ProviderCleanupResult;
-    },
-    cancel() {
-      calls.push("cancel");
-    },
-  }, "agent");
+    "agent",
+  );
 
   assert.equal(result.kind, "remote-deleted");
   assert.deepEqual(calls, ["delete", "cancel"]);
@@ -27,16 +38,19 @@ test("cleanupActiveRuntime prefers ACP session/delete over close", async () => {
 
 test("cleanupActiveRuntime still terminates local runtime when ACP delete throws", async () => {
   const calls: string[] = [];
-  const result = await cleanupActiveRuntime({
-    sessionCapabilities: { sessionDelete: true },
-    async deleteSession() {
-      calls.push("delete");
-      throw new Error("Session not found: ses_missing");
+  const result = await cleanupActiveRuntime(
+    {
+      sessionCapabilities: { sessionDelete: true },
+      async deleteSession() {
+        calls.push("delete");
+        throw new Error("Session not found: ses_missing");
+      },
+      cancel() {
+        calls.push("cancel");
+      },
     },
-    cancel() {
-      calls.push("cancel");
-    },
-  }, "opencode");
+    "opencode",
+  );
 
   assert.equal(result.kind, "remote-delete-failed");
   assert.equal(result.providerId, "opencode");
@@ -46,16 +60,23 @@ test("cleanupActiveRuntime still terminates local runtime when ACP delete throws
 
 test("cleanupActiveRuntime falls back to ACP session/close when delete is unavailable", async () => {
   const calls: string[] = [];
-  const result = await cleanupActiveRuntime({
-    sessionCapabilities: { sessionClose: true },
-    async close() {
-      calls.push("close");
-      return { kind: "remote-closed", providerId: "agent", message: "closed" } satisfies ProviderCleanupResult;
+  const result = await cleanupActiveRuntime(
+    {
+      sessionCapabilities: { sessionClose: true },
+      async close() {
+        calls.push("close");
+        return {
+          kind: "remote-closed",
+          providerId: "agent",
+          message: "closed",
+        } satisfies ProviderCleanupResult;
+      },
+      cancel() {
+        calls.push("cancel");
+      },
     },
-    cancel() {
-      calls.push("cancel");
-    },
-  }, "agent");
+    "agent",
+  );
 
   assert.equal(result.kind, "remote-closed");
   assert.deepEqual(calls, ["close"]);
@@ -63,12 +84,15 @@ test("cleanupActiveRuntime falls back to ACP session/close when delete is unavai
 
 test("cleanupActiveRuntime terminates local runtime when ACP cleanup is unsupported", async () => {
   const calls: string[] = [];
-  const result = await cleanupActiveRuntime({
-    sessionCapabilities: {},
-    cancel() {
-      calls.push("cancel");
+  const result = await cleanupActiveRuntime(
+    {
+      sessionCapabilities: {},
+      cancel() {
+        calls.push("cancel");
+      },
     },
-  }, "agent");
+    "agent",
+  );
 
   assert.equal(result.kind, "unsupported");
   assert.deepEqual(calls, ["cancel"]);
@@ -86,7 +110,11 @@ const project: ProjectSummary = {
 
 const workspaces: WorkspaceSummary[] = [
   { id: "main", name: "main", path: "D:/repo/project-two" },
-  { id: "project-1-worktree-feature", name: "feature", path: "D:/repo/project-one/.tiller/worktrees/feature" },
+  {
+    id: "project-1-worktree-feature",
+    name: "feature",
+    path: "D:/repo/project-one/.tiller/worktrees/feature",
+  },
 ];
 
 test("resolveProjectSessionWorkspace uses project path for root branch workspace", () => {
@@ -98,9 +126,12 @@ test("resolveProjectSessionWorkspace uses project path for root branch workspace
 });
 
 test("resolveProjectSessionWorkspace keeps explicit worktree path", () => {
-  assert.deepEqual(resolveProjectSessionWorkspace(project, workspaces, "project-1-worktree-feature"), {
-    id: "project-1-worktree-feature",
-    name: "feature",
-    path: "D:/repo/project-one/.tiller/worktrees/feature",
-  });
+  assert.deepEqual(
+    resolveProjectSessionWorkspace(project, workspaces, "project-1-worktree-feature"),
+    {
+      id: "project-1-worktree-feature",
+      name: "feature",
+      path: "D:/repo/project-one/.tiller/worktrees/feature",
+    },
+  );
 });

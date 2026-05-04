@@ -1,6 +1,10 @@
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
 
-export function applyUserPromptToSummary(summary: SessionSummary, text: string, timestamp: string): SessionSummary {
+export function applyUserPromptToSummary(
+  summary: SessionSummary,
+  text: string,
+  timestamp: string,
+): SessionSummary {
   return {
     ...summary,
     updatedAt: timestamp,
@@ -10,7 +14,10 @@ export function applyUserPromptToSummary(summary: SessionSummary, text: string, 
   };
 }
 
-export function applyAgentMessageToSummary(summary: SessionSummary, message: AgentMessage): SessionSummary {
+export function applyAgentMessageToSummary(
+  summary: SessionSummary,
+  message: AgentMessage,
+): SessionSummary {
   return {
     ...summary,
     updatedAt: message.timestamp,

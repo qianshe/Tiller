@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
-import { compareTimestampIdPosition, decodeCursor, encodeCursor, normalizePageLimit } from "./pagination";
+import {
+  compareTimestampIdPosition,
+  decodeCursor,
+  encodeCursor,
+  normalizePageLimit,
+} from "./pagination";
 
 type SessionArtifacts = {
   outputs: CommandChunk[];
@@ -45,17 +50,22 @@ export function createSessionArtifactStore(rootDir: string) {
     appendToolCall(sessionId: string, toolCall: AgentToolCall) {
       const current = getSessionArtifacts(rootDir, sessionId);
       const index = current.toolCalls.findIndex((item) => item.id === toolCall.id);
-      const nextToolCalls = index === -1
-        ? [...current.toolCalls, toolCall]
-        : current.toolCalls.map((item, itemIndex) => itemIndex === index ? {
-            ...item,
-            ...toolCall,
-            title: resolveToolCallTitle(item.title, toolCall.title, toolCall.id),
-            output: `${item.output ?? ""}${toolCall.output ?? ""}`,
-            input: toolCall.input ?? item.input,
-            timestamp: item.timestamp,
-            updatedAt: toolCall.updatedAt,
-          } : item);
+      const nextToolCalls =
+        index === -1
+          ? [...current.toolCalls, toolCall]
+          : current.toolCalls.map((item, itemIndex) =>
+              itemIndex === index
+                ? {
+                    ...item,
+                    ...toolCall,
+                    title: resolveToolCallTitle(item.title, toolCall.title, toolCall.id),
+                    output: `${item.output ?? ""}${toolCall.output ?? ""}`,
+                    input: toolCall.input ?? item.input,
+                    timestamp: item.timestamp,
+                    updatedAt: toolCall.updatedAt,
+                  }
+                : item,
+            );
       const next = {
         ...current,
         toolCalls: sortToolCalls(nextToolCalls),
@@ -88,7 +98,6 @@ export function createSessionArtifactStore(rootDir: string) {
   };
 }
 
-
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
   if (isInformativeToolCallTitle(incomingTitle, id)) {
     return incomingTitle;
@@ -101,26 +110,57 @@ function isInformativeToolCallTitle(title: string | undefined, id: string) {
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
 }
 
-export function pageSessionArtifacts(artifacts: SessionArtifacts, options: SessionArtifactPageOptions = {}): SessionArtifactPage {
-  const limit = normalizePageLimit(options.limit, DEFAULT_ARTIFACT_PAGE_LIMIT, MAX_ARTIFACT_PAGE_LIMIT);
+export function pageSessionArtifacts(
+  artifacts: SessionArtifacts,
+  options: SessionArtifactPageOptions = {},
+): SessionArtifactPage {
+  const limit = normalizePageLimit(
+    options.limit,
+    DEFAULT_ARTIFACT_PAGE_LIMIT,
+    MAX_ARTIFACT_PAGE_LIMIT,
+  );
   const before = decodeArtifactCursor(options.before);
   const activities = [
-    ...artifacts.outputs.map((item) => ({ kind: "output" as const, timestamp: item.timestamp, id: item.id, item })),
-    ...artifacts.toolCalls.map((item) => ({ kind: "toolCall" as const, timestamp: item.updatedAt || item.timestamp, id: item.id, item })),
-  ].sort((left, right) => compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id));
+    ...artifacts.outputs.map((item) => ({
+      kind: "output" as const,
+      timestamp: item.timestamp,
+      id: item.id,
+      item,
+    })),
+    ...artifacts.toolCalls.map((item) => ({
+      kind: "toolCall" as const,
+      timestamp: item.updatedAt || item.timestamp,
+      id: item.id,
+      item,
+    })),
+  ].sort((left, right) =>
+    compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id),
+  );
   const eligible = before
-    ? activities.filter((activity) => compareTimestampIdPosition(activity.timestamp, activity.id, before.timestamp, before.id) < 0)
+    ? activities.filter(
+        (activity) =>
+          compareTimestampIdPosition(activity.timestamp, activity.id, before.timestamp, before.id) <
+          0,
+      )
     : activities;
   const pageActivities = eligible.slice(Math.max(eligible.length - limit, 0));
-  const outputIds = new Set(pageActivities.filter((activity) => activity.kind === "output").map((activity) => activity.id));
-  const toolCallIds = new Set(pageActivities.filter((activity) => activity.kind === "toolCall").map((activity) => activity.id));
+  const outputIds = new Set(
+    pageActivities.filter((activity) => activity.kind === "output").map((activity) => activity.id),
+  );
+  const toolCallIds = new Set(
+    pageActivities
+      .filter((activity) => activity.kind === "toolCall")
+      .map((activity) => activity.id),
+  );
   const hasMore = eligible.length > pageActivities.length;
 
   return {
     outputs: artifacts.outputs.filter((item) => outputIds.has(item.id)),
     diffs: artifacts.diffs,
     toolCalls: artifacts.toolCalls.filter((item) => toolCallIds.has(item.id)),
-    nextCursor: hasMore ? encodeCursor(pageActivities[0]?.timestamp, pageActivities[0]?.id) : undefined,
+    nextCursor: hasMore
+      ? encodeCursor(pageActivities[0]?.timestamp, pageActivities[0]?.id)
+      : undefined,
     hasMore,
   };
 }
@@ -135,9 +175,13 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
     const raw = readFileSync(getSessionArtifactFilePath(rootDir, sessionId), "utf8");
     const parsed = JSON.parse(raw);
     return {
-      outputs: Array.isArray(parsed?.outputs) ? sortCommandChunks(parsed.outputs.filter(isCommandChunk)) : [],
+      outputs: Array.isArray(parsed?.outputs)
+        ? sortCommandChunks(parsed.outputs.filter(isCommandChunk))
+        : [],
       diffs: Array.isArray(parsed?.diffs) ? parsed.diffs.filter(isFileDiffSummary) : [],
-      toolCalls: Array.isArray(parsed?.toolCalls) ? sortToolCalls(parsed.toolCalls.filter(isAgentToolCall)) : [],
+      toolCalls: Array.isArray(parsed?.toolCalls)
+        ? sortToolCalls(parsed.toolCalls.filter(isAgentToolCall))
+        : [],
     };
   } catch {
     return { outputs: [], diffs: [], toolCalls: [] };
@@ -145,16 +189,29 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
 }
 
 function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) => compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id));
+  return [...items].sort((left, right) =>
+    compareTimestampIdPosition(left.timestamp, left.id, right.timestamp, right.id),
+  );
 }
 
 function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) => compareTimestampIdPosition(left.updatedAt || left.timestamp, left.id, right.updatedAt || right.timestamp, right.id));
+  return [...items].sort((left, right) =>
+    compareTimestampIdPosition(
+      left.updatedAt || left.timestamp,
+      left.id,
+      right.updatedAt || right.timestamp,
+      right.id,
+    ),
+  );
 }
 
 function persistSessionArtifacts(rootDir: string, sessionId: string, artifacts: SessionArtifacts) {
   mkdirSync(rootDir, { recursive: true });
-  writeFileSync(getSessionArtifactFilePath(rootDir, sessionId), JSON.stringify(artifacts, null, 2), "utf8");
+  writeFileSync(
+    getSessionArtifactFilePath(rootDir, sessionId),
+    JSON.stringify(artifacts, null, 2),
+    "utf8",
+  );
 }
 
 function getSessionArtifactFilePath(rootDir: string, sessionId: string) {
@@ -189,7 +246,6 @@ function isFileDiffSummary(value: unknown): value is FileDiffSummary {
     typeof candidate.deletions === "number"
   );
 }
-
 
 function isAgentToolCall(value: unknown): value is AgentToolCall {
   if (!value || typeof value !== "object") {

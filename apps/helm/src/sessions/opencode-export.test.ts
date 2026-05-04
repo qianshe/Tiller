@@ -3,35 +3,37 @@ import test from "node:test";
 import { loadProviderAuthoritativeHistory, parseOpenCodeExportHistory } from "./opencode-export.js";
 
 test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode export", () => {
-  const history = parseOpenCodeExportHistory(JSON.stringify({
-    messages: [
-      {
-        id: "msg-user",
-        info: { role: "user", time: { created: 1777543137952 } },
-        parts: [{ type: "text", text: "尝试调用个mcp或者skill，我测试下效果" }],
-      },
-      {
-        id: "msg-assistant",
-        info: { role: "assistant", time: { created: 1777543137977 } },
-        parts: [
-          { type: "text", text: "我来调用工具" },
-          {
-            id: "prt-tool",
-            type: "tool",
-            tool: "mcp-router_get_current_config",
-            callID: "call-1",
-            state: {
-              status: "completed",
-              input: {},
-              output: "ok",
-              title: "",
-              time: { start: 1777543150384, end: 1777543150482 },
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-user",
+          info: { role: "user", time: { created: 1777543137952 } },
+          parts: [{ type: "text", text: "尝试调用个mcp或者skill，我测试下效果" }],
+        },
+        {
+          id: "msg-assistant",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            { type: "text", text: "我来调用工具" },
+            {
+              id: "prt-tool",
+              type: "tool",
+              tool: "mcp-router_get_current_config",
+              callID: "call-1",
+              state: {
+                status: "completed",
+                input: {},
+                output: "ok",
+                title: "",
+                time: { start: 1777543150384, end: 1777543150482 },
+              },
             },
-          },
-        ],
-      },
-    ],
-  }));
+          ],
+        },
+      ],
+    }),
+  );
 
   assert.deepEqual(history.messages, [
     {
@@ -63,14 +65,20 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
 });
 
 test("loadProviderAuthoritativeHistory returns null for providers without native export", async () => {
-  assert.equal(await loadProviderAuthoritativeHistory(
-    { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
-    "runtime-1",
-    "D:/repo",
-  ), null);
-  assert.equal(await loadProviderAuthoritativeHistory(
-    { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
-    "runtime-1",
-    "D:/repo",
-  ), null);
+  assert.equal(
+    await loadProviderAuthoritativeHistory(
+      { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
+      "runtime-1",
+      "D:/repo",
+    ),
+    null,
+  );
+  assert.equal(
+    await loadProviderAuthoritativeHistory(
+      { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
+      "runtime-1",
+      "D:/repo",
+    ),
+    null,
+  );
 });

@@ -12,7 +12,10 @@ export function encodeCursor(...keys: Array<string | undefined>): string | undef
   return keys.join("\t");
 }
 
-export function decodeCursor(cursor: string | undefined, expectedKeyCount: number): string[] | null {
+export function decodeCursor(
+  cursor: string | undefined,
+  expectedKeyCount: number,
+): string[] | null {
   if (!cursor) {
     return null;
   }

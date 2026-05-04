@@ -2,7 +2,10 @@ import { normalizeProviderCleanupResult, type ProviderCleanupResult } from "@til
 import type { AcpAgentProvider, SessionSummary } from "@tiller/shared";
 import { executeProviderCleanup } from "../providers/cleanup";
 
-type CleanupExecutor = (provider: AcpAgentProvider, runtimeSessionId: string) => ProviderCleanupResult;
+type CleanupExecutor = (
+  provider: AcpAgentProvider,
+  runtimeSessionId: string,
+) => ProviderCleanupResult;
 
 export function resolveSessionCleanupOutcome(
   summary: SessionSummary,
@@ -14,7 +17,8 @@ export function resolveSessionCleanupOutcome(
       remoteDeleted: false,
       remoteDeletionAttempted: false,
       providerId: provider?.id,
-      message: "Legacy session had no tracked ACP runtimeSessionId; deleted local Tiller history only.",
+      message:
+        "Legacy session had no tracked ACP runtimeSessionId; deleted local Tiller history only.",
     };
   }
 
@@ -23,7 +27,8 @@ export function resolveSessionCleanupOutcome(
       remoteDeleted: false,
       remoteDeletionAttempted: false,
       providerId: summary.agentId,
-      message: "Session data deleted locally, but the original ACP provider could not be resolved for remote cleanup.",
+      message:
+        "Session data deleted locally, but the original ACP provider could not be resolved for remote cleanup.",
     };
   }
 

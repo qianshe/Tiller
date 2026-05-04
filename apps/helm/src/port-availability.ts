@@ -8,10 +8,16 @@ export type HelmPortAvailabilityInput = {
   timeoutMs?: number;
 };
 
-export async function assertHelmPortAvailable({ host, port, timeoutMs = 250 }: HelmPortAvailabilityInput) {
+export async function assertHelmPortAvailable({
+  host,
+  port,
+  timeoutMs = 250,
+}: HelmPortAvailabilityInput) {
   const probeHosts = resolvePortProbeHosts(host);
   const probeResults = await Promise.all(
-    probeHosts.map(async (probeHost) => ((await canConnect(probeHost, port, timeoutMs)) ? probeHost : null)),
+    probeHosts.map(async (probeHost) =>
+      (await canConnect(probeHost, port, timeoutMs)) ? probeHost : null,
+    ),
   );
   const occupiedHosts = probeResults.filter((value): value is string => value !== null);
 

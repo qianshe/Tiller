@@ -19,11 +19,7 @@ import {
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
-import {
-  createAcpRuntime,
-  testAcpConnection,
-  type SessionRuntimeEvent,
-} from "@tiller/acp-runtime";
+import { createAcpRuntime, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
@@ -63,7 +59,11 @@ import { loadStaticAsset, resolveDeckStaticDir } from "./static-assets";
 const configPath = getDefaultConfigPath();
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
-const { host: HOST, port: PORT, authMode: AUTH_MODE } = resolveTillerRuntimeOptions({ config: tillerConfig });
+const {
+  host: HOST,
+  port: PORT,
+  authMode: AUTH_MODE,
+} = resolveTillerRuntimeOptions({ config: tillerConfig });
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 const LOGS_DIR = resolve(dirname(configPath), "logs");
 const TILLER_LOG_FILE = resolve(LOGS_DIR, "tiller.log");
@@ -79,23 +79,19 @@ const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
 const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
 const sessionsSqlitePath = resolve(dirname(configPath), "sessions.sqlite");
 const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
-const {
-  sessionStore,
-  sessionMessageStore,
-  sessionArtifactStore,
-  sessionRuntimeStore,
-} = createHelmSessionStores({
-  backend: resolveSessionStoreBackend(),
-  sqlitePath: sessionsSqlitePath,
-  jsonPaths: {
-    sessionHistoryPath,
-    sessionMessagesPath,
-    sessionArtifactsPath,
-    sessionRuntimesPath,
-  },
-  logInfo,
-  logError,
-});
+const { sessionStore, sessionMessageStore, sessionArtifactStore, sessionRuntimeStore } =
+  createHelmSessionStores({
+    backend: resolveSessionStoreBackend(),
+    sqlitePath: sessionsSqlitePath,
+    jsonPaths: {
+      sessionHistoryPath,
+      sessionMessagesPath,
+      sessionArtifactsPath,
+      sessionRuntimesPath,
+    },
+    logInfo,
+    logError,
+  });
 const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
 const authenticatedSockets = createAuthenticatedSocketRegistry<WebSocket>();
 const socketIds = new WeakMap<WebSocket, string>();
@@ -135,13 +131,14 @@ function showPairingCode() {
   });
 }
 
-
-
 function normalizeProjectAgentDefaultsOnStartup() {
   const availableAgents = listAvailableProviders(configPath);
   let updated = 0;
   for (const project of listConfiguredProjects(configPath)) {
-    const nextDefaultAgentId = resolveDefaultProjectAgentId(availableAgents, project.defaultAgentId);
+    const nextDefaultAgentId = resolveDefaultProjectAgentId(
+      availableAgents,
+      project.defaultAgentId,
+    );
     if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
       saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
       updated += 1;
@@ -182,7 +179,9 @@ httpServer.on("listening", () => {
   }
   logInfo(`[tiller] WebSocket available on the same origin`);
   logInfo(`[tiller] auth mode: ${AUTH_MODE}`);
-  logInfo(`[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`);
+  logInfo(
+    `[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`,
+  );
   logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
 });
 
@@ -199,7 +198,9 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  logError(`[tiller] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  logError(
+    `[tiller] unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+  );
 });
 
 function beginAuthenticationFlow(socket: WebSocket) {
@@ -224,7 +225,10 @@ function beginAuthenticationFlow(socket: WebSocket) {
     try {
       const payload = JSON.parse(String(raw)) as ClientToHelm;
       if (payload.type === "device.auth") {
-        const result = trustedDeviceStore.authenticate({ deviceId: payload.deviceId, token: payload.token });
+        const result = trustedDeviceStore.authenticate({
+          deviceId: payload.deviceId,
+          token: payload.token,
+        });
         if (!result.ok) {
           clearTimeout(pairingPromptTimer);
           showPairingCode();
@@ -260,9 +264,15 @@ function beginAuthenticationFlow(socket: WebSocket) {
         return;
       }
 
-      reply(socket, { type: "error", message: "Helm not authenticated yet. Send device.auth or device.pair first." });
+      reply(socket, {
+        type: "error",
+        message: "Helm not authenticated yet. Send device.auth or device.pair first.",
+      });
     } catch (error) {
-      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      reply(socket, {
+        type: "error",
+        message: error instanceof Error ? error.message : "Invalid message",
+      });
     }
   });
 }
@@ -282,13 +292,21 @@ function authenticateSocket(socket: WebSocket, deviceId: string) {
     try {
       payload = JSON.parse(String(raw)) as ClientToHelm;
     } catch (error) {
-      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      reply(socket, {
+        type: "error",
+        message: error instanceof Error ? error.message : "Invalid message",
+      });
       return;
     }
 
     void handleMessage(socket, payload).catch((error) => {
-      logError(`[tiller] message handler failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      reply(socket, { type: "error", message: error instanceof Error ? error.message : "Message handler failed" });
+      logError(
+        `[tiller] message handler failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
+      reply(socket, {
+        type: "error",
+        message: error instanceof Error ? error.message : "Message handler failed",
+      });
     });
   });
 }
@@ -341,16 +359,24 @@ function createHandlerContext(): HelmHandlerContext {
     logWarn,
     logError,
     getHelms: () => helms,
-    setHelms: (items) => { helms = items; },
+    setHelms: (items) => {
+      helms = items;
+    },
     loadAvailableHelms,
     getWorkspaces: () => workspaces,
-    setWorkspaces: (items) => { workspaces = items; },
+    setWorkspaces: (items) => {
+      workspaces = items;
+    },
     loadAvailableWorkspaces,
     getAgents: () => agents,
-    setAgents: (items) => { agents = items; },
+    setAgents: (items) => {
+      agents = items;
+    },
     loadAvailableAgents: () => listAvailableProviders(configPath),
     getProjects: () => projects,
-    setProjects: (items) => { projects = items; },
+    setProjects: (items) => {
+      projects = items;
+    },
     loadAvailableProjectsWithSemanticSummaries,
     trustedDeviceStore,
     authenticatedSockets,
@@ -388,7 +414,9 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
   let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
 
-  logInfo(`[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`);
+  logInfo(
+    `[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`,
+  );
 
   try {
     const runtime = await createAcpRuntime({
@@ -405,7 +433,9 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
           configState = event.state;
           configOptions = event.options;
         } else if (event.type === "error") {
-          logError(`[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`);
+          logError(
+            `[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+          );
         }
       },
     });
@@ -413,7 +443,9 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
     runtime.cancel();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
-    logError(`[tiller] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`);
+    logError(
+      `[tiller] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`,
+    );
     return {
       ok: false,
       message,
@@ -431,7 +463,10 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
 
   return {
     ok: modelCount > 0 || configOptions.length > 0,
-    message: modelCount > 0 || configOptions.length > 0 ? `Loaded ${modelCount || configOptions.length} model option(s).` : "Agent did not return model options.",
+    message:
+      modelCount > 0 || configOptions.length > 0
+        ? `Loaded ${modelCount || configOptions.length} model option(s).`
+        : "Agent did not return model options.",
     currentModelId: modelState?.currentModelId ?? configState.model,
     modelOptions: modelState?.options ?? [],
     configOptions,
@@ -460,7 +495,10 @@ function persistSessionMessage(sessionId: string, message: AgentMessage) {
   sessionMessageStore.append(sessionId, message);
 }
 
-function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummary) => SessionSummary) {
+function updateSessionSummary(
+  sessionId: string,
+  mutate: (summary: SessionSummary) => SessionSummary,
+) {
   const activeSummary = sessions.get(sessionId)?.summary;
   const persistedSummary = sessionStore.list().find((item) => item.id === sessionId);
   const base = activeSummary ?? persistedSummary;
@@ -474,7 +512,11 @@ function updateSessionSummary(sessionId: string, mutate: (summary: SessionSummar
     record.summary = next;
   }
   sessionStore.upsert(next);
-  persistRuntimeDescriptor(next, record?.agent ?? resolveProviderById(next.agentId, agents), record?.runtime.sessionCapabilities);
+  persistRuntimeDescriptor(
+    next,
+    record?.agent ?? resolveProviderById(next.agentId, agents),
+    record?.runtime.sessionCapabilities,
+  );
   return next;
 }
 
@@ -483,7 +525,11 @@ function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
   const record = sessions.get(summary.id);
   const agent = record?.agent ?? resolveProviderById(aligned.agentId, agents);
   const descriptor = sessionRuntimeStore.get(summary.id);
-  const capabilities = resolveSessionRestoreCapabilities(agent, descriptor, record?.runtime.sessionCapabilities);
+  const capabilities = resolveSessionRestoreCapabilities(
+    agent,
+    descriptor,
+    record?.runtime.sessionCapabilities,
+  );
   return {
     ...aligned,
     imageInput: capabilities.imageInput,
@@ -503,18 +549,29 @@ function migrateStoredSessionSummary(summary: SessionSummary) {
   return hydrated;
 }
 
-function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo {
+function buildResumeInfo(
+  summary: SessionSummary,
+  agent: AcpAgentProvider | undefined,
+): SessionResumeInfo {
   const activeRecord = sessions.get(summary.id);
   const descriptor = sessionRuntimeStore.get(summary.id);
   const checkedAt = new Date().toISOString();
-  const runtimeSessionId = summary.runtimeSessionId ?? activeRecord?.runtime.runtimeSessionId ?? descriptor?.runtimeSessionId;
-  const capabilities = resolveSessionRestoreCapabilities(agent, descriptor, activeRecord?.runtime.sessionCapabilities);
+  const runtimeSessionId =
+    summary.runtimeSessionId ??
+    activeRecord?.runtime.runtimeSessionId ??
+    descriptor?.runtimeSessionId;
+  const capabilities = resolveSessionRestoreCapabilities(
+    agent,
+    descriptor,
+    activeRecord?.runtime.sessionCapabilities,
+  );
 
   if (activeRecord) {
     return {
       mode: "same-process",
       state: "resume-available",
-      reason: "Client can reconnect to the still-running Helm session; ACP restore is not required.",
+      reason:
+        "Client can reconnect to the still-running Helm session; ACP restore is not required.",
       checkedAt,
       providerId: summary.agentId,
       runtimeSessionId,
@@ -541,7 +598,8 @@ function buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | unde
   return {
     mode: "none",
     state: "history-only",
-    reason: "ACP agent restore is unavailable; Tiller can only restore UI history recorded by Helm.",
+    reason:
+      "ACP agent restore is unavailable; Tiller can only restore UI history recorded by Helm.",
     checkedAt,
     providerId: summary.agentId,
     runtimeSessionId,
@@ -556,12 +614,36 @@ function resolveSessionRestoreCapabilities(
   runtimeCapabilities?: StoredSessionRuntimeDescriptor["capabilities"],
 ) {
   return {
-    sessionLoad: Boolean(runtimeCapabilities?.sessionLoad ?? descriptor?.capabilities?.sessionLoad ?? agent?.capabilities?.sessionLoad),
-    sessionResume: Boolean(runtimeCapabilities?.sessionResume ?? descriptor?.capabilities?.sessionResume ?? agent?.capabilities?.sessionResume),
-    sessionList: Boolean(runtimeCapabilities?.sessionList ?? descriptor?.capabilities?.sessionList ?? agent?.capabilities?.sessionList),
-    sessionClose: Boolean(runtimeCapabilities?.sessionClose ?? descriptor?.capabilities?.sessionClose ?? agent?.capabilities?.sessionClose),
-    sessionDelete: Boolean(runtimeCapabilities?.sessionDelete ?? descriptor?.capabilities?.sessionDelete ?? agent?.capabilities?.sessionDelete),
-    imageInput: Boolean(runtimeCapabilities?.imageInput ?? descriptor?.capabilities?.imageInput ?? agent?.capabilities?.imageInput),
+    sessionLoad: Boolean(
+      runtimeCapabilities?.sessionLoad ??
+      descriptor?.capabilities?.sessionLoad ??
+      agent?.capabilities?.sessionLoad,
+    ),
+    sessionResume: Boolean(
+      runtimeCapabilities?.sessionResume ??
+      descriptor?.capabilities?.sessionResume ??
+      agent?.capabilities?.sessionResume,
+    ),
+    sessionList: Boolean(
+      runtimeCapabilities?.sessionList ??
+      descriptor?.capabilities?.sessionList ??
+      agent?.capabilities?.sessionList,
+    ),
+    sessionClose: Boolean(
+      runtimeCapabilities?.sessionClose ??
+      descriptor?.capabilities?.sessionClose ??
+      agent?.capabilities?.sessionClose,
+    ),
+    sessionDelete: Boolean(
+      runtimeCapabilities?.sessionDelete ??
+      descriptor?.capabilities?.sessionDelete ??
+      agent?.capabilities?.sessionDelete,
+    ),
+    imageInput: Boolean(
+      runtimeCapabilities?.imageInput ??
+      descriptor?.capabilities?.imageInput ??
+      agent?.capabilities?.imageInput,
+    ),
   };
 }
 
@@ -573,7 +655,12 @@ function resolveResumeMode(agent: AcpAgentProvider | undefined) {
   return agent?.capabilities?.resumeMode ?? "none";
 }
 
-async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
+async function importAuthoritativeOpenCodeHistory(
+  sessionId: string,
+  agent: AcpAgentProvider,
+  runtimeSessionId: string,
+  cwd: string,
+) {
   try {
     const history = await loadProviderAuthoritativeHistory(agent, runtimeSessionId, cwd);
     if (!history) {
@@ -585,10 +672,14 @@ async function importAuthoritativeOpenCodeHistory(sessionId: string, agent: AcpA
     if (history.toolCalls.length) {
       sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
     }
-    logInfo(`[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`);
+    logInfo(
+      `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`,
+    );
     return true;
   } catch (error) {
-    logError(`[tiller] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`);
+    logError(
+      `[tiller] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`,
+    );
     return false;
   }
 }
@@ -600,18 +691,28 @@ async function refreshAuthoritativeSessionHistory(sessionId: string) {
   }
 
   const activeRecord = sessions.get(sessionId);
-  const summary = activeRecord?.summary ?? sessionStore.list().find((item) => item.id === sessionId);
+  const summary =
+    activeRecord?.summary ?? sessionStore.list().find((item) => item.id === sessionId);
   if (!summary) {
     return;
   }
   const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, agents);
-  const workspace = activeRecord?.workspace ?? workspaces.find((item) => item.id === summary.workspaceId);
-  const runtimeSessionId = activeRecord?.runtime.runtimeSessionId ?? summary.runtimeSessionId ?? sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
+  const workspace =
+    activeRecord?.workspace ?? workspaces.find((item) => item.id === summary.workspaceId);
+  const runtimeSessionId =
+    activeRecord?.runtime.runtimeSessionId ??
+    summary.runtimeSessionId ??
+    sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
   if (!agent || !workspace || !runtimeSessionId) {
     return;
   }
 
-  const refreshed = await importAuthoritativeOpenCodeHistory(sessionId, agent, runtimeSessionId, workspace.path);
+  const refreshed = await importAuthoritativeOpenCodeHistory(
+    sessionId,
+    agent,
+    runtimeSessionId,
+    workspace.path,
+  );
   if (refreshed) {
     openCodeHistoryRefreshes.set(sessionId, Date.now());
   }
@@ -622,7 +723,9 @@ async function startSessionResume(sessionId: string) {
   if (activeRecord) {
     await refreshAuthoritativeSessionHistory(sessionId);
     const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
-    logInfo(`[tiller] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`);
+    logInfo(
+      `[tiller] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`,
+    );
     return {
       ok: true,
       resume,
@@ -648,7 +751,12 @@ async function startSessionResume(sessionId: string) {
   const agent = resolveProviderById(summary.agentId, agents);
   const workspace = workspaces.find((item) => item.id === summary.workspaceId);
   const resume = buildResumeInfo(summary, agent);
-  if (!agent || !workspace || !resume.runtimeSessionId || (resume.restoreMethod !== "session/load" && resume.restoreMethod !== "session/resume")) {
+  if (
+    !agent ||
+    !workspace ||
+    !resume.runtimeSessionId ||
+    (resume.restoreMethod !== "session/load" && resume.restoreMethod !== "session/resume")
+  ) {
     return {
       ok: false,
       resume,
@@ -657,7 +765,9 @@ async function startSessionResume(sessionId: string) {
   }
 
   try {
-    logInfo(`[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`);
+    logInfo(
+      `[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+    );
     const runtime = await createAcpRuntime({
       sessionId,
       workspace,
@@ -684,15 +794,24 @@ async function startSessionResume(sessionId: string) {
     sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
     sessionStore.upsert(restoredSummary);
     persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-    await importAuthoritativeOpenCodeHistory(sessionId, agent, runtime.runtimeSessionId, workspace.path);
-    logInfo(`[tiller] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`);
+    await importAuthoritativeOpenCodeHistory(
+      sessionId,
+      agent,
+      runtime.runtimeSessionId,
+      workspace.path,
+    );
+    logInfo(
+      `[tiller] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
+    );
     return {
       ok: true,
       resume: buildResumeInfo(restoredSummary, agent),
       message: `ACP ${resume.restoreMethod} completed for this session.`,
     };
   } catch (error) {
-    logError(`[tiller] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`);
+    logError(
+      `[tiller] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`,
+    );
     return {
       ok: false,
       resume: {
@@ -711,7 +830,11 @@ function persistRuntimeDescriptor(
   agent: AcpAgentProvider | undefined,
   capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
 ) {
-  const resolvedCapabilities = resolveSessionRestoreCapabilities(agent, sessionRuntimeStore.get(summary.id), capabilities);
+  const resolvedCapabilities = resolveSessionRestoreCapabilities(
+    agent,
+    sessionRuntimeStore.get(summary.id),
+    capabilities,
+  );
   if (
     !summary.runtimeSessionId &&
     !resolvedCapabilities.sessionLoad &&
@@ -764,7 +887,14 @@ async function hydrateDiffsFromWorkspaceGit(sessionId: string, files: FileDiffSu
   const gitByPath = new Map(gitDiffs.map((file) => [normalizeDiffPath(file.path), file]));
   return files.map((file) => {
     const fromGit = gitByPath.get(normalizeDiffPath(file.path));
-    return fromGit ? { ...file, additions: fromGit.additions, deletions: fromGit.deletions, patch: file.patch ?? fromGit.patch } : file;
+    return fromGit
+      ? {
+          ...file,
+          additions: fromGit.additions,
+          deletions: fromGit.deletions,
+          patch: file.patch ?? fromGit.patch,
+        }
+      : file;
   });
 }
 
@@ -775,9 +905,10 @@ function resolveSessionWorkspace(sessionId: string) {
   }
 
   const summary = sessionStore.list().find((item) => item.id === sessionId);
-  return summary ? workspaces.find((workspace) => workspace.id === summary.workspaceId) ?? null : null;
+  return summary
+    ? (workspaces.find((workspace) => workspace.id === summary.workspaceId) ?? null)
+    : null;
 }
-
 
 function emit(socket: WebSocket, payload: HelmToClient) {
   if (socket.readyState !== 1) {
@@ -786,7 +917,9 @@ function emit(socket: WebSocket, payload: HelmToClient) {
   socket.send(JSON.stringify(payload));
 }
 
-function toTrustedDeviceSummary(record: ReturnType<typeof trustedDeviceStore.list>[number]): TrustedDeviceSummary {
+function toTrustedDeviceSummary(
+  record: ReturnType<typeof trustedDeviceStore.list>[number],
+): TrustedDeviceSummary {
   return {
     deviceId: record.deviceId,
     deviceName: record.deviceName,
@@ -873,13 +1006,15 @@ function loadAvailableProjects(): ProjectSummary[] {
   }
 
   const fallbackHelm = helms[0] ?? { id: "local-helm", name: "Local Helm", host: HOST, port: PORT };
-  const fallbackWorkspaces = workspaces.length ? workspaces : [
-    {
-      id: "current-workspace",
-      name: basename(DEFAULT_WORKSPACE_ROOT),
-      path: DEFAULT_WORKSPACE_ROOT.replace(/\\/g, "/"),
-    },
-  ];
+  const fallbackWorkspaces = workspaces.length
+    ? workspaces
+    : [
+        {
+          id: "current-workspace",
+          name: basename(DEFAULT_WORKSPACE_ROOT),
+          path: DEFAULT_WORKSPACE_ROOT.replace(/\\/g, "/"),
+        },
+      ];
   return [
     {
       id: "current-project",
@@ -892,11 +1027,13 @@ function loadAvailableProjects(): ProjectSummary[] {
   ] satisfies ProjectSummary[];
 }
 
-function resolveDefaultProjectAgentId(agents: AcpAgentProvider[], existingDefaultAgentId: string | undefined) {
+function resolveDefaultProjectAgentId(
+  agents: AcpAgentProvider[],
+  existingDefaultAgentId: string | undefined,
+) {
   const codex = agents.find((agent) => agent.id === "codex");
   return codex?.id ?? existingDefaultAgentId ?? agents[0]?.id;
 }
-
 
 async function loadAvailableProjectsWithSemanticSummaries() {
   const baseProjects = loadAvailableProjects();
@@ -905,7 +1042,13 @@ async function loadAvailableProjectsWithSemanticSummaries() {
 
 async function enrichProjectSummary(project: ProjectSummary): Promise<ProjectSummary> {
   const projectWorkspaces = resolveProjectWorkspaces(project, loadAvailableWorkspaces());
-  const cacheKey = [project.id, project.summary ?? "", projectWorkspaces.map((workspace) => `${workspace.id}:${workspace.path}:${workspace.summary ?? ""}`).join("|")].join("::");
+  const cacheKey = [
+    project.id,
+    project.summary ?? "",
+    projectWorkspaces
+      .map((workspace) => `${workspace.id}:${workspace.path}:${workspace.summary ?? ""}`)
+      .join("|"),
+  ].join("::");
   const cached = projectContextSummaryCache.get(cacheKey);
   if (cached) {
     return { ...project, summary: cached };
@@ -920,7 +1063,10 @@ async function enrichProjectSummary(project: ProjectSummary): Promise<ProjectSum
   return { ...project, summary };
 }
 
-function resolveProjectWorkspaces(project: ProjectSummary, availableWorkspaces: WorkspaceSummary[]) {
+function resolveProjectWorkspaces(
+  project: ProjectSummary,
+  availableWorkspaces: WorkspaceSummary[],
+) {
   return project.workspaceIds?.length
     ? availableWorkspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id))
     : availableWorkspaces;
@@ -933,35 +1079,48 @@ function sanitizeConfiguredProjectSummary(projectName: string, summary: string |
   }
   const generatedPrefix = `Project: ${projectName} Configured summary:`;
   const withoutGeneratedPrefix = normalized.includes(generatedPrefix)
-    ? normalized.split(generatedPrefix).map((part) => part.trim()).filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim()
+    ? (normalized
+        .split(generatedPrefix)
+        .map((part) => part.trim())
+        .filter(Boolean)[0] ?? normalized.replaceAll(generatedPrefix, "").trim())
     : normalized;
   const compact = withoutGeneratedPrefix || normalized;
   return compact.length > 900 ? `${compact.slice(0, 900)}…` : compact;
 }
 
-async function collectProjectSummarySource(project: ProjectSummary, projectWorkspaces: WorkspaceSummary[]) {
+async function collectProjectSummarySource(
+  project: ProjectSummary,
+  projectWorkspaces: WorkspaceSummary[],
+) {
   const configuredSummary = sanitizeConfiguredProjectSummary(project.name, project.summary);
-  const snippets = await Promise.all(projectWorkspaces.slice(0, 3).map(async (workspace) => {
-    const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
-    const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
-    const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1600);
-    const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1000);
-    return [
-      `Workspace: ${workspace.name}`,
-      `Path: ${workspace.path}`,
-      workspace.summary ? `Workspace summary: ${workspace.summary}` : "",
-      agents ? `AGENTS.md:\n${agents}` : "",
-      claude ? `CLAUDE.md:\n${claude}` : "",
-      readme ? `README.md:\n${readme}` : "",
-      packageJson ? `package.json:\n${packageJson}` : "",
-    ].filter(Boolean).join("\n");
-  }));
+  const snippets = await Promise.all(
+    projectWorkspaces.slice(0, 3).map(async (workspace) => {
+      const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
+      const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
+      const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1600);
+      const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1000);
+      return [
+        `Workspace: ${workspace.name}`,
+        `Path: ${workspace.path}`,
+        workspace.summary ? `Workspace summary: ${workspace.summary}` : "",
+        agents ? `AGENTS.md:\n${agents}` : "",
+        claude ? `CLAUDE.md:\n${claude}` : "",
+        readme ? `README.md:\n${readme}` : "",
+        packageJson ? `package.json:\n${packageJson}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }),
+  );
 
   return [
     `Project: ${project.name}`,
     configuredSummary ? `Configured summary: ${configuredSummary}` : "",
     ...snippets,
-  ].filter(Boolean).join("\n\n").slice(0, 9000);
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 9000);
 }
 
 function compactProjectContextSource(source: string) {
@@ -986,7 +1145,11 @@ async function handleHttpRequest(request: IncomingMessage, response: ServerRespo
   const asset = await loadStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
   if (!asset.ok) {
     response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
-    response.end(asset.statusCode === 404 ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build." : "Forbidden");
+    response.end(
+      asset.statusCode === 404
+        ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build."
+        : "Forbidden",
+    );
     return;
   }
 
@@ -997,7 +1160,9 @@ async function handleHttpRequest(request: IncomingMessage, response: ServerRespo
     });
     response.end(asset.body);
   } catch (error) {
-    logError(`[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`,
+    );
     response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
     response.end("Failed to serve Tiller Deck asset.");
   }
@@ -1009,7 +1174,7 @@ function resolveDisplayUrls() {
 }
 
 function resolvePrimaryDisplayHost() {
-  return isWildcardHost(HOST) ? resolveLanAddresses()[0] ?? "127.0.0.1" : HOST;
+  return isWildcardHost(HOST) ? (resolveLanAddresses()[0] ?? "127.0.0.1") : HOST;
 }
 
 function logInfo(message: string) {

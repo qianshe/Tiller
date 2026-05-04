@@ -37,7 +37,11 @@ test("alignSessionProjectBinding preserves a known stored project id over worksp
 
 test("alignSessionProjectBinding recovers legacy sessions by project name before workspace", () => {
   const aligned = alignSessionProjectBinding(
-    buildSession({ projectId: "legacy-project", projectName: "Beta", workspaceId: "workspace-shared" }),
+    buildSession({
+      projectId: "legacy-project",
+      projectName: "Beta",
+      workspaceId: "workspace-shared",
+    }),
     projects,
   );
 

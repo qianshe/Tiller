@@ -71,20 +71,40 @@ export function createTrustedDeviceStore(filePath: string, options?: { now?: () 
       const record = registry.devices.find((item) => item.deviceId === input.deviceId);
       if (!record) {
         persistOrDeleteRegistry(filePath, registry);
-        return { ok: false, requiresPairing: true, reason: "not-found", message: "Beacon not found. Pair again." };
+        return {
+          ok: false,
+          requiresPairing: true,
+          reason: "not-found",
+          message: "Beacon not found. Pair again.",
+        };
       }
       if (record.revokedAt) {
-        return { ok: false, requiresPairing: true, reason: "revoked", message: "Beacon revoked. Pair again." };
+        return {
+          ok: false,
+          requiresPairing: true,
+          reason: "revoked",
+          message: "Beacon revoked. Pair again.",
+        };
       }
       if (Date.parse(record.expiresAt) <= Date.parse(currentTime)) {
         registry = {
           devices: registry.devices.filter((item) => item.deviceId !== input.deviceId),
         };
         persistOrDeleteRegistry(filePath, registry);
-        return { ok: false, requiresPairing: true, reason: "expired", message: "Beacon expired. Pair again." };
+        return {
+          ok: false,
+          requiresPairing: true,
+          reason: "expired",
+          message: "Beacon expired. Pair again.",
+        };
       }
       if (record.tokenHash !== hashToken(input.token)) {
-        return { ok: false, requiresPairing: true, reason: "token-mismatch", message: "Beacon token mismatch. Pair again." };
+        return {
+          ok: false,
+          requiresPairing: true,
+          reason: "token-mismatch",
+          message: "Beacon token mismatch. Pair again.",
+        };
       }
 
       const nextRecord: TrustedDeviceRecord = {
@@ -94,7 +114,12 @@ export function createTrustedDeviceStore(filePath: string, options?: { now?: () 
       };
       registry = upsertTrustedDeviceRecord(registry, nextRecord);
       persistOrDeleteRegistry(filePath, registry);
-      return { ok: true, record: nextRecord, trustedUntil: nextRecord.expiresAt, message: "Beacon authenticated." };
+      return {
+        ok: true,
+        record: nextRecord,
+        trustedUntil: nextRecord.expiresAt,
+        message: "Beacon authenticated.",
+      };
     },
     list() {
       registry = pruneExpiredRecords(registry, now);
@@ -138,16 +163,24 @@ function persistOrDeleteRegistry(filePath: string, registry: TrustedDeviceRegist
   writeFileSync(filePath, JSON.stringify(registry, null, 2));
 }
 
-function upsertTrustedDeviceRecord(registry: TrustedDeviceRegistry, record: TrustedDeviceRecord): TrustedDeviceRegistry {
+function upsertTrustedDeviceRecord(
+  registry: TrustedDeviceRegistry,
+  record: TrustedDeviceRecord,
+): TrustedDeviceRegistry {
   return {
     devices: [record, ...registry.devices.filter((item) => item.deviceId !== record.deviceId)],
   };
 }
 
-function pruneExpiredRecords(registry: TrustedDeviceRegistry, now: () => Date): TrustedDeviceRegistry {
+function pruneExpiredRecords(
+  registry: TrustedDeviceRegistry,
+  now: () => Date,
+): TrustedDeviceRegistry {
   const currentTime = now().toISOString();
   return {
-    devices: registry.devices.filter((item) => !item.revokedAt && Date.parse(item.expiresAt) > Date.parse(currentTime)),
+    devices: registry.devices.filter(
+      (item) => !item.revokedAt && Date.parse(item.expiresAt) > Date.parse(currentTime),
+    ),
   };
 }
 
@@ -156,13 +189,15 @@ function isTrustedDeviceRecord(value: unknown): value is TrustedDeviceRecord {
     return false;
   }
   const record = value as Record<string, unknown>;
-  return typeof record.deviceId === "string"
-    && typeof record.deviceName === "string"
-    && (record.clientKind === "web" || record.clientKind === "app")
-    && typeof record.tokenHash === "string"
-    && typeof record.createdAt === "string"
-    && typeof record.lastSeenAt === "string"
-    && typeof record.expiresAt === "string";
+  return (
+    typeof record.deviceId === "string" &&
+    typeof record.deviceName === "string" &&
+    (record.clientKind === "web" || record.clientKind === "app") &&
+    typeof record.tokenHash === "string" &&
+    typeof record.createdAt === "string" &&
+    typeof record.lastSeenAt === "string" &&
+    typeof record.expiresAt === "string"
+  );
 }
 
 function hashToken(token: string) {

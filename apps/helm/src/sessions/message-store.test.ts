@@ -9,7 +9,10 @@ type MessageStore = {
   append: (sessionId: string, message: AgentMessage) => AgentMessage[];
   replace: (sessionId: string, messages: AgentMessage[]) => AgentMessage[];
   list: (sessionId: string) => AgentMessage[];
-  listPage: (sessionId: string, options?: { limit?: number; before?: string }) => { messages: AgentMessage[]; nextCursor?: string; hasMore: boolean };
+  listPage: (
+    sessionId: string,
+    options?: { limit?: number; before?: string },
+  ) => { messages: AgentMessage[]; nextCursor?: string; hasMore: boolean };
   remove: (sessionId: string) => void;
 };
 
@@ -78,7 +81,10 @@ test("session message store preserves append order instead of sorting by timesta
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-late", "msg-early"]);
+    assert.deepEqual(
+      store.list("session-1").map((message) => message.id),
+      ["msg-late", "msg-early"],
+    );
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -103,12 +109,14 @@ test("session message store merges chunks with the same message id", async () =>
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1"), [{
-      id: "msg-1",
-      role: "assistant",
-      text: "你好，主人喵~",
-      timestamp: "2026-04-27T08:00:00.000Z",
-    }]);
+    assert.deepEqual(store.list("session-1"), [
+      {
+        id: "msg-1",
+        role: "assistant",
+        text: "你好，主人喵~",
+        timestamp: "2026-04-27T08:00:00.000Z",
+      },
+    ]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -133,12 +141,14 @@ test("session message store merges consecutive assistant stream chunks without a
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1"), [{
-      id: "session-1-msg-1000",
-      role: "assistant",
-      text: "执行 pnpm typecheck 验证喵~",
-      timestamp: "2026-04-27T08:00:00.000Z",
-    }]);
+    assert.deepEqual(store.list("session-1"), [
+      {
+        id: "session-1-msg-1000",
+        role: "assistant",
+        text: "执行 pnpm typecheck 验证喵~",
+        timestamp: "2026-04-27T08:00:00.000Z",
+      },
+    ]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -163,12 +173,14 @@ test("session message store keeps the latest cumulative assistant stream snapsho
       timestamp: "2026-04-27T08:00:01.000Z",
     });
 
-    assert.deepEqual(store.list("session-1"), [{
-      id: "session-1-msg-1000",
-      role: "assistant",
-      text: "主人，已完成本轮验证喵~",
-      timestamp: "2026-04-27T08:00:00.000Z",
-    }]);
+    assert.deepEqual(store.list("session-1"), [
+      {
+        id: "session-1-msg-1000",
+        role: "assistant",
+        text: "主人，已完成本轮验证喵~",
+        timestamp: "2026-04-27T08:00:00.000Z",
+      },
+    ]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -180,8 +192,10 @@ test("session message store collapses repeated assistant snapshots inside one me
 
   try {
     const store = mod.createSessionMessageStore(tempRoot);
-    const finalAnswer = "主人，已完成本轮最小改动喵~\n\n| 项目 | 内容 |\n|---|---|\n| **产物** | `apps/deck/src/app/App.tsx` |";
-    const bridge = "我会按 `superpowers` 流程做最小定位与修改，并优先用 MCP 搜索/编辑，确保 typecheck 验证喵~";
+    const finalAnswer =
+      "主人，已完成本轮最小改动喵~\n\n| 项目 | 内容 |\n|---|---|\n| **产物** | `apps/deck/src/app/App.tsx` |";
+    const bridge =
+      "我会按 `superpowers` 流程做最小定位与修改，并优先用 MCP 搜索/编辑，确保 typecheck 验证喵~";
     store.append("session-1", {
       id: "session-1-msg-1000",
       role: "assistant",
@@ -220,12 +234,14 @@ test("session message store refreshes duplicate replay timestamps without duplic
       timestamp: "2026-04-30T13:22:46.686Z",
     });
 
-    assert.deepEqual(store.list("session-1"), [{
-      id: "msg-1",
-      role: "user",
-      text: "还有谁？",
-      timestamp: "2026-04-30T13:22:46.686Z",
-    }]);
+    assert.deepEqual(store.list("session-1"), [
+      {
+        id: "msg-1",
+        role: "user",
+        text: "还有谁？",
+        timestamp: "2026-04-30T13:22:46.686Z",
+      },
+    ]);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -237,13 +253,21 @@ test("session message store replaces a session with authoritative history order"
 
   try {
     const store = mod.createSessionMessageStore(tempRoot);
-    store.append("session-1", { id: "stale", role: "user", text: "old", timestamp: "2026-04-30T13:22:46.000Z" });
+    store.append("session-1", {
+      id: "stale",
+      role: "user",
+      text: "old",
+      timestamp: "2026-04-30T13:22:46.000Z",
+    });
     store.replace("session-1", [
       { id: "msg-2", role: "assistant", text: "new", timestamp: "2026-04-30T09:59:11.000Z" },
       { id: "msg-1", role: "user", text: "hello", timestamp: "2026-04-30T09:58:57.000Z" },
     ]);
 
-    assert.deepEqual(store.list("session-1").map((message) => message.id), ["msg-2", "msg-1"]);
+    assert.deepEqual(
+      store.list("session-1").map((message) => message.id),
+      ["msg-2", "msg-1"],
+    );
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -295,12 +319,18 @@ test("session message store pages latest messages and exposes an older cursor", 
     }
 
     const latest = store.listPage("session-1", { limit: 2 });
-    assert.deepEqual(latest.messages.map((message) => message.id), ["msg-4", "msg-5"]);
+    assert.deepEqual(
+      latest.messages.map((message) => message.id),
+      ["msg-4", "msg-5"],
+    );
     assert.equal(latest.hasMore, true);
     assert.ok(latest.nextCursor);
 
     const older = store.listPage("session-1", { limit: 2, before: latest.nextCursor });
-    assert.deepEqual(older.messages.map((message) => message.id), ["msg-2", "msg-3"]);
+    assert.deepEqual(
+      older.messages.map((message) => message.id),
+      ["msg-2", "msg-3"],
+    );
     assert.equal(older.hasMore, true);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
@@ -324,8 +354,16 @@ test("session message store defaults to the latest twenty messages", async () =>
 
     const latest = store.listPage("session-1");
     assert.equal(latest.messages.length, 20);
-    assert.deepEqual(latest.messages.map((message) => message.id).slice(0, 3), ["msg-6", "msg-7", "msg-8"]);
-    assert.deepEqual(latest.messages.map((message) => message.id).slice(-3), ["msg-23", "msg-24", "msg-25"]);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(0, 3), [
+      "msg-6",
+      "msg-7",
+      "msg-8",
+    ]);
+    assert.deepEqual(latest.messages.map((message) => message.id).slice(-3), [
+      "msg-23",
+      "msg-24",
+      "msg-25",
+    ]);
     assert.equal(latest.hasMore, true);
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });

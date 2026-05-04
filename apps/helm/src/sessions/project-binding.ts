@@ -7,11 +7,14 @@ export function isProjectRootBranchWorkspace<P extends ProjectSummary>(
 ): project is P & { path: string } {
   return Boolean(
     project.path &&
-      (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch),
+    (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch),
   );
 }
 
-export function alignSessionProjectBinding(summary: SessionSummary, projects: ProjectSummary[]): SessionSummary {
+export function alignSessionProjectBinding(
+  summary: SessionSummary,
+  projects: ProjectSummary[],
+): SessionSummary {
   const exactProject = projects.find((project) => project.id === summary.projectId);
   if (exactProject) {
     return {

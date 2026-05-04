@@ -21,11 +21,18 @@ test("resolveTillerRuntimeOptions gives CLI args priority over env and config", 
 });
 
 test("resolveTillerRuntimeOptions falls back from env to config to defaults", () => {
-  assert.deepEqual(resolveTillerRuntimeOptions({ argv: [], env: { TILLER_PORT: "48000" }, config: { daemon: { host: "192.168.1.20", port: 47000 } } }), {
-    host: "192.168.1.20",
-    port: 48000,
-    authMode: "none",
-  });
+  assert.deepEqual(
+    resolveTillerRuntimeOptions({
+      argv: [],
+      env: { TILLER_PORT: "48000" },
+      config: { daemon: { host: "192.168.1.20", port: 47000 } },
+    }),
+    {
+      host: "192.168.1.20",
+      port: 48000,
+      authMode: "none",
+    },
+  );
 });
 
 test("resolveTillerRuntimeOptions rejects invalid ports", () => {
@@ -42,7 +49,11 @@ test("resolveTillerRuntimeOptions defaults to personal mode without pairing auth
 });
 
 test("resolveTillerRuntimeOptions allows pairing auth via env", () => {
-  const options = resolveTillerRuntimeOptions({ argv: [], env: { TILLER_AUTH: "pairing" }, config: {} });
+  const options = resolveTillerRuntimeOptions({
+    argv: [],
+    env: { TILLER_AUTH: "pairing" },
+    config: {},
+  });
 
   assert.equal(options.authMode, "pairing");
 });

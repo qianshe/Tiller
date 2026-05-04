@@ -39,7 +39,10 @@ export function resolveDeckStaticDir(moduleUrl = import.meta.url) {
   return resolve(moduleDir, "..", "..", "deck", "dist");
 }
 
-export async function loadStaticAsset(rootDir: string, requestUrl = "/"): Promise<StaticAssetResponse> {
+export async function loadStaticAsset(
+  rootDir: string,
+  requestUrl = "/",
+): Promise<StaticAssetResponse> {
   if (hasTraversalSegment(requestUrl)) {
     return { ok: false, statusCode: 403 };
   }
@@ -65,7 +68,9 @@ export async function loadStaticAsset(rootDir: string, requestUrl = "/"): Promis
   return { ok: false, statusCode: 404 };
 }
 
-async function loadCachedAsset(filePath: string): Promise<{ body: Buffer; contentType: string; immutable: boolean } | null> {
+async function loadCachedAsset(
+  filePath: string,
+): Promise<{ body: Buffer; contentType: string; immutable: boolean } | null> {
   const isHtmlEntry = filePath.endsWith("index.html");
   const cached = ASSET_CACHE.get(filePath);
 
@@ -108,7 +113,9 @@ function isInsideRoot(rootDir: string, candidate: string) {
 
 function hasTraversalSegment(requestUrl: string) {
   try {
-    return decodeURIComponent(requestUrl).split(/[\\/]/u).some((segment) => segment === "..");
+    return decodeURIComponent(requestUrl)
+      .split(/[\\/]/u)
+      .some((segment) => segment === "..");
   } catch {
     return true;
   }

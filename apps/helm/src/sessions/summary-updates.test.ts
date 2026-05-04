@@ -22,7 +22,11 @@ function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary 
 }
 
 test("applyUserPromptToSummary increments send count once per user prompt", () => {
-  const next = applyUserPromptToSummary(createSummary(), "请检查总览统计。", "2026-04-28T01:00:00.000Z");
+  const next = applyUserPromptToSummary(
+    createSummary(),
+    "请检查总览统计。",
+    "2026-04-28T01:00:00.000Z",
+  );
 
   assert.equal(next.messageCount, 3);
   assert.equal(next.updatedAt, "2026-04-28T01:00:00.000Z");
@@ -37,13 +41,15 @@ test("applyAgentMessageToSummary keeps the user prompt preview stable across str
     timestamp: "2026-04-28T01:00:01.000Z",
   };
 
-  const next = applyAgentMessageToSummary(createSummary({ lastMessagePreview: "请检查总览统计。" }), message);
+  const next = applyAgentMessageToSummary(
+    createSummary({ lastMessagePreview: "请检查总览统计。" }),
+    message,
+  );
 
   assert.equal(next.messageCount, 2);
   assert.equal(next.updatedAt, message.timestamp);
   assert.equal(next.lastMessagePreview, "请检查总览统计。");
 });
-
 
 test("Tiller summary count remains send-based across streamed agent chunks", () => {
   let summary = createSummary({ messageCount: 0 });

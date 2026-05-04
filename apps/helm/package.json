@@ -21,6 +21,8 @@
     "publish:npm": "pnpm run build && npm publish ./dist-package --access public",
     "test": "tsx --test src/**/*.test.ts scripts/**/*.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format:write": "prettier --write \"src/**/*.ts\"",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
     "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
@@ -34,6 +36,7 @@
     "@types/node": "^24.10.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
+    "prettier": "^3.8.3",
     "tsup": "^8.5.1",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3"

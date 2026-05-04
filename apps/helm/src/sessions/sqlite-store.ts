@@ -1,13 +1,29 @@
 import { createRequire } from "node:module";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary, SessionSummary } from "@tiller/shared";
-import { createSessionArtifactStore, pageSessionArtifacts, type SessionArtifactPageOptions } from "./artifact-store.js";
-import { createSessionMessageStore, pageSessionMessages, type SessionMessagePageOptions } from "./message-store.js";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  SessionSummary,
+} from "@tiller/shared";
+import {
+  createSessionArtifactStore,
+  pageSessionArtifacts,
+  type SessionArtifactPageOptions,
+} from "./artifact-store.js";
+import {
+  createSessionMessageStore,
+  pageSessionMessages,
+  type SessionMessagePageOptions,
+} from "./message-store.js";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
 import { createSessionStore } from "./summary-store.js";
 
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
 type DatabaseSync = import("node:sqlite").DatabaseSync;
 
 type SessionArtifacts = {
@@ -264,25 +280,37 @@ function openSessionDatabase(dbPath: string) {
   `);
   ensureSessionMessagePositions(db);
   db.exec("DROP INDEX IF EXISTS idx_session_messages_page");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, position, id)");
-  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(new Date().toISOString());
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, position, id)",
+  );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(
+    new Date().toISOString(),
+  );
   return db;
 }
 
 function ensureSessionMessagePositions(db: DatabaseSync) {
-  const columns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>;
+  const columns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{
+    name: string;
+  }>;
   if (columns.some((column) => column.name === "position")) {
     return;
   }
 
   runTransaction(db, () => {
     db.exec("ALTER TABLE session_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
-    const rows = db.prepare(`
+    const rows = db
+      .prepare(
+        `
       SELECT session_id, id
       FROM session_messages
       ORDER BY session_id ASC, timestamp ASC, id ASC
-    `).all() as Array<{ session_id: string; id: string }>;
-    const update = db.prepare("UPDATE session_messages SET position = ? WHERE session_id = ? AND id = ?");
+    `,
+      )
+      .all() as Array<{ session_id: string; id: string }>;
+    const update = db.prepare(
+      "UPDATE session_messages SET position = ? WHERE session_id = ? AND id = ?",
+    );
     let currentSessionId = "";
     let position = 0;
     for (const row of rows) {
@@ -303,24 +331,33 @@ function hasMigrationVersion(db: DatabaseSync, version: number) {
 }
 
 function recordMigrationVersion(db: DatabaseSync, version: number) {
-  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)").run(version, new Date().toISOString());
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)").run(
+    version,
+    new Date().toISOString(),
+  );
 }
 
 function listSessionSummaries(db: DatabaseSync) {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_summaries
     ORDER BY updated_at DESC, created_at DESC
-  `).all() as Array<{ payload_json: string }>;
+  `,
+    )
+    .all() as Array<{ payload_json: string }>;
   return rows.map((row) => parseJson<SessionSummary>(row.payload_json)).filter(isNotNull);
 }
 
 function upsertSessionSummary(db: DatabaseSync, summary: SessionSummary) {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT OR REPLACE INTO session_summaries(
       id, project_id, helm_id, workspace_id, agent_id, status, created_at, updated_at, payload_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     summary.id,
     summary.projectId,
     summary.helmId,
@@ -334,13 +371,19 @@ function upsertSessionSummary(db: DatabaseSync, summary: SessionSummary) {
 }
 
 function listSessionMessages(db: DatabaseSync, sessionId: string) {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_messages
     WHERE session_id = ?
     ORDER BY position ASC, id ASC
-  `).all(sessionId) as Array<{ payload_json: string }>;
-  return normalizeSessionMessages(rows.map((row) => parseJson<AgentMessage>(row.payload_json)).filter(isNotNull));
+  `,
+    )
+    .all(sessionId) as Array<{ payload_json: string }>;
+  return normalizeSessionMessages(
+    rows.map((row) => parseJson<AgentMessage>(row.payload_json)).filter(isNotNull),
+  );
 }
 
 function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: AgentMessage[]) {
@@ -351,16 +394,25 @@ function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: A
       VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const [position, message] of normalizeSessionMessages(messages).entries()) {
-      insert.run(sessionId, message.id, position, message.role, message.timestamp, JSON.stringify(message));
+      insert.run(
+        sessionId,
+        message.id,
+        position,
+        message.role,
+        message.timestamp,
+        JSON.stringify(message),
+      );
     }
   });
 }
 
 function upsertCommandChunk(db: DatabaseSync, sessionId: string, chunk: CommandChunk) {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT OR REPLACE INTO session_outputs(session_id, id, command_id, timestamp, payload_json)
     VALUES (?, ?, ?, ?, ?)
-  `).run(sessionId, chunk.id, chunk.commandId, chunk.timestamp, JSON.stringify(chunk));
+  `,
+  ).run(sessionId, chunk.id, chunk.commandId, chunk.timestamp, JSON.stringify(chunk));
 }
 
 function replaceSessionOutputs(db: DatabaseSync, sessionId: string, outputs: CommandChunk[]) {
@@ -387,19 +439,25 @@ function replaceSessionDiffs(db: DatabaseSync, sessionId: string, diffs: FileDif
 }
 
 function getToolCall(db: DatabaseSync, sessionId: string, id: string) {
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_tool_calls
     WHERE session_id = ? AND id = ?
-  `).get(sessionId, id) as { payload_json: string } | undefined;
+  `,
+    )
+    .get(sessionId, id) as { payload_json: string } | undefined;
   return row ? parseJson<AgentToolCall>(row.payload_json) : null;
 }
 
 function upsertToolCall(db: DatabaseSync, sessionId: string, toolCall: AgentToolCall) {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT OR REPLACE INTO session_tool_calls(session_id, id, timestamp, updated_at, payload_json)
     VALUES (?, ?, ?, ?, ?)
-  `).run(sessionId, toolCall.id, toolCall.timestamp, toolCall.updatedAt, JSON.stringify(toolCall));
+  `,
+  ).run(sessionId, toolCall.id, toolCall.timestamp, toolCall.updatedAt, JSON.stringify(toolCall));
 }
 
 function replaceSessionToolCalls(db: DatabaseSync, sessionId: string, toolCalls: AgentToolCall[]) {
@@ -412,56 +470,84 @@ function replaceSessionToolCalls(db: DatabaseSync, sessionId: string, toolCalls:
 }
 
 function getSessionArtifacts(db: DatabaseSync, sessionId: string): SessionArtifacts {
-  const outputRows = db.prepare(`
+  const outputRows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_outputs
     WHERE session_id = ?
     ORDER BY timestamp ASC, id ASC
-  `).all(sessionId) as Array<{ payload_json: string }>;
-  const diffRows = db.prepare(`
+  `,
+    )
+    .all(sessionId) as Array<{ payload_json: string }>;
+  const diffRows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_diffs
     WHERE session_id = ?
     ORDER BY path ASC
-  `).all(sessionId) as Array<{ payload_json: string }>;
-  const toolCallRows = db.prepare(`
+  `,
+    )
+    .all(sessionId) as Array<{ payload_json: string }>;
+  const toolCallRows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_tool_calls
     WHERE session_id = ?
     ORDER BY updated_at ASC, id ASC
-  `).all(sessionId) as Array<{ payload_json: string }>;
+  `,
+    )
+    .all(sessionId) as Array<{ payload_json: string }>;
 
   return {
-    outputs: sortCommandChunks(outputRows.map((row) => parseJson<CommandChunk>(row.payload_json)).filter(isNotNull)),
+    outputs: sortCommandChunks(
+      outputRows.map((row) => parseJson<CommandChunk>(row.payload_json)).filter(isNotNull),
+    ),
     diffs: diffRows.map((row) => parseJson<FileDiffSummary>(row.payload_json)).filter(isNotNull),
-    toolCalls: sortToolCalls(toolCallRows.map((row) => parseJson<AgentToolCall>(row.payload_json)).filter(isNotNull)),
+    toolCalls: sortToolCalls(
+      toolCallRows.map((row) => parseJson<AgentToolCall>(row.payload_json)).filter(isNotNull),
+    ),
   };
 }
 
 function listRuntimeDescriptors(db: DatabaseSync) {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_runtimes
     ORDER BY last_seen_at DESC, session_id ASC
-  `).all() as Array<{ payload_json: string }>;
-  return rows.map((row) => parseJson<StoredSessionRuntimeDescriptor>(row.payload_json)).filter(isNotNull);
+  `,
+    )
+    .all() as Array<{ payload_json: string }>;
+  return rows
+    .map((row) => parseJson<StoredSessionRuntimeDescriptor>(row.payload_json))
+    .filter(isNotNull);
 }
 
 function getRuntimeDescriptor(db: DatabaseSync, sessionId: string) {
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     SELECT payload_json
     FROM session_runtimes
     WHERE session_id = ?
-  `).get(sessionId) as { payload_json: string } | undefined;
+  `,
+    )
+    .get(sessionId) as { payload_json: string } | undefined;
   return row ? parseJson<StoredSessionRuntimeDescriptor>(row.payload_json) : null;
 }
 
 function upsertRuntimeDescriptor(db: DatabaseSync, descriptor: StoredSessionRuntimeDescriptor) {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT OR REPLACE INTO session_runtimes(
       session_id, provider_id, runtime_session_id, last_seen_at, state, payload_json
     ) VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     descriptor.sessionId,
     descriptor.providerId,
     descriptor.runtimeSessionId ?? null,
@@ -494,7 +580,12 @@ function normalizeSessionMessages(messages: AgentMessage[]) {
 }
 
 function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
-  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+  return (
+    current.role === "assistant" &&
+    incoming.role === "assistant" &&
+    isRuntimeGeneratedMessageId(current.id) &&
+    isRuntimeGeneratedMessageId(incoming.id)
+  );
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
@@ -504,13 +595,20 @@ function isRuntimeGeneratedMessageId(id: string) {
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
   const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
   const isCumulativeSnapshot = incoming.text.startsWith(current.text);
-  const nextText = isDuplicateText ? current.text : isCumulativeSnapshot ? incoming.text : `${current.text}${incoming.text}`;
+  const nextText = isDuplicateText
+    ? current.text
+    : isCumulativeSnapshot
+      ? incoming.text
+      : `${current.text}${incoming.text}`;
   return {
     ...current,
     ...incoming,
     id: current.id,
     text: collapseRepeatedAssistantText(nextText),
-    timestamp: isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp) ? incoming.timestamp : current.timestamp,
+    timestamp:
+      isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp)
+        ? incoming.timestamp
+        : current.timestamp,
   };
 }
 
@@ -526,7 +624,8 @@ function collapseRepeatedAssistantText(text: string) {
   }
 
   const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
-  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  const cutIndex =
+    bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
 }
 
@@ -555,14 +654,28 @@ function isInformativeToolCallTitle(title: string | undefined, id: string) {
 }
 
 function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) => compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id));
+  return [...items].sort((left, right) =>
+    compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id),
+  );
 }
 
 function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) => compareHistoryPosition(left.updatedAt || left.timestamp, left.id, right.updatedAt || right.timestamp, right.id));
+  return [...items].sort((left, right) =>
+    compareHistoryPosition(
+      left.updatedAt || left.timestamp,
+      left.id,
+      right.updatedAt || right.timestamp,
+      right.id,
+    ),
+  );
 }
 
-function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTimestamp: string, rightId: string) {
+function compareHistoryPosition(
+  leftTimestamp: string,
+  leftId: string,
+  rightTimestamp: string,
+  rightId: string,
+) {
   const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;

@@ -2,7 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { resolveAdapterCleanupPlan, type ProviderCleanupPlan, type ProviderCleanupResult } from "@tiller/acp-runtime";
+import {
+  resolveAdapterCleanupPlan,
+  type ProviderCleanupPlan,
+  type ProviderCleanupResult,
+} from "@tiller/acp-runtime";
 
 type CleanupExecutor = {
   exec?: (command: string, args: string[]) => string;
@@ -18,7 +22,11 @@ function quoteWindowsArg(value: string) {
 
 function resolveWindowsCommand(command: string) {
   try {
-    const resolved = execFileSync("where.exe", [command], { encoding: "utf8" }).split(/\r?\n/u).find(Boolean)?.trim() ?? command;
+    const resolved =
+      execFileSync("where.exe", [command], { encoding: "utf8" })
+        .split(/\r?\n/u)
+        .find(Boolean)
+        ?.trim() ?? command;
     if (!resolved.includes(".") && existsSync(`${resolved}.cmd`)) {
       return `${resolved}.cmd`;
     }
@@ -43,7 +51,12 @@ function runWindowsCleanupCommand(command: string, args: string[]) {
 }
 
 function isCommandNotFound(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 function runCleanupCommand(command: string, args: string[]) {
@@ -58,11 +71,18 @@ function runCleanupCommand(command: string, args: string[]) {
   }
 }
 
-export function resolveProviderCleanupPlan(provider: AcpAgentProvider, runtimeSessionId: string): ProviderCleanupPlan {
+export function resolveProviderCleanupPlan(
+  provider: AcpAgentProvider,
+  runtimeSessionId: string,
+): ProviderCleanupPlan {
   return resolveAdapterCleanupPlan(provider, runtimeSessionId);
 }
 
-export function executeProviderCleanup(provider: AcpAgentProvider, runtimeSessionId: string, executor: CleanupExecutor = {}): ProviderCleanupResult {
+export function executeProviderCleanup(
+  provider: AcpAgentProvider,
+  runtimeSessionId: string,
+  executor: CleanupExecutor = {},
+): ProviderCleanupResult {
   const plan = resolveProviderCleanupPlan(provider, runtimeSessionId);
   if (plan.kind === "unsupported") {
     return {
@@ -85,7 +105,10 @@ export function executeProviderCleanup(provider: AcpAgentProvider, runtimeSessio
     return {
       kind: "remote-delete-failed",
       providerId: plan.providerId,
-      message: error instanceof Error ? error.message : `Failed to delete remote session ${runtimeSessionId}`,
+      message:
+        error instanceof Error
+          ? error.message
+          : `Failed to delete remote session ${runtimeSessionId}`,
     };
   }
 }
