@@ -44,6 +44,8 @@ npm-debug.log*
 pnpm-debug.log*
 .serena/
 docs/
+.worktrees
+.worktrees/
 .ace-tool/
 .sisyphus/
 
