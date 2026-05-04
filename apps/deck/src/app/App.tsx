@@ -4,12 +4,9 @@ import {
   useRef,
   useState,
   type ClipboardEvent as ReactClipboardEvent,
-  type CSSProperties,
   type FormEvent,
   type UIEvent as ReactUIEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type MutableRefObject,
   type ReactNode,
 } from "react";
 import "highlight.js/styles/github-dark.css";
@@ -53,6 +50,11 @@ import {
   type DaemonProfile,
 } from "./daemon-profiles";
 import {
+  useHelmConnectionState,
+  type ConnectionState,
+  type HelmInventoryBucket,
+} from "./use-helm-connection-state";
+import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
@@ -64,6 +66,32 @@ import {
   type DeckTheme,
   type TechnicalPanelPreferences,
 } from "./preferences";
+import { UI_COPY, type Locale } from "./copy";
+import {
+  handleActivityServerEvent,
+  handleDeviceServerEvent,
+  handleInventoryServerEvent,
+  handleSessionServerEvent,
+} from "./server-events/index";
+import { AgentsPage } from "../pages/agents/AgentsPage";
+import { NAV_LABELS, VIEW_PATHS, type AppView } from "./routes";
+import { TopNav } from "../components/layout/TopNav";
+import {
+  createMissionVisualFixture,
+  shouldUseMissionVisualFixture,
+} from "../features/mission/mission-visual-fixture";
+import { OverviewPage } from "../pages/overview/OverviewPage";
+import { SettingsPage } from "../pages/settings/SettingsPage";
+import { MissionDisplayPanel } from "../features/mission/mission-display-panel";
+import { PlainMessages } from "../features/mission/plain-messages";
+import { MissionSidebar } from "../features/mission/mission-sidebar";
+import { MissionInspector } from "../features/mission/mission-inspector";
+import { MissionComposer } from "../features/mission/mission-composer";
+import { resolveToolCallTone } from "../features/logbook/tool-call-tone";
+import {
+  useMissionLayout,
+  type MissionResizeHandle,
+} from "../features/mission/use-mission-layout";
 import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
@@ -78,8 +106,6 @@ import {
 import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
 import {
   createSessionStatusMap,
-  pruneSessionScopedMap,
-  resolveActiveSessionId,
   resolveDraftSelectionId,
   resolveMissionHelms,
   resolveMissionSelectedProjectId,
@@ -97,17 +123,7 @@ import {
   writeTrustedDeviceCache,
   type TrustedDeviceCache,
 } from "../auth/beacon-cache";
-import {
-  MissionPanelNav,
-  type MissionPanelPage,
-} from "../features/mission/panels";
-import {
-  buildMissionDiffTree,
-  formatDiffStatus,
-  renderDiffPatch,
-  renderDiffStats,
-  type MissionDiffTreeNode,
-} from "../features/mission/diff-tree";
+import { type MissionPanelPage } from "../features/mission/panels";
 import {
   createClipboardImageContent,
   extractClipboardImageItems,
@@ -115,7 +131,6 @@ import {
 import {
   commandChunkToToolCall,
   groupToolCalls,
-  mergeAgentMessages,
   mergeMessageHistory,
   mergeToolCallHistory,
   resolvePendingToolActivity,
@@ -124,18 +139,44 @@ import { MarkdownMessage } from "../components/markdown";
 import {
   CommandOutput,
   DiffSummary,
-  InfoList,
   PairingBoxes,
   StatCard,
 } from "../components/primitives";
 import { toast } from "../features/toast/toast";
 import {
-  createHelmWebSocketUrl,
   DAEMON_HOST_KEY,
   DAEMON_PORT_KEY,
   normalizeEmbeddedHelmSummaries,
   resolveDefaultHelmEndpoint,
 } from "./helm-endpoint";
+import {
+  connectHelmSocket as connectHelmSocketImpl,
+  connectToDaemon as connectToDaemonImpl,
+  type ConnectToDaemonOptions,
+} from "./helm-sockets";
+import {
+  dispatchWithTrace,
+  nextRequestId,
+  requestInitialSync as requestInitialSyncImpl,
+} from "./request-dispatch";
+import {
+  createSession as createSessionImpl,
+  requestSessionResumeStart as requestSessionResumeStartImpl,
+  startResume as startResumeImpl,
+  submitPrompt as submitPromptImpl,
+} from "./session-actions";
+import {
+  handlePairingKeyDown as handlePairingKeyDownImpl,
+  pastePairingDigits as pastePairingDigitsImpl,
+  sendPairingRequest as sendPairingRequestImpl,
+  submitPairingCode as submitPairingCodeImpl,
+  updatePairingDigit as updatePairingDigitImpl,
+} from "./pairing-actions";
+import {
+  saveDraft as saveDraftImpl,
+  testAgent as testAgentImpl,
+  writeDraftToConfig as writeDraftToConfigImpl,
+} from "./config-actions";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";
@@ -152,8 +193,6 @@ const DEFAULT_SESSION_PAGE_LIMIT = 25;
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
 const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
-const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
-const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 const MODEL_OPTIONS = [
   "provider-default",
   "gpt-5.4",
@@ -174,122 +213,13 @@ const REASONING_OPTIONS: Array<{
   { value: "high", label: "High" },
   { value: "xhigh", label: "XHigh" },
 ];
-const UI_COPY = {
-  "zh-CN": {
-    localeLabel: "中文",
-    heroEyebrow: "ACP Coding Agent 舰队指挥甲板",
-    heroBody:
-      "一个同源内置 Deck，管理当前 Tiller 的项目、工作区与 ACP 舰员。先选项目，再进入该项目下的任务，会话成立后 ACP 舰员会被锁定。",
-    connection: {
-      connecting: "连接中",
-      connected: "已连接",
-      disconnected: "已断开",
-    },
-    daemonAddress: "Helm 地址",
-    daemonPort: "端口",
-    connectDaemon: "连接 Helm",
-    reconnectDaemon: "重新连接",
-    connectHint:
-      "先填写你的 Helm 地址和端口，再主动连接。连接成功后才进入配对流程。",
-    connectFeedbackIdle: "尚未连接 Helm。",
-    connectFeedbackConnecting: "正在连接 Helm...",
-    pairingTitle: "设备配对",
-    pairingHint: "连接成功后，请输入 Helm 终端显示的 6 位配对码。",
-    pairingFeedbackIdle: "等待输入配对码。",
-    pairingDebug: "调试回显",
-    controlPlane: "指挥甲板",
-    testConfiguredAgent: "测试当前舰员",
-    createSession: "创建任务",
-    selectedWorkspace: "工作区",
-    selectedAgent: "舰员",
-    workspaces: "工作区",
-    agents: "ACP 舰员",
-    noWorkspaces: "暂无工作区",
-    noAgents: "暂无舰员",
-    addAgentDraft: "添加 ACP 舰员配置",
-    saveDraftLocal: "保存本地配置草稿",
-    writeDaemonConfig: "写入 Helm 配置",
-    name: "名称",
-    command: "命令",
-    arguments: "参数",
-    draftOnlyTitle: "本地配置草稿",
-    draftOnlyHint:
-      "可先录入一个真实 ACP 舰员 command 组合，例如 `opencode acp --pure`，确认无误后再写入 Helm 配置。",
-    daemonConfigTitle: "写入 Helm 配置",
-    daemonConfigHint:
-      "这里会向 `~/.tiller/config.json` 写入舰员 provider 条目。建议先测试当前舰员命令可用。",
-    hooksTitle: "ACP 归一化层",
-    hooksBody:
-      "runtime 会把 session/update 尽量归一化为消息、权限请求、航行日志与 diff 事件，便于不同 ACP 舰员共用同一套 UI。",
-    agentTestTitle: "舰员测试",
-    sessions: "任务",
-    totalSuffix: "个",
-    noSessions: "先创建一个任务开始控制环路。",
-    sessionDetail: "任务详情",
-    noActiveSession: "还没有活跃任务。",
-    cancelSession: "取消任务",
-    cleanupSession: "清理任务",
-    promptPlaceholder: "向当前任务下达指令",
-    sendPrompt: "发送提示词",
-    agentStream: "舰员消息流",
-    commandOutput: "航行日志",
-    diffSummary: "变更摘要",
-    waitingForAgent: "等待舰员活动中。",
-    permissionRequest: "权限请求",
-    allowOnce: "本次允许",
-    deny: "拒绝",
-    noCommandOutput: "航行日志暂无记录。",
-    noDiffSummary: "还没有文件变更。",
-    role: {
-      assistant: "助手",
-      system: "系统",
-      user: "你",
-    },
-    status: {
-      starting: "启动中",
-      running: "运行中",
-      waiting_for_permission: "等待审批",
-      idle: "空闲",
-      error: "错误",
-      cancelled: "已取消",
-    },
-    draftLoaded: "已从浏览器本地存储加载配置草稿。",
-    draftParseFailed: "本地配置草稿解析失败，已回退到默认 ACP 配置。",
-    savedDraft: "已保存本地配置草稿：",
-    writingConfig: "正在写入舰员 provider 到 Helm 配置...",
-    testRunningPrefix: "正在测试",
-  },
-} as const;
-
 type AgentDraft = {
   name: string;
   command: string;
   args: string;
 };
 
-type HelmInventoryBucket = {
-  projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
-  agents: AcpAgentProvider[];
-  sessions: SessionSummary[];
-  statuses: Record<string, SessionStatus>;
-  trustedDevices: TrustedDeviceSummary[];
-};
 
-type Locale = keyof typeof UI_COPY;
-
-type DebugTrace = {
-  connectClicks: number;
-  pairClicks: number;
-  requestsSent: number;
-  lastRequestType: string;
-};
-
-type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
-
-type MissionPaneWidths = Record<MissionPaneId, number>;
-
-type MissionResizeHandle = "sidebar" | "display" | "inspector";
 
 type AgentModelOptionsEntry = {
   loading?: boolean;
@@ -536,524 +466,7 @@ function resolvePreferredModel(
   return modelOptions[0];
 }
 
-const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = {
-  sidebar: 320,
-  chat: 500,
-  display: 420,
-  inspector: 320,
-};
-const MISSION_PANE_LIMITS: Record<
-  MissionPaneId,
-  { min: number; max?: number }
-> = {
-  sidebar: { min: 240, max: 400 },
-  chat: { min: 420, max: 820 },
-  display: { min: 320 },
-  inspector: { min: 320, max: 520 },
-};
-const MISSION_RESIZER_WIDTH = 8;
-const MISSION_OUTER_GUTTER = 0;
-const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1584;
-const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1156;
 
-function getMissionPaneMax(pane: MissionPaneId) {
-  return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
-}
-
-function clampPaneWidth(value: number, pane: MissionPaneId) {
-  const limits = MISSION_PANE_LIMITS[pane];
-  const max = getMissionPaneMax(pane);
-  return Math.min(max, Math.max(limits.min, Math.round(value)));
-}
-
-function normalizeMissionPaneWidths(
-  widths: MissionPaneWidths,
-  sidebarCollapsed: boolean,
-  inspectorCollapsed: boolean,
-  viewportWidth: number,
-): MissionPaneWidths {
-  const next: MissionPaneWidths = {
-    sidebar: sidebarCollapsed ? 0 : clampPaneWidth(widths.sidebar, "sidebar"),
-    chat: clampPaneWidth(widths.chat, "chat"),
-    display: clampPaneWidth(widths.display, "display"),
-    inspector: inspectorCollapsed
-      ? 0
-      : clampPaneWidth(widths.inspector, "inspector"),
-  };
-  const visibleResizerCount =
-    1 + (sidebarCollapsed ? 0 : 1) + (inspectorCollapsed ? 0 : 1);
-  const availableWidth = Math.max(
-    0,
-    viewportWidth -
-      MISSION_OUTER_GUTTER -
-      visibleResizerCount * MISSION_RESIZER_WIDTH,
-  );
-  const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
-
-  if (totalWidth < availableWidth) {
-    return { ...next, display: next.display + availableWidth - totalWidth };
-  }
-
-  let overflow = totalWidth - availableWidth;
-  if (overflow <= 0) {
-    return next;
-  }
-
-  if (!inspectorCollapsed) {
-    const inspectorReduction = Math.min(
-      overflow,
-      Math.max(0, next.inspector - MISSION_PANE_LIMITS.inspector.min),
-    );
-    next.inspector -= inspectorReduction;
-    overflow -= inspectorReduction;
-  }
-
-  const displayReduction = Math.min(
-    overflow,
-    Math.max(0, next.display - MISSION_PANE_LIMITS.display.min),
-  );
-  next.display -= displayReduction;
-  overflow -= displayReduction;
-
-  if (!sidebarCollapsed && overflow > 0) {
-    const sidebarReduction = Math.min(
-      overflow,
-      Math.max(0, next.sidebar - MISSION_PANE_LIMITS.sidebar.min),
-    );
-    next.sidebar -= sidebarReduction;
-  }
-
-  return next;
-}
-
-function resizeMissionPanePair(
-  widths: MissionPaneWidths,
-  left: MissionPaneId,
-  right: MissionPaneId,
-  delta: number,
-): MissionPaneWidths {
-  const total = widths[left] + widths[right];
-  const leftMin = MISSION_PANE_LIMITS[left].min;
-  const rightMin = MISSION_PANE_LIMITS[right].min;
-  const leftMax = getMissionPaneMax(left);
-  const rightMax = getMissionPaneMax(right);
-  const lowerLeft = Math.max(leftMin, total - rightMax);
-  const upperLeft = Math.min(leftMax, total - rightMin);
-  const nextLeft = Math.round(
-    Math.min(upperLeft, Math.max(lowerLeft, widths[left] + delta)),
-  );
-  return {
-    ...widths,
-    [left]: nextLeft,
-    [right]: Math.round(total - nextLeft),
-  };
-}
-
-type AppView = "overview" | "sessions" | "agents" | "settings";
-
-const VIEW_PATHS: Record<AppView, string> = {
-  overview: "/",
-  sessions: "/mission",
-  agents: "/agents",
-  settings: "/settings",
-};
-
-const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
-  "zh-CN": {
-    overview: "总览",
-    sessions: "任务",
-    agents: "舰队",
-    settings: "设置",
-  },
-  "en-US": {
-    overview: "总览",
-    sessions: "任务",
-    agents: "舰队",
-    settings: "设置",
-  },
-};
-
-function TopNav({
-  activeView,
-  onNavigate,
-  connection,
-  language,
-}: {
-  activeView: AppView;
-  onNavigate: (view: AppView) => void;
-  connection: "connecting" | "connected" | "disconnected";
-  language: DeckLanguage;
-}) {
-  const labels = NAV_LABELS[language];
-  const items: { id: AppView; label: string }[] = [
-    { id: "overview", label: labels.overview },
-    { id: "sessions", label: labels.sessions },
-    { id: "agents", label: labels.agents },
-    { id: "settings", label: labels.settings },
-  ];
-
-  return (
-    <header className="top-nav card">
-      <div className="top-nav-brand">
-        <span className="top-nav-logo">🚀</span>
-        <strong>Tiller</strong>
-      </div>
-      <nav className="top-nav-links" aria-label="主导航">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`top-nav-item ${activeView === item.id ? "active" : ""}`}
-            onClick={(event) => {
-              onNavigate(item.id);
-              event.currentTarget.blur();
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <button
-        className={`admiral-avatar admiral-${connection}`}
-        type="button"
-        aria-label="党徽状态标识"
-      >
-        <svg viewBox="0 0 64 64" role="img" aria-hidden="true">
-          <defs>
-            <radialGradient
-              id="emblem-black"
-              cx="28"
-              cy="22"
-              r="38"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop stopColor="#151515" />
-              <stop offset="1" stopColor="#000000" />
-            </radialGradient>
-            <linearGradient
-              id="emblem-gold"
-              x1="12"
-              x2="52"
-              y1="8"
-              y2="58"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop stopColor="#fde68a" />
-              <stop offset="0.34" stopColor="#facc15" />
-              <stop offset="1" stopColor="#d97706" />
-            </linearGradient>
-          </defs>
-          <circle cx="32" cy="32" r="30" fill="url(#emblem-black)" />
-          <text
-            x="31.4"
-            y="56"
-            fill="url(#emblem-gold)"
-            fontFamily="'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Arial Unicode MS', sans-serif"
-            fontSize="57"
-            fontWeight="900"
-            textAnchor="middle"
-          >
-            ☭
-          </text>
-          <circle
-            cx="32"
-            cy="32"
-            r="29"
-            fill="none"
-            stroke="rgba(250, 204, 21, 0.44)"
-            strokeWidth="1.4"
-          />
-        </svg>
-      </button>
-    </header>
-  );
-}
-
-function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
-  const normalized = title.toLowerCase();
-  if (
-    kind === "subagent" ||
-    /\b(subagent|delegate|explore|librarian|worker|oracle|metis|momus)\b/iu.test(
-      title,
-    )
-  ) {
-    return "Subagent";
-  }
-  if (
-    /\b(skill|execute_skill|load_skill)\b|[\\/](skills?|plugins)[\\/].*skill\.md|skill\.md/iu.test(
-      title,
-    )
-  ) {
-    return "Skill";
-  }
-  if (
-    /(^|[\s:/_-])mcp([\s:/_-]|$)|mcp_router|mcp-router|mcp__[a-z0-9_-]+/iu.test(
-      title,
-    ) ||
-    isKnownMcpRouterTool(normalized)
-  ) {
-    return "MCP";
-  }
-  if (kind === "terminal") {
-    return "Shell";
-  }
-  if (kind === "edit") {
-    return "File";
-  }
-  if (
-    /\b(apply_patch|update_plan|todos?|background_output|read_thread_terminal|shell_command|webfetch)\b|websearch|web_search/iu.test(
-      normalized,
-    )
-  ) {
-    return "Built-in";
-  }
-  if (kind === "tool") {
-    return "Tool";
-  }
-  return "Tool";
-}
-
-function resolveToolCallTone(kind: AgentToolCall["kind"], title: string) {
-  const label = resolveToolCallLabel(kind, title);
-  const toneByLabel: Record<string, { className: string; icon: string }> = {
-    MCP: { className: "tool-call-mcp", icon: "◇" },
-    Shell: { className: "tool-call-shell", icon: "⌁" },
-    File: { className: "tool-call-file", icon: "□" },
-    Skill: { className: "tool-call-skill", icon: "✦" },
-    Subagent: { className: "tool-call-subagent", icon: "◎" },
-    "Built-in": { className: "tool-call-builtin", icon: "▵" },
-    Tool: { className: "tool-call-generic", icon: "·" },
-  };
-  return { label, ...(toneByLabel[label] ?? toneByLabel.Tool) };
-}
-
-function isKnownMcpRouterTool(normalizedTitle: string) {
-  return /^(activate_project|check_onboarding_performed|list_dir|find_file|read_file|read_memory|write_memory|search_context|search_for_pattern|find_symbol|find_referencing_symbols|get_symbols_overview|edit_file|replace_content|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_symbol|safe_delete_symbol|tavily_|resolve_library_id|get_library_docs|ask_question|read_wiki_|zhi|ji|tu)(\b|$)/u.test(
-    normalizedTitle,
-  );
-}
-
-type MissionVisualFixture = {
-  helms: HelmSummary[];
-  workspaces: WorkspaceSummary[];
-  projects: ProjectSummary[];
-  agents: AcpAgentProvider[];
-  sessions: SessionSummary[];
-  statuses: Record<string, SessionStatus>;
-  messages: Record<string, AgentMessage[]>;
-  outputs: Record<string, CommandChunk[]>;
-  toolCalls: Record<string, AgentToolCall[]>;
-  diffs: Record<string, FileDiffSummary[]>;
-  activeSessionId: string;
-  selectedProjectId: string;
-  selectedWorkspaceId: string;
-  selectedAgentId: string;
-};
-
-function shouldUseMissionVisualFixture() {
-  return (
-    import.meta.env.DEV &&
-    new URLSearchParams(window.location.search).get("visual") === "mission"
-  );
-}
-
-function createMissionVisualFixture(): MissionVisualFixture {
-  const now = new Date().toISOString();
-  const helmId = "visual-helm";
-  const projectId = "visual-project";
-  const workspaceId = "visual-workspace";
-  const agentId = "visual-codex";
-  const sessionId = "visual-session";
-  const session: SessionSummary = {
-    id: sessionId,
-    projectId,
-    projectName: "Tiller",
-    helmId,
-    workspaceId,
-    workspaceName: "Tiller",
-    agentId,
-    agentName: "Codex",
-    model: "gpt-5.5",
-    reasoningEffort: "medium",
-    status: "running",
-    createdAt: now,
-    updatedAt: now,
-    messageCount: 4,
-    runtimeSessionId: "visual-acp-session",
-    lastMessagePreview: "按 Zed 风格微调 任务页布局。",
-  };
-
-  return {
-    helms: [
-      {
-        id: helmId,
-        name: "Local Helm",
-        host: DEFAULT_DAEMON_HOST,
-        port: Number(DEFAULT_DAEMON_PORT),
-      },
-    ],
-    workspaces: [
-      { id: workspaceId, name: "Tiller", path: "D:/myProject/tools/Tiller" },
-    ],
-    projects: [
-      {
-        id: projectId,
-        name: "Tiller",
-        helmId,
-        workspaceIds: [workspaceId],
-        defaultWorkspaceId: workspaceId,
-        defaultAgentId: agentId,
-      },
-    ],
-    agents: [
-      {
-        id: agentId,
-        name: "Codex",
-        command: "codex-acp",
-        args: ["-c", "model=gpt-5.5"],
-        transport: "stdio",
-        protocol: "acp",
-      },
-    ],
-    sessions: [session],
-    statuses: { [sessionId]: "running" },
-    activeSessionId: sessionId,
-    selectedProjectId: projectId,
-    selectedWorkspaceId: workspaceId,
-    selectedAgentId: agentId,
-    messages: {
-      [sessionId]: [
-        {
-          id: "visual-user-1",
-          role: "user",
-          text: `# ??????
-
-?? Zed ? Agent Panel ???? ????`,
-          timestamp: now,
-        },
-        {
-          id: "visual-assistant-1",
-          role: "assistant",
-          text: `## ??/??
-
-?? ?????? Zed-like ?????
-
-- ????? / ?? rail
-- ????????
-- ???sticky composer
-- ?????? inspector`,
-          timestamp: now,
-        },
-      ],
-    },
-    outputs: {
-      [sessionId]: [
-        {
-          id: "visual-output-1",
-          commandId: "visual-command-1",
-          text: `pnpm --filter @tiller/deck build
-? built in 2.0s`,
-          stream: "stdout",
-          timestamp: now,
-        },
-      ],
-    },
-    toolCalls: {
-      [sessionId]: [
-        {
-          id: "visual-tool-1",
-          kind: "terminal",
-          title: "pnpm --filter @tiller/deck build",
-          status: "completed",
-          commandId: "visual-command-1",
-          output: "✓ built in 2.0s",
-          stream: "stdout",
-          timestamp: now,
-          updatedAt: now,
-        },
-      ],
-    },
-    diffs: {
-      [sessionId]: [
-        {
-          path: "apps/deck/src/App.tsx",
-          status: "modified",
-          additions: 44,
-          deletions: 18,
-        },
-        {
-          path: "apps/deck/src/styles.css",
-          status: "modified",
-          additions: 134,
-          deletions: 0,
-        },
-      ],
-    },
-  };
-}
-
-function SlashCommandPopup({
-  commands,
-  selectedIndex,
-  onSelect,
-  onHover,
-}: {
-  commands: AvailableCommand[];
-  selectedIndex: number;
-  onSelect: (cmd: AvailableCommand) => void;
-  onHover: (index: number) => void;
-}) {
-  return (
-    <div className="slash-command-popup" role="listbox">
-      {commands.map((cmd, index) => (
-        <button
-          key={cmd.name}
-          type="button"
-          role="option"
-          aria-selected={index === selectedIndex}
-          className={`slash-command-item ${index === selectedIndex ? "selected" : ""}`}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onSelect(cmd);
-          }}
-          onMouseEnter={() => onHover(index)}
-        >
-          <span className="slash-command-name">/{cmd.name}</span>
-          {cmd.description ? (
-            <span className="slash-command-desc">{cmd.description}</span>
-          ) : null}
-          {cmd.input?.hint ? (
-            <span className="slash-command-hint">{cmd.input.hint}</span>
-          ) : null}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function availableCommandListsEqual(
-  left: AvailableCommand[] | undefined,
-  right: AvailableCommand[],
-): boolean {
-  if (left === right) {
-    return true;
-  }
-  if (!left || left.length !== right.length) {
-    return false;
-  }
-  for (let index = 0; index < left.length; index += 1) {
-    const a = left[index];
-    const b = right[index];
-    if (
-      a.name !== b.name ||
-      a.description !== b.description ||
-      a.input?.hint !== b.input?.hint
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
@@ -1083,16 +496,19 @@ export function App() {
   const initialPreferences = useMemo(() => readDeckPreferences(), []);
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(
-    () => (missionVisualMode ? createMissionVisualFixture() : null),
+    () =>
+      missionVisualMode
+        ? createMissionVisualFixture({
+            defaultDaemonHost: DEFAULT_DAEMON_HOST,
+            defaultDaemonPort: DEFAULT_DAEMON_PORT,
+          })
+        : null,
     [missionVisualMode],
   );
   const deckDeviceId = useMemo(
     () => getOrCreateDeviceId(window.localStorage),
     [],
   );
-  const autoConnectAttemptRef = useRef<string | null>(null);
-  const manualDisconnectRef = useRef<string | null>(null);
-
   const locale: Locale = "zh-CN";
   const defaultHelmEndpoint = useMemo(
     () =>
@@ -1105,28 +521,32 @@ export function App() {
       }),
     [],
   );
-  const [connection, setConnection] = useState<
-    "connecting" | "connected" | "disconnected"
-  >(missionVisualFixture ? "connected" : "disconnected");
-  const [helmConnectionStates, setHelmConnectionStates] = useState<
-    Record<string, "connecting" | "connected" | "disconnected">
-  >({});
-  const [helmInventories, setHelmInventories] = useState<
-    Record<string, HelmInventoryBucket>
-  >({});
-  const [pairingState, setPairingState] = useState<
-    "idle" | "waiting" | "input" | "paired" | "rejected"
-  >(missionVisualFixture ? "paired" : "idle");
-  const [pairingCodeInput, setPairingCodeInput] = useState("");
-  const [pairingFeedback, setPairingFeedback] = useState("");
-  const [connectFeedback, setConnectFeedback] = useState("");
-  const [daemonHost, setDaemonHost] = useState(() => defaultHelmEndpoint.host);
-  const [daemonPort, setDaemonPort] = useState(() => defaultHelmEndpoint.port);
-  const [debugTrace, setDebugTrace] = useState<DebugTrace>({
-    connectClicks: 0,
-    pairClicks: 0,
-    requestsSent: 0,
-    lastRequestType: "none",
+  const {
+    autoConnectAttemptRef,
+    manualDisconnectRef,
+    connection,
+    setConnection,
+    helmConnectionStates,
+    setHelmConnectionStates,
+    helmInventories,
+    setHelmInventories,
+    pairingState,
+    setPairingState,
+    pairingCodeInput,
+    setPairingCodeInput,
+    pairingFeedback,
+    setPairingFeedback,
+    connectFeedback,
+    setConnectFeedback,
+    daemonHost,
+    setDaemonHost,
+    daemonPort,
+    setDaemonPort,
+    debugTrace,
+    setDebugTrace,
+  } = useHelmConnectionState({
+    defaultHelmEndpoint,
+    fixtureConnected: Boolean(missionVisualFixture),
   });
   const [helms, setHelms] = useState<HelmSummary[]>(
     missionVisualFixture?.helms ?? [],
@@ -1269,18 +689,26 @@ export function App() {
   const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<
     string | null
   >(null);
-  const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
-    DEFAULT_MISSION_PANE_WIDTHS,
+  const [activeView, setActiveView] = useState<AppView>(() =>
+    resolveViewFromPath(window.location.pathname),
   );
-  const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
-  const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
-    useState(false);
-  const missionLayoutRef = useRef<HTMLElement | null>(null);
-  const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
-    typeof document === "undefined"
-      ? 1440
-      : document.documentElement.clientWidth,
-  );
+  const {
+    missionLayoutRef,
+    missionSidebarCollapsed,
+    setMissionSidebarCollapsed,
+    setMissionInspectorCollapsed,
+    effectiveSidebarCollapsed,
+    effectiveInspectorCollapsed,
+    paneStyles: {
+      layout: missionLayoutStyle,
+      sidebar: missionSidebarPaneStyle,
+      chat: missionChatPaneStyle,
+      display: missionDisplayPaneStyle,
+      inspector: missionInspectorPaneStyle,
+    },
+    startMissionPaneResize,
+    nudgeMissionPane,
+  } = useMissionLayout(activeView);
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<
     string | null
   >(missionVisualFixture?.sessions[0]?.helmId ?? null);
@@ -1293,31 +721,6 @@ export function App() {
   const [missionConfigPicker, setMissionConfigPicker] = useState<
     "agentMode" | "model" | "reasoning" | null
   >(null);
-  const [activeView, setActiveView] = useState<AppView>(() =>
-    resolveViewFromPath(window.location.pathname),
-  );
-
-  useEffect(() => {
-    const measureMissionLayout = () => {
-      const width =
-        missionLayoutRef.current?.getBoundingClientRect().width ??
-        document.documentElement.clientWidth;
-      setMissionViewportWidth(Math.max(0, Math.round(width)));
-    };
-    measureMissionLayout();
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(measureMissionLayout);
-    if (missionLayoutRef.current) {
-      resizeObserver?.observe(missionLayoutRef.current);
-    }
-    window.addEventListener("resize", measureMissionLayout);
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureMissionLayout);
-    };
-  }, [activeView]);
 
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({
     name: "OpenCode",
@@ -2528,38 +1931,15 @@ export function App() {
   }
 
   function requestInitialSync(socket: WebSocket) {
-    dispatch(socket, {
-      type: "helm.list",
-      requestId: nextRequestId(requestCounter),
-    });
-    dispatch(socket, {
-      type: "project.list",
-      requestId: nextRequestId(requestCounter),
-    });
-    dispatch(socket, {
-      type: "workspace.list",
-      requestId: nextRequestId(requestCounter),
-    });
-    dispatch(socket, {
-      type: "agent.list",
-      requestId: nextRequestId(requestCounter),
-    });
-    setSessionHistoryState({ hasMore: false, loading: true });
-    dispatch(socket, {
-      type: "session.list",
-      requestId: nextRequestId(requestCounter),
-      limit: DEFAULT_SESSION_PAGE_LIMIT,
-    });
-    dispatch(socket, {
-      type: "device.list",
-      requestId: nextRequestId(requestCounter),
+    requestInitialSyncImpl(socket, {
+      dispatch,
+      requestCounter,
+      setSessionHistoryState,
+      sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
     });
   }
 
-  function setHelmConnectionState(
-    helmKey: string,
-    state: "connecting" | "connected" | "disconnected",
-  ) {
+  function setHelmConnectionState(helmKey: string, state: ConnectionState) {
     setHelmConnectionStates((current) => ({ ...current, [helmKey]: state }));
   }
 
@@ -2597,197 +1977,70 @@ export function App() {
   }
 
   function connectHelmSocket(profile: DaemonProfile) {
-    const helmKey = daemonProfileKey(profile.host, profile.port);
-    const existing = helmSocketRefs.current.get(helmKey);
-    if (existing?.readyState === WebSocket.OPEN) {
-      setHelmConnectionState(helmKey, "connected");
-      setDaemonProfileMessage(`${profile.name} 已连接`);
-      return;
-    }
-    existing?.close();
-
-    const wsUrl = createHelmWebSocketUrl({
+    connectHelmSocketImpl(profile, {
       embedded: IS_EMBEDDED_HELM_DECK,
-      host: profile.host,
-      port: profile.port,
       location: window.location,
-    });
-    const socket = new WebSocket(wsUrl);
-    helmSocketRefs.current.set(helmKey, socket);
-    setHelmConnectionState(helmKey, "connecting");
-    setDaemonProfileMessage(`正在连接 ${profile.name}...`);
-
-    socket.addEventListener("open", () => {
-      setHelmConnectionState(helmKey, "connected");
-      setDaemonProfileMessage(`已连接 ${profile.name}`);
-      const cache = readTrustedDeviceCache(
-        window.localStorage,
-        profile.host,
-        profile.port,
-      );
-      if (IS_EMBEDDED_HELM_DECK) {
-        requestInitialSync(socket);
-        return;
-      }
-      if (cache?.token) {
-        dispatch(socket, {
-          type: "device.auth",
-          requestId: nextRequestId(requestCounter),
-          deviceId: cache.deviceId,
-          token: cache.token,
-        });
-        requestInitialSync(socket);
-      }
-    });
-
-    socket.addEventListener("message", (event) => {
-      const payload = JSON.parse(String(event.data)) as HelmToClient;
-      handleServerEvent(payload, helmKey);
-    });
-
-    socket.addEventListener("close", () => {
-      if (helmSocketRefs.current.get(helmKey) === socket) {
-        helmSocketRefs.current.delete(helmKey);
-      }
-      setHelmConnectionState(helmKey, "disconnected");
-    });
-
-    socket.addEventListener("error", () => {
-      setHelmConnectionState(helmKey, "disconnected");
-      setDaemonProfileMessage(`${profile.name} 连接失败`);
+      helmSocketRefs,
+      setHelmConnectionState,
+      setDaemonProfileMessage,
+      readTrustedDeviceCache,
+      requestInitialSync,
+      dispatch,
+      nextRequestId,
+      requestCounter,
+      handleServerEvent,
     });
   }
 
   function connectToDaemon(
     event?: FormEvent<HTMLFormElement>,
-    options?: {
-      preserveState?: boolean;
-      auto?: boolean;
-      host?: string;
-      port?: string;
-      persistEndpoint?: boolean;
-    },
+    options?: ConnectToDaemonOptions,
   ) {
-    event?.preventDefault();
-    const preserveState = options?.preserveState ?? false;
-    const host =
-      options?.host?.trim() || daemonHost.trim() || DEFAULT_DAEMON_HOST;
-    const port =
-      options?.port?.trim() || daemonPort.trim() || DEFAULT_DAEMON_PORT;
-    const helmKey = daemonProfileKey(host, port);
-    const wsUrl = createHelmWebSocketUrl({
+    connectToDaemonImpl(event, options, {
       embedded: IS_EMBEDDED_HELM_DECK,
-      host,
-      port,
       location: window.location,
-    });
-    primaryHelmKeyRef.current = helmKey;
-
-    if (!options?.auto) {
-      manualDisconnectRef.current = null;
-    }
-
-    if (!IS_EMBEDDED_HELM_DECK && (options?.persistEndpoint ?? true)) {
-      window.localStorage.setItem(DAEMON_HOST_KEY, host);
-      window.localStorage.setItem(DAEMON_PORT_KEY, port);
-    }
-    socketRef.current?.close();
-    if (!preserveState) {
-      setSessions([]);
-      setStatuses({});
-      setMessages({});
-      setPermissionRequests({});
-      setOutputs({});
-      toolCallsRef.current = {};
-      setToolCalls({});
-      setDiffs({});
-      setSessionConfigOptions({});
-      setTrustedDevices([]);
-      setActiveSessionId(null);
-      setSelectedProjectId(null);
-      setResumeFeedback("");
-    }
-    setDebugTrace((current) => ({
-      ...current,
-      connectClicks: current.connectClicks + 1,
-    }));
-    setHelmConnectionState(helmKey, "connecting");
-    setConnection("connecting");
-    setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
-    setPairingState("idle");
-    setPairingCodeInput("");
-    setPairingFeedback(copy.pairingFeedbackIdle);
-
-    const socket = new WebSocket(wsUrl);
-    socketRef.current = socket;
-
-    socket.addEventListener("open", () => {
-      setHelmConnectionState(helmKey, "connected");
-      setConnection("connected");
-      setConnectFeedback(`已连接到 ${wsUrl}`);
-      const cache = readTrustedDeviceCache(window.localStorage, host, port);
-      // Prefer the cached trusted-device path - it lets pairing-auth helms
-      // re-authenticate silently and sync after `device.auth.result` arrives.
-      if (cache?.token) {
-        setTrustedDevice(cache);
-        dispatch(socket, {
-          type: "device.auth",
-          requestId: nextRequestId(requestCounter),
-          deviceId: cache.deviceId,
-          token: cache.token,
-        });
-        setPairingState("waiting");
-        setPairingFeedback("正在使用已保存令牌认证...");
-        return;
-      }
-      // No cached token: optimistically pull initial state. Personal-auth helms
-      // (`AUTH_MODE === "none"`) admit the socket immediately, so this is the
-      // only way for a fresh deck (e.g. vite dev on :5173 talking to local
-      // helm on :47631) to populate projects/sessions. Pairing-auth helms will
-      // reply with `error: not authenticated` and the error handler below will
-      // surface the pairing input.
-      setPairingState("paired");
-      setPairingFeedback("已连接,正在加载...");
-      requestInitialSync(socket);
-    });
-
-    socket.addEventListener("close", () => {
-      setHelmConnectionState(helmKey, "disconnected");
-      setConnection("disconnected");
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-      // Socket 断开后,project files 缓存可能与服务器状态分叉 — 重连后强制刷新一次。
-      lastFilesScopeKeyRef.current = null;
-      setConnectFeedback(copy.connectFeedbackIdle);
-      if (pairingState !== "paired") {
-        setPairingState("idle");
-      }
-    });
-
-    socket.addEventListener("error", () => {
-      setConnection("disconnected");
-      setConnectFeedback(`连接 ${wsUrl} 失败`);
-      if (!options?.auto) {
-        setPairingState("idle");
-      }
-      // Socket 异常断开后，project files 缓存可能过期 — 重连后强制刷新一次。
-      lastFilesScopeKeyRef.current = null;
-    });
-
-    socket.addEventListener("message", (event) => {
-      const payload = JSON.parse(String(event.data)) as HelmToClient;
-      handleServerEvent(payload, helmKey);
+      daemonHost,
+      daemonPort,
+      defaultDaemonHost: DEFAULT_DAEMON_HOST,
+      defaultDaemonPort: DEFAULT_DAEMON_PORT,
+      primaryHelmKeyRef,
+      manualDisconnectRef,
+      socketRef,
+      setSessions,
+      setStatuses,
+      setMessages,
+      setPermissionRequests,
+      setOutputs,
+      toolCallsRef,
+      setToolCalls,
+      setDiffs,
+      setSessionConfigOptions,
+      setTrustedDevices,
+      setActiveSessionId,
+      setSelectedProjectId,
+      setResumeFeedback,
+      setDebugTrace,
+      setHelmConnectionState,
+      setConnection,
+      setConnectFeedback,
+      copy,
+      setPairingState,
+      setPairingCodeInput,
+      setPairingFeedback,
+      pairingState,
+      setTrustedDevice,
+      readTrustedDeviceCache,
+      dispatch,
+      nextRequestId,
+      requestCounter,
+      requestInitialSync,
+      lastFilesScopeKeyRef,
+      handleServerEvent,
     });
   }
 
   function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    socket.send(JSON.stringify(payload));
-    setDebugTrace((current) => ({
-      ...current,
-      requestsSent: current.requestsSent + 1,
-      lastRequestType: payload.type,
-    }));
+    dispatchWithTrace(socket, payload, setDebugTrace);
   }
 
   function handleServerEvent(
@@ -2804,620 +2057,131 @@ export function App() {
         daemonPort.trim() || DEFAULT_DAEMON_PORT,
       );
     const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
-    switch (payload.type) {
-      case "device.pair.result":
-        if (payload.ok && payload.token) {
-          const nextCache: TrustedDeviceCache = {
-            deviceId: deckDeviceId,
-            token: payload.token,
-            trustedUntil: payload.trustedUntil,
-            lastAuthenticatedAt: new Date().toISOString(),
-          };
-          const pairedProfile = pendingAddHelmProfileRef.current;
-          const pairedHost =
-            pairedProfile?.host ?? (daemonHost.trim() || DEFAULT_DAEMON_HOST);
-          const pairedPort =
-            pairedProfile?.port ?? (daemonPort.trim() || DEFAULT_DAEMON_PORT);
-          writeTrustedDeviceCache(
-            window.localStorage,
-            pairedHost,
-            pairedPort,
-            nextCache,
-          );
-          if (pairedProfile) {
-            persistDaemonProfile(pairedProfile);
-            setDaemonHost(pairedProfile.host);
-            setDaemonPort(pairedProfile.port);
-            window.localStorage.setItem(DAEMON_HOST_KEY, pairedProfile.host);
-            window.localStorage.setItem(DAEMON_PORT_KEY, pairedProfile.port);
-            setSelectedHelmKey(
-              daemonProfileKey(pairedProfile.host, pairedProfile.port),
-            );
-            pendingAddHelmProfileRef.current = null;
-            setFleetAddHelmModalOpen(false);
-            setFleetAddHelmStage("connect");
-          }
-          setTrustedDevice(nextCache);
-          autoConnectAttemptRef.current = null;
-          setPairingFeedback(payload.message);
-          setPairingState("paired");
-          if (socketRef.current) {
-            requestInitialSync(socketRef.current);
-          }
-        } else {
-          setPairingFeedback(payload.message);
-          setPairingState("rejected");
-        }
-        return;
-      case "device.auth.result":
-        if (payload.ok) {
-          const existing = readTrustedDeviceCache(
-            window.localStorage,
-            daemonHost.trim() || DEFAULT_DAEMON_HOST,
-            daemonPort.trim() || DEFAULT_DAEMON_PORT,
-          );
-          if (existing) {
-            const nextCache: TrustedDeviceCache = {
-              ...existing,
-              trustedUntil: payload.trustedUntil ?? existing.trustedUntil,
-              lastAuthenticatedAt: new Date().toISOString(),
-            };
-            writeTrustedDeviceCache(
-              window.localStorage,
-              daemonHost.trim() || DEFAULT_DAEMON_HOST,
-              daemonPort.trim() || DEFAULT_DAEMON_PORT,
-              nextCache,
-            );
-            setTrustedDevice(nextCache);
-          }
-          autoConnectAttemptRef.current = null;
-          setPairingFeedback(payload.message);
-          setPairingState("paired");
-          if (socketRef.current) {
-            requestInitialSync(socketRef.current);
-          }
-        } else {
-          clearTrustedDeviceCache(
-            window.localStorage,
-            daemonHost.trim() || DEFAULT_DAEMON_HOST,
-            daemonPort.trim() || DEFAULT_DAEMON_PORT,
-          );
-          setTrustedDevice(null);
-          setTrustedDevices([]);
-          setPairingFeedback(payload.message);
-          setPairingState(payload.requiresPairing ? "input" : "rejected");
-        }
-        return;
-      case "device.list.result":
-        updateHelmInventory(sourceHelmKey, { trustedDevices: payload.devices });
-        if (sourceIsCurrentHelm) {
-          setTrustedDevices(payload.devices);
-        }
-        return;
-      case "device.revoke.result":
-        updateHelmInventory(sourceHelmKey, {
-          trustedDevices: (
-            helmInventories[sourceHelmKey]?.trustedDevices ?? trustedDevices
-          ).filter((device) => device.deviceId !== payload.deviceId),
-        });
-        if (sourceIsCurrentHelm) {
-          setTrustedDevices((current) =>
-            current.filter((device) => device.deviceId !== payload.deviceId),
-          );
-        }
-        setPairingFeedback(payload.message);
-        if (payload.ok && payload.deviceId === deckDeviceId) {
-          clearTrustedDeviceCache(
-            window.localStorage,
-            daemonHost.trim() || DEFAULT_DAEMON_HOST,
-            daemonPort.trim() || DEFAULT_DAEMON_PORT,
-          );
-          setTrustedDevice(null);
-          setConnectFeedback("当前设备已被撤销，请重新连接并输入配对码。");
-          setPairingState("input");
-        }
-        return;
-      case "helm.list.result":
-        setHelms(payload.helms);
-        return;
-      case "project.list.result":
-        updateHelmInventory(sourceHelmKey, { projects: payload.projects });
-        if (sourceIsCurrentHelm) {
-          setProjects(payload.projects);
-        }
-        return;
-      case "project.files.result": {
-        const key = projectFilesKey(payload.projectId, payload.workspaceId);
-        setProjectFilesByScope((current) => ({
-          ...current,
-          [key]: {
-            loading: false,
-            files: payload.files,
-            message: payload.message,
-          },
-        }));
-        return;
-      }
-      case "workspace.list.result":
-        updateHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
-        if (sourceIsCurrentHelm) {
-          setWorkspaces(payload.workspaces);
-        }
-        return;
-      case "workspace.git.result":
-        setWorktreeGitByProject((current) => ({
-          ...current,
-          [payload.projectId]: {
-            branches: payload.branches,
-            currentBranch: payload.currentBranch,
-            message: payload.message,
-            loading: false,
-          },
-        }));
-        if (sourceIsCurrentHelm && payload.workspaces.length) {
-          setWorkspaces((current) => {
-            const nextById = new Map(
-              current.map((workspace) => [workspace.id, workspace]),
-            );
-            payload.workspaces.forEach((workspace) =>
-              nextById.set(workspace.id, workspace),
-            );
-            return Array.from(nextById.values());
-          });
-        }
-        if (payload.selectedWorkspaceId) {
-          setSelectedWorkspaceId(payload.selectedWorkspaceId);
-          setWorktreePickerOpen(false);
-        }
-        return;
-      case "agent.list.result":
-        updateHelmInventory(sourceHelmKey, { agents: payload.agents });
-        if (sourceIsCurrentHelm) {
-          setAgents(payload.agents);
-        }
-        return;
-      case "agent.test.result":
-        setAgentTestResult(payload.message);
-        return;
-      case "agent.model.options.result": {
-        const key = agentModelOptionsKey(
-          payload.providerId,
-          payload.workspaceId,
-        );
-        const nextEntry: AgentModelOptionsEntry = {
-          loading: false,
-          message: payload.message,
-          modelOptions: payload.modelOptions,
-          configOptions: payload.configOptions,
-          state: payload.state,
-        };
-        setAgentModelOptions((current) => {
-          const next = { ...current, [key]: nextEntry };
-          writeAgentModelOptionsCache(next);
-          return next;
-        });
-        if (
-          sourceIsCurrentHelm &&
-          payload.providerId === selectedAgentId &&
-          payload.workspaceId === selectedWorkspaceId
-        ) {
-          const realOptions = resolveModelOptions(
-            payload.currentModelId ?? payload.state.model,
-            payload.configOptions,
-            payload.modelOptions,
-          );
-          const allOptions = Array.from(
-            new Set([
-              ...realOptions,
-              ...payload.modelOptions.map((option) => option.id),
-            ]),
-          );
-          const nextModel = resolvePreferredModel(
-            payload.currentModelId ?? payload.state.model,
-            allOptions,
-          );
-          if (
-            nextModel &&
-            (!selectedModel ||
-              selectedModel === "provider-default" ||
-              !allOptions.includes(selectedModel))
-          ) {
-            setSelectedModel(nextModel);
-          }
-          if (payload.state.agentMode) {
-            setSelectedAgentMode(payload.state.agentMode);
-          }
-          if (payload.state.reasoningEffort) {
-            setSelectedReasoningEffort(payload.state.reasoningEffort);
-          }
-        }
-        return;
-      }
-      case "project.save.result":
-        setConfigSaveMessage(payload.message);
-        setFleetProjectSaveMessage(payload.message);
-        if (sourceIsCurrentHelm) {
-          setSelectedProjectId(payload.projectId);
-        }
-        return;
-      case "agent.save.result":
-        setConfigSaveMessage(payload.message);
-        {
-          const refreshSocket = sourceIsCurrentHelm
-            ? socketRef.current
-            : (helmSocketRefs.current.get(sourceHelmKey) ?? null);
-          if (refreshSocket?.readyState === WebSocket.OPEN) {
-            dispatch(refreshSocket, {
-              type: "agent.list",
-              requestId: nextRequestId(requestCounter),
-            });
-            dispatch(refreshSocket, {
-              type: "project.list",
-              requestId: nextRequestId(requestCounter),
-            });
-          }
-        }
-        return;
-      case "session.created":
-        setSessions((current) =>
-          upsertSessionSummary(current, payload.session),
-        );
-        setStatuses((current) => ({
-          ...current,
-          [payload.session.id]: payload.session.status,
-        }));
-        setSelectedProjectId(payload.session.projectId);
-        if (payload.session.runtimeSessionId) {
-          setActiveSessionId(payload.session.id);
-          if (pendingPromptRef.current && socketRef.current) {
-            const pendingPrompt = pendingPromptRef.current;
-            const pendingContent = pendingPromptContentRef.current;
-            const pendingImages =
-              pendingContent?.filter(
-                (item): item is AgentPromptImageContent =>
-                  item.type === "image",
-              ) ?? [];
-            pendingPromptRef.current = null;
-            pendingPromptContentRef.current = undefined;
-            assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
-            const clientMessageId = createClientUserMessageId(
-              payload.session.id,
-            );
-            appendUserMessage(
-              payload.session.id,
-              pendingPrompt,
-              clientMessageId,
-              pendingImages,
-            );
-            dispatch(socketRef.current, {
-              type: "session.prompt",
-              requestId: nextRequestId(requestCounter),
-              sessionId: payload.session.id,
-              text: pendingPrompt,
-              content: pendingContent,
-              clientMessageId,
-            });
-          }
-        }
-        return;
-      case "session.updated":
-        setSessions((current) =>
-          upsertSessionSummary(current, payload.session),
-        );
-        return;
-      case "session.config.options":
-        setSessionConfigOptions((current) => ({
-          ...current,
-          [payload.sessionId]: payload.options,
-        }));
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  model: payload.state.model ?? session.model,
-                  agentMode: payload.state.agentMode ?? session.agentMode,
-                  reasoningEffort:
-                    payload.state.reasoningEffort ?? session.reasoningEffort,
-                  updatedAt: new Date().toISOString(),
-                }
-              : session,
-          ),
-        );
-        return;
-      case "session.commands":
-        setSessionAvailableCommands((current) => {
-          if (
-            availableCommandListsEqual(
-              current[payload.sessionId],
-              payload.commands,
-            )
-          ) {
-            return current;
-          }
-          return { ...current, [payload.sessionId]: payload.commands };
-        });
-        return;
-      case "session.model.options":
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  model: payload.currentModelId ?? session.model,
-                  modelOptions: payload.options,
-                  updatedAt: new Date().toISOString(),
-                }
-              : session,
-          ),
-        );
-        return;
-      case "session.list.result": {
-        const nextSessions = payload.before
-          ? mergeSessionSummaries(sessions, payload.sessions)
-          : payload.sessions;
-        const nextStatuses = createSessionStatusMap(nextSessions);
-        updateHelmInventory(sourceHelmKey, {
-          sessions: nextSessions,
-          statuses: nextStatuses,
-        });
-        if (sourceIsCurrentHelm) {
-          setSessions(nextSessions);
-          setSessionHistoryState({
-            nextCursor: payload.nextCursor,
-            hasMore: Boolean(payload.hasMore),
-            loading: false,
-          });
-          setStatuses(nextStatuses);
-          setMessages((current) =>
-            pruneSessionScopedMap(current, nextSessions),
-          );
-          setMessageHistoryState((current) =>
-            pruneSessionScopedMap(current, nextSessions),
-          );
-          setPermissionRequests((current) =>
-            pruneSessionScopedMap(current, nextSessions),
-          );
-          setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
-          setToolCalls((current) => {
-            const next = pruneSessionScopedMap(current, nextSessions);
-            toolCallsRef.current = next;
-            return next;
-          });
-          setActivityHistoryState((current) =>
-            pruneSessionScopedMap(current, nextSessions),
-          );
-          setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
-          setSessionConfigOptions((current) =>
-            pruneSessionScopedMap(current, nextSessions),
-          );
-          setActiveSessionId((current) =>
-            resolveActiveSessionId(current, nextSessions),
-          );
-        }
-        return;
-      }
-      case "session.messages.list.result":
-        setMessages((current) => ({
-          ...current,
-          [payload.sessionId]: mergeMessageHistory(
-            current[payload.sessionId] ?? [],
-            payload.messages,
-            { mode: payload.before ? "prepend" : "append" },
-          ),
-        }));
-        setMessageHistoryState((current) => ({
-          ...current,
-          [payload.sessionId]: {
-            nextCursor: payload.nextCursor,
-            hasMore: Boolean(payload.hasMore),
-            loading: false,
-          },
-        }));
-        return;
-      case "session.artifacts.result":
-        setOutputs((current) => ({
-          ...current,
-          [payload.sessionId]: mergeCommandHistory(
-            current[payload.sessionId] ?? [],
-            payload.outputs,
-          ),
-        }));
-        mergeSessionToolCalls(payload.sessionId, [
-          ...payload.outputs.map(commandChunkToToolCall),
-          ...(payload.toolCalls ?? []),
-        ]);
-        setDiffs((current) => ({
-          ...current,
-          [payload.sessionId]: payload.diffs,
-        }));
-        setActivityHistoryState((current) => ({
-          ...current,
-          [payload.sessionId]: {
-            nextCursor: payload.nextCursor,
-            hasMore: Boolean(payload.hasMore),
-            loading: false,
-          },
-        }));
-        return;
-      case "session.resume.result":
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  resume: payload.resume,
-                  runtimeSessionId:
-                    payload.resume.runtimeSessionId ?? session.runtimeSessionId,
-                }
-              : session,
-          ),
-        );
-        if (shouldAutoStartSessionResume({ resume: payload.resume })) {
-          requestSessionResumeStart(
-            payload.sessionId,
-            "检测到历史任务可恢复，正在自动重连 ACP 会话...",
-          );
-        }
-        return;
-      case "session.resume.start.result":
-        setResumeFeedback(payload.message);
-        if (!payload.ok) {
-          resumeStartRequestsRef.current.delete(payload.sessionId);
-        }
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  resume: payload.resume,
-                  runtimeSessionId:
-                    payload.resume.runtimeSessionId ?? session.runtimeSessionId,
-                }
-              : session,
-          ),
-        );
-        return;
-      case "session.cleanup.result":
-        if (payload.result.remoteDeleted) {
-          toast.success("会话已删除");
-        } else if (payload.result.remoteDeletionAttempted) {
-          toast.warning(payload.result.message);
-        } else {
-          toast.info(payload.result.message);
-        }
-        setResumeFeedback("");
-        setSessions((current) =>
-          current.filter((session) => session.id !== payload.result.sessionId),
-        );
-        setStatuses((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setMessages((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setPermissionRequests((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setOutputs((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setToolCalls((current) => {
-          const next = removeSessionRecord(current, payload.result.sessionId);
-          toolCallsRef.current = next;
-          return next;
-        });
-        setDiffs((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setSessionConfigOptions((current) =>
-          removeSessionRecord(current, payload.result.sessionId),
-        );
-        setActiveSessionId((current) =>
-          current === payload.result.sessionId ? null : current,
-        );
-        return;
-      case "session.status":
-        setStatuses((current) => ({
-          ...current,
-          [payload.sessionId]: payload.status,
-        }));
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  status: payload.status,
-                  updatedAt: new Date().toISOString(),
-                }
-              : session,
-          ),
-        );
-        return;
-      case "agent.message": {
-        const toolBoundaryTimes = (
-          toolCallsRef.current[payload.sessionId] ?? []
-        )
-          .map((call) => Date.parse(call.timestamp))
-          .filter(Number.isFinite);
-        setMessages((current) => ({
-          ...current,
-          [payload.sessionId]: mergeAgentMessages(
-            current[payload.sessionId] ?? [],
-            payload.message,
-            toolBoundaryTimes,
-          ),
-        }));
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  updatedAt: payload.message.timestamp,
-                  messageCount: session.messageCount + 1,
-                  lastMessagePreview: payload.message.text.slice(0, 160),
-                }
-              : session,
-          ),
-        );
-        return;
-      }
-      case "permission.request":
-        setPermissionRequests((current) => ({
-          ...current,
-          [payload.sessionId]: payload.permissionRequest,
-        }));
-        return;
-      case "permission.resolved":
-        setPermissionRequests((current) => ({
-          ...current,
-          [payload.sessionId]: null,
-        }));
-        return;
-      case "command.output":
-        setOutputs((current) => ({
-          ...current,
-          [payload.sessionId]: [
-            ...(current[payload.sessionId] ?? []),
-            payload.chunk,
-          ],
-        }));
-        mergeSessionToolCalls(payload.sessionId, [
-          commandChunkToToolCall(payload.chunk),
-        ]);
-        return;
-      case "tool.call":
-        mergeSessionToolCalls(payload.sessionId, [payload.toolCall]);
-        return;
-      case "diff.update":
-        setDiffs((current) => ({
-          ...current,
-          [payload.sessionId]: payload.files,
-        }));
-        return;
-      case "error":
-        setPairingFeedback(payload.message);
-        if (/not paired|not authenticated/iu.test(payload.message)) {
-          setPairingState("input");
-        }
-        if (payload.sessionId) {
-          appendSystemMessage(payload.sessionId, payload.message);
-          setSessions((current) =>
-            current.map((session) =>
-              session.id === payload.sessionId
-                ? {
-                    ...session,
-                    status: "error",
-                    updatedAt: new Date().toISOString(),
-                    lastMessagePreview: payload.message.slice(0, 160),
-                  }
-                : session,
-            ),
-          );
-        }
-        return;
-      default:
-        return;
+
+    if (
+      handleDeviceServerEvent(payload, sourceHelmKey, {
+        primaryHelmKeyRef,
+        daemonProfileKey,
+        daemonHost,
+        daemonPort,
+        defaultDaemonHost: DEFAULT_DAEMON_HOST,
+        defaultDaemonPort: DEFAULT_DAEMON_PORT,
+        deckDeviceId,
+        pendingAddHelmProfileRef,
+        writeTrustedDeviceCache,
+        persistDaemonProfile,
+        setDaemonHost,
+        setDaemonPort,
+        daemonHostStorageKey: DAEMON_HOST_KEY,
+        daemonPortStorageKey: DAEMON_PORT_KEY,
+        setSelectedHelmKey,
+        setFleetAddHelmModalOpen,
+        setFleetAddHelmStage,
+        setTrustedDevice,
+        autoConnectAttemptRef,
+        setPairingFeedback,
+        setPairingState,
+        socketRef,
+        requestInitialSync,
+        readTrustedDeviceCache,
+        clearTrustedDeviceCache,
+        setTrustedDevices,
+        updateHelmInventory,
+        helmInventories,
+        trustedDevices,
+        setConnectFeedback,
+      })
+    ) {
+      return;
+    }
+    if (
+      handleInventoryServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
+        setHelms,
+        updateHelmInventory,
+        setProjects,
+        projectFilesKey,
+        setProjectFilesByScope,
+        setWorkspaces,
+        setWorktreeGitByProject,
+        setSelectedWorkspaceId,
+        setWorktreePickerOpen,
+        setAgents,
+        setAgentTestResult,
+        agentModelOptionsKey,
+        setAgentModelOptions,
+        writeAgentModelOptionsCache,
+        selectedAgentId,
+        selectedWorkspaceId,
+        resolveModelOptions,
+        resolvePreferredModel,
+        selectedModel,
+        setSelectedModel,
+        setSelectedAgentMode,
+        setSelectedReasoningEffort,
+        setConfigSaveMessage,
+        setFleetProjectSaveMessage,
+        setSelectedProjectId,
+        socketRef,
+        helmSocketRefs,
+        dispatch,
+        nextRequestId,
+        requestCounter,
+      })
+    ) {
+      return;
+    }
+    if (
+      handleSessionServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
+        sessions,
+        setSessions,
+        setStatuses,
+        setSelectedProjectId,
+        setActiveSessionId,
+        pendingPromptRef,
+        pendingPromptContentRef,
+        socketRef,
+        assignSessionTitleFromPrompt,
+        createClientUserMessageId,
+        appendUserMessage,
+        dispatch,
+        nextRequestId,
+        requestCounter,
+        setSessionConfigOptions,
+        setSessionAvailableCommands,
+        updateHelmInventory,
+        setSessionHistoryState,
+        setMessages,
+        setMessageHistoryState,
+        setPermissionRequests,
+        setOutputs,
+        setToolCalls,
+        toolCallsRef,
+        setActivityHistoryState,
+        setDiffs,
+        mergeSessionToolCalls,
+        shouldAutoStartSessionResume,
+        requestSessionResumeStart,
+        setResumeFeedback,
+        resumeStartRequestsRef,
+      })
+    ) {
+      return;
+    }
+    if (
+      handleActivityServerEvent(payload, {
+        toolCallsRef,
+        setMessages,
+        setSessions,
+        setPermissionRequests,
+        setOutputs,
+        mergeSessionToolCalls,
+        setDiffs,
+        setPairingFeedback,
+        setPairingState,
+        appendSystemMessage,
+      })
+    ) {
+      return;
     }
   }
 
@@ -3496,91 +2260,62 @@ export function App() {
       });
   }
 
-  function buildPromptContent(
-    text: string,
-    images: AgentPromptImageContent[],
-  ): AgentPromptContent[] | undefined {
-    if (!images.length) {
-      return undefined;
-    }
-    return [...(text ? [{ type: "text" as const, text }] : []), ...images];
-  }
-
   function createSession(
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
   ) {
-    const projectId = selectedProjectId || projects[0]?.id;
-    const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
-    const agentId = selectedAgentId || filteredAgents[0]?.id;
-    if (!projectId || !workspaceId || !agentId || !socketRef.current) {
-      return false;
-    }
-
-    pendingPromptRef.current = initialPrompt ?? null;
-    pendingPromptContentRef.current = initialContent;
-    dispatch(socketRef.current, {
-      type: "session.create",
-      requestId: nextRequestId(requestCounter),
-      projectId,
-      workspaceId,
-      agentId,
-      agentMode: effectiveDraftAgentMode,
-      model: normalizeModelSelection(selectedModel),
-      reasoningEffort: selectedReasoningEffort,
+    return createSessionImpl(initialPrompt, initialContent, {
+      selectedProjectId,
+      projects,
+      selectedWorkspace,
+      filteredWorkspaces,
+      selectedAgentId,
+      filteredAgents,
+      socketRef,
+      pendingPromptRef,
+      pendingPromptContentRef,
+      dispatch,
+      requestCounter,
+      effectiveDraftAgentMode,
+      normalizeModelSelection,
+      selectedModel,
+      selectedReasoningEffort,
+      navigateToView,
     });
-    navigateToView("sessions");
-    return true;
   }
 
   function testAgent() {
-    const agentId = selectedAgentId || filteredAgents[0]?.id;
-    const agent =
-      filteredAgents.find((item) => item.id === agentId) ??
-      agents.find((item) => item.id === agentId);
-    if (!agent || !socketRef.current) {
-      return;
-    }
-
-    setAgentTestResult(`${copy.testRunningPrefix} ${agent.name}...`);
-    dispatch(socketRef.current, {
-      type: "agent.test",
-      requestId: nextRequestId(requestCounter),
-      providerId: agent.id,
+    testAgentImpl({
+      selectedAgentId,
+      filteredAgents,
+      agents,
+      socketRef,
+      setAgentTestResult,
+      copy,
+      dispatch,
+      requestCounter,
     });
   }
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    window.localStorage.setItem(
-      AGENT_DRAFT_STORAGE_KEY,
-      JSON.stringify(agentDraft),
-    );
-    setDraftSaveMessage(
-      `${copy.savedDraft} ${`${agentDraft.command} ${agentDraft.args}`.trim()}`,
-    );
+    saveDraftImpl(event, {
+      storageKey: AGENT_DRAFT_STORAGE_KEY,
+      agentDraft,
+      setDraftSaveMessage,
+      copy,
+    });
   }
 
   function writeDraftToConfig() {
-    if (!socketRef.current) {
-      return;
-    }
-
-    const providerId = slugify(
-      agentDraft.name || agentDraft.command || "custom-agent",
-    );
-    setConfigSaveMessage(copy.writingConfig);
-    dispatch(socketRef.current, {
-      type: "agent.save",
-      requestId: nextRequestId(requestCounter),
-      provider: {
-        id: providerId,
-        name: agentDraft.name || providerId,
-        kind: "custom",
-        command: agentDraft.command,
-        args: splitArgs(agentDraft.args),
-        installHint: `请确认命令 \`${agentDraft.command} ${agentDraft.args}\` 可以在终端运行。`,
-      },
+    writeDraftToConfigImpl({
+      socketRef,
+      slugify,
+      agentDraft,
+      setConfigSaveMessage,
+      copy,
+      dispatch,
+      requestCounter,
+      splitArgs,
     });
   }
 
@@ -3814,20 +2549,12 @@ export function App() {
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {
-    if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
-      resumeStartRequestsRef.current.has(sessionId)
-    ) {
-      return;
-    }
-
-    resumeStartRequestsRef.current.add(sessionId);
-    setResumeFeedback(reason);
-    dispatch(socketRef.current, {
-      type: "session.resume.start",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
+    requestSessionResumeStartImpl(sessionId, reason, {
+      socketRef,
+      resumeStartRequestsRef,
+      setResumeFeedback,
+      dispatch,
+      requestCounter,
     });
   }
 
@@ -3844,40 +2571,19 @@ export function App() {
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nextPrompt = prompt.trim();
-    if ((!nextPrompt && !promptImages.length) || !socketRef.current) {
-      return;
-    }
-    const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
-    const content = buildPromptContent(nextPrompt, promptImages);
-    const imagesToSend = promptImages;
-    setImagePasteNotice("");
-
-    if (!activeSessionId) {
-      if (createSession(messageText, content)) {
-        setPrompt("");
-        setPromptImages([]);
-      }
-      return;
-    }
-
-    const clientMessageId = createClientUserMessageId(activeSessionId);
-    appendUserMessage(
+    submitPromptImpl(event, {
+      prompt,
+      promptImages,
+      socketRef,
+      setImagePasteNotice,
       activeSessionId,
-      messageText,
-      clientMessageId,
-      imagesToSend,
-    );
-    setPrompt("");
-    setPromptImages([]);
-    dispatch(socketRef.current, {
-      type: "session.prompt",
-      requestId: nextRequestId(requestCounter),
-      sessionId: activeSessionId,
-      text: messageText,
-      content,
-      clientMessageId,
+      createSession,
+      setPrompt,
+      setPromptImages,
+      createClientUserMessageId,
+      appendUserMessage,
+      dispatch,
+      requestCounter,
     });
   }
 
@@ -4057,94 +2763,57 @@ export function App() {
   }
 
   function updatePairingDigit(index: number, rawValue: string) {
-    const nextChar = rawValue
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(-1);
-    const chars = pairingCodeInput.padEnd(6, " ").split("");
-    chars[index] = nextChar || " ";
-    const nextValue = chars.join("").trimEnd();
-    setPairingCodeInput(nextValue);
-    if (nextChar && index < 5) {
-      pairInputRefs.current[index + 1]?.focus();
-    }
-    if (pairingState === "rejected") {
-      setPairingState("input");
-    }
+    updatePairingDigitImpl(index, rawValue, {
+      pairingCodeInput,
+      setPairingCodeInput,
+      pairInputRefs,
+      pairingState,
+      setPairingState,
+    });
   }
 
   function pastePairingDigits(startIndex: number, rawValue: string) {
-    const charsOnly = rawValue
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 6 - startIndex);
-    if (!charsOnly) {
-      return;
-    }
-
-    const chars = pairingCodeInput.padEnd(6, " ").split("");
-    for (let offset = 0; offset < charsOnly.length; offset += 1) {
-      chars[startIndex + offset] = charsOnly[offset] ?? " ";
-    }
-    setPairingCodeInput(chars.join("").trimEnd());
-    const focusIndex = Math.min(startIndex + charsOnly.length, 5);
-    pairInputRefs.current[focusIndex]?.focus();
-    if (pairingState === "rejected") {
-      setPairingState("input");
-    }
+    pastePairingDigitsImpl(startIndex, rawValue, {
+      pairingCodeInput,
+      setPairingCodeInput,
+      pairInputRefs,
+      pairingState,
+      setPairingState,
+    });
   }
 
   function handlePairingKeyDown(index: number, key: string) {
-    if (key === "Backspace" && !pairingCodeInput[index] && index > 0) {
-      pairInputRefs.current[index - 1]?.focus();
-    }
+    handlePairingKeyDownImpl(index, key, {
+      pairingCodeInput,
+      pairInputRefs,
+    });
   }
 
   function sendPairingRequest() {
-    const socket = socketRef.current;
-    const normalizedCode = pairingCodeInput.trim().toUpperCase();
-    if (
-      !socket ||
-      normalizedCode.length !== 6 ||
-      socket.readyState !== WebSocket.OPEN
-    ) {
-      setPairingFeedback(
-        `无法发送配对请求，socket=${socket ? socket.readyState : "null"}`,
-      );
-      return;
-    }
-
-    setDebugTrace((current) => ({
-      ...current,
-      pairClicks: current.pairClicks + 1,
-    }));
-    setPairingFeedback(`正在发送配对请求：${normalizedCode}...`);
-    dispatch(socket, {
-      type: "device.pair",
-      requestId: nextRequestId(requestCounter),
-      pairingCode: normalizedCode,
-      deviceId: deckDeviceId,
-      deviceName: DECK_DEVICE_NAME,
-      clientKind: "web",
+    sendPairingRequestImpl({
+      socketRef,
+      pairingCodeInput,
+      setPairingFeedback,
+      setDebugTrace,
+      dispatch,
+      requestCounter,
+      deckDeviceId,
+      deckDeviceName: DECK_DEVICE_NAME,
+      setPairingState,
     });
-    setPairingState("waiting");
   }
 
   function submitPairingCode(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    sendPairingRequest();
+    submitPairingCodeImpl(event, sendPairingRequest);
   }
 
   function startResume() {
-    if (!activeSessionId || !socketRef.current) {
-      return;
-    }
-
-    setResumeFeedback("正在按能力检查 Tiller 客户端重连 / ACP 会话恢复...");
-    dispatch(socketRef.current, {
-      type: "session.resume.start",
-      requestId: nextRequestId(requestCounter),
-      sessionId: activeSessionId,
+    startResumeImpl({
+      activeSessionId,
+      socketRef,
+      setResumeFeedback,
+      dispatch,
+      requestCounter,
     });
   }
 
@@ -4392,74 +3061,21 @@ export function App() {
     sessionId?: string,
     assistantLabel: string = copy.role.assistant,
   ) {
-    const displayMessages = sortDisplayMessages(items);
-    if (!displayMessages.length) {
-      return <div className="empty-state">{copy.waitingForAgent}</div>;
-    }
-    const historyState = sessionId ? messageHistoryState[sessionId] : undefined;
-
     return (
-      <div className="plain-message-list conversation-timeline">
-        {historyState?.hasMore ? (
-          <button
-            className="secondary load-more-history"
-            type="button"
-            onClick={() => loadOlderMessages(sessionId!)}
-            disabled={historyState.loading}
-          >
-            {historyState.loading ? "加载中..." : "加载更早消息"}
-          </button>
-        ) : null}
-        {displayMessages.map((message) => {
-          const isExpanded = expandedMessageIds.has(message.id);
-          const isCollapsible =
-            message.role === "user" && shouldCollapsePlainMessage(message.text);
-          const markdownClassName =
-            isCollapsible && !isExpanded
-              ? "plain-message-body plain-message-body-collapsed"
-              : "plain-message-body";
-          return (
-            <article
-              key={message.id}
-              className={`plain-message plain-${message.role}`}
-            >
-              <span className="plain-message-role">
-                {resolveMessageRoleLabel(message, assistantLabel, copy.role)}
-              </span>
-              <div className={markdownClassName}>
-                <MarkdownMessage text={message.text} />
-              </div>
-              {isCollapsible ? (
-                <button
-                  className="plain-message-expand"
-                  type="button"
-                  onClick={() => toggleExpandedMessage(message.id)}
-                >
-                  {isExpanded ? "收起消息" : "展开完整消息"}
-                </button>
-              ) : null}
-              {message.attachments?.length ? (
-                <div className="mission-message-attachments">
-                  {message.attachments.map((image, index) => (
-                    <figure
-                      key={`${message.id}-image-${index}`}
-                      className="mission-message-image"
-                    >
-                      <img
-                        src={`data:${image.mimeType};base64,${image.data}`}
-                        alt={image.name ?? `粘贴图片 ${index + 1}`}
-                      />
-                      <figcaption>
-                        {image.name ?? `粘贴图片 ${index + 1}`}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
+      <PlainMessages
+        items={items}
+        emptyText={copy.waitingForAgent}
+        assistantLabel={assistantLabel}
+        roleLabels={copy.role}
+        expandedMessageIds={expandedMessageIds}
+        historyState={sessionId ? messageHistoryState[sessionId] : undefined}
+        onLoadOlderMessages={() => {
+          if (sessionId) {
+            loadOlderMessages(sessionId);
+          }
+        }}
+        onToggleExpandedMessage={toggleExpandedMessage}
+      />
     );
   }
 
@@ -4665,74 +3281,6 @@ export function App() {
     );
   }
 
-  function resolveMissionResizePair(
-    handle: MissionResizeHandle,
-  ): [MissionPaneId, MissionPaneId] {
-    if (handle === "sidebar") {
-      return ["sidebar", "chat"];
-    }
-    if (handle === "display") {
-      return ["chat", "display"];
-    }
-    return ["display", "inspector"];
-  }
-
-  function applyMissionPaneDelta(
-    handle: MissionResizeHandle,
-    delta: number,
-    base: MissionPaneWidths,
-  ) {
-    const [left, right] = resolveMissionResizePair(handle);
-    setMissionPaneWidths(resizeMissionPanePair(base, left, right, delta));
-  }
-
-  function startMissionPaneResize(
-    handle: MissionResizeHandle,
-    event: ReactMouseEvent<HTMLButtonElement>,
-  ) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const effectiveSidebarCollapsed =
-      missionSidebarCollapsed ||
-      missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
-    const effectiveInspectorCollapsed =
-      missionInspectorCollapsed ||
-      missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
-    const base = normalizeMissionPaneWidths(
-      missionPaneWidths,
-      effectiveSidebarCollapsed,
-      effectiveInspectorCollapsed,
-      missionViewportWidth,
-    );
-    const onMove = (moveEvent: MouseEvent) => {
-      applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
-    };
-    const onUp = () => {
-      document.body.classList.remove("mission-pane-resizing");
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-
-    document.body.classList.add("mission-pane-resizing");
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp, { once: true });
-  }
-
-  function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
-    applyMissionPaneDelta(
-      handle,
-      direction * 24,
-      normalizeMissionPaneWidths(
-        missionPaneWidths,
-        missionSidebarCollapsed ||
-          missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH,
-        missionInspectorCollapsed ||
-          missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH,
-        missionViewportWidth,
-      ),
-    );
-  }
-
   function renderMissionPaneResizer(
     handle: MissionResizeHandle,
     label: string,
@@ -4800,85 +3348,24 @@ export function App() {
   }
 
   function renderOverview() {
-    const recentSessions = sessions.slice(0, 5);
-    const activeHelmLabel = activeHelm
-      ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}`
-      : `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-    const overviewItems = [
-      `Helm · ${activeHelmLabel}`,
-      `连接 · ${copy.connection[connection]}`,
-      `项目 · ${projects.length}`,
-      `工作区 · ${workspaces.length}`,
-      `ACP 舰员 · ${agents.length}`,
-      `任务 · ${sessions.length}`,
-    ];
-
     return (
-      <section className="stack-gap overview-page">
-        <section className="card hero-card">
-          <div>
-            <p className="eyebrow">{copy.heroEyebrow}</p>
-            <h1>Tiller Command Deck</h1>
-            <p>{copy.heroBody}</p>
-          </div>
-          <div className="section-actions">
-            <button
-              className="primary"
-              type="button"
-              onClick={() => navigateToView("sessions")}
-            >
-              进入任务
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              onClick={() => navigateToView("agents")}
-            >
-              管理舰队
-            </button>
-          </div>
-        </section>
-        <section className="card surface-card overview-grid">
-          <InfoList
-            title="当前总览"
-            items={overviewItems}
-            empty="暂无总览信息"
-          />
-          <div className="info-list">
-            <div className="section-head section-head-soft">
-              <div>
-                <h3>最近任务</h3>
-                <p className="muted compact">按 Helm 返回顺序展示最近会话。</p>
-              </div>
-            </div>
-            {recentSessions.length ? (
-              <div className="session-list compact-session-list">
-                {recentSessions.map((session) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    className="session-row"
-                    onClick={() => {
-                      openSession(session.id);
-                      navigateToView("sessions");
-                    }}
-                  >
-                    <strong>{resolveDisplaySessionTitle(session)}</strong>
-                    <span>
-                      {session.projectName} · {session.agentName}
-                    </span>
-                    <small>{formatRelativeTime(session.updatedAt)}</small>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                还没有任务，先进入任务页创建一个。
-              </div>
-            )}
-          </div>
-        </section>
-      </section>
+      <OverviewPage
+        copy={copy}
+        connection={connection}
+        activeHelm={activeHelm}
+        daemonHost={daemonHost}
+        daemonPort={daemonPort}
+        defaultDaemonHost={DEFAULT_DAEMON_HOST}
+        defaultDaemonPort={DEFAULT_DAEMON_PORT}
+        projects={projects}
+        workspaces={workspaces}
+        agents={agents}
+        sessions={sessions}
+        onNavigate={navigateToView}
+        onOpenSession={openSession}
+        resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+        formatRelativeTime={formatRelativeTime}
+      />
     );
   }
 
@@ -4891,18 +3378,6 @@ export function App() {
       (!promptImages.length ||
         !activeSession ||
         activeSession.imageInput !== false),
-    );
-    const effectiveSidebarCollapsed =
-      missionSidebarCollapsed ||
-      missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
-    const effectiveInspectorCollapsed =
-      missionInspectorCollapsed ||
-      missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
-    const resolvedMissionPaneWidths = normalizeMissionPaneWidths(
-      missionPaneWidths,
-      effectiveSidebarCollapsed,
-      effectiveInspectorCollapsed,
-      missionViewportWidth,
     );
     const activeMissionHelm =
       missionHelms.find((helm) => helm.id === effectiveMissionHelmId) ??
@@ -4929,7 +3404,6 @@ export function App() {
             status: activeSessionStatus,
           })
         : null;
-    const activeDiffTree = buildMissionDiffTree(activeDiffs);
     const missionDiffCount = activeDiffs.length;
     const missionLogCount = activeToolCalls.length || activeOutputs.length;
     const missionPanelPages = [
@@ -4943,24 +3417,6 @@ export function App() {
       missionPanelPages.find(
         (page) => page.id === selectedMissionPanelPageId,
       ) ?? missionPanelPages[0];
-    const missionLayoutStyle = {
-      "--mission-sidebar-width": `${resolvedMissionPaneWidths.sidebar}px`,
-      "--mission-chat-width": `${resolvedMissionPaneWidths.chat}px`,
-      "--mission-display-width": `${resolvedMissionPaneWidths.display}px`,
-      "--mission-inspector-width": `${resolvedMissionPaneWidths.inspector}px`,
-    } as CSSProperties;
-    const missionSidebarPaneStyle = {
-      flexBasis: `${resolvedMissionPaneWidths.sidebar}px`,
-    } as CSSProperties;
-    const missionChatPaneStyle = {
-      flexBasis: `${resolvedMissionPaneWidths.chat}px`,
-    } as CSSProperties;
-    const missionDisplayPaneStyle = {
-      flexBasis: `${resolvedMissionPaneWidths.display}px`,
-    } as CSSProperties;
-    const missionInspectorPaneStyle = {
-      flexBasis: `${resolvedMissionPaneWidths.inspector}px`,
-    } as CSSProperties;
     const projectFilesScope = resolveProjectFilesScope({
       activeSession,
       activeSessionProjectId,
@@ -5061,198 +3517,39 @@ export function App() {
       );
     };
 
-    const renderMissionDiffTreeNode = (
-      node: MissionDiffTreeNode,
-      depth = 0,
-    ): ReactNode => {
-      if (node.kind === "file" && node.file) {
-        const file = node.file;
-        return (
-          <button
-            key={node.id}
-            type="button"
-            className="mission-file-row mission-file-row-compact mission-file-row-button"
-            style={{ paddingLeft: `${8 + depth * 14}px` }}
-            onClick={() => openDiffDetail(file.path)}
-          >
-            <span className={`mission-file-status status-${file.status}`}>
-              {formatDiffStatus(file.status)}
-            </span>
-            <strong>{node.name}</strong>
-            {renderDiffStats(file)}
-          </button>
-        );
-      }
-
-      const collapsed = collapsedMissionDiffDirectories.has(node.path);
-      return (
-        <section
-          key={node.id}
-          className={`mission-change-group ${collapsed ? "collapsed" : ""}`}
-        >
-          <button
-            type="button"
-            className="mission-change-group-title"
-            style={{ paddingLeft: `${2 + depth * 14}px` }}
-            onClick={() => toggleMissionDiffDirectory(node.path)}
-            aria-expanded={!collapsed}
-          >
-            <span>{collapsed ? "▸" : "▾"}</span>
-            <span>{node.name}</span>
-            <span className="mission-change-count">{node.count}</span>
-          </button>
-          {!collapsed
-            ? node.children?.map((child) =>
-                renderMissionDiffTreeNode(child, depth + 1),
-              )
-            : null}
-        </section>
-      );
-    };
     const renderMissionDisplayPanel = () => (
-      <aside
-        className="mission-display-panel mission-pane mission-pane-display"
+      <MissionDisplayPanel
         style={missionDisplayPaneStyle}
-        aria-label="任务展示容器"
-      >
-        <div className="mission-panel-head">
-          <div>
-            <p className="eyebrow">展示</p>
-            <h3>任务展示</h3>
-          </div>
-          <button
-            className="mission-panel-add"
-            type="button"
-            onClick={addMissionPanelPage}
-            aria-label="增加展示页"
-          >
-            ＋
-          </button>
-        </div>
-        <div className="mission-panel-body">
-          <MissionPanelNav
-            pages={missionPanelPages}
-            selectedPageId={selectedMissionPanelPage.id}
-            onSelect={setSelectedMissionPanelPageId}
-            onDragStart={setDraggedMissionPanelPageId}
-            onDrop={dropMissionPanelPage}
-          />
-          <section className="mission-panel-content">
-            {selectedMissionPanelPage.id === "changes" ? (
-              <div className="mission-panel-page mission-change-tree">
-                {activeDiffTree.length ? (
-                  activeDiffTree.map((node) => renderMissionDiffTreeNode(node))
-                ) : (
-                  <div className="empty-state">{copy.noDiffSummary}</div>
-                )}
-              </div>
-            ) : selectedMissionPanelPage.id === "diff-detail" ? (
-              <div className="mission-panel-page mission-diff-detail">
-                {activeDiffs.length ? (
-                  activeDiffs.map((file) => (
-                    <details
-                      key={file.path}
-                      className={`mission-diff-file ${selectedMissionDiffFilePath === file.path ? "active" : ""}`}
-                    >
-                      <summary className="mission-file-row mission-diff-file-summary">
-                        <span
-                          className={`mission-file-status status-${file.status}`}
-                        >
-                          {formatDiffStatus(file.status)}
-                        </span>
-                        <strong>{file.path}</strong>
-                        {renderDiffStats(file)}
-                        <span
-                          className="mission-diff-expand-icon"
-                          aria-hidden="true"
-                        >
-                          ▸
-                        </span>
-                      </summary>
-                      {file.patch ? (
-                        renderDiffPatch(file.patch)
-                      ) : (
-                        <div className="mission-diff-patch-empty">
-                          该 diff 事件没有携带 patch/hunk 内容。
-                        </div>
-                      )}
-                    </details>
-                  ))
-                ) : (
-                  <div className="empty-state">{copy.noDiffSummary}</div>
-                )}
-              </div>
-            ) : selectedMissionPanelPage.id === "logbook" ? (
-              <div className="mission-panel-page mission-logbook-page">
-                {renderSessionOverview(missionDiffCount, missionLogCount)}
-                {renderActivityLog(
-                  activeSession?.id,
-                  activeToolCalls,
-                  activeOutputs,
-                  activeSession ? (messages[activeSession.id] ?? []) : [],
-                )}
-              </div>
-            ) : selectedMissionPanelPage.id.startsWith("custom-") ? (
-              <div className="mission-panel-page mission-custom-page">
-                <div className="mission-custom-page-tools">
-                  <label>
-                    <span>展示页名称</span>
-                    <input
-                      value={selectedMissionPanelPage.title}
-                      onChange={(event) =>
-                        renameMissionPanelPage(
-                          selectedMissionPanelPage.id,
-                          event.target.value,
-                        )
-                      }
-                    />
-                  </label>
-                  <div className="mission-custom-page-actions">
-                    <button
-                      className="secondary"
-                      type="button"
-                      onClick={() =>
-                        moveMissionPanelPage(selectedMissionPanelPage.id, -1)
-                      }
-                    >
-                      上移
-                    </button>
-                    <button
-                      className="secondary"
-                      type="button"
-                      onClick={() =>
-                        moveMissionPanelPage(selectedMissionPanelPage.id, 1)
-                      }
-                    >
-                      下移
-                    </button>
-                    <button
-                      className="secondary danger-button"
-                      type="button"
-                      onClick={() =>
-                        deleteMissionPanelPage(selectedMissionPanelPage.id)
-                      }
-                    >
-                      删除展示页
-                    </button>
-                  </div>
-                </div>
-                <div className="empty-state">
-                  自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。
-                </div>
-              </div>
-            ) : (
-              <div className="mission-panel-page mission-overview-page">
-                <InfoList
-                  title="项目信息"
-                  items={projectOverviewItems}
-                  empty="选择左侧任务后显示项目信息"
-                />
-              </div>
+        pages={missionPanelPages}
+        selectedPage={selectedMissionPanelPage}
+        selectedDiffFilePath={selectedMissionDiffFilePath}
+        diffs={activeDiffs}
+        diffCount={missionDiffCount}
+        logCount={missionLogCount}
+        overviewItems={projectOverviewItems}
+        noDiffSummary={copy.noDiffSummary}
+        logbookContent={
+          <>
+            {renderSessionOverview(missionDiffCount, missionLogCount)}
+            {renderActivityLog(
+              activeSession?.id,
+              activeToolCalls,
+              activeOutputs,
+              activeSession ? (messages[activeSession.id] ?? []) : [],
             )}
-          </section>
-        </div>
-      </aside>
+          </>
+        }
+        collapsedDiffDirectories={collapsedMissionDiffDirectories}
+        onAddPage={addMissionPanelPage}
+        onSelectPage={setSelectedMissionPanelPageId}
+        onDragStart={setDraggedMissionPanelPageId}
+        onDrop={dropMissionPanelPage}
+        onOpenDiffDetail={openDiffDetail}
+        onRenamePage={renameMissionPanelPage}
+        onMovePage={moveMissionPanelPage}
+        onDeletePage={deleteMissionPanelPage}
+        onToggleDiffDirectory={toggleMissionDiffDirectory}
+      />
     );
 
     return (
@@ -5262,309 +3559,47 @@ export function App() {
         style={missionLayoutStyle}
       >
         <>
-          <aside
-            className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()}
-            style={missionSidebarPaneStyle}
-            aria-label="任务导航：Helm、项目与任务"
-            onScroll={handleMissionTreeScroll}
-          >
-            {!effectiveSidebarCollapsed ? (
-              <button
-                type="button"
-                className="mission-sidebar-toggle"
-                onClick={() => setMissionSidebarCollapsed(true)}
-                aria-expanded="true"
-                aria-label="收起任务导航"
-                title="收起任务导航"
-              >
-                ‹
-              </button>
-            ) : null}
-
-            {missionSidebarCollapsed ? null : (
-              <div className="sidebar-section mission-tree-switcher">
-                <div className="section-head section-head-soft sidebar-heading-block">
-                  <div>
-                    <h2>项目</h2>
-                    <p className="muted compact">
-                      Helm → Project → Session（绑定 ACP）
-                    </p>
-                  </div>
-                </div>
-                <div
-                  className="mission-tree"
-                  role="tree"
-                  aria-label="任务层级树"
-                >
-                  {missionHelms.map((helm) => {
-                    const selectedHelm = helm.id === effectiveMissionHelmId;
-                    const helmExpanded = expandedMissionHelmIds.has(helm.id);
-                    const helmProjects = [...projects]
-                      .filter((project) => project.helmId === helm.id)
-                      .sort(
-                        (left, right) =>
-                          left.name.localeCompare(right.name, undefined, {
-                            sensitivity: "base",
-                          }) || left.id.localeCompare(right.id),
-                      );
-                    const helmKey = daemonProfileKey(
-                      helm.host,
-                      String(helm.port),
-                    );
-                    const helmConnectionState =
-                      helmConnectionStates[helmKey] ??
-                      (helmKey === activeProfileId
-                        ? connection
-                        : "disconnected");
-                    return (
-                      <div
-                        key={helm.id}
-                        className="mission-tree-group"
-                        role="group"
-                      >
-                        <button
-                          type="button"
-                          className={`mission-tree-row mission-tree-row-helm ${selectedHelm ? "active" : ""}`}
-                          onClick={() => toggleMissionHelmNode(helm.id)}
-                          role="treeitem"
-                          aria-level={1}
-                          aria-expanded={helmExpanded}
-                          aria-selected={selectedHelm}
-                        >
-                          <span className="mission-tree-caret">
-                            {helmExpanded ? "▾" : "▸"}
-                          </span>
-                          <span className="mission-tree-icon">⎈</span>
-                          <span className="mission-tree-main">
-                            <strong>{helm.name}</strong>
-                            <span>
-                              {helm.host}:{helm.port} · {helmProjects.length}{" "}
-                              项目
-                            </span>
-                          </span>
-                          <span
-                            className={`mission-tree-status-dot helm-status-${helmConnectionState}`}
-                            title={formatConnectionStatus(helmConnectionState)}
-                            aria-label={formatConnectionStatus(
-                              helmConnectionState,
-                            )}
-                          />
-                        </button>
-                        {helmExpanded ? (
-                          <div
-                            className="mission-tree-children mission-tree-children-projects"
-                            role="group"
-                          >
-                            {helmProjects.map((project) => {
-                              const selectedProject =
-                                project.id === missionSelectedProjectId;
-                              const projectExpanded =
-                                expandedMissionProjectIds.has(project.id);
-                              const projectNodeSessions = sessions.filter(
-                                (session) =>
-                                  resolveSessionProjectId(session, projects) ===
-                                  project.id,
-                              );
-                              return (
-                                <div
-                                  key={project.id}
-                                  className="mission-tree-group"
-                                  role="group"
-                                >
-                                  <div
-                                    className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}
-                                  >
-                                    <button
-                                      type="button"
-                                      className={`mission-tree-row mission-tree-row-project ${selectedProject ? "active" : ""}`}
-                                      onClick={() =>
-                                        toggleMissionProjectNode(project.id)
-                                      }
-                                      role="treeitem"
-                                      aria-level={2}
-                                      aria-expanded={projectExpanded}
-                                      aria-selected={selectedProject}
-                                    >
-                                      <span className="mission-tree-caret">
-                                        {projectExpanded ? "▾" : "▸"}
-                                      </span>
-                                      <span className="mission-tree-icon">
-                                        {projectExpanded ? "📂" : "📁"}
-                                      </span>
-                                      <span className="mission-tree-main">
-                                        <strong>{project.name}</strong>
-                                        <span>
-                                          {sessionCountsByProject[project.id] ??
-                                            0}{" "}
-                                          任务
-                                        </span>
-                                      </span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="mission-tree-new-inline"
-                                      onClick={() => {
-                                        setSelectedMissionHelmId(
-                                          project.helmId,
-                                        );
-                                        setSelectedProjectId(project.id);
-                                        setSelectedWorkspaceId(
-                                          project.defaultWorkspaceId ??
-                                            project.workspaceIds?.[0] ??
-                                            null,
-                                        );
-                                        setSelectedAgentId(
-                                          project.defaultAgentId ??
-                                            agents[0]?.id ??
-                                            null,
-                                        );
-                                        setExpandedMissionProjectIds(
-                                          (current) =>
-                                            new Set([...current, project.id]),
-                                        );
-                                        setActiveSessionId(null);
-                                      }}
-                                      aria-label={`在 ${project.name} 下新建任务`}
-                                      title="新建任务"
-                                    >
-                                      ＋
-                                    </button>
-                                  </div>
-                                  {projectExpanded ? (
-                                    <div
-                                      className="mission-tree-children mission-tree-children-sessions"
-                                      role="group"
-                                    >
-                                      {projectNodeSessions.length ? (
-                                        projectNodeSessions.map((session) => {
-                                          const sessionStatus =
-                                            statuses[session.id] ??
-                                            session.status;
-                                          const sessionPending =
-                                            isSessionExecutionPending(
-                                              sessionStatus,
-                                            );
-                                          return (
-                                            <div
-                                              key={session.id}
-                                              className={`mission-tree-session-row ${session.id === activeSessionId ? "active" : ""} ${sessionPending ? "is-running" : ""}`.trim()}
-                                            >
-                                              <button
-                                                type="button"
-                                                className="mission-tree-row mission-tree-row-session"
-                                                onClick={() =>
-                                                  openSession(session.id)
-                                                }
-                                                role="treeitem"
-                                                aria-level={3}
-                                                aria-selected={
-                                                  session.id === activeSessionId
-                                                }
-                                              >
-                                                <span className="mission-tree-caret" />
-                                                <span
-                                                  className="mission-tree-agent-icon"
-                                                  title={session.agentName}
-                                                >
-                                                  {renderMissionAgentIcon(
-                                                    session.agentName,
-                                                  )}
-                                                </span>
-                                                <span className="mission-tree-main">
-                                                  <strong>
-                                                    {resolveDisplaySessionTitle(
-                                                      session,
-                                                    )}
-                                                  </strong>
-                                                  <span>
-                                                    ACP · {session.agentName} ·{" "}
-                                                    {copy.status[sessionStatus]}
-                                                  </span>
-                                                </span>
-                                                {sessionPending ? (
-                                                  <span
-                                                    className={`mission-tree-session-status mission-tree-session-status-${sessionStatus}`}
-                                                    aria-label={
-                                                      copy.status[sessionStatus]
-                                                    }
-                                                  >
-                                                    <i aria-hidden="true" />
-                                                    {copy.status[sessionStatus]}
-                                                  </span>
-                                                ) : null}
-                                                <span className="mission-tree-time">
-                                                  {formatRelativeTime(
-                                                    session.updatedAt,
-                                                  )}
-                                                </span>
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="session-inline-action mission-tree-cleanup"
-                                                aria-label={`清理 ${resolveDisplaySessionTitle(session)}`}
-                                                title="清理任务"
-                                                onPointerDown={(event) =>
-                                                  event.stopPropagation()
-                                                }
-                                                onClick={(event) => {
-                                                  event.stopPropagation();
-                                                  setPendingSessionCleanup(
-                                                    session,
-                                                  );
-                                                }}
-                                              >
-                                                ×
-                                              </button>
-                                            </div>
-                                          );
-                                        })
-                                      ) : (
-                                        <div className="mission-tree-empty">
-                                          这个项目还没有任务。
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              );
-                            })}
-                            {!helmProjects.length ? (
-                              <div className="mission-tree-empty">
-                                这个 Helm 还没有项目。
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  {!missionHelms.length ? (
-                    <div className="empty-state sidebar-empty">暂无 Helm。</div>
-                  ) : null}
-                  {sessionHistoryState.loading ? (
-                    <div className="mission-tree-empty">
-                      正在加载更多任务...
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </aside>
-          {missionSidebarCollapsed ? (
-            <button
-              type="button"
-              className="mission-sidebar-toggle mission-sidebar-floating-toggle"
-              onClick={() => setMissionSidebarCollapsed(false)}
-              aria-expanded="false"
-              aria-label="展开任务导航"
-              title="展开任务导航"
-            >
-              ›
-            </button>
-          ) : null}
-          {!effectiveSidebarCollapsed
-            ? renderMissionPaneResizer("sidebar", "调整任务列表宽度")
-            : null}
+          <MissionSidebar
+            effectiveSidebarCollapsed={effectiveSidebarCollapsed}
+            missionSidebarCollapsed={missionSidebarCollapsed}
+            missionSidebarPaneStyle={missionSidebarPaneStyle}
+            handleMissionTreeScroll={handleMissionTreeScroll}
+            setMissionSidebarCollapsed={setMissionSidebarCollapsed}
+            missionHelms={missionHelms}
+            effectiveMissionHelmId={effectiveMissionHelmId}
+            expandedMissionHelmIds={expandedMissionHelmIds}
+            projects={projects}
+            helmConnectionStates={helmConnectionStates}
+            activeProfileId={activeProfileId}
+            connection={connection}
+            toggleMissionHelmNode={toggleMissionHelmNode}
+            missionSelectedProjectId={missionSelectedProjectId}
+            expandedMissionProjectIds={expandedMissionProjectIds}
+            sessions={sessions}
+            sessionCountsByProject={sessionCountsByProject}
+            agents={agents}
+            setSelectedMissionHelmId={setSelectedMissionHelmId}
+            setSelectedProjectId={setSelectedProjectId}
+            setSelectedWorkspaceId={setSelectedWorkspaceId}
+            setSelectedAgentId={setSelectedAgentId}
+            setExpandedMissionProjectIds={setExpandedMissionProjectIds}
+            setActiveSessionId={setActiveSessionId}
+            statuses={statuses}
+            copy={copy}
+            activeSessionId={activeSessionId}
+            openSession={openSession}
+            renderMissionAgentIcon={renderMissionAgentIcon}
+            resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+            formatRelativeTime={formatRelativeTime}
+            setPendingSessionCleanup={setPendingSessionCleanup}
+            sessionHistoryState={sessionHistoryState}
+            toggleMissionProjectNode={toggleMissionProjectNode}
+            resizer={
+              !effectiveSidebarCollapsed
+                ? renderMissionPaneResizer("sidebar", "调整任务列表宽度")
+                : null
+            }
+          />
 
           <div
             className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()}
@@ -5657,1649 +3692,182 @@ export function App() {
               </section>
             ) : null}
 
-            <div className="chat-input-area draft-toolbar">
-              {!activeSession ? (
-                <div className="draft-toolbar-grid draft-toolbar-grid-mission">
-                  <div
-                    ref={worktreePickerRef}
-                    className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}
-                  >
-                    <span>Workspace</span>
-                    <button
-                      type="button"
-                      className="mission-worktree-trigger"
-                      onClick={() => {
-                        setAgentPickerOpen(false);
-                        setWorktreePickerOpen((current) => !current);
-                      }}
-                      aria-haspopup="listbox"
-                      aria-expanded={worktreePickerOpen}
-                    >
-                      <strong>{selectedWorkspaceName}</strong>
-                    </button>
-                    {worktreePickerOpen ? (
-                      <div
-                        className="mission-worktree-menu"
-                        role="listbox"
-                        aria-label="Workspace"
-                      >
-                        {draftWorkspaceOptions.map((workspace) => (
-                          <button
-                            key={workspace.id}
-                            type="button"
-                            role="option"
-                            aria-selected={workspace.id === selectedWorkspaceId}
-                            className={
-                              workspace.id === selectedWorkspaceId
-                                ? "active"
-                                : ""
-                            }
-                            onClick={() => selectDraftWorkspace(workspace.id)}
-                          >
-                            <strong>{workspace.name}</strong>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div
-                    ref={agentPickerRef}
-                    className={`mission-agent-field ${agentPickerOpen ? "open" : ""}`}
-                  >
-                    <span>{copy.selectedAgent}</span>
-                    <button
-                      type="button"
-                      className="mission-agent-trigger"
-                      onClick={() => {
-                        setWorktreePickerOpen(false);
-                        setAgentPickerOpen((current) => !current);
-                      }}
-                      aria-haspopup="listbox"
-                      aria-expanded={agentPickerOpen}
-                      disabled={agentLocked}
-                    >
-                      <strong>{selectedDraftAgent?.name ?? "选择舰员"}</strong>
-                    </button>
-                    {agentPickerOpen ? (
-                      <div
-                        className="mission-agent-menu"
-                        role="listbox"
-                        aria-label={copy.selectedAgent}
-                      >
-                        {filteredAgents.map((agent) => (
-                          <button
-                            key={agent.id}
-                            type="button"
-                            role="option"
-                            aria-selected={agent.id === selectedAgentId}
-                            className={
-                              agent.id === selectedAgentId ? "active" : ""
-                            }
-                            onClick={() => selectDraftAgent(agent.id)}
-                          >
-                            {agent.name}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              <form
-                className="chat-input-form mission-order-editor"
-                onSubmit={submitPrompt}
-              >
-                <div ref={slashWrapperRef} className="slash-command-wrapper">
-                  {promptImages.length ? (
-                    <div
-                      className="mission-composer-attachments mission-attachment-strip"
-                      aria-label="待发送图片"
-                    >
-                      {promptImages.map((image, index) => (
-                        <span
-                          key={`${image.uri ?? image.name}-${index}`}
-                          className="mission-composer-attachment mission-attachment-chip"
-                        >
-                          image {index + 1}
-                          <button
-                            type="button"
-                            className="mission-composer-attachment-remove"
-                            onClick={() => removePromptImage(index)}
-                            aria-label={`移除 image ${index + 1}`}
-                            title="移除"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {imagePasteNotice ? (
-                    <p className="subtle compact mission-composer-notice">
-                      {imagePasteNotice}
-                    </p>
-                  ) : null}
-                  <textarea
-                    ref={missionPromptRef}
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={handleMissionPromptKeyDown}
-                    onPaste={handleMissionPromptPaste}
-                    placeholder={draftPromptPlaceholder}
-                  />
-                  {slashPopupOpen ? (
-                    <SlashCommandPopup
-                      commands={filteredSlashCommands}
-                      selectedIndex={slashSelectedIndex}
-                      onSelect={applySlashCommand}
-                      onHover={setSlashSelectedIndex}
-                    />
-                  ) : null}
-                </div>
-                <div className="mission-composer-sidecar">
-                  <div className="mission-composer-tools" aria-hidden="true">
-                    <span>＋</span>
-                    <span>◎</span>
-                  </div>
-                  <div
-                    className="mission-composer-config"
-                    aria-label="当前任务模型配置"
-                  >
-                    {showDraftAgentModeSelect ? (
-                      <div
-                        className={`mission-config-picker mission-config-picker-agent ${missionConfigPicker === "agentMode" ? "open" : ""}`}
-                        onBlur={(event) => {
-                          if (
-                            !event.currentTarget.contains(
-                              event.relatedTarget as Node | null,
-                            )
-                          ) {
-                            setMissionConfigPicker(null);
-                          }
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="mission-config-trigger"
-                          aria-haspopup="listbox"
-                          aria-expanded={missionConfigPicker === "agentMode"}
-                          onClick={() =>
-                            setMissionConfigPicker((current) =>
-                              current === "agentMode" ? null : "agentMode",
-                            )
-                          }
-                        >
-                          <span>{draftAgentModePickerLabel}</span>
-                        </button>
-                        {missionConfigPicker === "agentMode" ? (
-                          <div
-                            className="mission-config-menu"
-                            role="listbox"
-                            aria-label="Agent 列表"
-                          >
-                            {draftAgentModeOptions.map((option) => (
-                              <button
-                                key={String(option.value)}
-                                type="button"
-                                role="option"
-                                aria-selected={
-                                  option.value === effectiveDraftAgentMode
-                                }
-                                className={
-                                  option.value === effectiveDraftAgentMode
-                                    ? "active"
-                                    : ""
-                                }
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  updateSessionDraftPreferences({
-                                    agentMode: option.value,
-                                  });
-                                  setMissionConfigPicker(null);
-                                }}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    <div
-                      className={`mission-config-picker mission-config-picker-model ${missionConfigPicker === "model" ? "open" : ""}`}
-                      onBlur={(event) => {
-                        if (
-                          !event.currentTarget.contains(
-                            event.relatedTarget as Node | null,
-                          )
-                        ) {
-                          setMissionConfigPicker(null);
-                        }
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="mission-config-trigger"
-                        title={draftModelPlaceholder}
-                        aria-haspopup="listbox"
-                        aria-expanded={missionConfigPicker === "model"}
-                        disabled={draftModelPickerDisabled}
-                        onClick={() =>
-                          setMissionConfigPicker((current) =>
-                            current === "model" ? null : "model",
-                          )
-                        }
-                      >
-                        <span>{draftModelPickerLabel}</span>
-                      </button>
-                      {missionConfigPicker === "model" ? (
-                        <div
-                          className="mission-config-menu"
-                          role="listbox"
-                          aria-label="模型列表"
-                        >
-                          {draftModelBaseOptions.map((model) => {
-                            const modelReasoningOptions =
-                              resolveReasoningOptionsForModel(
-                                model,
-                                draftAllModelOptions,
-                                draftConfigOptions,
-                              );
-                            const nextReasoning =
-                              modelReasoningOptions.includes(
-                                effectiveDraftReasoningEffort,
-                              )
-                                ? effectiveDraftReasoningEffort
-                                : modelReasoningOptions[0];
-                            const selected = model === effectiveDraftModelBase;
-                            return (
-                              <button
-                                key={model}
-                                type="button"
-                                role="option"
-                                aria-selected={selected}
-                                className={selected ? "active" : ""}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  updateSessionDraftPreferences({
-                                    model: resolveCombinedModelValue(
-                                      model,
-                                      nextReasoning,
-                                      draftAllModelOptions,
-                                    ),
-                                    ...(nextReasoning
-                                      ? { reasoningEffort: nextReasoning }
-                                      : {}),
-                                  });
-                                  setMissionConfigPicker(null);
-                                }}
-                              >
-                                {model}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                    {showDraftReasoningSelect ? (
-                      <div
-                        className={`mission-config-picker mission-config-picker-reasoning ${missionConfigPicker === "reasoning" ? "open" : ""}`}
-                        onBlur={(event) => {
-                          if (
-                            !event.currentTarget.contains(
-                              event.relatedTarget as Node | null,
-                            )
-                          ) {
-                            setMissionConfigPicker(null);
-                          }
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="mission-config-trigger"
-                          aria-haspopup="listbox"
-                          aria-expanded={missionConfigPicker === "reasoning"}
-                          onClick={() =>
-                            setMissionConfigPicker((current) =>
-                              current === "reasoning" ? null : "reasoning",
-                            )
-                          }
-                        >
-                          <span>
-                            {resolveReasoningLabel(
-                              effectiveDraftReasoningEffort,
-                            )}
-                          </span>
-                        </button>
-                        {missionConfigPicker === "reasoning" ? (
-                          <div
-                            className="mission-config-menu"
-                            role="listbox"
-                            aria-label="推理级别"
-                          >
-                            {draftReasoningOptions.map((option) => (
-                              <button
-                                key={option}
-                                type="button"
-                                role="option"
-                                aria-selected={
-                                  option === effectiveDraftReasoningEffort
-                                }
-                                className={
-                                  option === effectiveDraftReasoningEffort
-                                    ? "active"
-                                    : ""
-                                }
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  updateSessionDraftPreferences({
-                                    model: resolveCombinedModelValue(
-                                      effectiveDraftModelBase,
-                                      option,
-                                      draftAllModelOptions,
-                                    ),
-                                    reasoningEffort: option,
-                                  });
-                                  setMissionConfigPicker(null);
-                                }}
-                              >
-                                {resolveReasoningLabel(option)}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="mission-composer-actions">
-                    {deckPreferences.promptEnhancer.enabled ? (
-                      <button
-                        className="secondary composer-icon-button"
-                        type="button"
-                        onClick={enhancePromptDraft}
-                        disabled={!prompt.trim() || promptEnhancerBusy}
-                        aria-label="增强提示词"
-                        title="增强提示词"
-                      >
-                        ✦
-                      </button>
-                    ) : null}
-                    {activeSession &&
-                    isSessionExecutionPending(activeSessionStatus) ? (
-                      <button
-                        className="composer-send-icon composer-cancel-icon"
-                        type="button"
-                        onClick={() => cancelSession(activeSession.id)}
-                        aria-label={copy.cancelSession}
-                        title={copy.cancelSession}
-                      >
-                        ■
-                      </button>
-                    ) : (
-                      <button
-                        className="primary composer-send-icon"
-                        type="submit"
-                        disabled={!canSend}
-                        aria-label="发送"
-                        title="发送"
-                      >
-                        ➤
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </form>
-            </div>
+            <MissionComposer
+              activeSession={activeSession}
+              worktreePickerRef={worktreePickerRef}
+              worktreePickerOpen={worktreePickerOpen}
+              setWorktreePickerOpen={setWorktreePickerOpen}
+              agentPickerRef={agentPickerRef}
+              agentPickerOpen={agentPickerOpen}
+              setAgentPickerOpen={setAgentPickerOpen}
+              selectedWorkspaceName={selectedWorkspaceName}
+              draftWorkspaceOptions={draftWorkspaceOptions}
+              selectedWorkspaceId={selectedWorkspaceId}
+              selectDraftWorkspace={selectDraftWorkspace}
+              copy={copy}
+              agentLocked={agentLocked}
+              selectedDraftAgent={selectedDraftAgent}
+              filteredAgents={filteredAgents}
+              selectedAgentId={selectedAgentId}
+              selectDraftAgent={selectDraftAgent}
+              submitPrompt={submitPrompt}
+              slashWrapperRef={slashWrapperRef}
+              promptImages={promptImages}
+              removePromptImage={removePromptImage}
+              imagePasteNotice={imagePasteNotice}
+              missionPromptRef={missionPromptRef}
+              prompt={prompt}
+              setPrompt={setPrompt}
+              handleMissionPromptKeyDown={handleMissionPromptKeyDown}
+              handleMissionPromptPaste={handleMissionPromptPaste}
+              draftPromptPlaceholder={draftPromptPlaceholder}
+              slashPopupOpen={slashPopupOpen}
+              filteredSlashCommands={filteredSlashCommands}
+              slashSelectedIndex={slashSelectedIndex}
+              applySlashCommand={applySlashCommand}
+              setSlashSelectedIndex={setSlashSelectedIndex}
+              showDraftAgentModeSelect={showDraftAgentModeSelect}
+              missionConfigPicker={missionConfigPicker}
+              setMissionConfigPicker={setMissionConfigPicker}
+              draftAgentModePickerLabel={draftAgentModePickerLabel}
+              draftAgentModeOptions={draftAgentModeOptions}
+              effectiveDraftAgentMode={effectiveDraftAgentMode}
+              updateSessionDraftPreferences={updateSessionDraftPreferences}
+              draftModelPlaceholder={draftModelPlaceholder}
+              draftModelPickerDisabled={draftModelPickerDisabled}
+              draftModelPickerLabel={draftModelPickerLabel}
+              draftModelBaseOptions={draftModelBaseOptions}
+              resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
+              draftAllModelOptions={draftAllModelOptions}
+              draftConfigOptions={draftConfigOptions}
+              effectiveDraftReasoningEffort={effectiveDraftReasoningEffort}
+              effectiveDraftModelBase={effectiveDraftModelBase}
+              resolveCombinedModelValue={resolveCombinedModelValue}
+              showDraftReasoningSelect={showDraftReasoningSelect}
+              resolveReasoningLabel={resolveReasoningLabel}
+              draftReasoningOptions={draftReasoningOptions}
+              deckPreferences={deckPreferences}
+              enhancePromptDraft={enhancePromptDraft}
+              promptEnhancerBusy={promptEnhancerBusy}
+              sessionExecutionPending={Boolean(
+                activeSession && isSessionExecutionPending(activeSessionStatus),
+              )}
+              cancelSession={cancelSession}
+              canSend={canSend}
+            />
           </div>
 
           {renderMissionPaneResizer("display", "调整任务展示宽度")}
 
           {renderMissionDisplayPanel()}
 
-          {!effectiveInspectorCollapsed
-            ? renderMissionPaneResizer("inspector", "调整检视器宽度")
-            : null}
-
-          {effectiveInspectorCollapsed ? (
-            <button
-              className="mission-inspector-toggle mission-inspector-floating-toggle"
-              type="button"
-              onClick={() => setMissionInspectorCollapsed(false)}
-              aria-label="展开任务检视器"
-              title="展开任务检视器"
-            >
-              ›
-            </button>
-          ) : null}
-
-          {!effectiveInspectorCollapsed ? (
-            <aside
-              className="mission-inspector mission-pane mission-pane-inspector"
-              style={missionInspectorPaneStyle}
-              aria-label="任务检视器"
-            >
-              <section className="inspector-section inspector-scroll mission-project-files-section">
-                <div className="section-head section-head-soft mission-inspector-section-head">
-                  <div>
-                    <p className="eyebrow">项目文件</p>
-                    <h3>
-                      {activeSession
-                        ? `${projectFiles.length} 个文件`
-                        : "未选择任务"}
-                    </h3>
-                  </div>
-                  {projectFilesEntry?.loading ? (
-                    <span className="mission-inline-loading">加载中</span>
-                  ) : null}
-                </div>
-                <p className="subtle compact">
-                  {activeSession
-                    ? (projectFilesEntry?.message ??
-                      "完整文件列表由 Helm 按当前任务的 Project / Workspace 返回。")
-                    : "选择任务后才显示项目文件。"}
-                </p>
-                <input
-                  className="mission-project-file-search"
-                  value={projectFileFilter}
-                  onChange={(event) => setProjectFileFilter(event.target.value)}
-                  placeholder="搜索文件路径"
-                  aria-label="搜索项目文件"
-                />
-                {renderProjectFileList()}
-              </section>
-            </aside>
-          ) : null}
+          <MissionInspector
+            collapsed={effectiveInspectorCollapsed}
+            style={missionInspectorPaneStyle}
+            activeSessionPresent={Boolean(activeSession)}
+            projectFileCount={projectFiles.length}
+            loading={projectFilesEntry?.loading}
+            message={projectFilesEntry?.message}
+            filter={projectFileFilter}
+            projectFileList={renderProjectFileList()}
+            resizer={renderMissionPaneResizer("inspector", "调整检视器宽度")}
+            onFilterChange={setProjectFileFilter}
+            onExpand={() => setMissionInspectorCollapsed(false)}
+          />
         </>
       </section>
     );
   }
 
   function renderAgents() {
-    const currentHelmKey = daemonProfileKey(
-      daemonHost.trim() || DEFAULT_DAEMON_HOST,
-      daemonPort.trim() || DEFAULT_DAEMON_PORT,
-    );
-    const currentSavedHelmProfile = daemonProfiles.find(
-      (profile) =>
-        daemonProfileKey(profile.host, profile.port) === currentHelmKey,
-    );
-    const additionalHelmCards = IS_EMBEDDED_HELM_DECK
-      ? []
-      : [
-          ...daemonProfiles
-            .filter(
-              (profile) =>
-                daemonProfileKey(profile.host, profile.port) !== currentHelmKey,
-            )
-            .map((profile) => ({
-              key: daemonProfileKey(profile.host, profile.port),
-              name: profile.name,
-              host: profile.host,
-              port: profile.port,
-              isCurrent: false,
-              profile,
-            })),
-        ];
-    const rawHelmCards = [
-      {
-        key: currentHelmKey,
-        name: currentSavedHelmProfile?.name || "Local Helm",
-        host: daemonHost.trim() || DEFAULT_DAEMON_HOST,
-        port: daemonPort.trim() || DEFAULT_DAEMON_PORT,
-        isCurrent: true,
-        profile: null as DaemonProfile | null,
-      },
-      ...additionalHelmCards,
-    ];
-    const helmCards = dedupeHelmCards(rawHelmCards);
-    const selectedKey = selectedHelmKey || currentHelmKey;
-    const selectedHelm =
-      helmCards.find((helm) => helm.key === selectedKey) ?? helmCards[0];
-    const selectedHelmIsCurrent = selectedHelm.key === currentHelmKey;
-    const selectedHelmConnection = resolveHelmConnectionState(
-      selectedHelm,
-      currentHelmKey,
-      connection,
-      helmConnectionStates,
-    );
-    const selectedHelmIsConnected = selectedHelmConnection === "connected";
-    const selectedHelmInventory = helmInventories[selectedHelm.key];
-    const selectedHelmTrustedDevices = selectedHelmIsCurrent
-      ? trustedDevices
-      : (selectedHelmInventory?.trustedDevices ?? []);
-    const selectedHelmProjects = selectedHelmIsCurrent
-      ? projects
-      : (selectedHelmInventory?.projects ?? []);
-    const selectedHelmAgents = selectedHelmIsCurrent
-      ? agents
-      : (selectedHelmInventory?.agents ?? []);
-    const selectedHelmWorkspaces = selectedHelmIsCurrent
-      ? workspaces
-      : (selectedHelmInventory?.workspaces ?? []);
-    const selectedHelmSocket = selectedHelmIsCurrent
-      ? socketRef.current
-      : (helmSocketRefs.current.get(selectedHelm.key) ?? null);
-    const selectedHelmSummary = configuredHelms.find(
-      (helm) =>
-        helm.host === selectedHelm.host &&
-        String(helm.port) === selectedHelm.port,
-    );
-    const selectedHelmId =
-      selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
-    const selectedHelmSavedProfile =
-      daemonProfiles.find(
-        (profile) =>
-          daemonProfileKey(profile.host, profile.port) === selectedHelm.key,
-      ) ?? null;
-    const fleetModalReadyForPairing = fleetAddHelmStage === "pair";
-
     return (
-      <section className="workspace-single">
-        {fleetAddHelmModalOpen ? (
-          <div className="fleet-modal-backdrop" role="presentation">
-            <section
-              className="card surface-card fleet-add-helm-modal fleet-add-helm-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label="添加 Helm"
-            >
-              <div className="fleet-dialog-head fleet-dialog-head-simple">
-                <h3>添加 Helm</h3>
-                <button
-                  className="secondary fleet-dialog-close"
-                  type="button"
-                  onClick={closeFleetAddHelmModal}
-                >
-                  关闭
-                </button>
-              </div>
-
-              <div className="fleet-dialog-body fleet-dialog-body-single">
-                {!fleetModalReadyForPairing ? (
-                  <form
-                    className="fleet-dialog-card fleet-connect-card"
-                    onSubmit={connectFromFleetAddHelmModal}
-                  >
-                    <div className="fleet-connect-grid">
-                      <label className="fleet-field-full">
-                        <span>Helm 名称</span>
-                        <input
-                          value={fleetAddHelmName}
-                          onChange={(event) =>
-                            setFleetAddHelmName(event.target.value)
-                          }
-                          placeholder="本地 Helm"
-                          autoFocus
-                        />
-                      </label>
-                      <label>
-                        <span>Helm 地址</span>
-                        <input
-                          value={fleetAddHelmHost}
-                          onChange={(event) =>
-                            setFleetAddHelmHost(event.target.value)
-                          }
-                          placeholder={DEFAULT_DAEMON_HOST}
-                        />
-                      </label>
-                      <label>
-                        <span>端口</span>
-                        <input
-                          value={fleetAddHelmPort}
-                          onChange={(event) =>
-                            setFleetAddHelmPort(
-                              event.target.value.replace(/[^0-9]/g, ""),
-                            )
-                          }
-                          placeholder={DEFAULT_DAEMON_PORT}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="section-actions fleet-modal-actions">
-                      <button
-                        className="primary"
-                        type="submit"
-                        disabled={fleetAddHelmStage === "connecting"}
-                      >
-                        {fleetAddHelmStage === "connecting"
-                          ? "连接中..."
-                          : "连接 Helm"}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <form
-                    className="fleet-dialog-card fleet-pair-card"
-                    onSubmit={submitPairingCode}
-                  >
-                    <strong className="fleet-pair-title">输入验证码</strong>
-
-                    <PairingBoxes
-                      refs={pairInputRefs}
-                      value={pairingCodeInput}
-                      disabled={
-                        pairingState === "waiting" || connection !== "connected"
-                      }
-                      onChange={updatePairingDigit}
-                      onKeyDown={handlePairingKeyDown}
-                      onPaste={pastePairingDigits}
-                    />
-
-                    <div className="section-actions pairing-actions fleet-pair-actions">
-                      <button
-                        className="primary"
-                        type="button"
-                        onClick={sendPairingRequest}
-                        disabled={
-                          pairingCodeInput.length !== 6 ||
-                          pairingState === "waiting" ||
-                          connection !== "connected"
-                        }
-                      >
-                        {pairingState === "waiting"
-                          ? "提交中..."
-                          : "提交验证码"}
-                      </button>
-                      <button
-                        className="secondary"
-                        type="button"
-                        onClick={() =>
-                          void connectToDaemon(undefined, {
-                            preserveState: true,
-                          })
-                        }
-                      >
-                        重新连接
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        {pendingHelmDeleteProfile ? (
-          <div className="fleet-modal-backdrop" role="presentation">
-            <section
-              className="card surface-card fleet-delete-helm-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-label="删除 Helm 前端配置"
-            >
-              <div className="fleet-dialog-head fleet-dialog-head-simple">
-                <h3>删除 Helm 前端配置</h3>
-                <button
-                  className="secondary fleet-dialog-close"
-                  type="button"
-                  onClick={() => setPendingHelmDeleteProfile(null)}
-                >
-                  关闭
-                </button>
-              </div>
-              <div className="fleet-delete-confirm-body">
-                <p>
-                  只会从 Deck 的本地 Fleet 列表删除这条 Helm 配置，不会销毁远端
-                  Helm 进程，也不会删除 Helm 后端配置。
-                </p>
-                <div className="fleet-delete-target">
-                  <strong>{pendingHelmDeleteProfile.name}</strong>
-                  <span>
-                    {pendingHelmDeleteProfile.host}:
-                    {pendingHelmDeleteProfile.port}
-                  </span>
-                </div>
-              </div>
-              <div className="section-actions fleet-delete-actions">
-                <button
-                  className="secondary"
-                  type="button"
-                  onClick={() => setPendingHelmDeleteProfile(null)}
-                >
-                  取消
-                </button>
-                <button
-                  className="secondary helm-destroy-button"
-                  type="button"
-                  onClick={() => {
-                    removeDaemonProfile(pendingHelmDeleteProfile);
-                    setPendingHelmDeleteProfile(null);
-                  }}
-                >
-                  确认删除配置
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        <section className="card surface-card stack-gap fleet-panel fleet-command-panel">
-          <div className="section-head section-head-soft fleet-title-row">
-            <div>
-              <h2>舰队</h2>
-            </div>
-          </div>
-
-          <section className="fleet-hub" aria-label="舰队 Helm 节点">
-            <div className="fleet-hub-head">
-              <div>
-                <div className="fleet-hub-title-row">
-                  <h3>Helm</h3>
-                  <span>{helmCards.length} Helm</span>
-                </div>
-              </div>
-              {!IS_EMBEDDED_HELM_DECK ? (
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={openFleetAddHelmModal}
-                >
-                  添加
-                </button>
-              ) : null}
-            </div>
-
-            <p className="fleet-hub-copy">
-              {IS_EMBEDDED_HELM_DECK
-                ? "当前内置 Deck 只管理这个 Helm；多 Helm 控制台由公版 Web 承载。"
-                : "管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。"}
-            </p>
-
-            <div
-              className="fleet-hub-node-list"
-              role="list"
-              aria-label="Helm 节点列表"
-            >
-              {helmCards.map((helm) => (
-                <button
-                  className={`fleet-hub-node ${selectedHelm.key === helm.key ? "active" : ""}`}
-                  key={helm.key}
-                  type="button"
-                  role="listitem"
-                  onClick={() => setSelectedHelmKey(helm.key)}
-                  aria-pressed={selectedHelm.key === helm.key}
-                  title={`${helm.name} · ${helm.host}:${helm.port}`}
-                >
-                  <span
-                    className={`helm-status-dot helm-status-${resolveHelmConnectionState(helm, currentHelmKey, connection, helmConnectionStates)}`}
-                    aria-hidden="true"
-                  />
-                  <span>{helm.name}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="note-box compact-note fleet-card helm-detail-panel helm-detail-panel-expanded">
-            <div className="section-head section-head-soft">
-              <div>
-                <strong>{selectedHelm.name}</strong>
-                <p className="muted compact">
-                  {selectedHelm.host}:{selectedHelm.port} ·{" "}
-                  <span
-                    className={`helm-inline-status helm-inline-status-${selectedHelmConnection}`}
-                  >
-                    {formatConnectionStatus(selectedHelmConnection)}
-                  </span>
-                </p>
-              </div>
-              <div className="section-actions">
-                {selectedHelmIsConnected ? (
-                  <button
-                    className="secondary helm-disconnect-button"
-                    type="button"
-                    onClick={() => {
-                      manualDisconnectRef.current = selectedHelm.key;
-                      if (selectedHelmIsCurrent) {
-                        socketRef.current?.close();
-                        socketRef.current = null;
-                        setConnection("disconnected");
-                        // 手动断开当前 Helm 后，project files 缓存应失效，避免重连后使用过期数据。
-                        lastFilesScopeKeyRef.current = null;
-                        setHelmConnectionState(
-                          selectedHelm.key,
-                          "disconnected",
-                        );
-                        return;
-                      }
-                      helmSocketRefs.current.get(selectedHelm.key)?.close();
-                      helmSocketRefs.current.delete(selectedHelm.key);
-                      setHelmConnectionState(selectedHelm.key, "disconnected");
-                    }}
-                  >
-                    断开连接
-                  </button>
-                ) : selectedHelmConnection === "connecting" ? (
-                  <span className="helm-state-chip helm-state-connecting">
-                    连接中
-                  </span>
-                ) : (
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => {
-                      if (selectedHelm.profile) {
-                        connectDaemonProfile(selectedHelm.profile);
-                        return;
-                      }
-                      void connectToDaemon(undefined, { preserveState: true });
-                    }}
-                  >
-                    连接 Helm
-                  </button>
-                )}
-                {selectedHelmSavedProfile && !IS_EMBEDDED_HELM_DECK ? (
-                  <button
-                    className="secondary helm-destroy-button"
-                    type="button"
-                    onClick={() =>
-                      setPendingHelmDeleteProfile(selectedHelmSavedProfile)
-                    }
-                    title="仅删除 Deck 前端保存的 Helm 配置，不销毁远端 Helm 进程或后端配置"
-                  >
-                    删除配置
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="helm-detail-facts" aria-label="Helm 配置范围">
-              <span>
-                <strong>{selectedHelmProjects.length}</strong> 项目配置
-              </span>
-              <span>
-                <strong>{selectedHelmAgents.length}</strong> ACP 舰员
-              </span>
-              <span>
-                <strong>{selectedHelmWorkspaces.length}</strong> 分支
-              </span>
-            </div>
-            <div className="helm-inventory-list-stack">
-              <section className="helm-inventory-list-section">
-                <div className="helm-inventory-section-head">
-                  <h3>项目列表</h3>
-                  <button
-                    className="secondary helm-list-add-button"
-                    type="button"
-                    disabled={!selectedHelmIsConnected}
-                    aria-label="添加项目"
-                    title="添加项目"
-                    onClick={() =>
-                      setFleetProjectFormOpen((current) => !current)
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-                {fleetProjectFormOpen ? (
-                  <form
-                    className="helm-inline-add-form helm-inline-add-form-project"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (
-                        !selectedHelmSocket ||
-                        !fleetProjectDraft.path.trim()
-                      ) {
-                        return;
-                      }
-                      const projectPath = fleetProjectDraft.path
-                        .trim()
-                        .replace(/\\/g, "/");
-                      const fallbackProjectName =
-                        projectPath.split("/").filter(Boolean).at(-1) ??
-                        projectPath;
-                      const projectName =
-                        fleetProjectDraft.name.trim() || fallbackProjectName;
-                      const projectId = createProjectId(selectedHelmProjects);
-                      const workspaceId = `${projectId}-workspace`;
-                      setFleetProjectSaveMessage(
-                        `正在保存项目：${projectName}...`,
-                      );
-                      dispatch(selectedHelmSocket, {
-                        type: "project.save",
-                        requestId: nextRequestId(requestCounter),
-                        project: {
-                          id: projectId,
-                          name: projectName,
-                          helmId: selectedHelmId,
-                          path: projectPath,
-                          workspaceIds: [workspaceId],
-                          defaultWorkspaceId: workspaceId,
-                          defaultAgentId:
-                            defaultAgentId(selectedHelmAgents) ?? undefined,
-                        },
-                      });
-                      setFleetProjectDraft({ name: "", path: "" });
-                      setFleetProjectFormOpen(false);
-                    }}
-                  >
-                    <input
-                      value={fleetProjectDraft.name}
-                      onChange={(event) =>
-                        setFleetProjectDraft((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      placeholder="项目名称，例如 Tiller"
-                    />
-                    <input
-                      value={fleetProjectDraft.path}
-                      onChange={(event) =>
-                        setFleetProjectDraft((current) => ({
-                          ...current,
-                          path: event.target.value,
-                        }))
-                      }
-                      placeholder="项目路径，例如 D:/projects/my-app"
-                    />
-                    <button
-                      className="primary"
-                      type="submit"
-                      disabled={!fleetProjectDraft.path.trim()}
-                    >
-                      保存项目
-                    </button>
-                  </form>
-                ) : null}
-                {fleetProjectSaveMessage ? (
-                  <p className="muted compact helm-inline-save-message">
-                    {fleetProjectSaveMessage}
-                  </p>
-                ) : null}
-                {selectedHelmProjects.length ? (
-                  <ul className="helm-simple-list">
-                    {selectedHelmProjects.map((project) => (
-                      <li key={project.id}>
-                        <details className="helm-simple-detail-row">
-                          <summary>
-                            <strong>{project.name}</strong>
-                            <span>
-                              {project.path
-                                ? `路径 · ${project.path}`
-                                : `项目 · ${project.id}`}
-                            </span>
-                          </summary>
-                          <dl>
-                            <div>
-                              <dt>Project ID</dt>
-                              <dd>
-                                {resolveProjectDisplayId(
-                                  project,
-                                  selectedHelmProjects,
-                                )}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt>Path</dt>
-                              <dd>{project.path ?? "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>Helm ID</dt>
-                              <dd>{project.helmId}</dd>
-                            </div>
-                            <div>
-                              <dt>默认分支</dt>
-                              <dd>
-                                {resolveProjectWorkspaceLabel(
-                                  project,
-                                  selectedHelmWorkspaces,
-                                )}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt>Default Agent</dt>
-                              <dd>{project.defaultAgentId ?? "-"}</dd>
-                            </div>
-                          </dl>
-                        </details>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="empty-state">
-                    {selectedHelmIsConnected
-                      ? "当前 Helm 暂无项目数据"
-                      : "请先连接该 Helm 后加载项目"}
-                  </div>
-                )}
-              </section>
-
-              <section className="helm-inventory-list-section">
-                <div className="helm-inventory-section-head">
-                  <h3>ACP 舰员</h3>
-                  <div className="helm-section-actions-inline">
-                    <button
-                      className="secondary helm-list-add-button"
-                      type="button"
-                      disabled={!selectedHelmIsConnected}
-                      aria-label="添加 ACP"
-                      title="添加 ACP"
-                      onClick={() =>
-                        setFleetAgentFormOpen((current) => !current)
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                {fleetAgentFormOpen ? (
-                  <form
-                    className="helm-inline-add-form helm-inline-add-form-agent"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (
-                        !selectedHelmSocket ||
-                        !fleetAgentDraft.command.trim()
-                      ) {
-                        return;
-                      }
-                      const providerId = slugify(
-                        fleetAgentDraft.name || fleetAgentDraft.command,
-                      );
-                      const agentArgs = fleetAgentDraft.args
-                        .map((item) => item.trim())
-                        .filter(Boolean);
-                      dispatch(selectedHelmSocket, {
-                        type: "agent.save",
-                        requestId: nextRequestId(requestCounter),
-                        provider: {
-                          id: providerId,
-                          name: fleetAgentDraft.name.trim() || providerId,
-                          kind: "custom",
-                          command: fleetAgentDraft.command.trim(),
-                          args: agentArgs,
-                          installHint: `请确认命令 \`${[fleetAgentDraft.command.trim(), ...agentArgs].join(" ")}\` 可以在终端运行。`,
-                        },
-                      });
-                      setFleetAgentDraft({ name: "", command: "", args: [""] });
-                      setFleetAgentFormOpen(false);
-                    }}
-                  >
-                    <div className="helm-agent-core-row">
-                      <input
-                        value={fleetAgentDraft.name}
-                        onChange={(event) =>
-                          setFleetAgentDraft((current) => ({
-                            ...current,
-                            name: event.target.value,
-                          }))
-                        }
-                        placeholder="舰员名称"
-                      />
-                      <input
-                        value={fleetAgentDraft.command}
-                        onChange={(event) =>
-                          setFleetAgentDraft((current) => ({
-                            ...current,
-                            command: event.target.value,
-                          }))
-                        }
-                        placeholder="command"
-                      />
-                      <button
-                        className="primary"
-                        type="submit"
-                        disabled={!fleetAgentDraft.command.trim()}
-                      >
-                        保存 ACP
-                      </button>
-                    </div>
-                    <div className="helm-agent-args-column">
-                      <div className="helm-agent-args-head">
-                        <span>args 数组</span>
-                        <button
-                          className="secondary helm-arg-action-button"
-                          type="button"
-                          onClick={() =>
-                            setFleetAgentDraft((current) => ({
-                              ...current,
-                              args: [...current.args, ""],
-                            }))
-                          }
-                        >
-                          + 参数
-                        </button>
-                      </div>
-                      {fleetAgentDraft.args.map((arg, index) => (
-                        <div
-                          className="helm-agent-arg-row"
-                          key={`fleet-agent-arg-${index}`}
-                        >
-                          <span className="helm-agent-arg-index">
-                            args[{index}]
-                          </span>
-                          <input
-                            value={arg}
-                            onChange={(event) =>
-                              setFleetAgentDraft((current) => ({
-                                ...current,
-                                args: current.args.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? event.target.value
-                                    : item,
-                                ),
-                              }))
-                            }
-                            placeholder={index === 0 ? "acp" : "--pure"}
-                          />
-                          <button
-                            className="secondary helm-arg-icon-button"
-                            type="button"
-                            aria-label={`删除第 ${index + 1} 个参数`}
-                            title="删除参数"
-                            onClick={() =>
-                              setFleetAgentDraft((current) => ({
-                                ...current,
-                                args:
-                                  current.args.length > 1
-                                    ? current.args.filter(
-                                        (_, itemIndex) => itemIndex !== index,
-                                      )
-                                    : [""],
-                              }))
-                            }
-                          >
-                            −
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </form>
-                ) : null}
-                {selectedHelmAgents.length ? (
-                  <ul className="helm-simple-list">
-                    {selectedHelmAgents.map((agent) => (
-                      <li key={agent.id}>
-                        <details className="helm-simple-detail-row">
-                          <summary>
-                            <strong>{agent.name}</strong>
-                            <span>
-                              {`${agent.command} ${(agent.args ?? []).join(" ")}`.trim()}
-                            </span>
-                          </summary>
-                          <dl>
-                            <div>
-                              <dt>Agent ID</dt>
-                              <dd>{agent.id}</dd>
-                            </div>
-                            <div>
-                              <dt>Command</dt>
-                              <dd>{agent.command}</dd>
-                            </div>
-                            <div>
-                              <dt>Arguments</dt>
-                              <dd>{(agent.args ?? []).join(" ") || "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>Transport</dt>
-                              <dd>{agent.transport}</dd>
-                            </div>
-                            <div>
-                              <dt>Protocol</dt>
-                              <dd>{agent.protocol}</dd>
-                            </div>
-                          </dl>
-                        </details>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="empty-state">
-                    {selectedHelmIsConnected
-                      ? copy.noAgents
-                      : "请先连接该 Helm 后加载舰员"}
-                  </div>
-                )}
-              </section>
-            </div>
-
-            {renderTrustedDevicesPanel(
-              selectedHelmTrustedDevices,
-              selectedHelmSocket,
-              selectedHelm.name,
-            )}
-          </section>
-        </section>
-      </section>
+      <AgentsPage
+        daemonHost={daemonHost}
+        daemonPort={daemonPort}
+        defaultDaemonHost={DEFAULT_DAEMON_HOST}
+        defaultDaemonPort={DEFAULT_DAEMON_PORT}
+        isEmbeddedHelmDeck={IS_EMBEDDED_HELM_DECK}
+        daemonProfiles={daemonProfiles}
+        selectedHelmKey={selectedHelmKey}
+        connection={connection}
+        helmConnectionStates={helmConnectionStates}
+        helmInventories={helmInventories}
+        trustedDevices={trustedDevices}
+        projects={projects}
+        agents={agents}
+        workspaces={workspaces}
+        socketRef={socketRef}
+        helmSocketRefs={helmSocketRefs}
+        configuredHelms={configuredHelms}
+        fleetAddHelmStage={fleetAddHelmStage}
+        fleetAddHelmModalOpen={fleetAddHelmModalOpen}
+        closeFleetAddHelmModal={closeFleetAddHelmModal}
+        connectFromFleetAddHelmModal={connectFromFleetAddHelmModal}
+        fleetAddHelmName={fleetAddHelmName}
+        setFleetAddHelmName={setFleetAddHelmName}
+        fleetAddHelmHost={fleetAddHelmHost}
+        setFleetAddHelmHost={setFleetAddHelmHost}
+        fleetAddHelmPort={fleetAddHelmPort}
+        setFleetAddHelmPort={setFleetAddHelmPort}
+        submitPairingCode={submitPairingCode}
+        pairInputRefs={pairInputRefs}
+        pairingCodeInput={pairingCodeInput}
+        pairingState={pairingState}
+        updatePairingDigit={updatePairingDigit}
+        handlePairingKeyDown={handlePairingKeyDown}
+        pastePairingDigits={pastePairingDigits}
+        sendPairingRequest={sendPairingRequest}
+        connectToDaemon={connectToDaemon}
+        pendingHelmDeleteProfile={pendingHelmDeleteProfile}
+        setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
+        removeDaemonProfile={removeDaemonProfile}
+        setSelectedHelmKey={setSelectedHelmKey}
+        openFleetAddHelmModal={openFleetAddHelmModal}
+        manualDisconnectRef={manualDisconnectRef}
+        setConnection={setConnection}
+        lastFilesScopeKeyRef={lastFilesScopeKeyRef}
+        setHelmConnectionState={setHelmConnectionState}
+        connectDaemonProfile={connectDaemonProfile}
+        fleetProjectFormOpen={fleetProjectFormOpen}
+        setFleetProjectFormOpen={setFleetProjectFormOpen}
+        fleetProjectDraft={fleetProjectDraft}
+        setFleetProjectDraft={setFleetProjectDraft}
+        setFleetProjectSaveMessage={setFleetProjectSaveMessage}
+        fleetProjectSaveMessage={fleetProjectSaveMessage}
+        fleetAgentFormOpen={fleetAgentFormOpen}
+        setFleetAgentFormOpen={setFleetAgentFormOpen}
+        fleetAgentDraft={fleetAgentDraft}
+        setFleetAgentDraft={setFleetAgentDraft}
+        requestCounter={requestCounter}
+        copy={copy}
+        renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+      />
     );
   }
 
   function renderSettings() {
-    const settingsCopy =
-      deckPreferences.language === "en-US"
-        ? {
-            title: "Settings",
-            subtitle:
-              "Configure Deck theme, language, technical panels, and prompt enhancement. All options are stored locally in this browser.",
-            reset: "Reset defaults",
-            languageEyebrow: "Language",
-            languageLabel: "Language",
-            languageHelp:
-              "Switches navigation and core Settings copy; ACP Crew domain terms keep their original names.",
-            themeEyebrow: "Theme",
-            themeLabel: "Theme",
-            themeSystem: "System",
-            themeLight: "Light",
-            themeDark: "Dark",
-            themeHelp:
-              "Theme only affects this Deck and is not written to Helm or Crew config.",
-            motionEyebrow: "Motion",
-            reduceMotion: "Reduce transition animations",
-            technicalEyebrow: "Technical panel controls",
-            technicalTitle:
-              "Choose which diagnostic details are visible by default",
-            logbookOpen: "Open Logbook by default",
-            diffOpen: "Open diff summary by default",
-            runtimeMeta: "Show Session runtime metadata",
-            permissionWorkspace: "Show permission request workspace path",
-            connectionDebug: "Show connection/pairing debug echo",
-            enhancerEyebrow: "Prompt enhancement",
-            enhancerTitle: "Wrap casual chat as a standard prompt",
-            enhancerEnabled: "Enable before send",
-            enhancerHelp:
-              "Enhancement is prepended before sending to ACP; the chat window still shows your original input and nothing is written to Helm/backend config.",
-            instructionLabel: "Enhanced prompt textbox · Role and goal",
-            modelLabel: "Model config position · Reasoning preference",
-            contractLabel: "Output contract",
-            saveEyebrow: "Saved state",
-            browserTitle: "Current browser",
-            saveStatus:
-              "Frontend preferences are auto-saved; backend, provider, and Helm-level settings still belong to the concrete Helm / Crew.",
-            devicesEyebrow: "Trusted devices",
-            devicesTitle: "7-day remembered Deck / App devices",
-            devicesHelp:
-              "Each trusted device is scoped to this Helm profile. Revoking a device forces it to pair again on that device.",
-            devicesEmpty: "No trusted devices yet.",
-            currentDevice: "Current device",
-            revoke: "Revoke",
-            clientKindWeb: "Web",
-            clientKindApp: "App",
-            lastSeen: "Last seen",
-            expiresAt: "Expires",
-          }
-        : {
-            title: "设置",
-            subtitle:
-              "配置 Deck 语言、主题、技术面板与提示词增强；所有选项只保存在浏览器本地。",
-            reset: "重置默认",
-            languageEyebrow: "语言 / Language",
-            languageLabel: "语言",
-            languageHelp:
-              "用于切换导航与 设置基础文案；ACP 舰员 领域术语保持原名。",
-            themeEyebrow: "主题切换",
-            themeLabel: "主题",
-            themeSystem: "跟随系统",
-            themeLight: "浅色",
-            themeDark: "深色",
-            themeHelp: "主题只影响当前 Deck，不会写入 Helm 或舰员配置。",
-            motionEyebrow: "动效",
-            reduceMotion: "减少过渡动画",
-            technicalEyebrow: "技术面板控制",
-            technicalTitle: "决定哪些诊断信息默认展示",
-            logbookOpen: "默认展开航行日志",
-            diffOpen: "默认展开变更摘要",
-            runtimeMeta: "显示任务 runtime 元信息",
-            permissionWorkspace: "显示权限请求工作区路径",
-            connectionDebug: "显示连接/配对调试回显",
-            enhancerEyebrow: "提示词增强",
-            enhancerTitle: "把普通对话包装成标准提示词",
-            enhancerEnabled: "发送前启用",
-            enhancerHelp:
-              "增强内容会在发送到 ACP 前拼接；聊天窗口仍显示你的原始输入，不会写入 Helm 或后端配置。",
-            instructionLabel: "增强提示词文本框 · 角色与目标",
-            modelLabel: "模型配置位置 · 推理偏好",
-            contractLabel: "输出契约",
-            saveEyebrow: "保存状态",
-            browserTitle: "当前浏览器",
-            saveStatus:
-              "前端偏好会自动保存；后端、provider、Helm 级配置仍在具体 Helm / 舰员中管理。",
-            devicesEyebrow: "信标",
-            devicesTitle: "当前 Helm 记住的 7 天信标",
-            devicesHelp:
-              "每个信标都只属于当前 Helm profile。撤销后，该设备下次必须重新配对。",
-            devicesEmpty: "当前还没有信标。",
-            currentDevice: "当前信标",
-            revoke: "撤销",
-            clientKindWeb: "网页",
-            clientKindApp: "App",
-            lastSeen: "最近认证",
-            expiresAt: "信任到期",
-          };
-
     return (
-      <section className="workspace-single">
-        <section className="card surface-card stack-gap">
-          <div className="section-head section-head-soft">
-            <div>
-              <h2>{settingsCopy.title}</h2>
-            </div>
-            <button
-              className="secondary"
-              type="button"
-              onClick={resetDeckPreferences}
-            >
-              {settingsCopy.reset}
-            </button>
-          </div>
-
-          <div className="settings-grid settings-form">
-            <section className="note-box settings-card">
-              <label>
-                <span>{settingsCopy.languageLabel}</span>
-                <select
-                  aria-label={settingsCopy.languageLabel}
-                  value={deckPreferences.language}
-                  onChange={(event) =>
-                    updateDeckPreference(
-                      "language",
-                      event.target.value as DeckLanguage,
-                    )
-                  }
-                >
-                  <option value="zh-CN">中文</option>
-                  <option value="en-US">English</option>
-                </select>
-              </label>
-            </section>
-
-            <section className="note-box settings-card">
-              <label>
-                <span>{settingsCopy.themeLabel}</span>
-                <select
-                  value={deckPreferences.theme}
-                  onChange={(event) =>
-                    updateDeckPreference(
-                      "theme",
-                      event.target.value as DeckTheme,
-                    )
-                  }
-                >
-                  <option value="system">{settingsCopy.themeSystem}</option>
-                  <option value="light">{settingsCopy.themeLight}</option>
-                  <option value="dark">{settingsCopy.themeDark}</option>
-                </select>
-              </label>
-            </section>
-
-            <section className="note-box settings-card">
-              <p className="eyebrow">{settingsCopy.motionEyebrow}</p>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={deckPreferences.reduceMotion}
-                  onChange={(event) =>
-                    updateDeckPreference("reduceMotion", event.target.checked)
-                  }
-                />
-                <span>{settingsCopy.reduceMotion}</span>
-              </label>
-            </section>
-
-            <section className="note-box settings-card settings-card-full">
-              <p className="eyebrow">{settingsCopy.technicalEyebrow}</p>
-              <h3>{settingsCopy.technicalTitle}</h3>
-              <div className="settings-control-grid">
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={technicalPanels.logbookDefaultOpen}
-                    onChange={(event) =>
-                      updateTechnicalPanelPreference(
-                        "logbookDefaultOpen",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{settingsCopy.logbookOpen}</span>
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={technicalPanels.diffDefaultOpen}
-                    onChange={(event) =>
-                      updateTechnicalPanelPreference(
-                        "diffDefaultOpen",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{settingsCopy.diffOpen}</span>
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={technicalPanels.showSessionRuntimeMeta}
-                    onChange={(event) =>
-                      updateTechnicalPanelPreference(
-                        "showSessionRuntimeMeta",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{settingsCopy.runtimeMeta}</span>
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={technicalPanels.showPermissionWorkspace}
-                    onChange={(event) =>
-                      updateTechnicalPanelPreference(
-                        "showPermissionWorkspace",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{settingsCopy.permissionWorkspace}</span>
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={technicalPanels.showConnectionDebug}
-                    onChange={(event) =>
-                      updateTechnicalPanelPreference(
-                        "showConnectionDebug",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{settingsCopy.connectionDebug}</span>
-                </label>
-              </div>
-            </section>
-
-            <section className="note-box settings-card settings-card-full prompt-enhancer-card">
-              <div className="settings-card-head">
-                <div>
-                  <p className="eyebrow">提示词增强</p>
-                  <h3>LLM 增强器</h3>
-                </div>
-              </div>
-              <div className="prompt-enhancer-grid prompt-llm-grid">
-                <label>
-                  <span>OpenAI-compatible Base URL</span>
-                  <input
-                    value={deckPreferences.promptEnhancer.llm.baseUrl}
-                    onChange={(event) =>
-                      updatePromptEnhancerLlmPreference(
-                        "baseUrl",
-                        event.target.value,
-                      )
-                    }
-                    placeholder="http://localhost:8317"
-                  />
-                </label>
-                <label>
-                  <span>增强模型</span>
-                  <div
-                    className="prompt-model-combobox"
-                    ref={promptModelPickerRef}
-                  >
-                    <div className="prompt-model-input-row">
-                      <input
-                        value={deckPreferences.promptEnhancer.llm.model}
-                        onChange={(event) =>
-                          updatePromptEnhancerModelInput(event.target.value)
-                        }
-                        onFocus={() => setPromptEnhancerModelPickerOpen(true)}
-                        placeholder="gpt-4.1-mini"
-                        autoComplete="off"
-                      />
-                      <button
-                        className="secondary"
-                        type="button"
-                        onClick={refreshPromptEnhancerModels}
-                        disabled={promptEnhancerBusy}
-                      >
-                        {promptEnhancerBusy ? "加载" : "刷新"}
-                      </button>
-                    </div>
-                    {promptEnhancerModelPickerOpen && (
-                      <div
-                        className="prompt-model-picker"
-                        role="listbox"
-                        aria-label="增强模型列表"
-                      >
-                        <input
-                          className="prompt-model-filter"
-                          value={promptEnhancerModelFilter}
-                          onChange={(event) =>
-                            setPromptEnhancerModelFilter(event.target.value)
-                          }
-                          placeholder="搜索模型或 owner"
-                          aria-label="搜索增强模型"
-                        />
-                        {promptEnhancerBusy ? (
-                          <p className="prompt-model-empty">
-                            正在从 /v1/models 获取模型...
-                          </p>
-                        ) : null}
-                        {!promptEnhancerBusy &&
-                        promptEnhancerModels.length === 0 ? (
-                          <p className="prompt-model-empty">
-                            点击刷新，从 /v1/models 加载可用模型。
-                          </p>
-                        ) : null}
-                        {!promptEnhancerBusy &&
-                        promptEnhancerModels.length > 0 &&
-                        groupPromptEnhancerModels(
-                          promptEnhancerModels,
-                          promptEnhancerModelFilter,
-                        ).length === 0 ? (
-                          <p className="prompt-model-empty">没有匹配的模型。</p>
-                        ) : null}
-                        {!promptEnhancerBusy &&
-                          groupPromptEnhancerModels(
-                            promptEnhancerModels,
-                            promptEnhancerModelFilter,
-                          ).map((group) => (
-                            <div
-                              className="prompt-model-group"
-                              key={group.owner}
-                            >
-                              <p className="prompt-model-owner">
-                                {group.owner}
-                                <span>{group.models.length}</span>
-                              </p>
-                              <div className="prompt-model-option-list">
-                                {group.models.map((model) => (
-                                  <button
-                                    className={`prompt-model-option ${model.id === deckPreferences.promptEnhancer.llm.model ? "active" : ""}`}
-                                    key={`${model.ownedBy}:${model.id}`}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={
-                                      model.id ===
-                                      deckPreferences.promptEnhancer.llm.model
-                                    }
-                                    onMouseDown={(event) =>
-                                      event.preventDefault()
-                                    }
-                                    onClick={() =>
-                                      selectPromptEnhancerModel(model)
-                                    }
-                                  >
-                                    {model.id}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                </label>
-                <label className="settings-card-full">
-                  <span>API Key</span>
-                  <input
-                    type="password"
-                    value={deckPreferences.promptEnhancer.llm.apiKey}
-                    onChange={(event) =>
-                      updatePromptEnhancerLlmPreference(
-                        "apiKey",
-                        event.target.value,
-                      )
-                    }
-                    placeholder="sk-..."
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="settings-card-full">
-                  <span>增强器 System Prompt</span>
-                  <textarea
-                    value={deckPreferences.promptEnhancer.llm.systemPrompt}
-                    onChange={(event) =>
-                      updatePromptEnhancerLlmPreference(
-                        "systemPrompt",
-                        event.target.value,
-                      )
-                    }
-                    placeholder={DEFAULT_PROMPT_LLM_SYSTEM_PROMPT}
-                  />
-                </label>
-                <label className="settings-card-full">
-                  <span>增强器指令模板</span>
-                  <textarea
-                    value={
-                      deckPreferences.promptEnhancer.llm.instructionTemplate
-                    }
-                    onChange={(event) =>
-                      updatePromptEnhancerLlmPreference(
-                        "instructionTemplate",
-                        event.target.value,
-                      )
-                    }
-                    placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE}
-                  />
-                </label>
-                <div className="section-actions settings-card-full">
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={resetPromptEnhancerDefaults}
-                  >
-                    恢复默认模板
-                  </button>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={testPromptEnhancerSelectedModel}
-                    disabled={promptEnhancerBusy}
-                  >
-                    测试连通性
-                  </button>
-                  {promptEnhancerStatus ? (
-                    <span className="settings-status">
-                      {promptEnhancerStatus}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </section>
-          </div>
-        </section>
-      </section>
+      <SettingsPage
+        deckPreferences={deckPreferences}
+        technicalPanels={technicalPanels}
+        promptModelPickerRef={promptModelPickerRef}
+        promptEnhancerBusy={promptEnhancerBusy}
+        promptEnhancerModelPickerOpen={promptEnhancerModelPickerOpen}
+        promptEnhancerModelFilter={promptEnhancerModelFilter}
+        promptEnhancerModels={promptEnhancerModels}
+        promptEnhancerStatus={promptEnhancerStatus}
+        resetDeckPreferences={resetDeckPreferences}
+        updateDeckPreference={updateDeckPreference}
+        updateTechnicalPanelPreference={updateTechnicalPanelPreference}
+        updatePromptEnhancerLlmPreference={updatePromptEnhancerLlmPreference}
+        updatePromptEnhancerModelInput={updatePromptEnhancerModelInput}
+        setPromptEnhancerModelPickerOpen={setPromptEnhancerModelPickerOpen}
+        refreshPromptEnhancerModels={refreshPromptEnhancerModels}
+        setPromptEnhancerModelFilter={setPromptEnhancerModelFilter}
+        selectPromptEnhancerModel={selectPromptEnhancerModel}
+        resetPromptEnhancerDefaults={resetPromptEnhancerDefaults}
+        testPromptEnhancerSelectedModel={testPromptEnhancerSelectedModel}
+      />
     );
   }
 
@@ -7383,15 +3951,6 @@ function resolveViewFromPath(pathname: string): AppView {
   return matched?.[0] ?? "overview";
 }
 
-function nextRequestId(counter: MutableRefObject<number>) {
-  counter.current += 1;
-  return `req-${counter.current}`;
-}
-
-function removeSessionRecord<T>(records: Record<string, T>, sessionId: string) {
-  const { [sessionId]: _removed, ...rest } = records;
-  return rest;
-}
 
 function isSessionExecutionPending(status: SessionStatus) {
   return (
@@ -7401,73 +3960,7 @@ function isSessionExecutionPending(status: SessionStatus) {
   );
 }
 
-function sortDisplayMessages(items: AgentMessage[]) {
-  return items;
-}
 
-function shouldCollapsePlainMessage(text: string) {
-  const lineCount = text.split(/\r?\n/).length;
-  return (
-    lineCount > COLLAPSED_MESSAGE_LINE_LIMIT ||
-    text.length > COLLAPSED_MESSAGE_CHAR_LIMIT
-  );
-}
-
-function resolveMessageRoleLabel(
-  message: AgentMessage,
-  assistantLabel: string,
-  roleLabels: Record<AgentMessage["role"], string>,
-) {
-  return message.role === "assistant"
-    ? assistantLabel
-    : roleLabels[message.role];
-}
-
-function mergeSessionSummaries(
-  current: SessionSummary[],
-  incoming: SessionSummary[],
-) {
-  const byId = new Map(
-    current.map((session) => [session.id, session] as const),
-  );
-  incoming.forEach((session) => byId.set(session.id, session));
-  return Array.from(byId.values()).sort((left, right) => {
-    const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-    if (timeDelta !== 0) {
-      return timeDelta;
-    }
-    const createdDelta = right.createdAt.localeCompare(left.createdAt);
-    return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
-  });
-}
-
-function mergeCommandHistory(
-  current: CommandChunk[],
-  incoming: CommandChunk[],
-) {
-  const merged = [...current];
-  for (const chunk of incoming) {
-    if (!merged.some((item) => item.id === chunk.id)) {
-      merged.push(chunk);
-    }
-  }
-
-  return merged.sort(
-    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
-  );
-}
-
-function upsertSessionSummary(
-  current: SessionSummary[],
-  incoming: SessionSummary,
-) {
-  return [
-    ...current.filter((session) => session.id !== incoming.id),
-    incoming,
-  ].sort(
-    (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-  );
-}
 
 function formatResumeLabel(resume: SessionSummary["resume"], locale: Locale) {
   if (!resume) {
@@ -7861,11 +4354,8 @@ function summarizeSessionContext(
 function resolveHelmConnectionState(
   helm: { key: string; isCurrent: boolean },
   currentHelmKey: string,
-  globalConnection: "connecting" | "connected" | "disconnected",
-  helmConnectionStates: Record<
-    string,
-    "connecting" | "connected" | "disconnected"
-  >,
+  globalConnection: ConnectionState,
+  helmConnectionStates: Record<string, ConnectionState>,
 ) {
   return (
     helmConnectionStates[helm.key] ??
@@ -7888,32 +4378,6 @@ function dedupeHelmCards<T extends { key: string; isCurrent: boolean }>(
   return result;
 }
 
-function groupPromptEnhancerModels(
-  models: PromptEnhancerModelOption[],
-  filter: string,
-) {
-  const needle = filter.trim().toLowerCase();
-  const groups = new Map<string, PromptEnhancerModelOption[]>();
-  for (const model of models) {
-    if (
-      needle &&
-      !model.id.toLowerCase().includes(needle) &&
-      !model.ownedBy.toLowerCase().includes(needle)
-    ) {
-      continue;
-    }
-    const owner = model.ownedBy || "default";
-    groups.set(owner, [...(groups.get(owner) ?? []), model]);
-  }
-  return [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([owner, ownerModels]) => ({
-      owner,
-      models: ownerModels.sort((left, right) =>
-        left.id.localeCompare(right.id),
-      ),
-    }));
-}
 
 function formatSessionTime(value: string) {
   const parsed = Date.parse(value);
