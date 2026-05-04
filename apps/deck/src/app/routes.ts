@@ -1,4 +1,4 @@
-import type { DeckLanguage } from "./preferences";
+import type { DeckLanguage } from "../features/preferences/preferences-storage";
 
 export type AppView = "overview" | "sessions" | "agents" | "settings";
 
@@ -23,3 +23,15 @@ export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
     settings: "设置",
   },
 };
+
+
+export function resolveViewFromPath(pathname: string): AppView {
+  const normalized = pathname.replace(/\/+$/g, "") || "/";
+  if (normalized === "/sessions") {
+    return "sessions";
+  }
+  const matched = (Object.entries(VIEW_PATHS) as Array<[AppView, string]>).find(
+    ([, path]) => path === normalized,
+  );
+  return matched?.[0] ?? "overview";
+}

@@ -285,6 +285,10 @@ export function mergeToolCallHistory(current: AgentToolCall[], incoming: AgentTo
     }
 
     const existing = merged[index];
+    if (!existing) {
+      merged.push(next);
+      continue;
+    }
     merged[index] = {
       ...existing,
       ...next,

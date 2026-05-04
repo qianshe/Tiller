@@ -9,7 +9,11 @@
     "types": [
       "vite/client",
       "node"
-    ]
+    ],
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": [
     "src",
