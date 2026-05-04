@@ -5,7 +5,7 @@ import {
   readMissionPanelPages,
   reorderMissionPanelPage,
   writeMissionPanelPages,
-} from "./mission-panel-pages.js";
+} from "./panel-pages.js";
 
 class MemoryStorage {
   private values = new Map<string, string>();
