@@ -1,4 +1,4 @@
-import type { DaemonProfile } from "../../../app/daemon-profiles";
+import type { DaemonProfile } from "../../../features/helm-connection/daemon-profiles";
 
 type DeleteHelmConfigDialogProps = {
   profile: DaemonProfile;

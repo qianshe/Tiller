@@ -48,12 +48,12 @@ import {
   formatPairingState,
   readDaemonProfiles,
   type DaemonProfile,
-} from "./daemon-profiles";
+} from "../features/helm-connection/daemon-profiles";
 import {
   useHelmConnectionState,
   type ConnectionState,
   type HelmInventoryBucket,
-} from "./use-helm-connection-state";
+} from "../features/helm-connection/use-helm-connection-state";
 import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
@@ -95,7 +95,7 @@ import {
 import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
-} from "../connection/reconnect-policy";
+} from "../features/helm-connection/reconnect-policy";
 import {
   enhancePromptWithLlm,
   listPromptEnhancerModels,
@@ -148,17 +148,17 @@ import {
   DAEMON_PORT_KEY,
   normalizeEmbeddedHelmSummaries,
   resolveDefaultHelmEndpoint,
-} from "./helm-endpoint";
+} from "../features/helm-connection/helm-endpoint";
 import {
   connectHelmSocket as connectHelmSocketImpl,
   connectToDaemon as connectToDaemonImpl,
   type ConnectToDaemonOptions,
-} from "./helm-sockets";
+} from "../features/helm-connection/sockets";
 import {
   dispatchWithTrace,
   nextRequestId,
   requestInitialSync as requestInitialSyncImpl,
-} from "./request-dispatch";
+} from "../features/helm-connection/request-dispatch";
 import {
   createSession as createSessionImpl,
   requestSessionResumeStart as requestSessionResumeStartImpl,

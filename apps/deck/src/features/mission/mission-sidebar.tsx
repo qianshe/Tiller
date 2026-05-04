@@ -16,7 +16,7 @@ import type {
 import {
   daemonProfileKey,
   formatConnectionStatus,
-} from "../../app/daemon-profiles";
+} from "../helm-connection/daemon-profiles";
 import { resolveSessionProjectId } from "../../state/sessions";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
