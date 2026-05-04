@@ -46,12 +46,6 @@ export function useHelmConnectionState({
   const [connection, setConnection] = useState<ConnectionState>(
     fixtureConnected ? "connected" : "disconnected",
   );
-  const [helmConnectionStates, setHelmConnectionStates] = useState<
-    Record<string, ConnectionState>
-  >({});
-  const [helmInventories, setHelmInventories] = useState<
-    Record<string, HelmInventoryBucket>
-  >({});
   const [pairingState, setPairingState] = useState<PairingState>(
     fixtureConnected ? "paired" : "idle",
   );
@@ -72,10 +66,6 @@ export function useHelmConnectionState({
     manualDisconnectRef,
     connection,
     setConnection,
-    helmConnectionStates,
-    setHelmConnectionStates,
-    helmInventories,
-    setHelmInventories,
     pairingState,
     setPairingState,
     pairingCodeInput,

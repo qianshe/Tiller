@@ -523,10 +523,6 @@ export function App() {
     manualDisconnectRef,
     connection,
     setConnection,
-    helmConnectionStates,
-    setHelmConnectionStates,
-    helmInventories,
-    setHelmInventories,
     pairingState,
     setPairingState,
     pairingCodeInput,
@@ -545,9 +541,16 @@ export function App() {
     defaultHelmEndpoint,
     fixtureConnected: Boolean(missionVisualFixture),
   });
-  const [helms, setHelms] = useState<HelmSummary[]>(
-    missionVisualFixture?.helms ?? [],
+  const storedHelms = useDeckStore((state) => state.helms);
+  const helms = missionVisualFixture?.helms ?? storedHelms;
+  const setHelms = useDeckStore((state) => state.setHelms);
+  const helmConnectionStates = useDeckStore(
+    (state) => state.helmConnectionStates,
   );
+  const helmInventories = useDeckStore((state) => state.helmInventories);
+  const applyHelmInventory = useDeckStore((state) => state.applyHelmInventory);
+  const setHelmConnection = useDeckStore((state) => state.setHelmConnection);
+  const removeHelm = useDeckStore((state) => state.removeHelm);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>(
     missionVisualFixture?.workspaces ?? [],
   );
@@ -1928,29 +1931,14 @@ export function App() {
   }
 
   function setHelmConnectionState(helmKey: string, state: ConnectionState) {
-    setHelmConnectionStates((current) => ({ ...current, [helmKey]: state }));
+    setHelmConnection(helmKey, state);
   }
 
   function updateHelmInventory(
     helmKey: string,
     patch: Partial<HelmInventoryBucket>,
   ) {
-    const emptyBucket: HelmInventoryBucket = {
-      projects: [],
-      workspaces: [],
-      agents: [],
-      sessions: [],
-      statuses: {},
-      trustedDevices: [],
-    };
-    setHelmInventories((current) => ({
-      ...current,
-      [helmKey]: {
-        ...emptyBucket,
-        ...(current[helmKey] ?? {}),
-        ...patch,
-      },
-    }));
+    applyHelmInventory(helmKey, patch);
   }
 
   function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
@@ -2348,15 +2336,7 @@ export function App() {
 
     helmSocketRefs.current.get(profileKey)?.close();
     helmSocketRefs.current.delete(profileKey);
-    setHelmConnectionState(profileKey, "disconnected");
-    setHelmInventories((current) => {
-      const { [profileKey]: _removed, ...rest } = current;
-      return rest;
-    });
-    setHelmConnectionStates((current) => {
-      const { [profileKey]: _removed, ...rest } = current;
-      return rest;
-    });
+    removeHelm(profileKey);
 
     if (currentHelmKey === profileKey) {
       manualDisconnectRef.current = profileKey;
