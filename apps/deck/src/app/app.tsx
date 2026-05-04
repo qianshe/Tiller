@@ -72,7 +72,7 @@ import {
   handleDeviceServerEvent,
   handleInventoryServerEvent,
   handleSessionServerEvent,
-} from "./server-events/index";
+} from "../features/server-events/index";
 import { AgentsPage } from "../pages/agents/AgentsPage";
 import { NAV_LABELS, VIEW_PATHS, type AppView } from "./routes";
 import { TopNav } from "../components/layout/TopNav";
