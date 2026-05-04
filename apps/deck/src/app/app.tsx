@@ -570,39 +570,43 @@ export function App() {
   const storedStatuses = useDeckStore((state) => state.statuses);
   const statuses = missionVisualFixture?.statuses ?? storedStatuses;
   const setStatuses = useDeckStore((state) => state.setStatuses);
-  const [messages, setMessages] = useState<Record<string, AgentMessage[]>>(
-    missionVisualFixture?.messages ?? {},
-  );
+  const storedMessages = useDeckStore((state) => state.messages);
+  const messages = missionVisualFixture?.messages ?? storedMessages;
+  const setMessages = useDeckStore((state) => state.setMessages);
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [sessionOpenScrollTick, setSessionOpenScrollTick] = useState(0);
-  const [messageHistoryState, setMessageHistoryState] = useState<
-    Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>
-  >({});
-  const [permissionRequests, setPermissionRequests] = useState<
-    Record<string, PermissionRequest | null>
-  >({});
-  const [outputs, setOutputs] = useState<Record<string, CommandChunk[]>>(
-    missionVisualFixture?.outputs ?? {},
+  const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
+  const setMessageHistoryState = useDeckStore(
+    (state) => state.setMessageHistoryState,
   );
-  const [toolCalls, setToolCalls] = useState<Record<string, AgentToolCall[]>>(
-    missionVisualFixture?.toolCalls ?? {},
+  const permissionRequests = useDeckStore((state) => state.permissionRequests);
+  const setPermissionRequests = useDeckStore(
+    (state) => state.setPermissionRequests,
   );
+  const storedOutputs = useDeckStore((state) => state.outputs);
+  const outputs = missionVisualFixture?.outputs ?? storedOutputs;
+  const setOutputs = useDeckStore((state) => state.setOutputs);
+  const storedToolCalls = useDeckStore((state) => state.toolCalls);
+  const toolCalls = missionVisualFixture?.toolCalls ?? storedToolCalls;
+  const setToolCalls = useDeckStore((state) => state.setToolCalls);
   const toolCallsRef = useRef<Record<string, AgentToolCall[]>>(
     missionVisualFixture?.toolCalls ?? {},
   );
-  const [activityHistoryState, setActivityHistoryState] = useState<
-    Record<string, { nextCursor?: string; hasMore: boolean; loading: boolean }>
-  >({});
-  const [activityVisibleCounts, setActivityVisibleCounts] = useState<
-    Record<string, number>
-  >({});
+  const activityHistoryState = useDeckStore((state) => state.activityHistoryState);
+  const setActivityHistoryState = useDeckStore(
+    (state) => state.setActivityHistoryState,
+  );
+  const activityVisibleCounts = useDeckStore((state) => state.activityVisibleCounts);
+  const setActivityVisibleCounts = useDeckStore(
+    (state) => state.setActivityVisibleCounts,
+  );
   const sessionTitles = useDeckStore((state) => state.sessionTitles);
   const setSessionTitles = useDeckStore((state) => state.setSessionTitles);
-  const [diffs, setDiffs] = useState<Record<string, FileDiffSummary[]>>(
-    missionVisualFixture?.diffs ?? {},
-  );
+  const storedDiffs = useDeckStore((state) => state.diffs);
+  const diffs = missionVisualFixture?.diffs ?? storedDiffs;
+  const setDiffs = useDeckStore((state) => state.setDiffs);
   const sessionConfigOptions = useDeckStore(
     (state) => state.sessionConfigOptions,
   );
