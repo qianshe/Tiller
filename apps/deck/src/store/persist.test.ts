@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readDeckSnapshot, writeDeckSnapshot } from "./snapshot-cache.js";
+import { readDeckSnapshot, writeDeckSnapshot } from "./persist.js";
 
 function createMemoryStorage() {
   const data = new Map<string, string>();

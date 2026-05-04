@@ -103,7 +103,7 @@ import {
   type PromptEnhancerModelOption,
   type PromptEnhancerPreferences,
 } from "../features/prompt-enhancer/enhancer";
-import { readDeckSnapshot, writeDeckSnapshot } from "../state/snapshot-cache";
+import { readDeckSnapshot, writeDeckSnapshot } from "../store/persist";
 import {
   createSessionStatusMap,
   resolveDraftSelectionId,
