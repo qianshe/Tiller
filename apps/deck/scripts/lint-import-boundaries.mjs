@@ -7,12 +7,12 @@ const srcRoot = join(root, "src");
 const allowedStoreFeatureImports = new Set([
   normalize("features/auth/beacon-cache"),
   normalize("features/helm-connection/daemon-profiles"),
-  normalize("features/preferences/preferences-storage"),
+  normalize("features/preferences/storage"),
 ]);
 const allowedBoundaryImports = new Set([
-  `${normalize("features/overview/ui/overview-page.tsx")} -> ${normalize("app/routes")}`,
+  `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routes")}`,
   `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routes")}`,
-  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/preferences-storage")}`,
+  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/storage")}`,
 ]);
 
 function walk(dir) {

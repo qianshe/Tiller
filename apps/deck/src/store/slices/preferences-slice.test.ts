@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createStore } from "zustand/vanilla";
 import type { DaemonProfile } from "../../features/helm-connection/daemon-profiles";
-import { DEFAULT_DECK_PREFERENCES } from "../../features/preferences/preferences-storage";
+import { DEFAULT_DECK_PREFERENCES } from "../../features/preferences/storage";
 import {
   createPreferencesSlice,
   type PreferencesSlice,

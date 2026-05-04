@@ -9,7 +9,7 @@ import {
   DEFAULT_DECK_PREFERENCES,
   readDeckPreferences,
   type DeckPreferences,
-} from "../../features/preferences/preferences-storage";
+} from "../../features/preferences/storage";
 
 export type PreferencesSlice = {
   preferences: DeckPreferences;

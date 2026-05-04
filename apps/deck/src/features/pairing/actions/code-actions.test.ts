@@ -7,7 +7,7 @@ import {
   pastePairingDigits,
   sendPairingRequest,
   updatePairingDigit,
-} from "./pairing-actions.js";
+} from "./code-actions.js";
 
 function inputRef() {
   return {

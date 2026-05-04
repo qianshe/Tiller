@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE as ENGINE_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE } from "../prompt-enhancer/enhancer.js";
-import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, DECK_PREFERENCES_STORAGE_KEY, readDeckPreferences } from "./preferences-storage.js";
+import { DEFAULT_DECK_PREFERENCES, DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, DECK_PREFERENCES_STORAGE_KEY, readDeckPreferences } from "./storage.js";
 
 function withStoredPreferences(raw: string, callback: () => void) {
   const previousWindow = (globalThis as { window?: unknown }).window;
