@@ -1,7 +1,7 @@
-import { applyAgentMessageToSummary } from "./sessions/summary-updates";
+import { applyAgentMessageToSummary } from "../sessions/summary-updates";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage } from "@tiller/shared";
-import type { HelmHandlerContext } from "./handlers/context";
+import type { HelmHandlerContext } from "../handlers/context";
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);

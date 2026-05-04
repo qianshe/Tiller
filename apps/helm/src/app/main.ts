@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { tillerCliHelp, resolveTillerCliAction } from "./cli";
+import { tillerCliHelp, resolveTillerCliAction } from "../cli";
 
 const action = resolveTillerCliAction();
 
@@ -10,5 +10,5 @@ if (action.kind === "help") {
   console.error(tillerCliHelp());
   process.exitCode = 1;
 } else {
-  await import("./server");
+  await import("../server");
 }

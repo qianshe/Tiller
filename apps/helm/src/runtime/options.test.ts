@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveTillerRuntimeOptions } from "./runtime-options.js";
+import { resolveTillerRuntimeOptions } from "./options.js";
 
 test("resolveTillerRuntimeOptions defaults to LAN host and default port", () => {
   const options = resolveTillerRuntimeOptions({ argv: [], env: {}, config: {} });

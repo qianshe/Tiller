@@ -6,7 +6,9 @@
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(py --version)",
-      "Bash(where python *)"
+      "Bash(where python *)",
+      "Bash(pnpm --filter @tiller/helm exec prettier --write src/handlers/context.ts)",
+      "Bash(git mv *)"
     ],
     "defaultMode": "bypassPermissions"
   }

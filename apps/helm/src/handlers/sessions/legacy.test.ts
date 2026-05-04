@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
-import { cleanupActiveRuntime, resolveProjectSessionWorkspace } from "./sessions";
+import { cleanupActiveRuntime, resolveProjectSessionWorkspace } from "./legacy";
 
 test("cleanupActiveRuntime prefers ACP session/delete over close", async () => {
   const calls: string[] = [];

@@ -46,14 +46,14 @@ import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions
 import { alignSessionProjectBinding } from "./sessions/project-binding";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "./sessions/git-diff";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
-import { handleConfigMessage } from "./handlers/config";
+import { handleConfigMessage } from "./handlers/config/legacy";
 import { handleDeviceMessage } from "./handlers/devices";
-import { handleSessionMessage } from "./handlers/sessions";
+import { handleSessionMessage } from "./handlers/sessions/legacy";
 import type { HelmHandlerContext } from "./handlers/context";
-import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime-events";
-import { assertHelmPortAvailable, resolveLanAddresses } from "./port-availability";
-import { resolveTillerRuntimeOptions } from "./runtime-options";
-import { loadStaticAsset, resolveDeckStaticDir } from "./static-assets";
+import { handleRuntimeEvent as dispatchRuntimeEvent } from "./runtime/events";
+import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
+import { resolveTillerRuntimeOptions } from "./runtime/options";
+import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();

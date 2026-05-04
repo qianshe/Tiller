@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node scripts/build-package.mjs",
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
-    "dev": "pnpm run clean-port && tsx watch src/index.ts",
+    "dev": "pnpm run clean-port && tsx watch src/app/main.ts",
     "pack:npm": "pnpm run build && npm pack ./dist-package",
     "publish:npm": "pnpm run build && npm publish ./dist-package --access public",
     "test": "tsx --test src/**/*.test.ts scripts/**/*.test.mjs",

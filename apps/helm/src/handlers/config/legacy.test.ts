@@ -10,7 +10,7 @@ import {
   resolveProjectFileRoot,
   resolveProjectWorkspaceId,
   shouldPersistProjectGitInfo,
-} from "./config.js";
+} from "./legacy.js";
 
 test("resolveProjectWorkspaceId prefers current Git branch over project-scoped fallback", () => {
   assert.equal(resolveProjectWorkspaceId({ id: "project-1" }, "main"), "main");

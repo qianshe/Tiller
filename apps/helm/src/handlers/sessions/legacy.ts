@@ -1,13 +1,13 @@
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
-import { resolveSessionCleanupOutcome } from "../sessions/cleanup";
-import { isProjectRootBranchWorkspace } from "../sessions/project-binding";
-import { applyUserPromptToSummary } from "../sessions/summary-updates";
+import { resolveSessionCleanupOutcome } from "../../sessions/cleanup";
+import { isProjectRootBranchWorkspace } from "../../sessions/project-binding";
+import { applyUserPromptToSummary } from "../../sessions/summary-updates";
 import {
   compareTimestampIdPosition,
   decodeCursor,
   encodeCursor,
   normalizePageLimit,
-} from "../sessions/pagination";
+} from "../../sessions/pagination";
 import type { ProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
@@ -16,7 +16,7 @@ import {
   type SessionSummary,
   type WorkspaceSummary,
 } from "@tiller/shared";
-import type { HelmMessageHandler } from "./context";
+import type { HelmMessageHandler } from "../context";
 
 type SessionSummaryPageOptions = {
   limit?: number;

@@ -14,8 +14,8 @@ import {
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type { ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
 import type { ClientToHelm } from "@tiller/sync-protocol";
-import { isProjectRootBranchWorkspace } from "../sessions/project-binding";
-import type { HelmMessageHandler } from "./context";
+import { isProjectRootBranchWorkspace } from "../../sessions/project-binding";
+import type { HelmMessageHandler } from "../context";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;

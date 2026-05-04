@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, AgentToolCall, CommandChunk, SessionSummary } from "@tiller/shared";
-import type { HelmHandlerContext } from "./handlers/context";
-import { handleRuntimeEvent } from "./runtime-events.js";
+import type { HelmHandlerContext } from "../handlers/context";
+import { handleRuntimeEvent } from "./events.js";
 
 type TestContextCapture = {
   broadcasts: unknown[];

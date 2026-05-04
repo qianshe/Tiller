@@ -86,9 +86,7 @@ export type HelmHandlerContext = {
     agent: AcpAgentProvider,
     workspace: WorkspaceSummary,
   ) => Promise<ModelOptionsProbeResult>;
-  startSessionResume: (
-    sessionId: string,
-  ) => Promise<{
+  startSessionResume: (sessionId: string) => Promise<{
     ok: boolean;
     resume: SessionSummary["resume"] extends infer R ? NonNullable<R> : never;
     message: string;
