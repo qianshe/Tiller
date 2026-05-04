@@ -1,9 +1,18 @@
+import type { MutableRefObject } from "react";
+import type { HelmToClient } from "@tiller/sync-protocol";
+import type { AgentToolCall } from "@tiller/shared";
 import { commandChunkToToolCall, mergeAgentMessages } from "../../features/logbook/timeline";
 import { useDeckStore } from "../../store";
 
+type ActivityServerEventContext = {
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
+  mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
+  appendSystemMessage: (sessionId: string, text: string) => void;
+};
+
 export function handleActivityServerEvent(
-  payload: { type: string; [key: string]: any },
-  context: any,
+  payload: HelmToClient,
+  context: ActivityServerEventContext,
 ) {
   const {
     toolCallsRef,
@@ -15,9 +24,9 @@ export function handleActivityServerEvent(
   switch (payload.type) {
     case "agent.message": {
       const toolBoundaryTimes = (toolCallsRef.current[payload.sessionId] ?? [])
-        .map((call: any) => Date.parse(call.timestamp))
+        .map((call) => Date.parse(call.timestamp))
         .filter(Number.isFinite);
-      store.setMessages((current: any) => ({
+      store.setMessages((current) => ({
         ...current,
         [payload.sessionId]: mergeAgentMessages(
           current[payload.sessionId] ?? [],
@@ -25,7 +34,7 @@ export function handleActivityServerEvent(
           toolBoundaryTimes,
         ),
       }));
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -40,19 +49,19 @@ export function handleActivityServerEvent(
       return true;
     }
     case "permission.request":
-      store.setPermissionRequests((current: any) => ({
+      store.setPermissionRequests((current) => ({
         ...current,
         [payload.sessionId]: payload.permissionRequest,
       }));
       return true;
     case "permission.resolved":
-      store.setPermissionRequests((current: any) => ({
+      store.setPermissionRequests((current) => ({
         ...current,
         [payload.sessionId]: null,
       }));
       return true;
     case "command.output":
-      store.setOutputs((current: any) => ({
+      store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: [
           ...(current[payload.sessionId] ?? []),
@@ -67,7 +76,7 @@ export function handleActivityServerEvent(
       mergeSessionToolCalls(payload.sessionId, [payload.toolCall]);
       return true;
     case "diff.update":
-      store.setDiffs((current: any) => ({
+      store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.files,
       }));
@@ -79,7 +88,7 @@ export function handleActivityServerEvent(
       }
       if (payload.sessionId) {
         appendSystemMessage(payload.sessionId, payload.message);
-        store.setSessions((current: any[]) =>
+        store.setSessions((current) =>
           current.map((session) =>
             session.id === payload.sessionId
               ? {

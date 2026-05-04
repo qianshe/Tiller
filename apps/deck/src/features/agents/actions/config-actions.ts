@@ -1,7 +1,52 @@
-import type { FormEvent } from "react";
+import type { FormEvent, MutableRefObject } from "react";
+import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { AcpAgentProvider } from "@tiller/shared";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
 
-export function testAgent(context: any) {
+type AgentActionCopy = {
+  testRunningPrefix: string;
+  savedDraft: string;
+  writingConfig: string;
+};
+
+type AgentDraft = {
+  name: string;
+  command: string;
+  args: string;
+};
+
+type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
+
+type TestAgentContext = {
+  selectedAgentId?: string | null;
+  filteredAgents: AcpAgentProvider[];
+  agents: AcpAgentProvider[];
+  socketRef: MutableRefObject<WebSocket | null>;
+  setAgentTestResult: (value: string) => void;
+  copy: Pick<AgentActionCopy, "testRunningPrefix">;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+};
+
+type SaveDraftContext = {
+  storageKey: string;
+  agentDraft: AgentDraft;
+  setDraftSaveMessage: (value: string) => void;
+  copy: Pick<AgentActionCopy, "savedDraft">;
+};
+
+type WriteDraftContext = {
+  socketRef: MutableRefObject<WebSocket | null>;
+  slugify: (value: string) => string;
+  agentDraft: AgentDraft;
+  setConfigSaveMessage: (value: string) => void;
+  copy: Pick<AgentActionCopy, "writingConfig">;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+  splitArgs: (value: string) => string[];
+};
+
+export function testAgent(context: TestAgentContext) {
   const {
     selectedAgentId,
     filteredAgents,
@@ -15,8 +60,8 @@ export function testAgent(context: any) {
 
   const agentId = selectedAgentId || filteredAgents[0]?.id;
   const agent =
-    filteredAgents.find((item: any) => item.id === agentId) ??
-    agents.find((item: any) => item.id === agentId);
+    filteredAgents.find((item) => item.id === agentId) ??
+    agents.find((item) => item.id === agentId);
   if (!agent || !socketRef.current) {
     return;
   }
@@ -29,7 +74,7 @@ export function testAgent(context: any) {
   });
 }
 
-export function saveDraft(event: FormEvent<HTMLFormElement>, context: any) {
+export function saveDraft(event: FormEvent<HTMLFormElement>, context: SaveDraftContext) {
   const { storageKey, agentDraft, setDraftSaveMessage, copy } = context;
 
   event.preventDefault();
@@ -39,7 +84,7 @@ export function saveDraft(event: FormEvent<HTMLFormElement>, context: any) {
   );
 }
 
-export function writeDraftToConfig(context: any) {
+export function writeDraftToConfig(context: WriteDraftContext) {
   const {
     socketRef,
     slugify,

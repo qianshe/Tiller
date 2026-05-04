@@ -12,7 +12,7 @@ test("message maps support value and updater forms", () => {
   const store = createTestStore();
   const message: AgentMessage = { id: "m1", role: "user", text: "hi", timestamp: "now" };
   store.getState().setMessages({ s1: [message] });
-  store.getState().setMessages((current) => ({ ...current, s1: [...current.s1, { ...message, id: "m2" }] }));
+  store.getState().setMessages((current) => ({ ...current, s1: [...(current.s1 ?? []), { ...message, id: "m2" }] }));
   assert.deepEqual(store.getState().messages.s1?.map((item) => item.id), ["m1", "m2"]);
 });
 

@@ -1,3 +1,11 @@
+import type { MutableRefObject } from "react";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import type {
+  AgentPromptContent,
+  AgentPromptImageContent,
+  AgentToolCall,
+  SessionSummary,
+} from "@tiller/shared";
 import { toast } from "../../features/toast/toast";
 import { useDeckStore } from "../../store";
 import { commandChunkToToolCall, mergeMessageHistory } from "../../features/logbook/timeline";
@@ -14,11 +22,37 @@ import {
   upsertSessionSummary,
 } from "./helpers";
 
+type SessionServerEventContext = {
+  setSelectedProjectId: (projectId: string | null) => void;
+  pendingPromptRef: MutableRefObject<string | null>;
+  pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
+  socketRef: MutableRefObject<WebSocket | null>;
+  assignSessionTitleFromPrompt: (sessionId: string, prompt: string) => void;
+  createClientUserMessageId: (sessionId: string) => string;
+  appendUserMessage: (
+    sessionId: string,
+    text: string,
+    id: string,
+    attachments: AgentPromptImageContent[],
+  ) => void;
+  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
+  nextRequestId: (counter: MutableRefObject<number>) => string;
+  requestCounter: MutableRefObject<number>;
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
+  mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
+  shouldAutoStartSessionResume: (
+    session: Pick<SessionSummary, "resume"> | undefined,
+  ) => boolean;
+  requestSessionResumeStart: (sessionId: string, reason: string) => void;
+  setResumeFeedback: (value: string) => void;
+  resumeStartRequestsRef: MutableRefObject<Set<string>>;
+};
+
 export function handleSessionServerEvent(
-  payload: { type: string; [key: string]: any },
+  payload: HelmToClient,
   sourceHelmKey: string,
   sourceIsCurrentHelm: boolean,
-  context: any,
+  context: SessionServerEventContext,
 ) {
   const {
     setSelectedProjectId,
@@ -43,10 +77,10 @@ export function handleSessionServerEvent(
 
   switch (payload.type) {
     case "session.created":
-      store.setSessions((current: any) =>
+      store.setSessions((current) =>
         upsertSessionSummary(current, payload.session),
       );
-      store.setStatuses((current: any) => ({
+      store.setStatuses((current) => ({
         ...current,
         [payload.session.id]: payload.session.status,
       }));
@@ -57,7 +91,9 @@ export function handleSessionServerEvent(
           const pendingPrompt = pendingPromptRef.current;
           const pendingContent = pendingPromptContentRef.current;
           const pendingImages =
-            pendingContent?.filter((item: any) => item.type === "image") ?? [];
+            pendingContent?.filter(
+              (item): item is AgentPromptImageContent => item.type === "image",
+            ) ?? [];
           pendingPromptRef.current = null;
           pendingPromptContentRef.current = undefined;
           assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
@@ -80,16 +116,16 @@ export function handleSessionServerEvent(
       }
       return true;
     case "session.updated":
-      store.setSessions((current: any) =>
+      store.setSessions((current) =>
         upsertSessionSummary(current, payload.session),
       );
       return true;
     case "session.config.options":
-      store.setSessionConfigOptions((current: any) => ({
+      store.setSessionConfigOptions((current) => ({
         ...current,
         [payload.sessionId]: payload.options,
       }));
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -105,7 +141,7 @@ export function handleSessionServerEvent(
       );
       return true;
     case "session.commands":
-      store.setSessionAvailableCommands((current: any) => {
+      store.setSessionAvailableCommands((current) => {
         if (
           availableCommandListsEqual(current[payload.sessionId], payload.commands)
         ) {
@@ -115,7 +151,7 @@ export function handleSessionServerEvent(
       });
       return true;
     case "session.model.options":
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -145,24 +181,24 @@ export function handleSessionServerEvent(
           loading: false,
         });
         store.setStatuses(nextStatuses);
-        store.setMessages((current: any) => pruneSessionScopedMap(current, nextSessions));
-        store.setMessageHistoryState((current: any) =>
+        store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setPermissionRequests((current: any) =>
+        store.setPermissionRequests((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setOutputs((current: any) => pruneSessionScopedMap(current, nextSessions));
+        store.setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
         store.setToolCalls((current) => {
           const next = pruneSessionScopedMap(current, nextSessions);
           toolCallsRef.current = next;
           return next;
         });
-        store.setActivityHistoryState((current: any) =>
+        store.setActivityHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setDiffs((current: any) => pruneSessionScopedMap(current, nextSessions));
-        store.setSessionConfigOptions((current: any) =>
+        store.setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setSessionConfigOptions((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
         store.setActiveSessionId((current: string | null) =>
@@ -172,7 +208,7 @@ export function handleSessionServerEvent(
       return true;
     }
     case "session.messages.list.result":
-      store.setMessages((current: any) => ({
+      store.setMessages((current) => ({
         ...current,
         [payload.sessionId]: mergeMessageHistory(
           current[payload.sessionId] ?? [],
@@ -180,7 +216,7 @@ export function handleSessionServerEvent(
           { mode: payload.before ? "prepend" : "append" },
         ),
       }));
-      store.setMessageHistoryState((current: any) => ({
+      store.setMessageHistoryState((current) => ({
         ...current,
         [payload.sessionId]: {
           nextCursor: payload.nextCursor,
@@ -190,7 +226,7 @@ export function handleSessionServerEvent(
       }));
       return true;
     case "session.artifacts.result":
-      store.setOutputs((current: any) => ({
+      store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
           current[payload.sessionId] ?? [],
@@ -201,11 +237,11 @@ export function handleSessionServerEvent(
         ...payload.outputs.map(commandChunkToToolCall),
         ...(payload.toolCalls ?? []),
       ]);
-      store.setDiffs((current: any) => ({
+      store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.diffs,
       }));
-      store.setActivityHistoryState((current: any) => ({
+      store.setActivityHistoryState((current) => ({
         ...current,
         [payload.sessionId]: {
           nextCursor: payload.nextCursor,
@@ -215,7 +251,7 @@ export function handleSessionServerEvent(
       }));
       return true;
     case "session.resume.result":
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -239,7 +275,7 @@ export function handleSessionServerEvent(
       if (!payload.ok) {
         resumeStartRequestsRef.current.delete(payload.sessionId);
       }
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
@@ -261,19 +297,19 @@ export function handleSessionServerEvent(
         toast.info(payload.result.message);
       }
       setResumeFeedback("");
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.filter((session) => session.id !== payload.result.sessionId),
       );
-      store.setStatuses((current: any) =>
+      store.setStatuses((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setMessages((current: any) =>
+      store.setMessages((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setPermissionRequests((current: any) =>
+      store.setPermissionRequests((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setOutputs((current: any) =>
+      store.setOutputs((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
       store.setToolCalls((current) => {
@@ -281,10 +317,10 @@ export function handleSessionServerEvent(
         toolCallsRef.current = next;
         return next;
       });
-      store.setDiffs((current: any) =>
+      store.setDiffs((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setSessionConfigOptions((current: any) =>
+      store.setSessionConfigOptions((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
       store.setActiveSessionId((current: string | null) =>
@@ -292,11 +328,11 @@ export function handleSessionServerEvent(
       );
       return true;
     case "session.status":
-      store.setStatuses((current: any) => ({
+      store.setStatuses((current) => ({
         ...current,
         [payload.sessionId]: payload.status,
       }));
-      store.setSessions((current: any[]) =>
+      store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {

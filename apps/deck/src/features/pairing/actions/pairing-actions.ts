@@ -1,10 +1,36 @@
-import type { FormEvent } from "react";
+import type { FormEvent, MutableRefObject } from "react";
+import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { DebugTrace } from "../../../store/slices/connection-slice";
+import type { PairingState } from "../../../store/slices/pairing-slice";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
+
+type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
+type PairInputRefs = MutableRefObject<Array<HTMLInputElement | null>>;
+
+type PairingInputContext = {
+  pairingCodeInput: string;
+  setPairingCodeInput: (value: string) => void;
+  pairInputRefs: PairInputRefs;
+  pairingState: PairingState;
+  setPairingState: (state: PairingState) => void;
+};
+
+type PairingRequestContext = {
+  socketRef: MutableRefObject<WebSocket | null>;
+  pairingCodeInput: string;
+  setPairingFeedback: (value: string) => void;
+  setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+  deckDeviceId: string;
+  deckDeviceName: string;
+  setPairingState: (state: PairingState) => void;
+};
 
 export function updatePairingDigit(
   index: number,
   rawValue: string,
-  context: any,
+  context: PairingInputContext,
 ) {
   const { pairingCodeInput, setPairingCodeInput, pairInputRefs, pairingState, setPairingState } =
     context;
@@ -27,7 +53,7 @@ export function updatePairingDigit(
 export function pastePairingDigits(
   startIndex: number,
   rawValue: string,
-  context: any,
+  context: PairingInputContext,
 ) {
   const { pairingCodeInput, setPairingCodeInput, pairInputRefs, pairingState, setPairingState } =
     context;
@@ -54,7 +80,7 @@ export function pastePairingDigits(
 export function handlePairingKeyDown(
   index: number,
   key: string,
-  context: any,
+  context: Pick<PairingInputContext, "pairingCodeInput" | "pairInputRefs">,
 ) {
   const { pairingCodeInput, pairInputRefs } = context;
   if (key === "Backspace" && !pairingCodeInput[index] && index > 0) {
@@ -62,7 +88,7 @@ export function handlePairingKeyDown(
   }
 }
 
-export function sendPairingRequest(context: any) {
+export function sendPairingRequest(context: PairingRequestContext) {
   const {
     socketRef,
     pairingCodeInput,
@@ -88,7 +114,7 @@ export function sendPairingRequest(context: any) {
     return;
   }
 
-  setDebugTrace((current: any) => ({
+  setDebugTrace((current) => ({
     ...current,
     pairClicks: current.pairClicks + 1,
   }));

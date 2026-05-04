@@ -42,7 +42,7 @@ Use sections only when they make the prompt clearer:
 # Verification
 # Questions
 
-Omit any section that adds no execution value.`;
+Omit sections that add no execution value.`;
 
 export type PromptEnhancerLlmConfig = {
   enabled: boolean;

@@ -41,6 +41,7 @@ export function moveMissionPanelPageInList(
   if (index < 0 || nextIndex < 0 || nextIndex >= pages.length) return pages;
   const next = [...pages];
   const [page] = next.splice(index, 1);
+  if (!page) return pages;
   next.splice(nextIndex, 0, page);
   return next;
 }
@@ -55,6 +56,7 @@ export function reorderMissionPanelPage(
   if (sourceIndex < 0 || targetIndex < 0) return pages;
   const next = [...pages];
   const [page] = next.splice(sourceIndex, 1);
+  if (!page) return pages;
   next.splice(targetIndex, 0, page);
   return next;
 }

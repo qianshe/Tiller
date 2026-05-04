@@ -1,10 +1,63 @@
+import type { MutableRefObject } from "react";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import type {
+  AcpModelOption,
+  ProjectFileSummary,
+  SessionConfigOption,
+  SessionReasoningEffort,
+  WorkspaceSummary,
+} from "@tiller/shared";
+import type { AgentModelOptionsEntry } from "../agents/utils/agent-model-options-cache";
 import { useDeckStore } from "../../store";
 
+type StoreUpdater<T> = T | ((current: T) => T);
+type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
+type ProjectFilesEntry = {
+  loading?: boolean;
+  message?: string;
+  files: ProjectFileSummary[];
+};
+
+type InventoryServerEventContext = {
+  projectFilesKey: (projectId: string, workspaceId?: string) => string;
+  setProjectFilesByScope: StoreSetter<Record<string, ProjectFilesEntry>>;
+  setSelectedWorkspaceId: (workspaceId: string | null) => void;
+  setWorktreePickerOpen: (open: boolean) => void;
+  setAgentTestResult: (message: string) => void;
+  agentModelOptionsKey: (providerId: string, workspaceId: string) => string;
+  writeAgentModelOptionsCache: (
+    entries: Record<string, AgentModelOptionsEntry>,
+  ) => void;
+  selectedAgentId: string | null;
+  selectedWorkspaceId: string | null;
+  resolveModelOptions: (
+    currentModel?: string,
+    configOptions?: SessionConfigOption[],
+    nativeOptions?: AcpModelOption[],
+  ) => string[];
+  resolvePreferredModel: (
+    currentModel: string | undefined,
+    modelOptions: string[],
+  ) => string | undefined;
+  selectedModel: string;
+  setSelectedModel: (model: string) => void;
+  setSelectedAgentMode: (mode: string) => void;
+  setSelectedReasoningEffort: (effort: SessionReasoningEffort) => void;
+  setConfigSaveMessage: (message: string) => void;
+  setFleetProjectSaveMessage: (message: string) => void;
+  setSelectedProjectId: (projectId: string | null) => void;
+  socketRef: MutableRefObject<WebSocket | null>;
+  helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
+  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
+  nextRequestId: (counter: MutableRefObject<number>) => string;
+  requestCounter: MutableRefObject<number>;
+};
+
 export function handleInventoryServerEvent(
-  payload: { type: string; [key: string]: any },
+  payload: HelmToClient,
   sourceHelmKey: string,
   sourceIsCurrentHelm: boolean,
-  context: any,
+  context: InventoryServerEventContext,
 ) {
   const {
     projectFilesKey,
@@ -45,7 +98,7 @@ export function handleInventoryServerEvent(
       return true;
     case "project.files.result": {
       const key = projectFilesKey(payload.projectId, payload.workspaceId);
-      setProjectFilesByScope((current: any) => ({
+      setProjectFilesByScope((current) => ({
         ...current,
         [key]: {
           loading: false,
@@ -62,7 +115,7 @@ export function handleInventoryServerEvent(
       }
       return true;
     case "workspace.git.result":
-      store.setWorktreeGitByProject((current: any) => ({
+      store.setWorktreeGitByProject((current) => ({
         ...current,
         [payload.projectId]: {
           branches: payload.branches,
@@ -72,11 +125,11 @@ export function handleInventoryServerEvent(
         },
       }));
       if (sourceIsCurrentHelm && payload.workspaces.length) {
-        store.setWorkspaces((current: any[]) => {
+        store.setWorkspaces((current) => {
           const nextById = new Map(
             current.map((workspace) => [workspace.id, workspace]),
           );
-          payload.workspaces.forEach((workspace: any) =>
+          payload.workspaces.forEach((workspace) =>
             nextById.set(workspace.id, workspace),
           );
           return Array.from(nextById.values());
@@ -105,7 +158,7 @@ export function handleInventoryServerEvent(
         configOptions: payload.configOptions,
         state: payload.state,
       };
-      store.setAgentModelOptions((current: any) => {
+      store.setAgentModelOptions((current) => {
         const next = { ...current, [key]: nextEntry };
         writeAgentModelOptionsCache(next);
         return next;
@@ -123,7 +176,7 @@ export function handleInventoryServerEvent(
         const allOptions = Array.from(
           new Set([
             ...realOptions,
-            ...payload.modelOptions.map((option: any) => option.id),
+            ...payload.modelOptions.map((option) => option.id),
           ]),
         );
         const nextModel = resolvePreferredModel(

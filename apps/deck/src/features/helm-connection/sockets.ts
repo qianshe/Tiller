@@ -1,7 +1,91 @@
-import type { FormEvent } from "react";
-import type { HelmToClient } from "@tiller/sync-protocol";
+import type { FormEvent, MutableRefObject } from "react";
+import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  PermissionRequest,
+  SessionConfigOption,
+  SessionStatus,
+  SessionSummary,
+  TrustedDeviceSummary,
+} from "@tiller/shared";
+import type { TrustedDeviceCache } from "../auth/beacon-cache";
+import type { ConnectionState, DebugTrace } from "../../store/slices/connection-slice";
+import type { PairingState } from "../../store/slices/pairing-slice";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
+
+type StoreUpdater<T> = T | ((current: T) => T);
+type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
+type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
+type NextRequestId = (counter: MutableRefObject<number>) => string;
+type ReadTrustedDeviceCache = (
+  storage: Storage,
+  host: string,
+  port: string,
+) => TrustedDeviceCache | null;
+
+type ConnectHelmSocketContext = {
+  embedded: boolean;
+  location: Location;
+  helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
+  setHelmConnectionState: (helmKey: string, state: ConnectionState) => void;
+  setDaemonProfileMessage: (value: string) => void;
+  readTrustedDeviceCache: ReadTrustedDeviceCache;
+  requestInitialSync: (socket: WebSocket) => void;
+  dispatch: DispatchToHelm;
+  nextRequestId: NextRequestId;
+  requestCounter: MutableRefObject<number>;
+  handleServerEvent: (payload: HelmToClient, sourceHelmKey?: string) => void;
+};
+
+type ConnectToDaemonContext = {
+  embedded: boolean;
+  location: Location;
+  daemonHost: string;
+  daemonPort: string;
+  defaultDaemonHost: string;
+  defaultDaemonPort: string;
+  primaryHelmKeyRef: MutableRefObject<string | null>;
+  manualDisconnectRef: MutableRefObject<string | null>;
+  socketRef: MutableRefObject<WebSocket | null>;
+  setSessions: StoreSetter<SessionSummary[]>;
+  setStatuses: StoreSetter<Record<string, SessionStatus>>;
+  setMessages: StoreSetter<Record<string, AgentMessage[]>>;
+  setPermissionRequests: StoreSetter<Record<string, PermissionRequest | null>>;
+  setOutputs: StoreSetter<Record<string, CommandChunk[]>>;
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
+  setToolCalls: StoreSetter<Record<string, AgentToolCall[]>>;
+  setDiffs: StoreSetter<Record<string, FileDiffSummary[]>>;
+  setSessionConfigOptions: StoreSetter<Record<string, SessionConfigOption[]>>;
+  setTrustedDevices: StoreSetter<TrustedDeviceSummary[]>;
+  setActiveSessionId: StoreSetter<string | null>;
+  setSelectedProjectId: (projectId: string | null) => void;
+  setResumeFeedback: (value: string) => void;
+  setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void;
+  setHelmConnectionState: (helmKey: string, state: ConnectionState) => void;
+  setConnection: (state: ConnectionState) => void;
+  setConnectFeedback: (value: string) => void;
+  copy: {
+    connectFeedbackConnecting: string;
+    connectFeedbackIdle: string;
+    pairingFeedbackIdle: string;
+  };
+  setPairingState: (state: PairingState) => void;
+  setPairingCodeInput: (value: string) => void;
+  setPairingFeedback: (value: string) => void;
+  pairingState: PairingState;
+  setTrustedDevice: (cache: TrustedDeviceCache | null) => void;
+  readTrustedDeviceCache: ReadTrustedDeviceCache;
+  dispatch: DispatchToHelm;
+  nextRequestId: NextRequestId;
+  requestCounter: MutableRefObject<number>;
+  requestInitialSync: (socket: WebSocket) => void;
+  lastFilesScopeKeyRef: MutableRefObject<string | null>;
+  handleServerEvent: (payload: HelmToClient, sourceHelmKey?: string) => void;
+};
 
 export type ConnectToDaemonOptions = {
   preserveState?: boolean;
@@ -11,7 +95,7 @@ export type ConnectToDaemonOptions = {
   persistEndpoint?: boolean;
 };
 
-export function connectHelmSocket(profile: DaemonProfile, context: any) {
+export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSocketContext) {
   const {
     embedded,
     location,
@@ -90,7 +174,7 @@ export function connectHelmSocket(profile: DaemonProfile, context: any) {
 export function connectToDaemon(
   event: FormEvent<HTMLFormElement> | undefined,
   options: ConnectToDaemonOptions | undefined,
-  context: any,
+  context: ConnectToDaemonContext,
 ) {
   const {
     embedded,
@@ -170,7 +254,7 @@ export function connectToDaemon(
     setSelectedProjectId(null);
     setResumeFeedback("");
   }
-  setDebugTrace((current: any) => ({
+  setDebugTrace((current) => ({
     ...current,
     connectClicks: current.connectClicks + 1,
   }));

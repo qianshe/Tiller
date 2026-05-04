@@ -1,9 +1,48 @@
+import type { MutableRefObject } from "react";
+import type { HelmToClient } from "@tiller/sync-protocol";
+import type { TrustedDeviceSummary } from "@tiller/shared";
+import type { TrustedDeviceCache } from "../auth/beacon-cache";
+import type { DaemonProfile } from "../helm-connection/daemon-profiles";
 import { useDeckStore } from "../../store";
 
+type FleetAddHelmStage = "connect" | "connecting" | "pair";
+
+type DeviceServerEventContext = {
+  primaryHelmKeyRef: MutableRefObject<string | null>;
+  daemonProfileKey: (host: string, port: string) => string;
+  daemonHost: string;
+  daemonPort: string;
+  defaultDaemonHost: string;
+  defaultDaemonPort: string;
+  deckDeviceId: string;
+  pendingAddHelmProfileRef: MutableRefObject<DaemonProfile | null>;
+  writeTrustedDeviceCache: (
+    storage: Storage,
+    host: string,
+    port: string,
+    cache: TrustedDeviceCache,
+  ) => void;
+  persistDaemonProfile: (profile: DaemonProfile) => void;
+  daemonHostStorageKey: string;
+  daemonPortStorageKey: string;
+  setSelectedHelmKey: (key: string) => void;
+  setFleetAddHelmModalOpen: (open: boolean) => void;
+  setFleetAddHelmStage: (stage: FleetAddHelmStage) => void;
+  autoConnectAttemptRef: MutableRefObject<string | null>;
+  socketRef: MutableRefObject<WebSocket | null>;
+  requestInitialSync: (socket: WebSocket) => void;
+  readTrustedDeviceCache: (
+    storage: Storage,
+    host: string,
+    port: string,
+  ) => TrustedDeviceCache | null;
+  clearTrustedDeviceCache: (storage: Storage, host: string, port: string) => void;
+};
+
 export function handleDeviceServerEvent(
-  payload: { type: string; [key: string]: any },
+  payload: HelmToClient,
   sourceHelmKey: string,
-  context: any,
+  context: DeviceServerEventContext,
 ) {
   const {
     primaryHelmKeyRef,
@@ -120,10 +159,10 @@ export function handleDeviceServerEvent(
       store.applyHelmInventory(sourceHelmKey, {
         trustedDevices: (
           store.helmInventories[sourceHelmKey]?.trustedDevices ?? store.trustedDevices
-        ).filter((device: any) => device.deviceId !== payload.deviceId),
+        ).filter((device) => device.deviceId !== payload.deviceId),
       });
       if (sourceIsCurrentHelm) {
-        store.setTrustedDevices((current: any[]) =>
+        store.setTrustedDevices((current) =>
           current.filter((device) => device.deviceId !== payload.deviceId),
         );
       }

@@ -1,9 +1,70 @@
-import type { FormEvent } from "react";
+import type { FormEvent, MutableRefObject } from "react";
+import type { ClientToHelm } from "@tiller/sync-protocol";
 import type {
+  AcpAgentProvider,
   AgentPromptContent,
   AgentPromptImageContent,
+  ProjectSummary,
+  SessionReasoningEffort,
+  WorkspaceSummary,
 } from "@tiller/shared";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
+
+type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
+
+type CreateSessionContext = {
+  selectedProjectId?: string | null;
+  projects: ProjectSummary[];
+  selectedWorkspace?: WorkspaceSummary | null;
+  filteredWorkspaces: WorkspaceSummary[];
+  selectedAgentId?: string | null;
+  filteredAgents: AcpAgentProvider[];
+  socketRef: MutableRefObject<WebSocket | null>;
+  pendingPromptRef: MutableRefObject<string | null>;
+  pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+  effectiveDraftAgentMode?: string;
+  normalizeModelSelection: (model: string) => string | undefined;
+  selectedModel: string;
+  selectedReasoningEffort?: SessionReasoningEffort;
+  navigateToView: (view: "sessions") => void;
+};
+
+type ResumeStartContext = {
+  socketRef: MutableRefObject<WebSocket | null>;
+  resumeStartRequestsRef: MutableRefObject<Set<string>>;
+  setResumeFeedback: (value: string) => void;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+};
+
+type StartResumeContext = Omit<ResumeStartContext, "resumeStartRequestsRef"> & {
+  activeSessionId: string | null;
+};
+
+type SubmitPromptContext = {
+  prompt: string;
+  promptImages: AgentPromptImageContent[];
+  socketRef: MutableRefObject<WebSocket | null>;
+  setImagePasteNotice: (value: string) => void;
+  activeSessionId: string | null;
+  createSession: (
+    initialPrompt?: string,
+    initialContent?: AgentPromptContent[],
+  ) => boolean;
+  setPrompt: (value: string) => void;
+  setPromptImages: (images: AgentPromptImageContent[]) => void;
+  createClientUserMessageId: (sessionId: string) => string;
+  appendUserMessage: (
+    sessionId: string,
+    text: string,
+    id: string,
+    attachments: AgentPromptImageContent[],
+  ) => void;
+  dispatch: DispatchToHelm;
+  requestCounter: MutableRefObject<number>;
+};
 
 export function buildPromptContent(
   text: string,
@@ -18,7 +79,7 @@ export function buildPromptContent(
 export function createSession(
   initialPrompt: string | undefined,
   initialContent: AgentPromptContent[] | undefined,
-  context: any,
+  context: CreateSessionContext,
 ) {
   const {
     selectedProjectId,
@@ -65,7 +126,7 @@ export function createSession(
 export function requestSessionResumeStart(
   sessionId: string,
   reason: string,
-  context: any,
+  context: ResumeStartContext,
 ) {
   const {
     socketRef,
@@ -92,7 +153,7 @@ export function requestSessionResumeStart(
   });
 }
 
-export function submitPrompt(event: FormEvent<HTMLFormElement>, context: any) {
+export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitPromptContext) {
   const {
     prompt,
     promptImages,
@@ -140,7 +201,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: any) {
   });
 }
 
-export function startResume(context: any) {
+export function startResume(context: StartResumeContext) {
   const { activeSessionId, socketRef, setResumeFeedback, dispatch, requestCounter } =
     context;
   if (!activeSessionId || !socketRef.current) {

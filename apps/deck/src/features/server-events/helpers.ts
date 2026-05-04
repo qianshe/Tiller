@@ -17,6 +17,9 @@ export function availableCommandListsEqual(
   for (let index = 0; index < left.length; index += 1) {
     const a = left[index];
     const b = right[index];
+    if (!a || !b) {
+      return false;
+    }
     if (
       a.name !== b.name ||
       a.description !== b.description ||

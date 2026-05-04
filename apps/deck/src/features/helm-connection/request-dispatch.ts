@@ -1,5 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { DebugTrace } from "../../store/slices/connection-slice";
 
 export function nextRequestId(counter: MutableRefObject<number>) {
   counter.current += 1;
@@ -9,7 +10,7 @@ export function nextRequestId(counter: MutableRefObject<number>) {
 export function dispatchWithTrace(
   socket: WebSocket,
   payload: ClientToHelm,
-  setDebugTrace: (updater: (current: any) => any) => void,
+  setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void,
 ) {
   socket.send(JSON.stringify(payload));
   setDebugTrace((current) => ({
