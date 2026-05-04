@@ -5,9 +5,9 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { InfoList } from "../../components/primitives";
-import type { Locale, UI_COPY } from "../../app/copy";
-import type { AppView } from "../../app/routes";
+import { InfoList } from "../../../components/primitives";
+import type { Locale, UI_COPY } from "../../../app/copy";
+import type { AppView } from "../../../app/routes";
 
 type OverviewPageProps = {
   copy: (typeof UI_COPY)[Locale];

@@ -1,4 +1,4 @@
-import type { DeckLanguage } from "./preferences";
+import type { DeckLanguage } from "../features/preferences/preferences-storage";
 
 export type AppView = "overview" | "sessions" | "agents" | "settings";
 

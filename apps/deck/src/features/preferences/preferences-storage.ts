@@ -1,4 +1,4 @@
-import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, type PromptEnhancerPreferences } from "../features/prompt-enhancer/enhancer";
+import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, type PromptEnhancerPreferences } from "../prompt-enhancer/enhancer";
 
 export { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE };
 

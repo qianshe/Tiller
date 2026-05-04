@@ -17,10 +17,10 @@ import {
   daemonProfileKey,
   formatConnectionStatus,
   type DaemonProfile,
-} from "../../features/helm-connection/daemon-profiles";
-import type { Locale, UI_COPY } from "../../app/copy";
-import { DeleteHelmConfigDialog } from "./components/DeleteHelmConfigDialog";
-import { FleetAddHelmDialog } from "./components/FleetAddHelmDialog";
+} from "../../helm-connection/daemon-profiles";
+import type { Locale, UI_COPY } from "../../../app/copy";
+import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
+import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
 import {
   createProjectId,
   dedupeHelmCards,
@@ -31,7 +31,7 @@ import {
   resolveProjectDisplayId,
   resolveProjectWorkspaceLabel,
   slugify,
-} from "./agents-utils";
+} from "../utils/agents-utils";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";

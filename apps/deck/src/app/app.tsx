@@ -65,7 +65,7 @@ import {
   type DeckPreferences,
   type DeckTheme,
   type TechnicalPanelPreferences,
-} from "./preferences";
+} from "../features/preferences/preferences-storage";
 import { UI_COPY, type Locale } from "./copy";
 import {
   handleActivityServerEvent,
@@ -73,15 +73,15 @@ import {
   handleInventoryServerEvent,
   handleSessionServerEvent,
 } from "../features/server-events/index";
-import { AgentsPage } from "../pages/agents/AgentsPage";
+import { AgentsPage } from "../features/agents/ui/agents-page";
 import { NAV_LABELS, VIEW_PATHS, type AppView } from "./routes";
 import { TopNav } from "../components/layout/TopNav";
 import {
   createMissionVisualFixture,
   shouldUseMissionVisualFixture,
 } from "../features/mission/utils/mission-visual-fixture";
-import { OverviewPage } from "../pages/overview/OverviewPage";
-import { SettingsPage } from "../pages/settings/SettingsPage";
+import { OverviewPage } from "../features/overview/ui/overview-page";
+import { SettingsPage } from "../features/settings/ui/settings-page";
 import { MissionDisplayPanel } from "../features/mission/ui/mission-display-panel";
 import { PlainMessages } from "../features/mission/ui/plain-messages";
 import { MissionSidebar } from "../features/mission/ui/mission-sidebar";
@@ -122,7 +122,7 @@ import {
   readTrustedDeviceCache,
   writeTrustedDeviceCache,
   type TrustedDeviceCache,
-} from "../auth/beacon-cache";
+} from "../features/auth/beacon-cache";
 import { type MissionPanelPage } from "../features/mission/ui/panels";
 import {
   createClipboardImageContent,
@@ -171,12 +171,12 @@ import {
   sendPairingRequest as sendPairingRequestImpl,
   submitPairingCode as submitPairingCodeImpl,
   updatePairingDigit as updatePairingDigitImpl,
-} from "./pairing-actions";
+} from "../features/pairing/actions/pairing-actions";
 import {
   saveDraft as saveDraftImpl,
   testAgent as testAgentImpl,
   writeDraftToConfig as writeDraftToConfigImpl,
-} from "./config-actions";
+} from "../features/agents/actions/config-actions";
 
 const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DEFAULT_DAEMON_PORT = "47631";

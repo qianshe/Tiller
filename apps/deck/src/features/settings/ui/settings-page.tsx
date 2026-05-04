@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { PromptEnhancerModelOption } from "../../features/prompt-enhancer/enhancer";
+import type { PromptEnhancerModelOption } from "../../prompt-enhancer/enhancer";
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
@@ -7,7 +7,7 @@ import {
   type DeckPreferences,
   type DeckTheme,
   type TechnicalPanelPreferences,
-} from "../../app/preferences";
+} from "../../preferences/preferences-storage";
 
 type SettingsPageProps = {
   deckPreferences: DeckPreferences;

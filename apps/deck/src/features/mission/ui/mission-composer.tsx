@@ -15,7 +15,7 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { DeckPreferences } from "../../../app/preferences";
+import type { DeckPreferences } from "../../preferences/preferences-storage";
 import type { Locale, UI_COPY } from "../../../app/copy";
 import {
   MissionConfigControls,

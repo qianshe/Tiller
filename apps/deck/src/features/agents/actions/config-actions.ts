@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { nextRequestId } from "../features/helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/request-dispatch";
 
 export function testAgent(context: any) {
   const {
