@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readDeckSnapshot, writeDeckSnapshot } from "./persist.js";
+import { persistAdapter, readDeckSnapshot, writeDeckSnapshot } from "./persist.js";
 
 function createMemoryStorage() {
   const data = new Map<string, string>();
@@ -34,4 +34,23 @@ test("snapshot cache returns null for invalid JSON", () => {
   const storage = createMemoryStorage();
   storage.setItem("tiller.deck-snapshot.local-helm", "{invalid");
   assert.equal(readDeckSnapshot(storage, "local-helm"), null);
+});
+
+test("persist adapter stores and retrieves zustand hydration payloads", () => {
+  const storage = createMemoryStorage();
+  const adapter = persistAdapter(storage);
+  const payload = JSON.stringify({
+    state: {
+      preferences: { theme: "dark" },
+      daemonProfiles: [],
+      selectedHelmKey: "127.0.0.1:47631",
+    },
+    version: 0,
+  });
+
+  adapter.setItem("tiller.deck.store", payload);
+
+  assert.equal(adapter.getItem("tiller.deck.store"), payload);
+  adapter.removeItem("tiller.deck.store");
+  assert.equal(adapter.getItem("tiller.deck.store"), null);
 });
