@@ -4,7 +4,7 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from "react";
-import { PairingBoxes } from "../../../components/primitives";
+import { PairingBoxes } from "../../../shared/ui/primitives";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";

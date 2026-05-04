@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@tiller/shared";
-import { MarkdownMessage } from "../../../components/markdown";
+import { MarkdownMessage } from "../../../shared/ui/markdown";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;

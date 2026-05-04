@@ -18,7 +18,7 @@ import {
   formatConnectionStatus,
   type DaemonProfile,
 } from "../../helm-connection/daemon-profiles";
-import type { Locale, UI_COPY } from "../../../app/copy";
+import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
 import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
 import {

@@ -10,9 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import "highlight.js/styles/github-dark.css";
-import codexProviderIconUrl from "./assets/provider-icons/Codex.svg";
-import claudeProviderIconUrl from "./assets/provider-icons/ClaudeCode.svg";
-import geminiProviderIconUrl from "./assets/provider-icons/Gemini.svg";
+import codexProviderIconUrl from "../shared/assets/provider-icons/codex.svg";
+import claudeProviderIconUrl from "../shared/assets/provider-icons/claude-code.svg";
+import geminiProviderIconUrl from "../shared/assets/provider-icons/gemini.svg";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import {
   resolveSessionConfigSupport,
@@ -66,7 +66,7 @@ import {
   type DeckTheme,
   type TechnicalPanelPreferences,
 } from "../features/preferences/preferences-storage";
-import { UI_COPY, type Locale } from "./copy";
+import { UI_COPY, type Locale } from "../shared/utils/copy";
 import {
   handleActivityServerEvent,
   handleDeviceServerEvent,
@@ -75,7 +75,7 @@ import {
 } from "../features/server-events/index";
 import { AgentsPage } from "../features/agents/ui/agents-page";
 import { NAV_LABELS, VIEW_PATHS, type AppView } from "./routes";
-import { TopNav } from "../components/layout/TopNav";
+import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
   shouldUseMissionVisualFixture,
@@ -135,13 +135,13 @@ import {
   mergeToolCallHistory,
   resolvePendingToolActivity,
 } from "../features/logbook/timeline";
-import { MarkdownMessage } from "../components/markdown";
+import { MarkdownMessage } from "../shared/ui/markdown";
 import {
   CommandOutput,
   DiffSummary,
   PairingBoxes,
   StatCard,
-} from "../components/primitives";
+} from "../shared/ui/primitives";
 import { toast } from "../features/toast/toast";
 import {
   DAEMON_HOST_KEY,

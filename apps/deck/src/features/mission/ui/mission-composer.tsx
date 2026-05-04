@@ -16,7 +16,7 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import type { DeckPreferences } from "../../preferences/preferences-storage";
-import type { Locale, UI_COPY } from "../../../app/copy";
+import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
   MissionConfigControls,
   type AgentModeOption,
