@@ -79,14 +79,6 @@ import {
   splitModelReasoning,
   summarizeSessionContext,
 } from "../features/mission/utils/composer-options";
-import {
-  createFallbackSessionTitle,
-  generateSessionTitleWithLlm,
-} from "../features/mission/utils/session-title";
-import {
-  readSessionTitles,
-  writeSessionTitles,
-} from "../features/mission/utils/session-titles-storage";
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import {
   formatProjectSummaryForDisplay,
@@ -148,6 +140,7 @@ import {
   useSelection,
   type SessionDraftPreferencePatch,
 } from "../features/mission/hooks/use-selection";
+import { useSessionTitles } from "../features/mission/hooks/use-session-titles";
 import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
@@ -164,7 +157,6 @@ import {
   resolveProjectFilesScope,
   resolvePromptPlaceholder,
   resolveSessionProjectId,
-  resolveSessionTitle,
 } from "../features/mission/utils/session-derivations";
 import {
   clearTrustedDeviceCache,
@@ -227,9 +219,6 @@ type ProjectFilesEntry = {
   message?: string;
   files: ProjectFileSummary[];
 };
-function normalizeGeneratedSessionTitle(value: string) {
-  return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
-}
 type AgentModelOptionsCache = Record<
   string,
   AgentModelOptionsEntry & { cachedAt: number }
@@ -429,6 +418,13 @@ export function App() {
     useState<Set<string>>(() => new Set());
   const deckPreferences = useDeckStore((state) => state.preferences);
   const updatePreferences = useDeckStore((state) => state.updatePreferences);
+  const { resolveDisplaySessionTitle, assignSessionTitleFromPrompt } =
+    useSessionTitles({
+      messages,
+      sessionTitles,
+      setSessionTitles,
+      promptEnhancerLlm: deckPreferences.promptEnhancer.llm,
+    });
   const {
     busy: promptEnhancerBusy,
     setBusy: setPromptEnhancerBusy,
@@ -629,9 +625,6 @@ export function App() {
   useEffect(() => {
     toolCallsRef.current = toolCalls;
   }, [toolCalls]);
-  useEffect(() => {
-    writeSessionTitles(sessionTitles);
-  }, [sessionTitles]);
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
@@ -1736,38 +1729,6 @@ export function App() {
         },
       ]),
     }));
-  }
-  function resolveDisplaySessionTitle(session: SessionSummary) {
-    const firstUserMessage = messages[session.id]?.find(
-      (message) => message.role === "user",
-    )?.text;
-    return resolveSessionTitle(
-      session,
-      sessionTitles[session.id] ?? firstUserMessage,
-    );
-  }
-  function assignSessionTitleFromPrompt(sessionId: string, rawPrompt: string) {
-    const promptText = rawPrompt.trim();
-    if (!promptText) {
-      return;
-    }
-    const fallbackTitle = createFallbackSessionTitle(promptText);
-    setSessionTitles((current) =>
-      current[sessionId] ? current : { ...current, [sessionId]: fallbackTitle },
-    );
-    const llm = deckPreferences.promptEnhancer.llm;
-    if (!llm.enabled || !llm.baseUrl.trim() || !llm.model.trim()) {
-      return;
-    }
-    void generateSessionTitleWithLlm(promptText, llm)
-      .then((title) => {
-        if (title) {
-          setSessionTitles((current) => ({ ...current, [sessionId]: title }));
-        }
-      })
-      .catch(() => {
-        // Keep deterministic fallback title when the optional naming model is unavailable.
-      });
   }
   function createSession(
     initialPrompt?: string,
