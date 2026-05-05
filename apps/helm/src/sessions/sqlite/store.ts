@@ -11,28 +11,28 @@ import {
   createSessionArtifactStore,
   pageSessionArtifacts,
   type SessionArtifactPageOptions,
-} from "./artifact-store.js";
+} from "../artifact-store.js";
 import {
   createSessionMessageStore,
   pageSessionMessages,
   type SessionMessagePageOptions,
-} from "./message-store.js";
-import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
+} from "../message-store.js";
+import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "../runtime-store.js";
 import {
   hasMigrationVersion,
   openSessionDatabase,
   recordMigrationVersion,
   runTransaction,
   type DatabaseSync,
-} from "./sqlite-core.js";
+} from "./core.js";
 import {
   mergeSessionMessage,
   mergeToolCall,
   normalizeSessionMessages,
   sortCommandChunks,
   sortToolCalls,
-} from "./sqlite-merge.js";
-import { createSessionStore } from "./summary-store.js";
+} from "./merge.js";
+import { createSessionStore } from "../summary/store.js";
 
 
 type SessionArtifacts = {

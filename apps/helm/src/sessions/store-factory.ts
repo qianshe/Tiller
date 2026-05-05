@@ -8,7 +8,7 @@ import type {
 import { createSessionArtifactStore, type SessionArtifactPageOptions } from "./artifact-store.js";
 import { createSessionMessageStore, type SessionMessagePageOptions } from "./message-store.js";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
-import { createSessionStore } from "./summary-store.js";
+import { createSessionStore } from "./summary/store.js";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -16,7 +16,7 @@ import {
   createSqliteSessionStore,
   migrateJsonSessionDataToSqlite,
   type JsonSessionStorePaths,
-} from "./sqlite-store.js";
+} from "./sqlite/store.js";
 
 export type SessionStoreBackend = "sqlite" | "json";
 

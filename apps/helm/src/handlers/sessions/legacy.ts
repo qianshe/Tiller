@@ -1,7 +1,7 @@
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../../sessions/cleanup";
-import { isProjectRootBranchWorkspace } from "../../sessions/project-binding";
-import { applyUserPromptToSummary } from "../../sessions/summary-updates";
+import { isProjectRootBranchWorkspace } from "../../sessions/project/binding";
+import { applyUserPromptToSummary } from "../../sessions/summary/updates";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
 import {

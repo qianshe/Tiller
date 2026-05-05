@@ -10,7 +10,7 @@ import type {
   FileDiffSummary,
   SessionSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
+import type { StoredSessionRuntimeDescriptor } from "../runtime-store";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -18,7 +18,7 @@ import {
   createSqliteSessionStore,
   initializeSqliteSessionStore,
   migrateJsonSessionDataToSqlite,
-} from "./sqlite-store.js";
+} from "./store.js";
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {

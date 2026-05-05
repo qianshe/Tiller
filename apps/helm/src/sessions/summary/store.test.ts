@@ -15,7 +15,7 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
   } = null;
 
   try {
-    mod = await import("./summary-store.js");
+    mod = await import("./store.js");
   } catch {
     mod = null;
   }
@@ -114,7 +114,7 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
 });
 
 test("session store normalizes legacy summaries without project or helm fields", async () => {
-  const mod = await import("./summary-store.js");
+  const mod = await import("./store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-legacy-"));
 
   try {
@@ -150,7 +150,7 @@ test("session store normalizes legacy summaries without project or helm fields",
 });
 
 test("session store removes only the targeted session summary", async () => {
-  const mod = await import("./summary-store.js");
+  const mod = await import("./store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-delete-"));
 
   try {

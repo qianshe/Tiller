@@ -14,7 +14,7 @@ import type {
 } from "@tiller/shared";
 import type { HelmToClient } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../handlers/context";
-import { alignSessionProjectBinding } from "../sessions/project-binding";
+import { alignSessionProjectBinding } from "../sessions/project/binding";
 import { loadProviderAuthoritativeHistory } from "../sessions/opencode-export";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/runtime-store";
 import { normalizeDiffPath, readWorkspaceGitDiffs } from "../sessions/git-diff";

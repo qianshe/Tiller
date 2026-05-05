@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProjectSummary, SessionSummary } from "@tiller/shared";
-import { alignSessionProjectBinding } from "./project-binding.js";
+import { alignSessionProjectBinding } from "./binding.js";
 
 function buildSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
