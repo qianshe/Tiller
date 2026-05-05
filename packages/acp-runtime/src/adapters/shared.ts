@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "../config-adapters";
+import { applySessionLaunchOverrides, resolveSessionEnvOverrides } from "./session-config";
 import type { AcpLaunchContext, AcpLaunchSpec } from "./types";
 
 export function resolveDefaultLaunch(provider: AcpAgentProvider, context: AcpLaunchContext): AcpLaunchSpec {

@@ -1,48 +1,63 @@
-export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = `Enhance the user draft into a concise, precise prompt for a coding agent.
-
-<private_reference>
-Project summary: {{projectSummary}}
-Session summary: {{sessionSummary}}
-</private_reference>
-
-Treat private reference as non-output context. Use private reference only to resolve ambiguity about the target area, constraints, or existing work.
-Do not copy project or session summaries into the output. If the private reference is not needed, ignore it.
-
-<user_draft>
-{{userPrompt}}
-</user_draft>
-
-Output contract:
-- Apply the internal workflow silently: Keep → Drop → Clarify → Inspect → Propose → Verify → Defer.
-- Return only the enhanced prompt, without Markdown code fences.
-- Make the output directly usable as the user's next message.
-- Do not prefix it with meta commentary such as "Here is the enhanced prompt" or "优化后的提示词如下".
-- Use the user's language unless the user asks otherwise.
-- Preserve the user's intent and explicit constraints. Preserve the task mode (discussion, investigation, implementation, review, or fix).
-- Do not turn planning or discussion into implementation unless the user explicitly asks to implement.
-- Do not mention private reference, prompt enhancer internals, or missing context unless it is a blocking question.
-- If the draft is already actionable, only make light edits.
-- Remove filler, vague wording, and repeated context.
-- Prefer the fewest assumptions, smallest scope, shortest useful wording, and clearest verification.
-- Do not invent files, APIs, repository facts, or implementation details.
-- Do not add extra features, dependencies, abstractions, or refactors unless the user asked for them.
-- Do not add constraints unless they are explicit in the user draft or necessary to prevent scope, safety, or data-risk issues.
-- Do not output guessed file paths. Do not name files, components, APIs, or repository facts unless they appear in the draft or private reference.
-- For new product ideas, label inferred features as options or questions, not fixed requirements.
-- If the user asks to adjust an existing screen or behavior, ask the coding agent to inspect the relevant files and offer concise adjustment options when requirements are vague.
-- If the user asks to plan a new product or app, expand into a lightweight MVP outline, key open questions, and optional feature ideas without pretending decisions are already made.
-
-Enhancement patterns:
-- Existing project change: ask the coding agent to inspect relevant files first, then propose focused options if the requested change is vague.
-- New product or app: outline a minimal MVP, key open questions, and optional directions; phrase them as options or questions instead of fixed requirements.
-
-Use sections only when they make the prompt clearer:
-# Task
-# Acceptance Criteria
-# Verification
-# Questions
-
-Omit sections that add no execution value.`;
+export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
+  "Enhance the user draft into a concise, precise prompt for a coding agent.",
+  [
+    "<private_reference>",
+    "Project summary: {{projectSummary}}",
+    "Session summary: {{sessionSummary}}",
+    "</private_reference>",
+  ].join("\n"),
+  [
+    "Treat private reference as non-output context.",
+    "Use private reference only to resolve ambiguity about the target area,",
+    "constraints, or existing work.",
+    "Do not copy project or session summaries into the output.",
+    "If the private reference is not needed, ignore it.",
+  ].join(" "),
+  ["<user_draft>", "{{userPrompt}}", "</user_draft>"].join("\n"),
+  [
+    "Output contract:",
+    "- Apply the internal workflow silently: Keep → Drop → Clarify → Inspect → Propose → Verify → Defer.",
+    "- Return only the enhanced prompt, without Markdown code fences.",
+    "- Make the output directly usable as the user's next message.",
+    "- Do not prefix it with meta commentary such as",
+    '  "Here is the enhanced prompt" or "优化后的提示词如下".',
+    "- Use the user's language unless the user asks otherwise.",
+    "- Preserve the user's intent and explicit constraints.",
+    "- Preserve the task mode (discussion, investigation, implementation, review, or fix).",
+    "- Do not turn planning or discussion into implementation unless the user explicitly asks to implement.",
+    "- Do not mention private reference, prompt enhancer internals, or missing context",
+    "  unless it is a blocking question.",
+    "- If the draft is already actionable, only make light edits.",
+    "- Remove filler, vague wording, and repeated context.",
+    "- Prefer the fewest assumptions, smallest scope, shortest useful wording, and clearest verification.",
+    "- Do not invent files, APIs, repository facts, or implementation details.",
+    "- Do not add extra features, dependencies, abstractions, or refactors unless the user asked for them.",
+    "- Do not add constraints unless they are explicit in the user draft or necessary",
+    "  to prevent scope, safety, or data-risk issues.",
+    "- Do not output guessed file paths.",
+    "- Do not name files, components, APIs, or repository facts unless they appear in the draft or private reference.",
+    "- For new product ideas, label inferred features as options or questions, not fixed requirements.",
+    "- If the user asks to adjust an existing screen or behavior, ask the coding agent to inspect the relevant files.",
+    "- Offer concise adjustment options when requirements are vague.",
+    "- If the user asks to plan a new product or app, expand into a lightweight MVP outline.",
+    "- Include key open questions and optional feature ideas without pretending decisions are already made.",
+  ].join("\n"),
+  [
+    "Enhancement patterns:",
+    "- Existing project change: ask the coding agent to inspect relevant files first.",
+    "- Then propose focused options if the requested change is vague.",
+    "- New product or app: outline a minimal MVP, key open questions, and optional directions.",
+    "- phrase them as options or questions instead of fixed requirements.",
+  ].join("\n"),
+  [
+    "Use sections only when they make the prompt clearer:",
+    "# Task",
+    "# Acceptance Criteria",
+    "# Verification",
+    "# Questions",
+  ].join("\n"),
+  "Omit sections that add no execution value.",
+].join("\n\n");
 
 export type PromptEnhancerLlmConfig = {
   enabled: boolean;
@@ -77,18 +92,25 @@ export type PromptEnhancerModelOption = {
 
 type FetchLike = typeof fetch;
 
+const INSTRUCTION_TEMPLATE_PLACEHOLDER_PATTERN =
+  /\{\{\s*(projectName|workspaceName|projectSummary|workspaceSummary|sessionStatus|sessionSummary|userPrompt)\s*\}\}/g;
 
-export function buildEnhancedPrompt(rawPrompt: string, preferences: PromptEnhancerPreferences, context: { projectName?: string | null; workspaceName?: string | null; agentName?: string | null; model?: string | null; reasoningEffort?: string | null } = {}) {
+export function buildEnhancedPrompt(
+  rawPrompt: string,
+  preferences: PromptEnhancerPreferences,
+  context: {
+    projectName?: string | null;
+    workspaceName?: string | null;
+    agentName?: string | null;
+    model?: string | null;
+    reasoningEffort?: string | null;
+  } = {},
+) {
   if (!preferences.enabled) {
     return rawPrompt;
   }
 
-  const sections = [
-    "# Mission Prompt",
-    "",
-    "## Objective",
-    rawPrompt.trim(),
-  ];
+  const sections = ["# Mission Prompt", "", "## Objective", rawPrompt.trim()];
 
   const contextLines = [
     context.projectName ? `- Project: ${context.projectName}` : null,
@@ -105,13 +127,25 @@ export function buildEnhancedPrompt(rawPrompt: string, preferences: PromptEnhanc
     sections.push("", "## Working Guidelines", preferences.instruction.trim());
   }
   if (preferences.modelProfile?.trim()) {
-    sections.push("", "## Model / Reasoning Notes", preferences.modelProfile.trim());
+    sections.push(
+      "",
+      "## Model / Reasoning Notes",
+      preferences.modelProfile.trim(),
+    );
   }
 
-  sections.push("", "## Requested Behavior", "Rewrite and execute the user intent while preserving explicit constraints.");
+  sections.push(
+    "",
+    "## Requested Behavior",
+    "Rewrite and execute the user intent while preserving explicit constraints.",
+  );
 
   if (preferences.responseContract?.trim()) {
-    sections.push("", "## Response Format", preferences.responseContract.trim());
+    sections.push(
+      "",
+      "## Response Format",
+      preferences.responseContract.trim(),
+    );
   }
 
   return sections.join("\n");
@@ -129,13 +163,20 @@ export async function enhancePromptWithLlm(
     throw new Error("Prompt enhancer LLM is not configured");
   }
 
-  const instructionTemplate = renderInstructionTemplate(llm.instructionTemplate.trim() || DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE, context, objective);
+  const instructionTemplate = renderInstructionTemplate(
+    llm.instructionTemplate.trim() ||
+      DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+    context,
+    objective,
+  );
 
   const response = await fetcher(resolveChatCompletionsUrl(llm.baseUrl), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+      ...(llm.apiKey.trim()
+        ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
+        : {}),
     },
     body: JSON.stringify({
       model: llm.model.trim(),
@@ -143,7 +184,9 @@ export async function enhancePromptWithLlm(
       messages: [
         {
           role: "system",
-          content: llm.systemPrompt.trim() || "Rewrite the user's draft into a clear, actionable coding-agent prompt. Return only the rewritten prompt.",
+          content:
+            llm.systemPrompt.trim() ||
+            "Rewrite the user's draft into a clear, actionable coding-agent prompt. Return only the rewritten prompt.",
         },
         {
           role: "user",
@@ -157,7 +200,9 @@ export async function enhancePromptWithLlm(
     throw new Error(`Prompt enhancer LLM failed: ${response.status}`);
   }
 
-  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
   const enhanced = normalizeEnhancedPrompt(data.choices?.[0]?.message?.content);
   if (!enhanced) {
     throw new Error("Prompt enhancer LLM returned empty content");
@@ -165,8 +210,10 @@ export async function enhancePromptWithLlm(
   return enhanced;
 }
 
-
-export async function testPromptEnhancerConnectivity(llm: PromptEnhancerLlmConfig, fetcher: FetchLike = fetch) {
+export async function testPromptEnhancerConnectivity(
+  llm: PromptEnhancerLlmConfig,
+  fetcher: FetchLike = fetch,
+) {
   if (!llm.baseUrl.trim() || !llm.model.trim()) {
     throw new Error("Prompt enhancer LLM is not configured");
   }
@@ -175,7 +222,9 @@ export async function testPromptEnhancerConnectivity(llm: PromptEnhancerLlmConfi
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+      ...(llm.apiKey.trim()
+        ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
+        : {}),
     },
     body: JSON.stringify({
       model: llm.model.trim(),
@@ -188,20 +237,29 @@ export async function testPromptEnhancerConnectivity(llm: PromptEnhancerLlmConfi
   });
 
   if (!response.ok) {
-    throw new Error(`Prompt enhancer LLM connectivity failed: ${response.status}`);
+    throw new Error(
+      `Prompt enhancer LLM connectivity failed: ${response.status}`,
+    );
   }
 }
 
-
-export async function listPromptEnhancerModels(llm: PromptEnhancerLlmConfig, fetcher: FetchLike = fetch) {
+export async function listPromptEnhancerModels(
+  llm: PromptEnhancerLlmConfig,
+  fetcher: FetchLike = fetch,
+) {
   if (!llm.baseUrl.trim()) {
     throw new Error("Prompt enhancer LLM is not configured");
   }
 
   const headers = {
-    ...(llm.apiKey.trim() ? { Authorization: `Bearer ${llm.apiKey.trim()}` } : {}),
+    ...(llm.apiKey.trim()
+      ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
+      : {}),
   };
-  const response = await fetcher(resolveModelsUrl(llm.baseUrl), { method: "GET", headers });
+  const response = await fetcher(resolveModelsUrl(llm.baseUrl), {
+    method: "GET",
+    headers,
+  });
   if (!response.ok) {
     throw new Error(`Prompt enhancer model fetch failed: ${response.status}`);
   }
@@ -212,7 +270,9 @@ export async function listPromptEnhancerModels(llm: PromptEnhancerLlmConfig, fet
 
 function resolveChatCompletionsUrl(baseUrl: string) {
   const normalized = resolveApiBaseUrl(baseUrl);
-  return normalized.endsWith("/chat/completions") ? normalized : `${normalized}/chat/completions`;
+  return normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
 }
 
 function resolveModelsUrl(baseUrl: string) {
@@ -225,14 +285,22 @@ function resolveModelsUrl(baseUrl: string) {
 
 function extractModelOptions(data: unknown): PromptEnhancerModelOption[] {
   if (Array.isArray(data)) {
-    return data.map(readModelOption).filter((model): model is PromptEnhancerModelOption => Boolean(model));
+    return data
+      .map(readModelOption)
+      .filter((model): model is PromptEnhancerModelOption => Boolean(model));
   }
   if (!data || typeof data !== "object") {
     return [];
   }
   const record = data as { data?: unknown; models?: unknown };
-  const list = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : [];
-  return list.map(readModelOption).filter((model): model is PromptEnhancerModelOption => Boolean(model));
+  const list = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : [];
+  return list
+    .map(readModelOption)
+    .filter((model): model is PromptEnhancerModelOption => Boolean(model));
 }
 
 function readModelOption(value: unknown): PromptEnhancerModelOption | null {
@@ -243,14 +311,23 @@ function readModelOption(value: unknown): PromptEnhancerModelOption | null {
   if (!value || typeof value !== "object") {
     return null;
   }
-  const record = value as { id?: unknown; model?: unknown; name?: unknown; owned_by?: unknown; ownedBy?: unknown; owner?: unknown };
+  const record = value as {
+    id?: unknown;
+    model?: unknown;
+    name?: unknown;
+    owned_by?: unknown;
+    ownedBy?: unknown;
+    owner?: unknown;
+  };
   const id = readString(record.id ?? record.model ?? record.name);
   if (!id) {
     return null;
   }
   return {
     id,
-    ownedBy: readString(record.owned_by ?? record.ownedBy ?? record.owner) || "default",
+    ownedBy:
+      readString(record.owned_by ?? record.ownedBy ?? record.owner) ||
+      "default",
   };
 }
 
@@ -266,31 +343,49 @@ function resolveApiBaseUrl(baseUrl: string) {
   return `${trimmed}/v1`;
 }
 
-function renderInstructionTemplate(template: string, context: PromptEnhancerContext, userPrompt: string) {
+function renderInstructionTemplate(
+  template: string,
+  context: PromptEnhancerContext,
+  userPrompt: string,
+) {
   const values: Record<string, string> = {
     projectName: context.projectName?.trim() || "Not available.",
     workspaceName: context.workspaceName?.trim() || "Not available.",
-    projectSummary: context.projectSummary?.trim() || summarizeProjectContext(context),
-    workspaceSummary: context.workspaceSummary?.trim() || summarizeWorkspaceContext(context),
+    projectSummary:
+      context.projectSummary?.trim() || summarizeProjectContext(context),
+    workspaceSummary:
+      context.workspaceSummary?.trim() || summarizeWorkspaceContext(context),
     sessionStatus: context.sessionStatus?.trim() || "Not available.",
-    sessionSummary: context.sessionSummary?.trim() || "No prior session context.",
+    sessionSummary:
+      context.sessionSummary?.trim() || "No prior session context.",
     userPrompt,
   };
 
-  const rendered = template.replace(/\{\{\s*(projectName|workspaceName|projectSummary|workspaceSummary|sessionStatus|sessionSummary|userPrompt)\s*\}\}/g, (_match, key: string) => values[key] ?? "");
-  return /\{\{\s*userPrompt\s*\}\}/.test(template) ? rendered : [rendered, "", "User draft:", userPrompt].join("\n");
+  const rendered = template.replace(
+    INSTRUCTION_TEMPLATE_PLACEHOLDER_PATTERN,
+    (_match, key: string) => values[key] ?? "",
+  );
+  return /\{\{\s*userPrompt\s*\}\}/.test(template)
+    ? rendered
+    : [rendered, "", "User draft:", userPrompt].join("\n");
 }
 
 function summarizeProjectContext(context: PromptEnhancerContext) {
   const parts = [
-    context.projectName?.trim() ? `Project: ${context.projectName.trim()}.` : "",
-    context.workspaceName?.trim() ? `Workspace: ${context.workspaceName.trim()}.` : "",
+    context.projectName?.trim()
+      ? `Project: ${context.projectName.trim()}.`
+      : "",
+    context.workspaceName?.trim()
+      ? `Workspace: ${context.workspaceName.trim()}.`
+      : "",
   ].filter(Boolean);
   return parts.length ? parts.join(" ") : "Not available.";
 }
 
 function summarizeWorkspaceContext(context: PromptEnhancerContext) {
-  return context.workspaceName?.trim() ? `Workspace: ${context.workspaceName.trim()}.` : "Not available.";
+  return context.workspaceName?.trim()
+    ? `Workspace: ${context.workspaceName.trim()}.`
+    : "Not available.";
 }
 
 function normalizeEnhancedPrompt(content?: string) {

@@ -1,2 +1,1 @@
-export {};
-
+export { useCodeActions } from "./hooks/pairing-code";

@@ -4,12 +4,12 @@ import {
   mergeDaemonProfile,
   readDaemonProfiles,
   type DaemonProfile,
-} from "../../features/helm-connection/daemon-profiles";
+} from "../../features/helm-connection/facade";
 import {
   DEFAULT_DECK_PREFERENCES,
   readDeckPreferences,
   type DeckPreferences,
-} from "../../features/preferences/storage";
+} from "../../features/preferences/facade";
 
 export type PreferencesSlice = {
   preferences: DeckPreferences;

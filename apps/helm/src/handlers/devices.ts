@@ -12,7 +12,9 @@ export const handleDeviceMessage: HelmMessageHandler = (socket, payload, context
     case "device.revoke": {
       const revoked = context.trustedDeviceStore.revoke(payload.deviceId);
       const revokedSockets = context.authenticatedSockets.listForDevice(payload.deviceId);
-      const requesterRevoked = revokedSockets.some((record: { socket: unknown }) => record.socket === socket);
+      const requesterRevoked = revokedSockets.some(
+        (record: { socket: unknown }) => record.socket === socket,
+      );
       for (const record of revokedSockets) {
         context.authenticatedSockets.remove(record.socketId);
         context.emit(record.socket, {
@@ -20,7 +22,9 @@ export const handleDeviceMessage: HelmMessageHandler = (socket, payload, context
           requestId: payload.requestId,
           ok: revoked,
           deviceId: payload.deviceId,
-          message: revoked ? "This beacon was revoked. Pair again to reconnect." : "Beacon not found.",
+          message: revoked
+            ? "This beacon was revoked. Pair again to reconnect."
+            : "Beacon not found.",
         });
         record.socket.close();
       }

@@ -47,9 +47,16 @@ export function createSessionMessageStore(rootDir: string) {
   };
 }
 
-export function pageSessionMessages(messages: AgentMessage[], options: SessionMessagePageOptions = {}): SessionMessagePage {
+export function pageSessionMessages(
+  messages: AgentMessage[],
+  options: SessionMessagePageOptions = {},
+): SessionMessagePage {
   const normalized = normalizeSessionMessages(messages);
-  const limit = normalizePageLimit(options.limit, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT);
+  const limit = normalizePageLimit(
+    options.limit,
+    DEFAULT_MESSAGE_PAGE_LIMIT,
+    MAX_MESSAGE_PAGE_LIMIT,
+  );
   const endIndex = resolvePageEndIndex(normalized, options.before);
   const eligible = normalized.slice(0, endIndex);
   const startIndex = Math.max(eligible.length - limit, 0);
@@ -63,7 +70,9 @@ export function pageSessionMessages(messages: AgentMessage[], options: SessionMe
 }
 
 function encodeOrderCursor(position: number | undefined, id: string | undefined) {
-  return Number.isInteger(position) && id ? `${ORDER_CURSOR_PREFIX}\t${position}\t${id}` : undefined;
+  return Number.isInteger(position) && id
+    ? `${ORDER_CURSOR_PREFIX}\t${position}\t${id}`
+    : undefined;
 }
 
 function decodeOrderCursor(cursor: string | undefined) {
@@ -75,7 +84,9 @@ function decodeOrderCursor(cursor: string | undefined) {
     return null;
   }
   const parsedPosition = Number.parseInt(position, 10);
-  return Number.isFinite(parsedPosition) && parsedPosition >= 0 ? { position: parsedPosition, id } : null;
+  return Number.isFinite(parsedPosition) && parsedPosition >= 0
+    ? { position: parsedPosition, id }
+    : null;
 }
 
 function decodeLegacyHistoryCursor(cursor: string | undefined) {
@@ -100,16 +111,31 @@ function resolvePageEndIndex(messages: AgentMessage[], cursor: string | undefine
     return messages.length;
   }
 
-  const exactIndex = messages.findIndex((message) => message.timestamp === legacyCursor.timestamp && message.id === legacyCursor.id);
+  const exactIndex = messages.findIndex(
+    (message) => message.timestamp === legacyCursor.timestamp && message.id === legacyCursor.id,
+  );
   if (exactIndex !== -1) {
     return exactIndex;
   }
 
-  const compatibleIndex = messages.findIndex((message) => compareHistoryPosition(message.timestamp, message.id, legacyCursor.timestamp, legacyCursor.id) >= 0);
+  const compatibleIndex = messages.findIndex(
+    (message) =>
+      compareHistoryPosition(
+        message.timestamp,
+        message.id,
+        legacyCursor.timestamp,
+        legacyCursor.id,
+      ) >= 0,
+  );
   return compatibleIndex === -1 ? messages.length : compatibleIndex;
 }
 
-function compareHistoryPosition(leftTimestamp: string, leftId: string, rightTimestamp: string, rightId: string) {
+function compareHistoryPosition(
+  leftTimestamp: string,
+  leftId: string,
+  rightTimestamp: string,
+  rightId: string,
+) {
   const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;
@@ -150,7 +176,12 @@ function normalizeSessionMessages(messages: AgentMessage[]) {
 }
 
 function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
-  return current.role === "assistant" && incoming.role === "assistant" && isRuntimeGeneratedMessageId(current.id) && isRuntimeGeneratedMessageId(incoming.id);
+  return (
+    current.role === "assistant" &&
+    incoming.role === "assistant" &&
+    isRuntimeGeneratedMessageId(current.id) &&
+    isRuntimeGeneratedMessageId(incoming.id)
+  );
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
@@ -160,13 +191,20 @@ function isRuntimeGeneratedMessageId(id: string) {
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
   const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
   const isCumulativeSnapshot = incoming.text.startsWith(current.text);
-  const nextText = isDuplicateText ? current.text : isCumulativeSnapshot ? incoming.text : `${current.text}${incoming.text}`;
+  const nextText = isDuplicateText
+    ? current.text
+    : isCumulativeSnapshot
+      ? incoming.text
+      : `${current.text}${incoming.text}`;
   return {
     ...current,
     ...incoming,
     id: current.id,
     text: collapseRepeatedAssistantText(nextText),
-    timestamp: isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp) ? incoming.timestamp : current.timestamp,
+    timestamp:
+      isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp)
+        ? incoming.timestamp
+        : current.timestamp,
   };
 }
 
@@ -182,13 +220,18 @@ function collapseRepeatedAssistantText(text: string) {
   }
 
   const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
-  const cutIndex = bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
+  const cutIndex =
+    bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
 }
 
 function persistSessionMessages(rootDir: string, sessionId: string, messages: AgentMessage[]) {
   mkdirSync(rootDir, { recursive: true });
-  writeFileSync(getSessionMessageFilePath(rootDir, sessionId), JSON.stringify(messages, null, 2), "utf8");
+  writeFileSync(
+    getSessionMessageFilePath(rootDir, sessionId),
+    JSON.stringify(messages, null, 2),
+    "utf8",
+  );
 }
 
 function getSessionMessageFilePath(rootDir: string, sessionId: string) {

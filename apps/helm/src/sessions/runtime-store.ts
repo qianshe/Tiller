@@ -52,12 +52,18 @@ function loadRuntimeDescriptors(filePath: string) {
   }
 }
 
-function persistRuntimeDescriptors(filePath: string, descriptors: StoredSessionRuntimeDescriptor[]) {
+function persistRuntimeDescriptors(
+  filePath: string,
+  descriptors: StoredSessionRuntimeDescriptor[],
+) {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(descriptors, null, 2), "utf8");
 }
 
-function persistOrDeleteRuntimeDescriptors(filePath: string, descriptors: StoredSessionRuntimeDescriptor[]) {
+function persistOrDeleteRuntimeDescriptors(
+  filePath: string,
+  descriptors: StoredSessionRuntimeDescriptor[],
+) {
   if (!descriptors.length) {
     try {
       unlinkSync(filePath);
@@ -69,7 +75,10 @@ function persistOrDeleteRuntimeDescriptors(filePath: string, descriptors: Stored
   persistRuntimeDescriptors(filePath, descriptors);
 }
 
-function upsertRuntimeDescriptor(current: StoredSessionRuntimeDescriptor[], descriptor: StoredSessionRuntimeDescriptor) {
+function upsertRuntimeDescriptor(
+  current: StoredSessionRuntimeDescriptor[],
+  descriptor: StoredSessionRuntimeDescriptor,
+) {
   return [descriptor, ...current.filter((item) => item.sessionId !== descriptor.sessionId)];
 }
 
@@ -84,7 +93,8 @@ function isStoredSessionRuntimeDescriptor(value: unknown): value is StoredSessio
     (typeof candidate.projectId === "string" || typeof candidate.projectId === "undefined") &&
     (typeof candidate.helmId === "string" || typeof candidate.helmId === "undefined") &&
     typeof candidate.providerId === "string" &&
-    (typeof candidate.runtimeSessionId === "string" || typeof candidate.runtimeSessionId === "undefined") &&
+    (typeof candidate.runtimeSessionId === "string" ||
+      typeof candidate.runtimeSessionId === "undefined") &&
     isCapabilities(candidate.capabilities) &&
     typeof candidate.lastSeenAt === "string" &&
     (candidate.state === "resumeable" || candidate.state === "stale" || candidate.state === "lost")
@@ -99,7 +109,12 @@ function isCapabilities(value: unknown) {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return ["sessionLoad", "sessionResume", "sessionList", "sessionClose", "sessionDelete", "imageInput"].every(
-    (key) => typeof candidate[key] === "boolean" || typeof candidate[key] === "undefined",
-  );
+  return [
+    "sessionLoad",
+    "sessionResume",
+    "sessionList",
+    "sessionClose",
+    "sessionDelete",
+    "imageInput",
+  ].every((key) => typeof candidate[key] === "boolean" || typeof candidate[key] === "undefined");
 }

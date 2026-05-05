@@ -11,7 +11,11 @@ type OpenCodeExportHistory = {
   toolCalls: AgentToolCall[];
 };
 
-export async function loadOpenCodeExportHistory(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string): Promise<OpenCodeExportHistory | null> {
+export async function loadOpenCodeExportHistory(
+  agent: AcpAgentProvider,
+  runtimeSessionId: string,
+  cwd: string,
+): Promise<OpenCodeExportHistory | null> {
   if (!isOpenCodeCommand(agent.command)) {
     return null;
   }
@@ -20,7 +24,11 @@ export async function loadOpenCodeExportHistory(agent: AcpAgentProvider, runtime
   return parseOpenCodeExportHistory(stdout);
 }
 
-export async function loadProviderAuthoritativeHistory(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string): Promise<OpenCodeExportHistory | null> {
+export async function loadProviderAuthoritativeHistory(
+  agent: AcpAgentProvider,
+  runtimeSessionId: string,
+  cwd: string,
+): Promise<OpenCodeExportHistory | null> {
   return loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
 }
 
@@ -40,13 +48,19 @@ async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: stri
       throw error;
     }
     const command = `& ${quotePowerShellArg(agent.command)} ${quotePowerShellArg("export")} ${quotePowerShellArg(runtimeSessionId)}`;
-    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], options);
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+      options,
+    );
     return stdout;
   }
 }
 
 function isNoEntryError(error: unknown) {
-  return Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "ENOENT");
+  return Boolean(
+    error && typeof error === "object" && (error as { code?: unknown }).code === "ENOENT",
+  );
 }
 
 function quotePowerShellArg(value: string) {
@@ -86,8 +100,13 @@ function collectToolCalls(message: any): AgentToolCall[] {
     }
     const id = stringFrom(part.callID ?? part.callId ?? part.id);
     const state = part.state ?? {};
-    const start = timestampFromMillis(state?.time?.start ?? part?.time?.start ?? state?.time?.created ?? part?.time?.created);
-    const end = timestampFromMillis(state?.time?.end ?? part?.time?.end ?? state?.time?.updated ?? part?.time?.updated) ?? start;
+    const start = timestampFromMillis(
+      state?.time?.start ?? part?.time?.start ?? state?.time?.created ?? part?.time?.created,
+    );
+    const end =
+      timestampFromMillis(
+        state?.time?.end ?? part?.time?.end ?? state?.time?.updated ?? part?.time?.updated,
+      ) ?? start;
     if (!id || !start || !end) {
       continue;
     }
@@ -173,7 +192,9 @@ function stringifyToolPayload(value: unknown) {
 }
 
 function timestampFromMillis(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? new Date(value).toISOString() : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? new Date(value).toISOString()
+    : undefined;
 }
 
 function stringFrom(value: unknown) {

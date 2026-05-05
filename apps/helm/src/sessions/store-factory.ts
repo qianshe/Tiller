@@ -1,8 +1,14 @@
-import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  SessionSummary,
+} from "@tiller/shared";
 import { createSessionArtifactStore, type SessionArtifactPageOptions } from "./artifact-store.js";
 import { createSessionMessageStore, type SessionMessagePageOptions } from "./message-store.js";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
-import { createSessionStore } from "./summary-store.js";
+import { createSessionStore } from "./summary/store.js";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -10,7 +16,7 @@ import {
   createSqliteSessionStore,
   migrateJsonSessionDataToSqlite,
   type JsonSessionStorePaths,
-} from "./sqlite-store.js";
+} from "./sqlite/store.js";
 
 export type SessionStoreBackend = "sqlite" | "json";
 
@@ -30,7 +36,10 @@ export type SessionMessageStore = {
   append: (sessionId: string, message: AgentMessage) => AgentMessage[];
   replace: (sessionId: string, messages: AgentMessage[]) => AgentMessage[];
   list: (sessionId: string) => AgentMessage[];
-  listPage: (sessionId: string, options?: SessionMessagePageOptions) => { messages: AgentMessage[]; nextCursor?: string; hasMore: boolean };
+  listPage: (
+    sessionId: string,
+    options?: SessionMessagePageOptions,
+  ) => { messages: AgentMessage[]; nextCursor?: string; hasMore: boolean };
   remove: (sessionId: string) => void;
 };
 
@@ -40,7 +49,10 @@ export type SessionArtifactStore = {
   appendToolCall: (sessionId: string, toolCall: AgentToolCall) => StoredSessionArtifacts;
   replaceToolCalls: (sessionId: string, toolCalls: AgentToolCall[]) => StoredSessionArtifacts;
   get: (sessionId: string) => StoredSessionArtifacts;
-  getPage: (sessionId: string, options?: SessionArtifactPageOptions) => StoredSessionArtifacts & { nextCursor?: string; hasMore: boolean };
+  getPage: (
+    sessionId: string,
+    options?: SessionArtifactPageOptions,
+  ) => StoredSessionArtifacts & { nextCursor?: string; hasMore: boolean };
   remove: (sessionId: string) => void;
 };
 
@@ -69,11 +81,15 @@ export type HelmSessionStoreFactoryOptions = {
   logError?: StoreFactoryLogger;
 };
 
-export function resolveSessionStoreBackend(env: NodeJS.ProcessEnv = process.env): SessionStoreBackend {
+export function resolveSessionStoreBackend(
+  env: NodeJS.ProcessEnv = process.env,
+): SessionStoreBackend {
   return env.TILLER_SESSION_STORE?.toLowerCase() === "json" ? "json" : "sqlite";
 }
 
-export function createHelmSessionStores(options: HelmSessionStoreFactoryOptions): HelmSessionStores {
+export function createHelmSessionStores(
+  options: HelmSessionStoreFactoryOptions,
+): HelmSessionStores {
   const requestedBackend = options.backend ?? resolveSessionStoreBackend();
   if (requestedBackend === "json") {
     options.logInfo?.("[tiller] session.store backend=json reason=env");
@@ -81,7 +97,10 @@ export function createHelmSessionStores(options: HelmSessionStoreFactoryOptions)
   }
 
   try {
-    migrateJsonSessionDataToSqlite({ sqlitePath: options.sqlitePath, jsonPaths: options.jsonPaths });
+    migrateJsonSessionDataToSqlite({
+      sqlitePath: options.sqlitePath,
+      jsonPaths: options.jsonPaths,
+    });
     options.logInfo?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
     return {
       backend: "sqlite",
@@ -92,7 +111,9 @@ export function createHelmSessionStores(options: HelmSessionStoreFactoryOptions)
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    options.logError?.(`[tiller] session.store backend=json reason=sqlite-fallback detail=${reason}`);
+    options.logError?.(
+      `[tiller] session.store backend=json reason=sqlite-fallback detail=${reason}`,
+    );
     return createJsonHelmSessionStores(options.jsonPaths);
   }
 }

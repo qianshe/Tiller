@@ -8,7 +8,7 @@ import type {
   SessionReasoningEffort,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/facade";
 
 type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
 

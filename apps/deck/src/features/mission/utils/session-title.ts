@@ -1,4 +1,4 @@
-import type { PromptEnhancerPreferences } from "../../prompt-enhancer/enhancer";
+import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 
 export function createFallbackSessionTitle(prompt: string) {
   return prompt.replace(/[\p{P}\p{S}\s]+/gu, "").slice(0, 5) || "新任务";

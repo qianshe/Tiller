@@ -88,6 +88,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      prettier:
+        specifier: ^3.8.3
+        version: 3.8.3
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.12)(tsx@4.21.0)(typescript@6.0.3)
@@ -140,10 +143,22 @@ importers:
       '@tiller/shared':
         specifier: workspace:*
         version: link:../shared
+      zod:
+        specifier: ^4.4.1
+        version: 4.4.1
     devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.12.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      zod-to-json-schema:
+        specifier: ^3.25.0
+        version: 3.25.2(zod@4.4.1)
 
 packages:
 
@@ -1122,6 +1137,11 @@ packages:
     resolution: {integrity: sha512-W62t/Se6rA0Az3DfCL0AqJwXuKwBeYg6nOaIgzP+xZ7N5BFCI7DYi1qs6ygUYT6rvfi6t9k65UMLJC+PHZpDAA==}
     engines: {node: ^10 || ^12 || >=14}
 
+  prettier@3.8.3:
+    resolution: {integrity: sha512-7igPTM53cGHMW8xWuVTydi2KO233VFiTNyF5hLJqpilHfmn8C8gPf+PS7dUT64YcXFbiMGZxS9pCSxL/Dxm/Jw==}
+    engines: {node: '>=14'}
+    hasBin: true
+
   property-information@7.1.0:
     resolution: {integrity: sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ==}
 
@@ -1394,6 +1414,11 @@ packages:
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
+
+  zod-to-json-schema@3.25.2:
+    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
+    peerDependencies:
+      zod: ^3.25.28 || ^4
 
   zod@4.4.1:
     resolution: {integrity: sha512-a6ENMBBGZBsnlSebQ/eKCguSBeGKSf4O7BPnqVPmYGtpBYI7VSqoVqw+QcB7kPRjbqPwhYTpFbVj/RqNz/CT0Q==}
@@ -2385,6 +2410,8 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  prettier@3.8.3: {}
+
   property-information@7.1.0: {}
 
   qrcode-terminal@0.12.0: {}
@@ -2711,6 +2738,10 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  zod-to-json-schema@3.25.2(zod@4.4.1):
+    dependencies:
+      zod: 4.4.1
 
   zod@4.4.1: {}
 

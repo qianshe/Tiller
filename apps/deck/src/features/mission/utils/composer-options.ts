@@ -31,6 +31,22 @@ export const REASONING_OPTIONS: Array<{
   { value: "xhigh", label: "XHigh" },
 ];
 
+const STARTUP_MODEL_WITH_INLINE_REASONING_HINT = [
+  " 该 provider 会在下次 runtime 启动/恢复时应用模型覆盖；",
+  "若当前 provider/model 支持 reasoningEffort，",
+  "Tiller 也会通过 inline config 尝试带入，",
+  "否则仍只保存在 session 配置中。",
+  "模型请使用 provider/model 形式，例如 openai/gpt-5.4。",
+].join("");
+
+const NEW_SESSION_MODEL_WITH_INLINE_REASONING_HINT = [
+  " 该 provider 的新会话支持写入模型；",
+  "若当前 provider/model 支持 reasoningEffort，",
+  "Tiller 也会通过 inline config 尝试带入，",
+  "否则仅保存在 session 配置中。",
+  "模型请使用 provider/model 形式，例如 openai/gpt-5.4。",
+].join("");
+
 export function resolvePreferredModel(
   currentModel: string | undefined,
   modelOptions: string[],
@@ -52,7 +68,9 @@ export function resolvePreferredModel(
   return modelOptions[0];
 }
 
-export function resolveAgentModeOptions(configOptions: SessionConfigOption[] = []) {
+export function resolveAgentModeOptions(
+  configOptions: SessionConfigOption[] = [],
+) {
   const option = configOptions.find(
     (item) => item.category?.toLowerCase() === "mode",
   );
@@ -110,7 +128,9 @@ export function resolveModelOptions(
   );
 }
 
-export function resolveReasoningOptions(configOptions: SessionConfigOption[] = []) {
+export function resolveReasoningOptions(
+  configOptions: SessionConfigOption[] = [],
+) {
   const option = configOptions.find((item) =>
     ["thought_level", "reasoning", "reasoning_effort"].includes(
       item.category?.toLowerCase() ?? "",
@@ -252,8 +272,8 @@ export function resolveSessionConfigHint(
 
   if (support.model === "startup" && support.reasoningEffort === "none") {
     return activeSession
-      ? " 该 provider 会在下次 runtime 启动/恢复时应用模型覆盖；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仍只保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。"
-      : " 该 provider 的新会话支持写入模型；若当前 provider/model 支持 reasoningEffort，Tiller 也会通过 inline config 尝试带入，否则仅保存在 session 配置中。模型请使用 provider/model 形式，例如 openai/gpt-5.4。";
+      ? STARTUP_MODEL_WITH_INLINE_REASONING_HINT
+      : NEW_SESSION_MODEL_WITH_INLINE_REASONING_HINT;
   }
 
   return activeSession

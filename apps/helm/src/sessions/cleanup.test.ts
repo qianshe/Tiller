@@ -38,27 +38,36 @@ test("resolveSessionCleanupOutcome treats sessions without runtimeSessionId as l
     remoteDeleted: false,
     remoteDeletionAttempted: false,
     providerId: provider.id,
-    message: "Legacy session had no tracked ACP runtimeSessionId; deleted local Tiller history only.",
+    message:
+      "Legacy session had no tracked ACP runtimeSessionId; deleted local Tiller history only.",
   });
 });
 
 test("resolveSessionCleanupOutcome reports unresolved providers without attempting remote cleanup", () => {
-  const result = resolveSessionCleanupOutcome(createSummary({ runtimeSessionId: "runtime-1" }), undefined);
+  const result = resolveSessionCleanupOutcome(
+    createSummary({ runtimeSessionId: "runtime-1" }),
+    undefined,
+  );
 
   assert.deepEqual(result, {
     remoteDeleted: false,
     remoteDeletionAttempted: false,
     providerId: "opencode",
-    message: "Session data deleted locally, but the original ACP provider could not be resolved for remote cleanup.",
+    message:
+      "Session data deleted locally, but the original ACP provider could not be resolved for remote cleanup.",
   });
 });
 
 test("resolveSessionCleanupOutcome normalizes provider cleanup success", () => {
-  const result = resolveSessionCleanupOutcome(createSummary({ runtimeSessionId: "runtime-1" }), provider, () => ({
-    kind: "remote-deleted",
-    providerId: provider.id,
-    message: "deleted",
-  }));
+  const result = resolveSessionCleanupOutcome(
+    createSummary({ runtimeSessionId: "runtime-1" }),
+    provider,
+    () => ({
+      kind: "remote-deleted",
+      providerId: provider.id,
+      message: "deleted",
+    }),
+  );
 
   assert.deepEqual(result, {
     remoteDeleted: true,
@@ -69,11 +78,15 @@ test("resolveSessionCleanupOutcome normalizes provider cleanup success", () => {
 });
 
 test("resolveSessionCleanupOutcome normalizes provider cleanup failure", () => {
-  const result = resolveSessionCleanupOutcome(createSummary({ runtimeSessionId: "runtime-1" }), provider, () => ({
-    kind: "remote-delete-failed",
-    providerId: provider.id,
-    message: "boom",
-  }));
+  const result = resolveSessionCleanupOutcome(
+    createSummary({ runtimeSessionId: "runtime-1" }),
+    provider,
+    () => ({
+      kind: "remote-delete-failed",
+      providerId: provider.id,
+      message: "boom",
+    }),
+  );
 
   assert.deepEqual(result, {
     remoteDeleted: false,

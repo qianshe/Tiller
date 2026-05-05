@@ -1,8 +1,7 @@
 import type { FormEvent, MutableRefObject } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
-import type { DebugTrace } from "../../../store/slices/connection-slice";
-import type { PairingState } from "../../../store/slices/pairing-slice";
-import { nextRequestId } from "../../helm-connection/request-dispatch";
+import type { DebugTrace, PairingState } from "../../../store/facade";
+import { nextRequestId } from "../../helm-connection/facade";
 
 type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
 type PairInputRefs = MutableRefObject<Array<HTMLInputElement | null>>;

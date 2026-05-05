@@ -7,7 +7,7 @@ import type {
   SessionReasoningEffort,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { AgentModelOptionsEntry } from "../agents/utils/agent-model-options-cache";
+import type { AgentModelOptionsEntry } from "../agents/facade";
 import { useDeckStore } from "../../store";
 
 type StoreUpdater<T> = T | ((current: T) => T);

@@ -1,4 +1,4 @@
-import type { ConnectionState } from "../../../store/slices/connection-slice";
+import type { ConnectionState } from "../../../store/facade";
 
 export function resolveHelmConnectionState(
   helm: { key: string; isCurrent: boolean },
