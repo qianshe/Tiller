@@ -145,6 +145,10 @@ import { LogbookPanel } from "../features/mission/ui/logbook-panel";
 import { useMissionLayout } from "../features/mission/hooks/use-layout";
 import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
 import {
+  useSelection,
+  type SessionDraftPreferencePatch,
+} from "../features/mission/hooks/use-selection";
+import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
 } from "../features/helm-connection/reconnect-policy";
@@ -161,7 +165,6 @@ import {
   resolvePromptPlaceholder,
   resolveSessionProjectId,
   resolveSessionTitle,
-  toggleExpandedIdSet,
 } from "../features/mission/utils/session-derivations";
 import {
   clearTrustedDeviceCache,
@@ -532,6 +535,29 @@ export function App() {
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<
     Set<string>
   >(() => new Set());
+  const {
+    toggleHelmNode: toggleMissionHelmNode,
+    toggleProjectNode: toggleMissionProjectNode,
+    selectDraftWorkspace,
+    selectDraftAgent,
+    selectHelm: selectMissionHelm,
+    selectProject,
+    openSession,
+  } = useSelection({
+    projects,
+    agents,
+    sessions,
+    requestChatScrollToBottom,
+    setSelectedMissionHelmId,
+    setExpandedMissionHelmIds,
+    setExpandedMissionProjectIds,
+    setSelectedProjectId,
+    setSelectedWorkspaceId,
+    setSelectedAgentId,
+    setActiveSessionId,
+    setWorktreePickerOpen,
+    setAgentPickerOpen,
+  });
   const [missionConfigPicker, setMissionConfigPicker] = useState<
     "agentMode" | "model" | "reasoning" | null
   >(null);
@@ -843,89 +869,12 @@ export function App() {
     }
     setActiveView(view);
   }
-  function toggleMissionHelmNode(helmId: string) {
-    setExpandedMissionHelmIds((current) => {
-      const next = new Set(current);
-      if (next.has(helmId)) {
-        next.delete(helmId);
-      } else {
-        next.add(helmId);
-      }
-      return next;
-    });
-  }
-  function toggleMissionProjectNode(projectId: string) {
-    setExpandedMissionProjectIds((current) =>
-      toggleExpandedIdSet(current, projectId),
-    );
-  }
-  function selectDraftWorkspace(workspaceId: string) {
-    setSelectedWorkspaceId(workspaceId);
-    setWorktreePickerOpen(false);
-  }
-  function selectDraftAgent(agentId: string) {
-    setSelectedAgentId(agentId);
-    setAgentPickerOpen(false);
-  }
   function requestChatScrollToBottom(sessionId: string | null) {
     pendingSessionScrollToBottomRef.current = sessionId;
     stickChatToBottomRef.current = true;
     setSessionOpenScrollTick((current) => current + 1);
   }
-  function selectMissionHelm(helmId: string) {
-    setSelectedMissionHelmId(helmId);
-    setExpandedMissionHelmIds((current) => new Set([...current, helmId]));
-    const nextProject =
-      projects.find((project) => project.helmId === helmId) ?? null;
-    requestChatScrollToBottom(null);
-    setSelectedProjectId(nextProject?.id ?? null);
-    setActiveSessionId(null);
-  }
-  function selectProject(projectId: string) {
-    const project = projects.find((item) => item.id === projectId);
-    if (project) {
-      setSelectedMissionHelmId(project.helmId);
-      setExpandedMissionHelmIds(
-        (current) => new Set([...current, project.helmId]),
-      );
-      setExpandedMissionProjectIds(
-        (current) => new Set([...current, projectId]),
-      );
-      setSelectedWorkspaceId((current) =>
-        project.workspaceIds?.includes(current ?? "")
-          ? current
-          : (project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null),
-      );
-      setSelectedAgentId((current) =>
-        agents.some((agent) => agent.id === current)
-          ? current
-          : (project.defaultAgentId ?? agents[0]?.id ?? null),
-      );
-    }
-    setSelectedProjectId(projectId);
-    requestChatScrollToBottom(null);
-    setActiveSessionId(null);
-  }
-  function openSession(sessionId: string) {
-    const session = sessions.find((item) => item.id === sessionId);
-    if (!session) {
-      return;
-    }
-    setSelectedMissionHelmId(session.helmId);
-    const projectId = resolveSessionProjectId(session, projects);
-    setSelectedProjectId(projectId);
-    setExpandedMissionHelmIds(
-      (current) => new Set([...current, session.helmId]),
-    );
-    setExpandedMissionProjectIds((current) => new Set([...current, projectId]));
-    requestChatScrollToBottom(sessionId);
-    setActiveSessionId(sessionId);
-  }
-  function updateSessionDraftPreferences(next: {
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  }) {
+  function updateSessionDraftPreferences(next: SessionDraftPreferencePatch) {
     if (activeSession && socketRef.current) {
       dispatch(socketRef.current, {
         type: "session.configure",
