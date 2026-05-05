@@ -1,11 +1,10 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
+import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine, writeProtocolLog } from "./protocol-logging";
 import { resolveAcpLaunchConfig, resolveAdapterCapabilities } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
 import { resolveRuntimeSessionId } from "./requests";
@@ -43,12 +42,6 @@ export type ProviderCleanupResult =
   | { kind: "remote-delete-failed"; providerId: string; message: string }
   | { kind: "remote-closed"; providerId: string; message: string }
   | { kind: "remote-close-failed"; providerId: string; message: string };
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const LOGS_DIR = resolve(REPO_ROOT, "logs");
-const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
-
-mkdirSync(ACP_LOGS_DIR, { recursive: true });
-
 export type SessionRuntimeEvent =
   | {
       type: "status";
@@ -1198,67 +1191,6 @@ function normalizePreferredAgentId(agent: string | undefined) {
 }
 
 
-function writeProtocolLog(logFile: string, stream: "stdin" | "stdout", payload: unknown) {
-  writeLogLine(logFile, stream, JSON.stringify(sanitizeProtocolLogPayload(payload)));
-}
-
-export function sanitizeProtocolLogPayload(payload: unknown): unknown {
-  if (!payloadHasRedactableField(payload)) {
-    return payload;
-  }
-  if (Array.isArray(payload)) {
-    return payload.map((item) => sanitizeProtocolLogPayload(item));
-  }
-  if (!payload || typeof payload !== "object") {
-    return payload;
-  }
-
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    sanitized[key] = shouldRedactProtocolLogField(key, value) ? redactProtocolLogValue(value) : sanitizeProtocolLogPayload(value);
-  }
-  return sanitized;
-}
-
-function payloadHasRedactableField(value: unknown): boolean {
-  if (Array.isArray(value)) {
-    return value.some(payloadHasRedactableField);
-  }
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    if (shouldRedactProtocolLogField(key, child)) {
-      return true;
-    }
-    if (payloadHasRedactableField(child)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function shouldRedactProtocolLogField(key: string, value: unknown) {
-  return typeof value === "string" && /^(text|output|patch|content)$/iu.test(key);
-}
-
-function redactProtocolLogValue(value: unknown) {
-  return typeof value === "string" ? `[redacted chars=${value.length}]` : "[redacted]";
-}
-
-function writeChunkLog(logFile: string, stream: string, chunk: string) {
-  const trimmed = chunk.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
-  writeLogLine(logFile, stream, trimmed);
-}
-
-function writeLogLine(logFile: string, stream: string, message: string) {
-  appendFileSync(logFile, `${new Date().toISOString()} [${stream}] ${message}\n`, "utf8");
-}
-
-function sanitizeLogToken(value: string) {
-  return value.replace(/[^a-z0-9._-]+/giu, "-");
-}
-
 // TODO(real-acp): introduce createAcpRuntime(provider, workspace) using stdio JSON-RPC notifications beyond initialize.
 // TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
 
@@ -1266,6 +1198,7 @@ function sanitizeLogToken(value: string) {
 export { resolveRuntimeSessionId } from "./requests";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
+export { sanitizeProtocolLogPayload } from "./protocol-logging";
 
 export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
 export {
