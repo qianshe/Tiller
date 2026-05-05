@@ -149,7 +149,7 @@ import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
 import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
 import { SessionOverviewCard } from "../features/mission/ui/session-overview-card";
-import { resolveToolCallTone } from "../features/logbook/tool-call-tone";
+import { ActivityLogPanel } from "../features/logbook/ui/activity-log-panel";
 import {
   useMissionLayout,
   type MissionResizeHandle,
@@ -190,19 +190,12 @@ import {
   extractClipboardImageItems,
 } from "../features/mission/utils/clipboard";
 import {
-  commandChunkToToolCall,
-  groupToolCalls,
   mergeMessageHistory,
   mergeToolCallHistory,
   resolvePendingToolActivity,
 } from "../features/logbook/timeline";
 import { MarkdownMessage } from "../shared/ui/markdown";
-import {
-  CommandOutput,
-  DiffSummary,
-  PairingBoxes,
-  StatCard,
-} from "../shared/ui/primitives";
+import { DiffSummary, PairingBoxes, StatCard } from "../shared/ui/primitives";
 import { toast } from "../features/toast/toast";
 import {
   DAEMON_HOST_KEY,
@@ -2580,161 +2573,35 @@ export function App() {
       return next;
     });
   }
-  function summarizeActivityText(text: string) {
-    const compact = text.replace(/\s+/g, " ").trim();
-    return compact.length > 72
-      ? `${compact.slice(0, 72)}…`
-      : compact || "发送给 ACP";
-  }
   function renderActivityLog(
     sessionId: string | undefined,
     sessionToolCalls: AgentToolCall[],
     commandChunks: CommandChunk[],
     sessionMessages: AgentMessage[],
   ) {
-    const toolItems = groupToolCalls(
-      sessionToolCalls.length
-        ? sessionToolCalls
-        : commandChunks.map(commandChunkToToolCall),
-    );
-    const promptItems = sessionMessages
-      .filter((message) => message.role === "user")
-      .map((message) => ({
-        kind: "prompt" as const,
-        id: message.id,
-        timestamp: message.timestamp,
-        text: message.text,
-      }));
-    const timelineItems = [
-      ...promptItems,
-      ...toolItems.map((item) => ({
-        kind: "tool" as const,
-        timestamp: item.timestamp,
-        item,
-      })),
-    ].sort(
-      (left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp),
-    );
-    const historyState = sessionId
-      ? activityHistoryState[sessionId]
-      : undefined;
-    const visibleCount = sessionId
-      ? (activityVisibleCounts[sessionId] ?? DEFAULT_LOGBOOK_VISIBLE_LIMIT)
-      : DEFAULT_LOGBOOK_VISIBLE_LIMIT;
-    const visibleTimelineItems = timelineItems.slice(0, visibleCount);
-    const hiddenCount = Math.max(
-      0,
-      timelineItems.length - visibleTimelineItems.length,
-    );
-    if (!timelineItems.length) {
-      return (
-        <CommandOutput
-          items={commandChunks}
-          emptyLabel={copy.noCommandOutput}
-        />
-      );
-    }
     return (
-      <section className="info-list mission-activity-log">
-        {" "}
-        <div className="section-head section-head-soft">
-          {" "}
-          <div>
-            {" "}
-            <h3>{copy.commandOutput}</h3>{" "}
-          </div>{" "}
-        </div>{" "}
-        <div className="plain-message-list conversation-timeline activity-timeline">
-          {" "}
-          {visibleTimelineItems.map((timelineItem) => {
-            if (timelineItem.kind === "prompt") {
-              return (
-                <details
-                  key={timelineItem.id}
-                  className="tool-call-card acp-prompt-card"
-                >
-                  {" "}
-                  <summary className="tool-call-head">
-                    {" "}
-                    <span className="tool-call-icon" aria-hidden="true">
-                      {" "}
-                      ↗{" "}
-                    </span>{" "}
-                    <span className="tool-call-kind">Prompt</span>{" "}
-                    <strong>{summarizeActivityText(timelineItem.text)}</strong>{" "}
-                    <span className="tool-call-stream">user</span>{" "}
-                  </summary>{" "}
-                  <pre className="tool-call-output">
-                    {timelineItem.text}
-                  </pre>{" "}
-                </details>
-              );
-            }
-            const toolTone = resolveToolCallTone(
-              timelineItem.item.toolKind,
-              timelineItem.item.title,
-            );
-            const streamTone = timelineItem.item.streams.includes("stderr")
-              ? "stderr"
-              : "stdout";
-            return (
-              <details
-                key={timelineItem.item.id}
-                className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}
-              >
-                {" "}
-                <summary className="tool-call-head">
-                  {" "}
-                  <span className="tool-call-icon" aria-hidden="true">
-                    {" "}
-                    {toolTone.icon}{" "}
-                  </span>{" "}
-                  <span className="tool-call-kind">{toolTone.label}</span>{" "}
-                  <strong>{timelineItem.item.title}</strong>{" "}
-                  <span
-                    className={`tool-call-stream tool-call-stream-${streamTone}`}
-                  >
-                    {" "}
-                    {streamTone}{" "}
-                  </span>{" "}
-                </summary>{" "}
-                {timelineItem.item.text.trim() ? (
-                  <pre className="tool-call-output">
-                    {" "}
-                    {timelineItem.item.text}{" "}
-                  </pre>
-                ) : null}{" "}
-              </details>
-            );
-          })}{" "}
-          {hiddenCount > 0 ? (
-            <button
-              className="secondary load-more-history"
-              type="button"
-              onClick={() =>
-                sessionId
-                  ? setActivityVisibleCounts((current) => ({
-                      ...current,
-                      [sessionId]: visibleCount + DEFAULT_LOGBOOK_VISIBLE_LIMIT,
-                    }))
-                  : undefined
-              }
-            >
-              展开更多（剩余 {hiddenCount} 条）{" "}
-            </button>
-          ) : historyState?.hasMore ? (
-            <button
-              className="secondary load-more-history"
-              type="button"
-              onClick={() => loadOlderActivities(sessionId!)}
-              disabled={historyState.loading}
-            >
-              {" "}
-              {historyState.loading ? "加载中..." : "加载更早活动"}{" "}
-            </button>
-          ) : null}{" "}
-        </div>{" "}
-      </section>
+      <ActivityLogPanel
+        sessionId={sessionId}
+        sessionToolCalls={sessionToolCalls}
+        commandChunks={commandChunks}
+        sessionMessages={sessionMessages}
+        historyState={sessionId ? activityHistoryState[sessionId] : undefined}
+        visibleCount={
+          sessionId
+            ? (activityVisibleCounts[sessionId] ??
+              DEFAULT_LOGBOOK_VISIBLE_LIMIT)
+            : DEFAULT_LOGBOOK_VISIBLE_LIMIT
+        }
+        visibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
+        copy={copy}
+        onShowMore={(targetSessionId, nextVisibleCount) =>
+          setActivityVisibleCounts((current) => ({
+            ...current,
+            [targetSessionId]: nextVisibleCount,
+          }))
+        }
+        onLoadOlder={loadOlderActivities}
+      />
     );
   }
   function renderSessionOverview(diffCount: number, logCount: number) {
