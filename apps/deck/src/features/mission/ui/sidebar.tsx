@@ -7,7 +7,6 @@ import type {
 } from "react";
 import type {
   AcpAgentProvider,
-  AgentMessage,
   HelmSummary,
   ProjectSummary,
   SessionStatus,
@@ -17,8 +16,7 @@ import {
   daemonProfileKey,
   formatConnectionStatus,
 } from "../../helm-connection/daemon-profiles";
-import { resolveSessionProjectId } from "../utils/session-derivations";
-import { SessionRow } from "./session-row";
+import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type MissionSidebarProps = {
   effectiveSidebarCollapsed: boolean;
@@ -202,124 +200,36 @@ export function MissionSidebar({
                           const projectExpanded = expandedMissionProjectIds.has(
                             project.id,
                           );
-                          const projectNodeSessions = sessions.filter(
-                            (session) =>
-                              resolveSessionProjectId(session, projects) ===
-                              project.id,
-                          );
                           return (
-                            <div
+                            <SidebarProjectNode
                               key={project.id}
-                              className="mission-tree-group"
-                              role="group"
-                            >
-                              <div
-                                className={[
-                                  "mission-tree-project-row",
-                                  selectedProject ? "active" : "",
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ")}
-                              >
-                                <button
-                                  type="button"
-                                  className={[
-                                    "mission-tree-row",
-                                    "mission-tree-row-project",
-                                    selectedProject ? "active" : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  onClick={() =>
-                                    toggleMissionProjectNode(project.id)
-                                  }
-                                  role="treeitem"
-                                  aria-level={2}
-                                  aria-expanded={projectExpanded}
-                                  aria-selected={selectedProject}
-                                >
-                                  <span className="mission-tree-caret">
-                                    {projectExpanded ? "▾" : "▸"}
-                                  </span>
-                                  <span className="mission-tree-icon">
-                                    {projectExpanded ? "📂" : "📁"}
-                                  </span>
-                                  <span className="mission-tree-main">
-                                    <strong>{project.name}</strong>
-                                    <span>
-                                      {sessionCountsByProject[project.id] ?? 0}
-                                      任务
-                                    </span>
-                                  </span>
-                                </button>
-                                <button
-                                  type="button"
-                                  className="mission-tree-new-inline"
-                                  onClick={() => {
-                                    setSelectedMissionHelmId(project.helmId);
-                                    setSelectedProjectId(project.id);
-                                    setSelectedWorkspaceId(
-                                      project.defaultWorkspaceId ??
-                                        project.workspaceIds?.[0] ??
-                                        null,
-                                    );
-                                    setSelectedAgentId(
-                                      project.defaultAgentId ??
-                                        agents[0]?.id ??
-                                        null,
-                                    );
-                                    setExpandedMissionProjectIds(
-                                      (current) =>
-                                        new Set([...current, project.id]),
-                                    );
-                                    setActiveSessionId(null);
-                                  }}
-                                  aria-label={`在 ${project.name} 下新建任务`}
-                                  title="新建任务"
-                                >
-                                  ＋
-                                </button>
-                              </div>
-                              {projectExpanded ? (
-                                <div
-                                  className="mission-tree-children mission-tree-children-sessions"
-                                  role="group"
-                                >
-                                  {projectNodeSessions.length ? (
-                                    projectNodeSessions.map((session) => {
-                                      const sessionStatus =
-                                        statuses[session.id] ?? session.status;
-                                      return (
-                                        <SessionRow
-                                          key={session.id}
-                                          activeSessionId={activeSessionId}
-                                          copy={copy}
-                                          formatRelativeTime={
-                                            formatRelativeTime
-                                          }
-                                          openSession={openSession}
-                                          renderAgentIcon={
-                                            renderMissionAgentIcon
-                                          }
-                                          resolveDisplayTitle={
-                                            resolveDisplaySessionTitle
-                                          }
-                                          session={session}
-                                          sessionStatus={sessionStatus}
-                                          setPendingSessionCleanup={
-                                            setPendingSessionCleanup
-                                          }
-                                        />
-                                      );
-                                    })
-                                  ) : (
-                                    <div className="mission-tree-empty">
-                                      这个项目还没有任务。
-                                    </div>
-                                  )}
-                                </div>
-                              ) : null}
-                            </div>
+                              project={project}
+                              projects={projects}
+                              sessions={sessions}
+                              selectedProject={selectedProject}
+                              projectExpanded={projectExpanded}
+                              sessionCountsByProject={sessionCountsByProject}
+                              agents={agents}
+                              setSelectedMissionHelmId={setSelectedMissionHelmId}
+                              setSelectedProjectId={setSelectedProjectId}
+                              setSelectedWorkspaceId={setSelectedWorkspaceId}
+                              setSelectedAgentId={setSelectedAgentId}
+                              setExpandedMissionProjectIds={
+                                setExpandedMissionProjectIds
+                              }
+                              setActiveSessionId={setActiveSessionId}
+                              statuses={statuses}
+                              copy={copy}
+                              activeSessionId={activeSessionId}
+                              openSession={openSession}
+                              renderMissionAgentIcon={renderMissionAgentIcon}
+                              resolveDisplaySessionTitle={
+                                resolveDisplaySessionTitle
+                              }
+                              formatRelativeTime={formatRelativeTime}
+                              setPendingSessionCleanup={setPendingSessionCleanup}
+                              toggleMissionProjectNode={toggleMissionProjectNode}
+                            />
                           );
                         })}
                         {!helmProjects.length ? (
@@ -356,12 +266,5 @@ export function MissionSidebar({
       ) : null}
       {resizer}
     </>
-  );
-}
-function isSessionExecutionPending(status: SessionStatus) {
-  return (
-    status === "starting" ||
-    status === "running" ||
-    status === "waiting_for_permission"
   );
 }
