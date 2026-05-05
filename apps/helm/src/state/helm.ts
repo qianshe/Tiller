@@ -18,10 +18,7 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import {
-  resolveTillerRuntimeOptions,
-  type TillerRuntimeOptions,
-} from "../runtime/options";
+import { resolveTillerRuntimeOptions, type TillerRuntimeOptions } from "../runtime/options";
 import {
   createHelmSessionStores,
   resolveSessionStoreBackend,

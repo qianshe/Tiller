@@ -9,7 +9,9 @@ export type SocketState<TSocket extends SocketLike = SocketLike> = {
   getSocketId(socket: TSocket): string;
 };
 
-export function createSocketState<TSocket extends SocketLike & object = SocketLike>(): SocketState<TSocket> {
+export function createSocketState<
+  TSocket extends SocketLike & object = SocketLike,
+>(): SocketState<TSocket> {
   const registry = createAuthenticatedSocketRegistry<TSocket>();
   const ids = new WeakMap<TSocket, string>();
   let sequence = 0;
