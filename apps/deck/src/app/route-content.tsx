@@ -1,8 +1,8 @@
 import { OverviewPage } from "../features/overview/ui/page";
 import { AgentsPage } from "../features/agents/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
-import { MissionWorkspace } from "../features/mission/ui/workspace";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_LOGBOOK_VISIBLE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "./constants";
+import { renderMissionRoute } from "./mission-route";
 export function AppRoutes({ ctx }: { ctx: any }) {
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
@@ -26,140 +26,12 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     openSession,
     resolveDisplaySessionTitle,
     formatRelativeTime,
-    prompt,
-    promptImages,
     socketRef,
-    activeSessionId,
-    selectedProjectId,
-    selectedWorkspaceId,
-    selectedAgentId,
-    activeSession,
-    diffs,
-    outputs,
-    toolCalls,
-    statuses,
-    customMissionPanelPages,
-    selectedMissionPanelPageId,
-    activeSessionProjectId,
-    projectFilesByScope,
-    activeSessionProject,
-    draftProject,
-    selectedWorkspace,
-    selectedDraftAgent,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
-    effectiveSidebarCollapsed,
-    effectiveInspectorCollapsed,
-    missionLayoutRef,
-    missionLayoutStyle,
-    missionSidebarCollapsed,
-    missionSidebarPaneStyle,
-    handleMissionTreeScroll,
-    setMissionSidebarCollapsed,
-    missionHelms,
-    effectiveMissionHelmId,
-    missionProjects,
-    expandedMissionHelmIds,
     helmConnectionStates,
-    activeProfileId,
-    toggleMissionHelmNode,
-    missionSelectedProjectId,
-    expandedMissionProjectIds,
-    sessionCountsByProject,
-    setSelectedMissionHelmId,
-    setSelectedProjectId,
-    setSelectedWorkspaceId,
-    setSelectedAgentId,
-    setExpandedMissionProjectIds,
-    setActiveSessionId,
-    renderMissionAgentIcon,
-    setPendingSessionCleanup,
-    sessionHistoryState,
-    toggleMissionProjectNode,
-    startMissionPaneResize,
-    nudgeMissionPane,
-    missionChatPaneStyle,
-    chatMainRef,
-    handleChatMainScroll,
     pairingState,
-    activeSessionMessages,
-    expandedMessageIds,
-    messageHistoryState,
-    loadOlderMessages,
-    toggleExpandedMessage,
-    pendingPermission,
     technicalPanels,
-    respondToPermission,
-    worktreePickerRef,
-    worktreePickerOpen,
-    setWorktreePickerOpen,
-    agentPickerRef,
-    agentPickerOpen,
-    setAgentPickerOpen,
-    selectedWorkspaceName,
-    draftWorkspaceOptions,
-    selectDraftWorkspace,
-    agentLocked,
-    filteredAgents,
-    selectDraftAgent,
-    submitPrompt,
-    slashWrapperRef,
-    removePromptImage,
-    imagePasteNotice,
-    missionPromptRef,
-    setPrompt,
-    handleMissionPromptKeyDown,
-    handleMissionPromptPaste,
-    draftPromptPlaceholder,
-    slashPopupOpen,
-    filteredSlashCommands,
-    slashSelectedIndex,
-    applySlashCommand,
-    setSlashSelectedIndex,
-    showDraftAgentModeSelect,
-    missionConfigPicker,
-    setMissionConfigPicker,
-    draftAgentModePickerLabel,
-    draftAgentModeOptions,
-    effectiveDraftAgentMode,
-    updateSessionDraftPreferences,
-    draftModelPlaceholder,
-    draftModelPickerDisabled,
-    draftModelPickerLabel,
-    draftModelBaseOptions,
-    resolveReasoningOptionsForModel,
-    draftAllModelOptions,
-    draftConfigOptions,
-    effectiveDraftReasoningEffort,
-    effectiveDraftModelBase,
-    resolveCombinedModelValue,
-    showDraftReasoningSelect,
-    resolveReasoningLabel,
-    draftReasoningOptions,
     deckPreferences,
-    enhancePromptDraft,
     promptEnhancerBusy,
-    cancelSession,
-    missionDisplayPaneStyle,
-    selectedMissionDiffFilePath,
-    messages,
-    activityHistoryState,
-    activityVisibleCounts,
-    setActivityVisibleCounts,
-    loadOlderActivities,
-    addMissionPanelPage,
-    setSelectedMissionPanelPageId,
-    setDraggedMissionPanelPageId,
-    dropMissionPanelPage,
-    openDiffDetail,
-    renameMissionPanelPage,
-    moveMissionPanelPage,
-    deleteMissionPanelPage,
-    toggleMissionDiffDirectory,
-    missionInspectorPaneStyle,
-    setProjectFileFilter,
-    setMissionInspectorCollapsed,
-    toggleProjectFileDirectory,
     daemonProfiles,
     selectedHelmKey,
     helmInventories,
@@ -244,156 +116,7 @@ function renderOverview() {
     />
   );
 }
-function renderSessions() {
-  return (
-    <MissionWorkspace
-      prompt={prompt}
-      promptImages={promptImages}
-      socketRef={socketRef}
-      activeSessionId={activeSessionId}
-      selectedProjectId={selectedProjectId}
-      selectedWorkspaceId={selectedWorkspaceId}
-      selectedAgentId={selectedAgentId}
-      activeSession={activeSession}
-      diffs={diffs}
-      outputs={outputs}
-      toolCalls={toolCalls}
-      statuses={statuses}
-      copy={copy}
-      customMissionPanelPages={customMissionPanelPages}
-      selectedMissionPanelPageId={selectedMissionPanelPageId}
-      activeSessionProjectId={activeSessionProjectId}
-      projectFilesByScope={projectFilesByScope}
-      activeSessionProject={activeSessionProject}
-      draftProject={draftProject}
-      selectedWorkspace={selectedWorkspace}
-      selectedDraftAgent={selectedDraftAgent}
-      projectFileFilter={projectFileFilter}
-      collapsedProjectFileDirectories={collapsedProjectFileDirectories}
-      effectiveSidebarCollapsed={effectiveSidebarCollapsed}
-      effectiveInspectorCollapsed={effectiveInspectorCollapsed}
-      missionLayoutRef={missionLayoutRef}
-      missionLayoutStyle={missionLayoutStyle}
-      missionSidebarCollapsed={missionSidebarCollapsed}
-      missionSidebarPaneStyle={missionSidebarPaneStyle}
-      handleMissionTreeScroll={handleMissionTreeScroll}
-      setMissionSidebarCollapsed={setMissionSidebarCollapsed}
-      missionHelms={missionHelms}
-      effectiveMissionHelmId={effectiveMissionHelmId}
-      activeHelm={activeHelm}
-      missionProjects={missionProjects}
-      expandedMissionHelmIds={expandedMissionHelmIds}
-      projects={projects}
-      helmConnectionStates={helmConnectionStates}
-      activeProfileId={activeProfileId}
-      connection={connection}
-      toggleMissionHelmNode={toggleMissionHelmNode}
-      missionSelectedProjectId={missionSelectedProjectId}
-      expandedMissionProjectIds={expandedMissionProjectIds}
-      sessions={sessions}
-      sessionCountsByProject={sessionCountsByProject}
-      agents={agents}
-      setSelectedMissionHelmId={setSelectedMissionHelmId}
-      setSelectedProjectId={setSelectedProjectId}
-      setSelectedWorkspaceId={setSelectedWorkspaceId}
-      setSelectedAgentId={setSelectedAgentId}
-      setExpandedMissionProjectIds={setExpandedMissionProjectIds}
-      setActiveSessionId={setActiveSessionId}
-      openSession={openSession}
-      renderMissionAgentIcon={renderMissionAgentIcon}
-      resolveDisplaySessionTitle={resolveDisplaySessionTitle}
-      formatRelativeTime={formatRelativeTime}
-      setPendingSessionCleanup={setPendingSessionCleanup}
-      sessionHistoryState={sessionHistoryState}
-      toggleMissionProjectNode={toggleMissionProjectNode}
-      startMissionPaneResize={startMissionPaneResize}
-      nudgeMissionPane={nudgeMissionPane}
-      missionChatPaneStyle={missionChatPaneStyle}
-      chatMainRef={chatMainRef}
-      handleChatMainScroll={handleChatMainScroll}
-      pairingState={pairingState}
-      activeSessionMessages={activeSessionMessages}
-      expandedMessageIds={expandedMessageIds}
-      messageHistoryState={messageHistoryState}
-      loadOlderMessages={loadOlderMessages}
-      toggleExpandedMessage={toggleExpandedMessage}
-      pendingPermission={pendingPermission}
-      technicalPanels={technicalPanels}
-      respondToPermission={respondToPermission}
-      worktreePickerRef={worktreePickerRef}
-      worktreePickerOpen={worktreePickerOpen}
-      setWorktreePickerOpen={setWorktreePickerOpen}
-      agentPickerRef={agentPickerRef}
-      agentPickerOpen={agentPickerOpen}
-      setAgentPickerOpen={setAgentPickerOpen}
-      selectedWorkspaceName={selectedWorkspaceName}
-      draftWorkspaceOptions={draftWorkspaceOptions}
-      selectDraftWorkspace={selectDraftWorkspace}
-      agentLocked={agentLocked}
-      filteredAgents={filteredAgents}
-      selectDraftAgent={selectDraftAgent}
-      submitPrompt={submitPrompt}
-      slashWrapperRef={slashWrapperRef}
-      removePromptImage={removePromptImage}
-      imagePasteNotice={imagePasteNotice}
-      missionPromptRef={missionPromptRef}
-      setPrompt={setPrompt}
-      handleMissionPromptKeyDown={handleMissionPromptKeyDown}
-      handleMissionPromptPaste={handleMissionPromptPaste}
-      draftPromptPlaceholder={draftPromptPlaceholder}
-      slashPopupOpen={slashPopupOpen}
-      filteredSlashCommands={filteredSlashCommands}
-      slashSelectedIndex={slashSelectedIndex}
-      applySlashCommand={applySlashCommand}
-      setSlashSelectedIndex={setSlashSelectedIndex}
-      showDraftAgentModeSelect={showDraftAgentModeSelect}
-      missionConfigPicker={missionConfigPicker}
-      setMissionConfigPicker={setMissionConfigPicker}
-      draftAgentModePickerLabel={draftAgentModePickerLabel}
-      draftAgentModeOptions={draftAgentModeOptions}
-      effectiveDraftAgentMode={effectiveDraftAgentMode}
-      updateSessionDraftPreferences={updateSessionDraftPreferences}
-      draftModelPlaceholder={draftModelPlaceholder}
-      draftModelPickerDisabled={draftModelPickerDisabled}
-      draftModelPickerLabel={draftModelPickerLabel}
-      draftModelBaseOptions={draftModelBaseOptions}
-      resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
-      draftAllModelOptions={draftAllModelOptions}
-      draftConfigOptions={draftConfigOptions}
-      effectiveDraftReasoningEffort={effectiveDraftReasoningEffort}
-      effectiveDraftModelBase={effectiveDraftModelBase}
-      resolveCombinedModelValue={resolveCombinedModelValue}
-      showDraftReasoningSelect={showDraftReasoningSelect}
-      resolveReasoningLabel={resolveReasoningLabel}
-      draftReasoningOptions={draftReasoningOptions}
-      deckPreferences={deckPreferences}
-      enhancePromptDraft={enhancePromptDraft}
-      promptEnhancerBusy={promptEnhancerBusy}
-      cancelSession={cancelSession}
-      missionDisplayPaneStyle={missionDisplayPaneStyle}
-      selectedMissionDiffFilePath={selectedMissionDiffFilePath}
-      messages={messages}
-      activityHistoryState={activityHistoryState}
-      activityVisibleCounts={activityVisibleCounts}
-      setActivityVisibleCounts={setActivityVisibleCounts}
-      loadOlderActivities={loadOlderActivities}
-      addMissionPanelPage={addMissionPanelPage}
-      setSelectedMissionPanelPageId={setSelectedMissionPanelPageId}
-      setDraggedMissionPanelPageId={setDraggedMissionPanelPageId}
-      dropMissionPanelPage={dropMissionPanelPage}
-      openDiffDetail={openDiffDetail}
-      renameMissionPanelPage={renameMissionPanelPage}
-      moveMissionPanelPage={moveMissionPanelPage}
-      deleteMissionPanelPage={deleteMissionPanelPage}
-      toggleMissionDiffDirectory={toggleMissionDiffDirectory}
-      missionInspectorPaneStyle={missionInspectorPaneStyle}
-      setProjectFileFilter={setProjectFileFilter}
-      setMissionInspectorCollapsed={setMissionInspectorCollapsed}
-      toggleProjectFileDirectory={toggleProjectFileDirectory}
-      defaultLogbookVisibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
-    />
-  );
-}
+
 function renderAgents() {
   return (
     <AgentsPage
@@ -487,7 +210,7 @@ function renderSettings() {
   return (
     <div className="page-content stack-gap">
       {activeView === "overview" && renderOverview()}
-      {activeView === "sessions" && renderSessions()}
+      {activeView === "sessions" && renderMissionRoute(source)}
       {activeView === "agents" && renderAgents()}
       {activeView === "settings" && renderSettings()}
     </div>
