@@ -69,6 +69,12 @@ import {
 } from "../features/mission/utils/composer-options";
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import {
+  buildMissionPanelPages,
+  joinClassNames,
+  resolveVisibleProjectFiles,
+  selectMissionPanelPage,
+} from "../features/mission/utils/session-render-state";
+import {
   formatProjectSummaryForDisplay,
   resolveProjectDisplayId,
   resolveProjectWorkspaceLabel,
@@ -1744,17 +1750,15 @@ export function App() {
     const missionStatusLabel = activeSession
       ? copy.status[statuses[activeSession.id] ?? activeSession.status]
       : "待创建";
-    const missionPanelPages = [
-      { id: "overview", title: "概览" },
-      { id: "changes", title: `Git Diff (${missionDiffCount})` },
-      { id: "diff-detail", title: "Diff 详情" },
-      { id: "logbook", title: `航行日志 (${missionLogCount})` },
-      ...customMissionPanelPages,
-    ];
-    const selectedMissionPanelPage =
-      missionPanelPages.find(
-        (page) => page.id === selectedMissionPanelPageId,
-      ) ?? missionPanelPages[0]!;
+    const missionPanelPages = buildMissionPanelPages(
+      missionDiffCount,
+      missionLogCount,
+      customMissionPanelPages,
+    );
+    const selectedMissionPanelPage = selectMissionPanelPage(
+      missionPanelPages,
+      selectedMissionPanelPageId,
+    );
     const projectFilesScope = resolveProjectFilesScope({
       activeSession,
       activeSessionProjectId,
@@ -1789,20 +1793,11 @@ export function App() {
           `摘要 · ${formatProjectSummaryForDisplay(overviewProject.summary, overviewProjectName)}`,
         ]
       : [];
-    const projectFileFilterText = projectFileFilter.trim().toLowerCase();
-    const visibleProjectFiles = projectFiles.filter((file) => {
-      if (projectFileFilterText) {
-        return file.path.toLowerCase().includes(projectFileFilterText);
-      }
-      const parts = file.path.split("/");
-      return !parts
-        .slice(1)
-        .some((_, index) =>
-          collapsedProjectFileDirectories.has(
-            parts.slice(0, index + 1).join("/"),
-          ),
-        );
-    });
+    const visibleProjectFiles = resolveVisibleProjectFiles(
+      projectFiles,
+      projectFileFilter,
+      collapsedProjectFileDirectories,
+    );
     const renderProjectFileList = () => (
       <ProjectFileList
         activeSessionPresent={Boolean(activeSession)}
@@ -1814,21 +1809,17 @@ export function App() {
         onToggleDirectory={toggleProjectFileDirectory}
       />
     );
-    const chatPaneClassName = [
+    const chatPaneClassName = joinClassNames([
       "chat-conversation",
       "mission-pane",
       "mission-pane-chat",
-      !activeSession ? "mission-draft-chat" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const missionLayoutClassName = [
+      !activeSession && "mission-draft-chat",
+    ]);
+    const missionLayoutClassName = joinClassNames([
       "card surface-card chat-layout chat-layout-sidebar",
-      effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : "",
-      effectiveInspectorCollapsed ? "mission-inspector-collapsed" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+      effectiveSidebarCollapsed && "mission-sidebar-collapsed",
+      effectiveInspectorCollapsed && "mission-inspector-collapsed",
+    ]);
     const renderMissionDisplayPanel = () => (
       <MissionDisplayPanel
         style={missionDisplayPaneStyle}
