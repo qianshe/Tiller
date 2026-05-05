@@ -1,4 +1,4 @@
-import { decodeCursor, encodeCursor, normalizePageLimit } from "../../sessions/pagination";
+import { decodeCursor, encodeCursor, normalizePageLimit } from "../../sessions/facade";
 import type { SessionSummary } from "@tiller/shared";
 
 type SessionSummaryPageOptions = {

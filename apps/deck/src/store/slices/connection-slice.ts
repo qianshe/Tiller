@@ -1,6 +1,6 @@
 import type { TrustedDeviceSummary } from "@tiller/shared";
 import type { StateCreator } from "zustand";
-import type { TrustedDeviceCache } from "../../features/auth/beacon-cache";
+import type { TrustedDeviceCache } from "../../features/auth";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 

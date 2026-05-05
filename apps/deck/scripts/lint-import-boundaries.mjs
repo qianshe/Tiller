@@ -13,9 +13,9 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const srcRoot = join(root, "src");
 const allowedStoreFeatureImports = new Set([
-  normalize("features/auth/beacon-cache"),
-  normalize("features/helm-connection/daemon-profiles"),
-  normalize("features/preferences/storage"),
+  normalize("features/auth"),
+  normalize("features/helm-connection/facade"),
+  normalize("features/preferences/facade"),
 ]);
 const bannedCrossFeatureInternals = new Set([
   normalize("utils/agent-model-options-cache"),
@@ -31,11 +31,7 @@ const bannedCrossFeatureInternals = new Set([
   normalize("timeline"),
   normalize("store"),
 ]);
-const allowedBoundaryImports = new Set([
-  `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routing/routes")}`,
-  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routing/routes")}`,
-  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/storage")}`,
-]);
+const allowedBoundaryImports = new Set([]);
 
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {

@@ -1,4 +1,8 @@
 import {
+  isDeckLanguage,
+  type DeckLanguage,
+} from "../../shared/config/deck-language";
+import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   type PromptEnhancerPreferences,
 } from "../prompt-enhancer/facade";
@@ -7,7 +11,6 @@ export { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE };
 
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
-export type DeckLanguage = "zh-CN" | "en-US";
 export type DeckTheme = "system" | "light" | "dark";
 
 export type TechnicalPanelPreferences = {
@@ -235,11 +238,7 @@ export function readDeckPreferences(): DeckPreferences {
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-export function isDeckLanguage(value: unknown): value is DeckLanguage {
-  return value === "zh-CN" || value === "en-US";
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function isDeckTheme(value: unknown): value is DeckTheme {

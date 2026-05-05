@@ -1,5 +1,5 @@
-import type { DeckLanguage } from "../../../features/preferences/storage";
-import { NAV_LABELS, type AppView } from "../../../app/routing/routes";
+import type { DeckLanguage } from "../../config/deck-language";
+import { NAV_LABELS, type AppView } from "../../utils/routes";
 
 type TopNavProps = {
   activeView: AppView;
