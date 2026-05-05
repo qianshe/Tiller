@@ -3,7 +3,7 @@ import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
   type DeckPreferences,
-} from "../../preferences/storage";
+} from "../../preferences";
 import {
   listPromptEnhancerModels,
   testPromptEnhancerConnectivity,

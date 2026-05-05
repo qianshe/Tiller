@@ -1,11 +1,11 @@
 import type { RefObject } from "react";
-import type { PromptEnhancerModelOption } from "../../prompt-enhancer/enhancer";
+import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import type {
   DeckLanguage,
   DeckPreferences,
   DeckTheme,
   TechnicalPanelPreferences,
-} from "../../preferences/storage";
+} from "../../preferences";
 import { resolveSettingsCopy } from "../utils/copy";
 import { PromptEnhancerCard } from "./prompt-enhancer-card";
 type SettingsPageProps = {

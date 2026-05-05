@@ -6,9 +6,9 @@ import type {
   AgentToolCall,
   SessionSummary,
 } from "@tiller/shared";
-import { toast } from "../../features/toast/store";
+import { toast } from "../toast";
+import { commandChunkToToolCall, mergeMessageHistory } from "../logbook";
 import { useDeckStore } from "../../store";
-import { commandChunkToToolCall, mergeMessageHistory } from "../../features/logbook/timeline";
 import {
   createSessionStatusMap,
   pruneSessionScopedMap,

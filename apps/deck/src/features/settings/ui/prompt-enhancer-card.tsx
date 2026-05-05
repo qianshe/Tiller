@@ -1,10 +1,10 @@
 import type { RefObject } from "react";
-import type { PromptEnhancerModelOption } from "../../prompt-enhancer/enhancer";
+import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
   type DeckPreferences,
-} from "../../preferences/storage";
+} from "../../preferences";
 
 type PromptEnhancerCardProps = {
   deckPreferences: DeckPreferences;

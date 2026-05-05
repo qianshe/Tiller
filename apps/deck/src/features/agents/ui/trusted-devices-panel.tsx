@@ -1,5 +1,5 @@
 import type { TrustedDeviceSummary } from "@tiller/shared";
-import type { DeckLanguage } from "../../preferences/storage";
+import type { DeckLanguage } from "../../preferences";
 import { formatDeviceTime } from "../../../shared/utils/format-time";
 
 type TrustedDevicesPanelProps = {

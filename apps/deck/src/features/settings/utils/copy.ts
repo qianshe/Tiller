@@ -1,4 +1,4 @@
-import type { DeckLanguage } from "../../preferences/storage";
+import type { DeckLanguage } from "../../preferences";
 
 export type SettingsCopy = ReturnType<typeof resolveSettingsCopy>;
 

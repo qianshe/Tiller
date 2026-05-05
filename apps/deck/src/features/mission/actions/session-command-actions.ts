@@ -15,13 +15,13 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { toast } from "../../toast";
 import {
   createSession as createSessionImpl,
   requestSessionResumeStart as requestSessionResumeStartImpl,
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "./session-actions";
-import { toast } from "../../toast/store";
 
 type MutableRef<T> = { current: T };
 type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;

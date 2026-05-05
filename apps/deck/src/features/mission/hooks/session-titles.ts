@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
-import type { PromptEnhancerPreferences } from "../../prompt-enhancer/enhancer";
+import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 import {
   createFallbackSessionTitle,
   generateSessionTitleWithLlm,

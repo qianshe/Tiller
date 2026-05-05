@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { HelmToClient } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
-import { commandChunkToToolCall, mergeAgentMessages } from "../../features/logbook/timeline";
+import { commandChunkToToolCall, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 
 type ActivityServerEventContext = {
