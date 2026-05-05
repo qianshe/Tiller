@@ -204,13 +204,7 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "../features/mission/actions/session-actions";
-import {
-  handlePairingKeyDown as handlePairingKeyDownImpl,
-  pastePairingDigits as pastePairingDigitsImpl,
-  sendPairingRequest as sendPairingRequestImpl,
-  submitPairingCode as submitPairingCodeImpl,
-  updatePairingDigit as updatePairingDigitImpl,
-} from "../features/pairing/actions/code-actions";
+import { useCodeActions } from "../features/pairing/hooks/use-code-actions";
 import {
   saveDraft as saveDraftImpl,
   testAgent as testAgentImpl,
@@ -314,6 +308,26 @@ export function App() {
   } = useHelmConnection({
     defaultHelmEndpoint,
     fixtureConnected: Boolean(missionVisualFixture),
+  });
+  const {
+    updatePairingDigit,
+    pastePairingDigits,
+    handlePairingKeyDown,
+    sendPairingRequest,
+    submitPairingCode,
+  } = useCodeActions({
+    socketRef,
+    pairingCodeInput,
+    setPairingCodeInput,
+    pairInputRefs,
+    pairingState,
+    setPairingState,
+    setPairingFeedback,
+    setDebugTrace,
+    dispatch,
+    requestCounter,
+    deckDeviceId,
+    deckDeviceName: DECK_DEVICE_NAME,
   });
   const storedHelms = useDeckStore((state) => state.helms);
   const helms = missionVisualFixture?.helms ?? storedHelms;
@@ -2102,43 +2116,6 @@ export function App() {
       permissionRequestId: permissionRequest.id,
       decision,
     });
-  }
-  function updatePairingDigit(index: number, rawValue: string) {
-    updatePairingDigitImpl(index, rawValue, {
-      pairingCodeInput,
-      setPairingCodeInput,
-      pairInputRefs,
-      pairingState,
-      setPairingState,
-    });
-  }
-  function pastePairingDigits(startIndex: number, rawValue: string) {
-    pastePairingDigitsImpl(startIndex, rawValue, {
-      pairingCodeInput,
-      setPairingCodeInput,
-      pairInputRefs,
-      pairingState,
-      setPairingState,
-    });
-  }
-  function handlePairingKeyDown(index: number, key: string) {
-    handlePairingKeyDownImpl(index, key, { pairingCodeInput, pairInputRefs });
-  }
-  function sendPairingRequest() {
-    sendPairingRequestImpl({
-      socketRef,
-      pairingCodeInput,
-      setPairingFeedback,
-      setDebugTrace,
-      dispatch,
-      requestCounter,
-      deckDeviceId,
-      deckDeviceName: DECK_DEVICE_NAME,
-      setPairingState,
-    });
-  }
-  function submitPairingCode(event: FormEvent<HTMLFormElement>) {
-    submitPairingCodeImpl(event, sendPairingRequest);
   }
   function startResume() {
     startResumeImpl({
