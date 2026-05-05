@@ -9,42 +9,23 @@ import type {
   AcpAgentProvider,
   HelmSummary,
   ProjectSummary,
-  SessionSummary,
   TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import {
-  daemonProfileKey,
-  formatConnectionStatus,
-  type DaemonProfile,
-} from "../../helm-connection/daemon-profiles";
+import type { DaemonProfile } from "../../helm-connection/daemon-profiles";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
 import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
-import { HelmActions } from "./helm-actions";
-import { HelmHub, type HelmCard } from "./helm-hub";
+import { HelmDetailSection } from "./helm-detail-section";
+import { HelmHub } from "./helm-hub";
+import type { FleetAgentDraft } from "./agent-inventory-section";
+import type { FleetProjectDraft } from "./project-inventory-section";
 import {
-  AgentInventorySection,
-  type FleetAgentDraft,
-} from "./agent-inventory-section";
-import {
-  ProjectInventorySection,
-  type FleetProjectDraft,
-} from "./project-inventory-section";
-import {
-  dedupeHelmCards,
-  resolveHelmConnectionState,
-  slugify,
-} from "../utils/fleet-helpers";
-type ConnectionState = "connecting" | "connected" | "disconnected";
+  resolveHelmSelection,
+  type ConnectionState,
+  type HelmInventoryBucket,
+} from "../utils/helm-selection";
 type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";
-type HelmInventoryBucket = {
-  projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
-  agents: AcpAgentProvider[];
-  sessions: SessionSummary[];
-  trustedDevices: TrustedDeviceSummary[];
-};
 type AgentsPageProps = {
   daemonHost: string;
   daemonPort: string;
@@ -174,85 +155,43 @@ export function AgentsPage({
   copy,
   renderTrustedDevicesPanel,
 }: AgentsPageProps) {
-  const currentHelmKey = daemonProfileKey(
-    daemonHost.trim() || defaultDaemonHost,
-    daemonPort.trim() || defaultDaemonPort,
-  );
-  const currentSavedHelmProfile = daemonProfiles.find(
-    (profile) =>
-      daemonProfileKey(profile.host, profile.port) === currentHelmKey,
-  );
-  const additionalHelmCards = isEmbeddedHelmDeck
-    ? []
-    : [
-        ...daemonProfiles
-          .filter(
-            (profile) =>
-              daemonProfileKey(profile.host, profile.port) !== currentHelmKey,
-          )
-          .map((profile) => ({
-            key: daemonProfileKey(profile.host, profile.port),
-            name: profile.name,
-            host: profile.host,
-            port: profile.port,
-            isCurrent: false,
-            profile,
-          })),
-      ];
-  const rawHelmCards = [
-    {
-      key: currentHelmKey,
-      name: currentSavedHelmProfile?.name || "Local Helm",
-      host: daemonHost.trim() || defaultDaemonHost,
-      port: daemonPort.trim() || defaultDaemonPort,
-      isCurrent: true,
-      profile: null as DaemonProfile | null,
-    },
-    ...additionalHelmCards,
-  ];
-  const helmCards = dedupeHelmCards(rawHelmCards);
-  const selectedKey = selectedHelmKey || currentHelmKey;
-  const selectedHelm =
-    helmCards.find((helm) => helm.key === selectedKey) ?? helmCards[0];
-  if (!selectedHelm) {
-    return null;
-  }
-  const selectedHelmIsCurrent = selectedHelm.key === currentHelmKey;
-  const selectedHelmConnection = resolveHelmConnectionState(
-    selectedHelm,
-    currentHelmKey,
+  const helmSelection = resolveHelmSelection({
+    daemonHost,
+    daemonPort,
+    defaultDaemonHost,
+    defaultDaemonPort,
+    isEmbeddedHelmDeck,
+    daemonProfiles,
+    selectedHelmKey,
     connection,
     helmConnectionStates,
-  );
-  const selectedHelmIsConnected = selectedHelmConnection === "connected";
-  const selectedHelmInventory = helmInventories[selectedHelm.key];
-  const selectedHelmTrustedDevices = selectedHelmIsCurrent
-    ? trustedDevices
-    : (selectedHelmInventory?.trustedDevices ?? []);
-  const selectedHelmProjects = selectedHelmIsCurrent
-    ? projects
-    : (selectedHelmInventory?.projects ?? []);
-  const selectedHelmAgents = selectedHelmIsCurrent
-    ? agents
-    : (selectedHelmInventory?.agents ?? []);
-  const selectedHelmWorkspaces = selectedHelmIsCurrent
-    ? workspaces
-    : (selectedHelmInventory?.workspaces ?? []);
-  const selectedHelmSocket = selectedHelmIsCurrent
-    ? socketRef.current
-    : (helmSocketRefs.current.get(selectedHelm.key) ?? null);
-  const selectedHelmSummary = configuredHelms.find(
-    (helm) =>
-      helm.host === selectedHelm.host &&
-      String(helm.port) === selectedHelm.port,
-  );
-  const selectedHelmId =
-    selectedHelmSummary?.id ?? slugify(selectedHelm.name || selectedHelm.key);
-  const selectedHelmSavedProfile =
-    daemonProfiles.find(
-      (profile) =>
-        daemonProfileKey(profile.host, profile.port) === selectedHelm.key,
-    ) ?? null;
+    helmInventories,
+    trustedDevices,
+    projects,
+    agents,
+    workspaces,
+    configuredHelms,
+    socket: socketRef.current,
+    helmSockets: helmSocketRefs.current,
+  });
+  if (!helmSelection) {
+    return null;
+  }
+  const {
+    currentHelmKey,
+    helmCards,
+    selectedHelm,
+    selectedHelmAgents,
+    selectedHelmConnection,
+    selectedHelmId,
+    selectedHelmIsConnected,
+    selectedHelmIsCurrent,
+    selectedHelmProjects,
+    selectedHelmSavedProfile,
+    selectedHelmSocket,
+    selectedHelmTrustedDevices,
+    selectedHelmWorkspaces,
+  } = helmSelection;
   return (
     <section className="workspace-single">
       {fleetAddHelmModalOpen ? (
@@ -306,86 +245,42 @@ export function AgentsPage({
           selectedHelm={selectedHelm}
           setSelectedHelmKey={setSelectedHelmKey}
         />
-        <section className="note-box compact-note fleet-card helm-detail-panel helm-detail-panel-expanded">
-          <div className="section-head section-head-soft">
-            <div>
-              <strong>{selectedHelm.name}</strong>
-              <p className="muted compact">
-                {selectedHelm.host}:{selectedHelm.port} ·
-                <span
-                  className={`helm-inline-status helm-inline-status-${selectedHelmConnection}`}
-                >
-                  {formatConnectionStatus(selectedHelmConnection)}
-                </span>
-              </p>
-            </div>
-            <HelmActions
-              connectDaemonProfile={connectDaemonProfile}
-              connectToDaemon={connectToDaemon}
-              helmSocketRefs={helmSocketRefs}
-              isEmbeddedHelmDeck={isEmbeddedHelmDeck}
-              lastFilesScopeKeyRef={lastFilesScopeKeyRef}
-              manualDisconnectRef={manualDisconnectRef}
-              selectedHelm={selectedHelm}
-              selectedHelmConnection={selectedHelmConnection}
-              selectedHelmIsConnected={selectedHelmIsConnected}
-              selectedHelmIsCurrent={selectedHelmIsCurrent}
-              selectedHelmSavedProfile={selectedHelmSavedProfile}
-              setConnection={setConnection}
-              setHelmConnectionState={setHelmConnectionState}
-              setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
-              socketRef={socketRef}
-            />
-          </div>
-          <div className="helm-detail-facts" aria-label="Helm 配置范围">
-            <span>
-              <strong>{selectedHelmProjects.length}</strong> 项目配置
-            </span>
-            <span>
-              <strong>{selectedHelmAgents.length}</strong> ACP 舰员
-            </span>
-            <span>
-              <strong>{selectedHelmWorkspaces.length}</strong> 分支
-            </span>
-          </div>
-          <div className="helm-inventory-list-stack">
-            <ProjectInventorySection
-              connected={selectedHelmIsConnected}
-              draft={fleetProjectDraft}
-              formOpen={fleetProjectFormOpen}
-              requestCounter={requestCounter}
-              selectedHelmAgents={selectedHelmAgents}
-              selectedHelmId={selectedHelmId}
-              selectedHelmProjects={selectedHelmProjects}
-              selectedHelmSocket={selectedHelmSocket}
-              selectedHelmWorkspaces={selectedHelmWorkspaces}
-              setDraft={setFleetProjectDraft}
-              setFormOpen={setFleetProjectFormOpen}
-              setSaveMessage={setFleetProjectSaveMessage}
-            />
-            {fleetProjectSaveMessage ? (
-              <p className="muted compact helm-inline-save-message">
-                {fleetProjectSaveMessage}
-              </p>
-            ) : null}
-            <AgentInventorySection
-              connected={selectedHelmIsConnected}
-              draft={fleetAgentDraft}
-              emptyLabel={copy.noAgents}
-              formOpen={fleetAgentFormOpen}
-              requestCounter={requestCounter}
-              selectedHelmAgents={selectedHelmAgents}
-              selectedHelmSocket={selectedHelmSocket}
-              setDraft={setFleetAgentDraft}
-              setFormOpen={setFleetAgentFormOpen}
-            />
-          </div>
-          {renderTrustedDevicesPanel(
-            selectedHelmTrustedDevices,
-            selectedHelmSocket,
-            selectedHelm.name,
-          )}
-        </section>
+        <HelmDetailSection
+          selectedHelm={selectedHelm}
+          selectedHelmConnection={selectedHelmConnection}
+          selectedHelmIsConnected={selectedHelmIsConnected}
+          selectedHelmIsCurrent={selectedHelmIsCurrent}
+          selectedHelmSavedProfile={selectedHelmSavedProfile}
+          selectedHelmProjects={selectedHelmProjects}
+          selectedHelmAgents={selectedHelmAgents}
+          selectedHelmWorkspaces={selectedHelmWorkspaces}
+          selectedHelmSocket={selectedHelmSocket}
+          selectedHelmId={selectedHelmId}
+          selectedHelmTrustedDevices={selectedHelmTrustedDevices}
+          socketRef={socketRef}
+          helmSocketRefs={helmSocketRefs}
+          isEmbeddedHelmDeck={isEmbeddedHelmDeck}
+          manualDisconnectRef={manualDisconnectRef}
+          lastFilesScopeKeyRef={lastFilesScopeKeyRef}
+          setConnection={setConnection}
+          setHelmConnectionState={setHelmConnectionState}
+          setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
+          connectDaemonProfile={connectDaemonProfile}
+          connectToDaemon={connectToDaemon}
+          fleetProjectFormOpen={fleetProjectFormOpen}
+          setFleetProjectFormOpen={setFleetProjectFormOpen}
+          fleetProjectDraft={fleetProjectDraft}
+          setFleetProjectDraft={setFleetProjectDraft}
+          setFleetProjectSaveMessage={setFleetProjectSaveMessage}
+          fleetProjectSaveMessage={fleetProjectSaveMessage}
+          fleetAgentFormOpen={fleetAgentFormOpen}
+          setFleetAgentFormOpen={setFleetAgentFormOpen}
+          fleetAgentDraft={fleetAgentDraft}
+          setFleetAgentDraft={setFleetAgentDraft}
+          requestCounter={requestCounter}
+          copy={copy}
+          renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+        />
       </section>
     </section>
   );
