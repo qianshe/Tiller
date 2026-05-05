@@ -1,17 +1,66 @@
 import type { AgentToolCall } from "@tiller/shared";
 
-export function resolveToolCallTone(kind: AgentToolCall["kind"], title: string) {
+type ToolCallTone = { className: string; icon: string };
+
+const TOOL_CALL_TONES: Record<string, ToolCallTone> = {
+  MCP: { className: "tool-call-mcp", icon: "◇" },
+  Shell: { className: "tool-call-shell", icon: "⌁" },
+  File: { className: "tool-call-file", icon: "□" },
+  Skill: { className: "tool-call-skill", icon: "✦" },
+  Subagent: { className: "tool-call-subagent", icon: "◎" },
+  "Built-in": { className: "tool-call-builtin", icon: "▵" },
+  Tool: { className: "tool-call-generic", icon: "·" },
+};
+
+const KNOWN_MCP_ROUTER_TOOLS = [
+  "activate_project",
+  "check_onboarding_performed",
+  "list_dir",
+  "find_file",
+  "read_file",
+  "read_memory",
+  "write_memory",
+  "search_context",
+  "search_for_pattern",
+  "find_symbol",
+  "find_referencing_symbols",
+  "get_symbols_overview",
+  "edit_file",
+  "replace_content",
+  "replace_symbol_body",
+  "insert_before_symbol",
+  "insert_after_symbol",
+  "rename_symbol",
+  "safe_delete_symbol",
+  "tavily_",
+  "resolve_library_id",
+  "get_library_docs",
+  "ask_question",
+  "read_wiki_",
+  "zhi",
+  "ji",
+  "tu",
+];
+
+const BUILT_IN_TOOL_KEYWORDS = [
+  "apply_patch",
+  "update_plan",
+  "todo",
+  "todos",
+  "background_output",
+  "read_thread_terminal",
+  "shell_command",
+  "webfetch",
+  "websearch",
+  "web_search",
+];
+
+export function resolveToolCallTone(
+  kind: AgentToolCall["kind"],
+  title: string,
+) {
   const label = resolveToolCallLabel(kind, title);
-  const toneByLabel: Record<string, { className: string; icon: string }> = {
-    MCP: { className: "tool-call-mcp", icon: "◇" },
-    Shell: { className: "tool-call-shell", icon: "⌁" },
-    File: { className: "tool-call-file", icon: "□" },
-    Skill: { className: "tool-call-skill", icon: "✦" },
-    Subagent: { className: "tool-call-subagent", icon: "◎" },
-    "Built-in": { className: "tool-call-builtin", icon: "▵" },
-    Tool: { className: "tool-call-generic", icon: "·" },
-  };
-  return { label, ...(toneByLabel[label] ?? toneByLabel.Tool) };
+  return { label, ...(TOOL_CALL_TONES[label] ?? TOOL_CALL_TONES.Tool) };
 }
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
@@ -45,18 +94,21 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   if (kind === "edit") {
     return "File";
   }
-  if (
-    /\b(apply_patch|update_plan|todos?|background_output|read_thread_terminal|shell_command|webfetch)\b|websearch|web_search/iu.test(
-      normalized,
-    )
-  ) {
+  if (isBuiltInTool(normalized)) {
     return "Built-in";
   }
   return "Tool";
 }
 
+function isBuiltInTool(normalizedTitle: string) {
+  return BUILT_IN_TOOL_KEYWORDS.some((keyword) =>
+    normalizedTitle.includes(keyword),
+  );
+}
+
 function isKnownMcpRouterTool(normalizedTitle: string) {
-  return /^(activate_project|check_onboarding_performed|list_dir|find_file|read_file|read_memory|write_memory|search_context|search_for_pattern|find_symbol|find_referencing_symbols|get_symbols_overview|edit_file|replace_content|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_symbol|safe_delete_symbol|tavily_|resolve_library_id|get_library_docs|ask_question|read_wiki_|zhi|ji|tu)(\b|$)/u.test(
-    normalizedTitle,
+  return KNOWN_MCP_ROUTER_TOOLS.some(
+    (toolName) =>
+      normalizedTitle === toolName || normalizedTitle.startsWith(toolName),
   );
 }
