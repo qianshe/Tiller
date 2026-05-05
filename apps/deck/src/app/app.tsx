@@ -100,6 +100,7 @@ import { useConfiguredHelms } from "./use-configured-helms";
 import { useDaemonProfileActions } from "./use-daemon-profile-actions";
 import { useDeckPreferenceActions } from "./use-deck-preference-actions";
 import { usePromptEnhanceAction } from "./use-prompt-enhance-action";
+import { useFleetAddHelmActions } from "./use-fleet-add-helm-actions";
 import { useSessionCommandActions } from "./use-session-command-actions";
 import { useSessionMessageActions } from "./use-session-message-actions";
 import { TopNav } from "../shared/ui/layout/top-nav";
@@ -1201,35 +1202,6 @@ export function App() {
       setFleetAddHelmStage("pair");
     }
   }, [connection, fleetAddHelmModalOpen, fleetAddHelmStage]);
-  function openFleetAddHelmModal() {
-    setFleetAddHelmStage("connect");
-    setFleetAddHelmName("");
-    setFleetAddHelmHost(DEFAULT_DAEMON_HOST);
-    setFleetAddHelmPort(DEFAULT_DAEMON_PORT);
-    pendingAddHelmProfileRef.current = null;
-    setFleetAddHelmModalOpen(true);
-  }
-  function closeFleetAddHelmModal() {
-    setFleetAddHelmModalOpen(false);
-    setFleetAddHelmStage("connect");
-    pendingAddHelmProfileRef.current = null;
-  }
-  function connectFromFleetAddHelmModal(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const profile = createDaemonProfile(
-      fleetAddHelmName,
-      fleetAddHelmHost,
-      fleetAddHelmPort,
-    );
-    pendingAddHelmProfileRef.current = profile;
-    setFleetAddHelmStage("connecting");
-    void connectToDaemon(undefined, {
-      preserveState: true,
-      host: profile.host,
-      port: profile.port,
-      persistEndpoint: false,
-    });
-  }
   useEffect(() => {
     if (
       !fleetProjectSaveMessage ||
@@ -1615,6 +1587,25 @@ export function App() {
     setDaemonProfileName,
     setDaemonProfileMessage,
     setConnection,
+    connectToDaemon,
+  });
+  const {
+    closeFleetAddHelmModal,
+    connectFromFleetAddHelmModal,
+    openFleetAddHelmModal,
+  } = useFleetAddHelmActions({
+    fleetAddHelmName,
+    fleetAddHelmHost,
+    fleetAddHelmPort,
+    defaultDaemonHost: DEFAULT_DAEMON_HOST,
+    defaultDaemonPort: DEFAULT_DAEMON_PORT,
+    pendingAddHelmProfileRef,
+    setFleetAddHelmModalOpen,
+    setFleetAddHelmStage,
+    setFleetAddHelmName,
+    setFleetAddHelmHost,
+    setFleetAddHelmPort,
+    createDaemonProfile,
     connectToDaemon,
   });
   function revokeTrustedDevice(
