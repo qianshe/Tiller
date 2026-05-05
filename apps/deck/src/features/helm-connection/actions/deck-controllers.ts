@@ -17,6 +17,7 @@ import { useSessionCommandActions } from "../../mission/actions/session-command-
 import { useSessionMessageActions } from "../../mission/actions/session-message-actions";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
 import { DEFAULT_SESSION_PAGE_LIMIT } from "../../mission/config";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../../shared/config/deck-runtime";
 
 export function useAppControllers(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.route, ...ctx.titleActions, ...ctx };
