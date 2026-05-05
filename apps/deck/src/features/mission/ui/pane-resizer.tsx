@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import type { MissionResizeHandle } from "../hooks/use-layout";
+import type { MissionResizeHandle } from "../hooks/layout";
 
 type MissionPaneResizerProps = {
   handle: MissionResizeHandle;

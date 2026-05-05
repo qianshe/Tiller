@@ -5,7 +5,7 @@ import { useActiveConversationUpdateKey } from "./active-conversation-key";
 import { useConfiguredHelms } from "./configured-helms";
 import { resolveTechnicalPanelPreferences } from "../features/preferences/utils/helpers";
 import { formatResumeLabel } from "../features/mission/utils/session-state";
-import { usePromptImages } from "../features/mission/hooks/use-prompt-images";
+import { usePromptImages } from "../features/mission/hooks/prompt-images";
 import {
   MODEL_OPTIONS,
   defaultAgentId,
