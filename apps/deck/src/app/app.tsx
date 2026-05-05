@@ -20,10 +20,7 @@ import type {
   AgentPromptImageContent,
   AgentToolCall,
   AvailableCommand,
-  CommandChunk,
-  FileDiffSummary,
   PermissionDecision,
-  PermissionRequest,
   ProjectFileSummary,
   ProjectSummary,
   SessionConfigOption,
@@ -99,12 +96,6 @@ import {
   resolveProjectWorkspaceLabel,
 } from "../features/mission/utils/project-display";
 import {
-  moveMissionPanelPageInList,
-  readMissionPanelPages,
-  reorderMissionPanelPage,
-  writeMissionPanelPages,
-} from "../features/mission/utils/panel-pages";
-import {
   formatResumeLabel,
   isSessionExecutionPending,
 } from "../features/mission/utils/session-state";
@@ -143,18 +134,18 @@ import { OverviewPage } from "../features/overview/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
 import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
 import { MissionDisplayPanel } from "../features/mission/ui/display-panel";
-import { PlainMessages } from "../features/mission/ui/plain-messages";
+import { MissionMessageTimeline } from "../features/mission/ui/message-timeline";
+import { MissionPaneResizer } from "../features/mission/ui/pane-resizer";
+import { MissionPermissionDrawer } from "../features/mission/ui/permission-drawer";
+import { MissionToolLoading } from "../features/mission/ui/tool-loading";
 import { ProjectFileList } from "../features/mission/ui/project-file-list";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
 import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
-import { SessionOverviewCard } from "../features/mission/ui/session-overview-card";
-import { ActivityLogPanel } from "../features/logbook/ui/activity-log-panel";
-import {
-  useMissionLayout,
-  type MissionResizeHandle,
-} from "../features/mission/hooks/use-mission-layout";
+import { LogbookPanel } from "../features/mission/ui/logbook-panel";
+import { useMissionLayout } from "../features/mission/hooks/use-layout";
+import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
 import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
@@ -185,7 +176,6 @@ import {
   readTrustedDeviceCache,
   writeTrustedDeviceCache,
 } from "../features/auth/beacon-cache";
-import { type MissionPanelPage } from "../features/mission/ui/panels";
 import {
   createClipboardImageContent,
   extractClipboardImageItems,
@@ -195,8 +185,6 @@ import {
   mergeToolCallHistory,
   resolvePendingToolActivity,
 } from "../features/logbook/timeline";
-import { MarkdownMessage } from "../shared/ui/markdown";
-import { DiffSummary, PairingBoxes, StatCard } from "../shared/ui/primitives";
 import { toast } from "../features/toast/toast";
 import {
   DAEMON_HOST_KEY,
@@ -481,18 +469,21 @@ export function App() {
     useState<SessionReasoningEffort>("medium");
   const [agentTestResult, setAgentTestResult] = useState<string>("尚未测试");
   const [resumeFeedback, setResumeFeedback] = useState<string>("");
-  const [customMissionPanelPages, setCustomMissionPanelPages] = useState<
-    MissionPanelPage[]
-  >(() => readMissionPanelPages());
-  const [selectedMissionPanelPageId, setSelectedMissionPanelPageId] =
-    useState("overview");
-  const [selectedMissionDiffFilePath, setSelectedMissionDiffFilePath] =
-    useState<string | null>(null);
-  const [collapsedMissionDiffDirectories, setCollapsedMissionDiffDirectories] =
-    useState<Set<string>>(() => new Set());
-  const [draggedMissionPanelPageId, setDraggedMissionPanelPageId] = useState<
-    string | null
-  >(null);
+  const {
+    customPages: customMissionPanelPages,
+    selectedPageId: selectedMissionPanelPageId,
+    setSelectedPageId: setSelectedMissionPanelPageId,
+    selectedDiffFilePath: selectedMissionDiffFilePath,
+    setSelectedDiffFilePath: setSelectedMissionDiffFilePath,
+    collapsedDiffDirectories: collapsedMissionDiffDirectories,
+    setDraggedPageId: setDraggedMissionPanelPageId,
+    toggleDiffDirectory: toggleMissionDiffDirectory,
+    addPage: addMissionPanelPage,
+    dropPage: dropMissionPanelPage,
+    renamePage: renameMissionPanelPage,
+    movePage: moveMissionPanelPage,
+    deletePage: deleteMissionPanelPage,
+  } = usePanelPages();
   const [activeView, setActiveView] = useState<AppView>(() =>
     resolveViewFromPath(window.location.pathname),
   );
@@ -1405,9 +1396,6 @@ export function App() {
       persistEndpoint: false,
     });
   }
-  useEffect(() => {
-    writeMissionPanelPages(customMissionPanelPages);
-  }, [customMissionPanelPages]);
   useEffect(() => {
     if (
       !fleetProjectSaveMessage ||
@@ -2329,79 +2317,6 @@ export function App() {
     setSelectedMissionDiffFilePath(path);
     setSelectedMissionPanelPageId("diff-detail");
   }
-  function toggleMissionDiffDirectory(path: string) {
-    setCollapsedMissionDiffDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }
-  function addMissionPanelPage() {
-    const id = `custom-${Date.now()}`;
-    setCustomMissionPanelPages((current) => [
-      ...current,
-      { id, title: `展示页 ${current.length + 1}` },
-    ]);
-    setSelectedMissionPanelPageId(id);
-  }
-  function dropMissionPanelPage(targetPageId: string) {
-    if (
-      !draggedMissionPanelPageId ||
-      draggedMissionPanelPageId === targetPageId
-    ) {
-      return;
-    }
-    setCustomMissionPanelPages((current) => {
-      const fromIndex = current.findIndex(
-        (page) => page.id === draggedMissionPanelPageId,
-      );
-      const toIndex = current.findIndex((page) => page.id === targetPageId);
-      if (fromIndex < 0 || toIndex < 0) {
-        return current;
-      }
-      const next = [...current];
-      const [dragged] = next.splice(fromIndex, 1);
-      if (!dragged) {
-        return current;
-      }
-      next.splice(toIndex, 0, dragged);
-      return next;
-    });
-    setDraggedMissionPanelPageId(null);
-  }
-  function renameMissionPanelPage(pageId: string, title: string) {
-    setCustomMissionPanelPages((current) =>
-      current.map((page) => (page.id === pageId ? { ...page, title } : page)),
-    );
-  }
-  function moveMissionPanelPage(pageId: string, direction: -1 | 1) {
-    setCustomMissionPanelPages((current) => {
-      const index = current.findIndex((page) => page.id === pageId);
-      const targetIndex = index + direction;
-      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) {
-        return current;
-      }
-      const next = [...current];
-      const [page] = next.splice(index, 1);
-      if (!page) {
-        return current;
-      }
-      next.splice(targetIndex, 0, page);
-      return next;
-    });
-  }
-  function deleteMissionPanelPage(pageId: string) {
-    setCustomMissionPanelPages((current) =>
-      current.filter((page) => page.id !== pageId),
-    );
-    if (selectedMissionPanelPageId === pageId) {
-      setSelectedMissionPanelPageId("overview");
-    }
-  }
   function cleanupSession(sessionId: string) {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -2541,28 +2456,6 @@ export function App() {
     loadOlderMessages(activeSessionId);
     loadOlderActivities(activeSessionId);
   }
-  function renderPlainMessages(
-    items: AgentMessage[],
-    sessionId?: string,
-    assistantLabel: string = copy.role.assistant,
-  ) {
-    return (
-      <PlainMessages
-        items={items}
-        emptyText={copy.waitingForAgent}
-        assistantLabel={assistantLabel}
-        roleLabels={copy.role}
-        expandedMessageIds={expandedMessageIds}
-        historyState={sessionId ? messageHistoryState[sessionId] : undefined}
-        onLoadOlderMessages={() => {
-          if (sessionId) {
-            loadOlderMessages(sessionId);
-          }
-        }}
-        onToggleExpandedMessage={toggleExpandedMessage}
-      />
-    );
-  }
   function toggleExpandedMessage(messageId: string) {
     setExpandedMessageIds((current) => {
       const next = new Set(current);
@@ -2573,77 +2466,6 @@ export function App() {
       }
       return next;
     });
-  }
-  function renderActivityLog(
-    sessionId: string | undefined,
-    sessionToolCalls: AgentToolCall[],
-    commandChunks: CommandChunk[],
-    sessionMessages: AgentMessage[],
-  ) {
-    return (
-      <ActivityLogPanel
-        sessionId={sessionId}
-        sessionToolCalls={sessionToolCalls}
-        commandChunks={commandChunks}
-        sessionMessages={sessionMessages}
-        historyState={sessionId ? activityHistoryState[sessionId] : undefined}
-        visibleCount={
-          sessionId
-            ? (activityVisibleCounts[sessionId] ??
-              DEFAULT_LOGBOOK_VISIBLE_LIMIT)
-            : DEFAULT_LOGBOOK_VISIBLE_LIMIT
-        }
-        visibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
-        copy={copy}
-        onShowMore={(targetSessionId, nextVisibleCount) =>
-          setActivityVisibleCounts((current) => ({
-            ...current,
-            [targetSessionId]: nextVisibleCount,
-          }))
-        }
-        onLoadOlder={loadOlderActivities}
-      />
-    );
-  }
-  function renderSessionOverview(diffCount: number, logCount: number) {
-    const statusLabel = activeSession
-      ? copy.status[statuses[activeSession.id] ?? activeSession.status]
-      : "待创建";
-
-    return (
-      <SessionOverviewCard
-        activeSession={activeSession}
-        statusLabel={statusLabel}
-        diffCount={diffCount}
-        logCount={logCount}
-      />
-    );
-  }
-  function renderMissionPaneResizer(
-    handle: MissionResizeHandle,
-    label: string,
-  ) {
-    return (
-      <button
-        type="button"
-        className={`mission-pane-resizer mission-pane-resizer-${handle}`}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={label}
-        title={label}
-        onMouseDown={(event) => startMissionPaneResize(handle, event)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") {
-            event.preventDefault();
-            nudgeMissionPane(handle, -1);
-          }
-          if (event.key === "ArrowRight") {
-            event.preventDefault();
-            nudgeMissionPane(handle, 1);
-          }
-        }}
-      />
-    );
   }
   function renderMissionAgentIcon(agentName: string) {
     return <MissionAgentIcon agentName={agentName} />;
@@ -2706,6 +2528,9 @@ export function App() {
         : null;
     const missionDiffCount = activeDiffs.length;
     const missionLogCount = activeToolCalls.length || activeOutputs.length;
+    const missionStatusLabel = activeSession
+      ? copy.status[statuses[activeSession.id] ?? activeSession.status]
+      : "待创建";
     const missionPanelPages = [
       { id: "overview", title: "概览" },
       { id: "changes", title: `Git Diff (${missionDiffCount})` },
@@ -2776,6 +2601,13 @@ export function App() {
         onToggleDirectory={toggleProjectFileDirectory}
       />
     );
+    const missionLayoutClassName = [
+      "card surface-card chat-layout chat-layout-sidebar",
+      effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : "",
+      effectiveInspectorCollapsed ? "mission-inspector-collapsed" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const renderMissionDisplayPanel = () => (
       <MissionDisplayPanel
         style={missionDisplayPaneStyle}
@@ -2788,16 +2620,35 @@ export function App() {
         overviewItems={projectOverviewItems}
         noDiffSummary={copy.noDiffSummary}
         logbookContent={
-          <>
-            {" "}
-            {renderSessionOverview(missionDiffCount, missionLogCount)}{" "}
-            {renderActivityLog(
-              activeSession?.id,
-              activeToolCalls,
-              activeOutputs,
-              activeSession ? (messages[activeSession.id] ?? []) : [],
-            )}{" "}
-          </>
+          <LogbookPanel
+            activeSession={activeSession}
+            statusLabel={missionStatusLabel}
+            diffCount={missionDiffCount}
+            logCount={missionLogCount}
+            sessionToolCalls={activeToolCalls}
+            commandChunks={activeOutputs}
+            sessionMessages={
+              activeSession ? (messages[activeSession.id] ?? []) : []
+            }
+            historyState={
+              activeSession ? activityHistoryState[activeSession.id] : undefined
+            }
+            visibleCount={
+              activeSession
+                ? (activityVisibleCounts[activeSession.id] ??
+                  DEFAULT_LOGBOOK_VISIBLE_LIMIT)
+                : DEFAULT_LOGBOOK_VISIBLE_LIMIT
+            }
+            visibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
+            copy={copy}
+            onShowMore={(targetSessionId, nextVisibleCount) =>
+              setActivityVisibleCounts((current) => ({
+                ...current,
+                [targetSessionId]: nextVisibleCount,
+              }))
+            }
+            onLoadOlder={loadOlderActivities}
+          />
         }
         collapsedDiffDirectories={collapsedMissionDiffDirectories}
         onAddPage={addMissionPanelPage}
@@ -2814,7 +2665,7 @@ export function App() {
     return (
       <section
         ref={missionLayoutRef}
-        className={`card surface-card chat-layout chat-layout-sidebar ${effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : ""} ${effectiveInspectorCollapsed ? "mission-inspector-collapsed" : ""}`.trim()}
+        className={missionLayoutClassName}
         style={missionLayoutStyle}
       >
         {" "}
@@ -2856,9 +2707,14 @@ export function App() {
             sessionHistoryState={sessionHistoryState}
             toggleMissionProjectNode={toggleMissionProjectNode}
             resizer={
-              !effectiveSidebarCollapsed
-                ? renderMissionPaneResizer("sidebar", "调整任务列表宽度")
-                : null
+              !effectiveSidebarCollapsed ? (
+                <MissionPaneResizer
+                  handle="sidebar"
+                  label="调整任务列表宽度"
+                  onResizeStart={startMissionPaneResize}
+                  onNudge={nudgeMissionPane}
+                />
+              ) : null
             }
           />{" "}
           <div
@@ -2885,83 +2741,32 @@ export function App() {
               {activeSession ? (
                 <>
                   {" "}
-                  {renderPlainMessages(
-                    activeSessionMessages,
-                    activeSession.id,
-                    activeSession.agentName,
-                  )}{" "}
+                  <MissionMessageTimeline
+                    items={activeSessionMessages}
+                    sessionId={activeSession.id}
+                    assistantLabel={activeSession.agentName}
+                    copy={copy}
+                    expandedMessageIds={expandedMessageIds}
+                    historyStateBySession={messageHistoryState}
+                    onLoadOlderMessages={loadOlderMessages}
+                    onToggleExpandedMessage={toggleExpandedMessage}
+                  />{" "}
                   {missionActivityLoading ? (
-                    <div
-                      className="mission-tool-loading"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {" "}
-                      <span
-                        className="mission-tool-loading-dots"
-                        aria-hidden="true"
-                      >
-                        {" "}
-                        <i /> <i /> <i />{" "}
-                      </span>{" "}
-                      <div>
-                        {" "}
-                        <strong>
-                          {" "}
-                          {pendingToolActivity
-                            ? "正在执行工具"
-                            : "Agent 正在处理"}{" "}
-                        </strong>{" "}
-                        <p className="compact muted">
-                          {" "}
-                          等待 {missionActivityLoading.title} 返回结果…{" "}
-                        </p>{" "}
-                      </div>{" "}
-                    </div>
+                    <MissionToolLoading
+                      activity={missionActivityLoading}
+                      pendingToolPresent={Boolean(pendingToolActivity)}
+                    />
                   ) : null}{" "}
                 </>
               ) : null}{" "}
             </div>{" "}
             {activeSession && pendingPermission ? (
-              <section
-                className="mission-permission-drawer"
-                role="region"
-                aria-live="polite"
-                aria-label={copy.permissionRequest}
-              >
-                {" "}
-                <div className="mission-permission-copy">
-                  {" "}
-                  <p className="eyebrow">{copy.permissionRequest}</p>{" "}
-                  <strong>{pendingPermission.command}</strong>{" "}
-                  <p className="muted compact">{pendingPermission.reason}</p>{" "}
-                  {technicalPanels.showPermissionWorkspace ? (
-                    <p className="subtle compact">
-                      {" "}
-                      {pendingPermission.workspacePath}{" "}
-                    </p>
-                  ) : null}{" "}
-                </div>{" "}
-                <div className="permission-actions mission-permission-actions">
-                  {" "}
-                  <button
-                    className="primary"
-                    type="button"
-                    onClick={() => respondToPermission("allow")}
-                  >
-                    {" "}
-                    {copy.allowOnce}{" "}
-                  </button>{" "}
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => respondToPermission("deny")}
-                  >
-                    {" "}
-                    {copy.deny}{" "}
-                  </button>{" "}
-                </div>{" "}
-              </section>
+              <MissionPermissionDrawer
+                request={pendingPermission}
+                copy={copy}
+                showWorkspace={technicalPanels.showPermissionWorkspace}
+                onRespond={respondToPermission}
+              />
             ) : null}
             <MissionComposer
               activeSession={activeSession}
@@ -3027,7 +2832,12 @@ export function App() {
               canSend={canSend}
             />{" "}
           </div>{" "}
-          {renderMissionPaneResizer("display", "调整任务展示宽度")}{" "}
+          <MissionPaneResizer
+            handle="display"
+            label="调整任务展示宽度"
+            onResizeStart={startMissionPaneResize}
+            onNudge={nudgeMissionPane}
+          />{" "}
           {renderMissionDisplayPanel()}{" "}
           <MissionInspector
             collapsed={effectiveInspectorCollapsed}
@@ -3038,7 +2848,14 @@ export function App() {
             message={projectFilesEntry?.message}
             filter={projectFileFilter}
             projectFileList={renderProjectFileList()}
-            resizer={renderMissionPaneResizer("inspector", "调整检视器宽度")}
+            resizer={
+              <MissionPaneResizer
+                handle="inspector"
+                label="调整检视器宽度"
+                onResizeStart={startMissionPaneResize}
+                onNudge={nudgeMissionPane}
+              />
+            }
             onFilterChange={setProjectFileFilter}
             onExpand={() => setMissionInspectorCollapsed(false)}
           />{" "}
