@@ -18,8 +18,17 @@ export function resolveMissionPanelIcon(pageId: string) {
   return "□";
 }
 
-export function buildMissionDiffTree(files: FileDiffSummary[]): MissionDiffTreeNode[] {
-  const root: MissionDiffTreeNode = { id: "root", name: "", path: "", kind: "directory", count: 0, children: [] };
+export function buildMissionDiffTree(
+  files: FileDiffSummary[],
+): MissionDiffTreeNode[] {
+  const root: MissionDiffTreeNode = {
+    id: "root",
+    name: "",
+    path: "",
+    kind: "directory",
+    count: 0,
+    children: [],
+  };
   for (const file of files) {
     const normalized = normalizeDiffPath(file.path);
     const parts = normalized.split("/").filter(Boolean);
@@ -28,7 +37,11 @@ export function buildMissionDiffTree(files: FileDiffSummary[]): MissionDiffTreeN
       const isFile = index === parts.length - 1;
       const nodePath = parts.slice(0, index + 1).join("/");
       current.children ??= [];
-      let node = current.children.find((child) => child.path === nodePath && child.kind === (isFile ? "file" : "directory"));
+      let node = current.children.find(
+        (child) =>
+          child.path === nodePath &&
+          child.kind === (isFile ? "file" : "directory"),
+      );
       if (!node) {
         node = {
           id: `${isFile ? "file" : "dir"}:${nodePath}`,
@@ -59,7 +72,11 @@ function updateMissionDiffTreeCounts(node: MissionDiffTreeNode): number {
     return 1;
   }
 
-  node.count = node.children?.reduce((total, child) => total + updateMissionDiffTreeCounts(child), 0) ?? 0;
+  node.count =
+    node.children?.reduce(
+      (total, child) => total + updateMissionDiffTreeCounts(child),
+      0,
+    ) ?? 0;
   return node.count;
 }
 
@@ -95,7 +112,10 @@ export function renderDiffPatch(patch: string) {
   return (
     <pre className="mission-diff-patch">
       {patch.split(/\r?\n/u).map((line, index) => (
-        <span key={`${index}-${line.slice(0, 12)}`} className={`mission-diff-line ${resolveDiffLineClass(line)}`}>
+        <span
+          key={`${index}-${line.slice(0, 12)}`}
+          className={`mission-diff-line ${resolveDiffLineClass(line)}`}
+        >
           {line || " "}
         </span>
       ))}
@@ -107,7 +127,12 @@ export function resolveDiffLineClass(line: string) {
   if (line.startsWith("@@")) return "line-hunk";
   if (line.startsWith("+") && !line.startsWith("+++")) return "line-added";
   if (line.startsWith("-") && !line.startsWith("---")) return "line-deleted";
-  if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) return "line-meta";
+  if (
+    line.startsWith("diff --git") ||
+    line.startsWith("index ") ||
+    line.startsWith("---") ||
+    line.startsWith("+++")
+  )
+    return "line-meta";
   return "line-context";
 }
-

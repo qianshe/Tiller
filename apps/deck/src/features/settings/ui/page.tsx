@@ -66,8 +66,10 @@ export function SettingsPage({
     deckPreferences.language === "en-US"
       ? {
           title: "Settings",
-          subtitle:
-            "Configure Deck theme, language, technical panels, and prompt enhancement. All options are stored locally in this browser.",
+          subtitle: [
+            "Configure Deck theme, language, technical panels, and prompt enhancement.",
+            "All options are stored locally in this browser.",
+          ].join(" "),
           reset: "Reset defaults",
           languageEyebrow: "Language",
           languageLabel: "Language",
@@ -103,12 +105,16 @@ export function SettingsPage({
           contractLabel: "Output contract",
           saveEyebrow: "Saved state",
           browserTitle: "Current browser",
-          saveStatus:
-            "Frontend preferences are auto-saved; backend, provider, and Helm-level settings still belong to the concrete Helm / Crew.",
+          saveStatus: [
+            "Frontend preferences are auto-saved; backend, provider, and Helm-level",
+            "settings still belong to the concrete Helm / Crew.",
+          ].join(" "),
           devicesEyebrow: "Trusted devices",
           devicesTitle: "7-day remembered Deck / App devices",
-          devicesHelp:
-            "Each trusted device is scoped to this Helm profile. Revoking a device forces it to pair again on that device.",
+          devicesHelp: [
+            "Each trusted device is scoped to this Helm profile.",
+            "Revoking a device forces it to pair again on that device.",
+          ].join(" "),
           devicesEmpty: "No trusted devices yet.",
           currentDevice: "Current device",
           revoke: "Revoke",

@@ -98,10 +98,19 @@ export function MissionSidebar({
   toggleMissionProjectNode,
   resizer,
 }: MissionSidebarProps) {
+  const sidebarClassName = [
+    "chat-session-sidebar",
+    "mission-pane",
+    "mission-pane-sidebar",
+    effectiveSidebarCollapsed ? "collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <>
       <aside
-        className={`chat-session-sidebar mission-pane mission-pane-sidebar ${effectiveSidebarCollapsed ? "collapsed" : ""}`.trim()}
+        className={sidebarClassName}
         style={missionSidebarPaneStyle}
         aria-label="任务导航：Helm、项目与任务"
         onScroll={handleMissionTreeScroll}
@@ -152,7 +161,13 @@ export function MissionSidebar({
                   >
                     <button
                       type="button"
-                      className={`mission-tree-row mission-tree-row-helm ${selectedHelm ? "active" : ""}`}
+                      className={[
+                        "mission-tree-row",
+                        "mission-tree-row-helm",
+                        selectedHelm ? "active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       onClick={() => toggleMissionHelmNode(helm.id)}
                       role="treeitem"
                       aria-level={1}
@@ -199,11 +214,22 @@ export function MissionSidebar({
                               role="group"
                             >
                               <div
-                                className={`mission-tree-project-row ${selectedProject ? "active" : ""}`}
+                                className={[
+                                  "mission-tree-project-row",
+                                  selectedProject ? "active" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
                               >
                                 <button
                                   type="button"
-                                  className={`mission-tree-row mission-tree-row-project ${selectedProject ? "active" : ""}`}
+                                  className={[
+                                    "mission-tree-row",
+                                    "mission-tree-row-project",
+                                    selectedProject ? "active" : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                                   onClick={() =>
                                     toggleMissionProjectNode(project.id)
                                   }
