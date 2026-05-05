@@ -180,27 +180,23 @@ import {
   testAgent as testAgentImpl,
   writeDraftToConfig as writeDraftToConfigImpl,
 } from "../features/agents/actions/config-actions";
-const DEFAULT_DAEMON_HOST = "127.0.0.1";
-const DEFAULT_DAEMON_PORT = "47631";
-const IS_EMBEDDED_HELM_DECK =
-  import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true";
-const AGENT_DRAFT_STORAGE_KEY = "tiller.agent-draft";
-const DECK_DEVICE_NAME = "Tiller Deck";
-const DEFAULT_PROMPT = "";
-const DEFAULT_SESSION_PAGE_LIMIT = 25;
-const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
-const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
-const DEFAULT_LOGBOOK_VISIBLE_LIMIT = 25;
-type AgentDraft = { name: string; command: string; args: string };
-type ProjectFilesEntry = {
-  loading?: boolean;
-  message?: string;
-  files: ProjectFileSummary[];
-};
-type AgentModelOptionsCache = Record<
-  string,
-  AgentModelOptionsEntry & { cachedAt: number }
->;
+import {
+  AGENT_DRAFT_STORAGE_KEY,
+  DECK_DEVICE_NAME,
+  DEFAULT_ACTIVITY_PAGE_LIMIT,
+  DEFAULT_DAEMON_HOST,
+  DEFAULT_DAEMON_PORT,
+  DEFAULT_LOGBOOK_VISIBLE_LIMIT,
+  DEFAULT_MESSAGE_PAGE_LIMIT,
+  DEFAULT_PROMPT,
+  DEFAULT_SESSION_PAGE_LIMIT,
+  IS_EMBEDDED_HELM_DECK,
+} from "./app-constants";
+import type {
+  AgentDraft,
+  AgentModelOptionsCache,
+  ProjectFilesEntry,
+} from "./app-types";
 export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const helmSocketRefs = useRef<Map<string, WebSocket>>(new Map());
