@@ -3,9 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent as ReactClipboardEvent,
   type FormEvent,
-  type UIEvent as ReactUIEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -130,9 +128,11 @@ import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
 import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
 import { LogbookPanel } from "../features/mission/ui/logbook-panel";
+import { useHistoryPagination } from "../features/mission/hooks/use-history-pagination";
 import { useMissionLayout } from "../features/mission/hooks/use-layout";
 import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
 import { usePromptAutosize } from "../features/mission/hooks/use-prompt-autosize";
+import { usePromptImages } from "../features/mission/hooks/use-prompt-images";
 import {
   useSelection,
   type SessionDraftPreferencePatch,
@@ -157,10 +157,6 @@ import {
   readTrustedDeviceCache,
   writeTrustedDeviceCache,
 } from "../features/auth/beacon-cache";
-import {
-  createClipboardImageContent,
-  extractClipboardImageItems,
-} from "../features/mission/utils/clipboard";
 import {
   mergeMessageHistory,
   mergeToolCallHistory,
@@ -440,10 +436,6 @@ export function App() {
     updatePreferences,
   });
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>(
-    [],
-  );
-  const [imagePasteNotice, setImagePasteNotice] = useState("");
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId =
     missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
@@ -615,6 +607,17 @@ export function App() {
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
   );
+  const {
+    promptImages,
+    setPromptImages,
+    imagePasteNotice,
+    setImagePasteNotice,
+    handlePromptPaste: handleMissionPromptPaste,
+    removePromptImage,
+  } = usePromptImages({ activeSession });
+  const effectiveSessionHistoryState = activeSessionId
+    ? activityHistoryState[activeSessionId]
+    : undefined;
   const activeSessionMessages = activeSession
     ? (messages[activeSession.id] ?? [])
     : [];
@@ -1309,6 +1312,30 @@ export function App() {
     manualDisconnectRef,
     connectToDaemon,
   });
+  const {
+    handleChatMainScroll,
+    handleMissionTreeScroll,
+    loadOlderActivities,
+    loadOlderMessages,
+  } = useHistoryPagination({
+    activeSessionId,
+    activityHistoryState,
+    chatMainRef,
+    dispatch,
+    messageHistoryState,
+    preserveChatScrollRef,
+    requestCounter,
+    sessionHistoryState,
+    setActivityHistoryState,
+    setMessageHistoryState,
+    setSessionHistoryState,
+    socketRef,
+    stickChatToBottomRef,
+    nextRequestId,
+    sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
+    messagePageLimit: DEFAULT_MESSAGE_PAGE_LIMIT,
+    activityPageLimit: DEFAULT_ACTIVITY_PAGE_LIMIT,
+  });
   function updateDeckPreference<K extends keyof DeckPreferences>(
     key: K,
     value: DeckPreferences[K],
@@ -1784,34 +1811,6 @@ export function App() {
       requestCounter,
     });
   }
-  async function handleMissionPromptPaste(
-    event: ReactClipboardEvent<HTMLTextAreaElement>,
-  ) {
-    const images = extractClipboardImageItems(event.clipboardData);
-    if (!images.length) {
-      return;
-    }
-    event.preventDefault();
-    if (activeSession && activeSession.imageInput === false) {
-      setImagePasteNotice("当前 Agent 不支持图片输入，无法粘贴图片喵~");
-      return;
-    }
-    try {
-      const startIndex = promptImages.length;
-      const nextImages = await Promise.all(
-        images.map((file, index) =>
-          createClipboardImageContent(file, startIndex + index),
-        ),
-      );
-      setPromptImages((current) => [...current, ...nextImages]);
-      setImagePasteNotice("");
-    } catch {
-      setImagePasteNotice("图片粘贴失败：无法读取剪贴板图片内容。");
-    }
-  }
-  function removePromptImage(index: number) {
-    setPromptImages((current) => current.filter((_, i) => i !== index));
-  }
   function submitPromptFromKeyboard(
     event: ReactKeyboardEvent<HTMLTextAreaElement>,
   ) {
@@ -1907,120 +1906,6 @@ export function App() {
       requestId: nextRequestId(requestCounter),
       sessionId,
     });
-  }
-  function loadOlderSessions() {
-    if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
-      sessionHistoryState.loading ||
-      !sessionHistoryState.hasMore ||
-      !sessionHistoryState.nextCursor
-    ) {
-      return;
-    }
-    setSessionHistoryState((current) => ({ ...current, loading: true }));
-    dispatch(socketRef.current, {
-      type: "session.list",
-      requestId: nextRequestId(requestCounter),
-      limit: DEFAULT_SESSION_PAGE_LIMIT,
-      before: sessionHistoryState.nextCursor,
-    });
-  }
-  function handleMissionTreeScroll(event: ReactUIEvent<HTMLElement>) {
-    const target = event.currentTarget;
-    const distanceToBottom =
-      target.scrollHeight - target.clientHeight - target.scrollTop;
-    if (target.scrollTop <= 24 || distanceToBottom <= 24) {
-      loadOlderSessions();
-    }
-  }
-  function loadOlderMessages(sessionId: string) {
-    const historyState = messageHistoryState[sessionId];
-    if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
-      historyState?.loading ||
-      !historyState?.hasMore ||
-      !historyState.nextCursor
-    ) {
-      return;
-    }
-    if (activeSessionId === sessionId && chatMainRef.current) {
-      preserveChatScrollRef.current = {
-        scrollHeight: chatMainRef.current.scrollHeight,
-        scrollTop: chatMainRef.current.scrollTop,
-      };
-    }
-    setMessageHistoryState((current) => ({
-      ...current,
-      [sessionId]: {
-        hasMore: current[sessionId]?.hasMore ?? false,
-        ...current[sessionId],
-        loading: true,
-      },
-    }));
-    dispatch(socketRef.current, {
-      type: "session.messages.list",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
-      before: historyState.nextCursor,
-    });
-  }
-  function loadOlderActivities(sessionId: string) {
-    const historyState = activityHistoryState[sessionId];
-    if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
-      historyState?.loading ||
-      !historyState?.hasMore ||
-      !historyState.nextCursor
-    ) {
-      return;
-    }
-    setActivityHistoryState((current) => ({
-      ...current,
-      [sessionId]: {
-        hasMore: current[sessionId]?.hasMore ?? false,
-        ...current[sessionId],
-        loading: true,
-      },
-    }));
-    dispatch(socketRef.current, {
-      type: "session.artifacts.get",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-      limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
-      before: historyState.nextCursor,
-    });
-  }
-  function handleChatMainScroll(event: ReactUIEvent<HTMLDivElement>) {
-    const target = event.currentTarget;
-    const distanceToBottom =
-      target.scrollHeight - target.clientHeight - target.scrollTop;
-    stickChatToBottomRef.current = distanceToBottom <= 96;
-    if (!activeSessionId || target.scrollTop > 32) {
-      return;
-    }
-    const messageState = messageHistoryState[activeSessionId];
-    const activityState = activityHistoryState[activeSessionId];
-    const canLoadMessages = Boolean(
-      messageState?.hasMore && !messageState.loading && messageState.nextCursor,
-    );
-    const canLoadActivities = Boolean(
-      activityState?.hasMore &&
-        !activityState.loading &&
-        activityState.nextCursor,
-    );
-    if (!canLoadMessages && !canLoadActivities) {
-      return;
-    }
-    preserveChatScrollRef.current = {
-      scrollHeight: target.scrollHeight,
-      scrollTop: target.scrollTop,
-    };
-    loadOlderMessages(activeSessionId);
-    loadOlderActivities(activeSessionId);
   }
   function toggleExpandedMessage(messageId: string) {
     setExpandedMessageIds((current) => {
