@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import "highlight.js/styles/github-dark.css";
@@ -15,9 +14,7 @@ import type {
   AcpAgentProvider,
   AgentMessage,
   AgentPromptContent,
-  AgentPromptImageContent,
   AgentToolCall,
-  PermissionDecision,
   ProjectFileSummary,
   ProjectSummary,
   SessionConfigOption,
@@ -103,6 +100,8 @@ import { useConfiguredHelms } from "./use-configured-helms";
 import { useDaemonProfileActions } from "./use-daemon-profile-actions";
 import { useDeckPreferenceActions } from "./use-deck-preference-actions";
 import { usePromptEnhanceAction } from "./use-prompt-enhance-action";
+import { useSessionCommandActions } from "./use-session-command-actions";
+import { useSessionMessageActions } from "./use-session-message-actions";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
@@ -151,11 +150,9 @@ import {
   writeTrustedDeviceCache,
 } from "../features/auth/beacon-cache";
 import {
-  mergeMessageHistory,
   mergeToolCallHistory,
   resolvePendingToolActivity,
 } from "../features/logbook/timeline";
-import { toast } from "../features/toast/toast";
 import {
   createHelmWebSocketUrl,
   DAEMON_HOST_KEY,
@@ -172,12 +169,6 @@ import {
   nextRequestId,
   requestInitialSync as requestInitialSyncImpl,
 } from "../features/helm-connection/request-dispatch";
-import {
-  createSession as createSessionImpl,
-  requestSessionResumeStart as requestSessionResumeStartImpl,
-  startResume as startResumeImpl,
-  submitPrompt as submitPromptImpl,
-} from "../features/mission/actions/session-actions";
 import { useCodeActions } from "../features/pairing/hooks/use-code-actions";
 import {
   saveDraft as saveDraftImpl,
@@ -1345,6 +1336,11 @@ export function App() {
   ) {
     applyHelmInventory(helmKey, patch);
   }
+  const {
+    appendSystemMessage,
+    appendUserMessage,
+    createClientUserMessageId,
+  } = useSessionMessageActions({ setMessages });
   function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
     setToolCalls((current) => {
       const next = {
@@ -1419,6 +1415,45 @@ export function App() {
   function dispatch(socket: WebSocket, payload: ClientToHelm) {
     dispatchWithTrace(socket, payload, setDebugTrace);
   }
+  const {
+    cancelSession,
+    cleanupSession,
+    createSession,
+    requestSessionResumeStart,
+    respondToPermission,
+    shouldAutoStartSessionResume,
+    startResume,
+    submitPrompt,
+    submitPromptFromKeyboard,
+  } = useSessionCommandActions({
+    prompt,
+    promptImages,
+    socketRef,
+    setImagePasteNotice,
+    activeSessionId,
+    selectedProjectId,
+    projects,
+    selectedWorkspace,
+    filteredWorkspaces,
+    selectedAgentId,
+    filteredAgents,
+    pendingPromptRef,
+    pendingPromptContentRef,
+    dispatch,
+    requestCounter,
+    effectiveDraftAgentMode,
+    normalizeModelSelection,
+    selectedModel,
+    selectedReasoningEffort,
+    navigateToView,
+    setPrompt,
+    setPromptImages,
+    createClientUserMessageId,
+    appendUserMessage,
+    permissionRequests,
+    resumeStartRequestsRef,
+    setResumeFeedback,
+  });
   function handleServerEvent(
     payload: HelmToClient,
     sourceHelmKey = daemonProfileKey(
@@ -1520,65 +1555,6 @@ export function App() {
       return;
     }
   }
-  function appendSystemMessage(sessionId: string, text: string) {
-    setMessages((current) => ({
-      ...current,
-      [sessionId]: [
-        ...(current[sessionId] ?? []),
-        {
-          id: `${sessionId}-system-${Date.now()}`,
-          role: "system",
-          text,
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    }));
-  }
-  function createClientUserMessageId(sessionId: string) {
-    return `${sessionId}-user-${Date.now()}`;
-  }
-  function appendUserMessage(
-    sessionId: string,
-    text: string,
-    id = createClientUserMessageId(sessionId),
-    attachments: AgentPromptImageContent[] = [],
-  ) {
-    setMessages((current) => ({
-      ...current,
-      [sessionId]: mergeMessageHistory(current[sessionId] ?? [], [
-        {
-          id,
-          role: "user",
-          text,
-          timestamp: new Date().toISOString(),
-          ...(attachments.length ? { attachments } : {}),
-        },
-      ]),
-    }));
-  }
-  function createSession(
-    initialPrompt?: string,
-    initialContent?: AgentPromptContent[],
-  ) {
-    return createSessionImpl(initialPrompt, initialContent, {
-      selectedProjectId,
-      projects,
-      selectedWorkspace,
-      filteredWorkspaces,
-      selectedAgentId,
-      filteredAgents,
-      socketRef,
-      pendingPromptRef,
-      pendingPromptContentRef,
-      dispatch,
-      requestCounter,
-      effectiveDraftAgentMode,
-      normalizeModelSelection,
-      selectedModel,
-      selectedReasoningEffort,
-      navigateToView,
-    });
-  }
   function testAgent() {
     testAgentImpl({
       selectedAgentId,
@@ -1671,58 +1647,6 @@ export function App() {
       />
     );
   }
-  function requestSessionResumeStart(sessionId: string, reason: string) {
-    requestSessionResumeStartImpl(sessionId, reason, {
-      socketRef,
-      resumeStartRequestsRef,
-      setResumeFeedback,
-      dispatch,
-      requestCounter,
-    });
-  }
-  function shouldAutoStartSessionResume(
-    session: Pick<SessionSummary, "resume"> | undefined,
-  ) {
-    const resume = session?.resume;
-    return Boolean(
-      resume?.state === "resume-available" &&
-        resume.mode === "reconnect" &&
-        (resume.restoreMethod === "session/load" ||
-          resume.restoreMethod === "session/resume"),
-    );
-  }
-  function submitPrompt(event: FormEvent<HTMLFormElement>) {
-    submitPromptImpl(event, {
-      prompt,
-      promptImages,
-      socketRef,
-      setImagePasteNotice,
-      activeSessionId,
-      createSession,
-      setPrompt,
-      setPromptImages,
-      createClientUserMessageId,
-      appendUserMessage,
-      dispatch,
-      requestCounter,
-    });
-  }
-  function submitPromptFromKeyboard(
-    event: ReactKeyboardEvent<HTMLTextAreaElement>,
-  ) {
-    if (
-      event.key !== "Enter" ||
-      event.shiftKey ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.nativeEvent.isComposing
-    ) {
-      return;
-    }
-    event.preventDefault();
-    event.currentTarget.form?.requestSubmit();
-  }
   const {
     wrapperRef: slashWrapperRef,
     popupOpen: slashPopupOpen,
@@ -1739,30 +1663,6 @@ export function App() {
     promptRef: missionPromptRef,
     onFallbackKeyDown: submitPromptFromKeyboard,
   });
-  function respondToPermission(decision: PermissionDecision) {
-    if (!activeSessionId || !socketRef.current) {
-      return;
-    }
-    const permissionRequest = permissionRequests[activeSessionId];
-    if (!permissionRequest) {
-      return;
-    }
-    dispatch(socketRef.current, {
-      type: "permission.respond",
-      requestId: nextRequestId(requestCounter),
-      permissionRequestId: permissionRequest.id,
-      decision,
-    });
-  }
-  function startResume() {
-    startResumeImpl({
-      activeSessionId,
-      socketRef,
-      setResumeFeedback,
-      dispatch,
-      requestCounter,
-    });
-  }
   function toggleProjectFileDirectory(path: string) {
     setCollapsedProjectFileDirectories((current) => {
       const next = new Set(current);
@@ -1777,31 +1677,6 @@ export function App() {
   function openDiffDetail(path: string) {
     setSelectedMissionDiffFilePath(path);
     setSelectedMissionPanelPageId("diff-detail");
-  }
-  function cleanupSession(sessionId: string) {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      toast.warning("Helm 未连接，无法清理任务。");
-      return;
-    }
-    toast.info("正在清理任务...", { id: "session-cleanup", duration: 2000 });
-    dispatch(socket, {
-      type: "session.cleanup",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-    });
-  }
-  function cancelSession(sessionId: string) {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      toast.warning("Helm 未连接，无法取消任务。");
-      return;
-    }
-    dispatch(socket, {
-      type: "session.cancel",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-    });
   }
   function toggleExpandedMessage(messageId: string) {
     setExpandedMessageIds((current) => {
