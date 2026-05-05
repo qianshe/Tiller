@@ -123,6 +123,7 @@ import { MissionPaneResizer } from "../features/mission/ui/pane-resizer";
 import { ProjectFileList } from "../features/mission/ui/project-file-list";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
+import { MissionPage } from "../features/mission/ui/page";
 import { MissionComposer } from "../features/mission/ui/composer";
 import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
 import { useHistoryPagination } from "../features/mission/hooks/use-history-pagination";
@@ -1818,8 +1819,8 @@ export function App() {
       effectiveInspectorCollapsed && "mission-inspector-collapsed",
     ]);
     return (
-      <section
-        ref={missionLayoutRef}
+      <MissionPage
+        layoutRef={missionLayoutRef}
         className={missionLayoutClassName}
         style={missionLayoutStyle}
       >
@@ -2028,7 +2029,7 @@ export function App() {
             onExpand={() => setMissionInspectorCollapsed(false)}
           />{" "}
         </>{" "}
-      </section>
+      </MissionPage>
     );
   }
   function renderAgents() {
