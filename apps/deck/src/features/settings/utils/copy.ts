@@ -1,0 +1,113 @@
+import type { DeckLanguage } from "../../preferences/storage";
+
+export type SettingsCopy = ReturnType<typeof resolveSettingsCopy>;
+
+export function resolveSettingsCopy(language: DeckLanguage) {
+  return language === "en-US"
+    ? {
+        title: "Settings",
+        subtitle: [
+          "Configure Deck theme, language, technical panels, and prompt enhancement.",
+          "All options are stored locally in this browser.",
+        ].join(" "),
+        reset: "Reset defaults",
+        languageEyebrow: "Language",
+        languageLabel: "Language",
+        languageHelp:
+          "Switches navigation and core Settings copy; ACP Crew domain terms keep their original names.",
+        themeEyebrow: "Theme",
+        themeLabel: "Theme",
+        themeSystem: "System",
+        themeLight: "Light",
+        themeDark: "Dark",
+        themeHelp:
+          "Theme only affects this Deck and is not written to Helm or Crew config.",
+        motionEyebrow: "Motion",
+        reduceMotion: "Reduce transition animations",
+        technicalEyebrow: "Technical panel controls",
+        technicalTitle: "Choose which diagnostic details are visible by default",
+        logbookOpen: "Open Logbook by default",
+        diffOpen: "Open diff summary by default",
+        runtimeMeta: "Show Session runtime metadata",
+        permissionWorkspace: "Show permission request workspace path",
+        connectionDebug: "Show connection/pairing debug echo",
+        enhancerEyebrow: "Prompt enhancement",
+        enhancerTitle: "Wrap casual chat as a standard prompt",
+        enhancerEnabled: "Enable before send",
+        enhancerHelp: [
+          "Enhancement is prepended before sending to ACP;",
+          "the chat window still shows your original input",
+          "and nothing is written to Helm/backend config.",
+        ].join(" "),
+        instructionLabel: "Enhanced prompt textbox · Role and goal",
+        modelLabel: "Model config position · Reasoning preference",
+        contractLabel: "Output contract",
+        saveEyebrow: "Saved state",
+        browserTitle: "Current browser",
+        saveStatus: [
+          "Frontend preferences are auto-saved; backend, provider, and Helm-level",
+          "settings still belong to the concrete Helm / Crew.",
+        ].join(" "),
+        devicesEyebrow: "Trusted devices",
+        devicesTitle: "7-day remembered Deck / App devices",
+        devicesHelp: [
+          "Each trusted device is scoped to this Helm profile.",
+          "Revoking a device forces it to pair again on that device.",
+        ].join(" "),
+        devicesEmpty: "No trusted devices yet.",
+        currentDevice: "Current device",
+        revoke: "Revoke",
+        clientKindWeb: "Web",
+        clientKindApp: "App",
+        lastSeen: "Last seen",
+        expiresAt: "Expires",
+      }
+    : {
+        title: "设置",
+        subtitle:
+          "配置 Deck 语言、主题、技术面板与提示词增强；所有选项只保存在浏览器本地。",
+        reset: "重置默认",
+        languageEyebrow: "语言 / Language",
+        languageLabel: "语言",
+        languageHelp:
+          "用于切换导航与 设置基础文案；ACP 舰员 领域术语保持原名。",
+        themeEyebrow: "主题切换",
+        themeLabel: "主题",
+        themeSystem: "跟随系统",
+        themeLight: "浅色",
+        themeDark: "深色",
+        themeHelp: "主题只影响当前 Deck，不会写入 Helm 或舰员配置。",
+        motionEyebrow: "动效",
+        reduceMotion: "减少过渡动画",
+        technicalEyebrow: "技术面板控制",
+        technicalTitle: "决定哪些诊断信息默认展示",
+        logbookOpen: "默认展开航行日志",
+        diffOpen: "默认展开变更摘要",
+        runtimeMeta: "显示任务 runtime 元信息",
+        permissionWorkspace: "显示权限请求工作区路径",
+        connectionDebug: "显示连接/配对调试回显",
+        enhancerEyebrow: "提示词增强",
+        enhancerTitle: "把普通对话包装成标准提示词",
+        enhancerEnabled: "发送前启用",
+        enhancerHelp:
+          "增强内容会在发送到 ACP 前拼接；聊天窗口仍显示你的原始输入，不会写入 Helm 或后端配置。",
+        instructionLabel: "增强提示词文本框 · 角色与目标",
+        modelLabel: "模型配置位置 · 推理偏好",
+        contractLabel: "输出契约",
+        saveEyebrow: "保存状态",
+        browserTitle: "当前浏览器",
+        saveStatus:
+          "前端偏好会自动保存；后端、provider、Helm 级配置仍在具体 Helm / 舰员中管理。",
+        devicesEyebrow: "信标",
+        devicesTitle: "当前 Helm 记住的 7 天信标",
+        devicesHelp:
+          "每个信标都只属于当前 Helm profile。撤销后，该设备下次必须重新配对。",
+        devicesEmpty: "当前还没有信标。",
+        currentDevice: "当前信标",
+        revoke: "撤销",
+        clientKindWeb: "网页",
+        clientKindApp: "App",
+        lastSeen: "最近认证",
+        expiresAt: "信任到期",
+      };
+}
