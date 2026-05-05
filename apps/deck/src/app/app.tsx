@@ -117,7 +117,7 @@ import {
 import { OverviewPage } from "../features/overview/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
 import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
-import { MissionDisplayPanel } from "../features/mission/ui/display-panel";
+import { MissionDisplaySection } from "../features/mission/ui/display-section";
 import { MissionMessageTimeline } from "../features/mission/ui/message-timeline";
 import { MissionPaneResizer } from "../features/mission/ui/pane-resizer";
 import { MissionPermissionDrawer } from "../features/mission/ui/permission-drawer";
@@ -127,7 +127,6 @@ import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
 import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
-import { LogbookPanel } from "../features/mission/ui/logbook-panel";
 import { useHistoryPagination } from "../features/mission/hooks/use-history-pagination";
 import { useMissionLayout } from "../features/mission/hooks/use-layout";
 import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
@@ -1820,60 +1819,6 @@ export function App() {
       effectiveSidebarCollapsed && "mission-sidebar-collapsed",
       effectiveInspectorCollapsed && "mission-inspector-collapsed",
     ]);
-    const renderMissionDisplayPanel = () => (
-      <MissionDisplayPanel
-        style={missionDisplayPaneStyle}
-        pages={missionPanelPages}
-        selectedPage={selectedMissionPanelPage}
-        selectedDiffFilePath={selectedMissionDiffFilePath}
-        diffs={activeDiffs}
-        diffCount={missionDiffCount}
-        logCount={missionLogCount}
-        overviewItems={projectOverviewItems}
-        noDiffSummary={copy.noDiffSummary}
-        logbookContent={
-          <LogbookPanel
-            activeSession={activeSession}
-            statusLabel={missionStatusLabel}
-            diffCount={missionDiffCount}
-            logCount={missionLogCount}
-            sessionToolCalls={activeToolCalls}
-            commandChunks={activeOutputs}
-            sessionMessages={
-              activeSession ? (messages[activeSession.id] ?? []) : []
-            }
-            historyState={
-              activeSession ? activityHistoryState[activeSession.id] : undefined
-            }
-            visibleCount={
-              activeSession
-                ? (activityVisibleCounts[activeSession.id] ??
-                  DEFAULT_LOGBOOK_VISIBLE_LIMIT)
-                : DEFAULT_LOGBOOK_VISIBLE_LIMIT
-            }
-            visibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
-            copy={copy}
-            onShowMore={(targetSessionId, nextVisibleCount) =>
-              setActivityVisibleCounts((current) => ({
-                ...current,
-                [targetSessionId]: nextVisibleCount,
-              }))
-            }
-            onLoadOlder={loadOlderActivities}
-          />
-        }
-        collapsedDiffDirectories={collapsedMissionDiffDirectories}
-        onAddPage={addMissionPanelPage}
-        onSelectPage={setSelectedMissionPanelPageId}
-        onDragStart={setDraggedMissionPanelPageId}
-        onDrop={dropMissionPanelPage}
-        onOpenDiffDetail={openDiffDetail}
-        onRenamePage={renameMissionPanelPage}
-        onMovePage={moveMissionPanelPage}
-        onDeletePage={deleteMissionPanelPage}
-        onToggleDiffDirectory={toggleMissionDiffDirectory}
-      />
-    );
     return (
       <section
         ref={missionLayoutRef}
@@ -2047,7 +1992,52 @@ export function App() {
             onResizeStart={startMissionPaneResize}
             onNudge={nudgeMissionPane}
           />{" "}
-          {renderMissionDisplayPanel()}{" "}
+          <MissionDisplaySection
+            style={missionDisplayPaneStyle}
+            pages={missionPanelPages}
+            selectedPage={selectedMissionPanelPage}
+            selectedDiffFilePath={selectedMissionDiffFilePath}
+            diffs={activeDiffs}
+            diffCount={missionDiffCount}
+            logCount={missionLogCount}
+            overviewItems={projectOverviewItems}
+            noDiffSummary={copy.noDiffSummary}
+            activeSession={activeSession}
+            statusLabel={missionStatusLabel}
+            sessionToolCalls={activeToolCalls}
+            commandChunks={activeOutputs}
+            sessionMessages={
+              activeSession ? (messages[activeSession.id] ?? []) : []
+            }
+            historyState={
+              activeSession ? activityHistoryState[activeSession.id] : undefined
+            }
+            visibleCount={
+              activeSession
+                ? (activityVisibleCounts[activeSession.id] ??
+                  DEFAULT_LOGBOOK_VISIBLE_LIMIT)
+                : DEFAULT_LOGBOOK_VISIBLE_LIMIT
+            }
+            visibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
+            copy={copy}
+            collapsedDiffDirectories={collapsedMissionDiffDirectories}
+            onShowMore={(targetSessionId, nextVisibleCount) =>
+              setActivityVisibleCounts((current) => ({
+                ...current,
+                [targetSessionId]: nextVisibleCount,
+              }))
+            }
+            onLoadOlder={loadOlderActivities}
+            onAddPage={addMissionPanelPage}
+            onSelectPage={setSelectedMissionPanelPageId}
+            onDragStart={setDraggedMissionPanelPageId}
+            onDrop={dropMissionPanelPage}
+            onOpenDiffDetail={openDiffDetail}
+            onRenamePage={renameMissionPanelPage}
+            onMovePage={moveMissionPanelPage}
+            onDeletePage={deleteMissionPanelPage}
+            onToggleDiffDirectory={toggleMissionDiffDirectory}
+          />{" "}
           <MissionInspector
             collapsed={effectiveInspectorCollapsed}
             style={missionInspectorPaneStyle}
