@@ -10,7 +10,7 @@ import type {
   FileDiffSummary,
   SessionSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../runtime-store";
+import type { StoredSessionRuntimeDescriptor } from "../facade";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,

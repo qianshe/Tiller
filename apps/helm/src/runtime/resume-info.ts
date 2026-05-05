@@ -1,5 +1,5 @@
 import type { AcpAgentProvider, SessionResumeInfo, SessionSummary } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../sessions/runtime-store";
+import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 
 type ActiveSessionRecord = {
   runtime: {

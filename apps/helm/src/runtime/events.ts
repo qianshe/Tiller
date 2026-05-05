@@ -1,4 +1,4 @@
-import { applyAgentMessageToSummary } from "../sessions/summary/updates";
+import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";

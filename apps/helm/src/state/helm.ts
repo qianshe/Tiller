@@ -23,8 +23,8 @@ import {
   createHelmSessionStores,
   resolveSessionStoreBackend,
   type HelmSessionStores,
-} from "../sessions/store-factory";
-import { type StoredSessionRuntimeDescriptor } from "../sessions/runtime-store";
+  type StoredSessionRuntimeDescriptor,
+} from "../sessions/facade";
 import { createTrustedDeviceStore } from "../auth/beacon-store";
 import type { TillerLogger } from "../logging/logger";
 

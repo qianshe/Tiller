@@ -14,7 +14,7 @@ import type {
   TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../sessions/runtime-store";
+import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 
 export type SessionRecord = {
   summary: SessionSummary;

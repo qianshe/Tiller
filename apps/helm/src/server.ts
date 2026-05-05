@@ -34,9 +34,13 @@ import {
   type TrustedDeviceSummary,
   type WorkspaceSummary,
 } from "@tiller/shared";
-import { createHelmSessionStores, resolveSessionStoreBackend } from "./sessions/store-factory";
-import { resolveSessionCleanupOutcome } from "./sessions/cleanup";
-import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./sessions/summary/updates";
+import {
+  applyAgentMessageToSummary,
+  applyUserPromptToSummary,
+  createHelmSessionStores,
+  resolveSessionCleanupOutcome,
+  resolveSessionStoreBackend,
+} from "./sessions/facade";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
 import { createSocketAuthenticator } from "./auth/socket-auth";
 import { handleConfigMessage } from "./handlers/config/legacy";

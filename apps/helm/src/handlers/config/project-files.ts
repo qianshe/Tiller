@@ -4,7 +4,7 @@ import { relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type { ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
-import { isProjectRootBranchWorkspace } from "../../sessions/project/binding";
+import { isProjectRootBranchWorkspace } from "../../sessions/facade";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;

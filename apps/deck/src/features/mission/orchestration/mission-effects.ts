@@ -4,8 +4,12 @@ import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
 import { useSnapshotCache } from "../hooks/snapshot-cache";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "../config";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../../shared/config/deck-runtime";
+import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
+import {
+  DEFAULT_DAEMON_HOST,
+  DEFAULT_DAEMON_PORT,
+  IS_EMBEDDED_HELM_DECK,
+} from "../../../shared/config/deck-runtime";
 import { useMissionSelectionEffects } from "./mission-selection-effects";
 
 export function useMissionEffects(ctx: any) {

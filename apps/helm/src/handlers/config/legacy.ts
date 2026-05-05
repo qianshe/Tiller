@@ -6,7 +6,7 @@ import {
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
 import type { ClientToHelm } from "@tiller/sync-protocol";
-import { isProjectRootBranchWorkspace } from "../../sessions/project/binding";
+import { isProjectRootBranchWorkspace } from "../../sessions/facade";
 import { listProjectFiles, resolveProjectFileRoot } from "./project-files";
 import type { HelmMessageHandler } from "../context";
 
