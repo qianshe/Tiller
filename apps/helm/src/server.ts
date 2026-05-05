@@ -1155,33 +1155,6 @@ function resolvePrimaryDisplayHost() {
   return isWildcardHost(HOST) ? (resolveLanAddresses()[0] ?? "127.0.0.1") : HOST;
 }
 
-function logInfo(message: string) {
-  writeLogLine("INFO", message);
-  console.log(message);
-}
-
-function logDebug(message: string) {
-  if (!TILLER_DEBUG_ENABLED) {
-    return;
-  }
-  writeLogLine("DEBUG", message);
-  console.debug(message);
-}
-
-function logWarn(message: string) {
-  writeLogLine("WARN", message);
-  console.warn(message);
-}
-
-function logError(message: string) {
-  writeLogLine("ERROR", message);
-  console.error(message);
-}
-
-function writeLogLine(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string) {
-  tillerLogStream.write(`${new Date().toISOString()} [${level}] ${message}\n`);
-}
-
 type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
