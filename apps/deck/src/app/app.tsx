@@ -88,10 +88,6 @@ import {
   isSessionExecutionPending,
 } from "../features/mission/utils/session-state";
 import {
-  daemonProfileToHelmSummary,
-  mergeHelmSummariesByEndpoint,
-} from "../features/helm-connection/utils/daemon-helpers";
-import {
   dedupeHelmCards,
   resolveHelmConnectionState,
 } from "../features/helm-connection/utils/connection-helpers";
@@ -109,6 +105,8 @@ import { AgentsPage } from "../features/agents/ui/page";
 import { TrustedDevicesPanel } from "../features/agents/ui/trusted-devices-panel";
 import { NAV_LABELS } from "./routes";
 import { useRouteView } from "./use-route-view";
+import { useActiveConversationUpdateKey } from "./use-active-conversation-key";
+import { useConfiguredHelms } from "./use-configured-helms";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
@@ -164,9 +162,9 @@ import {
 } from "../features/logbook/timeline";
 import { toast } from "../features/toast/toast";
 import {
+  createHelmWebSocketUrl,
   DAEMON_HOST_KEY,
   DAEMON_PORT_KEY,
-  normalizeEmbeddedHelmSummaries,
   resolveDefaultHelmEndpoint,
 } from "../features/helm-connection/helm-endpoint";
 import {
@@ -615,52 +613,26 @@ export function App() {
     handlePromptPaste: handleMissionPromptPaste,
     removePromptImage,
   } = usePromptImages({ activeSession });
-  const effectiveSessionHistoryState = activeSessionId
-    ? activityHistoryState[activeSessionId]
-    : undefined;
   const activeSessionMessages = activeSession
     ? (messages[activeSession.id] ?? [])
     : [];
-  const activeConversationUpdateKey = useMemo(() => {
-    const lastMessage = activeSessionMessages.at(-1);
-    return [
-      activeSessionId ?? "",
-      activeSessionMessages.length,
-      lastMessage?.timestamp ?? "",
-      lastMessage?.text.length ?? 0,
-    ].join("|");
-  }, [activeSessionId, activeSessionMessages]);
+  const activeConversationUpdateKey = useActiveConversationUpdateKey(
+    activeSessionId,
+    activeSessionMessages,
+  );
   const draftProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
-  const configuredHelms = useMemo(() => {
-    const currentHost = daemonHost.trim() || DEFAULT_DAEMON_HOST;
-    const currentPort = daemonPort.trim() || DEFAULT_DAEMON_PORT;
-    const currentSavedProfile = daemonProfiles.find(
-      (profile) =>
-        daemonProfileKey(profile.host, profile.port) ===
-        daemonProfileKey(currentHost, currentPort),
-    );
-    const currentProfile: DaemonProfile = {
-      id: currentSavedProfile?.id ?? "current-helm",
-      name: currentSavedProfile?.name || "Local Helm",
-      host: currentHost,
-      port: currentPort,
-    };
-    return mergeHelmSummariesByEndpoint(
-      [currentProfile, ...daemonProfiles]
-        .map(daemonProfileToHelmSummary)
-        .concat(
-          normalizeEmbeddedHelmSummaries({
-            embedded: IS_EMBEDDED_HELM_DECK,
-            host: currentHost,
-            port: currentPort,
-            helms,
-          }),
-        ),
-    );
-  }, [daemonHost, daemonPort, daemonProfiles, helms]);
+  const configuredHelms = useConfiguredHelms({
+    daemonHost,
+    daemonPort,
+    defaultDaemonHost: DEFAULT_DAEMON_HOST,
+    defaultDaemonPort: DEFAULT_DAEMON_PORT,
+    daemonProfiles,
+    helms,
+    embedded: IS_EMBEDDED_HELM_DECK,
+  });
   const activeHelm = useMemo(() => {
     const helmId = activeSession?.helmId ?? draftProject?.helmId;
     return configuredHelms.find((helm) => helm.id === helmId) ?? null;
