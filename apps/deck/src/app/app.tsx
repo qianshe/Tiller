@@ -38,13 +38,7 @@ import { useHelmConnection } from "../features/helm-connection/hooks/use-helm-co
 import { useReconnectEffects } from "../features/helm-connection/hooks/use-reconnect-effects";
 import type { ConnectionState } from "../store/slices/connection-slice";
 import type { HelmInventoryBucket } from "../store/slices/helms-slice";
-import {
-  DEFAULT_DECK_PREFERENCES,
-  type DeckLanguage,
-  type DeckPreferences,
-  type DeckTheme,
-  type TechnicalPanelPreferences,
-} from "../features/preferences/storage";
+import type { DeckLanguage, DeckTheme } from "../features/preferences/storage";
 import { UI_COPY, type Locale } from "../shared/utils/copy";
 import { usePreferencesEffects } from "../features/preferences/hooks/use-preferences-effects";
 import { resolveTechnicalPanelPreferences } from "../features/preferences/utils/helpers";
@@ -75,7 +69,6 @@ import {
   resolveReasoningOptionsForModel,
   resolveSessionConfigHint,
   splitModelReasoning,
-  summarizeSessionContext,
 } from "../features/mission/utils/composer-options";
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import {
@@ -107,6 +100,8 @@ import { NAV_LABELS } from "./routes";
 import { useRouteView } from "./use-route-view";
 import { useActiveConversationUpdateKey } from "./use-active-conversation-key";
 import { useConfiguredHelms } from "./use-configured-helms";
+import { useDeckPreferenceActions } from "./use-deck-preference-actions";
+import { usePromptEnhanceAction } from "./use-prompt-enhance-action";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
@@ -138,7 +133,6 @@ import {
 import { useSessionTitles } from "../features/mission/hooks/use-session-titles";
 import { useSlashCommands } from "../features/mission/hooks/use-slash-commands";
 import { useSnapshotCache } from "../features/mission/hooks/use-snapshot-cache";
-import { enhancePromptWithLlm } from "../features/prompt-enhancer/enhancer";
 import { usePromptEnhancerSettings } from "../features/prompt-enhancer/hooks/use-settings";
 import {
   resolveDraftSelectionId,
@@ -830,6 +824,14 @@ export function App() {
   );
   const activeProfileId = `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
   const viewLabels = NAV_LABELS[deckPreferences.language];
+  const shellClassName = [
+    "shell",
+    `view-${activeView}`,
+    `theme-${deckPreferences.theme}`,
+    deckPreferences.reduceMotion ? "motion-reduced" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   function requestChatScrollToBottom(sessionId: string | null) {
     pendingSessionScrollToBottomRef.current = sessionId;
     stickChatToBottomRef.current = true;
@@ -1308,62 +1310,23 @@ export function App() {
     messagePageLimit: DEFAULT_MESSAGE_PAGE_LIMIT,
     activityPageLimit: DEFAULT_ACTIVITY_PAGE_LIMIT,
   });
-  function updateDeckPreference<K extends keyof DeckPreferences>(
-    key: K,
-    value: DeckPreferences[K],
-  ) {
-    updatePreferences({ [key]: value } as Partial<DeckPreferences>);
-  }
-  function updateTechnicalPanelPreference<
-    K extends keyof TechnicalPanelPreferences,
-  >(key: K, value: TechnicalPanelPreferences[K]) {
-    updatePreferences({
-      technicalPanels: {
-        ...resolveTechnicalPanelPreferences(deckPreferences),
-        [key]: value,
-      },
-    });
-  }
-  async function enhancePromptDraft() {
-    const rawPrompt = prompt.trim();
-    if (!rawPrompt) {
-      return;
-    }
-    setPromptEnhancerBusy(true);
-    setPromptEnhancerStatus("正在增强提示词...");
-    try {
-      const workspace = filteredWorkspaces.find(
-        (item) =>
-          item.id === (activeSession?.workspaceId ?? selectedWorkspaceId),
-      );
-      const enhanced = await enhancePromptWithLlm(
-        rawPrompt,
-        deckPreferences.promptEnhancer,
-        {
-          projectName: draftProject?.name ?? activeSession?.projectName,
-          workspaceName: activeSession?.workspaceName ?? workspace?.name,
-          projectSummary: draftProject?.summary,
-          workspaceSummary: workspace?.summary,
-          sessionStatus: activeSession?.status,
-          sessionSummary: summarizeSessionContext(
-            activeSession,
-            activeSession ? (messages[activeSession.id] ?? []) : [],
-          ),
-        },
-      );
-      setPrompt(enhanced);
-      setPromptEnhancerStatus("已增强并回填输入框，请确认后再发送。");
-    } catch (error) {
-      setPromptEnhancerStatus(
-        error instanceof Error ? error.message : "提示词增强失败",
-      );
-    } finally {
-      setPromptEnhancerBusy(false);
-    }
-  }
-  function resetDeckPreferences() {
-    updatePreferences(DEFAULT_DECK_PREFERENCES);
-  }
+  const {
+    resetDeckPreferences,
+    updateDeckPreference,
+    updateTechnicalPanelPreference,
+  } = useDeckPreferenceActions({ deckPreferences, updatePreferences });
+  const enhancePromptDraft = usePromptEnhanceAction({
+    prompt,
+    setPrompt,
+    promptEnhancer: deckPreferences.promptEnhancer,
+    setPromptEnhancerBusy,
+    setPromptEnhancerStatus,
+    filteredWorkspaces,
+    selectedWorkspaceId,
+    activeSession,
+    draftProject,
+    messages,
+  });
   function requestInitialSync(socket: WebSocket) {
     requestInitialSyncImpl(socket, {
       dispatch,
@@ -2024,6 +1987,14 @@ export function App() {
         onToggleDirectory={toggleProjectFileDirectory}
       />
     );
+    const chatPaneClassName = [
+      "chat-conversation",
+      "mission-pane",
+      "mission-pane-chat",
+      !activeSession ? "mission-draft-chat" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const missionLayoutClassName = [
       "card surface-card chat-layout chat-layout-sidebar",
       effectiveSidebarCollapsed ? "mission-sidebar-collapsed" : "",
@@ -2140,10 +2111,7 @@ export function App() {
               ) : null
             }
           />{" "}
-          <div
-            className={`chat-conversation mission-pane mission-pane-chat ${!activeSession ? "mission-draft-chat" : ""}`.trim()}
-            style={missionChatPaneStyle}
-          >
+          <div className={chatPaneClassName} style={missionChatPaneStyle}>
             {" "}
             <div
               className="chat-main"
@@ -2377,9 +2345,7 @@ export function App() {
     );
   }
   return (
-    <main
-      className={`shell view-${activeView} theme-${deckPreferences.theme} ${deckPreferences.reduceMotion ? "motion-reduced" : ""}`}
-    >
+    <main className={shellClassName}>
       {" "}
       <TopNav
         activeView={activeView}
