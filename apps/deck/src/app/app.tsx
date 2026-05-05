@@ -42,8 +42,6 @@ import type { ConnectionState } from "../store/slices/connection-slice";
 import type { HelmInventoryBucket } from "../store/slices/helms-slice";
 import {
   DEFAULT_DECK_PREFERENCES,
-  DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
-  DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
   type DeckLanguage,
   type DeckPreferences,
   type DeckTheme,
@@ -150,13 +148,8 @@ import {
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
 } from "../features/helm-connection/reconnect-policy";
-import {
-  enhancePromptWithLlm,
-  listPromptEnhancerModels,
-  testPromptEnhancerConnectivity,
-  type PromptEnhancerModelOption,
-  type PromptEnhancerPreferences,
-} from "../features/prompt-enhancer/enhancer";
+import { enhancePromptWithLlm } from "../features/prompt-enhancer/enhancer";
+import { usePromptEnhancerSettings } from "../features/prompt-enhancer/hooks/use-settings";
 import { readDeckSnapshot, writeDeckSnapshot } from "../store/persist";
 import {
   createSessionStatusMap,
@@ -419,6 +412,27 @@ export function App() {
     useState<Set<string>>(() => new Set());
   const deckPreferences = useDeckStore((state) => state.preferences);
   const updatePreferences = useDeckStore((state) => state.updatePreferences);
+  const {
+    busy: promptEnhancerBusy,
+    setBusy: setPromptEnhancerBusy,
+    status: promptEnhancerStatus,
+    setStatus: setPromptEnhancerStatus,
+    models: promptEnhancerModels,
+    modelFilter: promptEnhancerModelFilter,
+    setModelFilter: setPromptEnhancerModelFilter,
+    modelPickerOpen: promptEnhancerModelPickerOpen,
+    setModelPickerOpen: setPromptEnhancerModelPickerOpen,
+    updateLlmPreference: updatePromptEnhancerLlmPreference,
+    resetDefaults: resetPromptEnhancerDefaults,
+    testSelectedModel: testPromptEnhancerSelectedModel,
+    refreshModels: refreshPromptEnhancerModels,
+    updateModelInput: updatePromptEnhancerModelInput,
+    selectModel: selectPromptEnhancerModel,
+  } = usePromptEnhancerSettings({
+    preferences: deckPreferences,
+    pickerRef: promptModelPickerRef,
+    updatePreferences,
+  });
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>(
     [],
@@ -429,15 +443,6 @@ export function App() {
   );
   const slashWrapperRef = useRef<HTMLDivElement | null>(null);
   const [imagePasteNotice, setImagePasteNotice] = useState("");
-  const [promptEnhancerStatus, setPromptEnhancerStatus] = useState("");
-  const [promptEnhancerModels, setPromptEnhancerModels] = useState<
-    PromptEnhancerModelOption[]
-  >([]);
-  const [promptEnhancerModelFilter, setPromptEnhancerModelFilter] =
-    useState("");
-  const [promptEnhancerModelPickerOpen, setPromptEnhancerModelPickerOpen] =
-    useState(false);
-  const [promptEnhancerBusy, setPromptEnhancerBusy] = useState(false);
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId =
     missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
@@ -1330,35 +1335,6 @@ export function App() {
     promptImages.length,
   ]);
   useEffect(() => {
-    if (!promptEnhancerModelPickerOpen) {
-      return;
-    }
-    function closePromptModelPicker(event: PointerEvent) {
-      const target = event.target;
-      if (
-        target instanceof Node &&
-        promptModelPickerRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setPromptEnhancerModelPickerOpen(false);
-    }
-    function closePromptModelPickerWithKeyboard(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setPromptEnhancerModelPickerOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", closePromptModelPicker);
-    document.addEventListener("keydown", closePromptModelPickerWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", closePromptModelPicker);
-      document.removeEventListener(
-        "keydown",
-        closePromptModelPickerWithKeyboard,
-      );
-    };
-  }, [promptEnhancerModelPickerOpen]);
-  useEffect(() => {
     if (
       fleetAddHelmModalOpen &&
       fleetAddHelmStage === "connecting" &&
@@ -1529,84 +1505,6 @@ export function App() {
         [key]: value,
       },
     });
-  }
-  function updatePromptEnhancerPreference<
-    K extends keyof PromptEnhancerPreferences,
-  >(key: K, value: PromptEnhancerPreferences[K]) {
-    updatePreferences({
-      promptEnhancer: { ...deckPreferences.promptEnhancer, [key]: value },
-    });
-  }
-  function updatePromptEnhancerLlmPreference<
-    K extends keyof PromptEnhancerPreferences["llm"],
-  >(key: K, value: PromptEnhancerPreferences["llm"][K]) {
-    updatePreferences({
-      promptEnhancer: {
-        ...deckPreferences.promptEnhancer,
-        llm: { ...deckPreferences.promptEnhancer.llm, [key]: value },
-      },
-    });
-  }
-  function resetPromptEnhancerDefaults() {
-    updatePreferences({
-      promptEnhancer: {
-        ...deckPreferences.promptEnhancer,
-        llm: {
-          ...deckPreferences.promptEnhancer.llm,
-          systemPrompt: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-          instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
-        },
-      },
-    });
-    setPromptEnhancerStatus("已恢复默认增强器 System Prompt 与指令模板。");
-  }
-  async function testPromptEnhancerSelectedModel() {
-    setPromptEnhancerBusy(true);
-    setPromptEnhancerStatus("正在测试 LLM 连通性...");
-    try {
-      await testPromptEnhancerConnectivity(deckPreferences.promptEnhancer.llm);
-      setPromptEnhancerStatus("LLM 连通性正常。");
-    } catch (error) {
-      setPromptEnhancerStatus(
-        error instanceof Error ? error.message : "LLM 连通性测试失败",
-      );
-    } finally {
-      setPromptEnhancerBusy(false);
-    }
-  }
-  async function refreshPromptEnhancerModels() {
-    setPromptEnhancerBusy(true);
-    setPromptEnhancerModelPickerOpen(true);
-    setPromptEnhancerStatus("正在获取模型列表...");
-    try {
-      const models = await listPromptEnhancerModels(
-        deckPreferences.promptEnhancer.llm,
-      );
-      setPromptEnhancerModels(models);
-      const ownerCount = new Set(models.map((model) => model.ownedBy)).size;
-      setPromptEnhancerStatus(
-        models.length
-          ? `已获取 ${models.length} 个模型，来自 ${ownerCount} 个 owner。`
-          : "模型接口可用，但没有返回模型。",
-      );
-    } catch (error) {
-      setPromptEnhancerStatus(
-        error instanceof Error ? error.message : "获取模型失败",
-      );
-    } finally {
-      setPromptEnhancerBusy(false);
-    }
-  }
-  function updatePromptEnhancerModelInput(value: string) {
-    updatePromptEnhancerLlmPreference("model", value);
-    setPromptEnhancerModelFilter(value);
-    setPromptEnhancerModelPickerOpen(true);
-  }
-  function selectPromptEnhancerModel(model: PromptEnhancerModelOption) {
-    updatePromptEnhancerLlmPreference("model", model.id);
-    setPromptEnhancerModelFilter("");
-    setPromptEnhancerModelPickerOpen(false);
-    setPromptEnhancerStatus(`已选择 ${model.id}（${model.ownedBy}）。`);
   }
   async function enhancePromptDraft() {
     const rawPrompt = prompt.trim();
