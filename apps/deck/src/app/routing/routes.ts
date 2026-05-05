@@ -1,10 +1,10 @@
-import type { DeckLanguage } from "../features/preferences/storage";
-import { type AppView } from "../shared/utils/routes";
+import type { DeckLanguage } from "../../features/preferences/storage";
+import { type AppView } from "../../shared/utils/routes";
 export {
   VIEW_PATHS,
   resolveViewFromPath,
   type AppView,
-} from "../shared/utils/routes";
+} from "../../shared/utils/routes";
 
 export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
   "zh-CN": {

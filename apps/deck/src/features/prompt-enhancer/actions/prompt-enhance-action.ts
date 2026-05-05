@@ -4,11 +4,11 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { summarizeSessionContext } from "../features/mission/utils/composer-options";
+import { summarizeSessionContext } from "../../mission/utils/composer-options";
 import {
   enhancePromptWithLlm,
   type PromptEnhancerPreferences,
-} from "../features/prompt-enhancer/enhancer";
+} from "../enhancer";
 
 type UsePromptEnhanceActionOptions = {
   prompt: string;

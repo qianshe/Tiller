@@ -1,2 +1,13 @@
-export {};
-
+export { useMissionViewModel } from "./orchestration/mission-view-model";
+export { useMissionEffects } from "./orchestration/mission-effects";
+export { useSessionCommandActions } from "./actions/session-command-actions";
+export { useSessionMessageActions } from "./actions/session-message-actions";
+export { useHistoryPagination } from "./hooks/history-pagination";
+export { useMissionLayout } from "./hooks/layout";
+export { usePanelPages } from "./hooks/panel-pages";
+export { useSelection, type SessionDraftPreferencePatch } from "./hooks/selection";
+export { useSessionTitles } from "./hooks/session-titles";
+export { useSlashCommands } from "./hooks/slash-commands";
+export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
+export { MissionAgentIcon } from "./ui/agent-icon";
+export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";

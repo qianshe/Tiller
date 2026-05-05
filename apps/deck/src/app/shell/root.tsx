@@ -1,49 +1,44 @@
-import { useEffect, useMemo, useRef, type FormEvent } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
-import { daemonProfileKey, formatDaemonProfileLine, type DaemonProfile } from "../features/helm-connection/daemon-profiles";
-import { useHelmConnection } from "../features/helm-connection/hooks/connection";
-import type { ConnectionState } from "../store/slices/connection-slice";
-import type { HelmInventoryBucket } from "../store/slices/helms-slice";
-import { UI_COPY, type Locale } from "../shared/utils/copy";
-import { usePreferencesEffects } from "../features/preferences/hooks/effects";
-import { agentModelOptionsKey, readAgentModelOptionsCache, writeAgentModelOptionsCache } from "../features/agents/utils/agent-model-options-cache";
-import { slugify, splitArgs } from "../features/agents/utils/agent-identity";
-import { normalizeModelSelection, resolveCombinedModelValue, resolveModelOptions, resolvePreferredModel, resolveReasoningLabel, resolveReasoningOptionsForModel } from "../features/mission/utils/composer-options";
-import { projectFilesKey } from "../features/mission/utils/project-files-key";
-import { formatRelativeTime } from "../shared/utils/format-time";
-import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../features/server-events/index";
-import { useRouteView } from "./route-view";
-import { useDeckPreferenceActions } from "./preference-actions";
-import { usePromptEnhanceAction } from "./prompt-enhance-action";
-import { useSessionCommandActions } from "./session-command-actions";
-import { useSessionMessageActions } from "./session-message-actions";
-import { TopNav } from "../shared/ui/layout/top-nav";
-import { createMissionVisualFixture, shouldUseMissionVisualFixture } from "../features/mission/utils/visual-fixture";
-import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
-import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
-import { useHistoryPagination } from "../features/mission/hooks/history-pagination";
-import { useMissionLayout } from "../features/mission/hooks/layout";
-import { usePanelPages } from "../features/mission/hooks/panel-pages";
-import { useSelection, type SessionDraftPreferencePatch } from "../features/mission/hooks/selection";
-import { useSessionTitles } from "../features/mission/hooks/session-titles";
-import { useSlashCommands } from "../features/mission/hooks/slash-commands";
-import { useMissionViewModel } from "./mission-view-model";
-import { useMissionEffects } from "./mission-effects";
-import { usePromptEnhancerSettings } from "../features/prompt-enhancer/hooks/settings";
-import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache } from "../features/auth/beacon-cache";
-import { mergeToolCallHistory } from "../features/logbook/timeline";
-import { DAEMON_HOST_KEY, DAEMON_PORT_KEY, resolveDefaultHelmEndpoint } from "../features/helm-connection/helm-endpoint";
-import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../features/helm-connection/sockets";
-import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../features/helm-connection/request-dispatch";
-import { useCodeActions } from "../features/pairing/hooks/code-actions";
-import { DECK_DEVICE_NAME, DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
-import { useDeckData } from "./deck-data";
-import { useAppRuntimeState } from "./runtime-state";
-import { AppRoutes } from "./route-content";
-import { useAppActions } from "./action-handlers";
-import { useAppControllers } from "./controllers";
+import { useHelmConnection } from "../../features/helm-connection/hooks/connection";
+import { UI_COPY, type Locale } from "../../shared/utils/copy";
+import { usePreferencesEffects } from "../../features/preferences/hooks/effects";
+import { agentModelOptionsKey, readAgentModelOptionsCache, writeAgentModelOptionsCache } from "../../features/agents/utils/agent-model-options-cache";
+import { slugify, splitArgs } from "../../features/agents/utils/agent-identity";
+import { normalizeModelSelection, resolveCombinedModelValue, resolveModelOptions, resolvePreferredModel, resolveReasoningLabel, resolveReasoningOptionsForModel } from "../../features/mission/utils/composer-options";
+import { projectFilesKey } from "../../features/mission/utils/project-files-key";
+import { formatRelativeTime } from "../../shared/utils/format-time";
+import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../../features/server-events/index";
+import { useRouteView } from "../routing/route-view";
+import { useDeckPreferenceActions } from "../../features/preferences/actions/preference-actions";
+import { usePromptEnhanceAction } from "../../features/prompt-enhancer/actions/prompt-enhance-action";
+import { TopNav } from "../../shared/ui/layout/top-nav";
+import { createMissionVisualFixture, shouldUseMissionVisualFixture } from "../../features/mission/utils/visual-fixture";
+import { MissionAgentIcon } from "../../features/mission/ui/agent-icon";
+import { SessionCleanupConfirmDialog } from "../../features/mission/ui/session-cleanup-confirm-dialog";
+import { useHistoryPagination } from "../../features/mission/hooks/history-pagination";
+import { useMissionLayout } from "../../features/mission/hooks/layout";
+import { usePanelPages } from "../../features/mission/hooks/panel-pages";
+import { useSelection, type SessionDraftPreferencePatch } from "../../features/mission/hooks/selection";
+import { useSessionTitles } from "../../features/mission/hooks/session-titles";
+import { useSlashCommands } from "../../features/mission/hooks/slash-commands";
+import { useMissionViewModel } from "../../features/mission/orchestration/mission-view-model";
+import { useMissionEffects } from "../../features/mission/orchestration/mission-effects";
+import { usePromptEnhancerSettings } from "../../features/prompt-enhancer/hooks/settings";
+import { getOrCreateDeviceId } from "../../features/auth/beacon-cache";
+import { resolveDefaultHelmEndpoint } from "../../features/helm-connection/helm-endpoint";
+import { dispatchWithTrace, nextRequestId } from "../../features/helm-connection/request-dispatch";
+import { useCodeActions } from "../../features/pairing/hooks/pairing-code";
+import { DECK_DEVICE_NAME, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../shared/config/deck-runtime";
+import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT } from "../../features/mission/config";
+import { useDeckData } from "../state/deck-data";
+import { useAppRuntimeState } from "../state/runtime-state";
+import { AppRoutes } from "../routing/route-content";
+import { useAppActions } from "../../features/agents/actions/deck-actions";
+import { buildAppLayoutContext, buildAppRouteContext, buildMissionPanelContext, resolveShellClassName } from "../composition/bindings";
+import { useAppControllers } from "../../features/helm-connection/actions/deck-controllers";
 export function App() {
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(
@@ -115,29 +110,8 @@ export function App() {
   const panelPages = usePanelPages();
   const route = useRouteView();
   const layout = useMissionLayout(route.activeView);
-  const layoutContext = {
-    ...layout,
-    missionLayoutStyle: layout.paneStyles.layout,
-    missionSidebarPaneStyle: layout.paneStyles.sidebar,
-    missionChatPaneStyle: layout.paneStyles.chat,
-    missionDisplayPaneStyle: layout.paneStyles.display,
-    missionInspectorPaneStyle: layout.paneStyles.inspector,
-  };
-  const panelContext = {
-    customMissionPanelPages: panelPages.customPages,
-    selectedMissionPanelPageId: panelPages.selectedPageId,
-    setSelectedMissionPanelPageId: panelPages.setSelectedPageId,
-    selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
-    setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,
-    collapsedMissionDiffDirectories: panelPages.collapsedDiffDirectories,
-    setDraggedMissionPanelPageId: panelPages.setDraggedPageId,
-    toggleMissionDiffDirectory: panelPages.toggleDiffDirectory,
-    addMissionPanelPage: panelPages.addPage,
-    dropMissionPanelPage: panelPages.dropPage,
-    renameMissionPanelPage: panelPages.renamePage,
-    moveMissionPanelPage: panelPages.movePage,
-    deleteMissionPanelPage: panelPages.deletePage,
-  };
+  const layoutContext = buildAppLayoutContext(layout);
+  const panelContext = buildMissionPanelContext(panelPages);
 
   usePreferencesEffects();
   useEffect(() => {
@@ -313,14 +287,11 @@ export function App() {
   }
 
   const activeProfileId = `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-  const shellClassName = [
-    "shell",
-    `view-${route.activeView}`,
-    `theme-${deckData.deckPreferences.theme}`,
-    deckData.deckPreferences.reduceMotion ? "motion-reduced" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const shellClassName = resolveShellClassName(
+    route.activeView,
+    deckData.deckPreferences.theme,
+    deckData.deckPreferences.reduceMotion,
+  );
 
   return (
     <main className={shellClassName}>
@@ -331,7 +302,7 @@ export function App() {
         language={deckData.deckPreferences.language}
       />
       <AppRoutes
-        ctx={{
+        ctx={buildAppRouteContext({
           runtimeState,
           deckData,
           missionView,
@@ -348,25 +319,10 @@ export function App() {
           history,
           preferenceActions,
           promptEnhancerSettings,
-          promptEnhancerBusy: promptEnhancerSettings.busy,
-          promptEnhancerStatus: promptEnhancerSettings.status,
-          promptEnhancerModels: promptEnhancerSettings.models,
-          promptEnhancerModelFilter: promptEnhancerSettings.modelFilter,
-          setPromptEnhancerModelFilter: promptEnhancerSettings.setModelFilter,
-          promptEnhancerModelPickerOpen: promptEnhancerSettings.modelPickerOpen,
-          setPromptEnhancerModelPickerOpen: promptEnhancerSettings.setModelPickerOpen,
-          updatePromptEnhancerLlmPreference: promptEnhancerSettings.updateLlmPreference,
-          resetPromptEnhancerDefaults: promptEnhancerSettings.resetDefaults,
-          testPromptEnhancerSelectedModel: promptEnhancerSettings.testSelectedModel,
-          refreshPromptEnhancerModels: promptEnhancerSettings.refreshModels,
-          updatePromptEnhancerModelInput: promptEnhancerSettings.updateModelInput,
-          selectPromptEnhancerModel: promptEnhancerSettings.selectModel,
           slash,
           codeActions,
           helmConnection,
           route,
-          activeView: route.activeView,
-          navigateToView: route.navigateToView,
           activeProfileId,
           copy,
           agentLocked,
@@ -376,7 +332,7 @@ export function App() {
           openDiffDetail,
           toggleExpandedMessage,
           renderMissionAgentIcon,
-        }}
+        })}
       />
       <SessionCleanupConfirmDialog
         session={runtimeState.pendingSessionCleanup}

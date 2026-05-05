@@ -7,7 +7,7 @@ import type {
 } from "@tiller/shared";
 import { InfoList } from "../../../shared/ui/primitives";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
-import type { AppView } from "../../../app/routes";
+import type { AppView } from "../../../app/routing/routes";
 
 type OverviewPageProps = {
   copy: (typeof UI_COPY)[Locale];

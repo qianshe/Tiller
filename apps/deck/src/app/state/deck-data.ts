@@ -1,4 +1,4 @@
-import { useDeckStore } from "../store";
+import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
   AgentMessage,

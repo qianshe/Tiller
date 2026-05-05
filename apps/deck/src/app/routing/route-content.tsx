@@ -1,7 +1,7 @@
-import { OverviewPage } from "../features/overview/ui/page";
-import { AgentsPage } from "../features/agents/ui/page";
-import { SettingsPage } from "../features/settings/ui/page";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "./constants";
+import { OverviewPage } from "../../features/overview/ui/page";
+import { AgentsPage } from "../../features/agents/ui/page";
+import { SettingsPage } from "../../features/settings/ui/page";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../shared/config/deck-runtime";
 import { renderMissionRoute } from "./mission-route";
 export function AppRoutes({ ctx }: { ctx: any }) {
   const source = {

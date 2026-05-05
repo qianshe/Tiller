@@ -2,21 +2,21 @@
 import type { FormEvent } from "react";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
-import { daemonProfileKey, type DaemonProfile } from "../features/helm-connection/daemon-profiles";
-import type { ConnectionState } from "../store/slices/connection-slice";
-import type { HelmInventoryBucket } from "../store/slices/helms-slice";
-import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../features/auth/beacon-cache";
-import { mergeToolCallHistory } from "../features/logbook/timeline";
-import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../features/server-events/index";
-import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../features/agents/utils/agent-model-options-cache";
-import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../features/mission/utils/composer-options";
-import { projectFilesKey } from "../features/mission/utils/project-files-key";
-import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../features/helm-connection/sockets";
-import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../features/helm-connection/request-dispatch";
-import { useSessionCommandActions } from "./session-command-actions";
-import { useSessionMessageActions } from "./session-message-actions";
-import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../features/helm-connection/helm-endpoint";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
+import { daemonProfileKey, type DaemonProfile } from "../daemon-profiles";
+import type { ConnectionState } from "../../../store/slices/connection-slice";
+import type { HelmInventoryBucket } from "../../../store/slices/helms-slice";
+import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
+import { mergeToolCallHistory } from "../../logbook/timeline";
+import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../../server-events/index";
+import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/utils/agent-model-options-cache";
+import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../../mission/utils/composer-options";
+import { projectFilesKey } from "../../mission/utils/project-files-key";
+import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../sockets";
+import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../request-dispatch";
+import { useSessionCommandActions } from "../../mission/actions/session-command-actions";
+import { useSessionMessageActions } from "../../mission/actions/session-message-actions";
+import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
+import { DEFAULT_SESSION_PAGE_LIMIT } from "../../mission/config";
 
 export function useAppControllers(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.route, ...ctx.titleActions, ...ctx };
@@ -128,7 +128,7 @@ function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
 }
 function connectHelmSocket(profile: DaemonProfile) {
   connectHelmSocketImpl(profile, {
-    embedded: IS_EMBEDDED_HELM_DECK,
+    embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
     location: window.location,
     helmSocketRefs,
     setHelmConnectionState,
@@ -146,7 +146,7 @@ function connectToDaemon(
   options?: ConnectToDaemonOptions,
 ) {
   connectToDaemonImpl(event, options, {
-    embedded: IS_EMBEDDED_HELM_DECK,
+    embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
     location: window.location,
     daemonHost,
     daemonPort,

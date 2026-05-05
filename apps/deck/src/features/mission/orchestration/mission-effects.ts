@@ -1,10 +1,10 @@
 // @ts-nocheck
 import { useEffect } from "react";
-import { readTrustedDeviceCache } from "../features/auth/beacon-cache";
-import { useReconnectEffects } from "../features/helm-connection/hooks/reconnect-effects";
-import { usePromptAutosize } from "../features/mission/hooks/prompt-autosize";
-import { useSnapshotCache } from "../features/mission/hooks/snapshot-cache";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
+import { readTrustedDeviceCache } from "../../auth/beacon-cache";
+import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
+import { usePromptAutosize } from "../hooks/prompt-autosize";
+import { useSnapshotCache } from "../hooks/snapshot-cache";
+import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "../config";
 import { useMissionSelectionEffects } from "./mission-selection-effects";
 
 export function useMissionEffects(ctx: any) {

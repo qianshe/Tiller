@@ -1,12 +1,12 @@
 // @ts-nocheck
 import type { FormEvent } from "react";
-import { daemonProfileKey, type DaemonProfile } from "../features/helm-connection/daemon-profiles";
-import { TrustedDevicesPanel } from "../features/agents/ui/trusted-devices-panel";
-import { useDaemonProfileActions } from "./daemon-profile-actions";
-import { useFleetAddHelmActions } from "./fleet-add-helm-actions";
-import { nextRequestId } from "../features/helm-connection/request-dispatch";
-import { saveDraft as saveDraftImpl, testAgent as testAgentImpl, writeDraftToConfig as writeDraftToConfigImpl } from "../features/agents/actions/config-actions";
-import { AGENT_DRAFT_STORAGE_KEY, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "./constants";
+import { daemonProfileKey, type DaemonProfile } from "../../helm-connection/daemon-profiles";
+import { TrustedDevicesPanel } from "../ui/trusted-devices-panel";
+import { useDaemonProfileActions } from "../../helm-connection/actions/daemon-profile-actions";
+import { useFleetAddHelmActions } from "../../helm-connection/actions/fleet-add-helm-actions";
+import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { saveDraft as saveDraftImpl, testAgent as testAgentImpl, writeDraftToConfig as writeDraftToConfigImpl } from "./config-actions";
+import { AGENT_DRAFT_STORAGE_KEY, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../config";
 
 export function useAppActions(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.helmConnection, ...ctx.controllers, ...ctx };

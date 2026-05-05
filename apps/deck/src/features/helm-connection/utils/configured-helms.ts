@@ -4,12 +4,12 @@ import type { HelmSummary } from "@tiller/shared";
 import {
   daemonProfileKey,
   type DaemonProfile,
-} from "../features/helm-connection/daemon-profiles";
-import { normalizeEmbeddedHelmSummaries } from "../features/helm-connection/helm-endpoint";
+} from "../daemon-profiles";
+import { normalizeEmbeddedHelmSummaries } from "../helm-endpoint";
 import {
   daemonProfileToHelmSummary,
   mergeHelmSummariesByEndpoint,
-} from "../features/helm-connection/utils/daemon-helpers";
+} from "./daemon-helpers";
 
 type UseConfiguredHelmsOptions = {
   daemonHost: string;

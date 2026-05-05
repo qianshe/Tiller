@@ -10,8 +10,8 @@ const allowedStoreFeatureImports = new Set([
   normalize("features/preferences/storage"),
 ]);
 const allowedBoundaryImports = new Set([
-  `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routes")}`,
-  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routes")}`,
+  `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routing/routes")}`,
+  `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routing/routes")}`,
   `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("features/preferences/storage")}`,
 ]);
 

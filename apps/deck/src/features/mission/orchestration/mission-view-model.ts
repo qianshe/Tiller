@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { useMemo } from "react";
-import { agentModelOptionsKey } from "../features/agents/utils/agent-model-options-cache";
-import { useActiveConversationUpdateKey } from "./active-conversation-key";
-import { useConfiguredHelms } from "./configured-helms";
-import { resolveTechnicalPanelPreferences } from "../features/preferences/utils/helpers";
-import { formatResumeLabel } from "../features/mission/utils/session-state";
-import { usePromptImages } from "../features/mission/hooks/prompt-images";
+import { agentModelOptionsKey } from "../../agents/utils/agent-model-options-cache";
+import { useActiveConversationUpdateKey } from "../hooks/active-conversation-key";
+import { useConfiguredHelms } from "../../helm-connection/utils/configured-helms";
+import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helpers";
+import { formatResumeLabel } from "../utils/session-state";
+import { usePromptImages } from "../hooks/prompt-images";
 import {
   MODEL_OPTIONS,
   defaultAgentId,
@@ -18,9 +18,9 @@ import {
   resolveReasoningOptionsForModel,
   resolveSessionConfigHint,
   splitModelReasoning,
-} from "../features/mission/utils/composer-options";
-import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId } from "../features/mission/utils/session-derivations";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "./constants";
+} from "../utils/composer-options";
+import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId } from "../utils/session-derivations";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../shared/config/deck-runtime";
 
 export function useMissionViewModel(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.helmConnection, ...ctx };

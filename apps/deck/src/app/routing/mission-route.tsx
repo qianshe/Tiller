@@ -1,5 +1,5 @@
-import { MissionWorkspace } from "../features/mission/ui/workspace";
-import { DEFAULT_LOGBOOK_VISIBLE_LIMIT } from "./constants";
+import { MissionWorkspace } from "../../features/mission/ui/workspace";
+import { DEFAULT_LOGBOOK_VISIBLE_LIMIT } from "../../features/mission/config";
 
 export function renderMissionRoute(source: any) {
   const {

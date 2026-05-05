@@ -1,15 +1,15 @@
 import type { FormEvent } from "react";
-import type { ConnectionState } from "../store/slices/connection-slice";
+import type { ConnectionState } from "../../../store/slices/connection-slice";
 import {
   daemonProfileKey,
   type DaemonProfile,
-} from "../features/helm-connection/daemon-profiles";
+} from "../daemon-profiles";
 import {
   DAEMON_HOST_KEY,
   DAEMON_PORT_KEY,
-} from "../features/helm-connection/helm-endpoint";
-import type { ConnectToDaemonOptions } from "../features/helm-connection/sockets";
-import { slugify } from "../features/agents/utils/agent-identity";
+} from "../helm-endpoint";
+import type { ConnectToDaemonOptions } from "../sockets";
+import { slugify } from "../../agents/utils/agent-identity";
 
 type MutableRef<T> = { current: T };
 

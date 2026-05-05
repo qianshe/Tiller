@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
 import type { AgentPromptContent, SessionReasoningEffort, SessionSummary } from "@tiller/shared";
-import type { DaemonProfile } from "../features/helm-connection/daemon-profiles";
-import { MODEL_OPTIONS } from "../features/mission/utils/composer-options";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_PROMPT } from "./constants";
-import type { AgentDraft, ProjectFilesEntry } from "./types";
+import type { DaemonProfile } from "../../features/helm-connection/daemon-profiles";
+import { MODEL_OPTIONS } from "../../features/mission/utils/composer-options";
+import { DEFAULT_PROMPT } from "../../features/mission/config";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../shared/config/deck-runtime";
+import type { ProjectFilesEntry } from "../../features/mission/types";
+import type { AgentDraft } from "../../features/agents/types";
 
 /**
  * Owns App refs and local UI state so root can stay focused on wiring.
@@ -82,18 +84,16 @@ export function useAppRuntimeState(missionVisualFixture: any) {
     selectedAgentId, setSelectedAgentId, selectedAgentMode, setSelectedAgentMode,
     selectedModel, setSelectedModel, selectedReasoningEffort, setSelectedReasoningEffort,
     agentTestResult, setAgentTestResult, resumeFeedback, setResumeFeedback,
-    selectedMissionHelmId, setSelectedMissionHelmId, expandedMissionHelmIds,
-    setExpandedMissionHelmIds, expandedMissionProjectIds, setExpandedMissionProjectIds,
-    missionConfigPicker, setMissionConfigPicker, agentDraft, setAgentDraft,
-    draftSaveMessage, setDraftSaveMessage, configSaveMessage, setConfigSaveMessage,
-    agentConfigExpanded, setAgentConfigExpanded, fleetAddHelmModalOpen,
-    setFleetAddHelmModalOpen, fleetAddHelmStage, setFleetAddHelmStage,
+    selectedMissionHelmId, setSelectedMissionHelmId, expandedMissionHelmIds, setExpandedMissionHelmIds,
+    expandedMissionProjectIds, setExpandedMissionProjectIds, missionConfigPicker, setMissionConfigPicker,
+    agentDraft, setAgentDraft, draftSaveMessage, setDraftSaveMessage,
+    configSaveMessage, setConfigSaveMessage, agentConfigExpanded, setAgentConfigExpanded,
+    fleetAddHelmModalOpen, setFleetAddHelmModalOpen, fleetAddHelmStage, setFleetAddHelmStage,
     fleetAddHelmName, setFleetAddHelmName, fleetAddHelmHost, setFleetAddHelmHost,
     fleetAddHelmPort, setFleetAddHelmPort, fleetProjectFormOpen, setFleetProjectFormOpen,
-    fleetProjectDraft, setFleetProjectDraft, fleetProjectSaveMessage,
-    setFleetProjectSaveMessage, fleetAgentFormOpen, setFleetAgentFormOpen,
-    fleetAgentDraft, setFleetAgentDraft, pendingHelmDeleteProfile,
-    setPendingHelmDeleteProfile, pendingSessionCleanup, setPendingSessionCleanup,
+    fleetProjectDraft, setFleetProjectDraft, fleetProjectSaveMessage, setFleetProjectSaveMessage,
+    fleetAgentFormOpen, setFleetAgentFormOpen, fleetAgentDraft, setFleetAgentDraft,
+    pendingHelmDeleteProfile, setPendingHelmDeleteProfile, pendingSessionCleanup, setPendingSessionCleanup,
     daemonProfileName, setDaemonProfileName, daemonProfileMessage, setDaemonProfileMessage,
   };
 }

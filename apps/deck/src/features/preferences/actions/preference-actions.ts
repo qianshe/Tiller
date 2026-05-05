@@ -2,8 +2,8 @@ import {
   DEFAULT_DECK_PREFERENCES,
   type DeckPreferences,
   type TechnicalPanelPreferences,
-} from "../features/preferences/storage";
-import { resolveTechnicalPanelPreferences } from "../features/preferences/utils/helpers";
+} from "../storage";
+import { resolveTechnicalPanelPreferences } from "../utils/helpers";
 
 type UseDeckPreferenceActionsOptions = {
   deckPreferences: DeckPreferences;

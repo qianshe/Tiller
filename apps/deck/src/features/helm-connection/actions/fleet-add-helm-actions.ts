@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
-import type { DaemonProfile } from "../features/helm-connection/daemon-profiles";
-import type { ConnectToDaemonOptions } from "../features/helm-connection/sockets";
+import type { DaemonProfile } from "../daemon-profiles";
+import type { ConnectToDaemonOptions } from "../sockets";
 
 type FleetAddHelmStage = "connect" | "connecting" | "pair";
 type MutableRef<T> = { current: T };
