@@ -1,6 +1,5 @@
-import { createRequire } from "node:module";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { copyFileSync, cpSync, existsSync, readdirSync, statSync } from "node:fs";
+import { basename, extname, join } from "node:path";
 import type {
   AgentMessage,
   AgentToolCall,
@@ -19,12 +18,22 @@ import {
   type SessionMessagePageOptions,
 } from "./message-store.js";
 import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
+import {
+  hasMigrationVersion,
+  openSessionDatabase,
+  recordMigrationVersion,
+  runTransaction,
+  type DatabaseSync,
+} from "./sqlite-core.js";
+import {
+  mergeSessionMessage,
+  mergeToolCall,
+  normalizeSessionMessages,
+  sortCommandChunks,
+  sortToolCalls,
+} from "./sqlite-merge.js";
 import { createSessionStore } from "./summary-store.js";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
-) as typeof import("node:sqlite");
-type DatabaseSync = import("node:sqlite").DatabaseSync;
 
 type SessionArtifacts = {
   outputs: CommandChunk[];
@@ -43,8 +52,6 @@ export type JsonToSqliteMigrationOptions = {
   sqlitePath: string;
   jsonPaths: JsonSessionStorePaths;
 };
-
-const activeTransactions = new WeakSet<DatabaseSync>();
 
 export function createSqliteSessionStore(dbPath: string) {
   const db = openSessionDatabase(dbPath);
@@ -203,138 +210,6 @@ export function migrateJsonSessionDataToSqlite(options: JsonToSqliteMigrationOpt
   } finally {
     db.close();
   }
-}
-
-function openSessionDatabase(dbPath: string) {
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations(
-      version INTEGER PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS session_summaries(
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      helm_id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      payload_json TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS session_messages(
-      session_id TEXT NOT NULL,
-      id TEXT NOT NULL,
-      position INTEGER NOT NULL DEFAULT 0,
-      role TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      PRIMARY KEY(session_id, id)
-    );
-
-    CREATE TABLE IF NOT EXISTS session_outputs(
-      session_id TEXT NOT NULL,
-      id TEXT NOT NULL,
-      command_id TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      PRIMARY KEY(session_id, id)
-    );
-
-    CREATE TABLE IF NOT EXISTS session_tool_calls(
-      session_id TEXT NOT NULL,
-      id TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      PRIMARY KEY(session_id, id)
-    );
-
-    CREATE TABLE IF NOT EXISTS session_diffs(
-      session_id TEXT NOT NULL,
-      path TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      PRIMARY KEY(session_id, path)
-    );
-
-    CREATE TABLE IF NOT EXISTS session_runtimes(
-      session_id TEXT PRIMARY KEY,
-      provider_id TEXT NOT NULL,
-      runtime_session_id TEXT,
-      last_seen_at TEXT NOT NULL,
-      state TEXT NOT NULL,
-      payload_json TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
-    CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
-    CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
-    CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
-  `);
-  ensureSessionMessagePositions(db);
-  db.exec("DROP INDEX IF EXISTS idx_session_messages_page");
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_session_messages_page ON session_messages(session_id, position, id)",
-  );
-  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)").run(
-    new Date().toISOString(),
-  );
-  return db;
-}
-
-function ensureSessionMessagePositions(db: DatabaseSync) {
-  const columns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{
-    name: string;
-  }>;
-  if (columns.some((column) => column.name === "position")) {
-    return;
-  }
-
-  runTransaction(db, () => {
-    db.exec("ALTER TABLE session_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
-    const rows = db
-      .prepare(
-        `
-      SELECT session_id, id
-      FROM session_messages
-      ORDER BY session_id ASC, timestamp ASC, id ASC
-    `,
-      )
-      .all() as Array<{ session_id: string; id: string }>;
-    const update = db.prepare(
-      "UPDATE session_messages SET position = ? WHERE session_id = ? AND id = ?",
-    );
-    let currentSessionId = "";
-    let position = 0;
-    for (const row of rows) {
-      if (row.session_id !== currentSessionId) {
-        currentSessionId = row.session_id;
-        position = 0;
-      }
-      update.run(position, row.session_id, row.id);
-      position += 1;
-    }
-  });
-  recordMigrationVersion(db, 3);
-}
-
-function hasMigrationVersion(db: DatabaseSync, version: number) {
-  const row = db.prepare("SELECT version FROM schema_migrations WHERE version = ?").get(version);
-  return Boolean(row);
-}
-
-function recordMigrationVersion(db: DatabaseSync, version: number) {
-  db.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)").run(
-    version,
-    new Date().toISOString(),
-  );
 }
 
 function listSessionSummaries(db: DatabaseSync) {
@@ -555,151 +430,6 @@ function upsertRuntimeDescriptor(db: DatabaseSync, descriptor: StoredSessionRunt
     descriptor.state,
     JSON.stringify(descriptor),
   );
-}
-
-function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
-  return normalizeSessionMessages([...messages, message]);
-}
-
-function normalizeSessionMessages(messages: AgentMessage[]) {
-  return messages.reduce<AgentMessage[]>((merged, message) => {
-    const existingIndex = merged.findIndex((item) => item.id === message.id);
-    if (existingIndex !== -1) {
-      merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
-      return merged;
-    }
-
-    const last = merged.at(-1);
-    if (!last || !shouldMergeAssistantStreamChunk(last, message)) {
-      return [...merged, message];
-    }
-
-    merged[merged.length - 1] = mergeAgentMessageChunk(last, message);
-    return merged;
-  }, []);
-}
-
-function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
-  return (
-    current.role === "assistant" &&
-    incoming.role === "assistant" &&
-    isRuntimeGeneratedMessageId(current.id) &&
-    isRuntimeGeneratedMessageId(incoming.id)
-  );
-}
-
-function isRuntimeGeneratedMessageId(id: string) {
-  return /-msg-\d+$/u.test(id);
-}
-
-function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
-  const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
-  const isCumulativeSnapshot = incoming.text.startsWith(current.text);
-  const nextText = isDuplicateText
-    ? current.text
-    : isCumulativeSnapshot
-      ? incoming.text
-      : `${current.text}${incoming.text}`;
-  return {
-    ...current,
-    ...incoming,
-    id: current.id,
-    text: collapseRepeatedAssistantText(nextText),
-    timestamp:
-      isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp)
-        ? incoming.timestamp
-        : current.timestamp,
-  };
-}
-
-function collapseRepeatedAssistantText(text: string) {
-  const firstLine = text.split(/\r?\n/u)[0]?.trim();
-  if (!firstLine || firstLine.length < 8) {
-    return text;
-  }
-
-  const repeatIndex = text.indexOf(firstLine, firstLine.length);
-  if (repeatIndex === -1) {
-    return text;
-  }
-
-  const bridgeIndex = text.lastIndexOf("我会按 `superpowers`", repeatIndex);
-  const cutIndex =
-    bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
-  return text.slice(0, cutIndex).trimEnd();
-}
-
-function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): AgentToolCall {
-  return {
-    ...current,
-    ...incoming,
-    title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
-    output: `${current.output ?? ""}${incoming.output ?? ""}`,
-    input: incoming.input ?? current.input,
-    timestamp: current.timestamp,
-    updatedAt: incoming.updatedAt,
-  };
-}
-
-function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
-  if (isInformativeToolCallTitle(incomingTitle, id)) {
-    return incomingTitle;
-  }
-  return currentTitle || incomingTitle || id;
-}
-
-function isInformativeToolCallTitle(title: string | undefined, id: string) {
-  const normalized = title?.trim();
-  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
-}
-
-function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) =>
-    compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id),
-  );
-}
-
-function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) =>
-    compareHistoryPosition(
-      left.updatedAt || left.timestamp,
-      left.id,
-      right.updatedAt || right.timestamp,
-      right.id,
-    ),
-  );
-}
-
-function compareHistoryPosition(
-  leftTimestamp: string,
-  leftId: string,
-  rightTimestamp: string,
-  rightId: string,
-) {
-  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return leftId.localeCompare(rightId);
-}
-
-function runTransaction(db: DatabaseSync, action: () => void) {
-  if (activeTransactions.has(db)) {
-    action();
-    return;
-  }
-
-  activeTransactions.add(db);
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    action();
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  } finally {
-    activeTransactions.delete(db);
-  }
 }
 
 function parseJson<T>(raw: string) {
