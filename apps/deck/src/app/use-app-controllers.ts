@@ -57,6 +57,7 @@ export function useAppControllers(ctx: any) {
     promptImages,
     setImagePasteNotice,
     activeSessionId,
+    selectedProjectId,
     projects,
     selectedWorkspace,
     filteredWorkspaces,

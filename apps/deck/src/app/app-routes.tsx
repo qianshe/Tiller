@@ -5,7 +5,8 @@ import { MissionWorkspace } from "../features/mission/ui/workspace";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_LOGBOOK_VISIBLE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
 export function AppRoutes({ ctx }: { ctx: any }) {
   const source = {
-    ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.appActions,
+    ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
+    ...ctx.appActions,
     ...ctx.controllers, ...ctx.panelPages, ...ctx.selection, ...ctx.layout,
     ...ctx.history, ...ctx.preferenceActions, ...ctx.promptEnhancerSettings,
     ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx,

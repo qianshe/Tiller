@@ -30,6 +30,7 @@ export function useMissionViewModel(ctx: any) {
     messages,
     projects,
     selectedProjectId,
+    selectedMissionHelmId,
     daemonHost,
     daemonPort,
     daemonProfiles,
@@ -47,6 +48,7 @@ export function useMissionViewModel(ctx: any) {
     selectedReasoningEffort,
     agentModelOptions,
     sessionConfigOptions,
+    deckPreferences,
   } = source;
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,

@@ -59,6 +59,7 @@ export function useMissionEffects(ctx: any) {
     pendingSessionScrollToBottomRef,
     lastAutoScrollSessionIdRef,
     activeSessionMessages,
+    activeConversationUpdateKey,
     messageHistoryState,
     sessionOpenScrollTick,
     setMessageHistoryState,
