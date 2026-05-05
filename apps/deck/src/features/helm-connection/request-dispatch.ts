@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
-import type { DebugTrace } from "../../store/slices/connection-slice";
+import type { DebugTrace } from "../../store/facade";
 
 export function nextRequestId(counter: MutableRefObject<number>) {
   counter.current += 1;

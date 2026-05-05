@@ -1,5 +1,5 @@
 import { useEffect, type MutableRefObject } from "react";
-import type { ConnectionState } from "../../../store/slices/connection-slice";
+import type { ConnectionState } from "../../../store/facade";
 import type { ConnectToDaemonOptions } from "../sockets";
 import {
   shouldAttemptSilentReconnect,

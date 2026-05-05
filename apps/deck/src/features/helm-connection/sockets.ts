@@ -12,8 +12,11 @@ import type {
   TrustedDeviceSummary,
 } from "@tiller/shared";
 import type { TrustedDeviceCache } from "../auth/beacon-cache";
-import type { ConnectionState, DebugTrace } from "../../store/slices/connection-slice";
-import type { PairingState } from "../../store/slices/pairing-slice";
+import type {
+  ConnectionState,
+  DebugTrace,
+  PairingState,
+} from "../../store/facade";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 

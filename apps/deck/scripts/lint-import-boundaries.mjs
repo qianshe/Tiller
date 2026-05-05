@@ -119,6 +119,13 @@ for (const file of sourceFiles) {
     ) {
       failures.push(`${fromRel} must not import feature internals ${imported}`);
     }
+    if (
+      fromArea === "features" &&
+      importedArea === "store" &&
+      ![normalize("store"), normalize("store/facade")].includes(imported)
+    ) {
+      failures.push(`${fromRel} must import store public API instead of ${imported}`);
+    }
     if (fromArea === "features" && importedArea === "app") {
       failures.push(`${fromRel} must not import app module ${imported}`);
     }

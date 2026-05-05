@@ -2,8 +2,10 @@
 import type { FormEvent } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { DaemonProfile } from "../daemon-profiles";
-import type { ConnectionState } from "../../../store/slices/connection-slice";
-import type { HelmInventoryBucket } from "../../../store/slices/helms-slice";
+import type {
+  ConnectionState,
+  HelmInventoryBucket,
+} from "../../../store/facade";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import {
   connectHelmSocket as connectHelmSocketImpl,

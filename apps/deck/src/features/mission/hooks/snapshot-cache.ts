@@ -6,7 +6,7 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { readDeckSnapshot, writeDeckSnapshot } from "../../../store/persist";
+import { readDeckSnapshot, writeDeckSnapshot } from "../../../store/facade";
 import { createSessionStatusMap } from "../utils/session-derivations";
 
 type StatusMap = Record<string, SessionStatus>;

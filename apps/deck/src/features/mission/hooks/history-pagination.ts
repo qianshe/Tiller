@@ -4,9 +4,11 @@ import type {
   UIEvent as ReactUIEvent,
 } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
-import type { ActivitiesSlice } from "../../../store/slices/activities-slice";
-import type { MessagesSlice } from "../../../store/slices/messages-slice";
-import type { SessionsSlice } from "../../../store/slices/sessions-slice";
+import type {
+  ActivitiesSlice,
+  MessagesSlice,
+  SessionsSlice,
+} from "../../../store/facade";
 
 type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
 
