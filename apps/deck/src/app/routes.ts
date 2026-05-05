@@ -1,13 +1,10 @@
 import type { DeckLanguage } from "../features/preferences/storage";
-
-export type AppView = "overview" | "sessions" | "agents" | "settings";
-
-export const VIEW_PATHS: Record<AppView, string> = {
-  overview: "/",
-  sessions: "/mission",
-  agents: "/agents",
-  settings: "/settings",
-};
+import { type AppView } from "../shared/utils/routes";
+export {
+  VIEW_PATHS,
+  resolveViewFromPath,
+  type AppView,
+} from "../shared/utils/routes";
 
 export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
   "zh-CN": {
@@ -23,15 +20,3 @@ export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
     settings: "设置",
   },
 };
-
-
-export function resolveViewFromPath(pathname: string): AppView {
-  const normalized = pathname.replace(/\/+$/g, "") || "/";
-  if (normalized === "/sessions") {
-    return "sessions";
-  }
-  const matched = (Object.entries(VIEW_PATHS) as Array<[AppView, string]>).find(
-    ([, path]) => path === normalized,
-  );
-  return matched?.[0] ?? "overview";
-}

@@ -1,4 +1,6 @@
-export type AppView = "overview" | "sessions" | "agents" | "settings";
+import type { AppView } from "../../shared/utils/routes";
+
+export type { AppView };
 
 export function shouldEnsureLiveConnection(view: AppView) {
   return view === "sessions" || view === "agents";
@@ -11,7 +13,9 @@ export function shouldAttemptSilentReconnect(input: {
   host: string;
   port: string;
 }) {
-  return input.connection === "disconnected"
-    && Boolean(input.host.trim())
-    && Boolean(input.port.trim());
+  return (
+    input.connection === "disconnected" &&
+    Boolean(input.host.trim()) &&
+    Boolean(input.port.trim())
+  );
 }

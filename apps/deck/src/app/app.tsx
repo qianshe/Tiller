@@ -19,7 +19,6 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
-  AvailableCommand,
   PermissionDecision,
   ProjectFileSummary,
   ProjectSummary,
@@ -38,6 +37,7 @@ import {
   type DaemonProfile,
 } from "../features/helm-connection/daemon-profiles";
 import { useHelmConnection } from "../features/helm-connection/hooks/use-helm-connection";
+import { useReconnectEffects } from "../features/helm-connection/hooks/use-reconnect-effects";
 import type { ConnectionState } from "../store/slices/connection-slice";
 import type { HelmInventoryBucket } from "../store/slices/helms-slice";
 import {
@@ -109,12 +109,8 @@ import {
 } from "../features/server-events/index";
 import { AgentsPage } from "../features/agents/ui/page";
 import { TrustedDevicesPanel } from "../features/agents/ui/trusted-devices-panel";
-import {
-  NAV_LABELS,
-  VIEW_PATHS,
-  resolveViewFromPath,
-  type AppView,
-} from "./routes";
+import { NAV_LABELS } from "./routes";
+import { useRouteView } from "./use-route-view";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import {
   createMissionVisualFixture,
@@ -136,20 +132,17 @@ import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-clea
 import { LogbookPanel } from "../features/mission/ui/logbook-panel";
 import { useMissionLayout } from "../features/mission/hooks/use-layout";
 import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
+import { usePromptAutosize } from "../features/mission/hooks/use-prompt-autosize";
 import {
   useSelection,
   type SessionDraftPreferencePatch,
 } from "../features/mission/hooks/use-selection";
 import { useSessionTitles } from "../features/mission/hooks/use-session-titles";
-import {
-  shouldAttemptSilentReconnect,
-  shouldEnsureLiveConnection,
-} from "../features/helm-connection/reconnect-policy";
+import { useSlashCommands } from "../features/mission/hooks/use-slash-commands";
+import { useSnapshotCache } from "../features/mission/hooks/use-snapshot-cache";
 import { enhancePromptWithLlm } from "../features/prompt-enhancer/enhancer";
 import { usePromptEnhancerSettings } from "../features/prompt-enhancer/hooks/use-settings";
-import { readDeckSnapshot, writeDeckSnapshot } from "../store/persist";
 import {
-  createSessionStatusMap,
   resolveDraftSelectionId,
   resolveMissionHelms,
   resolveMissionSelectedProjectId,
@@ -450,11 +443,6 @@ export function App() {
   const [promptImages, setPromptImages] = useState<AgentPromptImageContent[]>(
     [],
   );
-  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
-  const [slashSuppressedFor, setSlashSuppressedFor] = useState<string | null>(
-    null,
-  );
-  const slashWrapperRef = useRef<HTMLDivElement | null>(null);
   const [imagePasteNotice, setImagePasteNotice] = useState("");
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId =
@@ -502,9 +490,7 @@ export function App() {
     movePage: moveMissionPanelPage,
     deletePage: deleteMissionPanelPage,
   } = usePanelPages();
-  const [activeView, setActiveView] = useState<AppView>(() =>
-    resolveViewFromPath(window.location.pathname),
-  );
+  const { activeView, navigateToView } = useRouteView();
   const {
     missionLayoutRef,
     missionSidebarCollapsed,
@@ -869,13 +855,6 @@ export function App() {
   );
   const activeProfileId = `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
   const viewLabels = NAV_LABELS[deckPreferences.language];
-  function navigateToView(view: AppView) {
-    const nextPath = VIEW_PATHS[view];
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, "", nextPath);
-    }
-    setActiveView(view);
-  }
   function requestChatScrollToBottom(sessionId: string | null) {
     pendingSessionScrollToBottomRef.current = sessionId;
     stickChatToBottomRef.current = true;
@@ -1236,60 +1215,14 @@ export function App() {
       sessionId: activeSessionId,
     });
   }, [activeSessionId, pairingState]);
-  useEffect(() => {
-    const handlePopState = () => {
-      setActiveView(resolveViewFromPath(window.location.pathname));
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-  useEffect(() => {
-    if (window.location.pathname.replace(/\/+$/g, "") === "/sessions") {
-      window.history.replaceState({}, "", VIEW_PATHS.sessions);
-    }
-  }, []);
-  useEffect(() => {
-    if (activeView !== "sessions" || !missionPromptRef.current) {
-      return;
-    }
-    const textarea = missionPromptRef.current;
-    let maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
-    const draftForm = textarea.closest<HTMLFormElement>(
-      ".mission-draft-chat .mission-order-editor",
-    );
-    if (draftForm) {
-      const formStyles = window.getComputedStyle(draftForm);
-      const rowGap =
-        Number.parseFloat(formStyles.rowGap || formStyles.gap || "0") || 0;
-      const visibleSiblings = Array.from(draftForm.children).filter(
-        (element): element is HTMLElement =>
-          element instanceof HTMLElement &&
-          !element.contains(textarea) &&
-          window.getComputedStyle(element).display !== "none",
-      );
-      const visibleSiblingHeight = visibleSiblings.reduce(
-        (total, element) => total + element.getBoundingClientRect().height,
-        0,
-      );
-      const availableDraftHeight = Math.floor(
-        draftForm.clientHeight -
-          visibleSiblingHeight -
-          rowGap * visibleSiblings.length,
-      );
-      maxHeight = Math.max(96, Math.min(maxHeight, availableDraftHeight));
-    }
-    textarea.style.height = "auto";
-    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
-    textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY =
-      textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [
-    activeSessionId,
+  usePromptAutosize({
     activeView,
+    activeSessionId,
     imagePasteNotice,
     prompt,
-    promptImages.length,
-  ]);
+    promptImageCount: promptImages.length,
+    promptRef: missionPromptRef,
+  });
   useEffect(() => {
     if (
       fleetAddHelmModalOpen &&
@@ -1348,104 +1281,34 @@ export function App() {
     );
     setTrustedDevices([]);
   }, [daemonHost, daemonPort]);
-  useEffect(() => {
-    if (missionVisualMode) {
-      return;
-    }
-    const snapshot = readDeckSnapshot(window.localStorage, activeProfileId);
-    if (!snapshot) {
-      return;
-    }
-    setProjects(snapshot.projects);
-    setSessions(snapshot.sessions);
-    setWorkspaces(snapshot.workspaces);
-    setAgents(snapshot.agents);
-    setStatuses(createSessionStatusMap(snapshot.sessions));
-    setSelectedProjectId(
-      (current) => current ?? snapshot.projects[0]?.id ?? null,
-    );
-  }, [activeProfileId, missionVisualMode]);
-  useEffect(() => {
-    if (missionVisualMode || pairingState !== "paired") {
-      return;
-    }
-    writeDeckSnapshot(window.localStorage, {
-      profileId: activeProfileId,
-      cachedAt: new Date().toISOString(),
-      projects,
-      sessions,
-      workspaces,
-      agents,
-    });
-  }, [activeProfileId, agents, pairingState, projects, sessions, workspaces]);
-  useEffect(() => {
-    if (
-      missionVisualMode ||
-      (!trustedDevice?.token && !IS_EMBEDDED_HELM_DECK)
-    ) {
-      return;
-    }
-    if (
-      !shouldAttemptSilentReconnect({
-        connection,
-        tokenPresent: Boolean(trustedDevice?.token),
-        embedded: IS_EMBEDDED_HELM_DECK,
-        host: daemonHost,
-        port: daemonPort,
-      })
-    ) {
-      return;
-    }
-    if (manualDisconnectRef.current === activeProfileId) {
-      return;
-    }
-    const attemptKey = `silent:${activeProfileId}`;
-    if (autoConnectAttemptRef.current === attemptKey) {
-      return;
-    }
-    autoConnectAttemptRef.current = attemptKey;
-    connectToDaemon(undefined, { preserveState: true, auto: true });
-  }, [
+  useSnapshotCache({
     activeProfileId,
-    connection,
-    daemonHost,
-    daemonPort,
     missionVisualMode,
-    trustedDevice?.token,
-  ]);
-  useEffect(() => {
-    if (missionVisualMode || !shouldEnsureLiveConnection(activeView)) {
-      return;
-    }
-    if (
-      !shouldAttemptSilentReconnect({
-        connection,
-        tokenPresent: Boolean(trustedDevice?.token),
-        embedded: IS_EMBEDDED_HELM_DECK,
-        host: daemonHost,
-        port: daemonPort,
-      })
-    ) {
-      return;
-    }
-    if (manualDisconnectRef.current === activeProfileId) {
-      return;
-    }
-    const attemptKey = `live:${activeView}:${activeProfileId}`;
-    if (autoConnectAttemptRef.current === attemptKey) {
-      return;
-    }
-    autoConnectAttemptRef.current = attemptKey;
-    connectToDaemon(undefined, { preserveState: true, auto: true });
-  }, [
+    pairingState,
+    projects,
+    sessions,
+    workspaces,
+    agents,
+    setProjects,
+    setSessions,
+    setWorkspaces,
+    setAgents,
+    setStatuses,
+    setSelectedProjectId,
+  });
+  useReconnectEffects({
     activeProfileId,
     activeView,
     connection,
     daemonHost,
     daemonPort,
+    embedded: IS_EMBEDDED_HELM_DECK,
     missionVisualMode,
-    trustedDevice?.token,
-  ]);
+    tokenPresent: Boolean(trustedDevice?.token),
+    autoConnectAttemptRef,
+    manualDisconnectRef,
+    connectToDaemon,
+  });
   function updateDeckPreference<K extends keyof DeckPreferences>(
     key: K,
     value: DeckPreferences[K],
@@ -1965,104 +1828,22 @@ export function App() {
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
   }
-  const slashCommandToken = useMemo(() => {
-    const match = /^\/(\S*)$/.exec(prompt);
-    return match ? (match[1]?.toLowerCase() ?? "") : null;
-  }, [prompt]);
-  const filteredSlashCommands = useMemo(() => {
-    if (slashCommandToken === null || !activeSessionId) {
-      return [] as AvailableCommand[];
-    }
-    const all = sessionAvailableCommands[activeSessionId] ?? [];
-    if (!slashCommandToken) {
-      return all;
-    }
-    return all.filter((cmd) =>
-      cmd.name.toLowerCase().startsWith(slashCommandToken),
-    );
-  }, [slashCommandToken, activeSessionId, sessionAvailableCommands]);
-  const slashPopupOpen =
-    filteredSlashCommands.length > 0 && slashSuppressedFor !== prompt;
-  useEffect(() => {
-    setSlashSelectedIndex(0);
-  }, [slashCommandToken, activeSessionId]);
-  useEffect(() => {
-    setSlashSelectedIndex((current) =>
-      filteredSlashCommands.length > 0 &&
-      current >= filteredSlashCommands.length
-        ? 0
-        : current,
-    );
-  }, [filteredSlashCommands.length]);
-  useEffect(() => {
-    if (!slashPopupOpen) {
-      return;
-    }
-    function handlePointerDown(event: PointerEvent) {
-      if (
-        slashWrapperRef.current &&
-        !slashWrapperRef.current.contains(event.target as Node)
-      ) {
-        setSlashSuppressedFor(prompt);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [slashPopupOpen, prompt]);
-  function applySlashCommand(cmd: AvailableCommand) {
-    setPrompt(`/${cmd.name} `);
-    setSlashSuppressedFor(null);
-    missionPromptRef.current?.focus();
-  }
-  function handleMissionPromptKeyDown(
-    event: ReactKeyboardEvent<HTMLTextAreaElement>,
-  ) {
-    if (slashPopupOpen) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSlashSelectedIndex((i) => (i + 1) % filteredSlashCommands.length);
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSlashSelectedIndex(
-          (i) =>
-            (i - 1 + filteredSlashCommands.length) %
-            filteredSlashCommands.length,
-        );
-        return;
-      }
-      if (
-        event.key === "Enter" &&
-        !event.shiftKey &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.nativeEvent.isComposing
-      ) {
-        event.preventDefault();
-        const cmd = filteredSlashCommands[slashSelectedIndex];
-        if (cmd) {
-          applySlashCommand(cmd);
-        }
-        return;
-      }
-      if (event.key === "Tab") {
-        event.preventDefault();
-        const cmd = filteredSlashCommands[slashSelectedIndex];
-        if (cmd) {
-          applySlashCommand(cmd);
-        }
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setSlashSuppressedFor(prompt);
-        return;
-      }
-    }
-    submitPromptFromKeyboard(event);
-  }
+  const {
+    wrapperRef: slashWrapperRef,
+    popupOpen: slashPopupOpen,
+    filteredCommands: filteredSlashCommands,
+    selectedIndex: slashSelectedIndex,
+    setSelectedIndex: setSlashSelectedIndex,
+    applyCommand: applySlashCommand,
+    handlePromptKeyDown: handleMissionPromptKeyDown,
+  } = useSlashCommands({
+    prompt,
+    setPrompt,
+    activeSessionId,
+    sessionAvailableCommands,
+    promptRef: missionPromptRef,
+    onFallbackKeyDown: submitPromptFromKeyboard,
+  });
   function respondToPermission(decision: PermissionDecision) {
     if (!activeSessionId || !socketRef.current) {
       return;
