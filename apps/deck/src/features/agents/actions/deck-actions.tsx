@@ -1,6 +1,7 @@
 // @ts-nocheck
 import type { TrustedDeviceSummary } from "@tiller/shared";
 import { TrustedDevicesPanel } from "../ui/trusted-devices-panel";
+import { slugify, splitArgs } from "../utils/agent-identity";
 import { useDaemonProfileActions } from "../../helm-connection/actions/daemon-profile-actions";
 import { useFleetAddHelmActions } from "../../helm-connection/actions/fleet-add-helm-actions";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
@@ -21,8 +22,6 @@ export function useAppActions(ctx: any) {
     agentDraft,
     setDraftSaveMessage,
     setConfigSaveMessage,
-    slugify,
-    splitArgs,
     daemonProfileName,
     daemonHost,
     daemonPort,

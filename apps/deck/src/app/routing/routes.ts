@@ -1,4 +1,4 @@
-import type { DeckLanguage } from "../../features/preferences/storage";
+import type { DeckLanguage } from "../../features/preferences";
 import { type AppView } from "../../shared/utils/routes";
 export {
   VIEW_PATHS,

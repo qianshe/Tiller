@@ -8,6 +8,25 @@ export { usePanelPages } from "./hooks/panel-pages";
 export { useSelection, type SessionDraftPreferencePatch } from "./hooks/selection";
 export { useSessionTitles } from "./hooks/session-titles";
 export { useSlashCommands } from "./hooks/slash-commands";
+export {
+  DEFAULT_ACTIVITY_PAGE_LIMIT,
+  DEFAULT_LOGBOOK_VISIBLE_LIMIT,
+  DEFAULT_MESSAGE_PAGE_LIMIT,
+  DEFAULT_PROMPT,
+  DEFAULT_SESSION_PAGE_LIMIT,
+} from "./config";
+export {
+  MODEL_OPTIONS,
+  normalizeModelSelection,
+  resolveCombinedModelValue,
+  resolveModelOptions,
+  resolvePreferredModel,
+  resolveReasoningLabel,
+  resolveReasoningOptionsForModel,
+} from "./utils/composer-options";
+export { projectFilesKey } from "./utils/project-files-key";
 export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
 export { MissionAgentIcon } from "./ui/agent-icon";
 export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";
+export { MissionWorkspace } from "./ui/workspace";
+export type { ProjectFilesEntry } from "./types";

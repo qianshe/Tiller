@@ -1,61 +1,25 @@
 // @ts-nocheck
-import type { FormEvent } from "react";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
-import type { AgentToolCall } from "@tiller/shared";
-import { daemonProfileKey, type DaemonProfile } from "../daemon-profiles";
-import type { ConnectionState } from "../../../store/slices/connection-slice";
-import type { HelmInventoryBucket } from "../../../store/slices/helms-slice";
-import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
-import { mergeToolCallHistory } from "../../logbook/timeline";
-import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../../server-events/index";
-import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/utils/agent-model-options-cache";
-import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../../mission/utils/composer-options";
-import { projectFilesKey } from "../../mission/utils/project-files-key";
-import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../sockets";
-import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../request-dispatch";
+import { normalizeModelSelection } from "../../mission/utils/composer-options";
 import { useSessionCommandActions } from "../../mission/actions/session-command-actions";
 import { useSessionMessageActions } from "../../mission/actions/session-message-actions";
-import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
-import { DEFAULT_SESSION_PAGE_LIMIT } from "../../mission/config";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../../shared/config/deck-runtime";
+import { createServerEventController } from "./server-event-controller";
+import { createSocketController } from "./socket-controller";
 
 export function useAppControllers(ctx: any) {
-  const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.route, ...ctx.titleActions, ...ctx };
+  const source = {
+    ...ctx.runtimeState,
+    ...ctx.deckData,
+    ...ctx.missionView,
+    ...ctx.helmConnection,
+    ...ctx.route,
+    ...ctx.titleActions,
+    ...ctx,
+  };
   const {
-    setSessionHistoryState,
-    setHelmConnection,
-    applyHelmInventory,
     setMessages,
-    setToolCalls,
-    toolCallsRef,
-    helmSocketRefs,
-    setDaemonProfileMessage,
-    requestCounter,
-    primaryHelmKeyRef,
-    manualDisconnectRef,
-    socketRef,
-    setSessions,
-    setStatuses,
-    setPermissionRequests,
-    setOutputs,
-    setDiffs,
-    setSessionConfigOptions,
-    setTrustedDevices,
-    setActiveSessionId,
-    setSelectedProjectId,
-    setResumeFeedback,
-    setDebugTrace,
-    setConnection,
-    setConnectFeedback,
-    copy,
-    setPairingState,
-    setPairingCodeInput,
-    setPairingFeedback,
-    pairingState,
-    setTrustedDevice,
-    lastFilesScopeKeyRef,
     prompt,
     promptImages,
+    socketRef,
     setImagePasteNotice,
     activeSessionId,
     selectedProjectId,
@@ -74,282 +38,77 @@ export function useAppControllers(ctx: any) {
     setPromptImages,
     permissionRequests,
     resumeStartRequestsRef,
-    daemonHost,
-    daemonPort,
-    deckDeviceId,
-    pendingAddHelmProfileRef,
-    selectHelmKey,
-    setFleetAddHelmModalOpen,
-    setFleetAddHelmStage,
-    setProjectFilesByScope,
-    setSelectedWorkspaceId,
-    setWorktreePickerOpen,
-    setAgentTestResult,
-    selectedWorkspaceId,
-    setSelectedModel,
-    setSelectedAgentMode,
-    setSelectedReasoningEffort,
-    setConfigSaveMessage,
-    setFleetProjectSaveMessage,
-    assignSessionTitleFromPrompt,
-    autoConnectAttemptRef,
-    appActionsRef,
-  } = source;
-function requestInitialSync(socket: WebSocket) {
-  requestInitialSyncImpl(socket, {
-    dispatch,
-    requestCounter,
-    setSessionHistoryState,
-    sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
-  });
-}
-function setHelmConnectionState(helmKey: string, state: ConnectionState) {
-  setHelmConnection(helmKey, state);
-}
-function updateHelmInventory(
-  helmKey: string,
-  patch: Partial<HelmInventoryBucket>,
-) {
-  applyHelmInventory(helmKey, patch);
-}
-const {
-  appendSystemMessage,
-  appendUserMessage,
-  createClientUserMessageId,
-} = useSessionMessageActions({ setMessages });
-function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
-  setToolCalls((current) => {
-    const next = {
-      ...current,
-      [sessionId]: mergeToolCallHistory(current[sessionId] ?? [], incoming),
-    };
-    toolCallsRef.current = next;
-    return next;
-  });
-}
-function connectHelmSocket(profile: DaemonProfile) {
-  connectHelmSocketImpl(profile, {
-    embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
-    location: window.location,
-    helmSocketRefs,
-    setHelmConnectionState,
-    setDaemonProfileMessage,
-    readTrustedDeviceCache,
-    requestInitialSync,
-    dispatch,
-    nextRequestId,
-    requestCounter,
-    handleServerEvent,
-  });
-}
-function connectToDaemon(
-  event?: FormEvent<HTMLFormElement>,
-  options?: ConnectToDaemonOptions,
-) {
-  connectToDaemonImpl(event, options, {
-    embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
-    location: window.location,
-    daemonHost,
-    daemonPort,
-    defaultDaemonHost: DEFAULT_DAEMON_HOST,
-    defaultDaemonPort: DEFAULT_DAEMON_PORT,
-    primaryHelmKeyRef,
-    manualDisconnectRef,
-    socketRef,
-    setSessions,
-    setStatuses,
-    setMessages,
-    setPermissionRequests,
-    setOutputs,
-    toolCallsRef,
-    setToolCalls,
-    setDiffs,
-    setSessionConfigOptions,
-    setTrustedDevices,
-    setActiveSessionId,
-    setSelectedProjectId,
     setResumeFeedback,
-    setDebugTrace,
-    setHelmConnectionState,
-    setConnection,
-    setConnectFeedback,
-    copy,
-    setPairingState,
-    setPairingCodeInput,
-    setPairingFeedback,
-    pairingState,
-    setTrustedDevice,
-    readTrustedDeviceCache,
-    dispatch,
-    nextRequestId,
-    requestCounter,
-    requestInitialSync,
-    lastFilesScopeKeyRef,
-    handleServerEvent,
-  });
-}
-function dispatch(socket: WebSocket, payload: ClientToHelm) {
-  dispatchWithTrace(socket, payload, setDebugTrace);
-}
-const {
-  cancelSession,
-  cleanupSession,
-  createSession,
-  requestSessionResumeStart,
-  respondToPermission,
-  shouldAutoStartSessionResume,
-  startResume,
-  submitPrompt,
-  submitPromptFromKeyboard,
-} = useSessionCommandActions({
-  prompt,
-  promptImages,
-  socketRef,
-  setImagePasteNotice,
-  activeSessionId,
-  selectedProjectId,
-  projects,
-  selectedWorkspace,
-  filteredWorkspaces,
-  selectedAgentId,
-  filteredAgents,
-  pendingPromptRef,
-  pendingPromptContentRef,
-  dispatch,
-  requestCounter,
-  effectiveDraftAgentMode,
-  normalizeModelSelection,
-  selectedModel,
-  selectedReasoningEffort,
-  navigateToView,
-  setPrompt,
-  setPromptImages,
-  createClientUserMessageId,
-  appendUserMessage,
-  permissionRequests,
-  resumeStartRequestsRef,
-  setResumeFeedback,
-});
-function handleServerEvent(
-  payload: HelmToClient,
-  sourceHelmKey = daemonProfileKey(
-    daemonHost.trim() || DEFAULT_DAEMON_HOST,
-    daemonPort.trim() || DEFAULT_DAEMON_PORT,
-  ),
-) {
-  const currentEventHelmKey =
-    primaryHelmKeyRef.current ??
-    daemonProfileKey(
-      daemonHost.trim() || DEFAULT_DAEMON_HOST,
-      daemonPort.trim() || DEFAULT_DAEMON_PORT,
-    );
-  const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
-  if (
-    handleDeviceServerEvent(payload, sourceHelmKey, {
-      primaryHelmKeyRef,
-      daemonProfileKey,
-      daemonHost,
-      daemonPort,
-      defaultDaemonHost: DEFAULT_DAEMON_HOST,
-      defaultDaemonPort: DEFAULT_DAEMON_PORT,
-      deckDeviceId,
-      pendingAddHelmProfileRef,
-      writeTrustedDeviceCache,
-      persistDaemonProfile: appActionsRef.current.persistDaemonProfile,
-      daemonHostStorageKey: DAEMON_HOST_KEY,
-      daemonPortStorageKey: DAEMON_PORT_KEY,
-      setSelectedHelmKey: selectHelmKey,
-      setFleetAddHelmModalOpen,
-      setFleetAddHelmStage,
-      autoConnectAttemptRef,
-      socketRef,
-      requestInitialSync,
-      readTrustedDeviceCache,
-      clearTrustedDeviceCache,
-    })
-  ) {
-    return;
-  }
-  if (
-    handleInventoryServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-      projectFilesKey,
-      setProjectFilesByScope,
-      setSelectedWorkspaceId,
-      setWorktreePickerOpen,
-      setAgentTestResult,
-      agentModelOptionsKey,
-      writeAgentModelOptionsCache,
-      selectedAgentId,
-      selectedWorkspaceId,
-      resolveModelOptions,
-      resolvePreferredModel,
-      selectedModel,
-      setSelectedModel,
-      setSelectedAgentMode,
-      setSelectedReasoningEffort,
-      setConfigSaveMessage,
-      setFleetProjectSaveMessage,
-      setSelectedProjectId,
-      socketRef,
-      helmSocketRefs,
-      dispatch,
-      nextRequestId,
-      requestCounter,
-    })
-  ) {
-    return;
-  }
-  if (
-    handleSessionServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-      setSelectedProjectId,
-      pendingPromptRef,
-      pendingPromptContentRef,
-      socketRef,
-      assignSessionTitleFromPrompt,
-      createClientUserMessageId,
-      appendUserMessage,
-      dispatch,
-      nextRequestId,
-      requestCounter,
-      toolCallsRef,
-      mergeSessionToolCalls,
-      shouldAutoStartSessionResume,
-      requestSessionResumeStart,
-      setResumeFeedback,
-      resumeStartRequestsRef,
-    })
-  ) {
-    return;
-  }
-  if (
-    handleActivityServerEvent(payload, {
-      toolCallsRef,
-      mergeSessionToolCalls,
-      appendSystemMessage,
-    })
-  ) {
-    return;
-  }
-}
-  return {
-    requestInitialSync,
-    setHelmConnectionState,
-    updateHelmInventory,
+  } = source;
+
+  const {
     appendSystemMessage,
     appendUserMessage,
     createClientUserMessageId,
-    mergeSessionToolCalls,
-    connectHelmSocket,
-    connectToDaemon,
-    cancelSession,
-    cleanupSession,
-    createSession,
-    requestSessionResumeStart,
-    respondToPermission,
-    shouldAutoStartSessionResume,
-    startResume,
-    submitPrompt,
-    submitPromptFromKeyboard,
-    handleServerEvent,
+  } = useSessionMessageActions({ setMessages });
+
+  let dispatch = (..._args: any[]) => undefined;
+  let requestInitialSync = (_socket: WebSocket) => undefined;
+  let requestSessionResumeStart = (_sessionId: string) => {};
+  let shouldAutoStartSessionResume = (_sessionId: string) => false;
+
+  const serverEventController = createServerEventController(source, {
+    appendSystemMessage,
+    appendUserMessage,
+    createClientUserMessageId,
+    dispatch: (...args: any[]) => dispatch(...args),
+    requestInitialSync: (...args: any[]) => requestInitialSync(...args),
+    requestSessionResumeStart: (...args: any[]) =>
+      requestSessionResumeStart(...args),
+    shouldAutoStartSessionResume: (...args: any[]) =>
+      shouldAutoStartSessionResume(...args),
+  });
+
+  const socketController = createSocketController(source, (...args) =>
+    serverEventController.handleServerEvent(...args),
+  );
+  dispatch = socketController.dispatch;
+  requestInitialSync = socketController.requestInitialSync;
+
+  const commandActions = useSessionCommandActions({
+    prompt,
+    promptImages,
+    socketRef,
+    setImagePasteNotice,
+    activeSessionId,
+    selectedProjectId,
+    projects,
+    selectedWorkspace,
+    filteredWorkspaces,
+    selectedAgentId,
+    filteredAgents,
+    pendingPromptRef,
+    pendingPromptContentRef,
+    dispatch: socketController.dispatch,
+    requestCounter: source.requestCounter,
+    effectiveDraftAgentMode,
+    normalizeModelSelection,
+    selectedModel,
+    selectedReasoningEffort,
+    navigateToView,
+    setPrompt,
+    setPromptImages,
+    createClientUserMessageId,
+    appendUserMessage,
+    permissionRequests,
+    resumeStartRequestsRef,
+    setResumeFeedback,
+  });
+
+  requestSessionResumeStart = commandActions.requestSessionResumeStart;
+  shouldAutoStartSessionResume = commandActions.shouldAutoStartSessionResume;
+
+  return {
+    ...socketController,
+    appendSystemMessage,
+    appendUserMessage,
+    createClientUserMessageId,
+    ...serverEventController,
+    ...commandActions,
   };
 }

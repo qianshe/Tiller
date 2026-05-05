@@ -1,43 +1,69 @@
 import { useEffect, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
-import { useHelmConnection, resolveDefaultHelmEndpoint, dispatchWithTrace, nextRequestId, useAppControllers } from "../../features/helm-connection";
-import { useAppActions } from "../../features/agents";
-import { UI_COPY, type Locale } from "../../shared/utils/copy";
-import { usePreferencesEffects, useDeckPreferenceActions } from "../../features/preferences";
-import { agentModelOptionsKey, readAgentModelOptionsCache, writeAgentModelOptionsCache } from "../../features/agents/utils/agent-model-options-cache";
-import { slugify, splitArgs } from "../../features/agents/utils/agent-identity";
-import { normalizeModelSelection, resolveCombinedModelValue, resolveModelOptions, resolvePreferredModel, resolveReasoningLabel, resolveReasoningOptionsForModel } from "../../features/mission/utils/composer-options";
-import { projectFilesKey } from "../../features/mission/utils/project-files-key";
-import { formatRelativeTime } from "../../shared/utils/format-time";
-import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../../features/server-events/index";
-import { useRouteView } from "../routing/route-view";
-import { usePromptEnhanceAction, usePromptEnhancerSettings } from "../../features/prompt-enhancer";
-import { TopNav } from "../../shared/ui/layout/top-nav";
 import {
+  readAgentModelOptionsCache,
+  useAppActions,
+} from "../../features/agents";
+import { getOrCreateDeviceId } from "../../features/auth";
+import {
+  dispatchWithTrace,
+  nextRequestId,
+  resolveDefaultHelmEndpoint,
+  useAppControllers,
+  useHelmConnection,
+} from "../../features/helm-connection";
+import {
+  DEFAULT_ACTIVITY_PAGE_LIMIT,
+  DEFAULT_MESSAGE_PAGE_LIMIT,
+  DEFAULT_SESSION_PAGE_LIMIT,
+  normalizeModelSelection,
+  resolveCombinedModelValue,
+  resolveReasoningLabel,
+  resolveReasoningOptionsForModel,
   createMissionVisualFixture,
   shouldUseMissionVisualFixture,
   MissionAgentIcon,
   SessionCleanupConfirmDialog,
+  type SessionDraftPreferencePatch,
   useHistoryPagination,
+  useMissionEffects,
   useMissionLayout,
+  useMissionViewModel,
   usePanelPages,
   useSelection,
-  type SessionDraftPreferencePatch,
   useSessionTitles,
   useSlashCommands,
-  useMissionViewModel,
-  useMissionEffects,
 } from "../../features/mission";
-import { getOrCreateDeviceId } from "../../features/auth/beacon-cache";
 import { useCodeActions } from "../../features/pairing";
-import { DECK_DEVICE_NAME, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../shared/config/deck-runtime";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT } from "../../features/mission/config";
+import {
+  useDeckPreferenceActions,
+  usePreferencesEffects,
+} from "../../features/preferences";
+import {
+  usePromptEnhanceAction,
+  usePromptEnhancerSettings,
+} from "../../features/prompt-enhancer";
+import {
+  DECK_DEVICE_NAME,
+  DEFAULT_DAEMON_HOST,
+  DEFAULT_DAEMON_PORT,
+  IS_EMBEDDED_HELM_DECK,
+} from "../../shared/config/deck-runtime";
+import { TopNav } from "../../shared/ui/layout/top-nav";
+import { UI_COPY, type Locale } from "../../shared/utils/copy";
+import { formatRelativeTime } from "../../shared/utils/format-time";
+import {
+  buildAppLayoutContext,
+  buildAppRouteContext,
+  buildMissionPanelContext,
+  resolveShellClassName,
+} from "../composition/bindings";
+import { AppRoutes } from "../routing/route-content";
+import { useRouteView } from "../routing/route-view";
 import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
-import { AppRoutes } from "../routing/route-content";
-import { buildAppLayoutContext, buildAppRouteContext, buildMissionPanelContext, resolveShellClassName } from "../composition/bindings";
 
 export function App() {
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);

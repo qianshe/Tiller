@@ -1,11 +1,17 @@
 import { useRef, useState } from "react";
-import type { AgentPromptContent, SessionReasoningEffort, SessionSummary } from "@tiller/shared";
-import type { DaemonProfile } from "../../features/helm-connection/daemon-profiles";
-import { MODEL_OPTIONS } from "../../features/mission/utils/composer-options";
-import { DEFAULT_PROMPT } from "../../features/mission/config";
+import type {
+  AgentPromptContent,
+  SessionReasoningEffort,
+  SessionSummary,
+} from "@tiller/shared";
+import type { AgentDraft } from "../../features/agents";
+import type { DaemonProfile } from "../../features/helm-connection";
+import {
+  DEFAULT_PROMPT,
+  MODEL_OPTIONS,
+  type ProjectFilesEntry,
+} from "../../features/mission";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../shared/config/deck-runtime";
-import type { ProjectFilesEntry } from "../../features/mission/types";
-import type { AgentDraft } from "../../features/agents/types";
 
 /**
  * Owns App refs and local UI state so root can stay focused on wiring.

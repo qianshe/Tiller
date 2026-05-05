@@ -1,6 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
+import {
+  dirname,
+  extname,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const srcRoot = join(root, "src");
@@ -42,6 +50,11 @@ function sourceArea(path) {
   return path.split(sep)[0] ?? "";
 }
 
+function isFeaturePublicImport(path) {
+  const segments = normalize(path).split(sep).filter(Boolean);
+  return segments[0] === "features" && segments.length === 2;
+}
+
 const sourceFiles = walk(srcRoot).filter((file) =>
   [".ts", ".tsx"].includes(extname(file)),
 );
@@ -63,6 +76,9 @@ for (const file of sourceFiles) {
     }
     if (fromArea === "shared" && ["app", "features", "store"].includes(importedArea)) {
       failures.push(`${fromRel} must not import ${imported} from shared`);
+    }
+    if (fromArea === "app" && importedArea === "features" && !isFeaturePublicImport(imported)) {
+      failures.push(`${fromRel} must import feature public API instead of ${imported}`);
     }
     if (fromArea === "store" && importedArea === "app") {
       failures.push(`${fromRel} must not import app module ${imported}`);
