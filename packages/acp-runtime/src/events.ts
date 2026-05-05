@@ -1,5 +1,5 @@
 import type { AcpModelOption, AcpModelState, AvailableCommand, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
-import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime";
+import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime-types";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 
 type AcpProtocolModelInfo = {

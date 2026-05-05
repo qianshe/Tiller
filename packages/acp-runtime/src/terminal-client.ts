@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
 import { isAbsolute, relative, resolve } from "node:path";
-import type { SessionRuntimeEvent } from "./runtime";
+import type { SessionRuntimeEvent } from "./runtime-types";
 
 export type ManagedSdkTerminal = {
   id: string;
