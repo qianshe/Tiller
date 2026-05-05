@@ -2,13 +2,8 @@ import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import { resolveSessionCleanupOutcome } from "../../sessions/cleanup";
 import { isProjectRootBranchWorkspace } from "../../sessions/project-binding";
 import { applyUserPromptToSummary } from "../../sessions/summary-updates";
-import {
-  compareTimestampIdPosition,
-  decodeCursor,
-  encodeCursor,
-  normalizePageLimit,
-} from "../../sessions/pagination";
-import type { ProviderCleanupResult } from "@tiller/acp-runtime";
+import { cleanupActiveRuntime } from "./runtime-cleanup";
+import { pageSessionSummaries } from "./session-list-page";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
@@ -18,51 +13,6 @@ import {
 } from "@tiller/shared";
 import type { HelmMessageHandler } from "../context";
 
-type SessionSummaryPageOptions = {
-  limit?: number;
-  before?: string;
-};
-
-function pageSessionSummaries(sessions: SessionSummary[], options: SessionSummaryPageOptions = {}) {
-  const sorted = sortSessionSummaries(sessions);
-  const limit = normalizePageLimit(options.limit, 25, 200);
-  const before = decodeSessionCursor(options.before);
-  const eligible = before
-    ? sorted.filter((session) => compareSessionPosition(session, before) > 0)
-    : sorted;
-  const page = eligible.slice(0, limit);
-  const hasMore = eligible.length > page.length;
-  return {
-    sessions: page,
-    nextCursor: hasMore ? encodeSessionCursor(page.at(-1)) : undefined,
-    hasMore,
-  };
-}
-
-function sortSessionSummaries(sessions: SessionSummary[]) {
-  return [...sessions].sort((left, right) => compareSessionPosition(left, right));
-}
-
-function compareSessionPosition(
-  left: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">,
-  right: Pick<SessionSummary, "id" | "createdAt" | "updatedAt">,
-) {
-  const timeDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-  if (timeDelta !== 0) {
-    return timeDelta;
-  }
-  const createdDelta = right.createdAt.localeCompare(left.createdAt);
-  return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
-}
-
-function encodeSessionCursor(session: SessionSummary | undefined) {
-  return session ? encodeCursor(session.updatedAt, session.createdAt, session.id) : undefined;
-}
-
-function decodeSessionCursor(cursor: string | undefined) {
-  const parts = decodeCursor(cursor, 3);
-  return parts ? { updatedAt: parts[0], createdAt: parts[1], id: parts[2] } : null;
-}
 
 export function resolveProjectSessionWorkspace(
   project: ProjectSummary,
@@ -530,50 +480,5 @@ export const handleSessionMessage: HelmMessageHandler = async (socket, payload, 
       return false;
   }
 };
-export async function cleanupActiveRuntime(
-  runtime: {
-    sessionCapabilities?: { sessionDelete?: boolean; sessionClose?: boolean };
-    deleteSession?: () => Promise<ProviderCleanupResult>;
-    close?: () => Promise<ProviderCleanupResult>;
-    cancel: () => void;
-  },
-  providerId: string,
-): Promise<ProviderCleanupResult> {
-  if (runtime.sessionCapabilities?.sessionDelete && runtime.deleteSession) {
-    try {
-      const deleted = await runtime.deleteSession();
-      runtime.cancel();
-      if (deleted.kind === "remote-deleted") {
-        return deleted;
-      }
-    } catch (error) {
-      runtime.cancel();
-      return {
-        kind: "remote-delete-failed",
-        providerId,
-        message: error instanceof Error ? error.message : "Failed to delete remote ACP session.",
-      };
-    }
-  }
 
-  if (runtime.sessionCapabilities?.sessionClose && runtime.close) {
-    try {
-      return await runtime.close();
-    } catch (error) {
-      runtime.cancel();
-      return {
-        kind: "remote-close-failed",
-        providerId,
-        message: error instanceof Error ? error.message : "Failed to close remote ACP session.",
-      };
-    }
-  }
-
-  runtime.cancel();
-  return {
-    kind: "unsupported",
-    providerId,
-    message:
-      "ACP agent did not advertise session/delete or session/close; cleaned local Tiller session and terminated the local runtime process only.",
-  };
-}
+export { cleanupActiveRuntime } from "./runtime-cleanup";
