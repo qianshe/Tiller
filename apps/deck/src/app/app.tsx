@@ -149,6 +149,7 @@ import { PlainMessages } from "../features/mission/ui/plain-messages";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
+import { SessionCleanupConfirmDialog } from "../features/mission/ui/session-cleanup-confirm-dialog";
 import { resolveToolCallTone } from "../features/logbook/tool-call-tone";
 import {
   useMissionLayout,
@@ -3407,67 +3408,15 @@ export function App() {
         {activeView === "agents" && renderAgents()}
         {activeView === "settings" && renderSettings()}{" "}
       </div>{" "}
-      {pendingSessionCleanup ? (
-        <div className="fleet-modal-backdrop" role="presentation">
-          {" "}
-          <section
-            className="card surface-card fleet-delete-helm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="确认删除会话"
-          >
-            {" "}
-            <div className="fleet-dialog-head fleet-dialog-head-simple">
-              {" "}
-              <h3>确认删除会话？</h3>{" "}
-              <button
-                className="secondary fleet-dialog-close"
-                type="button"
-                onClick={() => setPendingSessionCleanup(null)}
-              >
-                {" "}
-                关闭{" "}
-              </button>{" "}
-            </div>{" "}
-            <div className="fleet-delete-confirm-body">
-              {" "}
-              <p>
-                此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。
-              </p>{" "}
-              <div className="fleet-delete-target">
-                {" "}
-                <strong>
-                  {" "}
-                  {resolveDisplaySessionTitle(pendingSessionCleanup)}{" "}
-                </strong>{" "}
-                <span>{pendingSessionCleanup.agentName}</span>{" "}
-              </div>{" "}
-            </div>{" "}
-            <div className="section-actions fleet-delete-actions">
-              {" "}
-              <button
-                className="secondary"
-                type="button"
-                onClick={() => setPendingSessionCleanup(null)}
-              >
-                {" "}
-                取消{" "}
-              </button>{" "}
-              <button
-                className="secondary helm-destroy-button"
-                type="button"
-                onClick={() => {
-                  cleanupSession(pendingSessionCleanup.id);
-                  setPendingSessionCleanup(null);
-                }}
-              >
-                {" "}
-                确认删除{" "}
-              </button>{" "}
-            </div>{" "}
-          </section>{" "}
-        </div>
-      ) : null}{" "}
+      <SessionCleanupConfirmDialog
+        session={pendingSessionCleanup}
+        resolveSessionTitle={resolveDisplaySessionTitle}
+        onCancel={() => setPendingSessionCleanup(null)}
+        onConfirm={(sessionId) => {
+          cleanupSession(sessionId);
+          setPendingSessionCleanup(null);
+        }}
+      />
     </main>
   );
 }
