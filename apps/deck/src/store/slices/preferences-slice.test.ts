@@ -54,9 +54,7 @@ test("removeDaemonProfile deletes by endpoint key", () => {
 
   store.getState().addDaemonProfile(first);
   store.getState().addDaemonProfile(second);
-  store
-    .getState()
-    .removeDaemonProfile(profile({ host: "127.0.0.1", port: "47631" }));
+  store.getState().removeDaemonProfile(profile({ host: "127.0.0.1", port: "47631" }));
 
   assert.deepEqual(store.getState().daemonProfiles, [second]);
 });

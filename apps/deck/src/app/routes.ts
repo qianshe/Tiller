@@ -24,6 +24,7 @@ export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
   },
 };
 
+
 export function resolveViewFromPath(pathname: string): AppView {
   const normalized = pathname.replace(/\/+$/g, "") || "/";
   if (normalized === "/sessions") {

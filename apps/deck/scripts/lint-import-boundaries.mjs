@@ -1,14 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-  dirname,
-  extname,
-  join,
-  normalize,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const srcRoot = join(root, "src");
@@ -53,8 +45,7 @@ function sourceArea(path) {
 const sourceFiles = walk(srcRoot).filter((file) =>
   [".ts", ".tsx"].includes(extname(file)),
 );
-const importPattern =
-  /(?:import|export)\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?["']([^"']+)["']/gu;
+const importPattern = /(?:import|export)\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?["']([^"']+)["']/gu;
 const failures = [];
 
 for (const file of sourceFiles) {
@@ -70,10 +61,7 @@ for (const file of sourceFiles) {
     if (allowedBoundaryImports.has(`${fromRel} -> ${imported}`)) {
       continue;
     }
-    if (
-      fromArea === "shared" &&
-      ["app", "features", "store"].includes(importedArea)
-    ) {
+    if (fromArea === "shared" && ["app", "features", "store"].includes(importedArea)) {
       failures.push(`${fromRel} must not import ${imported} from shared`);
     }
     if (fromArea === "store" && importedArea === "app") {

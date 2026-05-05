@@ -7,11 +7,7 @@ import {
   pastePairingDigits,
   sendPairingRequest,
   updatePairingDigit,
-<<<<<<<< HEAD:apps/deck/src/features/pairing/actions/actions.test.ts
-} from "./actions.js";
-========
 } from "./code-actions.js";
->>>>>>>> origin/main:apps/deck/src/features/pairing/actions/code-actions.test.ts
 
 function inputRef() {
   return {
@@ -23,9 +19,7 @@ function inputRef() {
 }
 
 test("pairing digit input normalizes a single character and advances focus", () => {
-  const refs = [inputRef(), inputRef()] as Array<
-    HTMLInputElement & { focused: boolean }
-  >;
+  const refs = [inputRef(), inputRef()] as Array<HTMLInputElement & { focused: boolean }>;
   let value = "";
   let state = "rejected" as const;
 
@@ -71,9 +65,7 @@ test("pairing paste fills from the start index", () => {
 });
 
 test("pairing backspace moves focus to the previous empty input", () => {
-  const refs = [inputRef(), inputRef()] as Array<
-    HTMLInputElement & { focused: boolean }
-  >;
+  const refs = [inputRef(), inputRef()] as Array<HTMLInputElement & { focused: boolean }>;
 
   handlePairingKeyDown(1, "Backspace", {
     pairingCodeInput: "A",
@@ -97,12 +89,7 @@ test("sendPairingRequest sends a device.pair payload for six-character codes", (
       feedback = value;
     },
     setDebugTrace: (updater) => {
-      updater({
-        connectClicks: 0,
-        pairClicks: 0,
-        requestsSent: 0,
-        lastRequestType: "none",
-      });
+      updater({ connectClicks: 0, pairClicks: 0, requestsSent: 0, lastRequestType: "none" });
     },
     dispatch: (_socket, payload) => {
       sent.push(payload);

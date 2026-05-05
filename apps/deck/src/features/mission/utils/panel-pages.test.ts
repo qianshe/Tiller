@@ -21,9 +21,8 @@ class MemoryStorage {
 
 function withStorage(run: () => void) {
   const previousWindow = globalThis.window;
-  globalThis.window = {
-    localStorage: new MemoryStorage(),
-  } as unknown as Window & typeof globalThis;
+  globalThis.window = { localStorage: new MemoryStorage() } as unknown as Window &
+    typeof globalThis;
   try {
     run();
   } finally {
@@ -35,9 +34,7 @@ test("mission panel pages persist and sanitize stored records", () => {
   withStorage(() => {
     writeMissionPanelPages([{ id: "display", title: "展示" }]);
 
-    assert.deepEqual(readMissionPanelPages(), [
-      { id: "display", title: "展示" },
-    ]);
+    assert.deepEqual(readMissionPanelPages(), [{ id: "display", title: "展示" }]);
   });
 });
 

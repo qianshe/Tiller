@@ -53,9 +53,7 @@ export function MissionInspector({
               <div>
                 <p className="eyebrow">项目文件</p>
                 <h3>
-                  {activeSessionPresent
-                    ? `${projectFileCount} 个文件`
-                    : "未选择任务"}
+                  {activeSessionPresent ? `${projectFileCount} 个文件` : "未选择任务"}
                 </h3>
               </div>
               {loading ? (
@@ -64,8 +62,7 @@ export function MissionInspector({
             </div>
             <p className="subtle compact">
               {activeSessionPresent
-                ? (message ??
-                  "完整文件列表由 Helm 按当前任务的 Project / Workspace 返回。")
+                ? (message ?? "完整文件列表由 Helm 按当前任务的 Project / Workspace 返回。")
                 : "选择任务后才显示项目文件。"}
             </p>
             <input

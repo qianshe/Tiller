@@ -26,18 +26,14 @@ function canReadBrowserStorage() {
 }
 
 function initialPreferences() {
-  return canReadBrowserStorage()
-    ? readDeckPreferences()
-    : DEFAULT_DECK_PREFERENCES;
+  return canReadBrowserStorage() ? readDeckPreferences() : DEFAULT_DECK_PREFERENCES;
 }
 
 function initialDaemonProfiles() {
   return canReadBrowserStorage() ? readDaemonProfiles() : [];
 }
 
-export const createPreferencesSlice: StateCreator<PreferencesSlice> = (
-  set,
-) => ({
+export const createPreferencesSlice: StateCreator<PreferencesSlice> = (set) => ({
   preferences: initialPreferences(),
   daemonProfiles: initialDaemonProfiles(),
   selectedHelmKey: "",
