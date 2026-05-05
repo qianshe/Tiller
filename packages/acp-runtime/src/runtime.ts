@@ -3,9 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import { dirname, relative, resolve } from "node:path";
+import { resolveSessionCapabilities } from "./capabilities";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine, writeProtocolLog } from "./protocol-logging";
-import { resolveAcpLaunchConfig, resolveAdapterCapabilities } from "./adapters";
+import { resolveAcpLaunchConfig } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
 import { resolveRuntimeSessionId } from "./requests";
 import { SDK_PROBE_CLIENT_CAPABILITIES, SDK_RUNTIME_CLIENT_CAPABILITIES, mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
@@ -107,14 +108,6 @@ export type AcpRuntimeOptions = {
   onEvent: (event: SessionRuntimeEvent) => void;
 };
 
-export type DetectedAcpSessionCapabilities = {
-  sessionLoad?: boolean;
-  sessionResume?: boolean;
-  sessionList?: boolean;
-  sessionClose?: boolean;
-  sessionDelete?: boolean;
-  imageInput?: boolean;
-};
 
 export type AcpAgentSessionListResult = {
   sessions: AcpAgentSessionInfo[];
@@ -1007,54 +1000,6 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 }
 
 
-export function resolveSessionCapabilities(initializeResult: any, provider?: AcpAgentProvider): DetectedAcpSessionCapabilities {
-  const capabilities = initializeResult?.capabilities ?? initializeResult?.agentCapabilities ?? initializeResult?.sessionCapabilities ?? {};
-  const nestedSession = capabilities.session ?? capabilities.sessions ?? capabilities.sessionCapabilities ?? initializeResult?.sessionCapabilities ?? {};
-  const promptCapabilities = initializeResult?.promptCapabilities ?? capabilities.promptCapabilities ?? capabilities.prompt ?? {};
-  const providerCapabilities = provider?.capabilities ?? {};
-
-  const detected = {
-    sessionLoad: Boolean(
-      providerCapabilities.sessionLoad ??
-        capabilities.loadSession ??
-        capabilities.sessionLoad ??
-        nestedSession.load ??
-        nestedSession.loadSession,
-    ),
-    sessionResume: Boolean(
-      providerCapabilities.sessionResume ??
-        capabilities.resumeSession ??
-        capabilities.sessionResume ??
-        nestedSession.resume ??
-        nestedSession.resumeSession,
-    ),
-    sessionList: Boolean(
-      providerCapabilities.sessionList ??
-        capabilities.listSessions ??
-        capabilities.sessionList ??
-        nestedSession.list ??
-        nestedSession.listSessions,
-    ),
-    sessionClose: Boolean(
-      providerCapabilities.sessionClose ??
-        capabilities.closeSession ??
-        capabilities.sessionClose ??
-        nestedSession.close ??
-        nestedSession.closeSession,
-    ),
-    sessionDelete: Boolean(
-      providerCapabilities.sessionDelete ??
-        capabilities.deleteSession ??
-        capabilities.sessionDelete ??
-        nestedSession.delete ??
-        nestedSession.deleteSession,
-    ),
-    imageInput: Boolean(providerCapabilities.imageInput ?? promptCapabilities.image ?? promptCapabilities.images ?? capabilities.imageInput),
-  };
-
-  return provider ? resolveAdapterCapabilities(provider, initializeResult, detected) : detected;
-}
-
 
 export function resolvePreferredAgentId(provider: Pick<AcpAgentProvider, "defaultAgent">) {
   return normalizePreferredAgentId(provider.defaultAgent);
@@ -1101,6 +1046,7 @@ function normalizePreferredAgentId(agent: string | undefined) {
 
 
 export { resolveRuntimeSessionId } from "./requests";
+export { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "./capabilities";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 export { sanitizeProtocolLogPayload } from "./protocol-logging";
