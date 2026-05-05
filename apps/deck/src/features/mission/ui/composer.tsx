@@ -22,6 +22,8 @@ import {
   type AgentModeOption,
   type MissionConfigPicker,
 } from "./composer-config-controls";
+import { ComposerAttachments } from "./composer-attachments";
+import { ComposerDraftSelectors } from "./composer-draft-selectors";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
@@ -164,122 +166,35 @@ export function MissionComposer({
   return (
     <div className="chat-input-area draft-toolbar">
       {!activeSession ? (
-        <div className="draft-toolbar-grid draft-toolbar-grid-mission">
-          <div
-            ref={worktreePickerRef}
-            className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}
-          >
-            <span>Workspace</span>
-            <button
-              type="button"
-              className="mission-worktree-trigger"
-              onClick={() => {
-                setAgentPickerOpen(false);
-                setWorktreePickerOpen((current) => !current);
-              }}
-              aria-haspopup="listbox"
-              aria-expanded={worktreePickerOpen}
-            >
-              <strong>{selectedWorkspaceName}</strong>
-            </button>
-            {worktreePickerOpen ? (
-              <div
-                className="mission-worktree-menu"
-                role="listbox"
-                aria-label="Workspace"
-              >
-                {draftWorkspaceOptions.map((workspace) => (
-                  <button
-                    key={workspace.id}
-                    type="button"
-                    role="option"
-                    aria-selected={workspace.id === selectedWorkspaceId}
-                    className={
-                      workspace.id === selectedWorkspaceId ? "active" : ""
-                    }
-                    onClick={() => selectDraftWorkspace(workspace.id)}
-                  >
-                    <strong>{workspace.name}</strong>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div
-            ref={agentPickerRef}
-            className={`mission-agent-field ${agentPickerOpen ? "open" : ""}`}
-          >
-            <span>{copy.selectedAgent}</span>
-            <button
-              type="button"
-              className="mission-agent-trigger"
-              onClick={() => {
-                setWorktreePickerOpen(false);
-                setAgentPickerOpen((current) => !current);
-              }}
-              aria-haspopup="listbox"
-              aria-expanded={agentPickerOpen}
-              disabled={agentLocked}
-            >
-              <strong>{selectedDraftAgent?.name ?? "选择舰员"}</strong>
-            </button>
-            {agentPickerOpen ? (
-              <div
-                className="mission-agent-menu"
-                role="listbox"
-                aria-label={copy.selectedAgent}
-              >
-                {filteredAgents.map((agent) => (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    role="option"
-                    aria-selected={agent.id === selectedAgentId}
-                    className={agent.id === selectedAgentId ? "active" : ""}
-                    onClick={() => selectDraftAgent(agent.id)}
-                  >
-                    {agent.name}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <ComposerDraftSelectors
+          worktreePickerRef={worktreePickerRef}
+          worktreePickerOpen={worktreePickerOpen}
+          setWorktreePickerOpen={setWorktreePickerOpen}
+          agentPickerRef={agentPickerRef}
+          agentPickerOpen={agentPickerOpen}
+          setAgentPickerOpen={setAgentPickerOpen}
+          selectedWorkspaceName={selectedWorkspaceName}
+          draftWorkspaceOptions={draftWorkspaceOptions}
+          selectedWorkspaceId={selectedWorkspaceId}
+          selectDraftWorkspace={selectDraftWorkspace}
+          copy={copy}
+          agentLocked={agentLocked}
+          selectedDraftAgent={selectedDraftAgent}
+          filteredAgents={filteredAgents}
+          selectedAgentId={selectedAgentId}
+          selectDraftAgent={selectDraftAgent}
+        />
       ) : null}
       <form
         className="chat-input-form mission-order-editor"
         onSubmit={submitPrompt}
       >
         <div ref={slashWrapperRef} className="slash-command-wrapper">
-          {promptImages.length ? (
-            <div
-              className="mission-composer-attachments mission-attachment-strip"
-              aria-label="待发送图片"
-            >
-              {promptImages.map((image, index) => (
-                <span
-                  key={`${image.uri ?? image.name}-${index}`}
-                  className="mission-composer-attachment mission-attachment-chip"
-                >
-                  image {index + 1}
-                  <button
-                    type="button"
-                    className="mission-composer-attachment-remove"
-                    onClick={() => removePromptImage(index)}
-                    aria-label={`移除 image ${index + 1}`}
-                    title="移除"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {imagePasteNotice ? (
-            <p className="subtle compact mission-composer-notice">
-              {imagePasteNotice}
-            </p>
-          ) : null}
+          <ComposerAttachments
+            promptImages={promptImages}
+            removePromptImage={removePromptImage}
+            imagePasteNotice={imagePasteNotice}
+          />
           <textarea
             ref={missionPromptRef}
             value={prompt}
