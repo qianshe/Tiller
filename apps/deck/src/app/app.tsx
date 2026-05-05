@@ -100,6 +100,7 @@ import { NAV_LABELS } from "./routes";
 import { useRouteView } from "./use-route-view";
 import { useActiveConversationUpdateKey } from "./use-active-conversation-key";
 import { useConfiguredHelms } from "./use-configured-helms";
+import { useDaemonProfileActions } from "./use-daemon-profile-actions";
 import { useDeckPreferenceActions } from "./use-deck-preference-actions";
 import { usePromptEnhanceAction } from "./use-prompt-enhance-action";
 import { TopNav } from "../shared/ui/layout/top-nav";
@@ -1610,61 +1611,36 @@ export function App() {
       splitArgs,
     });
   }
-  function createDaemonProfile(
-    nameValue: string,
-    hostValue: string,
-    portValue: string,
-  ): DaemonProfile {
-    const host = hostValue.trim() || DEFAULT_DAEMON_HOST;
-    const port = portValue.trim() || DEFAULT_DAEMON_PORT;
-    const name = nameValue.trim() || `${host}:${port}`;
-    return { id: slugify(`${name}-${host}-${port}`), name, host, port };
-  }
-  function persistDaemonProfile(profile: DaemonProfile) {
-    addDaemonProfile(profile);
-    setDaemonProfileName(profile.name);
-    setDaemonProfileMessage(`已保存 Helm：${profile.name}`);
-  }
-  function saveDaemonProfile() {
-    persistDaemonProfile(
-      createDaemonProfile(daemonProfileName, daemonHost, daemonPort),
-    );
-  }
-  function removeDaemonProfile(profile: DaemonProfile) {
-    const profileKey = daemonProfileKey(profile.host, profile.port);
-    const nextProfiles = daemonProfiles.filter(
-      (item) => daemonProfileKey(item.host, item.port) !== profileKey,
-    );
-    const currentHelmKey = daemonProfileKey(
-      daemonHost.trim() || DEFAULT_DAEMON_HOST,
-      daemonPort.trim() || DEFAULT_DAEMON_PORT,
-    );
-    const fallbackProfile = nextProfiles[0];
-    helmSocketRefs.current.get(profileKey)?.close();
-    helmSocketRefs.current.delete(profileKey);
-    removeHelm(profileKey);
-    if (currentHelmKey === profileKey) {
-      manualDisconnectRef.current = profileKey;
-      socketRef.current?.close();
-      socketRef.current = null;
-      setConnection("disconnected");
-      // 手动断开当前 Helm 后，project files 缓存应失效，避免重连后使用过期数据。
-      lastFilesScopeKeyRef.current = null;
-      const fallbackHost = fallbackProfile?.host ?? DEFAULT_DAEMON_HOST;
-      const fallbackPort = fallbackProfile?.port ?? DEFAULT_DAEMON_PORT;
-      setDaemonHost(fallbackHost);
-      setDaemonPort(fallbackPort);
-      window.localStorage.setItem(DAEMON_HOST_KEY, fallbackHost);
-      window.localStorage.setItem(DAEMON_PORT_KEY, fallbackPort);
-      selectHelmKey(
-        fallbackProfile ? daemonProfileKey(fallbackHost, fallbackPort) : "",
-      );
-    } else if (selectedHelmKey === profileKey) {
-      selectHelmKey(currentHelmKey);
-    }
-    removeDaemonProfileFromStore(profile);
-    setDaemonProfileMessage(`已删除 Helm 前端配置：${profile.name}`);
-  }
+  const {
+    applyDaemonProfile,
+    connectDaemonProfile,
+    createDaemonProfile,
+    persistDaemonProfile,
+    removeDaemonProfile,
+    saveDaemonProfile,
+  } = useDaemonProfileActions({
+    daemonProfileName,
+    daemonHost,
+    daemonPort,
+    defaultDaemonHost: DEFAULT_DAEMON_HOST,
+    defaultDaemonPort: DEFAULT_DAEMON_PORT,
+    daemonProfiles,
+    selectedHelmKey,
+    helmSocketRefs,
+    manualDisconnectRef,
+    socketRef,
+    lastFilesScopeKeyRef,
+    addDaemonProfile,
+    removeDaemonProfileFromStore,
+    removeHelm,
+    selectHelmKey,
+    setDaemonHost,
+    setDaemonPort,
+    setDaemonProfileName,
+    setDaemonProfileMessage,
+    setConnection,
+    connectToDaemon,
+  });
   function revokeTrustedDevice(
     deviceId: string,
     targetSocket: WebSocket | null = socketRef.current,
@@ -1694,21 +1670,6 @@ export function App() {
         onRevokeDevice={revokeTrustedDevice}
       />
     );
-  }
-  function applyDaemonProfile(profile: DaemonProfile) {
-    setDaemonHost(profile.host);
-    setDaemonPort(profile.port);
-    setDaemonProfileName(profile.name);
-    setDaemonProfileMessage(`已切换到 ${profile.name}`);
-  }
-  function connectDaemonProfile(profile: DaemonProfile) {
-    applyDaemonProfile(profile);
-    selectHelmKey(daemonProfileKey(profile.host, profile.port));
-    void connectToDaemon(undefined, {
-      preserveState: true,
-      host: profile.host,
-      port: profile.port,
-    });
   }
   function requestSessionResumeStart(sessionId: string, reason: string) {
     requestSessionResumeStartImpl(sessionId, reason, {
