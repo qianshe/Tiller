@@ -6,7 +6,7 @@ import type {
   AgentToolCall,
   SessionSummary,
 } from "@tiller/shared";
-import { toast } from "../../features/toast/toast";
+import { toast } from "../../features/toast/store";
 import { useDeckStore } from "../../store";
 import { commandChunkToToolCall, mergeMessageHistory } from "../../features/logbook/timeline";
 import {

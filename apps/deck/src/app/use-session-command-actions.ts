@@ -21,7 +21,7 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "../features/mission/actions/session-actions";
-import { toast } from "../features/toast/toast";
+import { toast } from "../features/toast/store";
 
 type MutableRef<T> = { current: T };
 type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;

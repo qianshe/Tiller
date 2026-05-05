@@ -16,7 +16,7 @@ import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialS
 import { useSessionCommandActions } from "./use-session-command-actions";
 import { useSessionMessageActions } from "./use-session-message-actions";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../features/helm-connection/helm-endpoint";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
 
 export function useAppControllers(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.route, ...ctx.titleActions, ...ctx };

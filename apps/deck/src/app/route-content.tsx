@@ -2,7 +2,7 @@ import { OverviewPage } from "../features/overview/ui/page";
 import { AgentsPage } from "../features/agents/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
 import { MissionWorkspace } from "../features/mission/ui/workspace";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_LOGBOOK_VISIBLE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_LOGBOOK_VISIBLE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
 export function AppRoutes({ ctx }: { ctx: any }) {
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,

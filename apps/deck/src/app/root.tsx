@@ -38,10 +38,10 @@ import { DAEMON_HOST_KEY, DAEMON_PORT_KEY, resolveDefaultHelmEndpoint } from "..
 import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../features/helm-connection/sockets";
 import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../features/helm-connection/request-dispatch";
 import { useCodeActions } from "../features/pairing/hooks/use-code-actions";
-import { DECK_DEVICE_NAME, DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
+import { DECK_DEVICE_NAME, DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
 import { useDeckData } from "./use-deck-data";
 import { useAppRuntimeState } from "./use-app-runtime-state";
-import { AppRoutes } from "./app-routes";
+import { AppRoutes } from "./route-content";
 import { useAppActions } from "./use-app-actions";
 import { useAppControllers } from "./use-app-controllers";
 export function App() {

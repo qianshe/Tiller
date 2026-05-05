@@ -20,7 +20,7 @@ import {
   splitModelReasoning,
 } from "../features/mission/utils/composer-options";
 import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId } from "../features/mission/utils/session-derivations";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "./constants";
 
 export function useMissionViewModel(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.helmConnection, ...ctx };

@@ -2,11 +2,11 @@ import { useRef, useState } from "react";
 import type { AgentPromptContent, SessionReasoningEffort, SessionSummary } from "@tiller/shared";
 import type { DaemonProfile } from "../features/helm-connection/daemon-profiles";
 import { MODEL_OPTIONS } from "../features/mission/utils/composer-options";
-import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_PROMPT } from "./app-constants";
-import type { AgentDraft, ProjectFilesEntry } from "./app-types";
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_PROMPT } from "./constants";
+import type { AgentDraft, ProjectFilesEntry } from "./types";
 
 /**
- * Owns App refs and local UI state so app-root can stay focused on wiring.
+ * Owns App refs and local UI state so root can stay focused on wiring.
  */
 export function useAppRuntimeState(missionVisualFixture: any) {
   const socketRef = useRef<WebSocket | null>(null);

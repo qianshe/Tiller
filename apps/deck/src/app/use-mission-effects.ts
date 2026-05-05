@@ -9,7 +9,7 @@ import { agentModelOptionsKey } from "../features/agents/utils/agent-model-optio
 import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../features/mission/utils/composer-options";
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import { resolveDraftSelectionId, resolveProjectFilesScope, resolveSessionProjectId } from "../features/mission/utils/session-derivations";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./app-constants";
+import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
 
 export function useMissionEffects(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.controllers, ...ctx.history, ...ctx };

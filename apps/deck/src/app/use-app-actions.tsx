@@ -6,7 +6,7 @@ import { useDaemonProfileActions } from "./use-daemon-profile-actions";
 import { useFleetAddHelmActions } from "./use-fleet-add-helm-actions";
 import { nextRequestId } from "../features/helm-connection/request-dispatch";
 import { saveDraft as saveDraftImpl, testAgent as testAgentImpl, writeDraftToConfig as writeDraftToConfigImpl } from "../features/agents/actions/config-actions";
-import { AGENT_DRAFT_STORAGE_KEY, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "./app-constants";
+import { AGENT_DRAFT_STORAGE_KEY, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "./constants";
 
 export function useAppActions(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.helmConnection, ...ctx.controllers, ...ctx };
