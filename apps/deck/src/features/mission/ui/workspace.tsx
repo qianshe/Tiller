@@ -1,10 +1,3 @@
-import { sortProjectFileSummaries } from "@tiller/shared";
-import { projectFilesKey } from "../utils/project-files-key";
-import { formatProjectSummaryForDisplay } from "../utils/project-display";
-import { resolveProjectFilesScope } from "../utils/session-derivations";
-import { buildMissionPanelPages, joinClassNames, resolveVisibleProjectFiles, selectMissionPanelPage } from "../utils/session-render-state";
-import { isSessionExecutionPending } from "../utils/session-state";
-import { resolvePendingToolActivity } from "../../logbook/timeline";
 import { MissionChatPane } from "./chat-pane";
 import { MissionComposer } from "./composer";
 import { MissionDisplaySection } from "./display-section";
@@ -13,6 +6,8 @@ import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { ProjectFileList } from "./project-file-list";
 import { MissionSidebar } from "./sidebar";
+import { buildMissionWorkspaceModel } from "./workspace-model";
+import { joinClassNames } from "../utils/session-render-state";
 
 export function MissionWorkspace(props: any) {
   const {
@@ -162,93 +157,31 @@ export function MissionWorkspace(props: any) {
     toggleProjectFileDirectory,
     defaultLogbookVisibleLimit,
   } = props;
-  const canSend = Boolean(
-    (prompt.trim() || promptImages.length) &&
-      socketRef.current &&
-      (activeSessionId ||
-        (selectedProjectId && selectedWorkspaceId && selectedAgentId)) &&
-      (!promptImages.length ||
-        !activeSession ||
-        activeSession.imageInput !== false),
-  );
-  const activeMissionHelm =
-    missionHelms.find((helm: any) => helm.id === effectiveMissionHelmId) ??
-    activeHelm;
-  const activeMissionHelmProjectCount = missionProjects.length;
-  const activeDiffs = activeSession ? (diffs[activeSession.id] ?? []) : [];
-  const activeOutputs = activeSession
-    ? (outputs[activeSession.id] ?? [])
-    : [];
-  const activeToolCalls = activeSession
-    ? (toolCalls[activeSession.id] ?? [])
-    : [];
-  const activeSessionStatus = activeSession
-    ? (statuses[activeSession.id] ?? activeSession.status)
-    : "idle";
-  const pendingToolActivity =
-    activeSession && isSessionExecutionPending(activeSessionStatus)
-      ? resolvePendingToolActivity(activeToolCalls)
-      : null;
-  const missionActivityLoading =
-    activeSession && isSessionExecutionPending(activeSessionStatus)
-      ? (pendingToolActivity ?? {
-          title: "Agent 响应",
-          status: activeSessionStatus,
-        })
-      : null;
-  const missionDiffCount = activeDiffs.length;
-  const missionLogCount = activeToolCalls.length || activeOutputs.length;
-  const missionStatusLabel = activeSession
-    ? copy.status[statuses[activeSession.id] ?? activeSession.status]
-    : "待创建";
-  const missionPanelPages = buildMissionPanelPages(
+  const {
+    canSend,
+    activeMissionHelm,
+    activeDiffs,
+    activeOutputs,
+    activeToolCalls,
+    activeSessionStatus,
+    pendingToolActivity,
+    missionActivityLoading,
     missionDiffCount,
     missionLogCount,
-    customMissionPanelPages,
-  );
-  const selectedMissionPanelPage = selectMissionPanelPage(
+    missionStatusLabel,
     missionPanelPages,
-    selectedMissionPanelPageId,
-  );
-  const projectFilesScope = resolveProjectFilesScope({
-    activeSession,
-    activeSessionProjectId,
-  });
-  const projectFilesEntry =
-    projectFilesScope.projectId && projectFilesScope.workspaceId
-      ? projectFilesByScope[
-          projectFilesKey(
-            projectFilesScope.projectId,
-            projectFilesScope.workspaceId,
-          )
-        ]
-      : undefined;
-  const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(
-    sortProjectFileSummaries,
-  );
-  const overviewProject = activeSessionProject ?? draftProject;
-  const overviewProjectName = overviewProject?.name ?? "未选项目";
-  const overviewWorkspaceName =
-    activeSession?.workspaceName ?? selectedWorkspace?.name ?? "未选择";
-  const overviewAgentName =
-    activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
-  const projectOverviewItems = overviewProject
-    ? [
-        `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
-        `Project · ${overviewProjectName}`,
-        `Workspace · ${overviewWorkspaceName}`,
-        `ACP · ${overviewAgentName}`,
-        overviewProject.path
-          ? `路径 · ${overviewProject.path}`
-          : "路径 · 等待 Helm 返回",
-        `摘要 · ${formatProjectSummaryForDisplay(overviewProject.summary, overviewProjectName)}`,
-      ]
-    : [];
-  const visibleProjectFiles = resolveVisibleProjectFiles(
+    selectedMissionPanelPage,
+    projectFilesScope,
+    projectFilesEntry,
     projectFiles,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
-  );
+    overviewProject,
+    overviewProjectName,
+    overviewWorkspaceName,
+    overviewAgentName,
+    projectOverviewItems,
+    visibleProjectFiles,
+    sessionExecutionPending,
+  } = buildMissionWorkspaceModel(props);
   const renderProjectFileList = () => (
     <ProjectFileList
       activeSessionPresent={Boolean(activeSession)}
@@ -402,9 +335,7 @@ export function MissionWorkspace(props: any) {
             deckPreferences={deckPreferences}
             enhancePromptDraft={enhancePromptDraft}
             promptEnhancerBusy={promptEnhancerBusy}
-            sessionExecutionPending={Boolean(
-              activeSession && isSessionExecutionPending(activeSessionStatus),
-            )}
+            sessionExecutionPending={sessionExecutionPending}
             cancelSession={cancelSession}
             canSend={canSend}
           />{" "}
