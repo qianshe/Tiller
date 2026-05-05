@@ -11,9 +11,6 @@ import {
 } from "react";
 import "highlight.js/styles/github-dark.css";
 import { useDeckStore } from "../store";
-import codexProviderIconUrl from "../shared/assets/provider-icons/codex.svg";
-import claudeProviderIconUrl from "../shared/assets/provider-icons/claude-code.svg";
-import geminiProviderIconUrl from "../shared/assets/provider-icons/gemini.svg";
 import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type {
@@ -144,6 +141,7 @@ import {
 } from "../features/mission/utils/visual-fixture";
 import { OverviewPage } from "../features/overview/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
+import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
 import { MissionDisplayPanel } from "../features/mission/ui/display-panel";
 import { PlainMessages } from "../features/mission/ui/plain-messages";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
@@ -2779,42 +2777,8 @@ export function App() {
       />
     );
   }
-  function resolveMissionAgentInitials(agentName: string) {
-    const words = agentName.match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])/g) ?? [
-      agentName,
-    ];
-    return (
-      words
-        .slice(0, 2)
-        .map((word) => word[0])
-        .join("")
-        .toUpperCase() || "A"
-    );
-  }
-  function resolveMissionAgentIconUrl(agentName: string) {
-    const normalized = agentName.toLowerCase();
-    if (normalized.includes("codex") || normalized.includes("openai")) {
-      return codexProviderIconUrl;
-    }
-    if (normalized.includes("claude") || normalized.includes("anthropic")) {
-      return claudeProviderIconUrl;
-    }
-    if (normalized.includes("gemini")) {
-      return geminiProviderIconUrl;
-    }
-    return null;
-  }
   function renderMissionAgentIcon(agentName: string) {
-    const iconUrl = resolveMissionAgentIconUrl(agentName);
-    if (iconUrl) {
-      return <img src={iconUrl} alt="" aria-hidden="true" />;
-    }
-    return (
-      <span className="mission-tree-agent-initials">
-        {" "}
-        {resolveMissionAgentInitials(agentName)}{" "}
-      </span>
-    );
+    return <MissionAgentIcon agentName={agentName} />;
   }
   function renderOverview() {
     return (
