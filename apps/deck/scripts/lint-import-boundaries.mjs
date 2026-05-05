@@ -17,6 +17,18 @@ const allowedStoreFeatureImports = new Set([
   normalize("features/helm-connection/daemon-profiles"),
   normalize("features/preferences/storage"),
 ]);
+const bannedCrossFeatureInternals = new Set([
+  normalize("utils/agent-model-options-cache"),
+  normalize("utils/agent-identity"),
+  normalize("utils/composer-options"),
+  normalize("utils/project-files-key"),
+  normalize("actions/session-command-actions"),
+  normalize("actions/session-message-actions"),
+  normalize("storage"),
+  normalize("enhancer"),
+  normalize("timeline"),
+  normalize("store"),
+]);
 const allowedBoundaryImports = new Set([
   `${normalize("features/overview/ui/page.tsx")} -> ${normalize("app/routing/routes")}`,
   `${normalize("shared/ui/layout/top-nav.tsx")} -> ${normalize("app/routing/routes")}`,
@@ -65,12 +77,17 @@ for (const file of sourceFiles) {
   const source = readFileSync(file, "utf8");
   const fromRel = normalize(relative(srcRoot, file));
   const fromArea = sourceArea(fromRel);
+  const fromSegments = fromRel.split(sep).filter(Boolean);
+  const fromFeature = fromSegments[0] === "features" ? fromSegments[1] : null;
   for (const match of source.matchAll(importPattern)) {
     const imported = sourceModulePath(file, match[1]);
     if (!imported) {
       continue;
     }
     const importedArea = sourceArea(imported);
+    const importedSegments = imported.split(sep).filter(Boolean);
+    const importedFeature = importedSegments[0] === "features" ? importedSegments[1] : null;
+    const importedInternalPath = normalize(importedSegments.slice(2).join(sep));
     if (allowedBoundaryImports.has(`${fromRel} -> ${imported}`)) {
       continue;
     }
@@ -79,6 +96,16 @@ for (const file of sourceFiles) {
     }
     if (fromArea === "app" && importedArea === "features" && !isFeaturePublicImport(imported)) {
       failures.push(`${fromRel} must import feature public API instead of ${imported}`);
+    }
+    if (
+      fromArea === "features" &&
+      importedArea === "features" &&
+      fromFeature &&
+      importedFeature &&
+      fromFeature !== importedFeature &&
+      bannedCrossFeatureInternals.has(importedInternalPath)
+    ) {
+      failures.push(`${fromRel} must not import cross-feature internal ${imported}; use a facade or public API`);
     }
     if (fromArea === "store" && importedArea === "app") {
       failures.push(`${fromRel} must not import app module ${imported}`);

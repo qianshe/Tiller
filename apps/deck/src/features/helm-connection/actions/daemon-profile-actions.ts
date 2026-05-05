@@ -9,7 +9,7 @@ import {
   DAEMON_PORT_KEY,
 } from "../helm-endpoint";
 import type { ConnectToDaemonOptions } from "../sockets";
-import { slugify } from "../../agents/utils/agent-identity";
+import { slugify } from "../../agents/facade";
 
 type MutableRef<T> = { current: T };
 

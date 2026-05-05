@@ -1,7 +1,9 @@
 // @ts-nocheck
-import { normalizeModelSelection } from "../../mission/utils/composer-options";
-import { useSessionCommandActions } from "../../mission/actions/session-command-actions";
-import { useSessionMessageActions } from "../../mission/actions/session-message-actions";
+import {
+  normalizeModelSelection,
+  useSessionCommandActions,
+  useSessionMessageActions,
+} from "../../mission/facade";
 import { createServerEventController } from "./server-event-controller";
 import { createSocketController } from "./socket-controller";
 

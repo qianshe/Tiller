@@ -4,7 +4,7 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { summarizeSessionContext } from "../../mission/utils/composer-options";
+import { summarizeSessionContext } from "../../mission/facade";
 import {
   enhancePromptWithLlm,
   type PromptEnhancerPreferences,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE } from "../prompt-enhancer/enhancer.js";
+import { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE } from "../prompt-enhancer/facade.js";
 import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,

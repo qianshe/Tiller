@@ -4,7 +4,7 @@ import { formatProjectSummaryForDisplay } from "../utils/project-display";
 import { resolveProjectFilesScope } from "../utils/session-derivations";
 import { buildMissionPanelPages, joinClassNames, resolveVisibleProjectFiles, selectMissionPanelPage } from "../utils/session-render-state";
 import { isSessionExecutionPending } from "../utils/session-state";
-import { resolvePendingToolActivity } from "../../logbook/timeline";
+import { resolvePendingToolActivity } from "../../logbook";
 
 export function buildMissionWorkspaceModel(input: any) {
   const {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useMemo } from "react";
-import { agentModelOptionsKey } from "../../agents/utils/agent-model-options-cache";
+import { agentModelOptionsKey } from "../../agents/facade";
 import { useActiveConversationUpdateKey } from "../hooks/active-conversation-key";
 import { useConfiguredHelms } from "../../helm-connection/utils/configured-helms";
 import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helpers";

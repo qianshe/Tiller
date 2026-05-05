@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useEffect } from "react";
 import { nextRequestId } from "../../helm-connection/request-dispatch";
-import { agentModelOptionsKey } from "../../agents/utils/agent-model-options-cache";
+import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../utils/composer-options";
 import { projectFilesKey } from "../utils/project-files-key";
 import { resolveDraftSelectionId, resolveProjectFilesScope, resolveSessionProjectId } from "../utils/session-derivations";

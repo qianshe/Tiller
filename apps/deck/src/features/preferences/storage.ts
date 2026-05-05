@@ -1,7 +1,7 @@
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   type PromptEnhancerPreferences,
-} from "../prompt-enhancer/enhancer";
+} from "../prompt-enhancer/facade";
 
 export { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE };
 

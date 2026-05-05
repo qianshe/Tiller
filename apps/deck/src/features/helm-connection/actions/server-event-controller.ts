@@ -5,10 +5,13 @@ import { daemonProfileKey } from "../daemon-profiles";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
 import { nextRequestId } from "../request-dispatch";
 import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
-import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/utils/agent-model-options-cache";
-import { mergeToolCallHistory } from "../../logbook/timeline";
-import { resolveModelOptions, resolvePreferredModel } from "../../mission/utils/composer-options";
-import { projectFilesKey } from "../../mission/utils/project-files-key";
+import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/facade";
+import { mergeToolCallHistory } from "../../logbook";
+import {
+  projectFilesKey,
+  resolveModelOptions,
+  resolvePreferredModel,
+} from "../../mission/facade";
 import {
   handleActivityServerEvent,
   handleDeviceServerEvent,

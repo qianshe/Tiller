@@ -1,5 +1,5 @@
 import type { AgentMessage, AgentPromptImageContent } from "@tiller/shared";
-import { mergeMessageHistory } from "../../logbook/timeline";
+import { mergeMessageHistory } from "../../logbook";
 
 type MessageMap = Record<string, AgentMessage[]>;
 
