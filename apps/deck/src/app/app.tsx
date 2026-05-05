@@ -144,6 +144,7 @@ import { SettingsPage } from "../features/settings/ui/page";
 import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
 import { MissionDisplayPanel } from "../features/mission/ui/display-panel";
 import { PlainMessages } from "../features/mission/ui/plain-messages";
+import { ProjectFileList } from "../features/mission/ui/project-file-list";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
 import { MissionComposer } from "../features/mission/ui/composer";
@@ -2764,69 +2765,17 @@ export function App() {
           ),
         );
     });
-    const renderProjectFileList = () => {
-      if (!activeSession) {
-        return <div className="empty-state">选择左侧任务后显示项目文件。</div>;
-      }
-      if (projectFilesEntry?.loading && !projectFiles.length) {
-        return <div className="empty-state">正在加载项目文件...</div>;
-      }
-      if (!projectFiles.length) {
-        return (
-          <div className="empty-state">
-            {" "}
-            {projectFilesEntry?.message || "暂无项目文件"}{" "}
-          </div>
-        );
-      }
-      if (!visibleProjectFiles.length) {
-        return <div className="empty-state">没有匹配的项目文件</div>;
-      }
-      return (
-        <div
-          className="mission-project-file-list"
-          role="tree"
-          aria-label="项目文件列表"
-        >
-          {" "}
-          {visibleProjectFiles.map((file) => {
-            const isDirectory = file.kind === "directory";
-            const collapsed = collapsedProjectFileDirectories.has(file.path);
-            const depth = Math.max(file.path.split("/").length - 1, 0);
-            return (
-              <button
-                key={`${file.kind}:${file.path}`}
-                type="button"
-                className={`mission-project-file-row mission-project-file-${file.kind}`}
-                role="treeitem"
-                aria-expanded={isDirectory ? !collapsed : undefined}
-                title={file.path}
-                style={{ paddingLeft: `${8 + depth * 12}px` }}
-                onClick={() => {
-                  if (isDirectory) {
-                    toggleProjectFileDirectory(file.path);
-                  }
-                }}
-              >
-                {" "}
-                <span className="mission-project-file-caret">
-                  {" "}
-                  {isDirectory ? (collapsed ? "▸" : "▾") : ""}{" "}
-                </span>{" "}
-                <span className="mission-project-file-icon" aria-hidden="true">
-                  {" "}
-                  {isDirectory ? (collapsed ? "📁" : "📂") : "📄"}{" "}
-                </span>{" "}
-                <strong>
-                  {" "}
-                  {file.path.split("/").slice(-1)[0] ?? file.path}{" "}
-                </strong>{" "}
-              </button>
-            );
-          })}{" "}
-        </div>
-      );
-    };
+    const renderProjectFileList = () => (
+      <ProjectFileList
+        activeSessionPresent={Boolean(activeSession)}
+        loading={projectFilesEntry?.loading}
+        message={projectFilesEntry?.message}
+        projectFiles={projectFiles}
+        visibleProjectFiles={visibleProjectFiles}
+        collapsedDirectories={collapsedProjectFileDirectories}
+        onToggleDirectory={toggleProjectFileDirectory}
+      />
+    );
     const renderMissionDisplayPanel = () => (
       <MissionDisplayPanel
         style={missionDisplayPaneStyle}
