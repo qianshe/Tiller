@@ -118,10 +118,8 @@ import { OverviewPage } from "../features/overview/ui/page";
 import { SettingsPage } from "../features/settings/ui/page";
 import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
 import { MissionDisplaySection } from "../features/mission/ui/display-section";
-import { MissionMessageTimeline } from "../features/mission/ui/message-timeline";
+import { MissionChatPane } from "../features/mission/ui/chat-pane";
 import { MissionPaneResizer } from "../features/mission/ui/pane-resizer";
-import { MissionPermissionDrawer } from "../features/mission/ui/permission-drawer";
-import { MissionToolLoading } from "../features/mission/ui/tool-loading";
 import { ProjectFileList } from "../features/mission/ui/project-file-list";
 import { MissionSidebar } from "../features/mission/ui/sidebar";
 import { MissionInspector } from "../features/mission/ui/inspector";
@@ -1874,54 +1872,25 @@ export function App() {
               ) : null
             }
           />{" "}
-          <div className={chatPaneClassName} style={missionChatPaneStyle}>
-            {" "}
-            <div
-              className="chat-main"
-              ref={chatMainRef}
-              onScroll={handleChatMainScroll}
-            >
-              {" "}
-              {pairingState !== "paired" ? (
-                <div className="note-box compact-note mission-session-feedback">
-                  <strong>Helm 未连接</strong>{" "}
-                  <p>
-                    {" "}
-                    任务页会继续展示本地缓存；连接 Helm
-                    后即可刷新项目、任务与文件。{" "}
-                  </p>{" "}
-                </div>
-              ) : null}{" "}
-              {activeSession ? (
-                <>
-                  {" "}
-                  <MissionMessageTimeline
-                    items={activeSessionMessages}
-                    sessionId={activeSession.id}
-                    assistantLabel={activeSession.agentName}
-                    copy={copy}
-                    expandedMessageIds={expandedMessageIds}
-                    historyStateBySession={messageHistoryState}
-                    onLoadOlderMessages={loadOlderMessages}
-                    onToggleExpandedMessage={toggleExpandedMessage}
-                  />{" "}
-                  {missionActivityLoading ? (
-                    <MissionToolLoading
-                      activity={missionActivityLoading}
-                      pendingToolPresent={Boolean(pendingToolActivity)}
-                    />
-                  ) : null}{" "}
-                </>
-              ) : null}{" "}
-            </div>{" "}
-            {activeSession && pendingPermission ? (
-              <MissionPermissionDrawer
-                request={pendingPermission}
-                copy={copy}
-                showWorkspace={technicalPanels.showPermissionWorkspace}
-                onRespond={respondToPermission}
-              />
-            ) : null}
+          <MissionChatPane
+            className={chatPaneClassName}
+            style={missionChatPaneStyle}
+            chatMainRef={chatMainRef}
+            onChatMainScroll={handleChatMainScroll}
+            helmConnected={pairingState === "paired"}
+            activeSession={activeSession}
+            activeSessionMessages={activeSessionMessages}
+            copy={copy}
+            expandedMessageIds={expandedMessageIds}
+            messageHistoryState={messageHistoryState}
+            onLoadOlderMessages={loadOlderMessages}
+            onToggleExpandedMessage={toggleExpandedMessage}
+            activityLoading={missionActivityLoading}
+            pendingToolPresent={Boolean(pendingToolActivity)}
+            pendingPermission={pendingPermission}
+            showPermissionWorkspace={technicalPanels.showPermissionWorkspace}
+            onRespondToPermission={respondToPermission}
+          >
             <MissionComposer
               activeSession={activeSession}
               worktreePickerRef={worktreePickerRef}
@@ -1985,7 +1954,7 @@ export function App() {
               cancelSession={cancelSession}
               canSend={canSend}
             />{" "}
-          </div>{" "}
+          </MissionChatPane>{" "}
           <MissionPaneResizer
             handle="display"
             label="调整任务展示宽度"
