@@ -13,8 +13,8 @@ import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } f
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectToDaemonImpl, type ConnectToDaemonOptions } from "../features/helm-connection/sockets";
 import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../features/helm-connection/request-dispatch";
-import { useSessionCommandActions } from "./use-session-command-actions";
-import { useSessionMessageActions } from "./use-session-message-actions";
+import { useSessionCommandActions } from "./session-command-actions";
+import { useSessionMessageActions } from "./session-message-actions";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../features/helm-connection/helm-endpoint";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
 

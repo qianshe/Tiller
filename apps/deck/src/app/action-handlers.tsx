@@ -2,8 +2,8 @@
 import type { FormEvent } from "react";
 import { daemonProfileKey, type DaemonProfile } from "../features/helm-connection/daemon-profiles";
 import { TrustedDevicesPanel } from "../features/agents/ui/trusted-devices-panel";
-import { useDaemonProfileActions } from "./use-daemon-profile-actions";
-import { useFleetAddHelmActions } from "./use-fleet-add-helm-actions";
+import { useDaemonProfileActions } from "./daemon-profile-actions";
+import { useFleetAddHelmActions } from "./fleet-add-helm-actions";
 import { nextRequestId } from "../features/helm-connection/request-dispatch";
 import { saveDraft as saveDraftImpl, testAgent as testAgentImpl, writeDraftToConfig as writeDraftToConfigImpl } from "../features/agents/actions/config-actions";
 import { AGENT_DRAFT_STORAGE_KEY, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "./constants";

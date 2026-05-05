@@ -14,11 +14,11 @@ import { normalizeModelSelection, resolveCombinedModelValue, resolveModelOptions
 import { projectFilesKey } from "../features/mission/utils/project-files-key";
 import { formatRelativeTime } from "../shared/utils/format-time";
 import { handleActivityServerEvent, handleDeviceServerEvent, handleInventoryServerEvent, handleSessionServerEvent } from "../features/server-events/index";
-import { useRouteView } from "./use-route-view";
-import { useDeckPreferenceActions } from "./use-deck-preference-actions";
-import { usePromptEnhanceAction } from "./use-prompt-enhance-action";
-import { useSessionCommandActions } from "./use-session-command-actions";
-import { useSessionMessageActions } from "./use-session-message-actions";
+import { useRouteView } from "./route-view";
+import { useDeckPreferenceActions } from "./preference-actions";
+import { usePromptEnhanceAction } from "./prompt-enhance-action";
+import { useSessionCommandActions } from "./session-command-actions";
+import { useSessionMessageActions } from "./session-message-actions";
 import { TopNav } from "../shared/ui/layout/top-nav";
 import { createMissionVisualFixture, shouldUseMissionVisualFixture } from "../features/mission/utils/visual-fixture";
 import { MissionAgentIcon } from "../features/mission/ui/agent-icon";
@@ -29,8 +29,8 @@ import { usePanelPages } from "../features/mission/hooks/use-panel-pages";
 import { useSelection, type SessionDraftPreferencePatch } from "../features/mission/hooks/use-selection";
 import { useSessionTitles } from "../features/mission/hooks/use-session-titles";
 import { useSlashCommands } from "../features/mission/hooks/use-slash-commands";
-import { useMissionViewModel } from "./use-mission-view-model";
-import { useMissionEffects } from "./use-mission-effects";
+import { useMissionViewModel } from "./mission-view-model";
+import { useMissionEffects } from "./mission-effects";
 import { usePromptEnhancerSettings } from "../features/prompt-enhancer/hooks/use-settings";
 import { clearTrustedDeviceCache, getOrCreateDeviceId, readTrustedDeviceCache, writeTrustedDeviceCache } from "../features/auth/beacon-cache";
 import { mergeToolCallHistory } from "../features/logbook/timeline";
@@ -39,11 +39,11 @@ import { connectHelmSocket as connectHelmSocketImpl, connectToDaemon as connectT
 import { dispatchWithTrace, nextRequestId, requestInitialSync as requestInitialSyncImpl } from "../features/helm-connection/request-dispatch";
 import { useCodeActions } from "../features/pairing/hooks/use-code-actions";
 import { DECK_DEVICE_NAME, DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, DEFAULT_SESSION_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
-import { useDeckData } from "./use-deck-data";
-import { useAppRuntimeState } from "./use-app-runtime-state";
+import { useDeckData } from "./deck-data";
+import { useAppRuntimeState } from "./runtime-state";
 import { AppRoutes } from "./route-content";
-import { useAppActions } from "./use-app-actions";
-import { useAppControllers } from "./use-app-controllers";
+import { useAppActions } from "./action-handlers";
+import { useAppControllers } from "./controllers";
 export function App() {
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(

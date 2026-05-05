@@ -5,7 +5,7 @@ import { useReconnectEffects } from "../features/helm-connection/hooks/use-recon
 import { usePromptAutosize } from "../features/mission/hooks/use-prompt-autosize";
 import { useSnapshotCache } from "../features/mission/hooks/use-snapshot-cache";
 import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, DEFAULT_MESSAGE_PAGE_LIMIT, IS_EMBEDDED_HELM_DECK } from "./constants";
-import { useMissionSelectionEffects } from "./use-mission-selection-effects";
+import { useMissionSelectionEffects } from "./mission-selection-effects";
 
 export function useMissionEffects(ctx: any) {
   const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.controllers, ...ctx.history, ...ctx };
