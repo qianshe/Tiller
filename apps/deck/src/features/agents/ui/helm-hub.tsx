@@ -1,4 +1,4 @@
-import type { DaemonProfile } from "../../helm-connection/daemon-profiles";
+import type { DaemonProfile } from "../../helm-connection/facade";
 import { resolveHelmConnectionState } from "../utils/fleet-helpers";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";

@@ -4,7 +4,7 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from "react";
-import type { DaemonProfile } from "../../helm-connection/daemon-profiles";
+import type { DaemonProfile } from "../../helm-connection/facade";
 import type { HelmCard } from "./helm-hub";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";

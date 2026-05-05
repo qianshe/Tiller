@@ -4,7 +4,7 @@ import { TrustedDevicesPanel } from "../ui/trusted-devices-panel";
 import { slugify, splitArgs } from "../utils/agent-identity";
 import { useDaemonProfileActions } from "../../helm-connection/actions/daemon-profile-actions";
 import { useFleetAddHelmActions } from "../../helm-connection/actions/fleet-add-helm-actions";
-import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/facade";
 import { useAgentDraftActions } from "./agent-draft-actions";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../../shared/config/deck-runtime";
 

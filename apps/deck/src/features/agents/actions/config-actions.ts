@@ -1,7 +1,7 @@
 import type { FormEvent, MutableRefObject } from "react";
 import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/facade";
 
 type AgentActionCopy = {
   testRunningPrefix: string;

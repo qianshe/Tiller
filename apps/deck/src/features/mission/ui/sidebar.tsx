@@ -15,7 +15,7 @@ import type {
 import {
   daemonProfileKey,
   formatConnectionStatus,
-} from "../../helm-connection/daemon-profiles";
+} from "../../helm-connection/facade";
 import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type MissionSidebarProps = {

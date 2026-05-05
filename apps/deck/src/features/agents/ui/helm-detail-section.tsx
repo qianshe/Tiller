@@ -11,8 +11,10 @@ import type {
   ReactNode,
   SetStateAction,
 } from "react";
-import type { DaemonProfile } from "../../helm-connection/daemon-profiles";
-import { formatConnectionStatus } from "../../helm-connection/daemon-profiles";
+import {
+  formatConnectionStatus,
+  type DaemonProfile,
+} from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
   AgentInventorySection,

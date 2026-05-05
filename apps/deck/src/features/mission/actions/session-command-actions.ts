@@ -14,7 +14,7 @@ import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { nextRequestId } from "../../helm-connection/request-dispatch";
+import { nextRequestId } from "../../helm-connection/facade";
 import { toast } from "../../toast";
 import {
   createSession as createSessionImpl,

@@ -24,6 +24,8 @@ const bannedCrossFeatureInternals = new Set([
   normalize("utils/project-files-key"),
   normalize("actions/session-command-actions"),
   normalize("actions/session-message-actions"),
+  normalize("daemon-profiles"),
+  normalize("request-dispatch"),
   normalize("storage"),
   normalize("enhancer"),
   normalize("timeline"),

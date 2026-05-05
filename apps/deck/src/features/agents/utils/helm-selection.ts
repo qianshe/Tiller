@@ -9,7 +9,7 @@ import type {
 import {
   daemonProfileKey,
   type DaemonProfile,
-} from "../../helm-connection/daemon-profiles";
+} from "../../helm-connection/facade";
 import {
   dedupeHelmCards,
   resolveHelmConnectionState,

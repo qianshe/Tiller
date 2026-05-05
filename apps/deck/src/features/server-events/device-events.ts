@@ -2,7 +2,7 @@ import type { MutableRefObject } from "react";
 import type { HelmToClient } from "@tiller/sync-protocol";
 import type { TrustedDeviceSummary } from "@tiller/shared";
 import type { TrustedDeviceCache } from "../auth/beacon-cache";
-import type { DaemonProfile } from "../helm-connection/daemon-profiles";
+import type { DaemonProfile } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 
 type FleetAddHelmStage = "connect" | "connecting" | "pair";

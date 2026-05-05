@@ -12,7 +12,7 @@ import type {
   TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { DaemonProfile } from "../../helm-connection/daemon-profiles";
+import type { DaemonProfile } from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
 import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
