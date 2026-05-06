@@ -7,4 +7,9 @@ export {
   readDaemonProfiles,
   type DaemonProfile,
 } from "./daemon-profiles";
-export { dispatchWithTrace, nextRequestId, requestInitialSync } from "./request-dispatch";
+export {
+  dispatchWithTrace,
+  requestInitialSync,
+  type DispatchToHelm,
+} from "./request-dispatch";
+export { DeckRpcClient } from "./rpc-client";

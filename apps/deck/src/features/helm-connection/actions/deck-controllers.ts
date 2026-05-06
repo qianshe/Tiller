@@ -22,6 +22,7 @@ export function useAppControllers(ctx: any) {
     prompt,
     promptImages,
     socketRef,
+    rpcClientRef,
     setImagePasteNotice,
     activeSessionId,
     selectedProjectId,
@@ -66,9 +67,11 @@ export function useAppControllers(ctx: any) {
       shouldAutoStartSessionResume(...args),
   });
 
-  const socketController = createSocketController(source, (...args) =>
-    serverEventController.handleServerEvent(...args),
-  );
+  const socketController = createSocketController(source, {
+    handleServerEvent: (...args) => serverEventController.handleServerEvent(...args),
+    handleRpcResult: (...args) => serverEventController.handleRpcResult(...args),
+    handleRpcNotification: (...args) => serverEventController.handleRpcNotification(...args),
+  });
   dispatch = socketController.dispatch;
   requestInitialSync = socketController.requestInitialSync;
 
@@ -76,6 +79,7 @@ export function useAppControllers(ctx: any) {
     prompt,
     promptImages,
     socketRef,
+    rpcClientRef,
     setImagePasteNotice,
     activeSessionId,
     selectedProjectId,
@@ -87,7 +91,7 @@ export function useAppControllers(ctx: any) {
     pendingPromptRef,
     pendingPromptContentRef,
     dispatch: socketController.dispatch,
-    requestCounter: source.requestCounter,
+
     effectiveDraftAgentMode,
     normalizeModelSelection,
     selectedModel,

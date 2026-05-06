@@ -31,6 +31,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     resolveDisplaySessionTitle,
     formatRelativeTime,
     socketRef,
+    rpcClientRef,
     helmConnectionStates,
     pairingState,
     technicalPanels,
@@ -41,6 +42,8 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     helmInventories,
     trustedDevices,
     helmSocketRefs,
+    helmRpcClientRefs,
+    dispatch,
     configuredHelms,
     fleetAddHelmStage,
     fleetAddHelmModalOpen,
@@ -139,7 +142,10 @@ function renderAgents() {
       agents={agents}
       workspaces={workspaces}
       socketRef={socketRef}
+      rpcClientRef={rpcClientRef}
       helmSocketRefs={helmSocketRefs}
+      helmRpcClientRefs={helmRpcClientRefs}
+      dispatch={dispatch}
       configuredHelms={configuredHelms}
       fleetAddHelmStage={fleetAddHelmStage}
       fleetAddHelmModalOpen={fleetAddHelmModalOpen}

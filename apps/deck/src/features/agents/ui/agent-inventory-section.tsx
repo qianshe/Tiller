@@ -1,29 +1,30 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { dispatch, nextRequestId, slugify } from "../utils/fleet-helpers";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import { slugify } from "../utils/fleet-helpers";
 
 export type FleetAgentDraft = { name: string; command: string; args: string[] };
 
 type AgentInventorySectionProps = {
   connected: boolean;
+  dispatch: DispatchToHelm;
   draft: FleetAgentDraft;
   emptyLabel: string;
   formOpen: boolean;
-  requestCounter: MutableRefObject<number>;
   selectedHelmAgents: AcpAgentProvider[];
-  selectedHelmSocket: WebSocket | null;
+  selectedHelmRpcClient: DeckRpcClient | null;
   setDraft: Dispatch<SetStateAction<FleetAgentDraft>>;
   setFormOpen: Dispatch<SetStateAction<boolean>>;
 };
 
 export function AgentInventorySection({
   connected,
+  dispatch,
   draft,
   emptyLabel,
   formOpen,
-  requestCounter,
   selectedHelmAgents,
-  selectedHelmSocket,
+  selectedHelmRpcClient,
   setDraft,
   setFormOpen,
 }: AgentInventorySectionProps) {
@@ -49,16 +50,14 @@ export function AgentInventorySection({
           className="helm-inline-add-form helm-inline-add-form-agent"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!selectedHelmSocket || !draft.command.trim()) {
+            if (!selectedHelmRpcClient || !draft.command.trim()) {
               return;
             }
             const providerId = slugify(draft.name || draft.command);
             const agentArgs = draft.args
               .map((item) => item.trim())
               .filter(Boolean);
-            dispatch(selectedHelmSocket, {
-              type: "agent.save",
-              requestId: nextRequestId(requestCounter),
+            void dispatch(selectedHelmRpcClient, "agent/save", {
               provider: {
                 id: providerId,
                 name: draft.name.trim() || providerId,

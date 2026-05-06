@@ -1,7 +1,6 @@
 import type { FormEvent, MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { nextRequestId } from "../../helm-connection/facade";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 
 type AgentActionCopy = {
   testRunningPrefix: string;
@@ -15,17 +14,14 @@ type AgentDraft = {
   args: string;
 };
 
-type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
-
 type TestAgentContext = {
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
   agents: AcpAgentProvider[];
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   setAgentTestResult: (value: string) => void;
   copy: Pick<AgentActionCopy, "testRunningPrefix">;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
 };
 
 type SaveDraftContext = {
@@ -36,42 +32,42 @@ type SaveDraftContext = {
 };
 
 type WriteDraftContext = {
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   slugify: (value: string) => string;
   agentDraft: AgentDraft;
   setConfigSaveMessage: (value: string) => void;
   copy: Pick<AgentActionCopy, "writingConfig">;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
   splitArgs: (value: string) => string[];
 };
+
+function getOpenClient(ref: MutableRefObject<DeckRpcClient | null>) {
+  const client = ref.current;
+  return client?.socket.readyState === WebSocket.OPEN ? client : null;
+}
 
 export function testAgent(context: TestAgentContext) {
   const {
     selectedAgentId,
     filteredAgents,
     agents,
-    socketRef,
+    rpcClientRef,
     setAgentTestResult,
     copy,
     dispatch,
-    requestCounter,
   } = context;
 
   const agentId = selectedAgentId || filteredAgents[0]?.id;
   const agent =
     filteredAgents.find((item) => item.id === agentId) ??
     agents.find((item) => item.id === agentId);
-  if (!agent || !socketRef.current) {
+  const client = getOpenClient(rpcClientRef);
+  if (!agent || !client) {
     return;
   }
 
   setAgentTestResult(`${copy.testRunningPrefix} ${agent.name}...`);
-  dispatch(socketRef.current, {
-    type: "agent.test",
-    requestId: nextRequestId(requestCounter),
-    providerId: agent.id,
-  });
+  void dispatch(client, "agent/test", { providerId: agent.id });
 }
 
 export function saveDraft(event: FormEvent<HTMLFormElement>, context: SaveDraftContext) {
@@ -86,17 +82,17 @@ export function saveDraft(event: FormEvent<HTMLFormElement>, context: SaveDraftC
 
 export function writeDraftToConfig(context: WriteDraftContext) {
   const {
-    socketRef,
+    rpcClientRef,
     slugify,
     agentDraft,
     setConfigSaveMessage,
     copy,
     dispatch,
-    requestCounter,
     splitArgs,
   } = context;
 
-  if (!socketRef.current) {
+  const client = getOpenClient(rpcClientRef);
+  if (!client) {
     return;
   }
 
@@ -104,9 +100,7 @@ export function writeDraftToConfig(context: WriteDraftContext) {
     agentDraft.name || agentDraft.command || "custom-agent",
   );
   setConfigSaveMessage(copy.writingConfig);
-  dispatch(socketRef.current, {
-    type: "agent.save",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(client, "agent/save", {
     provider: {
       id: providerId,
       name: agentDraft.name || providerId,

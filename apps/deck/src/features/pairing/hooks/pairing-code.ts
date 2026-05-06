@@ -1,5 +1,5 @@
 import type { FormEvent, MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type { DebugTrace, PairingState } from "../../../store/facade";
 import {
   handlePairingKeyDown as handlePairingKeyDownImpl,
@@ -10,7 +10,7 @@ import {
 } from "../actions/code-actions";
 
 type UseCodeActionsOptions = {
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   pairingCodeInput: string;
   setPairingCodeInput: (value: string) => void;
   pairInputRefs: MutableRefObject<Array<HTMLInputElement | null>>;
@@ -18,8 +18,7 @@ type UseCodeActionsOptions = {
   setPairingState: (state: PairingState) => void;
   setPairingFeedback: (value: string) => void;
   setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void;
-  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
-  requestCounter: MutableRefObject<number>;
+  dispatch: DispatchToHelm;
   deckDeviceId: string;
   deckDeviceName: string;
 };
@@ -28,7 +27,7 @@ type UseCodeActionsOptions = {
  * Binds pairing code UI callbacks to the shared pairing action functions.
  */
 export function useCodeActions({
-  socketRef,
+  rpcClientRef,
   pairingCodeInput,
   setPairingCodeInput,
   pairInputRefs,
@@ -37,7 +36,6 @@ export function useCodeActions({
   setPairingFeedback,
   setDebugTrace,
   dispatch,
-  requestCounter,
   deckDeviceId,
   deckDeviceName,
 }: UseCodeActionsOptions) {
@@ -67,12 +65,11 @@ export function useCodeActions({
 
   function sendPairingRequest() {
     sendPairingRequestImpl({
-      socketRef,
+      rpcClientRef,
       pairingCodeInput,
       setPairingFeedback,
       setDebugTrace,
       dispatch,
-      requestCounter,
       deckDeviceId,
       deckDeviceName,
       setPairingState,

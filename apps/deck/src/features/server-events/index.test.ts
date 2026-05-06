@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type {
   AgentMessage,
   AgentToolCall,
@@ -9,10 +8,10 @@ import type {
   TrustedDeviceSummary,
 } from "@tiller/shared";
 import { useDeckStore } from "../../store";
-import { handleActivityServerEvent } from "./activity-events.js";
-import { handleDeviceServerEvent } from "./device-events.js";
-import { handleInventoryServerEvent } from "./inventory-events.js";
-import { handleSessionServerEvent } from "./session-events.js";
+import { applyActivityUpdate } from "./activity-events.js";
+import { applyDeviceResult } from "./device-events.js";
+import { applyInventoryResult } from "./inventory-events.js";
+import { applySessionResult } from "./session-events.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -52,7 +51,7 @@ function resetStore() {
   });
 }
 
-test("activity events append assistant messages and update session metadata", () => {
+test("activity RPC notifications append assistant messages and update session metadata", () => {
   resetStore();
   useDeckStore.setState({ sessions: [session("s1")] });
   const message: AgentMessage = {
@@ -62,8 +61,8 @@ test("activity events append assistant messages and update session metadata", ()
     timestamp: "2026-05-04T01:00:00.000Z",
   };
 
-  const handled = handleActivityServerEvent(
-    { type: "agent.message", sessionId: "s1", message },
+  const handled = applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message } },
     {
       toolCallsRef: { current: {} },
       mergeSessionToolCalls: () => undefined,
@@ -76,7 +75,7 @@ test("activity events append assistant messages and update session metadata", ()
   assert.equal(useDeckStore.getState().sessions[0]?.messageCount, 1);
 });
 
-test("device events sync trusted device inventory for the current helm", () => {
+test("device RPC results sync trusted device inventory for the current helm", () => {
   resetStore();
   const device: TrustedDeviceSummary = {
     deviceId: "deck-1",
@@ -87,8 +86,9 @@ test("device events sync trusted device inventory for the current helm", () => {
     expiresAt: "2026-05-05T00:00:00.000Z",
   };
 
-  const handled = handleDeviceServerEvent(
-    { type: "device.list.result", requestId: "r1", devices: [device] },
+  const handled = applyDeviceResult(
+    "device/list",
+    { devices: [device] },
     "127.0.0.1:47631",
     {
       primaryHelmKeyRef: { current: "127.0.0.1:47631" },
@@ -107,7 +107,7 @@ test("device events sync trusted device inventory for the current helm", () => {
       setFleetAddHelmModalOpen: () => undefined,
       setFleetAddHelmStage: () => undefined,
       autoConnectAttemptRef: { current: null },
-      socketRef: { current: null },
+      rpcClientRef: { current: null },
       requestInitialSync: () => undefined,
       readTrustedDeviceCache: () => null,
       clearTrustedDeviceCache: () => undefined,
@@ -118,25 +118,20 @@ test("device events sync trusted device inventory for the current helm", () => {
   assert.equal(useDeckStore.getState().trustedDevices[0]?.deviceId, "deck-1");
 });
 
-test("inventory events hydrate projects for the current helm", () => {
+test("inventory RPC results hydrate projects for the current helm", () => {
   resetStore();
-  const handled = handleInventoryServerEvent(
-    {
-      type: "project.list.result",
-      requestId: "r1",
-      projects: [{ id: "p1", name: "Project", helmId: "h1" }],
-    },
+  const handled = applyInventoryResult(
+    "project/list",
+    { projects: [{ id: "p1", name: "Project", helmId: "h1" }] },
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) =>
-        `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
       setProjectFilesByScope: () => undefined,
       setSelectedWorkspaceId: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) =>
-        `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
       writeAgentModelOptionsCache: () => undefined,
       selectedAgentId: null,
       selectedWorkspaceId: null,
@@ -149,11 +144,9 @@ test("inventory events hydrate projects for the current helm", () => {
       setConfigSaveMessage: () => undefined,
       setFleetProjectSaveMessage: () => undefined,
       setSelectedProjectId: () => undefined,
-      socketRef: { current: null },
-      helmSocketRefs: { current: new Map() },
-      dispatch: () => undefined,
-      nextRequestId: () => "r2",
-      requestCounter: { current: 0 },
+      rpcClientRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async () => undefined,
     },
   );
 
@@ -161,22 +154,19 @@ test("inventory events hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
-test("session events apply session list results and prune scoped maps", () => {
+test("session RPC results apply session list results and prune scoped maps", () => {
   resetStore();
   useDeckStore.setState({
-    messages: {
-      stale: [{ id: "m", role: "assistant", text: "old", timestamp: "t" }],
-    },
+    messages: { stale: [{ id: "m", role: "assistant", text: "old", timestamp: "t" }] },
   });
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
     current: { stale: [] },
   };
-  const dispatched: ClientToHelm[] = [];
+  const dispatched: string[] = [];
 
-  const handled = handleSessionServerEvent(
+  const handled = applySessionResult(
+    "session/list",
     {
-      type: "session.list.result",
-      requestId: "r1",
       sessions: [session("s1")],
       hasMore: false,
     },
@@ -186,15 +176,13 @@ test("session events apply session list results and prune scoped maps", () => {
       setSelectedProjectId: () => undefined,
       pendingPromptRef: { current: null },
       pendingPromptContentRef: { current: undefined },
-      socketRef: { current: null },
+      rpcClientRef: { current: null },
       assignSessionTitleFromPrompt: () => undefined,
       createClientUserMessageId: () => "m1",
       appendUserMessage: () => undefined,
-      dispatch: (_socket, payload) => {
-        dispatched.push(payload);
+      dispatch: async (_client, method) => {
+        dispatched.push(method);
       },
-      nextRequestId: () => "r2",
-      requestCounter: { current: 0 },
       toolCallsRef,
       mergeSessionToolCalls: () => undefined,
       shouldAutoStartSessionResume: () => false,

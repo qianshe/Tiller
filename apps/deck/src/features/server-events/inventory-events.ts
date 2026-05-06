@@ -1,5 +1,4 @@
 import type { MutableRefObject } from "react";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AcpModelOption,
   ProjectFileSummary,
@@ -8,6 +7,7 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import type { AgentModelOptionsEntry } from "../agents/facade";
+import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 
 type StoreUpdater<T> = T | ((current: T) => T);
@@ -18,7 +18,7 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
-type InventoryServerEventContext = {
+export type InventoryServerEventContext = {
   projectFilesKey: (projectId: string, workspaceId?: string) => string;
   setProjectFilesByScope: StoreSetter<Record<string, ProjectFilesEntry>>;
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
@@ -46,19 +46,19 @@ type InventoryServerEventContext = {
   setConfigSaveMessage: (message: string) => void;
   setFleetProjectSaveMessage: (message: string) => void;
   setSelectedProjectId: (projectId: string | null) => void;
-  socketRef: MutableRefObject<WebSocket | null>;
-  helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
-  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
-  nextRequestId: (counter: MutableRefObject<number>) => string;
-  requestCounter: MutableRefObject<number>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
+  helmRpcClientRefs: MutableRefObject<Map<string, DeckRpcClient>>;
+  dispatch: DispatchToHelm;
 };
 
-export function handleInventoryServerEvent(
-  payload: HelmToClient,
+export function applyInventoryResult(
+  method: string,
+  result: unknown,
   sourceHelmKey: string,
   sourceIsCurrentHelm: boolean,
   context: InventoryServerEventContext,
 ) {
+  const payload = result as Record<string, any>;
   const {
     projectFilesKey,
     setProjectFilesByScope,
@@ -78,25 +78,23 @@ export function handleInventoryServerEvent(
     setConfigSaveMessage,
     setFleetProjectSaveMessage,
     setSelectedProjectId,
-    socketRef,
-    helmSocketRefs,
+    rpcClientRef,
+    helmRpcClientRefs,
     dispatch,
-    nextRequestId,
-    requestCounter,
   } = context;
   const store = useDeckStore.getState();
 
-  switch (payload.type) {
-    case "helm.list.result":
+  switch (method) {
+    case "helm/list":
       store.setHelms(payload.helms);
       return true;
-    case "project.list.result":
+    case "project/list":
       store.applyHelmInventory(sourceHelmKey, { projects: payload.projects });
       if (sourceIsCurrentHelm) {
         store.setProjects(payload.projects);
       }
       return true;
-    case "project.files.result": {
+    case "project/list_files": {
       const key = projectFilesKey(payload.projectId, payload.workspaceId);
       setProjectFilesByScope((current) => ({
         ...current,
@@ -108,13 +106,14 @@ export function handleInventoryServerEvent(
       }));
       return true;
     }
-    case "workspace.list.result":
+    case "workspace/list":
       store.applyHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
       if (sourceIsCurrentHelm) {
         store.setWorkspaces(payload.workspaces);
       }
       return true;
-    case "workspace.git.result":
+    case "workspace/git/list_branches":
+    case "workspace/git/create_branch":
       store.setWorktreeGitByProject((current) => ({
         ...current,
         [payload.projectId]: {
@@ -129,7 +128,7 @@ export function handleInventoryServerEvent(
           const nextById = new Map(
             current.map((workspace) => [workspace.id, workspace]),
           );
-          payload.workspaces.forEach((workspace) =>
+          payload.workspaces.forEach((workspace: WorkspaceSummary) =>
             nextById.set(workspace.id, workspace),
           );
           return Array.from(nextById.values());
@@ -140,16 +139,16 @@ export function handleInventoryServerEvent(
         setWorktreePickerOpen(false);
       }
       return true;
-    case "agent.list.result":
+    case "agent/list":
       store.applyHelmInventory(sourceHelmKey, { agents: payload.agents });
       if (sourceIsCurrentHelm) {
         store.setAgents(payload.agents);
       }
       return true;
-    case "agent.test.result":
+    case "agent/test":
       setAgentTestResult(payload.message);
       return true;
-    case "agent.model.options.result": {
+    case "agent/get_model_options": {
       const key = agentModelOptionsKey(payload.providerId, payload.workspaceId);
       const nextEntry = {
         loading: false,
@@ -176,7 +175,7 @@ export function handleInventoryServerEvent(
         const allOptions = Array.from(
           new Set([
             ...realOptions,
-            ...payload.modelOptions.map((option) => option.id),
+            ...payload.modelOptions.map((option: AcpModelOption) => option.id),
           ]),
         );
         const nextModel = resolvePreferredModel(
@@ -200,30 +199,28 @@ export function handleInventoryServerEvent(
       }
       return true;
     }
-    case "project.save.result":
+    case "project/save":
       setConfigSaveMessage(payload.message);
       setFleetProjectSaveMessage(payload.message);
       if (sourceIsCurrentHelm) {
         setSelectedProjectId(payload.projectId);
       }
       return true;
-    case "agent.save.result": {
+    case "agent/save": {
       setConfigSaveMessage(payload.message);
-      const refreshSocket = sourceIsCurrentHelm
-        ? socketRef.current
-        : (helmSocketRefs.current.get(sourceHelmKey) ?? null);
-      if (refreshSocket?.readyState === WebSocket.OPEN) {
-        dispatch(refreshSocket, {
-          type: "agent.list",
-          requestId: nextRequestId(requestCounter),
-        });
-        dispatch(refreshSocket, {
-          type: "project.list",
-          requestId: nextRequestId(requestCounter),
-        });
+      const refreshClient = sourceIsCurrentHelm
+        ? rpcClientRef.current
+        : (helmRpcClientRefs.current.get(sourceHelmKey) ?? null);
+      if (refreshClient?.socket.readyState === WebSocket.OPEN) {
+        void dispatch(refreshClient, "agent/list", {});
+        void dispatch(refreshClient, "project/list", {});
       }
       return true;
     }
+    case "helm/save":
+    case "workspace/save":
+      setConfigSaveMessage(payload.message);
+      return true;
     default:
       return false;
   }

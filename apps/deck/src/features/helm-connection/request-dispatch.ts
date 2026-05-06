@@ -1,30 +1,37 @@
-import type { MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { DebugTrace } from "../../store/facade";
+import type { DeckRpcClient } from "./rpc-client";
 
-export function nextRequestId(counter: MutableRefObject<number>) {
-  counter.current += 1;
-  return `req-${counter.current}`;
-}
+export type DispatchToHelm = (
+  client: DeckRpcClient,
+  method: string,
+  params: unknown,
+  options?: { onResult?: (method: string, result: unknown) => void },
+) => Promise<void>;
 
-export function dispatchWithTrace(
-  socket: WebSocket,
-  payload: ClientToHelm,
+export async function dispatchWithTrace(
+  client: DeckRpcClient,
+  method: string,
+  params: unknown,
   setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void,
+  onResult?: (method: string, result: unknown) => void,
 ) {
-  socket.send(JSON.stringify(payload));
   setDebugTrace((current) => ({
     ...current,
     requestsSent: current.requestsSent + 1,
-    lastRequestType: payload.type,
+    lastRequestType: method,
   }));
+  if (method === "session/cancel") {
+    client.notify(method, params);
+    return;
+  }
+  const result = await client.request(method, params);
+  onResult?.(method, result);
 }
 
-export function requestInitialSync(
-  socket: WebSocket,
+export async function requestInitialSync(
+  client: DeckRpcClient,
   context: {
-    dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
-    requestCounter: MutableRefObject<number>;
+    dispatch: DispatchToHelm;
     setSessionHistoryState: (state: {
       nextCursor?: string;
       hasMore: boolean;
@@ -33,32 +40,12 @@ export function requestInitialSync(
     sessionPageLimit: number;
   },
 ) {
-  const { dispatch, requestCounter, setSessionHistoryState, sessionPageLimit } =
-    context;
-  dispatch(socket, {
-    type: "helm.list",
-    requestId: nextRequestId(requestCounter),
-  });
-  dispatch(socket, {
-    type: "project.list",
-    requestId: nextRequestId(requestCounter),
-  });
-  dispatch(socket, {
-    type: "workspace.list",
-    requestId: nextRequestId(requestCounter),
-  });
-  dispatch(socket, {
-    type: "agent.list",
-    requestId: nextRequestId(requestCounter),
-  });
+  const { dispatch, setSessionHistoryState, sessionPageLimit } = context;
+  await dispatch(client, "helm/list", {});
+  await dispatch(client, "project/list", {});
+  await dispatch(client, "workspace/list", {});
+  await dispatch(client, "agent/list", {});
   setSessionHistoryState({ hasMore: false, loading: true });
-  dispatch(socket, {
-    type: "session.list",
-    requestId: nextRequestId(requestCounter),
-    limit: sessionPageLimit,
-  });
-  dispatch(socket, {
-    type: "device.list",
-    requestId: nextRequestId(requestCounter),
-  });
+  await dispatch(client, "session/list", { limit: sessionPageLimit });
+  await dispatch(client, "device/list", {});
 }

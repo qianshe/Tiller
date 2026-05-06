@@ -12,7 +12,6 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { HelmToClient } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
@@ -22,6 +21,7 @@ import {
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
+import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
 
@@ -62,7 +62,7 @@ type SessionServicesOptions = {
   getProjects: () => ProjectSummary[];
   getWorkspaces: () => WorkspaceSummary[];
   createHandlerContext: () => HelmHandlerContext;
-  broadcastAuthenticated: (payload: HelmToClient) => void;
+  broadcastNotification: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
   logError: (message: string) => void;
 };
@@ -368,9 +368,8 @@ export function createSessionServices(options: SessionServicesOptions) {
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
     const diffs = await hydrateDiffsFromWorkspaceGit(sessionId, files);
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
-    options.broadcastAuthenticated({
-      type: "diff.update",
-      sessionId,
+    broadcastSessionUpdate(options.createHandlerContext(), sessionId, {
+      kind: "diff_update",
       files: diffs,
     });
   }

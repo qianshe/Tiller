@@ -53,3 +53,4 @@ output/
 .tmp/
 tmd/
 .rule/
+.agent-issues/

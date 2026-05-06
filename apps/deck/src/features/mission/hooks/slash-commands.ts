@@ -134,12 +134,12 @@ export function useSlashCommands({
   }
 
   return {
-    wrapperRef,
-    popupOpen,
-    filteredCommands,
-    selectedIndex,
-    setSelectedIndex,
-    applyCommand,
-    handlePromptKeyDown,
+    slashWrapperRef: wrapperRef,
+    slashPopupOpen: popupOpen,
+    filteredSlashCommands: filteredCommands,
+    slashSelectedIndex: selectedIndex,
+    setSlashSelectedIndex: setSelectedIndex,
+    applySlashCommand: applyCommand,
+    handleMissionPromptKeyDown: handlePromptKeyDown,
   };
 }

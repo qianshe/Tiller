@@ -17,7 +17,7 @@ import {
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
 import { createAcpRuntime, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
   type AcpAgentProvider,
@@ -43,9 +43,8 @@ import {
 } from "./sessions/facade";
 import { createTrustedDeviceStore } from "./auth/beacon-store";
 import { createSocketAuthenticator } from "./auth/socket-auth";
-import { handleConfigMessage } from "./handlers/config/legacy";
-import { handleDeviceMessage } from "./handlers/devices";
-import { handleSessionMessage } from "./handlers/sessions/legacy";
+import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
+import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
@@ -127,7 +126,7 @@ const sessionServices = createSessionServices({
   getProjects: () => projects,
   getWorkspaces: () => workspaces,
   createHandlerContext,
-  broadcastAuthenticated,
+  broadcastNotification,
   logInfo,
   logError,
 });
@@ -167,8 +166,7 @@ const beginAuthenticationFlow = createSocketAuthenticator({
   trustedDeviceStore,
   pairingState,
   showPairingCode,
-  reply,
-  handleMessage,
+  attachRpcConnection,
   logInfo,
   logError,
 });
@@ -245,18 +243,27 @@ process.on("unhandledRejection", (reason) => {
   );
 });
 
-async function handleMessage(socket: WebSocket, payload: ClientToHelm) {
-  const context = createHandlerContext();
-  if (await handleDeviceMessage(socket, payload, context)) return;
-  if (await handleConfigMessage(socket, payload, context)) return;
-  if (await handleSessionMessage(socket, payload, context)) return;
+function attachRpcConnection(socket: WebSocket) {
+  const stream = createWebSocketJsonRpcStream(socket, (error) => {
+    logError(`[tiller] json-rpc decode failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  const connection = new JsonRpcConnection(stream, {
+    onRequest: (method, params) => handleHelmRpcRequest(method, params, createHandlerContext()),
+    onNotification: (method, params) => handleHelmRpcNotification(method, params, createHandlerContext()),
+    onError: (error) => {
+      logError(`[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+  socket.once("close", () => {
+    connection.close();
+  });
 }
 
 function createHandlerContext(): HelmHandlerContext {
   return {
     configPath,
-    emit,
-    broadcastAuthenticated,
+    notify,
+    broadcastNotification,
     logInfo,
     logDebug,
     logWarn,
@@ -376,11 +383,12 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
     state: configState,
   };
 }
-function emit(socket: WebSocket, payload: HelmToClient) {
+
+function notify(socket: WebSocket, method: string, params: unknown) {
   if (socket.readyState !== 1) {
     return;
   }
-  socket.send(JSON.stringify(payload));
+  socket.send(encodeMessage({ jsonrpc: "2.0", method, params }));
 }
 
 function toTrustedDeviceSummary(
@@ -396,13 +404,10 @@ function toTrustedDeviceSummary(
   };
 }
 
-function reply(socket: WebSocket, payload: HelmToClient) {
-  emit(socket, payload);
-}
 
-function broadcastAuthenticated(payload: HelmToClient) {
+function broadcastNotification(method: string, params: unknown) {
   for (const record of authenticatedSockets.listAll()) {
-    emit(record.socket, payload);
+    notify(record.socket, method, params);
   }
 }
 

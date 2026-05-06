@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import {
   handlePairingKeyDown,
   pastePairingDigits,
@@ -79,11 +78,12 @@ test("pairing backspace moves focus to the previous empty input", () => {
 
 test("sendPairingRequest sends a device.pair payload for six-character codes", () => {
   const socket = { readyState: WebSocket.OPEN } as WebSocket;
+  const client = { socket };
   let feedback = "";
-  const sent: ClientToHelm[] = [];
+  const sent: Array<{ method: string; params: unknown }> = [];
 
   sendPairingRequest({
-    socketRef: { current: socket },
+    rpcClientRef: { current: client } as any,
     pairingCodeInput: "abc123",
     setPairingFeedback: (value) => {
       feedback = value;
@@ -91,15 +91,14 @@ test("sendPairingRequest sends a device.pair payload for six-character codes", (
     setDebugTrace: (updater) => {
       updater({ connectClicks: 0, pairClicks: 0, requestsSent: 0, lastRequestType: "none" });
     },
-    dispatch: (_socket, payload) => {
-      sent.push(payload);
+    dispatch: async (_client, method, params) => {
+      sent.push({ method, params });
     },
-    requestCounter: { current: 0 },
     deckDeviceId: "device-1",
     deckDeviceName: "Deck",
     setPairingState: () => undefined,
   });
 
   assert.equal(feedback, "正在发送配对请求：ABC123...");
-  assert.equal(sent[0]?.type, "device.pair");
+  assert.equal(sent[0]?.method, "device/pair");
 });

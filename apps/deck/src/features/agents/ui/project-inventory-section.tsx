@@ -1,14 +1,13 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type {
   AcpAgentProvider,
   ProjectSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import {
   createProjectId,
   defaultAgentId,
-  dispatch,
-  nextRequestId,
   resolveProjectDisplayId,
   resolveProjectWorkspaceLabel,
 } from "../utils/fleet-helpers";
@@ -17,13 +16,13 @@ export type FleetProjectDraft = { name: string; path: string };
 
 type ProjectInventorySectionProps = {
   connected: boolean;
+  dispatch: DispatchToHelm;
   draft: FleetProjectDraft;
   formOpen: boolean;
-  requestCounter: MutableRefObject<number>;
   selectedHelmAgents: AcpAgentProvider[];
   selectedHelmId: string;
   selectedHelmProjects: ProjectSummary[];
-  selectedHelmSocket: WebSocket | null;
+  selectedHelmRpcClient: DeckRpcClient | null;
   selectedHelmWorkspaces: WorkspaceSummary[];
   setDraft: Dispatch<SetStateAction<FleetProjectDraft>>;
   setFormOpen: Dispatch<SetStateAction<boolean>>;
@@ -32,13 +31,13 @@ type ProjectInventorySectionProps = {
 
 export function ProjectInventorySection({
   connected,
+  dispatch,
   draft,
   formOpen,
-  requestCounter,
   selectedHelmAgents,
   selectedHelmId,
   selectedHelmProjects,
-  selectedHelmSocket,
+  selectedHelmRpcClient,
   selectedHelmWorkspaces,
   setDraft,
   setFormOpen,
@@ -64,7 +63,7 @@ export function ProjectInventorySection({
           className="helm-inline-add-form helm-inline-add-form-project"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!selectedHelmSocket || !draft.path.trim()) {
+            if (!selectedHelmRpcClient || !draft.path.trim()) {
               return;
             }
             const projectPath = draft.path.trim().replace(/\\/g, "/");
@@ -74,9 +73,7 @@ export function ProjectInventorySection({
             const projectId = createProjectId(selectedHelmProjects);
             const workspaceId = `${projectId}-workspace`;
             setSaveMessage(`正在保存项目：${projectName}...`);
-            dispatch(selectedHelmSocket, {
-              type: "project.save",
-              requestId: nextRequestId(requestCounter),
+            void dispatch(selectedHelmRpcClient, "project/save", {
               project: {
                 id: projectId,
                 name: projectName,

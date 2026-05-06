@@ -11,16 +11,16 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../../shared/config/deck-runtime";
 import { useMissionSelectionEffects } from "./mission-selection-effects";
+import { buildMissionEffectsSource } from "./mission-effects-source";
 
 export function useMissionEffects(ctx: any) {
-  const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.controllers, ...ctx.history, ...ctx };
+  const source = buildMissionEffectsSource(ctx);
   const {
     projects,
     setSelectedProjectId,
     pairingState,
-    socketRef,
+    rpcClientRef,
     dispatch,
-    requestCounter,
     activeView,
     chatMainRef,
     preserveChatScrollRef,
@@ -119,8 +119,8 @@ useEffect(() => {
   if (
     !activeSessionId ||
     pairingState !== "paired" ||
-    !socketRef.current ||
-    socketRef.current.readyState !== WebSocket.OPEN
+    !rpcClientRef.current ||
+    rpcClientRef.current.socket.readyState !== WebSocket.OPEN
   ) {
     return;
   }
@@ -132,21 +132,15 @@ useEffect(() => {
     ...current,
     [activeSessionId]: { hasMore: false, loading: true },
   }));
-  dispatch(socketRef.current, {
-    type: "session.messages.list",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(rpcClientRef.current, "session/list_messages", {
     sessionId: activeSessionId,
     limit: DEFAULT_MESSAGE_PAGE_LIMIT,
   });
-  dispatch(socketRef.current, {
-    type: "session.artifacts.get",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(rpcClientRef.current, "session/get_artifacts", {
     sessionId: activeSessionId,
     limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
   });
-  dispatch(socketRef.current, {
-    type: "session.resume.check",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(rpcClientRef.current, "session/check_resume", {
     sessionId: activeSessionId,
   });
 }, [activeSessionId, pairingState]);

@@ -3,13 +3,19 @@ import { tokenizeTillerArgv } from "./runtime/options";
 export type TillerCliAction =
   | { kind: "start" }
   | { kind: "help" }
+  | { kind: "version" }
   | { kind: "error"; message: string };
 
+export const TILLER_VERSION = "0.1.0-alpha.0";
 const HELP_FLAGS = new Set(["help", "--help", "-h"]);
+const VERSION_FLAGS = new Set(["version", "--version", "-v"]);
 
 export function resolveTillerCliAction(argv = process.argv.slice(2)): TillerCliAction {
   if (argv.some((arg) => HELP_FLAGS.has(arg))) {
     return { kind: "help" };
+  }
+  if (argv.some((arg) => VERSION_FLAGS.has(arg))) {
+    return { kind: "version" };
   }
 
   const command = tokenizeTillerArgv(argv).positional[0];

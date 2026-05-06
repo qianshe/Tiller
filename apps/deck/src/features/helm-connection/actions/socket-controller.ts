@@ -1,6 +1,5 @@
 // @ts-nocheck
 import type { FormEvent } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { DaemonProfile } from "../daemon-profiles";
 import type {
   ConnectionState,
@@ -14,7 +13,6 @@ import {
 } from "../sockets";
 import {
   dispatchWithTrace,
-  nextRequestId,
   requestInitialSync as requestInitialSyncImpl,
 } from "../request-dispatch";
 import { DEFAULT_SESSION_PAGE_LIMIT } from "../../mission/config";
@@ -25,15 +23,20 @@ import {
 
 export function createSocketController(
   source: any,
-  handleServerEvent: (payload: any, sourceHelmKey?: string) => void,
+  handlers: {
+    handleServerEvent: (payload: any, sourceHelmKey?: string) => void;
+    handleRpcResult: (method: string, result: unknown, sourceHelmKey?: string) => void;
+    handleRpcNotification: (method: string, params: unknown, sourceHelmKey?: string) => void;
+  },
 ) {
   const {
     setSessionHistoryState,
     setHelmConnection,
     applyHelmInventory,
     helmSocketRefs,
+    helmRpcClientRefs,
+    rpcClientRef,
     setDaemonProfileMessage,
-    requestCounter,
     primaryHelmKeyRef,
     manualDisconnectRef,
     socketRef,
@@ -64,14 +67,30 @@ export function createSocketController(
     daemonPort,
   } = source;
 
-  function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    dispatchWithTrace(socket, payload, setDebugTrace);
+  function dispatchRpc(
+    client: any,
+    method: string,
+    params: unknown,
+    optionsOrSourceHelmKey?: { onResult?: (method: string, result: unknown) => void } | string,
+    explicitSourceHelmKey?: string,
+  ) {
+    const sourceHelmKey = typeof optionsOrSourceHelmKey === "string"
+      ? optionsOrSourceHelmKey
+      : explicitSourceHelmKey;
+    const onResult = typeof optionsOrSourceHelmKey === "object"
+      ? optionsOrSourceHelmKey.onResult
+      : undefined;
+    return dispatchWithTrace(client, method, params, setDebugTrace, (resultMethod, result) => {
+      handlers.handleRpcResult(resultMethod, result, sourceHelmKey);
+      onResult?.(resultMethod, result);
+    });
   }
 
-  function requestInitialSync(socket: WebSocket) {
-    requestInitialSyncImpl(socket, {
-      dispatch,
-      requestCounter,
+  function requestInitialSync(client: any, sourceHelmKey?: string) {
+    return requestInitialSyncImpl(client, {
+      dispatch: async (targetClient, method, params) => {
+        await dispatchRpc(targetClient, method, params, undefined, sourceHelmKey);
+      },
       setSessionHistoryState,
       sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
     });
@@ -93,14 +112,14 @@ export function createSocketController(
       embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
       location: window.location,
       helmSocketRefs,
+      helmRpcClientRefs,
       setHelmConnectionState,
       setDaemonProfileMessage,
       readTrustedDeviceCache,
       requestInitialSync,
-      dispatch,
-      nextRequestId,
-      requestCounter,
-      handleServerEvent,
+      dispatch: dispatchRpc,
+      handleRpcResult: handlers.handleRpcResult,
+      handleRpcNotification: handlers.handleRpcNotification,
     });
   }
 
@@ -118,6 +137,7 @@ export function createSocketController(
       primaryHelmKeyRef,
       manualDisconnectRef,
       socketRef,
+      rpcClientRef,
       setSessions,
       setStatuses,
       setMessages,
@@ -142,19 +162,18 @@ export function createSocketController(
       pairingState,
       setTrustedDevice,
       readTrustedDeviceCache,
-      dispatch,
-      nextRequestId,
-      requestCounter,
+      dispatch: dispatchRpc,
       requestInitialSync,
       lastFilesScopeKeyRef,
-      handleServerEvent,
+      handleRpcResult: handlers.handleRpcResult,
+      handleRpcNotification: handlers.handleRpcNotification,
     });
   }
 
   return {
     connectHelmSocket,
     connectToDaemon,
-    dispatch,
+    dispatch: dispatchRpc,
     requestInitialSync,
     setHelmConnectionState,
     updateHelmInventory,

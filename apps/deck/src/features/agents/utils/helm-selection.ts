@@ -9,6 +9,7 @@ import type {
 import {
   daemonProfileKey,
   type DaemonProfile,
+  type DeckRpcClient,
 } from "../../helm-connection/facade";
 import {
   dedupeHelmCards,
@@ -44,6 +45,8 @@ type ResolveHelmSelectionOptions = {
   configuredHelms: HelmSummary[];
   socket: WebSocket | null;
   helmSockets: Map<string, WebSocket>;
+  rpcClient: DeckRpcClient | null;
+  helmRpcClients: Map<string, DeckRpcClient>;
 };
 
 export function resolveHelmSelection({
@@ -64,6 +67,8 @@ export function resolveHelmSelection({
   configuredHelms,
   socket,
   helmSockets,
+  rpcClient,
+  helmRpcClients,
 }: ResolveHelmSelectionOptions) {
   const currentHelmKey = daemonProfileKey(
     daemonHost.trim() || defaultDaemonHost,
@@ -143,6 +148,9 @@ export function resolveHelmSelection({
     selectedHelmSocket: selectedHelmIsCurrent
       ? socket
       : (helmSockets.get(selectedHelm.key) ?? null),
+    selectedHelmRpcClient: selectedHelmIsCurrent
+      ? rpcClient
+      : (helmRpcClients.get(selectedHelm.key) ?? null),
     selectedHelmTrustedDevices: selectedHelmIsCurrent
       ? trustedDevices
       : (selectedHelmInventory?.trustedDevices ?? []),

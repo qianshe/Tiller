@@ -5,7 +5,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import type { AgentDraft } from "../../features/agents";
-import type { DaemonProfile } from "../../features/helm-connection";
+import type { DaemonProfile, DeckRpcClient } from "../../features/helm-connection";
 import {
   DEFAULT_PROMPT,
   MODEL_OPTIONS,
@@ -18,7 +18,9 @@ import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../shared/config/de
  */
 export function useAppRuntimeState(missionVisualFixture: any) {
   const socketRef = useRef<WebSocket | null>(null);
+  const rpcClientRef = useRef<DeckRpcClient | null>(null);
   const helmSocketRefs = useRef<Map<string, WebSocket>>(new Map());
+  const helmRpcClientRefs = useRef<Map<string, DeckRpcClient>>(new Map());
   const requestCounter = useRef(0);
   const pairInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const lastPairingAttemptRef = useRef<string | null>(null);
@@ -77,7 +79,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
 
   return {
-    socketRef, helmSocketRefs, requestCounter, pairInputRefs, lastPairingAttemptRef,
+    socketRef, rpcClientRef, helmSocketRefs, helmRpcClientRefs, requestCounter, pairInputRefs, lastPairingAttemptRef,
     pendingPromptRef, pendingPromptContentRef, promptModelPickerRef, missionPromptRef,
     chatMainRef, preserveChatScrollRef, stickChatToBottomRef, lastAutoScrollSessionIdRef,
     pendingSessionScrollToBottomRef, worktreePickerRef, agentPickerRef,

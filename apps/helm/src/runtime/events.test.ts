@@ -51,8 +51,8 @@ function createTestContext(
       _sessionId: string,
       mutate: (current: SessionSummary) => SessionSummary,
     ) => mutate(summary),
-    broadcastAuthenticated: (payload: unknown) => {
-      capture.broadcasts.push(payload);
+    broadcastNotification: (method: string, params: unknown) => {
+      capture.broadcasts.push({ method, params });
     },
     permissionIndex: new Map(),
     sessionArtifactStore: {
@@ -215,15 +215,20 @@ test("runtime tool-call events are persisted and broadcast without noisy info lo
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, [
     {
-      type: "tool.call",
-      sessionId: "session-1",
-      toolCall: {
-        id: "call-1",
-        kind: "tool",
-        title: "zhi",
-        status: "running",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          kind: "tool_call",
+          toolCall: {
+            id: "call-1",
+            kind: "tool",
+            title: "zhi",
+            status: "running",
+            timestamp: "2026-04-30T00:00:01.000Z",
+            updatedAt: "2026-04-30T00:00:01.000Z",
+          },
+        },
       },
     },
   ]);

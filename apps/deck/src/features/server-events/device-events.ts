@@ -1,13 +1,13 @@
 import type { MutableRefObject } from "react";
-import type { HelmToClient } from "@tiller/sync-protocol";
 import type { TrustedDeviceSummary } from "@tiller/shared";
 import type { TrustedDeviceCache } from "../auth/beacon-cache";
 import type { DaemonProfile } from "../helm-connection/facade";
+import type { DeckRpcClient } from "../helm-connection/rpc-client";
 import { useDeckStore } from "../../store";
 
 type FleetAddHelmStage = "connect" | "connecting" | "pair";
 
-type DeviceServerEventContext = {
+export type DeviceServerEventContext = {
   primaryHelmKeyRef: MutableRefObject<string | null>;
   daemonProfileKey: (host: string, port: string) => string;
   daemonHost: string;
@@ -29,8 +29,8 @@ type DeviceServerEventContext = {
   setFleetAddHelmModalOpen: (open: boolean) => void;
   setFleetAddHelmStage: (stage: FleetAddHelmStage) => void;
   autoConnectAttemptRef: MutableRefObject<string | null>;
-  socketRef: MutableRefObject<WebSocket | null>;
-  requestInitialSync: (socket: WebSocket) => void;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
+  requestInitialSync: (client: DeckRpcClient, sourceHelmKey?: string) => void | Promise<void>;
   readTrustedDeviceCache: (
     storage: Storage,
     host: string,
@@ -39,11 +39,13 @@ type DeviceServerEventContext = {
   clearTrustedDeviceCache: (storage: Storage, host: string, port: string) => void;
 };
 
-export function handleDeviceServerEvent(
-  payload: HelmToClient,
+export function applyDeviceResult(
+  method: string,
+  result: unknown,
   sourceHelmKey: string,
   context: DeviceServerEventContext,
 ) {
+  const payload = result as Record<string, any>;
   const {
     primaryHelmKeyRef,
     daemonProfileKey,
@@ -60,7 +62,7 @@ export function handleDeviceServerEvent(
     setFleetAddHelmModalOpen,
     setFleetAddHelmStage,
     autoConnectAttemptRef,
-    socketRef,
+    rpcClientRef,
     requestInitialSync,
     readTrustedDeviceCache,
     clearTrustedDeviceCache,
@@ -74,8 +76,8 @@ export function handleDeviceServerEvent(
     );
   const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
 
-  switch (payload.type) {
-    case "device.pair.result":
+  switch (method) {
+    case "device/pair":
       if (payload.ok && payload.token) {
         const nextCache = {
           deviceId: deckDeviceId,
@@ -102,15 +104,15 @@ export function handleDeviceServerEvent(
         autoConnectAttemptRef.current = null;
         store.setPairingFeedback(payload.message);
         store.setPairingState("paired");
-        if (socketRef.current) {
-          requestInitialSync(socketRef.current);
+        if (rpcClientRef.current) {
+          void requestInitialSync(rpcClientRef.current, sourceHelmKey);
         }
       } else {
         store.setPairingFeedback(payload.message);
         store.setPairingState("rejected");
       }
       return true;
-    case "device.auth.result":
+    case "device/authenticate":
       if (payload.ok) {
         const existing = readTrustedDeviceCache(
           window.localStorage,
@@ -134,8 +136,8 @@ export function handleDeviceServerEvent(
         autoConnectAttemptRef.current = null;
         store.setPairingFeedback(payload.message);
         store.setPairingState("paired");
-        if (socketRef.current) {
-          requestInitialSync(socketRef.current);
+        if (rpcClientRef.current) {
+          void requestInitialSync(rpcClientRef.current, sourceHelmKey);
         }
       } else {
         clearTrustedDeviceCache(
@@ -149,13 +151,13 @@ export function handleDeviceServerEvent(
         store.setPairingState(payload.requiresPairing ? "input" : "rejected");
       }
       return true;
-    case "device.list.result":
-      store.applyHelmInventory(sourceHelmKey, { trustedDevices: payload.devices });
+    case "device/list":
+      store.applyHelmInventory(sourceHelmKey, { trustedDevices: payload.devices as TrustedDeviceSummary[] });
       if (sourceIsCurrentHelm) {
-        store.setTrustedDevices(payload.devices);
+        store.setTrustedDevices(payload.devices as TrustedDeviceSummary[]);
       }
       return true;
-    case "device.revoke.result":
+    case "device/revoke":
       store.applyHelmInventory(sourceHelmKey, {
         trustedDevices: (
           store.helmInventories[sourceHelmKey]?.trustedDevices ?? store.trustedDevices

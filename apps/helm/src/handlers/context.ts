@@ -1,6 +1,5 @@
 import type { WebSocket } from "ws";
 import type { createAcpRuntime } from "@tiller/acp-runtime";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
   AcpModelState,
@@ -42,8 +41,8 @@ export type ModelOptionsProbeResult = {
 
 export type HelmHandlerContext = {
   configPath: string;
-  emit: (socket: WebSocket, payload: HelmToClient) => void;
-  broadcastAuthenticated: (payload: HelmToClient) => void;
+  notify: (socket: WebSocket, method: string, params: unknown) => void;
+  broadcastNotification: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
@@ -121,8 +120,3 @@ export type HelmHandlerContext = {
   deleteLocalSessionData: (sessionId: string) => void;
 };
 
-export type HelmMessageHandler = (
-  socket: WebSocket,
-  payload: ClientToHelm,
-  context: HelmHandlerContext,
-) => boolean | Promise<boolean>;
