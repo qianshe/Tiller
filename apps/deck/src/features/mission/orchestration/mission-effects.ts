@@ -11,9 +11,10 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../../shared/config/deck-runtime";
 import { useMissionSelectionEffects } from "./mission-selection-effects";
+import { buildMissionEffectsSource } from "./mission-effects-source";
 
 export function useMissionEffects(ctx: any) {
-  const source = { ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.helmConnection, ...ctx.controllers, ...ctx.history, ...ctx };
+  const source = buildMissionEffectsSource(ctx);
   const {
     projects,
     setSelectedProjectId,
