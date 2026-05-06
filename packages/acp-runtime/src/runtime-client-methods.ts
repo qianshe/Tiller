@@ -16,10 +16,12 @@ import {
   type ManagedSdkTerminal,
 } from "./terminal-client";
 import type { AcpRuntimeOptions, AcpSessionConfigOption } from "./runtime-types";
+import type { PermissionDecision } from "@tiller/shared";
 
 export type AcpRuntimePendingPermissionReply =
   | {
       kind: "agent";
+      optionIds: Partial<Record<PermissionDecision, string>>;
       allowOptionId?: string;
       denyOptionId?: string;
       resolve: (response: acp.RequestPermissionResponse) => void;
@@ -111,6 +113,7 @@ export function createRuntimeClientMethods({
       return await new Promise<acp.RequestPermissionResponse>((resolve) => {
         pendingPermissionReplies.set(mapped.id, {
           kind: "agent",
+          optionIds: mapped.optionIds,
           allowOptionId: mapped.allowOptionId,
           denyOptionId: mapped.denyOptionId,
           resolve,

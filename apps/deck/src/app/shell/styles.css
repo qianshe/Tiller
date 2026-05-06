@@ -1880,13 +1880,18 @@ textarea:focus,
 }
 
 .mission-permission-drawer {
+  position: relative;
+  z-index: 31;
   width: min(760px, calc(100% - 32px));
-  margin: 0 auto 12px;
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  max-height: min(52vh, 420px);
+  box-sizing: border-box;
+  margin: 0 auto 14px;
+  padding: 14px 16px 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 12px;
+  overflow: hidden;
   border: 1px solid rgba(96, 165, 250, 0.28);
   border-radius: 18px;
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
@@ -1894,18 +1899,76 @@ textarea:focus,
   color: #e5eefc;
 }
 
-.mission-permission-copy {
+.mission-permission-header {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
-.mission-permission-copy strong {
+.mission-permission-title {
+  color: #f8fafc;
+  font-size: 1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mission-permission-copy {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.mission-permission-copy .muted,
+.mission-permission-copy .subtle {
+  overflow-wrap: anywhere;
+}
+
+.mission-permission-reason,
+.mission-permission-workspace {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.mission-permission-detail {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 13, 23, 0.52);
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .mission-permission-actions {
   flex-shrink: 0;
+  align-self: stretch;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 38px;
+  padding-top: 8px;
+  padding-bottom: 2px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mission-permission-actions button {
+  min-width: 88px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  box-shadow: none;
+  font-size: 0.86rem;
+  line-height: 1.15;
 }
 
 .theme-light .mission-permission-drawer,
@@ -1915,15 +1978,41 @@ textarea:focus,
   box-shadow: 0 -12px 34px rgba(30, 41, 59, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+.theme-light .mission-permission-title,
+[data-deck-theme="light"] .mission-permission-title {
+  color: #172033;
+}
+
+.app-error-boundary {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.app-error-card {
+  display: grid;
+  gap: 14px;
+  max-width: 640px;
+}
+
+.app-error-card h1 {
+  font-size: clamp(1.35rem, 2.5vw, 2rem);
+}
+
+.app-error-card .primary {
+  justify-self: start;
+}
+
 @media (max-width: 720px) {
   .mission-permission-drawer {
     width: calc(100% - 20px);
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
 
   .mission-permission-actions {
     width: 100%;
+    align-self: stretch;
     justify-content: stretch;
   }
 

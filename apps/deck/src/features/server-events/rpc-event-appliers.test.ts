@@ -68,9 +68,17 @@ test("applyDeviceResult syncs device/list RPC results into the current helm", ()
   assert.equal(useDeckStore.getState().trustedDevices[0]?.deviceId, "deck-1");
 });
 
-test("applySessionUpdate routes agent_message notifications into activity state", () => {
+test("applySessionUpdate routes agent_message notifications into activity state without changing prompt metadata", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [session("s1")] });
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        messageCount: 1,
+        lastMessagePreview: "用户输入的 Prompt",
+      },
+    ],
+  });
   const message: AgentMessage = {
     id: "m1",
     role: "assistant",
@@ -90,4 +98,8 @@ test("applySessionUpdate routes agent_message notifications into activity state"
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "hello from rpc");
   assert.equal(useDeckStore.getState().sessions[0]?.messageCount, 1);
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.lastMessagePreview,
+    "用户输入的 Prompt",
+  );
 });

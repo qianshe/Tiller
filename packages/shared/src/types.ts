@@ -290,14 +290,25 @@ export type AgentPromptImageContent = {
 
 export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
 
+export type PermissionDecision =
+  | "allow"
+  | "allow_session"
+  | "allow_always"
+  | "deny"
+  | "deny_always";
+
+export type PermissionRequestOption = {
+  decision: PermissionDecision;
+  label: string;
+};
+
 export type PermissionRequest = {
   id: string;
   command: string;
   reason: string;
   workspacePath: string;
+  options?: PermissionRequestOption[];
 };
-
-export type PermissionDecision = "allow" | "deny";
 
 export type CommandChunk = {
   id: string;

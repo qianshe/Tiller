@@ -3,6 +3,7 @@ import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
   type AgentPromptContent,
+  type PermissionDecision,
   type ProjectSummary,
   type SessionReasoningEffort,
   type SessionSummary,
@@ -426,7 +427,7 @@ async function setConfigOption(
 }
 
 function respondPermission(
-  params: { permissionRequestId: string; decision: "allow" | "deny" },
+  params: { permissionRequestId: string; decision: PermissionDecision },
   context: HelmHandlerContext,
 ) {
   const permission = context.permissionIndex.get(params.permissionRequestId);

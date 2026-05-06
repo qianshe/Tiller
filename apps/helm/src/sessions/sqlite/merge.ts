@@ -85,6 +85,11 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
 }
 
 function collapseRepeatedAssistantText(text: string) {
+  const repeatedUnit = collapseExactRepeatedText(text);
+  if (repeatedUnit !== text) {
+    return repeatedUnit;
+  }
+
   const firstLine = text.split(/\r?\n/u)[0]?.trim();
   if (!firstLine || firstLine.length < 8) {
     return text;
@@ -99,6 +104,30 @@ function collapseRepeatedAssistantText(text: string) {
   const cutIndex =
     bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
+}
+
+function collapseExactRepeatedText(text: string) {
+  const minUnitLength = 40;
+  const maxUnitLength = Math.floor(text.length / 2);
+  for (let unitLength = minUnitLength; unitLength <= maxUnitLength; unitLength += 1) {
+    if (text.length % unitLength !== 0) {
+      continue;
+    }
+
+    const unit = text.slice(0, unitLength);
+    let repeatsExactly = true;
+    for (let index = unitLength; index < text.length; index += unitLength) {
+      if (text.slice(index, index + unitLength) !== unit) {
+        repeatsExactly = false;
+        break;
+      }
+    }
+
+    if (repeatsExactly) {
+      return unit;
+    }
+  }
+  return text;
 }
 
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {

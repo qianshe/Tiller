@@ -1,5 +1,11 @@
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpMcpServer, AgentPromptContent, PermissionRequest } from "@tiller/shared";
+import type {
+  AcpMcpServer,
+  AgentPromptContent,
+  PermissionDecision,
+  PermissionRequest,
+  PermissionRequestOption,
+} from "@tiller/shared";
 
 export const SDK_PROBE_CLIENT_CAPABILITIES = {
   fs: {
@@ -23,6 +29,7 @@ export type SdkPermissionDecision = "allow" | "deny" | "cancelled";
 
 export type SdkMappedPermissionRequest = {
   id: string;
+  optionIds: Partial<Record<PermissionDecision, string>>;
   allowOptionId?: string;
   denyOptionId?: string;
   request: PermissionRequest;
@@ -52,8 +59,20 @@ export function mapPromptContentToSdkBlocks(content: AgentPromptContent[]): acp.
 }
 
 export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id: string, workspacePath: string): SdkMappedPermissionRequest {
-  const allowOptionId = params.options.find((option) => option.kind.startsWith("allow"))?.optionId;
-  const denyOptionId = params.options.find((option) => option.kind.startsWith("reject"))?.optionId;
+  const optionIds: Partial<Record<PermissionDecision, string>> = {};
+  const options: PermissionRequestOption[] = [];
+
+  for (const option of params.options ?? []) {
+    const decision = resolvePermissionOptionDecision(option, optionIds);
+    if (!decision) {
+      continue;
+    }
+    options.push({ decision, label: option.name });
+    optionIds[decision] ??= option.optionId;
+  }
+
+  const allowOptionId = optionIds.allow ?? optionIds.allow_session ?? optionIds.allow_always;
+  const denyOptionId = optionIds.deny ?? optionIds.deny_always;
   const title = stringFrom(params.toolCall.title);
   const rawInput = stringFrom(params.toolCall.rawInput);
   const command = [title, rawInput].filter(Boolean).join(" :: ") || "ACP permission request";
@@ -61,6 +80,7 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
 
   return {
     id,
+    optionIds,
     allowOptionId,
     denyOptionId,
     request: {
@@ -68,8 +88,37 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
       command,
       reason,
       workspacePath,
+      ...(options.length ? { options } : {}),
     },
   };
+}
+
+function resolvePermissionOptionDecision(
+  option: acp.RequestPermissionRequest["options"][number],
+  optionIds: Partial<Record<PermissionDecision, string>>,
+): PermissionDecision | null {
+  switch (option.kind) {
+    case "allow_once":
+      return "allow";
+    case "allow_always":
+      return isSessionPermissionOption(option) && !optionIds.allow_session
+        ? "allow_session"
+        : "allow_always";
+    case "reject_once":
+      return "deny";
+    case "reject_always":
+      return "deny_always";
+    default:
+      return null;
+  }
+}
+
+function isSessionPermissionOption(
+  option: acp.RequestPermissionRequest["options"][number],
+): boolean {
+  return /session|current|this|会话|当前|本次/iu.test(
+    `${option.optionId} ${option.name}`,
+  );
 }
 
 function stringFrom(value: unknown): string | undefined {

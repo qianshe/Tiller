@@ -368,17 +368,20 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     }
 
     pendingPermissionReplies.delete(requestId);
+    const isAllowed = decision.startsWith("allow");
     if (pendingPermission.kind === "client") {
-      pendingPermission.resolve(decision === "allow");
+      pendingPermission.resolve(isAllowed);
       options.onEvent({
         type: "status",
-        status: decision === "allow" ? "running" : "idle",
-        message: decision === "allow" ? "Client operation permission granted" : "Client operation permission denied",
+        status: isAllowed ? "running" : "idle",
+        message: isAllowed ? "Client operation permission granted" : "Client operation permission denied",
       });
       return;
     }
 
-    const optionId = decision === "allow" ? pendingPermission.allowOptionId : pendingPermission.denyOptionId;
+    const optionId = pendingPermission.optionIds[decision]
+      ?? (decision === "allow" ? pendingPermission.allowOptionId : undefined)
+      ?? (decision === "deny" ? pendingPermission.denyOptionId : undefined);
     if (!optionId) {
       options.onEvent({
         type: "error",

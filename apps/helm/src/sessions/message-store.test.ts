@@ -215,6 +215,47 @@ test("session message store collapses repeated assistant snapshots inside one me
   }
 });
 
+test("session message store collapses repeated replayed assistant text without line breaks", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replayed-text-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    const replayedText =
+      "我会使用 `superpowers:systematic-debugging` 来先定位根因，再做最小修复喵~[🌳木] 目标：定位并修复 mission 页左侧项目展开/收起失效的根因；验收是能通过代码/类型检查，并给出可复核的交互点。先读取项目上下文与相关代码喵~";
+    const replayHead = replayedText.slice(0, 55);
+    const replayTail = replayedText.slice(55);
+    store.append("session-1", {
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: replayHead,
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1001",
+      role: "assistant",
+      text: replayTail,
+      timestamp: "2026-04-27T08:00:01.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1002",
+      role: "assistant",
+      text: replayHead,
+      timestamp: "2026-04-27T08:00:02.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-1003",
+      role: "assistant",
+      text: replayTail,
+      timestamp: "2026-04-27T08:00:03.000Z",
+    });
+
+    assert.equal(store.list("session-1")[0]?.text, replayedText);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store refreshes duplicate replay timestamps without duplicating text", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replay-"));

@@ -154,6 +154,27 @@ test("sqlite message store matches append merge, replace, pagination, and remove
         },
       ]);
       assert.equal(store.list("session-4")[0]?.text, finalAnswer);
+      const replayedText =
+        "我会使用 `superpowers:systematic-debugging` 来先定位根因，再做最小修复喵~[🌳木] 目标：定位并修复 mission 页左侧项目展开/收起失效的根因；验收是能通过代码/类型检查，并给出可复核的交互点。先读取项目上下文与相关代码喵~";
+      const replayHead = replayedText.slice(0, 55);
+      const replayTail = replayedText.slice(55);
+      store.append(
+        "session-5",
+        createMessage("session-5-msg-1000", "2026-04-30T10:00:00.000Z", replayHead),
+      );
+      store.append(
+        "session-5",
+        createMessage("session-5-msg-1001", "2026-04-30T10:00:01.000Z", replayTail),
+      );
+      store.append(
+        "session-5",
+        createMessage("session-5-msg-1002", "2026-04-30T10:00:02.000Z", replayHead),
+      );
+      store.append(
+        "session-5",
+        createMessage("session-5-msg-1003", "2026-04-30T10:00:03.000Z", replayTail),
+      );
+      assert.equal(store.list("session-5")[0]?.text, replayedText);
       const firstPage = store.listPage("session-1", { limit: 1 });
       assert.deepEqual(
         firstPage.messages.map((item) => item.id),

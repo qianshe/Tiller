@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
 import { commandChunkToToolCall, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 
@@ -46,12 +46,7 @@ export function applyActivityUpdate(
       store.setSessions((current) =>
         current.map((session) =>
           session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: message.timestamp,
-                messageCount: session.messageCount + 1,
-                lastMessagePreview: message.text.slice(0, 160),
-              }
+            ? applyMessageToSessionSummary(session, message)
             : session,
         ),
       );
@@ -93,6 +88,25 @@ export function applyActivityUpdate(
     default:
       return false;
   }
+}
+
+function applyMessageToSessionSummary(
+  session: SessionSummary,
+  message: AgentMessage,
+): SessionSummary {
+  if (message.role !== "user") {
+    return {
+      ...session,
+      updatedAt: message.timestamp,
+    };
+  }
+
+  return {
+    ...session,
+    updatedAt: message.timestamp,
+    messageCount: session.messageCount + 1,
+    lastMessagePreview: message.text.slice(0, 160),
+  };
 }
 
 export function applyErrorRaised(

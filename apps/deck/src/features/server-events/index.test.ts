@@ -51,9 +51,17 @@ function resetStore() {
   });
 }
 
-test("activity RPC notifications append assistant messages and update session metadata", () => {
+test("activity RPC notifications append assistant messages without changing session prompt metadata", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [session("s1")] });
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        messageCount: 1,
+        lastMessagePreview: "用户输入的 Prompt",
+      },
+    ],
+  });
   const message: AgentMessage = {
     id: "m1",
     role: "assistant",
@@ -73,6 +81,10 @@ test("activity RPC notifications append assistant messages and update session me
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "hello");
   assert.equal(useDeckStore.getState().sessions[0]?.messageCount, 1);
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.lastMessagePreview,
+    "用户输入的 Prompt",
+  );
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {

@@ -37,6 +37,46 @@ test("coalesceDisplayMessages collapses repeated assistant snapshots", () => {
   }
 });
 
+test("mergeAgentMessages collapses replayed assistant text without line breaks", () => {
+  const replayedText =
+    "我会使用 `superpowers:systematic-debugging` 来先定位根因，再做最小修复喵~[🌳木] 目标：定位并修复 mission 页左侧项目展开/收起失效的根因；验收是能通过代码/类型检查，并给出可复核的交互点。先读取项目上下文与相关代码喵~";
+
+  const replayHead = replayedText.slice(0, 55);
+  const replayTail = replayedText.slice(55);
+  const merged = [
+    {
+      id: "session-1-msg-1000",
+      role: "assistant",
+      text: replayHead,
+      timestamp: "2026-04-28T10:00:01.000Z",
+    },
+    {
+      id: "session-1-msg-1001",
+      role: "assistant",
+      text: replayTail,
+      timestamp: "2026-04-28T10:00:02.000Z",
+    },
+    {
+      id: "session-1-msg-1002",
+      role: "assistant",
+      text: replayHead,
+      timestamp: "2026-04-28T10:00:03.000Z",
+    },
+    {
+      id: "session-1-msg-1003",
+      role: "assistant",
+      text: replayTail,
+      timestamp: "2026-04-28T10:00:04.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, replayedText);
+});
+
 test("buildConversationTimeline keeps assistant messages split around inserted tool calls", () => {
   const timeline = buildConversationTimeline(
     [
