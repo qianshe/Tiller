@@ -276,3 +276,72 @@
   border-top-color: rgba(118, 125, 150, 0.14);
   background: color-mix(in srgb, var(--surface-sunken) 70%, transparent);
 }
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-trigger,
+[data-deck-theme="light"] .view-sessions .mission-agent-trigger,
+[data-deck-theme="light"] .view-sessions .mission-config-trigger {
+  background: var(--surface);
+  color: var(--foreground);
+  border-color: rgba(118, 125, 150, 0.2);
+  box-shadow: 0 8px 22px rgba(30, 41, 59, 0.08);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-config-trigger {
+  border: 1px solid rgba(118, 125, 150, 0.16);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-trigger strong,
+[data-deck-theme="light"] .view-sessions .mission-agent-trigger strong,
+[data-deck-theme="light"] .view-sessions .mission-config-trigger span {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-trigger small {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-trigger::after,
+[data-deck-theme="light"] .view-sessions .mission-agent-trigger::after,
+[data-deck-theme="light"] .view-sessions .mission-config-trigger::after {
+  border-color: var(--muted-foreground);
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-trigger:hover,
+[data-deck-theme="light"] .view-sessions .mission-agent-trigger:hover,
+[data-deck-theme="light"] .view-sessions .mission-config-trigger:hover,
+[data-deck-theme="light"] .view-sessions .mission-worktree-field.open .mission-worktree-trigger,
+[data-deck-theme="light"] .view-sessions .mission-agent-field.open .mission-agent-trigger,
+[data-deck-theme="light"] .view-sessions .mission-config-picker.open .mission-config-trigger {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: rgb(0 88 188 / 0.26);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-menu,
+[data-deck-theme="light"] .view-sessions .mission-agent-menu,
+[data-deck-theme="light"] .view-sessions .mission-config-menu {
+  background: var(--surface);
+  border-color: rgba(118, 125, 150, 0.18);
+  box-shadow: 0 20px 52px rgba(30, 41, 59, 0.16);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-menu > button,
+[data-deck-theme="light"] .view-sessions .mission-agent-menu button,
+[data-deck-theme="light"] .view-sessions .mission-config-menu button {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-menu > button span {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-worktree-menu > button:hover,
+[data-deck-theme="light"] .view-sessions .mission-worktree-menu > button.active,
+[data-deck-theme="light"] .view-sessions .mission-agent-menu button:hover,
+[data-deck-theme="light"] .view-sessions .mission-agent-menu button.active,
+[data-deck-theme="light"] .view-sessions .mission-config-menu button:hover,
+[data-deck-theme="light"] .view-sessions .mission-config-menu button.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
