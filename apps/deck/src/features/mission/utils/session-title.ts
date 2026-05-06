@@ -1,11 +1,34 @@
 import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 
+type SessionTitleGenerator = (
+  prompt: string,
+  llm: PromptEnhancerPreferences["llm"],
+) => Promise<string>;
+
 export function createFallbackSessionTitle(prompt: string) {
   return prompt.replace(/[\p{P}\p{S}\s]+/gu, "").slice(0, 5) || "新任务";
 }
 
 export function normalizeGeneratedSessionTitle(value: string) {
   return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
+}
+
+export async function resolveRegeneratedSessionTitle(
+  prompt: string,
+  llm: PromptEnhancerPreferences["llm"],
+  generator: SessionTitleGenerator = generateSessionTitleWithLlm,
+) {
+  const promptText = prompt.trim();
+  const fallbackTitle = createFallbackSessionTitle(promptText);
+  if (!promptText || !llm.enabled || !llm.baseUrl.trim() || !llm.model.trim()) {
+    return fallbackTitle;
+  }
+
+  try {
+    return (await generator(promptText, llm)) || fallbackTitle;
+  } catch {
+    return fallbackTitle;
+  }
 }
 
 export async function generateSessionTitleWithLlm(

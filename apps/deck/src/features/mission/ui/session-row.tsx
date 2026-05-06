@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { SessionStatus, SessionSummary } from "@tiller/shared";
 
 type SessionRowProps = {
@@ -8,6 +8,7 @@ type SessionRowProps = {
   openSession: (sessionId: string) => void;
   renderAgentIcon: (agentName: string) => ReactNode;
   resolveDisplayTitle: (session: SessionSummary) => string;
+  regenerateSessionTitle: (session: SessionSummary) => void;
   session: SessionSummary;
   sessionStatus: SessionStatus;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
@@ -20,12 +21,18 @@ export function SessionRow({
   openSession,
   renderAgentIcon,
   resolveDisplayTitle,
+  regenerateSessionTitle,
   session,
   sessionStatus,
   setPendingSessionCleanup,
 }: SessionRowProps) {
+  const [actionsOpen, setActionsOpen] = useState(false);
   const sessionPending = isSessionExecutionPending(sessionStatus);
   const title = resolveDisplayTitle(session);
+
+  function closeActions() {
+    setActionsOpen(false);
+  }
 
   return (
     <div
@@ -70,17 +77,49 @@ export function SessionRow({
       </button>
       <button
         type="button"
-        className="session-inline-action mission-tree-cleanup"
-        aria-label={`清理 ${title}`}
-        title="清理任务"
+        className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger"
+        aria-label={`${title} 的操作`}
+        aria-expanded={actionsOpen}
+        title="任务操作"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
-          setPendingSessionCleanup(session);
+          setActionsOpen((current) => !current);
         }}
       >
-        ×
+        ⋯
       </button>
+      {actionsOpen ? (
+        <div
+          className="mission-tree-session-menu"
+          role="menu"
+          aria-label={`${title} 的操作菜单`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              regenerateSessionTitle(session);
+              closeActions();
+            }}
+          >
+            重新生成名称
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => {
+              setPendingSessionCleanup(session);
+              closeActions();
+            }}
+          >
+            清理任务
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

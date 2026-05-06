@@ -128,7 +128,8 @@
 }
 
 .view-sessions .mission-tree-session-row:hover .mission-tree-cleanup,
-.view-sessions .mission-tree-session-row.active .mission-tree-cleanup {
+.view-sessions .mission-tree-session-row.active .mission-tree-cleanup,
+.view-sessions .mission-tree-session-row:focus-within .mission-tree-cleanup {
   opacity: 1;
 }
 
@@ -996,4 +997,50 @@
 
 .view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
   width: min(760px, calc(100% - 4px));
+}
+
+.view-sessions .mission-tree-actions-trigger {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-tree-actions-trigger:hover {
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
+}
+
+.view-sessions .mission-tree-session-menu {
+  position: absolute;
+  top: calc(50% + 12px);
+  right: 4px;
+  z-index: 12;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 10px;
+  background: #111827;
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.36);
+}
+
+.view-sessions .mission-tree-session-menu button {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d7deea;
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.view-sessions .mission-tree-session-menu button:hover {
+  background: rgba(59, 130, 246, 0.28);
+  color: #f8fafc;
+}
+
+.view-sessions .mission-tree-session-menu button.danger:hover {
+  background: rgba(186, 26, 26, 0.16);
+  color: #fecaca;
 }
