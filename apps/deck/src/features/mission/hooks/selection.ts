@@ -52,7 +52,7 @@ export function useSelection({
   setWorktreePickerOpen,
   setAgentPickerOpen,
 }: UseSelectionOptions) {
-  function toggleHelmNode(helmId: string) {
+  function toggleMissionHelmNode(helmId: string) {
     setExpandedMissionHelmIds((current) => {
       const next = new Set(current);
       if (next.has(helmId)) {
@@ -133,7 +133,7 @@ export function useSelection({
   }
 
   return {
-    toggleHelmNode,
+    toggleMissionHelmNode,
     toggleMissionProjectNode,
     selectDraftWorkspace,
     selectDraftAgent,

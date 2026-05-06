@@ -2,7 +2,12 @@ import { sortProjectFileSummaries } from "@tiller/shared";
 import { projectFilesKey } from "../utils/project-files-key";
 import { formatProjectSummaryForDisplay } from "../utils/project-display";
 import { resolveProjectFilesScope } from "../utils/session-derivations";
-import { buildMissionPanelPages, joinClassNames, resolveVisibleProjectFiles, selectMissionPanelPage } from "../utils/session-render-state";
+import {
+  buildMissionPanelPages,
+  joinClassNames,
+  resolveVisibleProjectFiles,
+  selectMissionPanelPage,
+} from "../utils/session-render-state";
 import { isSessionExecutionPending } from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
 
@@ -36,23 +41,24 @@ export function buildMissionWorkspaceModel(input: any) {
     activeHelm,
     missionProjects,
   } = input;
+  const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
+  const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
+  const effectiveAgentId = selectedAgentId || selectedDraftAgent?.id;
   const canSend = Boolean(
     (prompt.trim() || promptImages.length) &&
-      socketRef.current &&
-      (activeSessionId ||
-        (selectedProjectId && selectedWorkspaceId && selectedAgentId)) &&
-      (!promptImages.length ||
-        !activeSession ||
-        activeSession.imageInput !== false),
+    socketRef.current &&
+    (activeSessionId ||
+      (effectiveProjectId && effectiveWorkspaceId && effectiveAgentId)) &&
+    (!promptImages.length ||
+      !activeSession ||
+      activeSession.imageInput !== false),
   );
   const activeMissionHelm =
     missionHelms.find((helm: any) => helm.id === effectiveMissionHelmId) ??
     activeHelm;
   const activeMissionHelmProjectCount = missionProjects.length;
   const activeDiffs = activeSession ? (diffs[activeSession.id] ?? []) : [];
-  const activeOutputs = activeSession
-    ? (outputs[activeSession.id] ?? [])
-    : [];
+  const activeOutputs = activeSession ? (outputs[activeSession.id] ?? []) : [];
   const activeToolCalls = activeSession
     ? (toolCalls[activeSession.id] ?? [])
     : [];
