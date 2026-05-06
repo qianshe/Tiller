@@ -64,7 +64,7 @@ export function useSelection({
     });
   }
 
-  function toggleProjectNode(projectId: string) {
+  function toggleMissionProjectNode(projectId: string) {
     setExpandedMissionProjectIds((current) =>
       toggleExpandedIdSet(current, projectId),
     );
@@ -134,7 +134,7 @@ export function useSelection({
 
   return {
     toggleHelmNode,
-    toggleProjectNode,
+    toggleMissionProjectNode,
     selectDraftWorkspace,
     selectDraftAgent,
     selectHelm,

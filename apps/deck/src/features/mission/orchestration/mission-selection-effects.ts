@@ -41,6 +41,7 @@ export function useMissionSelectionEffects(source: any) {
     filteredAgents,
     setSelectedAgentId,
     agentModelOptions,
+    setAgentModelOptions,
     selectedModel,
     setSelectedModel,
     setSelectedAgentMode,

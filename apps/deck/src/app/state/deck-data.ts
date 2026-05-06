@@ -11,6 +11,19 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 
+type DaemonProfilesState<TProfile> = {
+  daemonProfiles: TProfile[];
+};
+
+const EMBEDDED_DAEMON_PROFILES: never[] = [];
+
+export function selectDaemonProfilesForDeckData<TProfile>(
+  state: DaemonProfilesState<TProfile>,
+  embedded: boolean,
+): TProfile[] {
+  return embedded ? EMBEDDED_DAEMON_PROFILES : state.daemonProfiles;
+}
+
 /**
  * Centralizes Deck store selectors and visual fixture fallbacks for App.
  */
@@ -94,7 +107,10 @@ export function useDeckData(missionVisualFixture: any) {
   const setWorktreeGitByProject = useDeckStore((state) => state.setWorktreeGitByProject);
 
   const daemonProfiles = useDeckStore((state) =>
-    import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true" ? [] : state.daemonProfiles,
+    selectDaemonProfilesForDeckData(
+      state,
+      import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
+    ),
   );
   const addDaemonProfile = useDeckStore((state) => state.addDaemonProfile);
   const removeDaemonProfileFromStore = useDeckStore((state) => state.removeDaemonProfile);
