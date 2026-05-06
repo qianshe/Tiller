@@ -142,28 +142,6 @@ export function useHistoryPagination({
     const distanceToBottom =
       target.scrollHeight - target.clientHeight - target.scrollTop;
     stickChatToBottomRef.current = distanceToBottom <= 96;
-    if (!activeSessionId || target.scrollTop > 32) {
-      return;
-    }
-    const messageState = messageHistoryState[activeSessionId];
-    const activityState = activityHistoryState[activeSessionId];
-    const canLoadMessages = Boolean(
-      messageState?.hasMore && !messageState.loading && messageState.nextCursor,
-    );
-    const canLoadActivities = Boolean(
-      activityState?.hasMore &&
-        !activityState.loading &&
-        activityState.nextCursor,
-    );
-    if (!canLoadMessages && !canLoadActivities) {
-      return;
-    }
-    preserveChatScrollRef.current = {
-      scrollHeight: target.scrollHeight,
-      scrollTop: target.scrollTop,
-    };
-    loadOlderMessages(activeSessionId);
-    loadOlderActivities(activeSessionId);
   }
 
   return {

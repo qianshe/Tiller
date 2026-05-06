@@ -1,0 +1,180 @@
+/* features/agents/ui/trusted-devices-panel/styles.css — Trusted Devices 面板样式 */
+/* 由 features/agents/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* features/agents/styles.css — Fleet/Agents 页面样式 */
+/* 从 shell/styles.css 拆分，来源行号见 git blame */
+
+@media (max-width: 860px) {
+  .trusted-device-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+  .trusted-device-actions {
+      grid-column: 1 / -1;
+      justify-content: stretch;
+    }
+
+  .trusted-device-actions .secondary {
+      width: 100%;
+    }
+}
+
+.trusted-device-list {
+  display: grid;
+  gap: 14px;
+}
+
+.trusted-device-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.94),
+      rgba(248, 250, 252, 0.78)
+    ),
+    radial-gradient(circle at top left, rgba(0, 88, 188, 0.1), transparent 34%);
+  box-shadow: 0 12px 28px rgba(30, 41, 59, 0.07);
+}
+
+.trusted-device-row-current {
+  border-color: rgba(0, 88, 188, 0.28);
+  box-shadow: 0 14px 32px rgba(0, 88, 188, 0.12);
+}
+
+.trusted-device-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #0058bc;
+  background: linear-gradient(
+    145deg,
+    rgba(216, 226, 255, 0.95),
+    rgba(232, 240, 255, 0.82)
+  );
+  box-shadow: inset 0 0 0 1px rgba(0, 88, 188, 0.12);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.trusted-device-copy {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.trusted-device-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.trusted-device-title-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trusted-device-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #414755;
+  font-size: 0.86rem;
+}
+
+.trusted-device-meta-grid span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.trusted-device-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+[data-deck-theme="dark"] .trusted-device-row {
+  border-color: rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(135deg, rgba(23, 31, 44, 0.96), rgba(15, 23, 36, 0.9)),
+    radial-gradient(
+      circle at top left,
+      rgba(77, 163, 255, 0.14),
+      transparent 34%
+    );
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+}
+
+[data-deck-theme="dark"] .trusted-device-row-current {
+  border-color: rgba(77, 163, 255, 0.38);
+  box-shadow: 0 16px 36px rgba(77, 163, 255, 0.12);
+}
+
+[data-deck-theme="dark"] .trusted-device-icon {
+  color: #d9e9ff;
+  background: linear-gradient(
+    145deg,
+    rgba(38, 50, 71, 0.96),
+    rgba(28, 40, 58, 0.9)
+  );
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+[data-deck-theme="dark"] .trusted-device-meta-grid {
+  color: #b7c4d8;
+}
+
+[data-deck-theme="dark"] .trusted-device-meta-grid span,
+[data-deck-theme="dark"] .subtle-chip {
+  background: rgba(148, 163, 184, 0.12);
+  color: #d9e6fb;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-deck-theme="system"] .trusted-device-row {
+      border-color: rgba(148, 163, 184, 0.22);
+      background:
+        linear-gradient(135deg, rgba(23, 31, 44, 0.96), rgba(15, 23, 36, 0.9)),
+        radial-gradient(
+          circle at top left,
+          rgba(77, 163, 255, 0.14),
+          transparent 34%
+        );
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+    }
+
+  [data-deck-theme="system"] .trusted-device-row-current {
+      border-color: rgba(77, 163, 255, 0.38);
+      box-shadow: 0 16px 36px rgba(77, 163, 255, 0.12);
+    }
+
+  [data-deck-theme="system"] .trusted-device-icon {
+      color: #d9e9ff;
+      background: linear-gradient(
+        145deg,
+        rgba(38, 50, 71, 0.96),
+        rgba(28, 40, 58, 0.9)
+      );
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+    }
+
+  [data-deck-theme="system"] .trusted-device-meta-grid {
+      color: #b7c4d8;
+    }
+
+  [data-deck-theme="system"] .trusted-device-meta-grid span,
+    [data-deck-theme="system"] .subtle-chip {
+      background: rgba(148, 163, 184, 0.12);
+      color: #d9e6fb;
+    }
+}

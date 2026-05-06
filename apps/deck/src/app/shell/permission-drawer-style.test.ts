@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const styles = readFileSync(
+function readStyles(url: URL): string {
+  const styles = readFileSync(url, "utf8");
+  return styles.replace(
+    /@import\s+["'](?<specifier>[^"']+)["'];/g,
+    (_match, specifier: string) => readStyles(new URL(specifier, url)),
+  );
+}
+
+const styles = readStyles(
   new URL("../../features/mission/styles.css", import.meta.url),
-  "utf8",
 );
 
 function readRule(selector: string): string {

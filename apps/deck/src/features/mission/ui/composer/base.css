@@ -1,0 +1,294 @@
+/* features/mission/ui/composer/base.css — Composer 基础命令栏与固定布局样式 */
+/* 由 features/mission/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Mission composer compact command bar */
+.draft-toolbar-grid-compact {
+  grid-template-columns: minmax(180px, 300px);
+  max-width: 320px;
+}
+
+.mission-order-editor {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.mission-composer-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border: 1px solid rgba(118, 125, 150, 0.24);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.mission-composer-box textarea {
+  min-height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: vertical;
+}
+
+.mission-composer-box textarea:focus {
+  box-shadow: none;
+}
+
+.mission-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.mission-composer-actions,
+.mission-composer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #526072;
+  font-size: 0.88rem;
+}
+
+.mission-composer-actions span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: #667085;
+}
+
+.mission-composer-meta select {
+  width: auto;
+  min-width: 92px;
+  height: 30px;
+  padding: 4px 26px 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  color: inherit;
+  box-shadow: none;
+  font-size: 0.88rem;
+}
+
+.mission-composer-meta select:hover,
+.mission-composer-meta select:focus {
+  background-color: rgba(118, 125, 150, 0.1);
+  box-shadow: none;
+}
+
+.composer-model-select {
+  max-width: 220px;
+}
+
+.composer-reasoning-select {
+  max-width: 112px;
+}
+
+.composer-enhance-button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 95, 191, 0.2);
+  background: rgba(216, 226, 255, 0.68);
+  color: #1f5fbf;
+  box-shadow: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.composer-enhance-button:hover:not(:disabled) {
+  background: rgba(216, 226, 255, 0.92);
+  transform: translateY(-1px);
+}
+
+.composer-enhance-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.composer-send-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  background: #1f5fbf;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.composer-send-button span {
+  color: #ff5a5f;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.composer-send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+[data-deck-theme="dark"] .mission-composer-box {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: #0f1724;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+[data-deck-theme="dark"] .mission-composer-actions,
+[data-deck-theme="dark"] .mission-composer-meta,
+[data-deck-theme="dark"] .mission-composer-actions span {
+  color: #b7c4d8;
+}
+
+[data-deck-theme="dark"] .composer-enhance-button {
+  border-color: rgba(77, 163, 255, 0.24);
+  background: rgba(77, 163, 255, 0.16);
+  color: #d9e9ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-deck-theme="system"] .mission-composer-box {
+      border-color: rgba(148, 163, 184, 0.3);
+      background: #0f1724;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+    }
+
+  [data-deck-theme="system"] .mission-composer-actions,
+    [data-deck-theme="system"] .mission-composer-meta,
+    [data-deck-theme="system"] .mission-composer-actions span {
+      color: #b7c4d8;
+    }
+
+  [data-deck-theme="system"] .composer-enhance-button {
+      border-color: rgba(77, 163, 255, 0.24);
+      background: rgba(77, 163, 255, 0.16);
+      color: #d9e9ff;
+    }
+}
+
+@media (max-width: 860px) {
+  .draft-toolbar-grid-compact {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+
+  .mission-composer-footer,
+    .mission-composer-meta {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+  .mission-composer-meta select,
+    .composer-enhance-button,
+    .composer-send-button {
+      width: 100%;
+      max-width: none;
+    }
+}
+
+/* Mission fixed-height thread: center content scrolls, composer stays pinned. */
+.view-sessions .page-content {
+  min-height: 0;
+}
+
+.view-sessions .chat-layout.chat-layout-sidebar {
+  height: calc(100vh - 140px);
+  min-height: 560px;
+  max-height: calc(100vh - 140px);
+}
+
+.view-sessions .chat-session-sidebar,
+.view-sessions .mission-inspector {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.view-sessions .chat-conversation {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.view-sessions .chat-main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.view-sessions .draft-toolbar {
+  position: static;
+  bottom: auto;
+  flex: none;
+  padding: 12px 16px 14px;
+}
+
+.view-sessions .chat-session-head {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
+@media (max-width: 860px) {
+  .view-sessions .chat-layout.chat-layout-sidebar {
+      height: auto;
+      min-height: calc(100vh - 120px);
+      max-height: none;
+    }
+
+  .view-sessions .chat-conversation {
+      height: auto;
+      overflow: visible;
+    }
+}
+
+/* Safety override: composer must remain visible at the bottom of the center pane. */
+.view-sessions .chat-input-area.draft-toolbar {
+  display: grid;
+  visibility: visible;
+  min-height: 0;
+  flex: 0 0 auto;
+  z-index: 6;
+}
+
+.view-sessions .chat-conversation > .chat-input-area.draft-toolbar {
+  align-self: stretch;
+}
+
+.view-sessions .chat-main {
+  scrollbar-gutter: stable;
+}
+
+/* Stronger bottom composer layout: messages scroll above, composer remains visible. */
+.view-sessions .chat-conversation {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.view-sessions .chat-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding-bottom: 18px;
+}
+
+.view-sessions .chat-input-area.draft-toolbar {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: auto;
+  border-top: 1px solid rgba(118, 125, 150, 0.18);
+}

@@ -1,0 +1,116 @@
+/* features/mission/ui/workspace/top-drawer.css — Mission 顶部抽屉样式 */
+/* 由 features/mission/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Mission top drawer: hide by its own height so it cannot protrude over single-chat mode after focus. */
+.shell.view-sessions > .top-nav {
+  top: 0;
+  left: 8px;
+  right: 8px;
+  width: calc(100vw - 16px);
+  transform: translateY(-100%) !important;
+  transition:
+    transform 0.24s ease,
+    box-shadow 0.24s ease;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  bottom: -12px;
+}
+
+/* Mission immersive mode: no visible top drawer handle/gap over the workbench. */
+.shell.view-sessions > .top-nav::after {
+  display: none !important;
+}
+
+.shell.view-sessions > .top-nav {
+  transform: translateY(calc(-100% - 1px)) !important;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+/* Mission top drawer access strip: keep a tiny hover target without pushing the workbench down. */
+.shell.view-sessions > .top-nav {
+  transform: translateY(calc(-100% + 4px)) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  height: 4px;
+  bottom: 0;
+  opacity: 0;
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  transform: translateY(0) !important;
+}
+
+/* Mission top drawer visible micro-handle. */
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  width: 56px;
+  height: 4px;
+  bottom: 0;
+  opacity: 0.72;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.82);
+  box-shadow: 0 0 12px rgba(148, 163, 184, 0.18);
+}
+
+/* Mission top drawer parity: use the same handle geometry as the other pages. */
+.shell.view-sessions > .top-nav {
+  top: 0;
+  left: 16px;
+  right: auto;
+  width: calc(100vw - 32px);
+  min-height: 76px;
+  transform: translateY(-78px) !important;
+}
+
+.shell.view-sessions > .top-nav::after {
+  display: block !important;
+  left: 50%;
+  bottom: -10px;
+  width: 64px;
+  height: 10px;
+  opacity: 1;
+  transform: translateX(-50%);
+  border-radius: 0 0 999px 999px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 24px rgba(26, 28, 29, 0.08);
+}
+
+.shell.view-sessions > .top-nav:hover,
+.shell.view-sessions > .top-nav:focus-within {
+  width: calc(100vw - 32px);
+  transform: translateY(0) !important;
+}
+
+@media (max-width: 860px) {
+  .shell > .top-nav,
+    .shell.view-sessions > .top-nav {
+      left: 8px;
+      right: auto;
+      width: calc(100vw - 16px);
+      min-height: 76px;
+      max-height: 76px;
+      padding: 12px 14px;
+      transform: translateY(-78px) !important;
+    }
+
+  .shell > .top-nav:hover,
+    .shell > .top-nav:focus-within,
+    .shell.view-sessions > .top-nav:hover,
+    .shell.view-sessions > .top-nav:focus-within {
+      width: calc(100vw - 16px);
+      transform: translateY(0) !important;
+    }
+}

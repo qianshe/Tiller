@@ -1,0 +1,169 @@
+/* features/mission/ui/composer/final-adjustments.css — Composer 末段选择器与附件修正 */
+/* 由 features/mission/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Mission split-layout tuning: give chat more room and keep draft dropdowns aligned to triggers. */
+.view-sessions .mission-draft-chat .draft-toolbar-grid-mission {
+  width: min(560px, calc(100% - 16px));
+  grid-template-columns: minmax(0, 340px) minmax(140px, 200px);
+  gap: 12px;
+}
+
+.view-sessions .mission-worktree-field,
+.view-sessions .mission-agent-field {
+  min-width: 0;
+}
+
+.view-sessions .mission-worktree-trigger,
+.view-sessions .mission-agent-trigger {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  left: 0;
+  right: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Mission picker popovers: align dropdown width and x-position with the visible trigger. */
+.view-sessions .mission-worktree-field {
+  --mission-picker-label-width: 82px;
+  --mission-picker-gap: 10px;
+}
+
+.view-sessions .mission-agent-field {
+  --mission-picker-label-width: 25px;
+  --mission-picker-gap: 10px;
+}
+
+.view-sessions .mission-worktree-menu,
+.view-sessions .mission-agent-menu {
+  left: calc(var(--mission-picker-label-width) + var(--mission-picker-gap));
+  right: auto;
+  width: calc(
+    100% - var(--mission-picker-label-width) - var(--mission-picker-gap)
+  );
+  min-width: 0;
+  max-width: calc(
+    100% - var(--mission-picker-label-width) - var(--mission-picker-gap)
+  );
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-worktree-menu,
+    .view-sessions .mission-agent-menu {
+      left: 0;
+      width: 100%;
+      max-width: 100%;
+    }
+}
+
+@media (max-width: 860px) {
+  .view-sessions .mission-composer-sidecar {
+      display: grid !important;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      overflow: visible;
+    }
+
+  .view-sessions .mission-composer-actions {
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: max-content;
+      justify-self: end;
+    }
+}
+
+/* Mission attachment strip: keep pasted images inside the editor instead of adding a tall block above the footer. */
+.view-sessions .mission-order-editor.chat-input-form .slash-command-wrapper {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.view-sessions
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 86px;
+  max-height: 180px;
+  padding: 12px 16px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d6d9df;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.view-sessions
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.view-sessions
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea::placeholder {
+  color: #8b8275;
+}
+
+.view-sessions
+  .mission-draft-chat
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea {
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  padding-inline: 12px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.view-sessions .mission-attachment-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.view-sessions .mission-attachment-chip {
+  flex: 0 0 auto;
+  height: 28px;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.view-sessions .mission-attachment-chip .mission-composer-attachment-remove {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin-left: 1px;
+  font-size: 12px;
+}
+
+.view-sessions
+  .mission-attachment-chip
+  .mission-composer-attachment-remove:hover {
+  background: rgba(220, 38, 38, 0.12);
+}

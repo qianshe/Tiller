@@ -1,0 +1,514 @@
+/* features/mission/ui/composer/popovers.css — Composer 控件、配置与弹层样式 */
+/* 由 features/mission/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Mission composer: copy Zed's compact editor footer instead of a large form card. */
+.view-sessions .mission-order-editor.chat-input-form {
+  width: min(760px, calc(100% - 32px));
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: 1fr !important;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: #0c0d0f;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.26);
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea {
+  min-height: 86px;
+  max-height: 180px;
+  padding: 16px 16px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d6d9df;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.view-sessions .mission-order-editor.chat-input-form > textarea::placeholder {
+  color: #8b8275;
+}
+
+.view-sessions .mission-composer-sidecar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 7px 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: #111214;
+}
+
+.view-sessions .mission-composer-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  color: #a7adb8;
+  font-size: 1.05rem;
+}
+
+.view-sessions .mission-composer-tools span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+}
+
+.view-sessions .mission-composer-config {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.view-sessions .mission-config-card,
+.view-sessions .mission-composer-config label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.view-sessions .mission-config-card > span,
+.view-sessions .mission-composer-config label > span {
+  color: #b7bfcc;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.view-sessions .mission-config-mode {
+  padding-inline: 4px;
+}
+
+.view-sessions .mission-config-card select,
+.view-sessions .mission-composer-config select {
+  width: auto;
+  max-width: 190px;
+  min-height: 28px;
+  padding: 2px 22px 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cfd6e2;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.view-sessions .mission-config-card select:hover,
+.view-sessions .mission-composer-config select:hover,
+.view-sessions .mission-config-card select:focus,
+.view-sessions .mission-composer-config select:focus {
+  background: rgba(148, 163, 184, 0.12);
+  outline: none;
+}
+
+.view-sessions .mission-config-card small {
+  display: none;
+}
+
+.view-sessions .mission-composer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-self: auto;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button,
+.view-sessions .mission-composer-actions .composer-send-icon {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button {
+  border: 0;
+  background: transparent;
+  color: #a7adb8;
+}
+
+.view-sessions
+  .mission-composer-actions
+  .composer-icon-button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.view-sessions .mission-composer-actions .composer-send-icon {
+  background: rgba(148, 163, 184, 0.18);
+  color: #98a2b3;
+}
+
+.view-sessions .mission-composer-actions .composer-send-icon:not(:disabled) {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.view-sessions .mission-composer-actions .composer-cancel-icon {
+  background: #dc2626;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.view-sessions .mission-composer-actions .composer-cancel-icon:hover {
+  background: #b91c1c;
+}
+
+.view-sessions .mission-order-editor .order-editor-hint {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #707887;
+  font-size: 0.72rem;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-order-editor.chat-input-form {
+  background: #111214;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-composer-sidecar {
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+
+  .view-sessions .mission-composer-config {
+      width: 100%;
+      order: 3;
+      justify-content: flex-start;
+      overflow-x: auto;
+    }
+}
+
+/* Mission composer fine tune: Zed-like controls are icon/select only. */
+.view-sessions .mission-composer-config {
+  gap: 6px;
+}
+
+.view-sessions .mission-config-card > span,
+.view-sessions .mission-composer-config label > span {
+  display: none;
+}
+
+.view-sessions .mission-config-model select {
+  width: 154px;
+  max-width: 154px;
+}
+
+.view-sessions .mission-config-reasoning select {
+  width: 86px;
+  max-width: 86px;
+}
+
+.view-sessions .mission-config-card select,
+.view-sessions .mission-composer-config select {
+  min-height: 30px;
+  padding-inline: 8px 20px;
+}
+
+@media (max-width: 720px) {
+  .view-sessions .mission-config-model select {
+      width: 150px;
+      max-width: 150px;
+    }
+
+  .view-sessions .mission-config-reasoning select {
+      width: 82px;
+      max-width: 82px;
+    }
+}
+
+/* Mission composer custom upward pickers fed by Helm/ACP model metadata. */
+.view-sessions .mission-config-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.view-sessions .mission-config-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d9e2f1;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: left;
+}
+
+.view-sessions .mission-config-trigger::after {
+  content: "⌄";
+  color: #96a0ad;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.view-sessions .mission-config-trigger:hover,
+.view-sessions .mission-config-picker.open .mission-config-trigger {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.view-sessions .mission-config-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger {
+  width: 154px;
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  width: 86px;
+}
+
+.view-sessions .mission-config-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(320px, 72vw);
+  max-height: 280px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 9px;
+  background: #181a1f;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.view-sessions .mission-config-menu button {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.view-sessions .mission-config-menu button:hover,
+.view-sessions .mission-config-menu button.active {
+  background: rgba(96, 165, 250, 0.2);
+  color: #f8fafc;
+}
+
+.view-sessions .mission-composer-actions .composer-icon-button {
+  font-size: 1rem;
+  color: #a7f3d0;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-config-menu {
+  background: #181a1f;
+}
+
+/* Mission composer visual fix: keep popovers visible and align with dark page surfaces. */
+.view-sessions .chat-input-area.draft-toolbar,
+.view-sessions .mission-order-editor.chat-input-form,
+.view-sessions .mission-composer-sidecar {
+  overflow: visible;
+}
+
+.view-sessions .chat-input-area.draft-toolbar {
+  z-index: 30;
+}
+
+.view-sessions .mission-order-editor.chat-input-form {
+  border-color: rgba(60, 74, 96, 0.82);
+  border-radius: 8px;
+  background: #0b1019;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.view-sessions .mission-composer-sidecar {
+  border-top-color: rgba(60, 74, 96, 0.72);
+  border-radius: 0 0 8px 8px;
+  background: #0d121d;
+}
+
+.view-sessions .mission-config-menu {
+  z-index: 80;
+  min-width: 188px;
+  background: #111827;
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-menu {
+  min-width: 112px;
+}
+
+.view-sessions .mission-config-menu button {
+  color: #d7deea;
+}
+
+.view-sessions .mission-config-menu button.active {
+  background: rgba(59, 130, 246, 0.34);
+}
+
+.mission-composer-attachments,
+.mission-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mission-composer-attachments span {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.mission-composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mission-composer-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.mission-composer-attachment-remove:hover {
+  background: rgba(220, 38, 38, 0.18);
+  color: #dc2626;
+  opacity: 1;
+}
+
+.mission-message-image {
+  margin: 8px 0 0;
+  max-width: 220px;
+}
+
+.mission-message-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.mission-message-image figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Mission composer interaction polish: content-driven height and adaptive pickers. */
+.view-sessions .mission-order-editor.chat-input-form > textarea {
+  min-height: 72px;
+  max-height: 50vh;
+  resize: none;
+  overflow-y: hidden;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger,
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  width: auto;
+  min-width: 0;
+}
+
+.view-sessions .mission-config-picker-model .mission-config-trigger {
+  max-width: min(220px, 24vw);
+}
+
+.view-sessions .mission-config-picker-reasoning .mission-config-trigger {
+  max-width: min(108px, 14vw);
+}
+
+.view-sessions .mission-config-trigger {
+  padding-inline: 8px 6px;
+}
+
+.view-sessions .mission-config-trigger::after {
+  margin-left: 4px;
+}
+
+.view-sessions .mission-config-menu {
+  min-width: max(100%, 132px);
+}
+
+/* Mission composer chevron polish: use a small CSS caret instead of a text glyph. */
+.view-sessions .mission-config-trigger {
+  gap: 5px;
+}
+
+.view-sessions .mission-config-trigger::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid #8ea0ba;
+  border-bottom: 1.5px solid #8ea0ba;
+  transform: translateY(-2px) rotate(45deg);
+  flex: 0 0 auto;
+}
+
+.view-sessions .mission-config-picker.open .mission-config-trigger::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+/* Mission composer: Zed-like footer has no explanatory hint below the toolbar. */
+.view-sessions .mission-order-editor .order-editor-hint {
+  display: none;
+}

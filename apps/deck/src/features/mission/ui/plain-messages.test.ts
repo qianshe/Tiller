@@ -36,3 +36,15 @@ test("plain message timeline can reveal older loaded messages", () => {
     messages.slice(-40).map((item) => item.id),
   );
 });
+
+test("plain message timeline uses chronological latest messages from newest-first pages", () => {
+  const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
+  const newestFirstMessages = [...messages].reverse();
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages(newestFirstMessages, DEFAULT_VISIBLE_MESSAGE_LIMIT).map(
+      (item) => item.id,
+    ),
+    messages.slice(-20).map((item) => item.id),
+  );
+});

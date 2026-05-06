@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
+import { sortAgentMessagesByTimeline } from "../../logbook";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -47,8 +48,13 @@ export function PlainMessages({
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
 
   function showMoreMessages() {
-    setVisibleMessageCount((current) => current + DEFAULT_VISIBLE_MESSAGE_LIMIT);
-    if (historyState?.hasMore && !historyState.loading) {
+    const nextVisibleCount = visibleMessageCount + DEFAULT_VISIBLE_MESSAGE_LIMIT;
+    setVisibleMessageCount(nextVisibleCount);
+    if (
+      displayMessages.length <= nextVisibleCount &&
+      historyState?.hasMore &&
+      !historyState.loading
+    ) {
       onLoadOlderMessages();
     }
   }
@@ -123,14 +129,14 @@ export function PlainMessages({
 }
 
 function sortDisplayMessages(items: AgentMessage[]) {
-  return items;
+  return sortAgentMessagesByTimeline(items);
 }
 
 export function resolveVisiblePlainMessages(
   items: AgentMessage[],
   visibleCount = DEFAULT_VISIBLE_MESSAGE_LIMIT,
 ) {
-  return items.slice(-visibleCount);
+  return sortDisplayMessages(items).slice(-visibleCount);
 }
 
 function shouldCollapsePlainMessage(text: string) {

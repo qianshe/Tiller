@@ -326,3 +326,40 @@
   background: rgba(255, 255, 255, 0.76);
   color: #0f172a;
 }
+
+/* Prompt enhancer settings polish: keep model refresh compact and textareas readable. */
+.prompt-enhancer-card .prompt-llm-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(4) textarea {
+  min-height: 150px;
+  max-height: 260px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(5) textarea {
+  min-height: 260px;
+  max-height: 480px;
+}
+
+@media (max-width: 980px) {
+  .prompt-enhancer-card .prompt-llm-grid {
+      grid-template-columns: 1fr;
+    }
+}
+
+.prompt-enhancer-card .prompt-llm-grid {
+  gap: 16px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-enhancer-card .prompt-llm-grid label > span {
+  font-size: 0.9rem;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+}

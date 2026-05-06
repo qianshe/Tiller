@@ -1,0 +1,141 @@
+/* features/agents/ui/helm-hub/styles.css — Helm Hub 选择模块样式 */
+/* 由 features/agents/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Fleet Hub redesign: one focused module for Helm selection only. */
+.fleet-hub {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(239, 68, 68, 0.1), transparent 34%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.62), rgba(15, 23, 42, 0.34));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 48px rgba(0, 0, 0, 0.14);
+}
+
+.fleet-hub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.fleet-hub-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.fleet-hub-title-row h3 {
+  margin: 0;
+  color: #fca5a5;
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+  line-height: 1;
+}
+
+.fleet-hub-title-row span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.fleet-hub-head .primary {
+  min-width: 92px;
+  min-height: 48px;
+  border-radius: 999px;
+}
+
+.fleet-hub-copy {
+  max-width: 82ch;
+  margin: 0;
+  color: #aebbd0;
+  font-size: 0.98rem;
+  line-height: 1.58;
+}
+
+.fleet-hub-node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 58px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(2, 6, 23, 0.2);
+}
+
+.fleet-hub-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  max-width: 260px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background: rgba(226, 232, 240, 0.1);
+  color: #e5edf7;
+  font-weight: 900;
+  text-align: left;
+  box-shadow: none;
+}
+
+.fleet-hub-node:hover,
+.fleet-hub-node:focus-visible {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.14);
+  outline: none;
+}
+
+.fleet-hub-node.active {
+  border-color: rgba(96, 165, 250, 0.78);
+  background: linear-gradient(
+    135deg,
+    rgba(226, 232, 240, 0.24),
+    rgba(59, 130, 246, 0.16)
+  );
+}
+
+.fleet-hub-node span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .fleet-hub {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(239, 68, 68, 0.1), transparent 34%),
+    rgba(248, 250, 252, 0.78);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-hub-copy {
+  color: #475569;
+}
+
+[data-deck-theme="light"] .fleet-hub-node-list {
+  background: rgba(255, 255, 255, 0.54);
+}
+
+[data-deck-theme="light"] .fleet-hub-node {
+  background: rgba(248, 250, 252, 0.82);
+  color: #0f172a;
+}
+
+@media (max-width: 720px) {
+  .fleet-hub-head {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+  .fleet-hub-head .primary {
+      width: 100%;
+    }
+}

@@ -37,7 +37,7 @@ export function MissionMessageTimeline({
 }: MissionMessageTimelineProps) {
   return (
     <PlainMessages
-      sessionId={sessionId}
+      sessionId={sessionId ?? null}
       items={items}
       emptyText={copy.waitingForAgent}
       assistantLabel={assistantLabel ?? copy.role.assistant}
