@@ -71,3 +71,22 @@ test("permission drawer detail block keeps raw approval payload readable", () =>
   assert.match(buttonRule, /padding\s*:\s*5px\s+10px/);
   assert.match(buttonRule, /box-shadow\s*:\s*none/);
 });
+
+test("mission light theme overrides Zed dark workbench surfaces", () => {
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-layout\.chat-layout-sidebar\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface-sunken\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-conversation\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-inspector\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.project-nav-item,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-session-item\s*\{(?<body>[^}]*)color\s*:\s*var\(--foreground\)/,
+  );
+});
