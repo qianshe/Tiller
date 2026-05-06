@@ -65,6 +65,15 @@ function isFeaturePublicImport(path) {
   return segments[0] === "features" && segments.length === 2;
 }
 
+function isFeatureStylesheetImport(path) {
+  const segments = normalize(path).split(sep).filter(Boolean);
+  return (
+    segments[0] === "features" &&
+    segments.length === 3 &&
+    segments[2] === "styles.css"
+  );
+}
+
 const sourceFiles = walk(srcRoot).filter((file) =>
   [".ts", ".tsx"].includes(extname(file)),
 );
@@ -92,7 +101,12 @@ for (const file of sourceFiles) {
     if (fromArea === "shared" && ["app", "features", "store"].includes(importedArea)) {
       failures.push(`${fromRel} must not import ${imported} from shared`);
     }
-    if (fromArea === "app" && importedArea === "features" && !isFeaturePublicImport(imported)) {
+    if (
+      fromArea === "app" &&
+      importedArea === "features" &&
+      !isFeaturePublicImport(imported) &&
+      !isFeatureStylesheetImport(imported)
+    ) {
       failures.push(`${fromRel} must import feature public API instead of ${imported}`);
     }
     if (

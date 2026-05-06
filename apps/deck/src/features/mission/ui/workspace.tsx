@@ -189,7 +189,7 @@ export function MissionWorkspace(props: any) {
       message={projectFilesEntry?.message}
       projectFiles={projectFiles}
       visibleProjectFiles={visibleProjectFiles}
-      collapsedDirectories={collapsedProjectFileDirectories}
+      expandedDirectories={collapsedProjectFileDirectories}
       onToggleDirectory={toggleProjectFileDirectory}
     />
   );

@@ -25,7 +25,7 @@ export function selectMissionPanelPage(
 export function resolveVisibleProjectFiles(
   projectFiles: ProjectFileSummary[],
   filter: string,
-  collapsedDirectories: Set<string>,
+  expandedDirectories: Set<string>,
 ) {
   const filterText = filter.trim().toLowerCase();
   return projectFiles.filter((file) => {
@@ -33,11 +33,10 @@ export function resolveVisibleProjectFiles(
       return file.path.toLowerCase().includes(filterText);
     }
     const parts = file.path.split("/");
-    return !parts
-      .slice(1)
-      .some((_, index) =>
-        collapsedDirectories.has(parts.slice(0, index + 1).join("/")),
-      );
+    const ancestorPaths = parts
+      .slice(0, -1)
+      .map((_, index) => parts.slice(0, index + 1).join("/"));
+    return ancestorPaths.every((path) => expandedDirectories.has(path));
   });
 }
 

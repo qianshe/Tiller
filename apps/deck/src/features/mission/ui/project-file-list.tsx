@@ -6,7 +6,7 @@ type ProjectFileListProps = {
   message?: string;
   projectFiles: ProjectFileSummary[];
   visibleProjectFiles: ProjectFileSummary[];
-  collapsedDirectories: Set<string>;
+  expandedDirectories: Set<string>;
   onToggleDirectory: (path: string) => void;
 };
 
@@ -19,7 +19,7 @@ export function ProjectFileList({
   message,
   projectFiles,
   visibleProjectFiles,
-  collapsedDirectories,
+  expandedDirectories,
   onToggleDirectory,
 }: ProjectFileListProps) {
   if (!activeSessionPresent) {
@@ -43,7 +43,7 @@ export function ProjectFileList({
     >
       {visibleProjectFiles.map((file) => {
         const isDirectory = file.kind === "directory";
-        const collapsed = collapsedDirectories.has(file.path);
+        const expanded = expandedDirectories.has(file.path);
         const depth = Math.max(file.path.split("/").length - 1, 0);
         return (
           <button
@@ -51,7 +51,7 @@ export function ProjectFileList({
             type="button"
             className={`mission-project-file-row mission-project-file-${file.kind}`}
             role="treeitem"
-            aria-expanded={isDirectory ? !collapsed : undefined}
+            aria-expanded={isDirectory ? expanded : undefined}
             title={file.path}
             style={{ paddingLeft: `${8 + depth * 12}px` }}
             onClick={() => {
@@ -61,10 +61,10 @@ export function ProjectFileList({
             }}
           >
             <span className="mission-project-file-caret">
-              {isDirectory ? (collapsed ? "▸" : "▾") : ""}
+              {isDirectory ? (expanded ? "▾" : "▸") : ""}
             </span>
             <span className="mission-project-file-icon" aria-hidden="true">
-              {isDirectory ? (collapsed ? "📁" : "📂") : "📄"}
+              {isDirectory ? (expanded ? "📂" : "📁") : "📄"}
             </span>
             <strong>{file.path.split("/").slice(-1)[0] ?? file.path}</strong>
           </button>

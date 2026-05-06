@@ -1,10 +1,13 @@
+import { useEffect, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+export const DEFAULT_VISIBLE_MESSAGE_LIMIT = 20;
 
 type PlainMessagesProps = {
+  sessionId: string | null;
   items: AgentMessage[];
   emptyText: string;
   assistantLabel: string;
@@ -16,6 +19,7 @@ type PlainMessagesProps = {
 };
 
 export function PlainMessages({
+  sessionId,
   items,
   emptyText,
   assistantLabel,
@@ -25,24 +29,47 @@ export function PlainMessages({
   onLoadOlderMessages,
   onToggleExpandedMessage,
 }: PlainMessagesProps) {
+  const [visibleMessageCount, setVisibleMessageCount] = useState(
+    DEFAULT_VISIBLE_MESSAGE_LIMIT,
+  );
+
+  useEffect(() => {
+    setVisibleMessageCount(DEFAULT_VISIBLE_MESSAGE_LIMIT);
+  }, [sessionId]);
+
   const displayMessages = sortDisplayMessages(items);
+  const visibleMessages = resolveVisiblePlainMessages(
+    displayMessages,
+    visibleMessageCount,
+  );
+  const hasHiddenLoadedMessages = visibleMessages.length < displayMessages.length;
+  const canLoadMoreMessages =
+    hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
+
+  function showMoreMessages() {
+    setVisibleMessageCount((current) => current + DEFAULT_VISIBLE_MESSAGE_LIMIT);
+    if (historyState?.hasMore && !historyState.loading) {
+      onLoadOlderMessages();
+    }
+  }
+
   if (!displayMessages.length) {
     return <div className="empty-state">{emptyText}</div>;
   }
 
   return (
     <div className="plain-message-list conversation-timeline">
-      {historyState?.hasMore ? (
+      {canLoadMoreMessages ? (
         <button
           className="secondary load-more-history"
           type="button"
-          onClick={onLoadOlderMessages}
-          disabled={historyState.loading}
+          onClick={showMoreMessages}
+          disabled={historyState?.loading}
         >
-          {historyState.loading ? "加载中..." : "加载更早消息"}
+          {historyState?.loading ? "加载中..." : "查看更多"}
         </button>
       ) : null}
-      {displayMessages.map((message) => {
+      {visibleMessages.map((message) => {
         const isExpanded = expandedMessageIds.has(message.id);
         const isCollapsible =
           message.role === "user" && shouldCollapsePlainMessage(message.text);
@@ -97,6 +124,13 @@ export function PlainMessages({
 
 function sortDisplayMessages(items: AgentMessage[]) {
   return items;
+}
+
+export function resolveVisiblePlainMessages(
+  items: AgentMessage[],
+  visibleCount = DEFAULT_VISIBLE_MESSAGE_LIMIT,
+) {
+  return items.slice(-visibleCount);
 }
 
 function shouldCollapsePlainMessage(text: string) {
