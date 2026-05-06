@@ -2,6 +2,7 @@ import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
@@ -67,9 +68,8 @@ export function handleRuntimeEvent(
         status: event.status,
         updatedAt: new Date().toISOString(),
       }));
-      context.broadcastAuthenticated({
-        type: "session.status",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "status_change",
         status: event.status,
         message: event.message,
       });
@@ -93,7 +93,10 @@ export function handleRuntimeEvent(
       context.updateSessionSummary(sessionId, (current) =>
         applyAgentMessageToSummary(current, event.message),
       );
-      context.broadcastAuthenticated({ type: "agent.message", sessionId, message: event.message });
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "agent_message",
+        message: event.message,
+      });
       return;
     case "permission-request":
       context.logInfo(
@@ -106,9 +109,8 @@ export function handleRuntimeEvent(
         lastMessagePreview: event.request.reason,
       }));
       context.permissionIndex.set(event.request.id, { sessionId, request: event.request });
-      context.broadcastAuthenticated({
-        type: "permission.request",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "permission_request",
         permissionRequest: event.request,
       });
       return;
@@ -117,22 +119,27 @@ export function handleRuntimeEvent(
         `[tiller] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`,
       );
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
-      context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "tool_call",
+        toolCall: event.toolCall,
+      });
       return;
     case "command-output":
       context.logInfo(
         `[tiller] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length}`,
       );
       context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
-      context.broadcastAuthenticated({
-        type: "command.output",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "command_output",
         commandId: event.chunk.commandId,
         chunk: event.chunk,
       });
       if (event.toolCall) {
         context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
-        context.broadcastAuthenticated({ type: "tool.call", sessionId, toolCall: event.toolCall });
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "tool_call",
+          toolCall: event.toolCall,
+        });
       }
       return;
     case "diff-update":
@@ -152,16 +159,14 @@ export function handleRuntimeEvent(
         reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
-      context.broadcastAuthenticated({
-        type: "session.config.options",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "config_options",
         state: event.state,
         options: event.options,
       });
       if (updated) {
-        context.broadcastAuthenticated({
-          type: "session.updated",
-          requestId: `session-config-${Date.now()}`,
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "session_updated",
           session: context.hydrateSessionSummary(updated),
         });
       }
@@ -177,25 +182,22 @@ export function handleRuntimeEvent(
         modelOptions: event.state.options,
         updatedAt: new Date().toISOString(),
       }));
-      context.broadcastAuthenticated({
-        type: "session.model.options",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "model_options",
         currentModelId: event.state.currentModelId,
         options: event.state.options,
       });
       if (updated) {
-        context.broadcastAuthenticated({
-          type: "session.updated",
-          requestId: `session-model-${Date.now()}`,
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "session_updated",
           session: context.hydrateSessionSummary(updated),
         });
       }
       return;
     }
     case "available-commands":
-      context.broadcastAuthenticated({
-        type: "session.commands",
-        sessionId,
+      broadcastSessionUpdate(context, sessionId, {
+        kind: "commands_available",
         commands: event.commands,
       });
       return;
@@ -215,8 +217,7 @@ export function handleRuntimeEvent(
         updatedAt: new Date().toISOString(),
         lastMessagePreview: event.message.slice(0, 160),
       }));
-      context.broadcastAuthenticated({
-        type: "error",
+      broadcastErrorRaised(context, {
         sessionId,
         message: event.message,
         code: event.code,
