@@ -275,6 +275,7 @@ export function App() {
     controllers,
     history,
     route,
+    lastFilesScopeKeyRef,
     missionVisualMode,
     activeProfileId: `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`,
     requestChatScrollToBottom,
