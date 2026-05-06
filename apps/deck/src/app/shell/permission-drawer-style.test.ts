@@ -89,4 +89,20 @@ test("mission light theme overrides Zed dark workbench surfaces", () => {
     styles,
     /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.project-nav-item,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-session-item\s*\{(?<body>[^}]*)color\s*:\s*var\(--foreground\)/,
   );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-activity-log\s+\.tool-call-card\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-tree-main\s+strong\s*\{(?<body>[^}]*)color\s*:\s*var\(--foreground\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-order-editor\.chat-input-form\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-pane-resizer\s*\{(?<body>[^}]*)background\s*:\s*transparent/,
+  );
 });

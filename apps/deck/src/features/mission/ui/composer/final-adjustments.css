@@ -167,3 +167,112 @@
   .mission-composer-attachment-remove:hover {
   background: rgba(220, 38, 38, 0.12);
 }
+
+/* Mission light-theme polish: keep tree, composer, and split gutters readable. */
+[data-deck-theme="light"] .view-sessions .mission-pane-resizer {
+  flex-basis: 6px;
+  width: 6px;
+  min-width: 6px;
+  background: transparent;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-pane-resizer::before {
+  inset: 0 2.5px;
+  background: rgba(118, 125, 150, 0.18);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-pane-resizer:hover::before,
+[data-deck-theme="light"] .view-sessions .mission-pane-resizer:focus-visible::before,
+[data-deck-theme="light"] .mission-pane-resizing .mission-pane-resizer::before {
+  background: rgb(0 88 188 / 0.5);
+  box-shadow: 0 0 0 1px rgb(0 88 188 / 0.14);
+}
+
+[data-deck-theme="light"] .view-sessions .chat-session-sidebar {
+  border-right-color: rgba(118, 125, 150, 0.1);
+}
+
+[data-deck-theme="light"] .view-sessions .chat-conversation {
+  border-left-color: rgba(118, 125, 150, 0.1);
+  border-right-color: rgba(118, 125, 150, 0.1);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-display-panel {
+  border-right-color: rgba(118, 125, 150, 0.1);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-inspector {
+  border-left-color: rgba(118, 125, 150, 0.1);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-row {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-main strong {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-main span,
+[data-deck-theme="light"] .view-sessions .mission-tree-time {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-caret,
+[data-deck-theme="light"] .view-sessions .mission-tree-icon,
+[data-deck-theme="light"] .view-sessions .mission-tree-agent-icon,
+[data-deck-theme="light"] .view-sessions .mission-tree-new-inline {
+  color: var(--primary);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-row-session,
+[data-deck-theme="light"] .view-sessions .mission-tree-row-new.active {
+  background: transparent;
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-row-session:hover,
+[data-deck-theme="light"] .view-sessions .mission-tree-session-row:hover .mission-tree-row-session {
+  background: rgb(0 88 188 / 0.08);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-row-session.active,
+[data-deck-theme="light"] .view-sessions .mission-tree-session-row.active .mission-tree-row-session {
+  background: var(--primary-soft);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-session-row.active .mission-tree-main strong {
+  color: var(--primary);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-new-inline:hover {
+  background: rgb(0 88 188 / 0.1);
+  color: var(--primary);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-order-editor.chat-input-form {
+  background: var(--surface);
+  border-color: rgba(118, 125, 150, 0.2);
+  box-shadow: 0 14px 36px rgba(30, 41, 59, 0.12);
+}
+
+[data-deck-theme="light"]
+  .view-sessions
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"]
+  .view-sessions
+  .mission-order-editor.chat-input-form
+  .slash-command-wrapper
+  > textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-composer-sidecar {
+  border-top-color: rgba(118, 125, 150, 0.14);
+  background: color-mix(in srgb, var(--surface-sunken) 70%, transparent);
+}

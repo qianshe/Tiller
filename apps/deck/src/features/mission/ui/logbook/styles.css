@@ -112,3 +112,28 @@
   --log-accent: #f87171;
   --log-accent-soft: rgba(248, 113, 113, 0.14);
 }
+
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-card {
+  border-color: rgba(118, 125, 150, 0.16);
+  background: var(--surface);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-card:hover {
+  border-color: rgba(118, 125, 150, 0.24);
+  border-left-color: var(--log-accent);
+  background: var(--surface-elevated);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-kind,
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-stream {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-head strong,
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-output {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-output {
+  border-top-color: rgba(118, 125, 150, 0.16);
+}
