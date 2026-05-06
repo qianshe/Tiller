@@ -9,6 +9,10 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
+const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
+const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
+const THINKING_PARAGRAPH_PREFIX = /^(?:Thinking|Thought|思考)\b[:：-]?/iu;
+
 const markdownComponents: Components = {
   a({ children, href, ...props }) {
     const external = Boolean(href && /^(https?:)?\/\//i.test(href));
@@ -25,6 +29,20 @@ const markdownComponents: Components = {
   },
   img() {
     return null;
+  },
+  p({ children, className, node: _node, ...props }) {
+    const paragraphClassName = [
+      className,
+      "markdown-paragraph",
+      isThinkingParagraph(children) ? "markdown-paragraph-thinking" : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return (
+      <p {...props} className={paragraphClassName}>
+        {children}
+      </p>
+    );
   },
   table({ children, node: _node, ...props }) {
     return (
@@ -52,13 +70,23 @@ export function MarkdownMessage({ text }: { text: string }) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
       >
-        {text}
+        {normalizeMarkdownMessageText(text)}
       </ReactMarkdown>
     </div>
   );
 }
 
 export { markdownComponents };
+
+export function normalizeMarkdownMessageText(text: string) {
+  return text
+    .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
+    .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2");
+}
+
+function isThinkingParagraph(node: ReactNode) {
+  return THINKING_PARAGRAPH_PREFIX.test(extractTextFromReactNode(node).trimStart());
+}
 
 function MarkdownCodeBlock({
   children,

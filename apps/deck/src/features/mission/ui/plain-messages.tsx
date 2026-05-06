@@ -3,7 +3,7 @@ import type { AgentMessage } from "@tiller/shared";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
 
-const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
+const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 export const DEFAULT_VISIBLE_MESSAGE_LIMIT = 20;
 
@@ -92,7 +92,7 @@ export function PlainMessages({
               {resolveMessageRoleLabel(message, assistantLabel, roleLabels)}
             </span>
             <div className={messageBodyClassName}>
-              {renderPlainMessageContent(message)}
+              {renderPlainMessageContent(message, isCollapsible && !isExpanded)}
             </div>
             {isCollapsible ? (
               <button
@@ -128,9 +128,18 @@ export function PlainMessages({
   );
 }
 
-function renderPlainMessageContent(message: AgentMessage) {
+function renderPlainMessageContent(
+  message: AgentMessage,
+  collapsed: boolean,
+) {
   return message.role === "user" ? (
-    <div className="plain-message-text">{message.text}</div>
+    <div
+      className={
+        collapsed ? "plain-message-text plain-message-text-collapsed" : "plain-message-text"
+      }
+    >
+      {message.text}
+    </div>
   ) : (
     <MarkdownMessage text={message.text} />
   );

@@ -96,9 +96,9 @@ test("user messages render as plain text and keep the collapse affordance", () =
   );
 
   assert.match(html, /plain-message-text/);
+  assert.match(html, /plain-message-text-collapsed/);
   assert.match(html, /展开完整消息/);
-  assert.match(html, /…/);
+  assert.match(html, /很长的文本/);
   assert.doesNotMatch(html, /markdown-message/);
   assert.doesNotMatch(html, /<table>/);
-  assert.doesNotMatch(html, /第六行内容/);
 });

@@ -93,36 +93,19 @@
   word-break: break-word;
 }
 
+.plain-message-text-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
 .plain-message-body {
   min-width: 0;
 }
 
 .plain-message-body-collapsed {
   position: relative;
-  max-height: 5em;
-  overflow: hidden;
-}
-
-.plain-message-body-collapsed .plain-message-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
-}
-
-.plain-message-body-collapsed::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1.6em;
-  pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0),
-    var(--surface, #fff) 86%
-  );
 }
 
 .plain-message-expand {
