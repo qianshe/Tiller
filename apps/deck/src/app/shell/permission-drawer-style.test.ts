@@ -43,7 +43,7 @@ test("permission drawer path stays on a single second row", () => {
   const headerRule = readRule(".mission-permission-header");
   const titleRule = readRule(".mission-permission-title");
   const workspaceRule = styles.match(
-    /\n\n\.mission-permission-workspace\s*\{(?<body>[^}]*)\}/,
+    /(?:\r?\n){2}\.mission-permission-workspace\s*\{(?<body>[^}]*)\}/,
   );
 
   assert.match(headerRule, /gap\s*:\s*4px/);
