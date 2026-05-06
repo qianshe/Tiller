@@ -12,7 +12,7 @@ import type {
   TrustedDeviceSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import type { DaemonProfile } from "../../helm-connection/facade";
+import type { DaemonProfile, DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
 import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
@@ -42,7 +42,10 @@ type AgentsPageProps = {
   agents: AcpAgentProvider[];
   workspaces: WorkspaceSummary[];
   socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
+  helmRpcClientRefs: MutableRefObject<Map<string, DeckRpcClient>>;
+  dispatch: DispatchToHelm;
   configuredHelms: HelmSummary[];
   fleetAddHelmStage: "connect" | "connecting" | "pair";
   fleetAddHelmModalOpen: boolean;
@@ -110,7 +113,10 @@ export function AgentsPage({
   agents,
   workspaces,
   socketRef,
+  rpcClientRef,
   helmSocketRefs,
+  helmRpcClientRefs,
+  dispatch,
   configuredHelms,
   fleetAddHelmStage,
   fleetAddHelmModalOpen,
@@ -173,6 +179,8 @@ export function AgentsPage({
     configuredHelms,
     socket: socketRef.current,
     helmSockets: helmSocketRefs.current,
+    rpcClient: rpcClientRef.current,
+    helmRpcClients: helmRpcClientRefs.current,
   });
   if (!helmSelection) {
     return null;
@@ -189,6 +197,7 @@ export function AgentsPage({
     selectedHelmProjects,
     selectedHelmSavedProfile,
     selectedHelmSocket,
+    selectedHelmRpcClient,
     selectedHelmTrustedDevices,
     selectedHelmWorkspaces,
   } = helmSelection;
@@ -255,6 +264,7 @@ export function AgentsPage({
           selectedHelmAgents={selectedHelmAgents}
           selectedHelmWorkspaces={selectedHelmWorkspaces}
           selectedHelmSocket={selectedHelmSocket}
+          selectedHelmRpcClient={selectedHelmRpcClient}
           selectedHelmId={selectedHelmId}
           selectedHelmTrustedDevices={selectedHelmTrustedDevices}
           socketRef={socketRef}
@@ -278,6 +288,7 @@ export function AgentsPage({
           fleetAgentDraft={fleetAgentDraft}
           setFleetAgentDraft={setFleetAgentDraft}
           requestCounter={requestCounter}
+          dispatch={dispatch}
           copy={copy}
           renderTrustedDevicesPanel={renderTrustedDevicesPanel}
         />

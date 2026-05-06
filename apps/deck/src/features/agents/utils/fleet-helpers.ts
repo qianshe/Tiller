@@ -1,5 +1,3 @@
-import type { MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
   ProjectSummary,
@@ -61,17 +59,6 @@ export function slugify(value: string) {
   );
 }
 
-export function nextRequestId(counter: MutableRefObject<number>) {
-  counter.current += 1;
-  return `req-${counter.current}`;
-}
-
-export function dispatch(socket: WebSocket, payload: ClientToHelm) {
-  if (socket.readyState !== WebSocket.OPEN) {
-    return;
-  }
-  socket.send(JSON.stringify(payload));
-}
 
 export function resolveProjectDisplayId(
   project: ProjectSummary,

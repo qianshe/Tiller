@@ -5,12 +5,12 @@ export function broadcastSessionUpdate(
   sessionId: string,
   update: unknown,
 ): void {
-  context.broadcastNotification?.("session/update", { sessionId, update });
+  context.broadcastNotification("session/update", { sessionId, update });
 }
 
 export function broadcastErrorRaised(
   context: HelmHandlerContext,
   input: { sessionId?: string; code?: string; message: string; data?: unknown },
 ): void {
-  context.broadcastNotification?.("error/raised", input);
+  context.broadcastNotification("error/raised", input);
 }

@@ -1,6 +1,5 @@
 // @ts-nocheck
 import type { FormEvent } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { DaemonProfile } from "../daemon-profiles";
 import type {
   ConnectionState,
@@ -13,9 +12,7 @@ import {
   type ConnectToDaemonOptions,
 } from "../sockets";
 import {
-  dispatchLegacyPayloadWithTrace,
   dispatchWithTrace,
-  nextRequestId,
   requestInitialSync as requestInitialSyncImpl,
 } from "../request-dispatch";
 import { DEFAULT_SESSION_PAGE_LIMIT } from "../../mission/config";
@@ -40,7 +37,6 @@ export function createSocketController(
     helmRpcClientRefs,
     rpcClientRef,
     setDaemonProfileMessage,
-    requestCounter,
     primaryHelmKeyRef,
     manualDisconnectRef,
     socketRef,
@@ -71,40 +67,29 @@ export function createSocketController(
     daemonPort,
   } = source;
 
-  function resolveHelmKeyForSocket(socket: WebSocket) {
-    if (socket === socketRef.current) {
-      return `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-    }
-    for (const [helmKey, candidate] of helmSocketRefs.current) {
-      if (candidate === socket) return helmKey;
-    }
-    return `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-  }
-
-  function resolveClientForSocket(socket: WebSocket) {
-    if (socket === socketRef.current) return rpcClientRef.current;
-    return helmRpcClientRefs.current.get(resolveHelmKeyForSocket(socket)) ?? null;
-  }
-
-  function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    const client = resolveClientForSocket(socket);
-    if (!client) return;
-    const helmKey = resolveHelmKeyForSocket(socket);
-    void dispatchLegacyPayloadWithTrace(client, payload, setDebugTrace, (method, result) => {
-      handlers.handleRpcResult(method, result, helmKey);
-    });
-  }
-
-  function dispatchRpc(client: any, method: string, params: unknown, sourceHelmKey?: string) {
+  function dispatchRpc(
+    client: any,
+    method: string,
+    params: unknown,
+    optionsOrSourceHelmKey?: { onResult?: (method: string, result: unknown) => void } | string,
+    explicitSourceHelmKey?: string,
+  ) {
+    const sourceHelmKey = typeof optionsOrSourceHelmKey === "string"
+      ? optionsOrSourceHelmKey
+      : explicitSourceHelmKey;
+    const onResult = typeof optionsOrSourceHelmKey === "object"
+      ? optionsOrSourceHelmKey.onResult
+      : undefined;
     return dispatchWithTrace(client, method, params, setDebugTrace, (resultMethod, result) => {
       handlers.handleRpcResult(resultMethod, result, sourceHelmKey);
+      onResult?.(resultMethod, result);
     });
   }
 
   function requestInitialSync(client: any, sourceHelmKey?: string) {
     return requestInitialSyncImpl(client, {
       dispatch: async (targetClient, method, params) => {
-        await dispatchRpc(targetClient, method, params, sourceHelmKey);
+        await dispatchRpc(targetClient, method, params, undefined, sourceHelmKey);
       },
       setSessionHistoryState,
       sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
@@ -133,8 +118,6 @@ export function createSocketController(
       readTrustedDeviceCache,
       requestInitialSync,
       dispatch: dispatchRpc,
-      nextRequestId,
-      requestCounter,
       handleRpcResult: handlers.handleRpcResult,
       handleRpcNotification: handlers.handleRpcNotification,
     });
@@ -180,8 +163,6 @@ export function createSocketController(
       setTrustedDevice,
       readTrustedDeviceCache,
       dispatch: dispatchRpc,
-      nextRequestId,
-      requestCounter,
       requestInitialSync,
       lastFilesScopeKeyRef,
       handleRpcResult: handlers.handleRpcResult,
@@ -192,7 +173,7 @@ export function createSocketController(
   return {
     connectHelmSocket,
     connectToDaemon,
-    dispatch,
+    dispatch: dispatchRpc,
     requestInitialSync,
     setHelmConnectionState,
     updateHelmInventory,

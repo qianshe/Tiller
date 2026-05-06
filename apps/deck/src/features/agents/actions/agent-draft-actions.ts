@@ -6,11 +6,10 @@ type UseAgentDraftActionsOptions = {
   selectedAgentId: string | null;
   filteredAgents: any[];
   agents: any[];
-  socketRef: { current: WebSocket | null };
+  rpcClientRef: any;
   setAgentTestResult: (value: string) => void;
   copy: any;
-  dispatch: (socket: WebSocket, payload: any) => void;
-  requestCounter: { current: number };
+  dispatch: any;
   agentDraft: { name: string; command: string; args: string };
   setDraftSaveMessage: (value: string) => void;
   setConfigSaveMessage: (value: string) => void;
@@ -22,11 +21,10 @@ export function useAgentDraftActions({
   selectedAgentId,
   filteredAgents,
   agents,
-  socketRef,
+  rpcClientRef,
   setAgentTestResult,
   copy,
   dispatch,
-  requestCounter,
   agentDraft,
   setDraftSaveMessage,
   setConfigSaveMessage,
@@ -38,11 +36,10 @@ export function useAgentDraftActions({
       selectedAgentId,
       filteredAgents,
       agents,
-      socketRef,
+      rpcClientRef,
       setAgentTestResult,
       copy,
       dispatch,
-      requestCounter,
     });
   }
 
@@ -57,13 +54,12 @@ export function useAgentDraftActions({
 
   function writeDraftToConfig() {
     writeDraftToConfigImpl({
-      socketRef,
+      rpcClientRef,
       slugify,
       agentDraft,
       setConfigSaveMessage,
       copy,
       dispatch,
-      requestCounter,
       splitArgs,
     });
   }

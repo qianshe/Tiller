@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { useEffect } from "react";
-import { nextRequestId } from "../../helm-connection/facade";
 import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../utils/composer-options";
 import { projectFilesKey } from "../utils/project-files-key";
@@ -31,10 +30,9 @@ export function useMissionSelectionEffects(source: any) {
     filteredWorkspaces,
     setSelectedWorkspaceId,
     pairingState,
-    socketRef,
+    rpcClientRef,
     setWorktreeGitByProject,
     dispatch,
-    requestCounter,
     lastFilesScopeKeyRef,
     setProjectFilesByScope,
     selectedAgentId,
@@ -138,8 +136,8 @@ export function useMissionSelectionEffects(source: any) {
     if (
       !selectedProjectId ||
       pairingState !== "paired" ||
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN
+      !rpcClientRef.current ||
+      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
@@ -151,9 +149,7 @@ export function useMissionSelectionEffects(source: any) {
         message: "正在加载 worktree...",
       },
     }));
-    dispatch(socketRef.current, {
-      type: "workspace.git.list",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(rpcClientRef.current, "workspace/git/list_branches", {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
@@ -168,8 +164,8 @@ export function useMissionSelectionEffects(source: any) {
       !scope.projectId ||
       !scope.workspaceId ||
       pairingState !== "paired" ||
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN
+      !rpcClientRef.current ||
+      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
@@ -187,9 +183,7 @@ export function useMissionSelectionEffects(source: any) {
         message: "正在加载项目文件...",
       },
     }));
-    dispatch(socketRef.current, {
-      type: "project.files.list",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(rpcClientRef.current, "project/list_files", {
       projectId: scope.projectId,
       workspaceId: scope.workspaceId,
     });
@@ -220,8 +214,8 @@ export function useMissionSelectionEffects(source: any) {
       pairingState !== "paired" ||
       !selectedAgentId ||
       !selectedWorkspaceId ||
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN
+      !rpcClientRef.current ||
+      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
@@ -269,9 +263,7 @@ export function useMissionSelectionEffects(source: any) {
         message: "正在加载模型列表...",
       },
     }));
-    dispatch(socketRef.current, {
-      type: "agent.model.options.get",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(rpcClientRef.current, "agent/get_model_options", {
       providerId: selectedAgentId,
       workspaceId: selectedWorkspaceId,
       projectId: selectedProjectId ?? undefined,

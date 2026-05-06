@@ -51,9 +51,6 @@ function createTestContext(
       _sessionId: string,
       mutate: (current: SessionSummary) => SessionSummary,
     ) => mutate(summary),
-    broadcastAuthenticated: (payload: unknown) => {
-      capture.broadcasts.push(payload);
-    },
     broadcastNotification: (method: string, params: unknown) => {
       capture.broadcasts.push({ method, params });
     },

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
 import {
   readAgentModelOptionsCache,
@@ -8,9 +7,9 @@ import {
 } from "../../features/agents";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
-  dispatchLegacyPayloadWithTrace,
-  nextRequestId,
+  dispatchWithTrace,
   resolveDefaultHelmEndpoint,
+  type DeckRpcClient,
   useAppControllers,
   useHelmConnection,
 } from "../../features/helm-connection";
@@ -98,37 +97,26 @@ export function App() {
   const copy = UI_COPY[locale];
   const deckData = useDeckData(missionVisualFixture);
 
-  function resolveHelmKeyForSocket(socket: WebSocket) {
-    if (socket === runtimeState.socketRef.current) {
-      return `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-    }
-    for (const [helmKey, candidate] of runtimeState.helmSocketRefs.current) {
-      if (candidate === socket) return helmKey;
-    }
-    return `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
-  }
-
-  function resolveRpcClientForSocket(socket: WebSocket) {
-    if (socket === runtimeState.socketRef.current) {
-      return runtimeState.rpcClientRef.current;
-    }
-    const helmKey = resolveHelmKeyForSocket(socket);
-    return runtimeState.helmRpcClientRefs.current.get(helmKey) ?? null;
-  }
-
-  function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    const client = resolveRpcClientForSocket(socket);
-    if (!client) return;
-    void dispatchLegacyPayloadWithTrace(
+  function dispatch(
+    client: DeckRpcClient,
+    method: string,
+    params: unknown,
+    options?: { onResult?: (method: string, result: unknown) => void },
+  ) {
+    return dispatchWithTrace(
       client,
-      payload,
+      method,
+      params,
       helmConnection.setDebugTrace,
-      (method, result) => controllers.handleRpcResult?.(method, result, resolveHelmKeyForSocket(socket)),
+      (resultMethod, result) => {
+        options?.onResult?.(resultMethod, result);
+        controllers.handleRpcResult?.(resultMethod, result);
+      },
     );
   }
 
   const codeActions = useCodeActions({
-    socketRef: runtimeState.socketRef,
+    rpcClientRef: runtimeState.rpcClientRef,
     pairingCodeInput: helmConnection.pairingCodeInput,
     setPairingCodeInput: helmConnection.setPairingCodeInput,
     pairInputRefs: runtimeState.pairInputRefs,
@@ -137,7 +125,6 @@ export function App() {
     setPairingFeedback: helmConnection.setPairingFeedback,
     setDebugTrace: helmConnection.setDebugTrace,
     dispatch,
-    requestCounter: runtimeState.requestCounter,
     deckDeviceId,
     deckDeviceName: DECK_DEVICE_NAME,
   });
@@ -211,10 +198,9 @@ export function App() {
 
   function updateSessionDraftPreferences(next: SessionDraftPreferencePatch) {
     const activeSession = missionView.activeSession;
-    if (activeSession && runtimeState.socketRef.current) {
-      dispatch(runtimeState.socketRef.current, {
-        type: "session.configure",
-        requestId: nextRequestId(runtimeState.requestCounter),
+    const client = runtimeState.rpcClientRef.current;
+    if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "session/set_config_option", {
         sessionId: activeSession.id,
         agentMode: next.agentMode ?? activeSession.agentMode ?? missionView.effectiveDraftAgentMode,
         model: normalizeModelSelection(next.model ?? activeSession.model ?? missionView.draftModel),
@@ -255,14 +241,12 @@ export function App() {
     dispatch,
     messageHistoryState: deckData.messageHistoryState,
     preserveChatScrollRef: runtimeState.preserveChatScrollRef,
-    requestCounter: runtimeState.requestCounter,
     sessionHistoryState: deckData.sessionHistoryState,
     setActivityHistoryState: deckData.setActivityHistoryState,
     setMessageHistoryState: deckData.setMessageHistoryState,
     setSessionHistoryState: deckData.setSessionHistoryState,
-    socketRef: runtimeState.socketRef,
+    rpcClientRef: runtimeState.rpcClientRef,
     stickChatToBottomRef: runtimeState.stickChatToBottomRef,
-    nextRequestId,
     sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
     messagePageLimit: DEFAULT_MESSAGE_PAGE_LIMIT,
     activityPageLimit: DEFAULT_ACTIVITY_PAGE_LIMIT,

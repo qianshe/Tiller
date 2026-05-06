@@ -3,7 +3,7 @@ import type {
   RefObject,
   UIEvent as ReactUIEvent,
 } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type {
   ActivitiesSlice,
   MessagesSlice,
@@ -16,21 +16,24 @@ type UseHistoryPaginationOptions = {
   activeSessionId: string | null;
   activityHistoryState: ActivitiesSlice["activityHistoryState"];
   chatMainRef: RefObject<HTMLDivElement | null>;
-  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
+  dispatch: DispatchToHelm;
   messageHistoryState: MessagesSlice["messageHistoryState"];
   preserveChatScrollRef: MutableRefObject<ScrollSnapshot | null>;
-  requestCounter: MutableRefObject<number>;
   sessionHistoryState: SessionsSlice["sessionHistoryState"];
   setActivityHistoryState: ActivitiesSlice["setActivityHistoryState"];
   setMessageHistoryState: MessagesSlice["setMessageHistoryState"];
   setSessionHistoryState: SessionsSlice["setSessionHistoryState"];
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   stickChatToBottomRef: MutableRefObject<boolean>;
-  nextRequestId: (counter: MutableRefObject<number>) => string;
   sessionPageLimit: number;
   messagePageLimit: number;
   activityPageLimit: number;
 };
+
+function getOpenClient(rpcClientRef: MutableRefObject<DeckRpcClient | null>) {
+  const client = rpcClientRef.current;
+  return client?.socket.readyState === WebSocket.OPEN ? client : null;
+}
 
 /** Coordinates mission history pagination for sessions, messages and activities. */
 export function useHistoryPagination({
@@ -40,22 +43,20 @@ export function useHistoryPagination({
   dispatch,
   messageHistoryState,
   preserveChatScrollRef,
-  requestCounter,
   sessionHistoryState,
   setActivityHistoryState,
   setMessageHistoryState,
   setSessionHistoryState,
-  socketRef,
+  rpcClientRef,
   stickChatToBottomRef,
-  nextRequestId,
   sessionPageLimit,
   messagePageLimit,
   activityPageLimit,
 }: UseHistoryPaginationOptions) {
   function loadOlderSessions() {
+    const client = getOpenClient(rpcClientRef);
     if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
+      !client ||
       sessionHistoryState.loading ||
       !sessionHistoryState.hasMore ||
       !sessionHistoryState.nextCursor
@@ -63,9 +64,7 @@ export function useHistoryPagination({
       return;
     }
     setSessionHistoryState((current) => ({ ...current, loading: true }));
-    dispatch(socketRef.current, {
-      type: "session.list",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(client, "session/list", {
       limit: sessionPageLimit,
       before: sessionHistoryState.nextCursor,
     });
@@ -81,10 +80,10 @@ export function useHistoryPagination({
   }
 
   function loadOlderMessages(sessionId: string) {
+    const client = getOpenClient(rpcClientRef);
     const historyState = messageHistoryState[sessionId];
     if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
+      !client ||
       historyState?.loading ||
       !historyState?.hasMore ||
       !historyState.nextCursor
@@ -105,9 +104,7 @@ export function useHistoryPagination({
         loading: true,
       },
     }));
-    dispatch(socketRef.current, {
-      type: "session.messages.list",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(client, "session/list_messages", {
       sessionId,
       limit: messagePageLimit,
       before: historyState.nextCursor,
@@ -115,10 +112,10 @@ export function useHistoryPagination({
   }
 
   function loadOlderActivities(sessionId: string) {
+    const client = getOpenClient(rpcClientRef);
     const historyState = activityHistoryState[sessionId];
     if (
-      !socketRef.current ||
-      socketRef.current.readyState !== WebSocket.OPEN ||
+      !client ||
       historyState?.loading ||
       !historyState?.hasMore ||
       !historyState.nextCursor
@@ -133,9 +130,7 @@ export function useHistoryPagination({
         loading: true,
       },
     }));
-    dispatch(socketRef.current, {
-      type: "session.artifacts.get",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(client, "session/get_artifacts", {
       sessionId,
       limit: activityPageLimit,
       before: historyState.nextCursor,

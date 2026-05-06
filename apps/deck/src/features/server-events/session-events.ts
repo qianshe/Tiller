@@ -1,5 +1,4 @@
 import type { MutableRefObject } from "react";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AgentPromptContent,
   AgentPromptImageContent,
@@ -8,6 +7,7 @@ import type {
 } from "@tiller/shared";
 import { toast } from "../toast";
 import { commandChunkToToolCall, mergeMessageHistory } from "../logbook";
+import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
   createSessionStatusMap,
@@ -22,11 +22,16 @@ import {
   upsertSessionSummary,
 } from "./helpers";
 
-type SessionServerEventContext = {
+type SessionUpdateParams = {
+  sessionId: string;
+  update: { kind: string } & Record<string, any>;
+};
+
+export type SessionServerEventContext = {
   setSelectedProjectId: (projectId: string | null) => void;
   pendingPromptRef: MutableRefObject<string | null>;
   pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   assignSessionTitleFromPrompt: (sessionId: string, prompt: string) => void;
   createClientUserMessageId: (sessionId: string) => string;
   appendUserMessage: (
@@ -35,9 +40,7 @@ type SessionServerEventContext = {
     id: string,
     attachments: AgentPromptImageContent[],
   ) => void;
-  dispatch: (socket: WebSocket, payload: ClientToHelm) => void;
-  nextRequestId: (counter: MutableRefObject<number>) => string;
-  requestCounter: MutableRefObject<number>;
+  dispatch: DispatchToHelm;
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   shouldAutoStartSessionResume: (
@@ -48,23 +51,65 @@ type SessionServerEventContext = {
   resumeStartRequestsRef: MutableRefObject<Set<string>>;
 };
 
-export function handleSessionServerEvent(
-  payload: HelmToClient,
-  sourceHelmKey: string,
-  sourceIsCurrentHelm: boolean,
-  context: SessionServerEventContext,
-) {
+function applySessionCreated(payload: { session: SessionSummary }, context: SessionServerEventContext) {
   const {
     setSelectedProjectId,
     pendingPromptRef,
     pendingPromptContentRef,
-    socketRef,
+    rpcClientRef,
     assignSessionTitleFromPrompt,
     createClientUserMessageId,
     appendUserMessage,
     dispatch,
-    nextRequestId,
-    requestCounter,
+  } = context;
+  const store = useDeckStore.getState();
+
+  store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  store.setStatuses((current) => ({
+    ...current,
+    [payload.session.id]: payload.session.status,
+  }));
+  setSelectedProjectId(payload.session.projectId);
+  if (!payload.session.runtimeSessionId) {
+    return true;
+  }
+  store.setActiveSessionId(payload.session.id);
+  if (pendingPromptRef.current && rpcClientRef.current) {
+    const pendingPrompt = pendingPromptRef.current;
+    const pendingContent = pendingPromptContentRef.current;
+    const pendingImages =
+      pendingContent?.filter(
+        (item): item is AgentPromptImageContent => item.type === "image",
+      ) ?? [];
+    pendingPromptRef.current = null;
+    pendingPromptContentRef.current = undefined;
+    assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
+    const clientMessageId = createClientUserMessageId(payload.session.id);
+    appendUserMessage(
+      payload.session.id,
+      pendingPrompt,
+      clientMessageId,
+      pendingImages,
+    );
+    void dispatch(rpcClientRef.current, "session/prompt", {
+      sessionId: payload.session.id,
+      text: pendingPrompt,
+      content: pendingContent,
+      clientMessageId,
+    });
+  }
+  return true;
+}
+
+export function applySessionResult(
+  method: string,
+  result: unknown,
+  sourceHelmKey: string,
+  sourceIsCurrentHelm: boolean,
+  context: SessionServerEventContext,
+) {
+  const payload = result as Record<string, any>;
+  const {
     toolCallsRef,
     mergeSessionToolCalls,
     shouldAutoStartSessionResume,
@@ -75,96 +120,10 @@ export function handleSessionServerEvent(
   const store = useDeckStore.getState();
   const currentSessions = store.sessions;
 
-  switch (payload.type) {
-    case "session.created":
-      store.setSessions((current) =>
-        upsertSessionSummary(current, payload.session),
-      );
-      store.setStatuses((current) => ({
-        ...current,
-        [payload.session.id]: payload.session.status,
-      }));
-      setSelectedProjectId(payload.session.projectId);
-      if (payload.session.runtimeSessionId) {
-        store.setActiveSessionId(payload.session.id);
-        if (pendingPromptRef.current && socketRef.current) {
-          const pendingPrompt = pendingPromptRef.current;
-          const pendingContent = pendingPromptContentRef.current;
-          const pendingImages =
-            pendingContent?.filter(
-              (item): item is AgentPromptImageContent => item.type === "image",
-            ) ?? [];
-          pendingPromptRef.current = null;
-          pendingPromptContentRef.current = undefined;
-          assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
-          const clientMessageId = createClientUserMessageId(payload.session.id);
-          appendUserMessage(
-            payload.session.id,
-            pendingPrompt,
-            clientMessageId,
-            pendingImages,
-          );
-          dispatch(socketRef.current, {
-            type: "session.prompt",
-            requestId: nextRequestId(requestCounter),
-            sessionId: payload.session.id,
-            text: pendingPrompt,
-            content: pendingContent,
-            clientMessageId,
-          });
-        }
-      }
-      return true;
-    case "session.updated":
-      store.setSessions((current) =>
-        upsertSessionSummary(current, payload.session),
-      );
-      return true;
-    case "session.config.options":
-      store.setSessionConfigOptions((current) => ({
-        ...current,
-        [payload.sessionId]: payload.options,
-      }));
-      store.setSessions((current) =>
-        current.map((session) =>
-          session.id === payload.sessionId
-            ? {
-                ...session,
-                model: payload.state.model ?? session.model,
-                agentMode: payload.state.agentMode ?? session.agentMode,
-                reasoningEffort:
-                  payload.state.reasoningEffort ?? session.reasoningEffort,
-                updatedAt: new Date().toISOString(),
-              }
-            : session,
-        ),
-      );
-      return true;
-    case "session.commands":
-      store.setSessionAvailableCommands((current) => {
-        if (
-          availableCommandListsEqual(current[payload.sessionId], payload.commands)
-        ) {
-          return current;
-        }
-        return { ...current, [payload.sessionId]: payload.commands };
-      });
-      return true;
-    case "session.model.options":
-      store.setSessions((current) =>
-        current.map((session) =>
-          session.id === payload.sessionId
-            ? {
-                ...session,
-                model: payload.currentModelId ?? session.model,
-                modelOptions: payload.options,
-                updatedAt: new Date().toISOString(),
-              }
-            : session,
-        ),
-      );
-      return true;
-    case "session.list.result": {
+  switch (method) {
+    case "session/new":
+      return applySessionCreated(payload as { session: SessionSummary }, context);
+    case "session/list": {
       const nextSessions = payload.before
         ? mergeSessionSummaries(currentSessions, payload.sessions)
         : payload.sessions;
@@ -207,7 +166,7 @@ export function handleSessionServerEvent(
       }
       return true;
     }
-    case "session.messages.list.result":
+    case "session/list_messages":
       store.setMessages((current) => ({
         ...current,
         [payload.sessionId]: mergeMessageHistory(
@@ -225,7 +184,7 @@ export function handleSessionServerEvent(
         },
       }));
       return true;
-    case "session.artifacts.result":
+    case "session/get_artifacts":
       store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
@@ -250,7 +209,7 @@ export function handleSessionServerEvent(
         },
       }));
       return true;
-    case "session.resume.result":
+    case "session/check_resume":
       store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
@@ -270,7 +229,7 @@ export function handleSessionServerEvent(
         );
       }
       return true;
-    case "session.resume.start.result":
+    case "session/resume":
       setResumeFeedback(payload.message);
       if (!payload.ok) {
         resumeStartRequestsRef.current.delete(payload.sessionId);
@@ -288,7 +247,7 @@ export function handleSessionServerEvent(
         ),
       );
       return true;
-    case "session.cleanup.result":
+    case "session/cleanup":
       if (payload.result.remoteDeleted) {
         toast.success("会话已删除");
       } else if (payload.result.remoteDeletionAttempted) {
@@ -327,17 +286,81 @@ export function handleSessionServerEvent(
         current === payload.result.sessionId ? null : current,
       );
       return true;
-    case "session.status":
-      store.setStatuses((current) => ({
+    case "permission/respond":
+    case "session/prompt":
+    case "session/set_config_option":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function applySessionUpdate(
+  params: SessionUpdateParams,
+  context: SessionServerEventContext,
+) {
+  const { sessionId, update } = params;
+  const store = useDeckStore.getState();
+
+  switch (update.kind) {
+    case "session_updated":
+      store.setSessions((current) =>
+        upsertSessionSummary(current, update.session),
+      );
+      return true;
+    case "config_options":
+      store.setSessionConfigOptions((current) => ({
         ...current,
-        [payload.sessionId]: payload.status,
+        [sessionId]: update.options,
       }));
       store.setSessions((current) =>
         current.map((session) =>
-          session.id === payload.sessionId
+          session.id === sessionId
             ? {
                 ...session,
-                status: payload.status,
+                model: update.state.model ?? session.model,
+                agentMode: update.state.agentMode ?? session.agentMode,
+                reasoningEffort:
+                  update.state.reasoningEffort ?? session.reasoningEffort,
+                updatedAt: new Date().toISOString(),
+              }
+            : session,
+        ),
+      );
+      return true;
+    case "commands_available":
+      store.setSessionAvailableCommands((current) => {
+        if (availableCommandListsEqual(current[sessionId], update.commands)) {
+          return current;
+        }
+        return { ...current, [sessionId]: update.commands };
+      });
+      return true;
+    case "model_options":
+      store.setSessions((current) =>
+        current.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                model: update.currentModelId ?? session.model,
+                modelOptions: update.options,
+                updatedAt: new Date().toISOString(),
+              }
+            : session,
+        ),
+      );
+      return true;
+    case "status_change":
+      store.setStatuses((current) => ({
+        ...current,
+        [sessionId]: update.status,
+      }));
+      store.setSessions((current) =>
+        current.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                status: update.status,
                 updatedAt: new Date().toISOString(),
               }
             : session,

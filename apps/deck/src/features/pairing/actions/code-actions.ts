@@ -1,9 +1,7 @@
 import type { FormEvent, MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type { DebugTrace, PairingState } from "../../../store/facade";
-import { nextRequestId } from "../../helm-connection/facade";
 
-type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
 type PairInputRefs = MutableRefObject<Array<HTMLInputElement | null>>;
 
 type PairingInputContext = {
@@ -15,12 +13,11 @@ type PairingInputContext = {
 };
 
 type PairingRequestContext = {
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   pairingCodeInput: string;
   setPairingFeedback: (value: string) => void;
   setDebugTrace: (updater: (current: DebugTrace) => DebugTrace) => void;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
   deckDeviceId: string;
   deckDeviceName: string;
   setPairingState: (state: PairingState) => void;
@@ -89,26 +86,25 @@ export function handlePairingKeyDown(
 
 export function sendPairingRequest(context: PairingRequestContext) {
   const {
-    socketRef,
+    rpcClientRef,
     pairingCodeInput,
     setPairingFeedback,
     setDebugTrace,
     dispatch,
-    requestCounter,
     deckDeviceId,
     deckDeviceName,
     setPairingState,
   } = context;
 
-  const socket = socketRef.current;
+  const client = rpcClientRef.current;
   const normalizedCode = pairingCodeInput.trim().toUpperCase();
   if (
-    !socket ||
+    !client ||
     normalizedCode.length !== 6 ||
-    socket.readyState !== WebSocket.OPEN
+    client.socket.readyState !== WebSocket.OPEN
   ) {
     setPairingFeedback(
-      `无法发送配对请求，socket=${socket ? socket.readyState : "null"}`,
+      `无法发送配对请求，socket=${client ? client.socket.readyState : "null"}`,
     );
     return;
   }
@@ -118,9 +114,7 @@ export function sendPairingRequest(context: PairingRequestContext) {
     pairClicks: current.pairClicks + 1,
   }));
   setPairingFeedback(`正在发送配对请求：${normalizedCode}...`);
-  dispatch(socket, {
-    type: "device.pair",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(client, "device/pair", {
     pairingCode: normalizedCode,
     deviceId: deckDeviceId,
     deviceName: deckDeviceName,

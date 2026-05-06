@@ -13,6 +13,11 @@ test("resolveTillerCliAction returns help for help flags", () => {
   assert.equal(resolveTillerCliAction(["help"]).kind, "help");
 });
 
+test("resolveTillerCliAction returns version for version flags", () => {
+  assert.equal(resolveTillerCliAction(["--version"]).kind, "version");
+  assert.equal(resolveTillerCliAction(["-v"]).kind, "version");
+});
+
 test("resolveTillerCliAction rejects unknown commands", () => {
   const action = resolveTillerCliAction(["serve"]);
 

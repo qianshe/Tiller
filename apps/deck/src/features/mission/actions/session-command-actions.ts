@@ -1,4 +1,3 @@
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
   AgentPromptContent,
@@ -14,7 +13,7 @@ import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { nextRequestId } from "../../helm-connection/facade";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { toast } from "../../toast";
 import {
   createSession as createSessionImpl,
@@ -24,12 +23,12 @@ import {
 } from "./session-actions";
 
 type MutableRef<T> = { current: T };
-type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
 
 type UseSessionCommandActionsOptions = {
   prompt: string;
   promptImages: AgentPromptImageContent[];
   socketRef: MutableRef<WebSocket | null>;
+  rpcClientRef: MutableRef<DeckRpcClient | null>;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
   selectedProjectId?: string | null;
@@ -41,7 +40,6 @@ type UseSessionCommandActionsOptions = {
   pendingPromptRef: MutableRef<string | null>;
   pendingPromptContentRef: MutableRef<AgentPromptContent[] | undefined>;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRef<number>;
   effectiveDraftAgentMode?: string;
   normalizeModelSelection: (model: string) => string | undefined;
   selectedModel: string;
@@ -61,10 +59,15 @@ type UseSessionCommandActionsOptions = {
   setResumeFeedback: (value: string) => void;
 };
 
+function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
+  return Boolean(client && client.socket.readyState === WebSocket.OPEN);
+}
+
 export function useSessionCommandActions({
   prompt,
   promptImages,
   socketRef,
+  rpcClientRef,
   setImagePasteNotice,
   activeSessionId,
   selectedProjectId,
@@ -76,7 +79,6 @@ export function useSessionCommandActions({
   pendingPromptRef,
   pendingPromptContentRef,
   dispatch,
-  requestCounter,
   effectiveDraftAgentMode,
   normalizeModelSelection,
   selectedModel,
@@ -101,11 +103,10 @@ export function useSessionCommandActions({
       filteredWorkspaces,
       selectedAgentId,
       filteredAgents,
-      socketRef,
+      rpcClientRef,
       pendingPromptRef,
       pendingPromptContentRef,
       dispatch,
-      requestCounter,
       effectiveDraftAgentMode,
       normalizeModelSelection,
       selectedModel,
@@ -116,11 +117,10 @@ export function useSessionCommandActions({
 
   function requestSessionResumeStart(sessionId: string, reason: string) {
     requestSessionResumeStartImpl(sessionId, reason, {
-      socketRef,
+      rpcClientRef,
       resumeStartRequestsRef,
       setResumeFeedback,
       dispatch,
-      requestCounter,
     });
   }
 
@@ -140,7 +140,7 @@ export function useSessionCommandActions({
     submitPromptImpl(event, {
       prompt,
       promptImages,
-      socketRef,
+      rpcClientRef,
       setImagePasteNotice,
       activeSessionId,
       createSession,
@@ -149,7 +149,6 @@ export function useSessionCommandActions({
       createClientUserMessageId,
       appendUserMessage,
       dispatch,
-      requestCounter,
     });
   }
 
@@ -171,16 +170,15 @@ export function useSessionCommandActions({
   }
 
   function respondToPermission(decision: PermissionDecision) {
-    if (!activeSessionId || !socketRef.current) {
+    const client = rpcClientRef.current;
+    if (!activeSessionId || !isClientOpen(client)) {
       return;
     }
     const permissionRequest = permissionRequests[activeSessionId];
     if (!permissionRequest) {
       return;
     }
-    dispatch(socketRef.current, {
-      type: "permission.respond",
-      requestId: nextRequestId(requestCounter),
+    void dispatch(client, "permission/respond", {
       permissionRequestId: permissionRequest.id,
       decision,
     });
@@ -189,38 +187,29 @@ export function useSessionCommandActions({
   function startResume() {
     startResumeImpl({
       activeSessionId,
-      socketRef,
+      rpcClientRef,
       setResumeFeedback,
       dispatch,
-      requestCounter,
     });
   }
 
   function cleanupSession(sessionId: string) {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    const client = rpcClientRef.current;
+    if (!isClientOpen(client)) {
       toast.warning("Helm 未连接，无法清理任务。");
       return;
     }
     toast.info("正在清理任务...", { id: "session-cleanup", duration: 2000 });
-    dispatch(socket, {
-      type: "session.cleanup",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-    });
+    void dispatch(client, "session/cleanup", { sessionId });
   }
 
   function cancelSession(sessionId: string) {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    const client = rpcClientRef.current;
+    if (!isClientOpen(client)) {
       toast.warning("Helm 未连接，无法取消任务。");
       return;
     }
-    dispatch(socket, {
-      type: "session.cancel",
-      requestId: nextRequestId(requestCounter),
-      sessionId,
-    });
+    void dispatch(client, "session/cancel", { sessionId });
   }
 
   return {

@@ -1,5 +1,4 @@
 import type { FormEvent, MutableRefObject } from "react";
-import type { ClientToHelm } from "@tiller/sync-protocol";
 import type {
   AcpAgentProvider,
   AgentPromptContent,
@@ -8,9 +7,9 @@ import type {
   SessionReasoningEffort,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { nextRequestId } from "../../helm-connection/facade";
+import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 
-type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
+type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
 
 type CreateSessionContext = {
   selectedProjectId?: string | null;
@@ -19,11 +18,10 @@ type CreateSessionContext = {
   filteredWorkspaces: WorkspaceSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: RpcClientRef;
   pendingPromptRef: MutableRefObject<string | null>;
   pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
   effectiveDraftAgentMode?: string;
   normalizeModelSelection: (model: string) => string | undefined;
   selectedModel: string;
@@ -32,11 +30,10 @@ type CreateSessionContext = {
 };
 
 type ResumeStartContext = {
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: RpcClientRef;
   resumeStartRequestsRef: MutableRefObject<Set<string>>;
   setResumeFeedback: (value: string) => void;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
 };
 
 type StartResumeContext = Omit<ResumeStartContext, "resumeStartRequestsRef"> & {
@@ -46,7 +43,7 @@ type StartResumeContext = Omit<ResumeStartContext, "resumeStartRequestsRef"> & {
 type SubmitPromptContext = {
   prompt: string;
   promptImages: AgentPromptImageContent[];
-  socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: RpcClientRef;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
   createSession: (
@@ -63,8 +60,11 @@ type SubmitPromptContext = {
     attachments: AgentPromptImageContent[],
   ) => void;
   dispatch: DispatchToHelm;
-  requestCounter: MutableRefObject<number>;
 };
+
+function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
+  return Boolean(client && client.socket.readyState === WebSocket.OPEN);
+}
 
 export function buildPromptContent(
   text: string,
@@ -88,11 +88,10 @@ export function createSession(
     filteredWorkspaces,
     selectedAgentId,
     filteredAgents,
-    socketRef,
+    rpcClientRef,
     pendingPromptRef,
     pendingPromptContentRef,
     dispatch,
-    requestCounter,
     effectiveDraftAgentMode,
     normalizeModelSelection,
     selectedModel,
@@ -103,15 +102,14 @@ export function createSession(
   const projectId = selectedProjectId || projects[0]?.id;
   const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
   const agentId = selectedAgentId || filteredAgents[0]?.id;
-  if (!projectId || !workspaceId || !agentId || !socketRef.current) {
+  const client = rpcClientRef.current;
+  if (!projectId || !workspaceId || !agentId || !isClientOpen(client)) {
     return false;
   }
 
   pendingPromptRef.current = initialPrompt ?? null;
   pendingPromptContentRef.current = initialContent;
-  dispatch(socketRef.current, {
-    type: "session.create",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(client, "session/new", {
     projectId,
     workspaceId,
     agentId,
@@ -129,35 +127,27 @@ export function requestSessionResumeStart(
   context: ResumeStartContext,
 ) {
   const {
-    socketRef,
+    rpcClientRef,
     resumeStartRequestsRef,
     setResumeFeedback,
     dispatch,
-    requestCounter,
   } = context;
+  const client = rpcClientRef.current;
 
-  if (
-    !socketRef.current ||
-    socketRef.current.readyState !== WebSocket.OPEN ||
-    resumeStartRequestsRef.current.has(sessionId)
-  ) {
+  if (!isClientOpen(client) || resumeStartRequestsRef.current.has(sessionId)) {
     return;
   }
 
   resumeStartRequestsRef.current.add(sessionId);
   setResumeFeedback(reason);
-  dispatch(socketRef.current, {
-    type: "session.resume.start",
-    requestId: nextRequestId(requestCounter),
-    sessionId,
-  });
+  void dispatch(client, "session/resume", { sessionId });
 }
 
 export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitPromptContext) {
   const {
     prompt,
     promptImages,
-    socketRef,
+    rpcClientRef,
     setImagePasteNotice,
     activeSessionId,
     createSession,
@@ -166,12 +156,12 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     createClientUserMessageId,
     appendUserMessage,
     dispatch,
-    requestCounter,
   } = context;
 
   event.preventDefault();
   const nextPrompt = prompt.trim();
-  if ((!nextPrompt && !promptImages.length) || !socketRef.current) {
+  const client = rpcClientRef.current;
+  if ((!nextPrompt && !promptImages.length) || !isClientOpen(client)) {
     return;
   }
   const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
@@ -191,9 +181,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
   appendUserMessage(activeSessionId, messageText, clientMessageId, imagesToSend);
   setPrompt("");
   setPromptImages([]);
-  dispatch(socketRef.current, {
-    type: "session.prompt",
-    requestId: nextRequestId(requestCounter),
+  void dispatch(client, "session/prompt", {
     sessionId: activeSessionId,
     text: messageText,
     content,
@@ -202,16 +190,12 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
 }
 
 export function startResume(context: StartResumeContext) {
-  const { activeSessionId, socketRef, setResumeFeedback, dispatch, requestCounter } =
-    context;
-  if (!activeSessionId || !socketRef.current) {
+  const { activeSessionId, rpcClientRef, setResumeFeedback, dispatch } = context;
+  const client = rpcClientRef.current;
+  if (!activeSessionId || !isClientOpen(client)) {
     return;
   }
 
   setResumeFeedback("正在按能力检查 Tiller 客户端重连 / ACP 会话恢复...");
-  dispatch(socketRef.current, {
-    type: "session.resume.start",
-    requestId: nextRequestId(requestCounter),
-    sessionId: activeSessionId,
-  });
+  void dispatch(client, "session/resume", { sessionId: activeSessionId });
 }

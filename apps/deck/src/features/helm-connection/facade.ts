@@ -8,9 +8,7 @@ export {
   type DaemonProfile,
 } from "./daemon-profiles";
 export {
-  dispatchLegacyPayloadWithTrace,
   dispatchWithTrace,
-  nextRequestId,
   requestInitialSync,
   type DispatchToHelm,
 } from "./request-dispatch";

@@ -4,7 +4,6 @@ import { TrustedDevicesPanel } from "../ui/trusted-devices-panel";
 import { slugify, splitArgs } from "../utils/agent-identity";
 import { useDaemonProfileActions } from "../../helm-connection/actions/daemon-profile-actions";
 import { useFleetAddHelmActions } from "../../helm-connection/actions/fleet-add-helm-actions";
-import { nextRequestId } from "../../helm-connection/facade";
 import { useAgentDraftActions } from "./agent-draft-actions";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../../shared/config/deck-runtime";
 
@@ -15,10 +14,11 @@ export function useAppActions(ctx: any) {
     filteredAgents,
     agents,
     socketRef,
+    rpcClientRef,
+    helmRpcClientRefs,
     setAgentTestResult,
     copy,
     dispatch,
-    requestCounter,
     agentDraft,
     setDraftSaveMessage,
     setConfigSaveMessage,
@@ -59,10 +59,11 @@ export function useAppActions(ctx: any) {
     filteredAgents,
     agents,
     socketRef,
+    rpcClientRef,
+    helmRpcClientRefs,
     setAgentTestResult,
     copy,
     dispatch,
-    requestCounter,
     agentDraft,
     setDraftSaveMessage,
     setConfigSaveMessage,
@@ -125,16 +126,18 @@ export function useAppActions(ctx: any) {
     deviceId: string,
     targetSocket: WebSocket | null = socketRef.current,
   ) {
-    if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) {
+    const targetClient =
+      targetSocket === socketRef.current
+        ? rpcClientRef.current
+        : Array.from(helmRpcClientRefs.current.values()).find(
+            (client) => client.socket === targetSocket,
+          ) ?? null;
+    if (!targetClient || targetClient.socket.readyState !== WebSocket.OPEN) {
       setPairingFeedback("请先连接 Helm 后再管理信标。");
       return;
     }
 
-    dispatch(targetSocket, {
-      type: "device.revoke",
-      requestId: nextRequestId(requestCounter),
-      deviceId,
-    });
+    void dispatch(targetClient, "device/revoke", { deviceId });
   }
 
   function renderTrustedDevicesPanel(

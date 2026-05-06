@@ -1,9 +1,7 @@
 // @ts-nocheck
-import type { HelmToClient } from "@tiller/sync-protocol";
 import type { AgentToolCall } from "@tiller/shared";
 import { daemonProfileKey } from "../daemon-profiles";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
-import { nextRequestId } from "../request-dispatch";
 import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
 import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/facade";
 import { mergeToolCallHistory } from "../../logbook";
@@ -13,15 +11,12 @@ import {
   resolvePreferredModel,
 } from "../../mission/facade";
 import {
+  applyActivityUpdate,
   applyDeviceResult,
   applyErrorRaised,
   applyInventoryResult,
   applySessionResult,
   applySessionUpdate,
-  handleActivityServerEvent,
-  handleDeviceServerEvent,
-  handleInventoryServerEvent,
-  handleSessionServerEvent,
 } from "../../server-events";
 import {
   DEFAULT_DAEMON_HOST,
@@ -42,7 +37,8 @@ export function createServerEventController(source: any, helpers: any) {
     setFleetAddHelmModalOpen,
     setFleetAddHelmStage,
     autoConnectAttemptRef,
-    socketRef,
+    rpcClientRef,
+    helmRpcClientRefs,
     setProjectFilesByScope,
     setSelectedWorkspaceId,
     setWorktreePickerOpen,
@@ -56,13 +52,11 @@ export function createServerEventController(source: any, helpers: any) {
     setConfigSaveMessage,
     setFleetProjectSaveMessage,
     setSelectedProjectId,
-    helmSocketRefs,
     pendingPromptRef,
     pendingPromptContentRef,
     assignSessionTitleFromPrompt,
     setResumeFeedback,
     resumeStartRequestsRef,
-    requestCounter,
   } = source;
   const {
     appendSystemMessage,
@@ -85,121 +79,20 @@ export function createServerEventController(source: any, helpers: any) {
     });
   }
 
-  function handleServerEvent(
-    payload: HelmToClient,
-    sourceHelmKey = daemonProfileKey(
+  function defaultHelmKey() {
+    return daemonProfileKey(
       daemonHost.trim() || DEFAULT_DAEMON_HOST,
       daemonPort.trim() || DEFAULT_DAEMON_PORT,
-    ),
-  ) {
-    const currentEventHelmKey =
-      primaryHelmKeyRef.current ??
-      daemonProfileKey(
-        daemonHost.trim() || DEFAULT_DAEMON_HOST,
-        daemonPort.trim() || DEFAULT_DAEMON_PORT,
-      );
-    const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
-
-    if (
-      handleDeviceServerEvent(payload, sourceHelmKey, {
-        primaryHelmKeyRef,
-        daemonProfileKey,
-        daemonHost,
-        daemonPort,
-        defaultDaemonHost: DEFAULT_DAEMON_HOST,
-        defaultDaemonPort: DEFAULT_DAEMON_PORT,
-        deckDeviceId,
-        pendingAddHelmProfileRef,
-        writeTrustedDeviceCache,
-        persistDaemonProfile: appActionsRef.current.persistDaemonProfile,
-        daemonHostStorageKey: DAEMON_HOST_KEY,
-        daemonPortStorageKey: DAEMON_PORT_KEY,
-        setSelectedHelmKey: selectHelmKey,
-        setFleetAddHelmModalOpen,
-        setFleetAddHelmStage,
-        autoConnectAttemptRef,
-        socketRef,
-        requestInitialSync,
-        readTrustedDeviceCache,
-        clearTrustedDeviceCache,
-      })
-    ) {
-      return;
-    }
-
-    if (
-      handleInventoryServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-        projectFilesKey,
-        setProjectFilesByScope,
-        setSelectedWorkspaceId,
-        setWorktreePickerOpen,
-        setAgentTestResult,
-        agentModelOptionsKey,
-        writeAgentModelOptionsCache,
-        selectedAgentId,
-        selectedWorkspaceId,
-        resolveModelOptions,
-        resolvePreferredModel,
-        selectedModel,
-        setSelectedModel,
-        setSelectedAgentMode,
-        setSelectedReasoningEffort,
-        setConfigSaveMessage,
-        setFleetProjectSaveMessage,
-        setSelectedProjectId,
-        socketRef,
-        helmSocketRefs,
-        dispatch,
-        nextRequestId,
-        requestCounter,
-      })
-    ) {
-      return;
-    }
-
-    if (
-      handleSessionServerEvent(payload, sourceHelmKey, sourceIsCurrentHelm, {
-        setSelectedProjectId,
-        pendingPromptRef,
-        pendingPromptContentRef,
-        socketRef,
-        assignSessionTitleFromPrompt,
-        createClientUserMessageId,
-        appendUserMessage,
-        dispatch,
-        nextRequestId,
-        requestCounter,
-        toolCallsRef,
-        mergeSessionToolCalls,
-        shouldAutoStartSessionResume,
-        requestSessionResumeStart,
-        setResumeFeedback,
-        resumeStartRequestsRef,
-      })
-    ) {
-      return;
-    }
-
-    handleActivityServerEvent(payload, {
-      toolCallsRef,
-      mergeSessionToolCalls,
-      appendSystemMessage,
-    });
+    );
   }
 
-  function handleRpcResult(method: string, result: unknown, sourceHelmKey = daemonProfileKey(
-    daemonHost.trim() || DEFAULT_DAEMON_HOST,
-    daemonPort.trim() || DEFAULT_DAEMON_PORT,
-  )) {
-    const currentEventHelmKey =
-      primaryHelmKeyRef.current ??
-      daemonProfileKey(
-        daemonHost.trim() || DEFAULT_DAEMON_HOST,
-        daemonPort.trim() || DEFAULT_DAEMON_PORT,
-      );
-    const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
+  function sourceIsCurrent(sourceHelmKey: string) {
+    const currentEventHelmKey = primaryHelmKeyRef.current ?? defaultHelmKey();
+    return sourceHelmKey === currentEventHelmKey;
+  }
 
-    if (applyDeviceResult(method, result, sourceHelmKey, {
+  function deviceContext() {
+    return {
       primaryHelmKeyRef,
       daemonProfileKey,
       daemonHost,
@@ -216,13 +109,15 @@ export function createServerEventController(source: any, helpers: any) {
       setFleetAddHelmModalOpen,
       setFleetAddHelmStage,
       autoConnectAttemptRef,
-      socketRef,
+      rpcClientRef,
       requestInitialSync,
       readTrustedDeviceCache,
       clearTrustedDeviceCache,
-    })) return;
+    };
+  }
 
-    if (applyInventoryResult(method, result, sourceHelmKey, sourceIsCurrentHelm, {
+  function inventoryContext() {
+    return {
       projectFilesKey,
       setProjectFilesByScope,
       setSelectedWorkspaceId,
@@ -241,62 +136,61 @@ export function createServerEventController(source: any, helpers: any) {
       setConfigSaveMessage,
       setFleetProjectSaveMessage,
       setSelectedProjectId,
-      socketRef,
-      helmSocketRefs,
+      rpcClientRef,
+      helmRpcClientRefs,
       dispatch,
-      nextRequestId,
-      requestCounter,
-    })) return;
+    };
+  }
 
-    applySessionResult(method, result, sourceHelmKey, sourceIsCurrentHelm, {
+  function sessionContext() {
+    return {
       setSelectedProjectId,
       pendingPromptRef,
       pendingPromptContentRef,
-      socketRef,
+      rpcClientRef,
       assignSessionTitleFromPrompt,
       createClientUserMessageId,
       appendUserMessage,
       dispatch,
-      nextRequestId,
-      requestCounter,
       toolCallsRef,
       mergeSessionToolCalls,
       shouldAutoStartSessionResume,
       requestSessionResumeStart,
       setResumeFeedback,
       resumeStartRequestsRef,
-    });
+    };
+  }
+
+  function activityContext() {
+    return {
+      toolCallsRef,
+      mergeSessionToolCalls,
+      appendSystemMessage,
+    };
+  }
+
+  function handleServerEvent() {
+    // Legacy custom WebSocket frames are intentionally no longer handled.
+  }
+
+  function handleRpcResult(method: string, result: unknown, sourceHelmKey = defaultHelmKey()) {
+    const current = sourceIsCurrent(sourceHelmKey);
+
+    if (applyDeviceResult(method, result, sourceHelmKey, deviceContext())) return;
+    if (applyInventoryResult(method, result, sourceHelmKey, current, inventoryContext())) return;
+    applySessionResult(method, result, sourceHelmKey, current, sessionContext());
   }
 
   function handleRpcNotification(method: string, params: unknown) {
     if (method === "session/update") {
-      applySessionUpdate(params as any, {
-        setSelectedProjectId,
-        pendingPromptRef,
-        pendingPromptContentRef,
-        socketRef,
-        assignSessionTitleFromPrompt,
-        createClientUserMessageId,
-        appendUserMessage,
-        dispatch,
-        nextRequestId,
-        requestCounter,
-        toolCallsRef,
-        mergeSessionToolCalls,
-        shouldAutoStartSessionResume,
-        requestSessionResumeStart,
-        setResumeFeedback,
-        resumeStartRequestsRef,
-        appendSystemMessage,
-      });
+      const handledBySession = applySessionUpdate(params as any, sessionContext());
+      if (!handledBySession) {
+        applyActivityUpdate(params as any, activityContext());
+      }
       return;
     }
     if (method === "error/raised") {
-      applyErrorRaised(params as any, {
-        toolCallsRef,
-        mergeSessionToolCalls,
-        appendSystemMessage,
-      });
+      applyErrorRaised(params as any, activityContext());
     }
   }
 

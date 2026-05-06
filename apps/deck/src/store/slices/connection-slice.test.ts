@@ -47,9 +47,9 @@ test("setDebugTrace accepts updater functions", () => {
   store.getState().setDebugTrace((current) => ({
     ...current,
     connectClicks: current.connectClicks + 1,
-    lastRequestType: "helm.list",
+    lastRequestType: "helm/list",
   }));
 
   assert.equal(store.getState().debugTrace.connectClicks, 1);
-  assert.equal(store.getState().debugTrace.lastRequestType, "helm.list");
+  assert.equal(store.getState().debugTrace.lastRequestType, "helm/list");
 });

@@ -9,9 +9,7 @@ export {
 } from "./daemon-profiles";
 export { resolveDefaultHelmEndpoint, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 export {
-  dispatchLegacyPayloadWithTrace,
   dispatchWithTrace,
-  nextRequestId,
   type DispatchToHelm,
 } from "./request-dispatch";
 export { DeckRpcClient } from "./rpc-client";

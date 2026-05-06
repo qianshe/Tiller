@@ -167,8 +167,7 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
         deviceId: cache.deviceId,
         token: cache.token,
       }, {
-        onResult: (method, result) => {
-          handleRpcResult(method, result, helmKey);
+        onResult: () => {
           void requestInitialSync(client, helmKey);
         },
       });
@@ -302,8 +301,7 @@ export function connectToDaemon(
         deviceId: cache.deviceId,
         token: cache.token,
       }, {
-        onResult: (method, result) => {
-          handleRpcResult(method, result, helmKey);
+        onResult: () => {
           void requestInitialSync(client, helmKey);
         },
       });

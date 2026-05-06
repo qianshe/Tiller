@@ -14,6 +14,8 @@ import type {
 import {
   formatConnectionStatus,
   type DaemonProfile,
+  type DeckRpcClient,
+  type DispatchToHelm,
 } from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
@@ -39,6 +41,7 @@ type HelmDetailSectionProps = {
   selectedHelmAgents: AcpAgentProvider[];
   selectedHelmWorkspaces: WorkspaceSummary[];
   selectedHelmSocket: WebSocket | null;
+  selectedHelmRpcClient: DeckRpcClient | null;
   selectedHelmId: string;
   selectedHelmTrustedDevices: TrustedDeviceSummary[];
   socketRef: MutableRefObject<WebSocket | null>;
@@ -65,6 +68,7 @@ type HelmDetailSectionProps = {
   fleetAgentDraft: FleetAgentDraft;
   setFleetAgentDraft: Dispatch<SetStateAction<FleetAgentDraft>>;
   requestCounter: MutableRefObject<number>;
+  dispatch: DispatchToHelm;
   copy: (typeof UI_COPY)[Locale];
   renderTrustedDevicesPanel: (
     devices: TrustedDeviceSummary[],
@@ -86,6 +90,7 @@ export function HelmDetailSection({
   selectedHelmAgents,
   selectedHelmWorkspaces,
   selectedHelmSocket,
+  selectedHelmRpcClient,
   selectedHelmId,
   selectedHelmTrustedDevices,
   socketRef,
@@ -109,6 +114,7 @@ export function HelmDetailSection({
   fleetAgentDraft,
   setFleetAgentDraft,
   requestCounter,
+  dispatch,
   copy,
   renderTrustedDevicesPanel,
 }: HelmDetailSectionProps) {
@@ -160,11 +166,11 @@ export function HelmDetailSection({
           connected={selectedHelmIsConnected}
           draft={fleetProjectDraft}
           formOpen={fleetProjectFormOpen}
-          requestCounter={requestCounter}
+          dispatch={dispatch}
           selectedHelmAgents={selectedHelmAgents}
           selectedHelmId={selectedHelmId}
           selectedHelmProjects={selectedHelmProjects}
-          selectedHelmSocket={selectedHelmSocket}
+          selectedHelmRpcClient={selectedHelmRpcClient}
           selectedHelmWorkspaces={selectedHelmWorkspaces}
           setDraft={setFleetProjectDraft}
           setFormOpen={setFleetProjectFormOpen}
@@ -180,9 +186,9 @@ export function HelmDetailSection({
           draft={fleetAgentDraft}
           emptyLabel={copy.noAgents}
           formOpen={fleetAgentFormOpen}
-          requestCounter={requestCounter}
+          dispatch={dispatch}
           selectedHelmAgents={selectedHelmAgents}
-          selectedHelmSocket={selectedHelmSocket}
+          selectedHelmRpcClient={selectedHelmRpcClient}
           setDraft={setFleetAgentDraft}
           setFormOpen={setFleetAgentFormOpen}
         />

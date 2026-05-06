@@ -126,7 +126,7 @@ const sessionServices = createSessionServices({
   getProjects: () => projects,
   getWorkspaces: () => workspaces,
   createHandlerContext,
-  broadcastAuthenticated,
+  broadcastNotification,
   logInfo,
   logError,
 });
@@ -262,8 +262,6 @@ function attachRpcConnection(socket: WebSocket) {
 function createHandlerContext(): HelmHandlerContext {
   return {
     configPath,
-    emit,
-    broadcastAuthenticated,
     notify,
     broadcastNotification,
     logInfo,
@@ -385,12 +383,6 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
     state: configState,
   };
 }
-function emit(socket: WebSocket, payload: unknown) {
-  if (socket.readyState !== 1) {
-    return;
-  }
-  socket.send(JSON.stringify(payload));
-}
 
 function notify(socket: WebSocket, method: string, params: unknown) {
   if (socket.readyState !== 1) {
@@ -412,11 +404,6 @@ function toTrustedDeviceSummary(
   };
 }
 
-function broadcastAuthenticated(payload: unknown) {
-  for (const record of authenticatedSockets.listAll()) {
-    emit(record.socket, payload);
-  }
-}
 
 function broadcastNotification(method: string, params: unknown) {
   for (const record of authenticatedSockets.listAll()) {
