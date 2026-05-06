@@ -66,9 +66,11 @@ export function useAppControllers(ctx: any) {
       shouldAutoStartSessionResume(...args),
   });
 
-  const socketController = createSocketController(source, (...args) =>
-    serverEventController.handleServerEvent(...args),
-  );
+  const socketController = createSocketController(source, {
+    handleServerEvent: (...args) => serverEventController.handleServerEvent(...args),
+    handleRpcResult: (...args) => serverEventController.handleRpcResult(...args),
+    handleRpcNotification: (...args) => serverEventController.handleRpcNotification(...args),
+  });
   dispatch = socketController.dispatch;
   requestInitialSync = socketController.requestInitialSync;
 

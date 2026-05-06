@@ -1,5 +1,4 @@
 import type { FormEvent, MutableRefObject } from "react";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
 import type {
   AgentMessage,
   AgentToolCall,
@@ -19,32 +18,35 @@ import type {
 } from "../../store/facade";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
+import { DeckRpcClient } from "./rpc-client";
+import type { DispatchToHelm } from "./request-dispatch";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
-type DispatchToHelm = (socket: WebSocket, payload: ClientToHelm) => void;
-type NextRequestId = (counter: MutableRefObject<number>) => string;
 type ReadTrustedDeviceCache = (
   storage: Storage,
   host: string,
   port: string,
 ) => TrustedDeviceCache | null;
 
-type ConnectHelmSocketContext = {
+type RpcHandlers = {
+  handleRpcResult: (method: string, result: unknown, sourceHelmKey?: string) => void;
+  handleRpcNotification: (method: string, params: unknown, sourceHelmKey?: string) => void;
+};
+
+type ConnectHelmSocketContext = RpcHandlers & {
   embedded: boolean;
   location: Location;
   helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
+  helmRpcClientRefs: MutableRefObject<Map<string, DeckRpcClient>>;
   setHelmConnectionState: (helmKey: string, state: ConnectionState) => void;
   setDaemonProfileMessage: (value: string) => void;
   readTrustedDeviceCache: ReadTrustedDeviceCache;
-  requestInitialSync: (socket: WebSocket) => void;
+  requestInitialSync: (client: DeckRpcClient, sourceHelmKey?: string) => void | Promise<void>;
   dispatch: DispatchToHelm;
-  nextRequestId: NextRequestId;
-  requestCounter: MutableRefObject<number>;
-  handleServerEvent: (payload: HelmToClient, sourceHelmKey?: string) => void;
 };
 
-type ConnectToDaemonContext = {
+type ConnectToDaemonContext = RpcHandlers & {
   embedded: boolean;
   location: Location;
   daemonHost: string;
@@ -54,6 +56,7 @@ type ConnectToDaemonContext = {
   primaryHelmKeyRef: MutableRefObject<string | null>;
   manualDisconnectRef: MutableRefObject<string | null>;
   socketRef: MutableRefObject<WebSocket | null>;
+  rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   setSessions: StoreSetter<SessionSummary[]>;
   setStatuses: StoreSetter<Record<string, SessionStatus>>;
   setMessages: StoreSetter<Record<string, AgentMessage[]>>;
@@ -83,11 +86,8 @@ type ConnectToDaemonContext = {
   setTrustedDevice: (cache: TrustedDeviceCache | null) => void;
   readTrustedDeviceCache: ReadTrustedDeviceCache;
   dispatch: DispatchToHelm;
-  nextRequestId: NextRequestId;
-  requestCounter: MutableRefObject<number>;
-  requestInitialSync: (socket: WebSocket) => void;
+  requestInitialSync: (client: DeckRpcClient, sourceHelmKey?: string) => void | Promise<void>;
   lastFilesScopeKeyRef: MutableRefObject<string | null>;
-  handleServerEvent: (payload: HelmToClient, sourceHelmKey?: string) => void;
 };
 
 export type ConnectToDaemonOptions = {
@@ -98,19 +98,33 @@ export type ConnectToDaemonOptions = {
   persistEndpoint?: boolean;
 };
 
+function createRpcClient(socket: WebSocket, helmKey: string, handlers: RpcHandlers) {
+  return new DeckRpcClient(
+    socket,
+    (method, params) => handlers.handleRpcNotification(method, params, helmKey),
+    (error) => {
+      handlers.handleRpcNotification(
+        "error/raised",
+        { message: error instanceof Error ? error.message : String(error) },
+        helmKey,
+      );
+    },
+  );
+}
+
 export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSocketContext) {
   const {
     embedded,
     location,
     helmSocketRefs,
+    helmRpcClientRefs,
     setHelmConnectionState,
     setDaemonProfileMessage,
     readTrustedDeviceCache,
     requestInitialSync,
     dispatch,
-    nextRequestId,
-    requestCounter,
-    handleServerEvent,
+    handleRpcResult,
+    handleRpcNotification,
   } = context;
 
   const helmKey = daemonProfileKey(profile.host, profile.port);
@@ -121,6 +135,7 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
     return;
   }
   existing?.close();
+  helmRpcClientRefs.current.get(helmKey)?.close();
 
   const wsUrl = createHelmWebSocketUrl({
     embedded,
@@ -129,7 +144,9 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
     location,
   });
   const socket = new WebSocket(wsUrl);
+  const client = createRpcClient(socket, helmKey, { handleRpcResult, handleRpcNotification });
   helmSocketRefs.current.set(helmKey, socket);
+  helmRpcClientRefs.current.set(helmKey, client);
   setHelmConnectionState(helmKey, "connecting");
   setDaemonProfileMessage(`正在连接 ${profile.name}...`);
 
@@ -142,28 +159,28 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
       profile.port,
     );
     if (embedded) {
-      requestInitialSync(socket);
+      void requestInitialSync(client, helmKey);
       return;
     }
     if (cache?.token) {
-      dispatch(socket, {
-        type: "device.auth",
-        requestId: nextRequestId(requestCounter),
+      void dispatch(client, "device/authenticate", {
         deviceId: cache.deviceId,
         token: cache.token,
+      }, {
+        onResult: (method, result) => {
+          handleRpcResult(method, result, helmKey);
+          void requestInitialSync(client, helmKey);
+        },
       });
-      requestInitialSync(socket);
     }
-  });
-
-  socket.addEventListener("message", (event) => {
-    const payload = JSON.parse(String(event.data)) as HelmToClient;
-    handleServerEvent(payload, helmKey);
   });
 
   socket.addEventListener("close", () => {
     if (helmSocketRefs.current.get(helmKey) === socket) {
       helmSocketRefs.current.delete(helmKey);
+    }
+    if (helmRpcClientRefs.current.get(helmKey) === client) {
+      helmRpcClientRefs.current.delete(helmKey);
     }
     setHelmConnectionState(helmKey, "disconnected");
   });
@@ -189,6 +206,7 @@ export function connectToDaemon(
     primaryHelmKeyRef,
     manualDisconnectRef,
     socketRef,
+    rpcClientRef,
     setSessions,
     setStatuses,
     setMessages,
@@ -213,11 +231,10 @@ export function connectToDaemon(
     setTrustedDevice,
     readTrustedDeviceCache,
     dispatch,
-    nextRequestId,
-    requestCounter,
     requestInitialSync,
     lastFilesScopeKeyRef,
-    handleServerEvent,
+    handleRpcResult,
+    handleRpcNotification,
   } = context;
 
   event?.preventDefault();
@@ -241,6 +258,7 @@ export function connectToDaemon(
     window.localStorage.setItem(DAEMON_HOST_KEY, host);
     window.localStorage.setItem(DAEMON_PORT_KEY, port);
   }
+  rpcClientRef.current?.close();
   socketRef.current?.close();
   if (!preserveState) {
     setSessions([]);
@@ -269,36 +287,33 @@ export function connectToDaemon(
   setPairingFeedback(copy.pairingFeedbackIdle);
 
   const socket = new WebSocket(wsUrl);
+  const client = createRpcClient(socket, helmKey, { handleRpcResult, handleRpcNotification });
   socketRef.current = socket;
+  rpcClientRef.current = client;
 
   socket.addEventListener("open", () => {
     setHelmConnectionState(helmKey, "connected");
     setConnection("connected");
     setConnectFeedback(`已连接到 ${wsUrl}`);
     const cache = readTrustedDeviceCache(window.localStorage, host, port);
-    // Prefer the cached trusted-device path - it lets pairing-auth helms
-    // re-authenticate silently and sync after `device.auth.result` arrives.
     if (cache?.token) {
       setTrustedDevice(cache);
-      dispatch(socket, {
-        type: "device.auth",
-        requestId: nextRequestId(requestCounter),
+      void dispatch(client, "device/authenticate", {
         deviceId: cache.deviceId,
         token: cache.token,
+      }, {
+        onResult: (method, result) => {
+          handleRpcResult(method, result, helmKey);
+          void requestInitialSync(client, helmKey);
+        },
       });
       setPairingState("waiting");
       setPairingFeedback("正在使用已保存令牌认证...");
       return;
     }
-    // No cached token: optimistically pull initial state. Personal-auth helms
-    // (`AUTH_MODE === "none"`) admit the socket immediately, so this is the
-    // only way for a fresh deck (e.g. vite dev on :5173 talking to local
-    // helm on :47631) to populate projects/sessions. Pairing-auth helms will
-    // reply with `error: not authenticated` and the error handler below will
-    // surface the pairing input.
     setPairingState("paired");
     setPairingFeedback("已连接,正在加载...");
-    requestInitialSync(socket);
+    void requestInitialSync(client, helmKey);
   });
 
   socket.addEventListener("close", () => {
@@ -307,7 +322,9 @@ export function connectToDaemon(
     if (socketRef.current === socket) {
       socketRef.current = null;
     }
-    // Socket 断开后,project files 缓存可能与服务器状态分叉 — 重连后强制刷新一次。
+    if (rpcClientRef.current === client) {
+      rpcClientRef.current = null;
+    }
     lastFilesScopeKeyRef.current = null;
     setConnectFeedback(copy.connectFeedbackIdle);
     if (context.pairingState !== "paired") {
@@ -321,12 +338,6 @@ export function connectToDaemon(
     if (!options?.auto) {
       setPairingState("idle");
     }
-    // Socket 异常断开后，project files 缓存可能过期 — 重连后强制刷新一次。
     lastFilesScopeKeyRef.current = null;
-  });
-
-  socket.addEventListener("message", (event) => {
-    const payload = JSON.parse(String(event.data)) as HelmToClient;
-    handleServerEvent(payload, helmKey);
   });
 }

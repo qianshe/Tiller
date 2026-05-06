@@ -8,7 +8,7 @@ import {
 } from "../../features/agents";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
-  dispatchWithTrace,
+  dispatchLegacyPayloadWithTrace,
   nextRequestId,
   resolveDefaultHelmEndpoint,
   useAppControllers,
@@ -98,8 +98,33 @@ export function App() {
   const copy = UI_COPY[locale];
   const deckData = useDeckData(missionVisualFixture);
 
+  function resolveHelmKeyForSocket(socket: WebSocket) {
+    if (socket === runtimeState.socketRef.current) {
+      return `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+    }
+    for (const [helmKey, candidate] of runtimeState.helmSocketRefs.current) {
+      if (candidate === socket) return helmKey;
+    }
+    return `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  }
+
+  function resolveRpcClientForSocket(socket: WebSocket) {
+    if (socket === runtimeState.socketRef.current) {
+      return runtimeState.rpcClientRef.current;
+    }
+    const helmKey = resolveHelmKeyForSocket(socket);
+    return runtimeState.helmRpcClientRefs.current.get(helmKey) ?? null;
+  }
+
   function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    dispatchWithTrace(socket, payload, helmConnection.setDebugTrace);
+    const client = resolveRpcClientForSocket(socket);
+    if (!client) return;
+    void dispatchLegacyPayloadWithTrace(
+      client,
+      payload,
+      helmConnection.setDebugTrace,
+      (method, result) => controllers.handleRpcResult?.(method, result, resolveHelmKeyForSocket(socket)),
+    );
   }
 
   const codeActions = useCodeActions({

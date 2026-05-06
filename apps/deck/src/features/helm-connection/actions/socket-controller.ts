@@ -13,6 +13,7 @@ import {
   type ConnectToDaemonOptions,
 } from "../sockets";
 import {
+  dispatchLegacyPayloadWithTrace,
   dispatchWithTrace,
   nextRequestId,
   requestInitialSync as requestInitialSyncImpl,
@@ -25,13 +26,19 @@ import {
 
 export function createSocketController(
   source: any,
-  handleServerEvent: (payload: any, sourceHelmKey?: string) => void,
+  handlers: {
+    handleServerEvent: (payload: any, sourceHelmKey?: string) => void;
+    handleRpcResult: (method: string, result: unknown, sourceHelmKey?: string) => void;
+    handleRpcNotification: (method: string, params: unknown, sourceHelmKey?: string) => void;
+  },
 ) {
   const {
     setSessionHistoryState,
     setHelmConnection,
     applyHelmInventory,
     helmSocketRefs,
+    helmRpcClientRefs,
+    rpcClientRef,
     setDaemonProfileMessage,
     requestCounter,
     primaryHelmKeyRef,
@@ -64,14 +71,41 @@ export function createSocketController(
     daemonPort,
   } = source;
 
-  function dispatch(socket: WebSocket, payload: ClientToHelm) {
-    dispatchWithTrace(socket, payload, setDebugTrace);
+  function resolveHelmKeyForSocket(socket: WebSocket) {
+    if (socket === socketRef.current) {
+      return `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+    }
+    for (const [helmKey, candidate] of helmSocketRefs.current) {
+      if (candidate === socket) return helmKey;
+    }
+    return `${daemonHost.trim() || DEFAULT_DAEMON_HOST}:${daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
   }
 
-  function requestInitialSync(socket: WebSocket) {
-    requestInitialSyncImpl(socket, {
-      dispatch,
-      requestCounter,
+  function resolveClientForSocket(socket: WebSocket) {
+    if (socket === socketRef.current) return rpcClientRef.current;
+    return helmRpcClientRefs.current.get(resolveHelmKeyForSocket(socket)) ?? null;
+  }
+
+  function dispatch(socket: WebSocket, payload: ClientToHelm) {
+    const client = resolveClientForSocket(socket);
+    if (!client) return;
+    const helmKey = resolveHelmKeyForSocket(socket);
+    void dispatchLegacyPayloadWithTrace(client, payload, setDebugTrace, (method, result) => {
+      handlers.handleRpcResult(method, result, helmKey);
+    });
+  }
+
+  function dispatchRpc(client: any, method: string, params: unknown, sourceHelmKey?: string) {
+    return dispatchWithTrace(client, method, params, setDebugTrace, (resultMethod, result) => {
+      handlers.handleRpcResult(resultMethod, result, sourceHelmKey);
+    });
+  }
+
+  function requestInitialSync(client: any, sourceHelmKey?: string) {
+    return requestInitialSyncImpl(client, {
+      dispatch: async (targetClient, method, params) => {
+        await dispatchRpc(targetClient, method, params, sourceHelmKey);
+      },
       setSessionHistoryState,
       sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
     });
@@ -93,14 +127,16 @@ export function createSocketController(
       embedded: import.meta.env.VITE_TILLER_EMBEDDED_HELM === "true",
       location: window.location,
       helmSocketRefs,
+      helmRpcClientRefs,
       setHelmConnectionState,
       setDaemonProfileMessage,
       readTrustedDeviceCache,
       requestInitialSync,
-      dispatch,
+      dispatch: dispatchRpc,
       nextRequestId,
       requestCounter,
-      handleServerEvent,
+      handleRpcResult: handlers.handleRpcResult,
+      handleRpcNotification: handlers.handleRpcNotification,
     });
   }
 
@@ -118,6 +154,7 @@ export function createSocketController(
       primaryHelmKeyRef,
       manualDisconnectRef,
       socketRef,
+      rpcClientRef,
       setSessions,
       setStatuses,
       setMessages,
@@ -142,12 +179,13 @@ export function createSocketController(
       pairingState,
       setTrustedDevice,
       readTrustedDeviceCache,
-      dispatch,
+      dispatch: dispatchRpc,
       nextRequestId,
       requestCounter,
       requestInitialSync,
       lastFilesScopeKeyRef,
-      handleServerEvent,
+      handleRpcResult: handlers.handleRpcResult,
+      handleRpcNotification: handlers.handleRpcNotification,
     });
   }
 
