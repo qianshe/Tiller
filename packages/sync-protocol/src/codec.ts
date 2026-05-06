@@ -63,6 +63,21 @@ export function validateParams(method: string, params: unknown): unknown {
   return result.data;
 }
 
+export function validateResult(method: string, result: unknown): unknown {
+  const descriptor = METHODS[method];
+  if (!descriptor) {
+    throw rpcError(ErrorCode.MethodNotFound, `Unknown method: ${method}`);
+  }
+  if (descriptor.kind !== "request") {
+    throw rpcError(ErrorCode.InvalidRequest, `Method has no result: ${method}`);
+  }
+  const parsed = descriptor.resultSchema.safeParse(result);
+  if (!parsed.success) {
+    throw rpcError(ErrorCode.InternalError, "Invalid result", parsed.error.issues);
+  }
+  return parsed.data;
+}
+
 export function encodeMessage(message: JsonRpcMessage): string {
   return JSON.stringify(message);
 }
