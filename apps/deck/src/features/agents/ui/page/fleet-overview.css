@@ -1,0 +1,699 @@
+/* features/agents/ui/page/fleet-overview.css — Fleet Overview 与顶部信息区样式 */
+/* 由 features/agents/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
+
+/* Fleet page IA polish: Fleet summary + Helm picker + selected Helm detail. */
+.fleet-command-panel {
+  gap: 22px;
+  padding: 28px;
+}
+
+.fleet-title-row {
+  align-items: center;
+  min-height: 56px;
+}
+
+.fleet-title-row h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.fleet-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.9fr);
+  gap: 22px;
+  align-items: stretch;
+}
+
+.fleet-summary-card,
+.fleet-helm-card-list,
+.helm-detail-panel-expanded {
+  border-radius: 22px;
+}
+
+.fleet-summary-card {
+  min-height: 240px;
+  align-content: center;
+  gap: 28px;
+}
+
+.fleet-summary-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+}
+
+.fleet-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.fleet-summary-metric {
+  display: grid;
+  gap: 8px;
+  min-height: 76px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.fleet-summary-metric span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.fleet-summary-metric strong {
+  color: #e5edf7;
+  font-size: 1.05rem;
+  word-break: break-word;
+}
+
+.fleet-card-heading {
+  align-items: flex-start;
+}
+
+.fleet-card-heading .primary {
+  min-width: 86px;
+}
+
+.fleet-helm-card-list .helm-card-grid {
+  grid-template-columns: 1fr;
+}
+
+.fleet-helm-card-list .helm-node-card {
+  min-height: 112px;
+}
+
+.fleet-helm-card-list .helm-node-main {
+  padding: 18px;
+}
+
+.helm-detail-panel-expanded {
+  gap: 22px;
+  padding: 22px;
+}
+
+.helm-inventory-grid {
+  align-items: stretch;
+}
+
+.helm-inventory-grid > * {
+  min-height: 128px;
+}
+
+.helm-config-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.helm-config-placeholder {
+  display: grid;
+  gap: 8px;
+  min-height: 136px;
+  padding: 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.18);
+  color: inherit;
+  text-align: left;
+}
+
+.helm-config-placeholder strong {
+  font-size: 1rem;
+}
+
+.helm-config-placeholder span {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.helm-agent-placeholder {
+  width: 100%;
+  cursor: pointer;
+}
+
+.helm-agent-placeholder:hover,
+.helm-agent-placeholder:focus-visible {
+  border-color: rgba(77, 163, 255, 0.42);
+  background: rgba(77, 163, 255, 0.1);
+  outline: none;
+}
+
+[data-deck-theme="dark"] .fleet-summary-card,
+[data-deck-theme="dark"] .fleet-helm-card-list,
+[data-deck-theme="dark"] .helm-detail-panel-expanded {
+  background: rgba(15, 23, 42, 0.42);
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
+[data-deck-theme="dark"] .helm-node-card {
+  background: rgba(15, 23, 42, 0.34);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+[data-deck-theme="dark"] .helm-node-card.active {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.22),
+    rgba(15, 23, 42, 0.48)
+  );
+  border-color: rgba(96, 165, 250, 0.58);
+  box-shadow: 0 16px 36px rgba(37, 99, 235, 0.18);
+}
+
+[data-deck-theme="light"] .fleet-summary-metric,
+[data-deck-theme="light"] .helm-config-placeholder {
+  background: rgba(248, 250, 252, 0.72);
+}
+
+[data-deck-theme="light"] .fleet-summary-metric strong {
+  color: #0f172a;
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-grid {
+      grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+  .fleet-command-panel {
+      padding: 18px;
+    }
+
+  .fleet-summary-metrics,
+    .helm-inventory-grid {
+      grid-template-columns: 1fr;
+    }
+}
+
+/* Fleet page second pass: make concrete Helm detail feel like the primary work area. */
+.helm-detail-panel-expanded {
+  min-height: 520px;
+}
+
+.helm-detail-panel-expanded > .section-head:first-child {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.helm-detail-panel-expanded > .section-head:first-child strong {
+  font-size: 1.08rem;
+}
+
+.helm-detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+.helm-detail-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #b7c4d8;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.helm-detail-facts strong {
+  color: #e5edf7;
+}
+
+.helm-detail-scope-note {
+  margin: -10px 0 0;
+}
+
+.helm-section-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.helm-inventory-section-head .helm-section-actions-inline {
+  justify-self: end;
+}
+
+.helm-section-actions-inline .helm-list-add-button {
+  margin-left: 0;
+}
+
+[data-deck-theme="light"] .helm-detail-facts span {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.86);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+[data-deck-theme="light"] .helm-detail-facts strong {
+  color: #0f172a;
+}
+
+.helm-config-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.helm-config-panel > .section-head {
+  align-items: center;
+}
+
+.helm-config-placeholder {
+  min-height: 176px;
+  align-content: start;
+}
+
+.helm-agent-config-panel .helm-config-placeholder {
+  min-height: 210px;
+}
+
+.helm-config-placeholder strong {
+  width: fit-content;
+  min-width: 120px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.1);
+  text-align: center;
+}
+
+[data-deck-theme="light"] .helm-config-placeholder strong {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.62);
+}
+
+.fleet-summary-card .eyebrow,
+.fleet-summary-card h3 {
+  color: #fca5a5;
+}
+
+.fleet-helm-card-list .helm-node-card.active .helm-node-main strong {
+  color: #dbeafe;
+}
+
+[data-deck-theme="light"]
+  .fleet-helm-card-list
+  .helm-node-card.active
+  .helm-node-main
+  strong {
+  color: #0f172a;
+}
+
+/* Fleet order fix: Helm selection belongs above selected Helm contents. */
+.shell.view-agents {
+  padding-top: 72px;
+}
+
+.view-agents .page-content,
+.view-agents .workspace-single {
+  gap: 10px;
+}
+
+.fleet-command-panel {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 16px;
+  padding-top: 22px;
+}
+
+.fleet-title-row {
+  order: 0;
+  min-height: auto;
+  padding-bottom: 2px;
+}
+
+.fleet-overview-grid {
+  order: 1;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+}
+
+.fleet-summary-card,
+.fleet-helm-card-list {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+
+.helm-detail-panel,
+.helm-detail-panel-expanded {
+  order: 2;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+}
+
+.fleet-summary-card {
+  min-height: 176px;
+  align-content: start;
+  gap: 18px;
+}
+
+.fleet-helm-card-list .helm-node-card {
+  min-height: 96px;
+}
+
+.fleet-helm-card-list .helm-node-main {
+  padding: 16px 18px;
+}
+
+.helm-detail-panel-expanded {
+  min-height: 500px;
+}
+
+/* Fleet Helm node bubbles: name + status dot only. */
+.fleet-summary-metrics-single {
+  grid-template-columns: minmax(180px, 260px);
+}
+
+.fleet-summary-metrics-single .fleet-summary-metric {
+  min-height: 66px;
+}
+
+.fleet-helm-card-list .helm-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  align-items: start;
+}
+
+.fleet-helm-card-list .helm-node-bubble {
+  min-height: 54px;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 12px 16px;
+  border-radius: 999px;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main strong {
+  overflow: hidden;
+  color: #e5edf7;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.helm-status-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+}
+
+.helm-status-connected {
+  background: #22c55e;
+  box-shadow:
+    0 0 0 4px rgba(34, 197, 94, 0.14),
+    0 0 18px rgba(34, 197, 94, 0.35);
+}
+
+.helm-status-connecting {
+  background: #f59e0b;
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.14),
+    0 0 18px rgba(245, 158, 11, 0.35);
+}
+
+.helm-status-disconnected,
+.helm-status-saved {
+  background: #64748b;
+  box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.14);
+}
+
+[data-deck-theme="light"]
+  .fleet-helm-card-list
+  .helm-node-bubble
+  .helm-node-main
+  strong {
+  color: #0f172a;
+}
+
+/* Fleet top block should read as one unified content card. */
+.fleet-overview-grid {
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.fleet-overview-grid .fleet-summary-card,
+.fleet-overview-grid .fleet-helm-card-list {
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.fleet-overview-grid .fleet-summary-card {
+  min-height: 0;
+  align-content: start;
+}
+
+.fleet-overview-grid .fleet-helm-card-list {
+  align-content: start;
+  padding-left: 20px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14) !important;
+}
+
+.fleet-overview-grid .fleet-summary-metrics-single {
+  max-width: 260px;
+}
+
+.fleet-overview-grid .helm-card-grid {
+  margin-top: 18px;
+}
+
+.fleet-overview-grid .helm-node-bubble.active {
+  background: rgba(226, 232, 240, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-overview-grid {
+  background: rgba(248, 250, 252, 0.76);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-grid .fleet-helm-card-list {
+      padding-left: 0;
+      padding-top: 18px;
+      border-left: 0 !important;
+      border-top: 1px solid rgba(148, 163, 184, 0.14) !important;
+    }
+}
+
+/* Fleet top block layout: top info row + lower count/bubble row. */
+.fleet-overview-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.9fr);
+  grid-template-rows: auto;
+  gap: 28px;
+  padding: 20px 22px 22px;
+  align-items: stretch;
+}
+
+.fleet-overview-grid .fleet-summary-card,
+.fleet-overview-grid .fleet-helm-card-list {
+  display: grid;
+  grid-template-rows: auto minmax(74px, 1fr);
+  gap: 20px;
+}
+
+.fleet-summary-card h3 {
+  margin: 4px 0 8px;
+  font-size: 1.18rem;
+}
+
+.fleet-summary-copy {
+  max-width: 68ch;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.fleet-overview-grid .fleet-summary-metrics-single {
+  align-self: end;
+  max-width: 320px;
+}
+
+.fleet-summary-metrics-single .fleet-summary-metric {
+  min-height: 78px;
+  padding: 16px 18px;
+}
+
+.fleet-card-heading {
+  min-height: 76px;
+}
+
+.fleet-card-heading strong {
+  font-size: 1.08rem;
+}
+
+.fleet-card-heading .primary {
+  align-self: start;
+  min-width: 90px;
+  min-height: 50px;
+}
+
+.fleet-overview-grid .helm-card-grid {
+  align-self: end;
+  margin-top: 0;
+}
+
+.fleet-helm-card-list .helm-node-bubble {
+  min-height: 50px;
+}
+
+.fleet-helm-card-list .helm-node-bubble .helm-node-main {
+  min-height: 50px;
+  padding: 10px 16px;
+}
+
+/* Fleet unified top block v2: explicit four-zone layout. */
+.fleet-overview-unified {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.9fr);
+  grid-template-rows: auto auto;
+  column-gap: 28px;
+  row-gap: 20px;
+  padding: 20px 22px 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.fleet-info-head {
+  display: grid;
+  gap: 8px;
+}
+
+.fleet-info-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 36px;
+}
+
+.fleet-info-title-row h3 {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 1.2rem;
+}
+
+.fleet-info-title-row strong {
+  color: #f87171;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.fleet-helm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-left: 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.fleet-helm-head strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.08rem;
+}
+
+.fleet-helm-head .primary {
+  min-width: 92px;
+  min-height: 50px;
+}
+
+.fleet-count-card {
+  display: grid;
+  gap: 8px;
+  align-self: end;
+  width: min(260px, 100%);
+  min-height: 76px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.fleet-count-card span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.fleet-count-card strong {
+  color: #e5edf7;
+  font-size: 1.16rem;
+}
+
+.fleet-helm-bubbles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  align-self: end;
+  padding-left: 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.fleet-helm-bubbles .helm-node-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: rgba(226, 232, 240, 0.16);
+  color: #e5edf7;
+  text-align: left;
+}
+
+.fleet-helm-bubbles .helm-node-bubble.active {
+  border-color: rgba(96, 165, 250, 0.72);
+  background: rgba(226, 232, 240, 0.24);
+}
+
+.fleet-helm-bubbles .helm-node-bubble strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-deck-theme="light"] .fleet-overview-unified {
+  background: rgba(248, 250, 252, 0.76);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+[data-deck-theme="light"] .fleet-count-card,
+[data-deck-theme="light"] .fleet-helm-bubbles .helm-node-bubble {
+  background: rgba(248, 250, 252, 0.72);
+  color: #0f172a;
+}
+
+[data-deck-theme="light"] .fleet-count-card strong {
+  color: #0f172a;
+}
+
+@media (max-width: 1100px) {
+  .fleet-overview-unified {
+      grid-template-columns: 1fr;
+    }
+
+  .fleet-helm-head,
+    .fleet-helm-bubbles {
+      padding-left: 0;
+      border-left: 0;
+    }
+}
