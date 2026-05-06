@@ -1,5 +1,14 @@
 import { WebSocket } from "ws";
-import type { ClientToHelm, HelmToClient } from "@tiller/sync-protocol";
+import {
+  decodeMessage,
+  encodeMessage,
+  ErrorCode,
+  isJsonRpcRequest,
+  rpcError,
+  type JsonRpcFailure,
+  type JsonRpcId,
+  type JsonRpcSuccess,
+} from "@tiller/sync-protocol";
 
 type AuthenticatedSocketRegistry = {
   add(record: {
@@ -39,8 +48,7 @@ type SocketAuthenticatorOptions = {
   trustedDeviceStore: TrustedDeviceStore;
   pairingState: PairingState;
   showPairingCode: () => void;
-  reply: (socket: WebSocket, message: HelmToClient) => void;
-  handleMessage: (socket: WebSocket, payload: ClientToHelm) => Promise<void>;
+  attachRpcConnection: (socket: WebSocket) => void;
   logInfo: (message: string) => void;
   logError: (message: string) => void;
 };
@@ -53,11 +61,24 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
     trustedDeviceStore,
     pairingState,
     showPairingCode,
-    reply,
-    handleMessage,
+    attachRpcConnection,
     logInfo,
     logError,
   } = options;
+
+  function sendSuccess(socket: WebSocket, id: JsonRpcId, result: unknown) {
+    send(socket, { jsonrpc: "2.0", id, result });
+  }
+
+  function sendFailure(socket: WebSocket, id: JsonRpcId | null, error: JsonRpcFailure["error"]) {
+    send(socket, { jsonrpc: "2.0", id, error });
+  }
+
+  function send(socket: WebSocket, message: JsonRpcSuccess | JsonRpcFailure) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(encodeMessage(message));
+    }
+  }
 
   function authenticateSocket(socket: WebSocket, deviceId: string) {
     const socketId = getSocketId(socket);
@@ -69,60 +90,43 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
       lastSeenAt: new Date().toISOString(),
     });
     socket.removeAllListeners("message");
-    socket.on("message", (raw) => {
-      let payload: ClientToHelm;
-      try {
-        payload = JSON.parse(String(raw)) as ClientToHelm;
-      } catch (error) {
-        reply(socket, {
-          type: "error",
-          message: error instanceof Error ? error.message : "Invalid message",
-        });
-        return;
-      }
-
-      void handleMessage(socket, payload).catch((error) => {
-        logError(
-          `[tiller] message handler failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-        );
-        reply(socket, {
-          type: "error",
-          message: error instanceof Error ? error.message : "Message handler failed",
-        });
-      });
-    });
+    attachRpcConnection(socket);
   }
 
-  function handlePairing(socket: WebSocket, payload: Extract<ClientToHelm, { type: "device.pair" }>) {
+  function handlePairing(
+    socket: WebSocket,
+    id: JsonRpcId,
+    params: { pairingCode?: string; deviceId?: string; deviceName?: string; clientKind?: string },
+  ) {
     const activeCode = pairingState.getCode();
-    if (!activeCode || payload.pairingCode.toUpperCase() !== activeCode) {
-      reply(socket, {
-        type: "device.pair.result",
-        requestId: payload.requestId,
+    if (!params.pairingCode || !params.deviceId || !params.deviceName) {
+      sendFailure(socket, id, rpcError(ErrorCode.InvalidParams, "Invalid device/pair params"));
+      return false;
+    }
+    if (!activeCode || params.pairingCode.toUpperCase() !== activeCode) {
+      sendSuccess(socket, id, {
         ok: false,
         message: "Invalid pairing code.",
       });
-      return;
+      return false;
     }
 
     const issued = trustedDeviceStore.issue({
-      deviceId: payload.deviceId,
-      deviceName: payload.deviceName,
-      clientKind: payload.clientKind,
+      deviceId: params.deviceId,
+      deviceName: params.deviceName,
+      clientKind: params.clientKind,
     });
     pairingState.reset();
-    authenticateSocket(socket, payload.deviceId);
-    logInfo(`[tiller] Beacon paired device=${payload.deviceId} (${payload.deviceName}) ✓`);
-
-    reply(socket, {
-      type: "device.pair.result",
-      requestId: payload.requestId,
+    authenticateSocket(socket, params.deviceId);
+    logInfo(`[tiller] Beacon paired device=${params.deviceId} (${params.deviceName}) ✓`);
+    sendSuccess(socket, id, {
       ok: true,
       token: issued.token,
       trustedUntil: issued.record.expiresAt,
       deviceName: issued.record.deviceName,
       message: "Beacon anchored successfully.",
     });
+    return true;
   }
 
   return function beginAuthenticationFlow(socket: WebSocket) {
@@ -145,18 +149,26 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
       }
 
       try {
-        const payload = JSON.parse(String(raw)) as ClientToHelm;
-        if (payload.type === "device.auth") {
+        const message = decodeMessage(String(raw));
+        if (!isJsonRpcRequest(message)) {
+          sendFailure(socket, null, rpcError(ErrorCode.InvalidRequest, "Authenticate with device/authenticate or device/pair."));
+          return;
+        }
+
+        if (message.method === "device/authenticate") {
+          const params = message.params as { deviceId?: string; token?: string } | undefined;
+          if (!params?.deviceId || !params.token) {
+            sendFailure(socket, message.id, rpcError(ErrorCode.InvalidParams, "Invalid device/authenticate params"));
+            return;
+          }
           const result = trustedDeviceStore.authenticate({
-            deviceId: payload.deviceId,
-            token: payload.token,
+            deviceId: params.deviceId,
+            token: params.token,
           });
           if (!result.ok) {
             clearTimeout(pairingPromptTimer);
             showPairingCode();
-            reply(socket, {
-              type: "device.auth.result",
-              requestId: payload.requestId,
+            sendSuccess(socket, message.id, {
               ok: false,
               requiresPairing: result.requiresPairing,
               message: result.message,
@@ -167,11 +179,9 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
 
           authenticated = true;
           clearTimeout(pairingPromptTimer);
-          authenticateSocket(socket, payload.deviceId);
-          logInfo(`[tiller] Beacon authenticated device=${payload.deviceId} ✓`);
-          reply(socket, {
-            type: "device.auth.result",
-            requestId: payload.requestId,
+          authenticateSocket(socket, params.deviceId);
+          logInfo(`[tiller] Beacon authenticated device=${params.deviceId} ✓`);
+          sendSuccess(socket, message.id, {
             ok: true,
             trustedUntil: result.trustedUntil,
             message: result.message,
@@ -179,22 +189,29 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
           return;
         }
 
-        if (payload.type === "device.pair") {
+        if (message.method === "device/pair") {
           clearTimeout(pairingPromptTimer);
-          handlePairing(socket, payload);
-          authenticated = true;
+          authenticated = handlePairing(socket, message.id, message.params as any);
           return;
         }
 
-        reply(socket, {
-          type: "error",
-          message: "Helm not authenticated yet. Send device.auth or device.pair first.",
-        });
+        sendFailure(
+          socket,
+          message.id,
+          rpcError(
+            ErrorCode.InvalidRequest,
+            "Helm not authenticated yet. Send device/authenticate or device/pair first.",
+          ),
+        );
       } catch (error) {
-        reply(socket, {
-          type: "error",
-          message: error instanceof Error ? error.message : "Invalid message",
-        });
+        logError(`[tiller] auth message failed: ${error instanceof Error ? error.message : String(error)}`);
+        sendFailure(
+          socket,
+          null,
+          error && typeof error === "object" && "code" in error
+            ? (error as JsonRpcFailure["error"])
+            : rpcError(ErrorCode.ParseError, "Invalid message"),
+        );
       }
     });
   };
