@@ -44,6 +44,8 @@ export type HelmHandlerContext = {
   configPath: string;
   emit: (socket: WebSocket, payload: HelmToClient) => void;
   broadcastAuthenticated: (payload: HelmToClient) => void;
+  notify?: (socket: WebSocket, method: string, params: unknown) => void;
+  broadcastNotification?: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
