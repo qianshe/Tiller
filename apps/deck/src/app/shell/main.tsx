@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ToastViewport } from "../../features/toast";
 import { AppErrorBoundary } from "./error-boundary";
 import { App } from "./root";
+import "./tokens.css";
 import "./styles.css";
 import "../../features/mission/styles.css";
 import "../../features/agents/styles.css";

@@ -5,7 +5,6 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
-import { InfoList } from "../../../shared/ui/primitives";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import type { AppView } from "../../../shared/utils/routes";
 
@@ -56,66 +55,72 @@ export function OverviewPage({
     `ACP 舰员 · ${agents.length}`,
     `任务 · ${sessions.length}`,
   ];
+  const latestSession = recentSessions[0] ?? null;
 
   return (
-    <section className="stack-gap overview-page">
-      <section className="card hero-card">
-        <div>
-          <p className="eyebrow">{copy.heroEyebrow}</p>
-          <h1>Tiller Command Deck</h1>
-          <p>{copy.heroBody}</p>
-        </div>
-        <div className="section-actions">
+    <section className="landing-hero" aria-labelledby="landing-hero-title">
+      <div className="landing-hero-content">
+        <p className="landing-eyebrow">
+          <span aria-hidden="true" />
+          AI COMMAND PLATFORM
+        </p>
+        <h1 id="landing-hero-title">
+          Command AI.
+          <br />
+          Unify Everything.
+        </h1>
+        <p className="landing-copy">
+          Tiller is an AI command platform that unifies ACP agents across your
+          infrastructure. As Governor, you orchestrate fleets, assign missions,
+          and achieve outcomes at scale.
+        </p>
+        <div className="landing-actions" aria-label="首页操作">
           <button
-            className="primary"
+            className="primary landing-primary"
             type="button"
             onClick={() => onNavigate("sessions")}
           >
-            进入任务
+            Start Commanding
+            <span aria-hidden="true">›</span>
           </button>
           <button
-            className="secondary"
+            className="secondary landing-secondary"
             type="button"
             onClick={() => onNavigate("agents")}
           >
-            管理舰队
+            Explore the Deck
           </button>
         </div>
-      </section>
-      <section className="card surface-card overview-grid">
-        <InfoList title="当前总览" items={overviewItems} empty="暂无总览信息" />
-        <div className="info-list">
-          <div className="section-head section-head-soft">
-            <div>
-              <h3>最近任务</h3>
-              <p className="muted compact">按 Helm 返回顺序展示最近会话。</p>
-            </div>
-          </div>
-          {recentSessions.length ? (
-            <div className="session-list compact-session-list">
-              {recentSessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className="session-row"
-                  onClick={() => {
-                    onOpenSession(session.id);
-                    onNavigate("sessions");
-                  }}
-                >
-                  <strong>{resolveDisplaySessionTitle(session)}</strong>
-                  <span>
-                    {session.projectName} · {session.agentName}
-                  </span>
-                  <small>{formatRelativeTime(session.updatedAt)}</small>
-                </button>
-              ))}
-            </div>
+      </div>
+
+      <aside className="landing-telemetry" aria-label="当前总览">
+        <div>
+          <p className="landing-telemetry-kicker">Live Helm</p>
+          <strong>{activeHelmLabel}</strong>
+        </div>
+        <div className="landing-telemetry-grid">
+          {overviewItems.slice(1).map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+        <div className="landing-telemetry-session">
+          <p>Latest Mission</p>
+          {latestSession ? (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenSession(latestSession.id);
+                onNavigate("sessions");
+              }}
+            >
+              <strong>{resolveDisplaySessionTitle(latestSession)}</strong>
+              <span>{formatRelativeTime(latestSession.updatedAt)}</span>
+            </button>
           ) : (
-            <div className="empty-state">还没有任务，先进入任务页创建一个。</div>
+            <span>还没有任务，先进入任务页创建一个。</span>
           )}
         </div>
-      </section>
+      </aside>
     </section>
   );
 }

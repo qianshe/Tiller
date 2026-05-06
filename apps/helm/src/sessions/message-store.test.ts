@@ -154,6 +154,38 @@ test("session message store merges consecutive assistant stream chunks without a
   }
 });
 
+test("session message store merges stable alphanumeric assistant stream chunks", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-stream-alpha-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-11jmeuu",
+      role: "assistant",
+      text: "具体",
+      timestamp: "2026-05-06T12:06:32.267Z",
+    });
+    store.append("session-1", {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-13ipn7f",
+      role: "assistant",
+      text: "消息内容",
+      timestamp: "2026-05-06T12:06:32.275Z",
+    });
+
+    assert.deepEqual(store.list("session-1"), [
+      {
+        id: "019dfc94-a921-7112-8980-8d57cd537787-msg-11jmeuu",
+        role: "assistant",
+        text: "具体消息内容",
+        timestamp: "2026-05-06T12:06:32.267Z",
+      },
+    ]);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store keeps the latest cumulative assistant stream snapshot", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-cumulative-"));

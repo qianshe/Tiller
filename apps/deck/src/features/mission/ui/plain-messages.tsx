@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
-import { sortAgentMessagesByTimeline } from "../../logbook";
+import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 5;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -129,7 +129,7 @@ export function PlainMessages({
 }
 
 function sortDisplayMessages(items: AgentMessage[]) {
-  return sortAgentMessagesByTimeline(items);
+  return coalesceDisplayMessages(sortAgentMessagesByTimeline(items));
 }
 
 export function resolveVisiblePlainMessages(

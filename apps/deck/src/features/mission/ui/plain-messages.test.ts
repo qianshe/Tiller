@@ -48,3 +48,16 @@ test("plain message timeline uses chronological latest messages from newest-firs
     messages.slice(-20).map((item) => item.id),
   );
 });
+
+test("plain message timeline coalesces runtime assistant chunks before windowing", () => {
+  const chunks: AgentMessage[] = "具体消息内容".split("").map((text, index) => ({
+    id: `019dfc94-a921-7112-8980-8d57cd537787-msg-${(1000 + index).toString(36)}`,
+    role: "assistant",
+    text,
+    timestamp: `2026-05-06T01:00:${String(index).padStart(2, "0")}.000Z`,
+  }));
+
+  assert.deepEqual(resolveVisiblePlainMessages(chunks).map((item) => item.text), [
+    "具体消息内容",
+  ]);
+});

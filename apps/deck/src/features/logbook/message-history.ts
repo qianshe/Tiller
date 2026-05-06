@@ -139,7 +139,7 @@ function shouldMergeAssistantStreamChunk(
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
-  return /-msg-\d+$/u.test(id);
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-[a-z0-9]+$/iu.test(id);
 }
 
 function hasTimelineBoundaryBetween(

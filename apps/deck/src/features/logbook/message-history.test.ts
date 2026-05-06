@@ -247,6 +247,53 @@ test("mergeAgentMessages merges runtime generated assistant chunks without share
   assert.equal(merged[0]?.text, "流式回复");
 });
 
+test("mergeAgentMessages merges stable alphanumeric runtime assistant chunks", () => {
+  const merged = [
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-11jmeuu",
+      role: "assistant",
+      text: "具体",
+      timestamp: "2026-05-06T12:06:32.267Z",
+    },
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-13ipn7f",
+      role: "assistant",
+      text: "消息内容",
+      timestamp: "2026-05-06T12:06:32.275Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "具体消息内容");
+});
+
+test("mergeAgentMessages keeps non-runtime assistant ids separate", () => {
+  const merged = mergeAgentMessages(
+    [
+      {
+        id: "assistant-msg-alpha",
+        role: "assistant",
+        text: "第一条",
+        timestamp: "2026-05-06T12:06:32.267Z",
+      },
+    ],
+    {
+      id: "assistant-msg-beta",
+      role: "assistant",
+      text: "第二条",
+      timestamp: "2026-05-06T12:06:32.275Z",
+    },
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["第一条", "第二条"],
+  );
+});
+
 test("mergeMessageHistory preserves server order even when timestamps are out of order", () => {
   const merged = mergeMessageHistory(
     [],
