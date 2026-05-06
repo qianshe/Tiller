@@ -395,6 +395,17 @@ textarea {
 
 .top-nav-logo {
   font-size: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.top-nav-logo-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .top-nav-links {
@@ -1155,27 +1166,12 @@ textarea {
   width: 30px;
   height: 28px;
   font-size: 0;
+  color: #050914;
 }
 
-.shell.view-overview > .top-nav .top-nav-logo::before,
-.shell.view-overview > .top-nav .top-nav-logo::after {
-  content: "";
-  position: absolute;
-  background: #050914;
-}
-
-.shell.view-overview > .top-nav .top-nav-logo::before {
-  inset: 0;
-  border-radius: 4px;
-  clip-path: polygon(50% 0, 100% 100%, 76% 100%, 50% 45%, 24% 100%, 0 100%);
-}
-
-.shell.view-overview > .top-nav .top-nav-logo::after {
-  left: 11px;
-  right: 11px;
-  bottom: 2px;
-  height: 9px;
-  border-radius: 2px;
+.shell.view-overview > .top-nav .top-nav-logo-mark {
+  width: 100%;
+  height: 100%;
 }
 
 .shell.view-overview > .top-nav .top-nav-links {
@@ -1227,14 +1223,15 @@ textarea {
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(360px, 740px) minmax(280px, 420px);
-  align-items: center;
+  align-items: start;
   justify-content: space-between;
   gap: clamp(28px, 7vw, 96px);
-  padding: clamp(132px, 16vh, 190px) clamp(24px, 4.2vw, 72px) clamp(40px, 8vh, 88px);
+  padding: clamp(96px, 11vh, 136px) clamp(24px, 4.2vw, 72px) clamp(40px, 8vh, 88px);
 }
 
 .landing-hero-content {
   max-width: 740px;
+  padding-top: 18px;
 }
 
 .landing-eyebrow {

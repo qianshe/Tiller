@@ -25,7 +25,15 @@ export function TopNav({
   return (
     <header className="top-nav card">
       <div className="top-nav-brand">
-        <span className="top-nav-logo">🚀</span>
+        <span className="top-nav-logo" aria-hidden="true">
+          <svg className="top-nav-logo-mark" viewBox="0 0 32 28" role="presentation">
+            <path
+              d="M16 0 31 28H24.2l-2.9-5.7h-3.1l2.4 5.7h-9.1l2.4-5.7h-3.1L7.8 28H1z"
+              fill="currentColor"
+            />
+            <path d="M14.6 16.8h2.8l-1.4-3.5z" fill="#ffffff" />
+          </svg>
+        </span>
         <strong>Tiller</strong>
       </div>
       <nav className="top-nav-links" aria-label="主导航">

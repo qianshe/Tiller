@@ -68,12 +68,17 @@
     rgba(11, 18, 31, 0.98),
     rgba(7, 12, 22, 0.98)
   );
+  --mission-chat-bottom-reserve: 24px;
+}
+
+.view-sessions .chat-conversation:has(.mission-permission-drawer) {
+  --mission-chat-bottom-reserve: 170px;
 }
 
 .view-sessions .chat-main {
-  padding: 20px 10px 190px;
+  padding: 20px 10px var(--mission-chat-bottom-reserve);
   overflow-y: auto;
-  scroll-padding-bottom: 190px;
+  scroll-padding-bottom: var(--mission-chat-bottom-reserve);
 }
 
 .view-sessions .plain-message-list {
@@ -215,9 +220,8 @@
       grid-template-columns: 1fr;
     }
 
-  .view-sessions .chat-main {
-      padding-bottom: 360px;
-      scroll-padding-bottom: 360px;
+  .view-sessions .chat-conversation:has(.mission-permission-drawer) {
+      --mission-chat-bottom-reserve: 360px;
     }
 }
 
@@ -378,11 +382,6 @@
   min-height: 0;
   max-height: none;
   border-radius: 18px;
-}
-
-.view-sessions .chat-main {
-  padding-bottom: 170px;
-  scroll-padding-bottom: 170px;
 }
 
 .view-sessions

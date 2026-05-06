@@ -26,6 +26,13 @@ const markdownComponents: Components = {
   img() {
     return null;
   },
+  table({ children, node: _node, ...props }) {
+    return (
+      <div className="markdown-table-scroll">
+        <table {...props}>{children}</table>
+      </div>
+    );
+  },
   pre({ children }) {
     const code = extractTextFromReactNode(children).replace(/\n$/, "");
     const language = findCodeLanguage(children);
@@ -50,6 +57,8 @@ export function MarkdownMessage({ text }: { text: string }) {
     </div>
   );
 }
+
+export { markdownComponents };
 
 function MarkdownCodeBlock({
   children,

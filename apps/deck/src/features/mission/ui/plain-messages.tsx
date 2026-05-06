@@ -79,7 +79,7 @@ export function PlainMessages({
         const isExpanded = expandedMessageIds.has(message.id);
         const isCollapsible =
           message.role === "user" && shouldCollapsePlainMessage(message.text);
-        const markdownClassName =
+        const messageBodyClassName =
           isCollapsible && !isExpanded
             ? "plain-message-body plain-message-body-collapsed"
             : "plain-message-body";
@@ -91,8 +91,8 @@ export function PlainMessages({
             <span className="plain-message-role">
               {resolveMessageRoleLabel(message, assistantLabel, roleLabels)}
             </span>
-            <div className={markdownClassName}>
-              <MarkdownMessage text={message.text} />
+            <div className={messageBodyClassName}>
+              {renderPlainMessageContent(message)}
             </div>
             {isCollapsible ? (
               <button
@@ -125,6 +125,14 @@ export function PlainMessages({
         );
       })}
     </div>
+  );
+}
+
+function renderPlainMessageContent(message: AgentMessage) {
+  return message.role === "user" ? (
+    <div className="plain-message-text">{message.text}</div>
+  ) : (
+    <MarkdownMessage text={message.text} />
   );
 }
 

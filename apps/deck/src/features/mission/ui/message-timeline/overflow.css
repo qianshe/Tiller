@@ -2,7 +2,12 @@
 /* 由 features/mission/styles.css 聚合；入口 import 顺序即原 cascade 顺序。 */
 
 /* Mission conversation overflow guard: keep replies inside the center pane. */
-.view-sessions .chat-main,
+.view-sessions .chat-main {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .view-sessions .plain-message-list,
 .view-sessions .plain-message,
 .view-sessions .plain-message-body,
@@ -10,5 +15,17 @@
 .view-sessions .markdown-message > * {
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
+}
+
+.view-sessions .plain-message,
+.view-sessions .plain-message-body,
+.view-sessions .markdown-message,
+.view-sessions .markdown-message > * {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.view-sessions .markdown-message > .markdown-table-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
 }

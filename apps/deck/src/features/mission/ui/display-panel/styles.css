@@ -991,9 +991,9 @@
     ul,
     ol,
     pre,
-    blockquote,
-    table
-  ):first-child {
+    blockquote
+  ):first-child,
+.markdown-message > .markdown-table-scroll:first-child {
   margin-top: 0;
 }
 
@@ -1010,13 +1010,13 @@
     ul,
     ol,
     pre,
-    blockquote,
-    table
-  ):last-child {
+    blockquote
+  ):last-child,
+.markdown-message > .markdown-table-scroll:last-child {
   margin-bottom: 0;
 }
 
-.markdown-message :where(p, ul, ol, pre, blockquote, table) {
+.markdown-message :where(p, ul, ol, pre, blockquote) {
   margin: 0 0 0.72rem;
 }
 
@@ -1081,20 +1081,37 @@
   color: #414755;
 }
 
-.markdown-message table {
-  width: 100%;
+.markdown-message .markdown-table-scroll {
   max-width: 100%;
-  table-layout: fixed;
+  margin: 0 0 0.72rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.markdown-message .markdown-table-scroll > table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  table-layout: auto;
+  border-collapse: collapse;
+}
+
+.markdown-message table {
+  width: auto;
+  max-width: none;
+  table-layout: auto;
   border-collapse: collapse;
   display: table;
-  overflow-wrap: anywhere;
 }
 
 .markdown-message th,
 .markdown-message td {
+  min-width: 7.5rem;
   padding: 0.5rem 0.65rem;
   border: 1px solid rgba(148, 163, 184, 0.28);
   text-align: left;
+  vertical-align: top;
 }
 
 .markdown-message a {

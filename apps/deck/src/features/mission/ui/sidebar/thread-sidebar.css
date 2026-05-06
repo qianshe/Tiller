@@ -87,6 +87,12 @@
   overflow-wrap: anywhere;
 }
 
+.plain-message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .plain-message-body {
   min-width: 0;
 }
@@ -94,6 +100,13 @@
 .plain-message-body-collapsed {
   position: relative;
   max-height: 5em;
+  overflow: hidden;
+}
+
+.plain-message-body-collapsed .plain-message-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
   overflow: hidden;
 }
 
