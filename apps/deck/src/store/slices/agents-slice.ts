@@ -9,6 +9,8 @@ import type { StateCreator } from "zustand";
 export type AgentModelOptionsEntry = {
   loading?: boolean;
   message?: string;
+  /** projectId used when probing, echoed back for cache-key reconstruction. */
+  projectId?: string | null;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
   state: {

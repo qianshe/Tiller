@@ -190,7 +190,7 @@ const draftModelPlaceholder = resolveModelInputPlaceholder(
 );
 const draftAgentModelOptionsKey =
   !activeSession && selectedAgentId && selectedWorkspaceId
-    ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId)
+    ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId)
     : null;
 const draftAgentModelOptions = draftAgentModelOptionsKey
   ? agentModelOptions[draftAgentModelOptionsKey]
