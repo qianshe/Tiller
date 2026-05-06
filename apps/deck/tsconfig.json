@@ -13,7 +13,16 @@
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tiller/shared": ["../../packages/shared/src/index.ts"],
+      "@tiller/sync-protocol": ["../../packages/sync-protocol/src/index.ts"],
+      "@tiller/agent-registry": ["../../packages/agent-registry/src/index.ts"],
+      "@tiller/acp-runtime": ["../../packages/acp-runtime/src/index.ts"]
+    }
   },
   "include": [
     "src",
