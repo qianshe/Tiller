@@ -48,6 +48,25 @@ test("permission command display falls back to MCP server name when tool name is
   assert.equal(display.detail, null);
 });
 
+test("permission command display uses pending tool title when approval payload only has MCP server", () => {
+  const rawInput = JSON.stringify({
+    server_name: "mcp_router",
+    request: {
+      _meta: {
+        codex_approval_kind: "mcp_tool_call",
+      },
+    },
+  });
+
+  const display = resolvePermissionCommandDisplay(
+    `Approve MCP tool call :: ${rawInput}`,
+    "Tool: mcp_router/new_page",
+  );
+
+  assert.equal(display.title, "MCP · mcp_router/new_page");
+  assert.equal(display.detail, null);
+});
+
 test("permission action labels localize scoped approval options", () => {
   assert.equal(
     resolvePermissionActionLabel({ decision: "allow", label: "Allow once" }, drawerCopy),

@@ -1,0 +1,79 @@
+/* features/pairing/styles.css — 配对页面样式 */
+/* 从 shell/styles.css 拆分，来源行号见 git blame */
+
+.pairing-card {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.pairing-boxes {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pairing-box {
+  min-height: 56px;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.pairing-box:focus {
+  outline: 2px solid rgba(0, 88, 188, 0.4);
+  outline-offset: 1px;
+}
+
+[data-deck-theme="dark"] input,
+[data-deck-theme="dark"] select,
+[data-deck-theme="dark"] textarea,
+[data-deck-theme="dark"] .pairing-box {
+  background: #0f1724;
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-deck-theme="system"] input,
+    [data-deck-theme="system"] select,
+    [data-deck-theme="system"] textarea,
+    [data-deck-theme="system"] .pairing-box {
+      background: #0f1724;
+      color: #f8fafc;
+      border-color: rgba(148, 163, 184, 0.35);
+    }
+}
+
+/* Pairing code input: display as three grouped pairs, e.g. []-[]-[]. */
+.pairing-boxes-grouped {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.pairing-box-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pairing-separator {
+  color: #748197;
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+  user-select: none;
+}
+
+@media (max-width: 520px) {
+  .pairing-box-group {
+      gap: 6px;
+    }
+}

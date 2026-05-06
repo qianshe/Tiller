@@ -98,6 +98,45 @@ test("mapSessionUpdateNotification preserves nested message ids", () => {
   assert.equal(mapped.event.message.text, "嵌套消息");
 });
 
+test("mapSessionUpdateNotification generates stable ids for replayed chunks without message ids", () => {
+  const updates = [
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "第一段" } },
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "第二段" } },
+  ];
+  const originalDateNow = Date.now;
+
+  try {
+    Date.now = () => 1000;
+    const firstPass = updates.map((update) =>
+      mapSessionUpdateNotification({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: { sessionId: "sess_replay", update },
+      }),
+    );
+
+    Date.now = () => 2000;
+    const secondPass = updates.map((update) =>
+      mapSessionUpdateNotification({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: { sessionId: "sess_replay", update },
+      }),
+    );
+
+    assert.deepEqual(
+      firstPass.map((mapped) => mapped?.event.type === "message" ? mapped.event.message.id : null),
+      secondPass.map((mapped) => mapped?.event.type === "message" ? mapped.event.message.id : null),
+    );
+    assert.match(
+      firstPass[0]?.event.type === "message" ? firstPass[0].event.message.id : "",
+      /^sess_replay-msg-[a-z0-9]+$/u,
+    );
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

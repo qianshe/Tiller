@@ -257,7 +257,29 @@ export function findSessionConfigOptionId(configOptions: AcpSessionConfigOption[
 }
 
 function resolveMessageId(sessionId: string, update: any) {
-  return stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ?? `${sessionId}-msg-${Date.now()}`;
+  return (
+    stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
+    `${sessionId}-msg-${hashStableMessageSeed(sessionId, update)}`
+  );
+}
+
+function hashStableMessageSeed(sessionId: string, update: any) {
+  const updateType = update.sessionUpdate ?? update.type ?? "message";
+  const text =
+    extractTextContent(update.content) ??
+    extractTextContent(update.delta) ??
+    extractTextContent(update.message) ??
+    "";
+  return stableHash(`${sessionId}\u001f${updateType}\u001f${text}`).toString(10);
+}
+
+function stableHash(value: string) {
+  let hash = 0x811c9dc5;
+  for (const char of value) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }
 
 function stringFrom(value: unknown): string | undefined {

@@ -9,6 +9,9 @@ import {
   type MissionDiffTreeNode,
 } from "./diff-tree";
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
+
+const EMPTY_COLLAPSED_DIFF_DIRECTORIES: ReadonlySet<string> = new Set();
+
 type MissionDisplayPanelProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
@@ -54,6 +57,8 @@ export function MissionDisplayPanel({
   onToggleDiffDirectory,
 }: MissionDisplayPanelProps) {
   const diffTree = buildMissionDiffTree(diffs);
+  const collapsedDirectorySet =
+    collapsedDiffDirectories ?? EMPTY_COLLAPSED_DIFF_DIRECTORIES;
   const renderDiffTreeNode = (
     node: MissionDiffTreeNode,
     depth = 0,
@@ -76,7 +81,7 @@ export function MissionDisplayPanel({
         </button>
       );
     }
-    const collapsed = collapsedDiffDirectories.has(node.path);
+    const collapsed = collapsedDirectorySet.has(node.path);
     return (
       <section
         key={node.id}

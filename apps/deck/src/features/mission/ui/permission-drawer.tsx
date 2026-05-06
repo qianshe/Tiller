@@ -21,11 +21,13 @@ type MissionPermissionDrawerProps = {
   request: PermissionRequest;
   copy: MissionPermissionDrawerCopy;
   showWorkspace: boolean;
+  fallbackToolTitle?: string | null;
   onRespond: (decision: PermissionDecision) => void;
 };
 
 export function resolvePermissionCommandDisplay(
   command: string,
+  fallbackToolTitle?: string | null,
 ): MissionPermissionCommandDisplay {
   const [label, detailSource] = splitCommand(command);
   const parsedDetail = parseJsonRecord(detailSource);
@@ -36,7 +38,10 @@ export function resolvePermissionCommandDisplay(
 
   const mcpName = resolveMcpToolName(parsedDetail);
   if (mcpName) {
-    return { title: `MCP · ${mcpName}`, detail: null };
+    return {
+      title: `MCP · ${resolveMcpFallbackToolName(mcpName, fallbackToolTitle)}`,
+      detail: null,
+    };
   }
 
   if (detailSource && isLikelyShellPermissionLabel(label)) {
@@ -118,6 +123,23 @@ function resolveMcpToolName(record: JsonRecord | null): string | null {
   return toolName ?? serverName;
 }
 
+function resolveMcpFallbackToolName(
+  mcpName: string,
+  fallbackToolTitle: string | null | undefined,
+): string {
+  if (mcpName.includes("/") || !fallbackToolTitle) {
+    return mcpName;
+  }
+
+  const normalizedFallback = fallbackToolTitle
+    .replace(/^Tool:\s*/iu, "")
+    .replace(/^MCP\s*[·•]\s*/iu, "")
+    .trim();
+  return normalizedFallback.startsWith(`${mcpName}/`)
+    ? normalizedFallback
+    : mcpName;
+}
+
 function firstString(...values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -160,9 +182,13 @@ export function MissionPermissionDrawer({
   request,
   copy,
   showWorkspace,
+  fallbackToolTitle,
   onRespond,
 }: MissionPermissionDrawerProps) {
-  const commandDisplay = resolvePermissionCommandDisplay(request.command);
+  const commandDisplay = resolvePermissionCommandDisplay(
+    request.command,
+    fallbackToolTitle,
+  );
   const permissionOptions = request.options?.length
     ? request.options
     : [
@@ -178,20 +204,22 @@ export function MissionPermissionDrawer({
       aria-label={copy.permissionRequest}
     >
       <div className="mission-permission-header">
-        <p className="eyebrow">{copy.permissionRequest}</p>
         <strong className="mission-permission-title">
           {commandDisplay.title}
         </strong>
       </div>
       <div className="mission-permission-copy">
-        {commandDisplay.detail ? (
-          <p className="mission-permission-detail">{commandDisplay.detail}</p>
-        ) : null}
-        <p className="muted compact mission-permission-reason">{request.reason}</p>
         {showWorkspace ? (
           <p className="subtle compact mission-permission-workspace">
             {request.workspacePath}
           </p>
+        ) : (
+          <p className="muted compact mission-permission-reason">
+            {request.reason}
+          </p>
+        )}
+        {commandDisplay.detail ? (
+          <p className="mission-permission-detail">{commandDisplay.detail}</p>
         ) : null}
       </div>
       <div className="permission-actions mission-permission-actions">

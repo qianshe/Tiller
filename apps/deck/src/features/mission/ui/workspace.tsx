@@ -275,6 +275,7 @@ export function MissionWorkspace(props: any) {
           activityLoading={missionActivityLoading}
           pendingToolPresent={Boolean(pendingToolActivity)}
           pendingPermission={pendingPermission}
+          pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorkspace={technicalPanels.showPermissionWorkspace}
           onRespondToPermission={respondToPermission}
         >

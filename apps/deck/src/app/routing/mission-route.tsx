@@ -144,6 +144,7 @@ export function renderMissionRoute(source: any) {
     moveMissionPanelPage,
     deleteMissionPanelPage,
     toggleMissionDiffDirectory,
+    collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
     setMissionInspectorCollapsed,
@@ -290,6 +291,7 @@ export function renderMissionRoute(source: any) {
         moveMissionPanelPage={moveMissionPanelPage}
         deleteMissionPanelPage={deleteMissionPanelPage}
         toggleMissionDiffDirectory={toggleMissionDiffDirectory}
+        collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}
         missionInspectorPaneStyle={missionInspectorPaneStyle}
         setProjectFileFilter={setProjectFileFilter}
         setMissionInspectorCollapsed={setMissionInspectorCollapsed}
