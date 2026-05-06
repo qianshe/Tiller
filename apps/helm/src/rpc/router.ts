@@ -1,6 +1,7 @@
 import { ErrorCode, rpcError, validateParams, validateResult } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../handlers/context";
 import { handleConfigRpcRequest } from "../handlers/config/rpc";
+import { handleDeviceRpcRequest } from "../handlers/devices-rpc";
 
 export async function handleHelmRpcRequest(
   method: string,
@@ -8,7 +9,9 @@ export async function handleHelmRpcRequest(
   context: HelmHandlerContext,
 ): Promise<unknown> {
   const params = validateParams(method, rawParams);
-  const result = await handleConfigRpcRequest(method, params, context);
+  const result =
+    (await handleConfigRpcRequest(method, params, context)) ??
+    (await handleDeviceRpcRequest(method, params, context));
   if (result === undefined) {
     throw rpcError(ErrorCode.MethodNotFound, `Unknown method: ${method}`);
   }
