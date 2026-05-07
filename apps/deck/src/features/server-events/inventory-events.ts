@@ -24,7 +24,7 @@ export type InventoryServerEventContext = {
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
   setWorktreePickerOpen: (open: boolean) => void;
   setAgentTestResult: (message: string) => void;
-  agentModelOptionsKey: (providerId: string, workspaceId: string) => string;
+  agentModelOptionsKey: (providerId: string, workspaceId: string, projectId?: string | null) => string;
   writeAgentModelOptionsCache: (
     entries: Record<string, AgentModelOptionsEntry>,
   ) => void;
@@ -149,9 +149,19 @@ export function applyInventoryResult(
       setAgentTestResult(payload.message);
       return true;
     case "agent/get_model_options": {
-      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+      // Reconstruct the cache key including projectId.
+      // The loading entry carries the projectId used when the probe was dispatched;
+      // find it by matching the providerId::workspaceId prefix.
+      const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+      const currentEntries = store.agentModelOptions;
+      const loadingEntry = Object.entries(currentEntries).find(
+        ([k, entry]) => k.startsWith(baseKey) && entry.loading,
+      );
+      const loadingProjectId = loadingEntry?.[1]?.projectId;
+      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
       const nextEntry = {
         loading: false,
+        projectId: loadingProjectId,
         message: payload.message,
         modelOptions: payload.modelOptions,
         configOptions: payload.configOptions,
@@ -159,6 +169,10 @@ export function applyInventoryResult(
       };
       store.setAgentModelOptions((current) => {
         const next = { ...current, [key]: nextEntry };
+        // If the loading sentinel lived under a different key variant, clean it up.
+        if (loadingEntry && loadingEntry[0] !== key) {
+          delete next[loadingEntry[0]];
+        }
         writeAgentModelOptionsCache(next);
         return next;
       });

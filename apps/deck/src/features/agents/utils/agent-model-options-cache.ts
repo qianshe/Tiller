@@ -10,6 +10,8 @@ const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 export type AgentModelOptionsEntry = {
   loading?: boolean;
   message?: string;
+  /** projectId used when probing, echoed back for cache-key reconstruction. */
+  projectId?: string | null;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
   state: {
@@ -24,8 +26,10 @@ type AgentModelOptionsCache = Record<
   AgentModelOptionsEntry & { cachedAt: number }
 >;
 
-export function agentModelOptionsKey(providerId: string, workspaceId: string) {
-  return `${providerId}::${workspaceId}`;
+export function agentModelOptionsKey(providerId: string, workspaceId: string, projectId?: string | null) {
+  return projectId
+    ? `${providerId}::${workspaceId}::${projectId}`
+    : `${providerId}::${workspaceId}`;
 }
 
 export function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEntry> {
@@ -44,6 +48,7 @@ export function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEn
           key,
           {
             loading: false,
+            projectId: entry.projectId,
             message: entry.message,
             modelOptions: entry.modelOptions ?? [],
             configOptions: entry.configOptions ?? [],

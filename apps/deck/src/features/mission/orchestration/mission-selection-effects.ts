@@ -219,7 +219,7 @@ export function useMissionSelectionEffects(source: any) {
     ) {
       return;
     }
-    const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId);
+    const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
     const cached = agentModelOptions[key];
     if (cached && !cached.loading) {
       const realOptions = resolveModelOptions(
@@ -257,6 +257,7 @@ export function useMissionSelectionEffects(source: any) {
       ...current,
       [key]: {
         loading: true,
+        projectId: selectedProjectId,
         modelOptions: [],
         configOptions: [],
         state: {},
