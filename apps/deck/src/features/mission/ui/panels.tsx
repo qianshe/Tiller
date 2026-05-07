@@ -20,12 +20,12 @@ export function MissionPanelNav({
   onDrop: (pageId: string) => void;
 }) {
   return (
-    <nav className="mission-panel-tree grid content-start gap-1 border-r border-border-ghost bg-surface-sunken/60 p-2 max-[860px]:flex max-[860px]:overflow-x-auto max-[860px]:border-b max-[860px]:border-r-0" aria-label="展示页">
+    <nav className="mission-panel-tree flex gap-1 overflow-x-auto border-b border-border-ghost bg-surface-sunken/60 p-2" aria-label="展示页">
       {pages.map((page) => {
         const custom = page.id.startsWith("custom-");
         return (
           <button
-            className={cn("mission-panel-node grid min-h-12 place-items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground max-[860px]:min-w-20", selectedPageId === page.id && "active bg-primary-soft text-primary")}
+            className={cn("mission-panel-node inline-flex min-h-10 min-w-20 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground", selectedPageId === page.id && "active bg-primary-soft text-primary")}
             draggable={custom}
             key={page.id}
             type="button"

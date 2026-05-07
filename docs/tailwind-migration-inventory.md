@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 2
-- Total lines: 1602
+- Total lines: 1616
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 1411
-- Top-level selectors: 212
+- Lines: 1425
+- Top-level selectors: 214
 - Hard-coded color tokens: 29
 
 Selectors:
@@ -122,6 +122,8 @@ Selectors:
 - `.shell.view-overview > .top-nav .top-nav-logo`
 - `.shell.view-overview > .top-nav .top-nav-logo-mark`
 - `.shell.view-overview > .top-nav::after`
+- `.shell.view-sessions`
+- `.shell.view-sessions .page-content`
 - `.sidebar`
 - `.stat-card`
 - `.stat-card strong`

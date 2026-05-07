@@ -1,7 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { FileDiffSummary } from "@tiller/shared";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../../../shared/ui";
-import { InfoList } from "../../../shared/ui/primitives";
+import { Button, Card, CardContent, Input } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
   buildMissionDiffTree,
@@ -13,6 +12,23 @@ import {
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
 
 const EMPTY_COLLAPSED_DIFF_DIRECTORIES: ReadonlySet<string> = new Set();
+
+type OverviewItem = {
+  label: string;
+  value: string;
+};
+
+function parseOverviewItem(item: string): OverviewItem {
+  const [label, ...valueParts] = item.split(" · ");
+  return {
+    label: label || "信息",
+    value: valueParts.join(" · ") || item,
+  };
+}
+
+function isWideOverviewItem(label: string): boolean {
+  return label === "路径" || label === "摘要";
+}
 
 type MissionDisplayPanelProps = {
   style: CSSProperties;
@@ -161,7 +177,7 @@ export function MissionDisplayPanel({
     }
     if (selectedPage.id === "logbook") {
       return (
-        <div className="mission-panel-page mission-logbook-page min-h-0 overflow-auto">
+        <div className="mission-panel-page mission-logbook-page grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
           {" "}
           {logbookContent}{" "}
         </div>
@@ -222,12 +238,41 @@ export function MissionDisplayPanel({
     }
     return (
       <div className="mission-panel-page mission-overview-page grid gap-3">
-        {" "}
-        <InfoList
-          title="项目信息"
-          items={overviewItems}
-          empty="选择左侧任务后显示项目信息"
-        />{" "}
+        {overviewItems.length ? (
+          <div className="mission-overview-grid grid grid-cols-2 gap-2 max-xl:grid-cols-1">
+            {overviewItems.map((item) => {
+              const overviewItem = parseOverviewItem(item);
+              return (
+                <Card
+                  key={item}
+                  className={cn(
+                    "mission-overview-card border-border-ghost bg-surface-sunken shadow-none",
+                    isWideOverviewItem(overviewItem.label) && "col-span-2 max-xl:col-span-1",
+                  )}
+                >
+                  <CardContent className="grid gap-1 p-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {overviewItem.label}
+                    </span>
+                    <strong
+                      className={cn(
+                        "text-sm font-semibold leading-relaxed text-foreground",
+                        overviewItem.label === "路径" && "break-all font-mono text-xs",
+                        overviewItem.label === "摘要" && "font-normal text-muted-foreground",
+                      )}
+                    >
+                      {overviewItem.value}
+                    </strong>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+            选择左侧任务后显示项目信息
+          </div>
+        )}
       </div>
     );
   };
@@ -255,7 +300,7 @@ export function MissionDisplayPanel({
           ＋{" "}
         </Button>{" "}
       </div>{" "}
-      <div className="mission-panel-body grid min-h-0 flex-1 grid-cols-[72px_minmax(0,1fr)] gap-0 max-[860px]:grid-cols-1">
+      <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
         {" "}
         <MissionPanelNav
           pages={pages}

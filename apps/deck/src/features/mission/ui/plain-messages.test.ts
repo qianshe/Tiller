@@ -65,6 +65,62 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
   ]);
 });
 
+test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
+  const chunks: AgentMessage[] = [
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+      role: "assistant",
+      text: "先说明",
+      timestamp: "2026-05-06T01:10:01.000Z",
+    },
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+      role: "assistant",
+      text: "先说明再继续",
+      timestamp: "2026-05-06T01:10:03.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages(chunks, DEFAULT_VISIBLE_MESSAGE_LIMIT, [
+      "2026-05-06T01:10:02.000Z",
+    ]).map((item) => item.text),
+    ["先说明", "再继续"],
+  );
+});
+
+test("plain message timeline renders a divider where tool calls split assistant chunks", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+          role: "assistant",
+          text: "先说明",
+          timestamp: "2026-05-06T01:10:01.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+          role: "assistant",
+          text: "先说明再继续",
+          timestamp: "2026-05-06T01:10:03.000Z",
+        },
+      ],
+      boundaryTimestamps: ["2026-05-06T01:10:02.000Z"],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /mission-message-tool-boundary/);
+  assert.match(html, />---</);
+});
+
 test("user messages render as plain text and keep the collapse affordance", () => {
   const longUserMessage = [
     "# 标题",

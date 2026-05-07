@@ -16,7 +16,7 @@ import {
   daemonProfileKey,
   formatConnectionStatus,
 } from "../../helm-connection/facade";
-import { Button } from "../../../shared/ui";
+import { Badge, Button } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -103,7 +103,7 @@ export function MissionSidebar({
   resizer,
 }: MissionSidebarProps) {
   const sidebarClassName = [
-    "chat-session-sidebar mission-pane mission-pane-sidebar flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface p-3 shadow-none",
+    "chat-session-sidebar mission-pane mission-pane-sidebar flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface/95 p-2 shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
   ]
     .filter(Boolean)
@@ -122,7 +122,7 @@ export function MissionSidebar({
             type="button"
             variant="ghost"
             size="icon"
-            className="mission-sidebar-toggle ml-auto"
+            className="mission-sidebar-toggle ml-auto size-7 text-muted-foreground hover:text-foreground"
             onClick={() => setMissionSidebarCollapsed(true)}
             aria-expanded="true"
             aria-label="收起任务导航"
@@ -133,11 +133,16 @@ export function MissionSidebar({
         ) : null}
         {missionSidebarCollapsed ? null : (
           <div className="sidebar-section mission-tree-switcher grid gap-3">
-            <div className="section-head section-head-soft sidebar-heading-block flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">项目</h2>
-                <p className="muted compact text-sm text-muted-foreground">
-                  Helm → Project → Session（绑定 ACP）
+            <div className="section-head section-head-soft sidebar-heading-block rounded-xl border border-border-ghost bg-surface-sunken p-2">
+              <div className="grid gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">项目</h2>
+                  <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
+                    {projects.length} 个
+                  </Badge>
+                </div>
+                <p className="muted compact text-xs leading-relaxed text-muted-foreground">
+                  Helm → Project → Session
                 </p>
               </div>
             </div>
@@ -166,8 +171,8 @@ export function MissionSidebar({
                     <button
                       type="button"
                       className={cn(
-                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[16px_24px_minmax(0,1fr)_10px] items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                        selectedHelm && "active bg-primary-soft text-primary",
+                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[18px_24px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-transparent px-2.5 py-1.5 text-left text-sm text-foreground transition hover:border-border-ghost hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        selectedHelm && "active border-primary/20 bg-primary-soft text-primary",
                       )}
                       onClick={() => toggleMissionHelmNode(helm.id)}
                       role="treeitem"
@@ -178,7 +183,12 @@ export function MissionSidebar({
                       <span className="mission-tree-caret text-xs text-muted-foreground">
                         {helmExpanded ? "▾" : "▸"}
                       </span>
-                      <span className="mission-tree-icon text-base">⎈</span>
+                      <span
+                        className="mission-tree-icon grid size-5 place-items-center rounded-md bg-surface-sunken text-xs"
+                        aria-hidden="true"
+                      >
+                        ⎈
+                      </span>
                       <span className="mission-tree-main grid min-w-0 gap-0.5">
                         <strong className="truncate font-semibold">{helm.name}</strong>
                         <span className="truncate text-xs text-muted-foreground">
@@ -186,20 +196,24 @@ export function MissionSidebar({
                           项目
                         </span>
                       </span>
-                      <span
-                        className={cn(
-                          "mission-tree-status-dot size-2 rounded-full",
-                          helmConnectionState === "connected" && "bg-success",
-                          helmConnectionState === "connecting" && "bg-warning",
-                          helmConnectionState === "disconnected" && "bg-muted-foreground/50",
-                        )}
+                      <Badge
+                        variant={
+                          helmConnectionState === "connected"
+                            ? "success"
+                            : helmConnectionState === "connecting"
+                              ? "warning"
+                              : "outline"
+                        }
+                        className="shrink-0 px-2 py-0.5 text-[10px]"
                         title={formatConnectionStatus(helmConnectionState)}
                         aria-label={formatConnectionStatus(helmConnectionState)}
-                      />
+                      >
+                        {helmProjects.length}
+                      </Badge>
                     </button>
                     {helmExpanded ? (
                       <div
-                        className="mission-tree-children mission-tree-children-projects ml-3 grid gap-1 border-l border-border-ghost pl-2"
+                        className="mission-tree-children mission-tree-children-projects ml-3 grid gap-1.5 border-l border-border-ghost pl-2"
                         role="group"
                       >
                         {helmProjects.map((project) => {

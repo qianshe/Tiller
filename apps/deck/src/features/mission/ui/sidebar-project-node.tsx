@@ -5,6 +5,8 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { Badge, Button } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
 import { resolveSessionProjectId } from "../utils/session-derivations";
 import { SessionRow } from "./session-row";
 
@@ -69,41 +71,47 @@ export function SidebarProjectNode({
   );
 
   return (
-    <div key={project.id} className="mission-tree-group" role="group">
+    <div key={project.id} className="mission-tree-group grid gap-1" role="group">
       <div
-        className={["mission-tree-project-row", selectedProject ? "active" : ""]
-          .filter(Boolean)
-          .join(" ")}
+        className={cn(
+          "mission-tree-project-row group/project grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-xl",
+          selectedProject && "active bg-primary-soft/60",
+        )}
       >
         <button
           type="button"
-          className={[
-            "mission-tree-row",
-            "mission-tree-row-project",
-            selectedProject ? "active" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
+          className={cn(
+            "mission-tree-row mission-tree-row-project grid min-w-0 flex-1 grid-cols-[18px_22px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            selectedProject && "active text-primary",
+          )}
           onClick={() => toggleMissionProjectNode(project.id)}
           role="treeitem"
           aria-level={2}
           aria-expanded={projectExpanded}
           aria-selected={selectedProject}
         >
-          <span className="mission-tree-caret">
+          <span className="mission-tree-caret text-xs text-muted-foreground">
             {projectExpanded ? "▾" : "▸"}
           </span>
-          <span className="mission-tree-icon">
+          <span
+            className="mission-tree-icon grid size-5 place-items-center rounded-md bg-surface-sunken text-xs"
+            aria-hidden="true"
+          >
             {projectExpanded ? "📂" : "📁"}
           </span>
-          <span className="mission-tree-main">
-            <strong>{project.name}</strong>
-            <span>{sessionCountsByProject[project.id] ?? 0} 任务</span>
+          <span className="mission-tree-main grid min-w-0 gap-0.5">
+            <strong className="truncate font-semibold">{project.name}</strong>
+            <span className="truncate text-xs text-muted-foreground">Project</span>
           </span>
+          <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
+            {sessionCountsByProject[project.id] ?? 0}
+          </Badge>
         </button>
-        <button
+        <Button
           type="button"
-          className="mission-tree-new-inline"
+          variant="ghost"
+          size="icon"
+          className="mission-tree-new-inline size-7 shrink-0 rounded-lg text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);
             setSelectedProjectId(project.id);
@@ -120,11 +128,11 @@ export function SidebarProjectNode({
           title="新建任务"
         >
           ＋
-        </button>
+        </Button>
       </div>
       {projectExpanded ? (
         <div
-          className="mission-tree-children mission-tree-children-sessions"
+          className="mission-tree-children mission-tree-children-sessions ml-4 grid gap-1 border-l border-border-ghost pl-2"
           role="group"
         >
           {projectNodeSessions.length ? (
@@ -148,7 +156,7 @@ export function SidebarProjectNode({
               );
             })
           ) : (
-            <div className="mission-tree-empty">这个项目还没有任务。</div>
+            <div className="mission-tree-empty rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground">这个项目还没有任务。</div>
           )}
         </div>
       ) : null}

@@ -17,6 +17,7 @@ type MissionMessageTimelineProps = {
   assistantLabel?: string;
   copy: MissionMessageTimelineCopy;
   expandedMessageIds: ReadonlySet<string>;
+  boundaryTimestamps?: string[];
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
@@ -31,6 +32,7 @@ export function MissionMessageTimeline({
   assistantLabel,
   copy,
   expandedMessageIds,
+  boundaryTimestamps = [],
   historyStateBySession,
   onLoadOlderMessages,
   onToggleExpandedMessage,
@@ -43,6 +45,7 @@ export function MissionMessageTimeline({
       assistantLabel={assistantLabel ?? copy.role.assistant}
       roleLabels={copy.role}
       expandedMessageIds={expandedMessageIds}
+      boundaryTimestamps={boundaryTimestamps}
       historyState={sessionId ? historyStateBySession[sessionId] : undefined}
       onLoadOlderMessages={() => {
         if (sessionId) {

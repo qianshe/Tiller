@@ -201,9 +201,9 @@ export function MissionWorkspace(props: any) {
     !activeSession && "mission-draft-chat",
   ]);
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar grid min-h-[calc(100vh-8rem)] grid-cols-[minmax(220px,22%)_6px_minmax(0,1fr)_6px_minmax(280px,24%)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient max-[1180px]:grid-cols-[minmax(200px,24%)_6px_minmax(0,1fr)_6px_minmax(240px,26%)] max-[860px]:flex max-[860px]:min-h-0 max-[860px]:flex-col",
-    effectiveSidebarCollapsed && "mission-sidebar-collapsed grid-cols-[0_6px_minmax(0,1fr)_6px_minmax(280px,24%)]",
-    effectiveInspectorCollapsed && "mission-inspector-collapsed grid-cols-[minmax(220px,22%)_6px_minmax(0,1fr)_6px_0]",
+    "card surface-card chat-layout chat-layout-sidebar grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_8px_var(--mission-chat-width)_8px_var(--mission-display-width)_8px_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient max-[860px]:flex max-[860px]:h-auto max-[860px]:min-h-0 max-[860px]:flex-col",
+    effectiveSidebarCollapsed && "mission-sidebar-collapsed",
+    effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
   return (
     <MissionPage
@@ -270,6 +270,7 @@ export function MissionWorkspace(props: any) {
           helmConnected={pairingState === "paired"}
           activeSession={activeSession}
           activeSessionMessages={activeSessionMessages}
+          activeSessionToolCalls={activeToolCalls}
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}

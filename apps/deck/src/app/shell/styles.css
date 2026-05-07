@@ -1219,6 +1219,20 @@ textarea {
   gap: 0;
 }
 
+.shell.view-sessions {
+  width: 100vw;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 8px 12px 12px;
+}
+
+.shell.view-sessions .page-content {
+  min-height: calc(100vh - 20px);
+  padding: 0;
+  gap: 0;
+}
+
 .landing-hero {
   min-height: 100vh;
   display: grid;

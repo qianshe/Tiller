@@ -21,6 +21,7 @@ import {
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
+import { planProviderHistorySync } from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
@@ -172,14 +173,38 @@ export function createSessionServices(options: SessionServicesOptions) {
       if (!history) {
         return false;
       }
-      if (history.messages.length) {
-        options.sessionMessageStore.replace(sessionId, history.messages);
+      if (!history.messages.length) {
+        if (history.toolCalls.length) {
+          options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+        }
+        options.logInfo(
+          `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+        );
+        return true;
       }
+
+      const descriptor = options.sessionRuntimeStore.get(sessionId);
+      const syncDecision = planProviderHistorySync({
+        currentState: descriptor?.providerHistory,
+        providerMessages: history.messages,
+      });
+
+      if (syncDecision.action === "replace") {
+        if (syncDecision.messages.length) {
+          options.sessionMessageStore.replace(sessionId, syncDecision.messages);
+        }
+      } else if (syncDecision.action === "append") {
+        for (const message of syncDecision.messages) {
+          options.sessionMessageStore.append(sessionId, message);
+        }
+      }
+
+      persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
       if (history.toolCalls.length) {
         options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
       }
       options.logInfo(
-        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`,
+        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${syncDecision.action} providerMessages=${history.messages.length} localMessages=${syncDecision.action === "skip" ? 0 : syncDecision.messages.length} toolCalls=${history.toolCalls.length}`,
       );
       return true;
     } catch (error) {
@@ -188,6 +213,46 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       return false;
     }
+  }
+
+  function persistProviderHistoryState(
+    sessionId: string,
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    providerHistory: StoredSessionRuntimeDescriptor["providerHistory"],
+  ) {
+    if (!providerHistory) {
+      return;
+    }
+
+    const descriptor = options.sessionRuntimeStore.get(sessionId);
+    if (descriptor) {
+      options.sessionRuntimeStore.upsert({
+        ...descriptor,
+        providerHistory,
+        lastSeenAt: providerHistory.syncedAt,
+      });
+      return;
+    }
+
+    const summary =
+      options.sessions.get(sessionId)?.summary ??
+      options.sessionStore.list().find((item) => item.id === sessionId);
+    if (!summary) {
+      return;
+    }
+
+    options.sessionRuntimeStore.upsert({
+      sessionId,
+      projectId: summary.projectId,
+      helmId: summary.helmId,
+      providerId: summary.agentId,
+      runtimeSessionId,
+      capabilities: resolveSessionRestoreCapabilities(agent, null),
+      providerHistory,
+      lastSeenAt: providerHistory.syncedAt,
+      state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
+    });
   }
 
   async function refreshAuthoritativeSessionHistory(sessionId: string) {
@@ -336,9 +401,10 @@ export function createSessionServices(options: SessionServicesOptions) {
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) {
+    const existingDescriptor = options.sessionRuntimeStore.get(summary.id);
     const resolvedCapabilities = resolveSessionRestoreCapabilities(
       agent,
-      options.sessionRuntimeStore.get(summary.id),
+      existingDescriptor,
       capabilities,
     );
     if (
@@ -360,6 +426,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       providerId: summary.agentId,
       runtimeSessionId: summary.runtimeSessionId,
       capabilities: resolvedCapabilities,
+      providerHistory: existingDescriptor?.providerHistory,
       lastSeenAt: summary.updatedAt,
       state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
     });

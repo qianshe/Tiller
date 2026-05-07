@@ -33,8 +33,8 @@ const markdownComponents: Components = {
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,
-      "markdown-paragraph",
-      isThinkingParagraph(children) ? "markdown-paragraph-thinking" : null,
+      "markdown-paragraph leading-7 text-foreground",
+      isThinkingParagraph(children) ? "markdown-paragraph-thinking italic text-muted-foreground" : null,
     ]
       .filter(Boolean)
       .join(" ");
@@ -44,10 +44,58 @@ const markdownComponents: Components = {
       </p>
     );
   },
+  ul({ children, node: _node, ...props }) {
+    return (
+      <ul {...props} className="my-2 list-disc space-y-1 pl-5 marker:text-primary">
+        {children}
+      </ul>
+    );
+  },
+  ol({ children, node: _node, ...props }) {
+    return (
+      <ol {...props} className="my-2 list-decimal space-y-1 pl-5 marker:text-primary">
+        {children}
+      </ol>
+    );
+  },
+  li({ children, node: _node, ...props }) {
+    return (
+      <li {...props} className="pl-1 leading-7 text-foreground [&>p]:inline">
+        {children}
+      </li>
+    );
+  },
+  blockquote({ children, node: _node, ...props }) {
+    return (
+      <blockquote
+        {...props}
+        className="border-l-2 border-primary/50 pl-3 text-muted-foreground"
+      >
+        {children}
+      </blockquote>
+    );
+  },
+  code({ children, className, node: _node, ...props }) {
+    return (
+      <code
+        {...props}
+        className={[
+          className,
+          "rounded bg-surface-sunken px-1 py-0.5 font-mono text-[0.92em] text-foreground",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </code>
+    );
+  },
   table({ children, node: _node, ...props }) {
     return (
-      <div className="markdown-table-scroll">
-        <table {...props}>{children}</table>
+      <div className="markdown-table-scroll rounded-md border border-border-ghost">
+        <table {...props} className="w-full border-collapse text-left text-sm">
+          {children}
+        </table>
       </div>
     );
   },
@@ -64,7 +112,7 @@ const markdownComponents: Components = {
 
 export function MarkdownMessage({ text }: { text: string }) {
   return (
-    <div className="markdown-message">
+    <div className="markdown-message space-y-3 text-sm leading-7 text-foreground">
       <ReactMarkdown
         components={markdownComponents}
         remarkPlugins={[remarkGfm]}
@@ -152,11 +200,12 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block">
-      <div className="markdown-code-toolbar">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[#0d1117] text-sm shadow-sm">
+      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
           type="button"
+          className="rounded px-2 py-0.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
           onClick={copyCode}
           disabled={!code}
           aria-label="复制代码块"
@@ -169,14 +218,14 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre>
+        <pre className="overflow-x-auto p-3 text-xs leading-6">
           <code
             className={`hljs language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre>{children}</pre>
+        <pre className="overflow-x-auto p-3 text-xs leading-6">{children}</pre>
       )}
     </div>
   );

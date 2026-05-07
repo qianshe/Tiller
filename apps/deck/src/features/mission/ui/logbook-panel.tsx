@@ -52,25 +52,29 @@ export function LogbookPanel({
   onLoadOlder,
 }: LogbookPanelProps) {
   return (
-    <>
-      <SessionOverviewCard
-        activeSession={activeSession}
-        statusLabel={statusLabel}
-        diffCount={diffCount}
-        logCount={logCount}
-      />
-      <ActivityLogPanel
-        sessionId={activeSession?.id}
-        sessionToolCalls={sessionToolCalls}
-        commandChunks={commandChunks}
-        sessionMessages={sessionMessages}
-        historyState={historyState}
-        visibleCount={visibleCount}
-        visibleLimit={visibleLimit}
-        copy={copy}
-        onShowMore={onShowMore}
-        onLoadOlder={onLoadOlder}
-      />
-    </>
+    <div className="mission-logbook-layout grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+      <div className="mission-logbook-summary min-h-0">
+        <SessionOverviewCard
+          activeSession={activeSession}
+          statusLabel={statusLabel}
+          diffCount={diffCount}
+          logCount={logCount}
+        />
+      </div>
+      <div className="mission-logbook-scroll min-h-0 overflow-auto pr-1">
+        <ActivityLogPanel
+          sessionId={activeSession?.id}
+          sessionToolCalls={sessionToolCalls}
+          commandChunks={commandChunks}
+          sessionMessages={sessionMessages}
+          historyState={historyState}
+          visibleCount={visibleCount}
+          visibleLimit={visibleLimit}
+          copy={copy}
+          onShowMore={onShowMore}
+          onLoadOlder={onLoadOlder}
+        />
+      </div>
+    </div>
   );
 }

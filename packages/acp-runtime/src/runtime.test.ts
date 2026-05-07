@@ -11,6 +11,8 @@ import {
   normalizeProviderCleanupResult,
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
+  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  resolveAcpRequestTimeout,
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
@@ -25,6 +27,24 @@ test("default ACP request timeout allows slow session/new responses", () => {
 
 test("default ACP prompt timeout allows long-running agent turns", () => {
   assert.equal(DEFAULT_ACP_PROMPT_TIMEOUT_MS, 30 * 60_000);
+});
+
+test("OpenCode ACP session creation uses a longer request timeout", () => {
+  assert.equal(OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS, 120_000);
+  assert.equal(
+    resolveAcpRequestTimeout(
+      { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"], transport: "stdio", protocol: "acp" },
+      "session/new",
+    ),
+    OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveAcpRequestTimeout(
+      { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
+      "session/new",
+    ),
+    DEFAULT_ACP_REQUEST_TIMEOUT_MS,
+  );
 });
 
 test("normalizeAcpAgentSessionListResult accepts camelCase and snake_case ACP session entries", () => {
@@ -77,13 +97,37 @@ test("resolveAcpLaunchConfig keeps provider-specific command and env handling be
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-adapter-"));
   try {
     const openCode = resolveAcpLaunchConfig(
-      { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--pure"], env: { EXISTING: "1" }, transport: "stdio", protocol: "acp" },
+      {
+        id: "opencode",
+        name: "OpenCode",
+        command: "opencode",
+        args: ["acp", "--pure"],
+        env: {
+          EXISTING: "1",
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { mcpServers: { enabled: false } } }),
+        },
+        transport: "stdio",
+        protocol: "acp",
+      },
       { fallbackCwd: tempDir, sessionConfig: { model: "openai/gpt-5.4", reasoningEffort: "high" } },
     );
     assert.deepEqual(openCode.args, ["acp", "--pure", "--port", "0"]);
     assert.equal(openCode.cwd, tempDir);
     assert.equal(openCode.env.EXISTING, "1");
     assert.equal(typeof openCode.env.OPENCODE_CONFIG_CONTENT, "string");
+    assert.deepEqual(JSON.parse(openCode.env.OPENCODE_CONFIG_CONTENT as string), {
+      mcp: { mcpServers: { enabled: false } },
+      model: "openai/gpt-5.4",
+      provider: {
+        openai: {
+          models: {
+            "gpt-5.4": {
+              options: { reasoningEffort: "high" },
+            },
+          },
+        },
+      },
+    });
 
     const codex = resolveAcpLaunchConfig(
       { id: "codex", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp" },

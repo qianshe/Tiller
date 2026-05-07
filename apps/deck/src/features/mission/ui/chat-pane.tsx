@@ -1,5 +1,6 @@
 import type {
   AgentMessage,
+  AgentToolCall,
   PermissionDecision,
   PermissionRequest,
   SessionSummary,
@@ -32,6 +33,7 @@ type MissionChatPaneProps = {
   helmConnected: boolean;
   activeSession: SessionSummary | null;
   activeSessionMessages: AgentMessage[];
+  activeSessionToolCalls: AgentToolCall[];
   copy: MissionChatPaneCopy;
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, MessageHistoryState | undefined>;
@@ -57,6 +59,7 @@ export function MissionChatPane({
   helmConnected,
   activeSession,
   activeSessionMessages,
+  activeSessionToolCalls,
   copy,
   expandedMessageIds,
   messageHistoryState,
@@ -89,6 +92,9 @@ export function MissionChatPane({
           <>
             <MissionMessageTimeline
               items={activeSessionMessages}
+              boundaryTimestamps={activeSessionToolCalls.map(
+                (toolCall) => toolCall.timestamp,
+              )}
               sessionId={activeSession.id}
               assistantLabel={activeSession.agentName}
               copy={copy}

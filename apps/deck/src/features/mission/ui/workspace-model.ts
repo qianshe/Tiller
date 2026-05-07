@@ -1,11 +1,7 @@
-import { sortProjectFileSummaries } from "@tiller/shared";
-import { projectFilesKey } from "../utils/project-files-key";
+import type { ProjectFileSummary } from "@tiller/shared";
 import { formatProjectSummaryForDisplay } from "../utils/project-display";
-import { resolveProjectFilesScope } from "../utils/session-derivations";
 import {
   buildMissionPanelPages,
-  joinClassNames,
-  resolveVisibleProjectFiles,
   selectMissionPanelPage,
 } from "../utils/session-render-state";
 import { isSessionExecutionPending } from "../utils/session-state";
@@ -29,13 +25,10 @@ export function buildMissionWorkspaceModel(input: any) {
     customMissionPanelPages,
     selectedMissionPanelPageId,
     activeSessionProjectId,
-    projectFilesByScope,
     activeSessionProject,
     draftProject,
     selectedWorkspace,
     selectedDraftAgent,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -90,22 +83,19 @@ export function buildMissionWorkspaceModel(input: any) {
     missionPanelPages,
     selectedMissionPanelPageId,
   );
-  const projectFilesScope = resolveProjectFilesScope({
-    activeSession,
-    activeSessionProjectId,
-  });
-  const projectFilesEntry =
-    projectFilesScope.projectId && projectFilesScope.workspaceId
-      ? projectFilesByScope[
-          projectFilesKey(
-            projectFilesScope.projectId,
-            projectFilesScope.workspaceId,
-          )
-        ]
-      : undefined;
-  const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(
-    sortProjectFileSummaries,
-  );
+  const projectFilesScope = {
+    projectId: activeSessionProjectId ?? null,
+    workspaceId: activeSession?.workspaceId ?? null,
+  };
+  const projectFilesEntry = activeSession
+    ? {
+        loading: false,
+        files: [],
+        message:
+          "Web 端暂不拉取全量 Git 文件；请通过 Git Diff 或航行日志查看结构变化。",
+      }
+    : undefined;
+  const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
   const overviewWorkspaceName =
@@ -124,11 +114,7 @@ export function buildMissionWorkspaceModel(input: any) {
         `摘要 · ${formatProjectSummaryForDisplay(overviewProject.summary, overviewProjectName)}`,
       ]
     : [];
-  const visibleProjectFiles = resolveVisibleProjectFiles(
-    projectFiles,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
-  );
+  const visibleProjectFiles = [] as ProjectFileSummary[];
   const sessionExecutionPending = Boolean(
     activeSession && isSessionExecutionPending(activeSessionStatus),
   );

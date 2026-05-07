@@ -2,8 +2,7 @@
 import { useEffect } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../utils/composer-options";
-import { projectFilesKey } from "../utils/project-files-key";
-import { resolveDraftSelectionId, resolveProjectFilesScope, resolveSessionProjectId } from "../utils/session-derivations";
+import { resolveDraftSelectionId } from "../utils/session-derivations";
 
 export function useMissionSelectionEffects(source: any) {
   const {
@@ -33,8 +32,6 @@ export function useMissionSelectionEffects(source: any) {
     rpcClientRef,
     setWorktreeGitByProject,
     dispatch,
-    lastFilesScopeKeyRef,
-    setProjectFilesByScope,
     selectedAgentId,
     filteredAgents,
     setSelectedAgentId,
@@ -153,47 +150,6 @@ export function useMissionSelectionEffects(source: any) {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
-  useEffect(() => {
-    const scope = resolveProjectFilesScope({
-      activeSession,
-      activeSessionProjectId: activeSession
-        ? resolveSessionProjectId(activeSession, projects)
-        : null,
-    });
-    if (
-      !scope.projectId ||
-      !scope.workspaceId ||
-      pairingState !== "paired" ||
-      !rpcClientRef.current ||
-      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-    const key = projectFilesKey(scope.projectId, scope.workspaceId);
-    if (lastFilesScopeKeyRef.current === key) {
-      // 同一 project+workspace,只是切换会话 — 复用现有文件列表,避免 loading 闪烁与重复请求。
-      return;
-    }
-    lastFilesScopeKeyRef.current = key;
-    setProjectFilesByScope((current) => ({
-      ...current,
-      [key]: {
-        loading: true,
-        files: current[key]?.files ?? [],
-        message: "正在加载项目文件...",
-      },
-    }));
-    void dispatch(rpcClientRef.current, "project/list_files", {
-      projectId: scope.projectId,
-      workspaceId: scope.workspaceId,
-    });
-  }, [
-    activeSession?.id,
-    activeSession?.projectId,
-    activeSession?.workspaceId,
-    pairingState,
-    projects,
-  ]);
   useEffect(() => {
     if (!draftProject) {
       return;

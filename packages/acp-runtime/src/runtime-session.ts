@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import { resolve } from "node:path";
-import { ACP_EARLY_STDERR_FAILURE, ACP_INITIALIZE_TIMEOUT_MS, DEFAULT_ACP_PROMPT_TIMEOUT_MS, DEFAULT_ACP_REQUEST_TIMEOUT_MS } from "./constants";
+import { ACP_EARLY_STDERR_FAILURE, DEFAULT_ACP_PROMPT_TIMEOUT_MS, resolveAcpRequestTimeout } from "./constants";
 import { resolveSessionCapabilities } from "./capabilities";
 import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine, writeProtocolLog } from "./protocol-logging";
@@ -164,7 +164,11 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
     },
   }), stream);
 
-  const withSdkRequest = async <T>(method: string, operation: Promise<T>, timeoutMs = options.agent.initializeTimeoutMs ?? ACP_INITIALIZE_TIMEOUT_MS): Promise<T> => {
+  const withSdkRequest = async <T>(
+    method: string,
+    operation: Promise<T>,
+    timeoutMs = resolveAcpRequestTimeout(options.agent, method),
+  ): Promise<T> => {
     if (exitError) {
       throw exitError;
     }

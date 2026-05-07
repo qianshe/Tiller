@@ -29,7 +29,7 @@ export function ProjectFileList({
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">正在加载项目文件...</div>;
   }
   if (!projectFiles.length) {
-    return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{message || "暂无项目文件"}</div>;
+    return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{message || "Web 端暂不加载全量 Git 文件；可通过 Git Diff 和航行日志查看相关结构。"}</div>;
   }
   if (!visibleProjectFiles.length) {
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">没有匹配的项目文件</div>;

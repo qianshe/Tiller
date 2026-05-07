@@ -1,4 +1,13 @@
 import type { SessionSummary } from "@tiller/shared";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../../shared/ui";
 
 type SessionCleanupConfirmDialogProps = {
   session: SessionSummary | null;
@@ -21,43 +30,33 @@ export function SessionCleanupConfirmDialog({
   }
 
   return (
-    <div className="fleet-modal-backdrop" role="presentation">
-      <section
-        className="card surface-card fleet-delete-helm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="确认删除会话"
-      >
-        <div className="fleet-dialog-head fleet-dialog-head-simple">
-          <h3>确认删除会话？</h3>
-          <button
-            className="secondary fleet-dialog-close"
-            type="button"
-            onClick={onCancel}
-          >
-            关闭
-          </button>
+    <Dialog open={Boolean(session)} onOpenChange={(open) => (!open ? onCancel() : undefined)}>
+      <DialogContent aria-label="确认删除会话" className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>确认删除会话？</DialogTitle>
+          <DialogDescription>
+            此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-1 rounded-lg bg-surface-sunken p-3">
+          <strong className="text-sm font-semibold text-foreground">
+            {resolveSessionTitle(session)}
+          </strong>
+          <span className="text-sm text-muted-foreground">{session.agentName}</span>
         </div>
-        <div className="fleet-delete-confirm-body">
-          <p>此操作将清理该会话的本地记录并尝试通知 Agent 删除远端会话。</p>
-          <div className="fleet-delete-target">
-            <strong>{resolveSessionTitle(session)}</strong>
-            <span>{session.agentName}</span>
-          </div>
-        </div>
-        <div className="section-actions fleet-delete-actions">
-          <button className="secondary" type="button" onClick={onCancel}>
+        <DialogFooter>
+          <Button variant="outline" type="button" onClick={onCancel}>
             取消
-          </button>
-          <button
-            className="secondary helm-destroy-button"
+          </Button>
+          <Button
+            variant="destructive"
             type="button"
             onClick={() => onConfirm(session.id)}
           >
             确认删除
-          </button>
-        </div>
-      </section>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

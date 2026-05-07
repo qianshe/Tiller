@@ -346,6 +346,37 @@ test("session message store replaces a session with authoritative history order"
   }
 });
 
+test("session message store keeps provider paragraph messages separate", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-paragraphs-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "第一段",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "第二段",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    });
+
+    assert.deepEqual(
+      store.list("session-1").map((message) => [message.id, message.text]),
+      [
+        ["provider-message-1#p0", "第一段"],
+        ["provider-message-1#p1", "第二段"],
+      ],
+    );
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store removes only the targeted session history", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-delete-"));
@@ -438,6 +469,30 @@ test("session message store defaults to the latest twenty messages", async () =>
       "msg-25",
     ]);
     assert.equal(latest.hasMore, true);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session message store defaults to latest twenty paragraph messages", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-default-paragraph-page-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    for (let index = 0; index < 25; index += 1) {
+      store.append("session-1", {
+        id: `provider-message-${index}#p0`,
+        role: "assistant",
+        text: `paragraph ${index}`,
+        timestamp: `2026-05-07T08:00:${String(index).padStart(2, "0")}.000Z`,
+      });
+    }
+
+    const latest = store.listPage("session-1");
+    assert.equal(latest.messages.length, 20);
+    assert.equal(latest.messages[0]?.id, "provider-message-5#p0");
+    assert.equal(latest.messages.at(-1)?.id, "provider-message-24#p0");
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
