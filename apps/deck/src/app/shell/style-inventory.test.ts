@@ -11,7 +11,7 @@ const repoRoot = resolve(deckRoot, "../..");
 const scriptPath = resolve(deckRoot, "scripts/style-inventory.mjs");
 const inventoryPath = resolve(repoRoot, "docs/tailwind-migration-inventory.md");
 
-test("style inventory script documents known CSS entry points", () => {
+test("style inventory script documents final CSS entry points", () => {
   execFileSync(process.execPath, [scriptPath], {
     cwd: repoRoot,
     stdio: "pipe",
@@ -20,9 +20,10 @@ test("style inventory script documents known CSS entry points", () => {
   assert.equal(existsSync(inventoryPath), true);
   const inventory = readFileSync(inventoryPath, "utf8");
 
-  assert.match(inventory, /- CSS files: \d+/);
+  assert.match(inventory, /- CSS files: 2/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/styles\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\.css/);
   assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/settings\/styles\.css/);
   assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/agents\/styles\.css/);
-  assert.match(inventory, /apps\/deck\/src\/features\/mission\/styles\.css/);
+  assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/mission\/styles\.css/);
 });

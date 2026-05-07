@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   WorkspaceSummary,
 } from "@tiller/shared";
+import { cn } from "../../../shared/utils/cn";
 import type {
   Dispatch,
   MutableRefObject,
@@ -50,15 +51,15 @@ export function ComposerDraftSelectors({
   selectDraftAgent,
 }: ComposerDraftSelectorsProps) {
   return (
-    <div className="draft-toolbar-grid draft-toolbar-grid-mission">
+    <div className="draft-toolbar-grid draft-toolbar-grid-mission grid gap-3 rounded-lg border border-border-ghost bg-surface-sunken p-3 sm:grid-cols-2">
       <div
         ref={worktreePickerRef}
-        className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""}`}
+        className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""} relative grid gap-1`}
       >
-        <span>Workspace</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Workspace</span>
         <button
           type="button"
-          className="mission-worktree-trigger"
+          className="mission-worktree-trigger flex min-h-10 items-center justify-between rounded-md border border-border-ghost bg-surface px-3 py-2 text-left text-sm text-foreground transition hover:bg-surface-emphasis"
           onClick={() => {
             setAgentPickerOpen(false);
             setWorktreePickerOpen((current) => !current);
@@ -70,7 +71,7 @@ export function ComposerDraftSelectors({
         </button>
         {worktreePickerOpen ? (
           <div
-            className="mission-worktree-menu"
+            className="mission-worktree-menu absolute left-0 top-full z-40 mt-2 grid max-h-72 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
             role="listbox"
             aria-label="Workspace"
           >
@@ -80,7 +81,7 @@ export function ComposerDraftSelectors({
                 type="button"
                 role="option"
                 aria-selected={workspace.id === selectedWorkspaceId}
-                className={workspace.id === selectedWorkspaceId ? "active" : ""}
+                className={cn("rounded-sm px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary", workspace.id === selectedWorkspaceId && "active bg-primary-soft text-primary")}
                 onClick={() => selectDraftWorkspace(workspace.id)}
               >
                 <strong>{workspace.name}</strong>
@@ -91,12 +92,12 @@ export function ComposerDraftSelectors({
       </div>
       <div
         ref={agentPickerRef}
-        className={`mission-agent-field ${agentPickerOpen ? "open" : ""}`}
+        className={`mission-agent-field ${agentPickerOpen ? "open" : ""} relative grid gap-1`}
       >
-        <span>{copy.selectedAgent}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{copy.selectedAgent}</span>
         <button
           type="button"
-          className="mission-agent-trigger"
+          className="mission-agent-trigger flex min-h-10 items-center justify-between rounded-md border border-border-ghost bg-surface px-3 py-2 text-left text-sm text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => {
             setWorktreePickerOpen(false);
             setAgentPickerOpen((current) => !current);
@@ -109,7 +110,7 @@ export function ComposerDraftSelectors({
         </button>
         {agentPickerOpen ? (
           <div
-            className="mission-agent-menu"
+            className="mission-agent-menu absolute left-0 top-full z-40 mt-2 grid max-h-72 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
             role="listbox"
             aria-label={copy.selectedAgent}
           >
@@ -119,7 +120,7 @@ export function ComposerDraftSelectors({
                 type="button"
                 role="option"
                 aria-selected={agent.id === selectedAgentId}
-                className={agent.id === selectedAgentId ? "active" : ""}
+                className={cn("rounded-sm px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary", agent.id === selectedAgentId && "active bg-primary-soft text-primary")}
                 onClick={() => selectDraftAgent(agent.id)}
               >
                 {agent.name}

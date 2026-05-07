@@ -1,4 +1,8 @@
 import {
+  Button,
+  Textarea,
+} from "../../../shared/ui";
+import {
   type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
   type FormEvent,
@@ -166,7 +170,7 @@ export function MissionComposer({
   canSend,
 }: MissionComposerProps) {
   return (
-    <div className="chat-input-area draft-toolbar">
+    <div className="chat-input-area draft-toolbar border-t border-border-ghost bg-surface p-3">
       {!activeSession ? (
         <ComposerDraftSelectors
           worktreePickerRef={worktreePickerRef}
@@ -188,22 +192,23 @@ export function MissionComposer({
         />
       ) : null}
       <form
-        className="chat-input-form mission-order-editor"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface-sunken p-3"
         onSubmit={submitPrompt}
       >
-        <div ref={slashWrapperRef} className="slash-command-wrapper">
+        <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
             imagePasteNotice={imagePasteNotice}
           />
-          <textarea
+          <Textarea
             ref={missionPromptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
+            className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup
@@ -214,9 +219,9 @@ export function MissionComposer({
             />
           ) : null}
         </div>
-        <div className="mission-composer-sidecar">
-          <div className="mission-composer-tools" aria-hidden="true">
-            <span>＋</span> <span>◎</span>
+        <div className="mission-composer-sidecar flex flex-wrap items-center justify-between gap-3">
+          <div className="mission-composer-tools flex items-center gap-1 text-muted-foreground" aria-hidden="true">
+            <span className="grid size-7 place-items-center rounded-full bg-surface text-sm">＋</span> <span className="grid size-7 place-items-center rounded-full bg-surface text-sm">◎</span>
           </div>
           <MissionConfigControls
             showAgentModeSelect={showDraftAgentModeSelect}
@@ -246,10 +251,11 @@ export function MissionComposer({
             resolveReasoningLabel={resolveReasoningLabel}
             reasoningOptions={draftReasoningOptions}
           />
-          <div className="mission-composer-actions">
+          <div className="mission-composer-actions ml-auto flex items-center gap-2">
             {deckPreferences.promptEnhancer.enabled ? (
-              <button
-                className="secondary composer-icon-button"
+              <Button
+                variant="outline"
+                size="icon"
                 type="button"
                 onClick={enhancePromptDraft}
                 disabled={!prompt.trim() || promptEnhancerBusy}
@@ -257,28 +263,29 @@ export function MissionComposer({
                 title="增强提示词"
               >
                 ✦
-              </button>
+              </Button>
             ) : null}
             {activeSession && sessionExecutionPending ? (
-              <button
-                className="composer-send-icon composer-cancel-icon"
+              <Button
+                variant="destructive"
+                size="icon"
                 type="button"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
               >
                 ■
-              </button>
+              </Button>
             ) : (
-              <button
-                className="primary composer-send-icon"
+              <Button
+                size="icon"
                 type="submit"
                 disabled={!canSend}
                 aria-label="发送"
                 title="发送"
               >
                 ➤
-              </button>
+              </Button>
             )}
           </div>
         </div>

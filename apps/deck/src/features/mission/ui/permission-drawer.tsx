@@ -3,6 +3,7 @@ import type {
   PermissionRequest,
   PermissionRequestOption,
 } from "@tiller/shared";
+import { Button } from "../../../shared/ui";
 
 export type MissionPermissionCommandDisplay = {
   title: string;
@@ -198,40 +199,41 @@ export function MissionPermissionDrawer({
 
   return (
     <section
-      className="mission-permission-drawer"
+      className="mission-permission-drawer absolute bottom-[var(--mission-permission-composer-offset,190px)] left-1/2 z-30 grid w-[min(720px,calc(100%-2rem))] -translate-x-1/2 grid-rows-[auto_auto_auto] gap-2 overflow-visible rounded-lg border border-warning/30 bg-popover-glass p-3 text-foreground shadow-ambient backdrop-blur-2xl"
       role="region"
       aria-live="polite"
       aria-label={copy.permissionRequest}
     >
-      <div className="mission-permission-header">
-        <strong className="mission-permission-title">
+      <div className="mission-permission-header grid gap-1">
+        <strong className="mission-permission-title break-words text-[0.98rem] font-semibold text-foreground">
           {commandDisplay.title}
         </strong>
       </div>
-      <div className="mission-permission-copy">
+      <div className="mission-permission-copy min-h-0 overflow-visible text-sm text-muted-foreground">
         {showWorkspace ? (
-          <p className="subtle compact mission-permission-workspace">
+          <p className="subtle compact mission-permission-workspace truncate text-xs">
             {request.workspacePath}
           </p>
         ) : (
-          <p className="muted compact mission-permission-reason">
+          <p className="muted compact mission-permission-reason text-xs">
             {request.reason}
           </p>
         )}
         {commandDisplay.detail ? (
-          <p className="mission-permission-detail">{commandDisplay.detail}</p>
+          <p className="mission-permission-detail whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">{commandDisplay.detail}</p>
         ) : null}
       </div>
-      <div className="permission-actions mission-permission-actions">
+      <div className="permission-actions mission-permission-actions flex items-center gap-2 self-stretch pb-0">
         {permissionOptions.map((option) => (
-          <button
-            className={isAllowDecision(option.decision) ? "primary" : "secondary"}
+          <Button
+            variant={isAllowDecision(option.decision) ? "default" : "outline"}
+            className="min-h-8 min-w-[72px] px-3 py-1.5 shadow-none"
             type="button"
             key={`${option.decision}-${option.label}`}
             onClick={() => onRespond(option.decision)}
           >
             {resolvePermissionActionLabel(option, copy)}
-          </button>
+          </Button>
         ))}
       </div>
     </section>

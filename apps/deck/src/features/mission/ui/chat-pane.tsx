@@ -72,11 +72,15 @@ export function MissionChatPane({
 }: MissionChatPaneProps) {
   return (
     <div className={className} style={style}>
-      <div className="chat-main" ref={chatMainRef} onScroll={onChatMainScroll}>
+      <div
+        className="chat-main min-h-0 flex-1 overflow-y-auto rounded-md bg-surface-sunken/70 p-3"
+        ref={chatMainRef}
+        onScroll={onChatMainScroll}
+      >
         {!helmConnected ? (
-          <div className="note-box compact-note mission-session-feedback">
+          <div className="note-box compact-note mission-session-feedback mb-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground">
             <strong>Helm 未连接</strong>{" "}
-            <p>
+            <p className="mt-1 text-muted-foreground">
               任务页会继续展示本地缓存；连接 Helm 后即可刷新项目、任务与文件。
             </p>{" "}
           </div>

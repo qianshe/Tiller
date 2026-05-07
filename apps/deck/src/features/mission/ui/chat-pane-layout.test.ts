@@ -4,80 +4,40 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 
-const workspaceCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "workspace/workbench-layout.css",
-);
-const overflowCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "message-timeline/overflow.css",
-);
-const threadSidebarCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "sidebar/thread-sidebar.css",
-);
-const displayPanelCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "display-panel/styles.css",
-);
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const workspaceSource = readFileSync(resolve(currentDir, "workspace.tsx"), "utf8");
+const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
+const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
 
-test("mission chat only reserves large bottom space when the permission drawer is visible", () => {
-  const source = readFileSync(workspaceCssPath, "utf8");
+test("mission chat reserves permission drawer space through localized drawer positioning", () => {
+  const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
 
-  assert.match(
-    source,
-    /\.chat-conversation:has\(\.mission-permission-drawer\)\s*\{\s*--mission-chat-bottom-reserve:\s*170px;/s,
-  );
-  assert.doesNotMatch(
-    source,
-    /\.view-sessions \.chat-main\s*\{[^}]*padding-bottom:\s*170px;/s,
-  );
+  assert.match(permissionDrawerSource, /bottom-\[var\(--mission-permission-composer-offset,190px\)\]/);
+  assert.doesNotMatch(chatPaneSource, /padding-bottom:\s*170px/);
 });
 
-test("markdown table wrapper opts out of the generic overflow clip rule", () => {
-  const source = readFileSync(overflowCssPath, "utf8");
-
-  assert.match(
-    source,
-    /\.markdown-message > \.markdown-table-scroll\s*\{[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/s,
-  );
-  assert.doesNotMatch(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph\s*\{[^}]*overflow-x:\s*visible;/s,
-  );
+test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
+  assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-x-auto/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-y-hidden/);
+  assert.doesNotMatch(plainMessagesSource, /plain-assistant[^\n]+overflow-x-visible/);
 });
 
 test("collapsed plain-text user messages use a three-line visual clamp without an overlay", () => {
-  const source = readFileSync(threadSidebarCssPath, "utf8");
-
-  assert.match(
-    source,
-    /\.plain-message-text-collapsed\s*\{[^}]*display:\s*-webkit-box;[^}]*-webkit-line-clamp:\s*3;[^}]*overflow:\s*hidden;/s,
-  );
-  assert.doesNotMatch(source, /\.plain-message-body-collapsed::after/s);
+  assert.match(plainMessagesSource, /plain-message-text-collapsed line-clamp-3 overflow-hidden/);
+  assert.doesNotMatch(plainMessagesSource, /plain-message-body-collapsed::after/);
 });
 
 test("assistant markdown paragraphs render with a green marker without shifting the whole message block", () => {
-  const source = readFileSync(displayPanelCssPath, "utf8");
+  assert.doesNotMatch(plainMessagesSource, /margin-left:\s*-0\.45rem/);
+  assert.match(plainMessagesSource, /\[&_blockquote\]:ml-4/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-paragraph\]:pl-4/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-paragraph\]:before:left-1/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-paragraph\]:before:bg-green-500/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-paragraph-thinking\]:italic/);
+});
 
-  assert.doesNotMatch(
-    source,
-    /\.plain-assistant \.markdown-message\s*\{[^}]*margin-left:\s*-0\.45rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > :where\(\.markdown-table-scroll, ul, ol, pre, blockquote\)\s*\{[^}]*margin-left:\s*0\.95rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph\s*\{[^}]*padding-left:\s*0\.95rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph::before\s*\{[^}]*left:\s*0\.2rem;[^}]*background:\s*#22c55e;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph-thinking\s*\{[^}]*font-style:\s*italic;/s,
-  );
+test("mission workspace uses Tailwind pane layout instead of feature css", () => {
+  assert.match(workspaceSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
+  assert.match(workspaceSource, /mission-sidebar-collapsed/);
+  assert.match(workspaceSource, /mission-inspector-collapsed/);
 });

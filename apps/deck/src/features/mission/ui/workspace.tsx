@@ -197,15 +197,13 @@ export function MissionWorkspace(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation",
-    "mission-pane",
-    "mission-pane-chat",
+    "chat-conversation mission-pane mission-pane-chat flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar",
-    effectiveSidebarCollapsed && "mission-sidebar-collapsed",
-    effectiveInspectorCollapsed && "mission-inspector-collapsed",
+    "card surface-card chat-layout chat-layout-sidebar grid min-h-[calc(100vh-8rem)] grid-cols-[minmax(220px,22%)_6px_minmax(0,1fr)_6px_minmax(280px,24%)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient max-[1180px]:grid-cols-[minmax(200px,24%)_6px_minmax(0,1fr)_6px_minmax(240px,26%)] max-[860px]:flex max-[860px]:min-h-0 max-[860px]:flex-col",
+    effectiveSidebarCollapsed && "mission-sidebar-collapsed grid-cols-[0_6px_minmax(0,1fr)_6px_minmax(280px,24%)]",
+    effectiveInspectorCollapsed && "mission-inspector-collapsed grid-cols-[minmax(220px,22%)_6px_minmax(0,1fr)_6px_0]",
   ]);
   return (
     <MissionPage

@@ -60,14 +60,14 @@ export function PlainMessages({
   }
 
   if (!displayMessages.length) {
-    return <div className="empty-state">{emptyText}</div>;
+    return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
   }
 
   return (
-    <div className="plain-message-list conversation-timeline">
+    <div className="plain-message-list conversation-timeline grid gap-3">
       {canLoadMoreMessages ? (
         <button
-          className="secondary load-more-history"
+          className="secondary load-more-history rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:opacity-60"
           type="button"
           onClick={showMoreMessages}
           disabled={historyState?.loading}
@@ -86,17 +86,17 @@ export function PlainMessages({
         return (
           <article
             key={message.id}
-            className={`plain-message plain-${message.role}`}
+            className={`plain-message plain-${message.role} grid gap-2 rounded-lg border border-border-ghost bg-surface p-3 text-foreground ${message.role === "assistant" ? "plain-assistant" : "plain-user"}`}
           >
-            <span className="plain-message-role">
+            <span className="plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {resolveMessageRoleLabel(message, assistantLabel, roleLabels)}
             </span>
-            <div className={messageBodyClassName}>
+            <div className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed`}>
               {renderPlainMessageContent(message, isCollapsible && !isExpanded)}
             </div>
             {isCollapsible ? (
               <button
-                className="plain-message-expand"
+                className="plain-message-expand w-fit rounded-md border border-border-ghost px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
                 type="button"
                 onClick={() => onToggleExpandedMessage(message.id)}
               >
@@ -104,17 +104,18 @@ export function PlainMessages({
               </button>
             ) : null}
             {message.attachments?.length ? (
-              <div className="mission-message-attachments">
+              <div className="mission-message-attachments grid gap-2 sm:grid-cols-2">
                 {message.attachments.map((image, index) => (
                   <figure
                     key={`${message.id}-image-${index}`}
-                    className="mission-message-image"
+                    className="mission-message-image overflow-hidden rounded-md border border-border-ghost bg-surface-sunken"
                   >
                     <img
                       src={`data:${image.mimeType};base64,${image.data}`}
                       alt={image.name ?? `粘贴图片 ${index + 1}`}
+                      className="w-full object-contain"
                     />
-                    <figcaption>
+                    <figcaption className="px-2 py-1 text-xs text-muted-foreground">
                       {image.name ?? `粘贴图片 ${index + 1}`}
                     </figcaption>
                   </figure>
@@ -135,13 +136,15 @@ function renderPlainMessageContent(
   return message.role === "user" ? (
     <div
       className={
-        collapsed ? "plain-message-text plain-message-text-collapsed" : "plain-message-text"
+        collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
       }
     >
       {message.text}
     </div>
   ) : (
-    <MarkdownMessage text={message.text} />
+    <div className="[&_.markdown-paragraph-thinking]:italic [&_.markdown-paragraph]:relative [&_.markdown-paragraph]:pl-4 [&_.markdown-paragraph]:before:absolute [&_.markdown-paragraph]:before:left-1 [&_.markdown-paragraph]:before:top-2 [&_.markdown-paragraph]:before:size-1.5 [&_.markdown-paragraph]:before:rounded-full [&_.markdown-paragraph]:before:bg-green-500 [&_.markdown-table-scroll]:ml-4 [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden [&_blockquote]:ml-4 [&_ol]:ml-4 [&_pre]:ml-4 [&_ul]:ml-4">
+      <MarkdownMessage text={message.text} />
+    </div>
   );
 }
 
