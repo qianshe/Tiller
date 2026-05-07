@@ -4,8 +4,8 @@
 
 ## Summary
 
-- CSS files: 29
-- Total lines: 11574
+- CSS files: 28
+- Total lines: 11208
 
 ## Files
 
@@ -2362,90 +2362,5 @@ Hard-coded colors:
 - `#e8eefb`
 - `#eef4ff`
 - `rgb(`
-- `rgba(`
-
-### apps/deck/src/features/prompt-enhancer/styles.css
-
-- Lines: 366
-- Top-level selectors: 56
-- Hard-coded color tokens: 17
-
-Selectors:
-
-- `.prompt-enhancer-card .prompt-llm-grid`
-- `.prompt-enhancer-card .prompt-llm-grid label`
-- `.prompt-enhancer-card .prompt-llm-grid label > span`
-- `.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(4) textarea`
-- `.prompt-enhancer-card .prompt-llm-grid label:nth-of-type(5) textarea`
-- `.prompt-enhancer-card .prompt-model-input-row`
-- `.prompt-enhancer-card .prompt-model-input-row button`
-- `.prompt-enhancer-card .section-actions.settings-card-full`
-- `.prompt-enhancer-card .settings-help`
-- `.prompt-enhancer-card .settings-status`
-- `.prompt-enhancer-card input`
-- `.prompt-enhancer-card textarea`
-- `.prompt-enhancer-grid`
-- `.prompt-enhancer-status`
-- `.prompt-model-combobox`
-- `.prompt-model-empty`
-- `.prompt-model-field`
-- `.prompt-model-field .prompt-model-success`
-- `.prompt-model-field input`
-- `.prompt-model-filter`
-- `.prompt-model-group`
-- `.prompt-model-input-row`
-- `.prompt-model-option`
-- `.prompt-model-option-list`
-- `.prompt-model-option:focus-visible`
-- `.prompt-model-option:hover`
-- `.prompt-model-option.active`
-- `.prompt-model-owner`
-- `.prompt-model-owner span`
-- `.prompt-model-picker`
-- `.prompt-model-picker .prompt-model-filter`
-- `.prompt-model-refresh`
-- `.prompt-model-refresh:disabled`
-- `.prompt-model-refresh:focus-visible:not(:disabled)`
-- `.prompt-model-refresh:hover:not(:disabled)`
-- `.prompt-model-success`
-- `.settings-control-grid`
-- `[data-deck-theme="dark"] .prompt-enhancer-status`
-- `[data-deck-theme="light"] .prompt-model-empty`
-- `[data-deck-theme="light"] .prompt-model-option`
-- `[data-deck-theme="light"] .prompt-model-option:focus-visible`
-- `[data-deck-theme="light"] .prompt-model-option:hover`
-- `[data-deck-theme="light"] .prompt-model-option.active`
-- `[data-deck-theme="light"] .prompt-model-owner`
-- `[data-deck-theme="light"] .prompt-model-owner span`
-- `[data-deck-theme="light"] .prompt-model-picker`
-- `[data-deck-theme="light"] .prompt-model-picker .prompt-model-filter`
-- `[data-deck-theme="light"] .prompt-model-refresh`
-- `[data-deck-theme="light"] .prompt-model-refresh:focus-visible:not(:disabled)`
-- `[data-deck-theme="light"] .prompt-model-refresh:hover:not(:disabled)`
-- `[data-deck-theme="light"] .prompt-model-success`
-- `} .prompt-enhancer-card`
-- `} .prompt-enhancer-card .prompt-llm-grid`
-- `} .prompt-model-input-row`
-- `@media (max-width: 980px)`
-- `@media (prefers-color-scheme: dark)`
-
-Hard-coded colors:
-
-- `#0f172a`
-- `#15803d`
-- `#1f5fbf`
-- `#22c55e`
-- `#334155`
-- `#475569`
-- `#4da3ff`
-- `#64748b`
-- `#8fb4dd`
-- `#94a3b8`
-- `#9dccff`
-- `#bfdbfe`
-- `#cbd5e1`
-- `#e2e8f0`
-- `#f8fafc`
-- `#ffffff`
 - `rgba(`
 

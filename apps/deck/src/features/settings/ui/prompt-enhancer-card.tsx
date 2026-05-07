@@ -9,6 +9,7 @@ import {
   Label,
   Textarea,
 } from "@/shared/ui";
+import { cn } from "@/shared/utils/cn";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
@@ -57,12 +58,12 @@ export function PromptEnhancerCard({
   testSelectedModel,
 }: PromptEnhancerCardProps) {
   return (
-    <Card className="prompt-enhancer-card grid content-start gap-4 p-4 shadow-card lg:col-span-3">
+    <Card className="grid content-start gap-[18px] overflow-visible p-4 shadow-card lg:col-span-3">
       <CardHeader className="p-0">
         <p className="eyebrow">提示词增强</p>
         <CardTitle>LLM 增强器</CardTitle>
       </CardHeader>
-      <CardContent className="prompt-enhancer-grid prompt-llm-grid p-0">
+      <CardContent className="grid items-start gap-4 p-0 min-[980px]:grid-cols-2">
         <Label className="grid gap-2">
           <span>OpenAI-compatible Base URL</span>
           <Input
@@ -104,7 +105,7 @@ export function PromptEnhancerCard({
         <Label className="grid gap-2 md:col-span-2">
           <span>增强器 System Prompt</span>
           <Textarea
-            className="min-h-32"
+            className="min-h-[150px] max-h-[260px] px-[18px] py-4 text-[0.95rem] leading-[1.58]"
             value={deckPreferences.promptEnhancer.llm.systemPrompt}
             onChange={(event) =>
               updateLlmPreference("systemPrompt", event.target.value)
@@ -115,7 +116,7 @@ export function PromptEnhancerCard({
         <Label className="grid gap-2 md:col-span-2">
           <span>增强器指令模板</span>
           <Textarea
-            className="min-h-32"
+            className="min-h-[260px] max-h-[480px] px-[18px] py-4 text-[0.95rem] leading-[1.58]"
             value={deckPreferences.promptEnhancer.llm.instructionTemplate}
             onChange={(event) =>
               updateLlmPreference("instructionTemplate", event.target.value)
@@ -174,8 +175,8 @@ function PromptModelPicker({
   const groups = groupPromptEnhancerModels(models, filter);
 
   return (
-    <div className="prompt-model-combobox" ref={pickerRef}>
-      <div className="prompt-model-input-row">
+    <div className="relative z-[3] grid gap-2" ref={pickerRef}>
+      <div className="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-2.5 max-[980px]:grid-cols-[minmax(0,1fr)_84px]">
         <Input
           value={currentModel}
           onChange={(event) => updateModelInput(event.target.value)}
@@ -184,6 +185,7 @@ function PromptModelPicker({
           autoComplete="off"
         />
         <Button
+          className="h-[46px] min-w-24 rounded-[14px] px-3 max-[980px]:min-w-[84px]"
           variant="secondary"
           type="button"
           onClick={refreshModels}
@@ -194,39 +196,43 @@ function PromptModelPicker({
       </div>
       {open ? (
         <div
-          className="prompt-model-picker"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 grid max-h-56 gap-1.5 overflow-auto rounded-2xl border border-border-ghost bg-surface-elevated/90 p-2 text-foreground shadow-ambient backdrop-blur-lg"
           role="listbox"
           aria-label="增强模型列表"
         >
           <Input
-            className="prompt-model-filter"
+            className="min-h-[34px] rounded-[10px] px-2.5 py-[7px] text-[0.86rem]"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="搜索模型或 owner"
             aria-label="搜索增强模型"
           />
           {busy ? (
-            <p className="prompt-model-empty">正在从 /v1/models 获取模型...</p>
+            <p className="m-0 rounded-xl bg-surface-sunken px-3 py-2.5 text-[0.86rem] leading-relaxed text-muted-foreground">正在从 /v1/models 获取模型...</p>
           ) : null}
           {!busy && models.length === 0 ? (
-            <p className="prompt-model-empty">
+            <p className="m-0 rounded-xl bg-surface-sunken px-3 py-2.5 text-[0.86rem] leading-relaxed text-muted-foreground">
               点击刷新，从 /v1/models 加载可用模型。
             </p>
           ) : null}
           {!busy && models.length > 0 && groups.length === 0 ? (
-            <p className="prompt-model-empty">没有匹配的模型。</p>
+            <p className="m-0 rounded-xl bg-surface-sunken px-3 py-2.5 text-[0.86rem] leading-relaxed text-muted-foreground">没有匹配的模型。</p>
           ) : null}
           {!busy
             ? groups.map((group) => (
-                <div className="prompt-model-group" key={group.owner}>
-                  <p className="prompt-model-owner">
+                <div className="grid gap-1.5" key={group.owner}>
+                  <p className="m-0 flex items-center justify-between px-0.5 pt-1 text-[0.72rem] font-extrabold uppercase tracking-[0.08em] text-muted-foreground">
                     {group.owner}
-                    <span>{group.models.length}</span>
+                    <span className="min-w-[22px] rounded-full bg-primary-soft px-1.5 py-0.5 text-center tracking-normal text-primary">{group.models.length}</span>
                   </p>
-                  <div className="prompt-model-option-list">
+                  <div className="grid gap-1.5">
                     {group.models.map((model) => (
                       <button
-                        className={`prompt-model-option ${model.id === currentModel ? "active" : ""}`}
+                        className={cn(
+                          "min-h-[34px] w-full rounded-[10px] bg-transparent px-2.5 py-[7px] text-left text-[0.86rem] leading-tight text-foreground shadow-none transition-colors hover:bg-primary-soft hover:text-primary focus-visible:bg-primary-soft focus-visible:text-primary focus-visible:outline-none",
+                          model.id === currentModel &&
+                            "bg-primary-soft text-primary shadow-[inset_3px_0_0_var(--primary)]",
+                        )}
                         key={`${model.ownedBy}:${model.id}`}
                         type="button"
                         role="option"
