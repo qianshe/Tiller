@@ -1,3 +1,5 @@
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@/shared/ui";
+import { cn } from "@/shared/utils/cn";
 import type { DaemonProfile } from "../../helm-connection/facade";
 import { resolveHelmConnectionState } from "../utils/fleet-helpers";
 
@@ -34,58 +36,69 @@ export function HelmHub({
   setSelectedHelmKey,
 }: HelmHubProps) {
   return (
-    <section className="fleet-hub" aria-label="舰队 Helm 节点">
-      <div className="fleet-hub-head">
+    <Card className="grid gap-4 p-4 shadow-card" aria-label="舰队 Helm 节点">
+      <CardHeader className="flex-row items-start justify-between gap-3 p-0">
         <div>
-          <div className="fleet-hub-title-row">
-            <h3>Helm</h3>
-            <span>{helmCards.length} Helm</span>
+          <div className="flex items-center gap-2">
+            <CardTitle>Helm</CardTitle>
+            <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+              {helmCards.length} Helm
+            </span>
           </div>
         </div>
         {!isEmbeddedHelmDeck ? (
-          <button className="primary" type="button" onClick={onAddHelm}>
+          <Button type="button" onClick={onAddHelm}>
             添加
-          </button>
+          </Button>
         ) : null}
-      </div>
-      <p className="fleet-hub-copy">
-        {isEmbeddedHelmDeck
-          ? "当前内置 Deck 只管理这个 Helm；多 Helm 控制台由公版 Web 承载。"
-          : "管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。"}
-      </p>
-      <div
-        className="fleet-hub-node-list"
-        role="list"
-        aria-label="Helm 节点列表"
-      >
-        {helmCards.map((helm) => (
-          <button
-            className={[
-              "fleet-hub-node",
-              selectedHelm.key === helm.key ? "active" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            key={helm.key}
-            type="button"
-            role="listitem"
-            onClick={() => setSelectedHelmKey(helm.key)}
-            aria-pressed={selectedHelm.key === helm.key}
-            title={`${helm.name} · ${helm.host}:${helm.port}`}
-          >
-            <span
-              className={`helm-status-dot helm-status-${resolveHelmConnectionState(
-                helm,
-                currentHelmKey,
-                connection,
-                helmConnectionStates,
-              )}`}
-              aria-hidden="true"
-            />
-            <span>{helm.name}</span>
-          </button>
-        ))}
-      </div>
-    </section>
+      </CardHeader>
+      <CardContent className="grid gap-4 p-0">
+        <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+          {isEmbeddedHelmDeck
+            ? "当前内置 Deck 只管理这个 Helm；多 Helm 控制台由公版 Web 承载。"
+            : "管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。"}
+        </p>
+        <div
+          className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-2"
+          role="list"
+          aria-label="Helm 节点列表"
+        >
+          {helmCards.map((helm) => {
+            const state = resolveHelmConnectionState(
+              helm,
+              currentHelmKey,
+              connection,
+              helmConnectionStates,
+            );
+            return (
+              <button
+                className={cn(
+                  "flex min-h-12 items-center gap-2 rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  selectedHelm.key === helm.key &&
+                    "border-primary bg-primary-soft text-primary",
+                )}
+                key={helm.key}
+                type="button"
+                role="listitem"
+                onClick={() => setSelectedHelmKey(helm.key)}
+                aria-pressed={selectedHelm.key === helm.key}
+                title={`${helm.name} · ${helm.host}:${helm.port}`}
+              >
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full bg-muted-foreground",
+                    state === "connected" && "bg-success",
+                    state === "connecting" && "bg-warning",
+                    state === "disconnected" && "bg-muted-foreground",
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 truncate">{helm.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

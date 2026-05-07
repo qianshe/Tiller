@@ -1,3 +1,4 @@
+import { Badge, Card, CardContent, CardHeader } from "@/shared/ui";
 import type {
   AcpAgentProvider,
   ProjectSummary,
@@ -119,17 +120,12 @@ export function HelmDetailSection({
   renderTrustedDevicesPanel,
 }: HelmDetailSectionProps) {
   return (
-    <section className="note-box compact-note fleet-card helm-detail-panel helm-detail-panel-expanded">
-      <div className="section-head section-head-soft">
+    <Card className="grid min-h-[520px] gap-5 p-5 shadow-card">
+      <CardHeader className="flex-row items-start justify-between gap-4 border-b border-border-ghost p-0 pb-3">
         <div>
-          <strong>{selectedHelm.name}</strong>
-          <p className="muted compact">
-            {selectedHelm.host}:{selectedHelm.port} ·
-            <span
-              className={`helm-inline-status helm-inline-status-${selectedHelmConnection}`}
-            >
-              {formatConnectionStatus(selectedHelmConnection)}
-            </span>
+          <strong className="text-base font-semibold text-foreground">{selectedHelm.name}</strong>
+          <p className="m-0 text-sm text-muted-foreground">
+            {selectedHelm.host}:{selectedHelm.port} · {formatConnectionStatus(selectedHelmConnection)}
           </p>
         </div>
         <HelmActions
@@ -149,19 +145,19 @@ export function HelmDetailSection({
           setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
           socketRef={socketRef}
         />
-      </div>
-      <div className="helm-detail-facts" aria-label="Helm 配置范围">
-        <span>
+      </CardHeader>
+      <div className="flex flex-wrap gap-2" aria-label="Helm 配置范围">
+        <Badge variant="secondary">
           <strong>{selectedHelmProjects.length}</strong> 项目配置
-        </span>
-        <span>
+        </Badge>
+        <Badge variant="secondary">
           <strong>{selectedHelmAgents.length}</strong> ACP 舰员
-        </span>
-        <span>
+        </Badge>
+        <Badge variant="secondary">
           <strong>{selectedHelmWorkspaces.length}</strong> 分支
-        </span>
+        </Badge>
       </div>
-      <div className="helm-inventory-list-stack">
+      <CardContent className="grid gap-4 p-0 lg:grid-cols-2 lg:items-start lg:gap-x-12">
         <ProjectInventorySection
           connected={selectedHelmIsConnected}
           draft={fleetProjectDraft}
@@ -192,12 +188,12 @@ export function HelmDetailSection({
           setDraft={setFleetAgentDraft}
           setFormOpen={setFleetAgentFormOpen}
         />
-      </div>
+      </CardContent>
       {renderTrustedDevicesPanel(
         selectedHelmTrustedDevices,
         selectedHelmSocket,
         selectedHelm.name,
       )}
-    </section>
+    </Card>
   );
 }

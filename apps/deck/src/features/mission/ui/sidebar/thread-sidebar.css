@@ -459,8 +459,7 @@
   border-radius: 12px;
   background: rgba(8, 13, 23, 0.52);
   color: #cbd5e1;
-  font-family:
-    ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.5;
   white-space: pre-wrap;

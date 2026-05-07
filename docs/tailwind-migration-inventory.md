@@ -4,8 +4,8 @@
 
 ## Summary
 
-- CSS files: 28
-- Total lines: 11208
+- CSS files: 25
+- Total lines: 10139
 
 ## Files
 
@@ -317,14 +317,14 @@ Hard-coded colors:
 
 ### apps/deck/src/features/agents/styles.css
 
-- Lines: 13
+- Lines: 10
 - Top-level selectors: 0
 - Hard-coded color tokens: 0
 
 ### apps/deck/src/features/agents/ui/fleet-add-helm-dialog/connection-flow.css
 
-- Lines: 261
-- Top-level selectors: 46
+- Lines: 236
+- Top-level selectors: 41
 - Hard-coded color tokens: 4
 
 Selectors:
@@ -357,21 +357,16 @@ Selectors:
 - `.fleet-dialog-status`
 - `.fleet-dialog-status p`
 - `.fleet-field-full`
-- `.fleet-hub-node-list`
 - `.fleet-pair-actions`
 - `.fleet-pair-card .pairing-boxes`
 - `.fleet-pair-card .pairing-boxes input`
 - `.fleet-pair-card .pairing-boxes-grouped`
 - `.fleet-pair-card .pairing-form`
 - `.fleet-pair-title`
-- `.view-agents .fleet-command-panel`
-- `.view-agents .fleet-hub`
-- `.view-agents .helm-detail-panel-expanded`
 - `[data-deck-theme="light"] .fleet-add-helm-dialog .fleet-dialog-card`
 - `[data-deck-theme="light"] .fleet-connect-grid label > span`
 - `[data-deck-theme="light"] .fleet-dialog-card`
 - `[data-deck-theme="light"] .fleet-dialog-status`
-- `[data-deck-theme="light"] .fleet-hub-node-list`
 - `} .fleet-dialog-body-single`
 - `@media (max-width: 520px)`
 - `@media (max-width: 860px)`
@@ -416,8 +411,8 @@ Hard-coded colors:
 
 ### apps/deck/src/features/agents/ui/helm-detail-section/inventory.css
 
-- Lines: 679
-- Top-level selectors: 96
+- Lines: 662
+- Top-level selectors: 94
 - Hard-coded color tokens: 26
 
 Selectors:
@@ -468,7 +463,6 @@ Selectors:
 - `.helm-inventory-list-section`
 - `.helm-inventory-list-section > .empty-state`
 - `.helm-inventory-list-section h3`
-- `.helm-inventory-list-stack`
 - `.helm-inventory-section-head`
 - `.helm-inventory-section-head .helm-list-add-button`
 - `.helm-inventory-section-head h3`
@@ -511,7 +505,6 @@ Selectors:
 - `} .helm-inline-add-form`
 - `} .helm-inline-add-form-agent`
 - `} .helm-inventory-list-section`
-- `} .helm-inventory-list-stack`
 - `} .helm-inventory-section-head`
 - `} @media (max-width: 720px)`
 - `@media (max-width: 1120px)`
@@ -548,87 +541,6 @@ Hard-coded colors:
 - `#fff1f2`
 - `rgba(`
 
-### apps/deck/src/features/agents/ui/helm-hub/styles.css
-
-- Lines: 142
-- Top-level selectors: 18
-- Hard-coded color tokens: 7
-
-Selectors:
-
-- `.fleet-hub`
-- `.fleet-hub-copy`
-- `.fleet-hub-head`
-- `.fleet-hub-head .primary`
-- `.fleet-hub-node`
-- `.fleet-hub-node span:last-child`
-- `.fleet-hub-node-list`
-- `.fleet-hub-node:focus-visible`
-- `.fleet-hub-node:hover`
-- `.fleet-hub-node.active`
-- `.fleet-hub-title-row`
-- `.fleet-hub-title-row h3`
-- `.fleet-hub-title-row span`
-- `[data-deck-theme="light"] .fleet-hub`
-- `[data-deck-theme="light"] .fleet-hub-copy`
-- `[data-deck-theme="light"] .fleet-hub-node`
-- `[data-deck-theme="light"] .fleet-hub-node-list`
-- `@media (max-width: 720px)`
-
-Hard-coded colors:
-
-- `#0f172a`
-- `#475569`
-- `#aebbd0`
-- `#e5edf7`
-- `#fca5a5`
-- `#fecaca`
-- `rgba(`
-
-### apps/deck/src/features/agents/ui/page/fleet-layout.css
-
-- Lines: 174
-- Top-level selectors: 28
-- Hard-coded color tokens: 4
-
-Selectors:
-
-- `.fleet-add-helm-card`
-- `.fleet-grid`
-- `.fleet-helm-card-list`
-- `.fleet-list-card`
-- `.fleet-model-card`
-- `.fleet-model-form`
-- `.fleet-profile-card`
-- `.helm-agent-config-details`
-- `.helm-agent-config-details > summary`
-- `.helm-agent-config-details > summary small`
-- `.helm-agent-config-details[open] > summary`
-- `.helm-card-grid`
-- `.helm-config-details`
-- `.helm-config-details > summary`
-- `.helm-config-details > summary small`
-- `.helm-detail-grid`
-- `.helm-detail-panel`
-- `.helm-node-actions`
-- `.helm-node-card`
-- `.helm-node-card.active`
-- `.helm-node-card.active .helm-node-kicker`
-- `.helm-node-card.active .helm-node-status`
-- `.helm-node-kicker`
-- `.helm-node-main`
-- `.helm-node-status`
-- `} .fleet-grid-helm-ia`
-- `@media (max-width: 1100px)`
-- `@media (max-width: 980px)`
-
-Hard-coded colors:
-
-- `#174bc4`
-- `#4c5a73`
-- `#6d7482`
-- `rgba(`
-
 ### apps/deck/src/features/agents/ui/page/fleet-model-card.css
 
 - Lines: 44
@@ -649,129 +561,6 @@ Hard-coded colors:
 
 - `#2f3645`
 - `#d9e9ff`
-
-### apps/deck/src/features/agents/ui/page/fleet-overview.css
-
-- Lines: 700
-- Top-level selectors: 98
-- Hard-coded color tokens: 13
-
-Selectors:
-
-- `.fleet-card-heading`
-- `.fleet-card-heading .primary`
-- `.fleet-card-heading strong`
-- `.fleet-command-panel`
-- `.fleet-count-card`
-- `.fleet-count-card span`
-- `.fleet-count-card strong`
-- `.fleet-helm-bubbles`
-- `.fleet-helm-bubbles .helm-node-bubble`
-- `.fleet-helm-bubbles .helm-node-bubble strong`
-- `.fleet-helm-bubbles .helm-node-bubble.active`
-- `.fleet-helm-card-list`
-- `.fleet-helm-card-list .helm-card-grid`
-- `.fleet-helm-card-list .helm-node-bubble`
-- `.fleet-helm-card-list .helm-node-bubble .helm-node-main`
-- `.fleet-helm-card-list .helm-node-bubble .helm-node-main strong`
-- `.fleet-helm-card-list .helm-node-card`
-- `.fleet-helm-card-list .helm-node-card.active .helm-node-main strong`
-- `.fleet-helm-card-list .helm-node-main`
-- `.fleet-helm-head`
-- `.fleet-helm-head .primary`
-- `.fleet-helm-head strong`
-- `.fleet-info-head`
-- `.fleet-info-title-row`
-- `.fleet-info-title-row h3`
-- `.fleet-info-title-row strong`
-- `.fleet-overview-grid`
-- `.fleet-overview-grid .fleet-helm-card-list`
-- `.fleet-overview-grid .fleet-summary-card`
-- `.fleet-overview-grid .fleet-summary-metrics-single`
-- `.fleet-overview-grid .helm-card-grid`
-- `.fleet-overview-grid .helm-node-bubble.active`
-- `.fleet-overview-unified`
-- `.fleet-summary-card`
-- `.fleet-summary-card .eyebrow`
-- `.fleet-summary-card h3`
-- `.fleet-summary-copy`
-- `.fleet-summary-metric`
-- `.fleet-summary-metric span`
-- `.fleet-summary-metric strong`
-- `.fleet-summary-metrics`
-- `.fleet-summary-metrics-single`
-- `.fleet-summary-metrics-single .fleet-summary-metric`
-- `.fleet-title-row`
-- `.fleet-title-row h2`
-- `.helm-agent-config-panel .helm-config-placeholder`
-- `.helm-agent-placeholder`
-- `.helm-agent-placeholder:focus-visible`
-- `.helm-agent-placeholder:hover`
-- `.helm-config-panel`
-- `.helm-config-panel > .section-head`
-- `.helm-config-panel h3`
-- `.helm-config-placeholder`
-- `.helm-config-placeholder span`
-- `.helm-config-placeholder strong`
-- `.helm-detail-facts`
-- `.helm-detail-facts span`
-- `.helm-detail-facts strong`
-- `.helm-detail-panel`
-- `.helm-detail-panel-expanded`
-- `.helm-detail-panel-expanded > .section-head:first-child`
-- `.helm-detail-panel-expanded > .section-head:first-child strong`
-- `.helm-detail-scope-note`
-- `.helm-inventory-grid`
-- `.helm-inventory-grid > *`
-- `.helm-inventory-section-head .helm-section-actions-inline`
-- `.helm-section-actions-inline`
-- `.helm-section-actions-inline .helm-list-add-button`
-- `.helm-status-connected`
-- `.helm-status-connecting`
-- `.helm-status-disconnected`
-- `.helm-status-dot`
-- `.helm-status-saved`
-- `.shell.view-agents`
-- `.view-agents .page-content`
-- `.view-agents .workspace-single`
-- `[data-deck-theme="dark"] .fleet-helm-card-list`
-- `[data-deck-theme="dark"] .fleet-summary-card`
-- `[data-deck-theme="dark"] .helm-detail-panel-expanded`
-- `[data-deck-theme="dark"] .helm-node-card`
-- `[data-deck-theme="dark"] .helm-node-card.active`
-- `[data-deck-theme="light"] .fleet-count-card`
-- `[data-deck-theme="light"] .fleet-count-card strong`
-- `[data-deck-theme="light"] .fleet-helm-bubbles .helm-node-bubble`
-- `[data-deck-theme="light"] .fleet-helm-card-list .helm-node-bubble .helm-node-main strong`
-- `[data-deck-theme="light"] .fleet-helm-card-list .helm-node-card.active .helm-node-main strong`
-- `[data-deck-theme="light"] .fleet-overview-grid`
-- `[data-deck-theme="light"] .fleet-overview-unified`
-- `[data-deck-theme="light"] .fleet-summary-metric`
-- `[data-deck-theme="light"] .fleet-summary-metric strong`
-- `[data-deck-theme="light"] .helm-config-placeholder`
-- `[data-deck-theme="light"] .helm-config-placeholder strong`
-- `[data-deck-theme="light"] .helm-detail-facts span`
-- `[data-deck-theme="light"] .helm-detail-facts strong`
-- `} .fleet-overview-grid`
-- `} .helm-detail-panel-expanded`
-- `} @media (max-width: 720px)`
-- `@media (max-width: 1100px)`
-
-Hard-coded colors:
-
-- `#0f172a`
-- `#22c55e`
-- `#475569`
-- `#64748b`
-- `#94a3b8`
-- `#b7c4d8`
-- `#b91c1c`
-- `#dbeafe`
-- `#e5edf7`
-- `#f59e0b`
-- `#f87171`
-- `#fca5a5`
-- `rgba(`
 
 ### apps/deck/src/features/agents/ui/page/fleet-profile.css
 
@@ -1498,7 +1287,7 @@ Hard-coded colors:
 
 ### apps/deck/src/features/mission/ui/logbook/styles.css
 
-- Lines: 162
+- Lines: 155
 - Top-level selectors: 30
 - Hard-coded color tokens: 14
 
@@ -1732,7 +1521,7 @@ Hard-coded colors:
 
 ### apps/deck/src/features/mission/ui/sidebar/thread-sidebar.css
 
-- Lines: 1196
+- Lines: 1195
 - Top-level selectors: 210
 - Hard-coded color tokens: 34
 

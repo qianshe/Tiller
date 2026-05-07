@@ -24,10 +24,6 @@
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
 }
 
-.helm-inventory-list-stack {
-  display: grid;
-  gap: 22px;
-}
 
 .helm-inventory-list-section {
   display: grid;
@@ -88,19 +84,6 @@
     }
 }
 
-/* Fleet inventory: keep direct lists, but present projects and ACP agents in two columns. */
-.helm-inventory-list-stack {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  column-gap: 48px;
-}
-
-@media (max-width: 860px) {
-  .helm-inventory-list-stack {
-      grid-template-columns: 1fr;
-      column-gap: 0;
-    }
-}
 
 .helm-disconnect-button {
   color: #fecaca;
@@ -336,7 +319,7 @@
 .helm-args-array-input {
   min-height: 72px;
   resize: vertical;
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   line-height: 1.45;
 }
 
@@ -385,7 +368,7 @@
 }
 
 .helm-agent-arg-row input {
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .helm-arg-icon-button {
@@ -449,7 +432,7 @@
   border-radius: 12px;
   color: #93a4bd;
   background: rgba(15, 23, 42, 0.28);
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   font-weight: 800;
 }
@@ -518,7 +501,7 @@
 
 .fleet-delete-target span {
   color: #fca5a5;
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9rem;
 }
 

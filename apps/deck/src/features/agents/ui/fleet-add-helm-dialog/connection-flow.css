@@ -151,7 +151,7 @@
     }
 }
 
-/* Simplify Add Helm modal and remove Fleet node-list container shell. */
+/* Simplify Add Helm modal: keep the dialog focused on the connection flow. */
 .fleet-dialog-body-single {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -166,18 +166,6 @@
 
 .fleet-dialog-body-single .fleet-pair-card {
   max-width: 680px;
-}
-
-.fleet-hub-node-list {
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-[data-deck-theme="light"] .fleet-hub-node-list {
-  background: transparent;
 }
 
 /* Add Helm modal: remove inner card chrome, keep form flow lightweight. */
@@ -201,19 +189,6 @@
   padding-top: 4px;
 }
 
-/* Fleet hierarchy correction: Fleet/Helm cards stay above selected Helm contents. */
-.view-agents .fleet-command-panel {
-  display: grid;
-  grid-template-rows: auto auto auto;
-}
-
-.view-agents .fleet-hub {
-  order: 1;
-}
-
-.view-agents .helm-detail-panel-expanded {
-  order: 2;
-}
 
 /* Add Helm modal: keep only the necessary form controls. */
 .fleet-add-helm-dialog {

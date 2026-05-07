@@ -89,7 +89,7 @@
 
 .mission-panel-node-icon {
   color: #7a8597;
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
 }
 
@@ -528,7 +528,7 @@
   overflow: auto;
   padding: 10px 12px;
   color: #334155;
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.76rem;
   line-height: 1.55;
   white-space: pre;
@@ -1078,7 +1078,7 @@
   padding: 0.12rem 0.34rem;
   border-radius: 0.42rem;
   background: rgba(15, 23, 42, 0.08);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
@@ -1184,7 +1184,7 @@
   padding: 0.52rem 0.72rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   color: #cbd5e1;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.74rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1292,7 +1292,7 @@
   border-radius: 5px;
   background: rgba(124, 58, 237, 0.16);
   color: #5b21b6;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 800;
 }
@@ -1337,7 +1337,7 @@
   border-radius: 0;
   background: transparent;
   color: #e5e7eb;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.84rem;
   line-height: 1.45;
   white-space: pre-wrap;

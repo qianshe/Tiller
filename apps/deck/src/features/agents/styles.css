@@ -4,9 +4,6 @@
 @import "./ui/trusted-devices-panel/styles.css";
 @import "./ui/page/fleet-profile.css";
 @import "./ui/page/fleet-model-card.css";
-@import "./ui/page/fleet-layout.css";
 @import "./ui/fleet-add-helm-dialog/helm-node-modal.css";
-@import "./ui/page/fleet-overview.css";
-@import "./ui/helm-hub/styles.css";
 @import "./ui/fleet-add-helm-dialog/connection-flow.css";
 @import "./ui/helm-detail-section/inventory.css";

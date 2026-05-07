@@ -14,6 +14,7 @@ import type {
 } from "@tiller/shared";
 import type { DaemonProfile, DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
+import { Card } from "@/shared/ui";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
 import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
 import { HelmDetailSection } from "./helm-detail-section";
@@ -238,10 +239,10 @@ export function AgentsPage({
           }}
         />
       ) : null}
-      <section className="card surface-card stack-gap fleet-panel fleet-command-panel">
-        <div className="section-head section-head-soft fleet-title-row">
+      <Card className="grid gap-5 p-6 md:p-7">
+        <div className="flex min-h-14 items-center">
           <div>
-            <h2>舰队</h2>
+            <h2 className="m-0 text-2xl font-semibold text-foreground">舰队</h2>
           </div>
         </div>
         <HelmHub
@@ -292,7 +293,7 @@ export function AgentsPage({
           copy={copy}
           renderTrustedDevicesPanel={renderTrustedDevicesPanel}
         />
-      </section>
+      </Card>
     </section>
   );
 }

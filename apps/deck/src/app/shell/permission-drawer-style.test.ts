@@ -61,7 +61,7 @@ test("permission drawer detail block keeps raw approval payload readable", () =>
   );
   const buttonRule = readRule(".mission-permission-actions button");
 
-  assert.match(detailRule, /font-family\s*:\s*ui-monospace/);
+  assert.match(detailRule, /font-family\s*:\s*var\(--font-mono\)/);
   assert.match(detailRule, /white-space\s*:\s*pre-wrap/);
   assert.match(detailRule, /overflow-wrap\s*:\s*anywhere/);
   assert.ok(metadataRule?.groups?.body, "Missing compact permission metadata rule");
