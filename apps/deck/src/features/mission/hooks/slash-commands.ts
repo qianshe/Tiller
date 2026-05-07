@@ -84,6 +84,7 @@ export function useSlashCommands({
     }
   }, [
     commandToken,
+    activeSessionId,
     activeSessionAgentId,
     sessionAvailableCommands,
     agentAvailableCommands,
@@ -181,3 +182,5 @@ export function useSlashCommands({
     handleMissionPromptKeyDown: handlePromptKeyDown,
   };
 }
+
+

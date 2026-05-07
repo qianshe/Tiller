@@ -318,3 +318,40 @@ test("runtime command-output logs metadata without streaming content", () => {
   assert.equal(appendedOutputs.length, 1);
   assert.equal(capture.broadcasts.length, 1);
 });
+
+test("runtime available-commands events persist commands on the session summary", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const updatedSummaries: SessionSummary[] = [];
+  context.updateSessionSummary = (
+    _sessionId: string,
+    mutate: (current: SessionSummary) => SessionSummary,
+  ) => {
+    const current = context.sessionStore.list()[0] as SessionSummary;
+    const updatedSummary = mutate(current);
+    updatedSummaries.push(updatedSummary);
+    return updatedSummary;
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "available-commands",
+      commands: [{ name: "review" }, { name: "compact" }],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    updatedSummaries[0]?.availableCommands?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(
+    capture.broadcasts.map((item: any) => item.params.update.kind),
+    ["commands_available", "session_updated"],
+  );
+});
+
+
+

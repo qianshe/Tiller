@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
 import { useDeckStore } from "../../store";
-import { applyDeviceResult, applySessionUpdate } from "./rpc-event-appliers.js";
+import { applyDeviceResult, applySessionResult, applySessionUpdate } from "./rpc-event-appliers.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -119,6 +119,43 @@ test("applySessionUpdate caches available commands by session and agent", () => 
       },
     },
     {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionAvailableCommands.s1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+});
+
+test("applySessionResult hydrates available commands from persisted session summaries", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [
+        {
+          ...session("s1"),
+          availableCommands: [{ name: "review" }, { name: "compact" }],
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set<string>() },
+    } as any,
   );
 
   assert.equal(handled, true);

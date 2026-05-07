@@ -195,12 +195,24 @@ export function handleRuntimeEvent(
       }
       return;
     }
-    case "available-commands":
+    case "available-commands": {
+      const updated = context.updateSessionSummary(sessionId, (current) => ({
+        ...current,
+        availableCommands: event.commands,
+        updatedAt: new Date().toISOString(),
+      }));
       broadcastSessionUpdate(context, sessionId, {
         kind: "commands_available",
         commands: event.commands,
       });
+      if (updated) {
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "session_updated",
+          session: context.hydrateSessionSummary(updated),
+        });
+      }
       return;
+    }
     case "error":
       context.logError(
         `[tiller] session.error ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`,
@@ -227,3 +239,4 @@ export function handleRuntimeEvent(
       return;
   }
 }
+
