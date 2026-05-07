@@ -14,7 +14,7 @@ import {
   Input,
   Label,
 } from "@/shared/ui";
-import { PairingBoxes } from "../../../shared/ui/primitives";
+import { PairingBoxes } from "./pairing-boxes";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";

@@ -23,7 +23,7 @@ export function TopNav({
   ];
 
   return (
-    <header className="top-nav card">
+    <header className="top-nav">
       <div className="top-nav-brand">
         <span className="top-nav-logo" aria-hidden="true">
           <svg className="top-nav-logo-mark" viewBox="0 0 32 28" role="presentation">

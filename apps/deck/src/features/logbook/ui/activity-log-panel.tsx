@@ -1,7 +1,7 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "../../../shared/ui";
-import { CommandOutput } from "../../../shared/ui/primitives";
 import { cn } from "../../../shared/utils/cn";
+import { CommandOutput } from "./command-output";
 import { resolveToolCallTone } from "../tool-call-tone";
 import { commandChunkToToolCall, groupToolCalls } from "../timeline";
 

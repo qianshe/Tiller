@@ -24,6 +24,25 @@ test("deck shell imports only shell-owned css entries", () => {
   assert.deepEqual(cssImports, ["./tokens.css", "./styles.css"]);
 });
 
+test("shared ui does not expose domain-specific primitives", () => {
+  assert.equal(existsSync(join(deckRoot, "src/shared/ui/primitives.tsx")), false);
+});
+
+test("shared ui does not import Tiller domain types", () => {
+  const sharedUiSource = readDeck("src/shared/ui/index.ts");
+
+  assert.doesNotMatch(sharedUiSource, /@tiller\/shared/);
+  assert.doesNotMatch(sharedUiSource, /primitives/);
+});
+
+test("shell styles do not own feature page styles", () => {
+  const shellStyles = readDeck("src/app/shell/styles.css");
+
+  assert.doesNotMatch(shellStyles, /\.landing-/);
+  assert.doesNotMatch(shellStyles, /\.toast-/);
+  assert.doesNotMatch(shellStyles, /view-overview/);
+});
+
 test("mission css aggregator is removed", () => {
   assert.equal(existsSync(join(deckRoot, "src/features/mission/styles.css")), false);
 });
@@ -31,8 +50,10 @@ test("mission css aggregator is removed", () => {
 test("migration inventory documents final retained css surface", () => {
   const inventory = readRepo("docs/tailwind-migration-inventory.md");
 
-  assert.match(inventory, /CSS files: 2/);
+  assert.match(inventory, /CSS files: 4/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/styles\.css/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\.css/);
+  assert.match(inventory, /apps\/deck\/src\/features\/overview\/ui\/page\.css/);
+  assert.match(inventory, /apps\/deck\/src\/features\/toast\/styles\.css/);
   assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/mission\/styles\.css/);
 });

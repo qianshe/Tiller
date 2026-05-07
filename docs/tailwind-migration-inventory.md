@@ -4,16 +4,16 @@
 
 ## Summary
 
-- CSS files: 2
-- Total lines: 1597
+- CSS files: 4
+- Total lines: 1031
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 1406
-- Top-level selectors: 210
-- Hard-coded color tokens: 29
+- Lines: 385
+- Top-level selectors: 67
+- Hard-coded color tokens: 1
 
 Selectors:
 
@@ -23,190 +23,47 @@ Selectors:
 - `.admiral-connected`
 - `.admiral-connecting`
 - `.admiral-disconnected`
-- `.app-shell`
-- `.brand-block`
-- `.card`
-- `.cleanup-feedback`
-- `.cleanup-info`
-- `.cleanup-success`
-- `.cleanup-warning`
 - `.compact`
-- `.compact-note`
-- `.config-form label`
-- `.connect-form`
-- `.connect-form label`
-- `.danger-button`
-- `.danger-button:hover`
-- `.detail-grid`
-- `.detail-grid-stacked`
 - `.device-mono`
-- `.dot`
-- `.empty-state`
-- `.error-text`
-- `.eyebrow`
-- `.hero`
-- `.hero-copy`
-- `.hero-metric`
-- `.hero-metric strong`
-- `.hero-metrics`
-- `.hero-panel`
-- `.hero-title`
-- `.landing-actions`
-- `.landing-copy`
-- `.landing-eyebrow`
-- `.landing-eyebrow span`
-- `.landing-hero`
-- `.landing-hero h1`
-- `.landing-hero-content`
-- `.landing-primary`
-- `.landing-primary span`
-- `.landing-secondary`
-- `.landing-telemetry`
-- `.landing-telemetry-grid`
-- `.landing-telemetry-grid span`
-- `.landing-telemetry-kicker`
-- `.landing-telemetry-session > span`
-- `.landing-telemetry-session button`
-- `.landing-telemetry-session button span`
-- `.landing-telemetry-session p`
-- `.meta-grid`
-- `.meta-grid label`
-- `.metric-label`
-- `.motion-reduced .toast-exiting`
-- `.motion-reduced .toast-item`
 - `.motion-reduced *`
 - `.motion-reduced *::after`
 - `.motion-reduced *::before`
 - `.muted`
-- `.overview-stats .stat-card`
 - `.page-content`
-- `.panel`
-- `.panel-terminal`
-- `.permission-card`
-- `.primary`
-- `.primary:disabled`
-- `.primary:not(:disabled):hover`
-- `.role-assistant`
-- `.role-system`
-- `.role-user`
-- `.secondary`
-- `.secondary:disabled`
-- `.secondary:not(:disabled):hover`
-- `.section-head`
-- `.section-head-soft`
 - `.shell`
-- `.shell > .top-nav .admiral-avatar`
-- `.shell > .top-nav .status-pill`
-- `.shell > .top-nav .top-nav-brand`
-- `.shell > .top-nav .top-nav-brand strong`
-- `.shell > .top-nav .top-nav-links`
-- `.shell > .top-nav .top-nav-links::-webkit-scrollbar`
-- `.shell > .top-nav::after`
-- `.shell > .top-nav:focus-within`
-- `.shell > .top-nav:hover`
-- `.shell.view-overview`
-- `.shell.view-overview .page-content`
-- `.shell.view-overview > .top-nav`
-- `.shell.view-overview > .top-nav .admiral-avatar`
-- `.shell.view-overview > .top-nav .admiral-avatar svg`
-- `.shell.view-overview > .top-nav .admiral-avatar::after`
-- `.shell.view-overview > .top-nav .top-nav-brand`
-- `.shell.view-overview > .top-nav .top-nav-brand strong`
-- `.shell.view-overview > .top-nav .top-nav-item`
-- `.shell.view-overview > .top-nav .top-nav-item:hover`
-- `.shell.view-overview > .top-nav .top-nav-item.active`
-- `.shell.view-overview > .top-nav .top-nav-links`
-- `.shell.view-overview > .top-nav .top-nav-logo`
-- `.shell.view-overview > .top-nav .top-nav-logo-mark`
-- `.shell.view-overview > .top-nav::after`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
-- `.sidebar`
-- `.stat-card`
-- `.stat-card strong`
-- `.status-chip`
-- `.status-connected .dot`
-- `.status-disconnected .dot`
-- `.status-pill`
-- `.status-stack`
+- `.stack-gap`
 - `.subtle`
-- `.subtle-chip`
-- `.surface-card`
-- `.toast-close`
-- `.toast-close:focus-visible`
-- `.toast-close:hover`
-- `.toast-content`
-- `.toast-content p`
-- `.toast-error`
-- `.toast-exiting`
-- `.toast-info`
-- `.toast-item`
-- `.toast-label`
-- `.toast-success`
-- `.toast-viewport`
-- `.toast-warning`
-- `.toggle-row`
-- `.toggle-row input[type="checkbox"]`
-- `.toggle-row-inline`
 - `.top-nav`
-- `.top-nav .admiral-avatar`
-- `.top-nav .status-pill`
 - `.top-nav-brand`
-- `.top-nav-brand strong`
 - `.top-nav-item`
 - `.top-nav-item:hover`
 - `.top-nav-item.active`
 - `.top-nav-links`
+- `.top-nav-links::-webkit-scrollbar`
 - `.top-nav-logo`
 - `.top-nav-logo-mark`
 - `.top-nav::after`
 - `.top-nav:focus-within`
-- `.top-nav:focus-within .status-pill`
-- `.top-nav:focus-within .top-nav-brand strong`
-- `.top-nav:focus-within .top-nav-links`
 - `.top-nav:hover`
-- `.top-nav:hover .status-pill`
-- `.top-nav:hover .top-nav-brand strong`
-- `.top-nav:hover .top-nav-links`
-- `.view-nav`
-- `.view-nav-item`
-- `.view-nav-item:hover`
-- `.view-nav-item.selected`
 - `.workspace-single`
-- `[data-deck-reduce-motion="true"] .toast-exiting`
-- `[data-deck-reduce-motion="true"] .toast-item`
+- `[data-deck-reduce-motion="true"] *`
 - `[data-deck-theme="dark"]`
-- `[data-deck-theme="dark"] .danger-soft`
-- `[data-deck-theme="dark"] .secondary`
-- `[data-deck-theme="dark"] .toast-close`
-- `[data-deck-theme="dark"] .toast-close:focus-visible`
-- `[data-deck-theme="dark"] .toast-close:hover`
-- `[data-deck-theme="dark"] .toast-content p`
 - `[data-deck-theme="dark"] *`
 - `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="dark"] body`
+- `[data-deck-theme="system"]`
 - `[data-deck-theme="system"] *`
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="system"] body`
-- `} .danger-soft`
-- `} .shell`
-- `} .shell > .top-nav`
-- `} .top-nav`
-- `} [data-deck-theme="dark"] .toast-item`
 - `} @keyframes mission-loading-pulse`
-- `} @keyframes toast-exit`
-- `} @media (max-width: 1120px)`
-- `} @media (max-width: 720px)`
-- `} @media (max-width: 860px)`
-- `} @media (prefers-color-scheme: dark)`
-- `@keyframes mission-session-status-pulse`
+- `} @keyframes mission-session-status-pulse`
+- `} *`
 - `@keyframes surface-fade`
-- `@keyframes toast-enter`
 - `@media (max-width: 860px)`
-- `@media (max-width: 980px)`
-- `@media (prefers-color-scheme: dark)`
 - `*`
 - `*::-webkit-scrollbar`
 - `*::-webkit-scrollbar-corner`
@@ -230,35 +87,7 @@ Selectors:
 
 Hard-coded colors:
 
-- `#004493`
-- `#0058bc`
-- `#0070eb`
-- `#008733`
-- `#050914`
-- `#080d18`
-- `#0d5f2a`
-- `#111827`
-- `#1a1c1d`
-- `#2f3132`
-- `#334155`
-- `#414755`
-- `#647084`
-- `#8a5600`
-- `#9bc7ff`
-- `#b42318`
-- `#b91c1c`
-- `#ba1a1a`
-- `#d8e2f2`
-- `#d8e2ff`
-- `#e8e8ea`
-- `#eef4ff`
-- `#f0f0f2`
-- `#f3f3f5`
-- `#f8fbff`
-- `#fecaca`
-- `#ffb000`
-- `#ffffff`
-- `rgba(`
+- `rgb(`
 
 ### apps/deck/src/app/shell/tokens.css
 
@@ -312,4 +141,97 @@ Hard-coded colors:
 - `#ffffff`
 - `rgb(`
 - `rgba(`
+
+### apps/deck/src/features/overview/ui/page.css
+
+- Lines: 293
+- Top-level selectors: 35
+- Hard-coded color tokens: 8
+
+Selectors:
+
+- `.landing-actions`
+- `.landing-copy`
+- `.landing-eyebrow`
+- `.landing-eyebrow span`
+- `.landing-hero`
+- `.landing-hero h1`
+- `.landing-hero-content`
+- `.landing-primary`
+- `.landing-primary span`
+- `.landing-secondary`
+- `.landing-telemetry`
+- `.landing-telemetry-grid`
+- `.landing-telemetry-grid span`
+- `.landing-telemetry-kicker`
+- `.landing-telemetry-session > span`
+- `.landing-telemetry-session button`
+- `.landing-telemetry-session button span`
+- `.landing-telemetry-session p`
+- `.shell.view-overview`
+- `.shell.view-overview .page-content`
+- `.shell.view-overview > .top-nav`
+- `.shell.view-overview > .top-nav .admiral-avatar`
+- `.shell.view-overview > .top-nav .admiral-avatar svg`
+- `.shell.view-overview > .top-nav .admiral-avatar::after`
+- `.shell.view-overview > .top-nav .top-nav-brand`
+- `.shell.view-overview > .top-nav .top-nav-brand strong`
+- `.shell.view-overview > .top-nav .top-nav-item`
+- `.shell.view-overview > .top-nav .top-nav-item:hover`
+- `.shell.view-overview > .top-nav .top-nav-item.active`
+- `.shell.view-overview > .top-nav .top-nav-links`
+- `.shell.view-overview > .top-nav .top-nav-logo`
+- `.shell.view-overview > .top-nav .top-nav-logo-mark`
+- `.shell.view-overview > .top-nav::after`
+- `} @media (max-width: 720px)`
+- `@media (max-width: 980px)`
+
+Hard-coded colors:
+
+- `#050914`
+- `#080d18`
+- `#111827`
+- `#647084`
+- `#9bc7ff`
+- `#f8fbff`
+- `#ffffff`
+- `rgb(`
+
+### apps/deck/src/features/toast/styles.css
+
+- Lines: 162
+- Top-level selectors: 25
+- Hard-coded color tokens: 1
+
+Selectors:
+
+- `.motion-reduced .toast-exiting`
+- `.motion-reduced .toast-item`
+- `.toast-close`
+- `.toast-close:focus-visible`
+- `.toast-close:hover`
+- `.toast-content`
+- `.toast-content p`
+- `.toast-error`
+- `.toast-exiting`
+- `.toast-info`
+- `.toast-item`
+- `.toast-label`
+- `.toast-success`
+- `.toast-viewport`
+- `.toast-warning`
+- `[data-deck-reduce-motion="true"] .toast-exiting`
+- `[data-deck-reduce-motion="true"] .toast-item`
+- `[data-deck-theme="dark"] .toast-close`
+- `[data-deck-theme="dark"] .toast-close:focus-visible`
+- `[data-deck-theme="dark"] .toast-close:hover`
+- `[data-deck-theme="dark"] .toast-item`
+- `} @keyframes toast-exit`
+- `} @media (max-width: 860px)`
+- `@keyframes toast-enter`
+- `to`
+
+Hard-coded colors:
+
+- `rgb(`
 

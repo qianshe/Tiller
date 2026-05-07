@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const pagePath = resolve(currentDir, "page.tsx");
-const stylesPath = resolve(currentDir, "../../../app/shell/styles.css");
+const stylesPath = resolve(currentDir, "page.css");
 const topNavPath = resolve(currentDir, "../../../shared/ui/layout/top-nav.tsx");
 
 test("overview page uses the starship landing hero treatment", () => {
