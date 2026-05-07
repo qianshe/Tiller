@@ -308,7 +308,10 @@ export function App() {
     prompt: runtimeState.prompt,
     setPrompt: runtimeState.setPrompt,
     activeSessionId: deckData.activeSessionId,
+    activeSessionAgentId: missionView.activeSession?.agentId ?? runtimeState.selectedAgentId,
     sessionAvailableCommands: deckData.sessionAvailableCommands,
+    agentAvailableCommands: deckData.agentAvailableCommands,
+    refreshAgentAvailableCommands: deckData.refreshAgentAvailableCommands,
     promptRef: runtimeState.missionPromptRef,
     onFallbackKeyDown: controllers.submitPromptFromKeyboard,
   });

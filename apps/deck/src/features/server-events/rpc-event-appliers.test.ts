@@ -27,6 +27,8 @@ function resetStore() {
     sessions: [],
     messages: {},
     trustedDevices: [],
+    sessionAvailableCommands: {},
+    agentAvailableCommands: {},
   });
 }
 
@@ -101,5 +103,31 @@ test("applySessionUpdate routes agent_message notifications into activity state 
   assert.equal(
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
+  );
+});
+
+test("applySessionUpdate caches available commands by session and agent", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "commands_available",
+        commands: [{ name: "review" }, { name: "compact" }],
+      },
+    },
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionAvailableCommands.s1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
+    ["review", "compact"],
   );
 });

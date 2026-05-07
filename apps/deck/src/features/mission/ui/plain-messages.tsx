@@ -1,7 +1,9 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
-import { MarkdownMessage } from "../../../shared/ui/markdown";
+import { Button } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
 import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
+import { StructuredAssistantMessage } from "./structured-assistant-message";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -67,7 +69,7 @@ export function PlainMessages({
   }
 
   return (
-    <div className="plain-message-list conversation-timeline grid gap-3">
+    <div className="plain-message-list conversation-timeline grid gap-4">
       {canLoadMoreMessages ? (
         <button
           className="secondary load-more-history rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:opacity-60"
@@ -78,15 +80,8 @@ export function PlainMessages({
           {historyState?.loading ? "加载中..." : "查看更多"}
         </button>
       ) : null}
-      {visibleMessages.map((message, index) => {
-        const previousMessage = visibleMessages[index - 1];
-        const showToolBoundary = previousMessage
-          ? hasToolBoundaryBetweenMessages(
-              previousMessage,
-              message,
-              boundaryTimestamps,
-            )
-          : false;
+      {visibleMessages.map((message) => {
+        const isAssistant = message.role === "assistant";
         const isExpanded = expandedMessageIds.has(message.id);
         const isCollapsible =
           message.role === "user" && shouldCollapsePlainMessage(message.text);
@@ -95,35 +90,40 @@ export function PlainMessages({
             ? "plain-message-body plain-message-body-collapsed"
             : "plain-message-body";
         return (
-          <Fragment key={message.id}>
-            {showToolBoundary ? (
-              <div
-                key={`${previousMessage?.id ?? "start"}-${message.id}-tool-boundary`}
-                className="mission-message-tool-boundary flex items-center gap-3 py-1 text-xs font-semibold text-muted-foreground"
-                aria-label="工具调用分隔"
+          <article
+            key={message.id}
+            className={cn(
+              "plain-message min-w-0 text-foreground",
+              `plain-${message.role}`,
+              isAssistant
+                ? "mr-auto grid max-w-[min(820px,100%)] grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3"
+                : "ml-auto grid max-w-[min(720px,88%)] gap-2 rounded-2xl border border-border-ghost bg-surface-elevated p-3 shadow-ambient",
+            )}
+          >
+            {isAssistant ? (
+              <span
+                aria-hidden="true"
+                className="plain-assistant-segment-marker flex min-h-6 justify-center pt-2"
               >
-                <span className="h-px flex-1 bg-border-ghost" />
-                <span className="rounded-full bg-surface px-2 py-0.5">---</span>
-                <span className="h-px flex-1 bg-border-ghost" />
-              </div>
+                <span className="plain-assistant-segment-dot size-2 rounded-full bg-success-container ring-4 ring-surface-sunken" />
+              </span>
             ) : null}
-            <article
-              className={`plain-message plain-${message.role} grid gap-2 rounded-lg border border-border-ghost bg-surface p-3 text-foreground ${message.role === "assistant" ? "plain-assistant" : "plain-user"}`}
-            >
+            <div className="grid min-w-0 gap-2">
               <span className="plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {resolveMessageRoleLabel(message, assistantLabel, roleLabels)}
               </span>
-              <div className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed`}>
+              <div className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`}>
                 {renderPlainMessageContent(message, isCollapsible && !isExpanded)}
               </div>
               {isCollapsible ? (
-                <button
-                  className="plain-message-expand w-fit rounded-md border border-border-ghost px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
+                <Button
+                  className="plain-message-expand w-fit px-3 py-1.5 text-xs"
                   type="button"
+                  variant="outline"
                   onClick={() => onToggleExpandedMessage(message.id)}
                 >
                   {isExpanded ? "收起消息" : "展开完整消息"}
-                </button>
+                </Button>
               ) : null}
               {message.attachments?.length ? (
                 <div className="mission-message-attachments grid gap-2 sm:grid-cols-2">
@@ -144,8 +144,8 @@ export function PlainMessages({
                   ))}
                 </div>
               ) : null}
-            </article>
-          </Fragment>
+            </div>
+          </article>
         );
       })}
     </div>
@@ -165,8 +165,8 @@ function renderPlainMessageContent(
       {message.text}
     </div>
   ) : (
-    <div className="[&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden">
-      <MarkdownMessage text={message.text} />
+    <div className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden">
+      <StructuredAssistantMessage text={message.text} />
     </div>
   );
 }
@@ -192,29 +192,6 @@ function shouldCollapsePlainMessage(text: string) {
     lineCount > COLLAPSED_MESSAGE_LINE_LIMIT ||
     text.length > COLLAPSED_MESSAGE_CHAR_LIMIT
   );
-}
-
-function hasToolBoundaryBetweenMessages(
-  left: AgentMessage,
-  right: AgentMessage,
-  boundaryTimestamps: string[],
-) {
-  const leftTime = Date.parse(left.timestamp);
-  const rightTime = Date.parse(right.timestamp);
-  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
-    return false;
-  }
-
-  const minTime = Math.min(leftTime, rightTime);
-  const maxTime = Math.max(leftTime, rightTime);
-  return boundaryTimestamps.some((timestamp) => {
-    const boundaryTime = Date.parse(timestamp);
-    return (
-      Number.isFinite(boundaryTime) &&
-      boundaryTime > minTime &&
-      boundaryTime <= maxTime
-    );
-  });
 }
 
 function resolveMessageRoleLabel(

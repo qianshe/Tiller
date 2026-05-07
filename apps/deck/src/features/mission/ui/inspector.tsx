@@ -31,21 +31,10 @@ export function MissionInspector({
   return (
     <>
       {!collapsed ? resizer : null}
-      {collapsed ? (
-        <button
-          className="mission-inspector-toggle mission-inspector-floating-toggle fixed right-4 top-28 z-30 grid size-9 place-items-center rounded-full border border-border-ghost bg-surface text-lg text-foreground shadow-ambient transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          type="button"
-          onClick={onExpand}
-          aria-label="展开任务检视器"
-          title="展开任务检视器"
-        >
-          ›
-        </button>
-      ) : null}
 
       {!collapsed ? (
         <aside
-          className="mission-inspector mission-pane mission-pane-inspector flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
+          className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
           style={style}
           aria-label="任务检视器"
         >

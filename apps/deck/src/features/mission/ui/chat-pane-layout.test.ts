@@ -33,8 +33,10 @@ const cleanupDialogSource = readFileSync(
   "utf8",
 );
 const panelsSource = readFileSync(resolve(currentDir, "panels.tsx"), "utf8");
+const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
 const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
 const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
+const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
@@ -66,7 +68,7 @@ test("assistant markdown uses readable prose styling without paragraph marker bu
 });
 
 test("mission workspace uses Tailwind pane layout instead of feature css", () => {
-  assert.match(workspaceSource, /grid-cols-\[var\(--mission-sidebar-width\)_8px_var\(--mission-chat-width\)_8px_var\(--mission-display-width\)_8px_var\(--mission-inspector-width\)\]/);
+  assert.match(workspaceSource, /grid-cols-\[var\(--mission-sidebar-width\)_var\(--mission-sidebar-resizer-width\)_minmax\(0,var\(--mission-chat-width\)\)_var\(--mission-display-resizer-width\)_var\(--mission-display-width\)_var\(--mission-inspector-resizer-width\)_var\(--mission-inspector-width\)\]/);
   assert.doesNotMatch(workspaceSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
   assert.match(workspaceSource, /mission-sidebar-collapsed/);
   assert.match(workspaceSource, /mission-inspector-collapsed/);
@@ -135,4 +137,28 @@ test("session cleanup confirmation uses the shared centered dialog primitive", (
   assert.match(cleanupDialogSource, /DialogFooter/);
   assert.doesNotMatch(cleanupDialogSource, /fleet-modal-backdrop/);
   assert.doesNotMatch(cleanupDialogSource, /fleet-delete-helm-modal/);
+});
+
+test("mission responsive collapse keeps chat as the last visible pane", () => {
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080/);
+  assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 24/);
+  assert.match(missionLayoutHookSource, /chat: \{ min: 280, max: 820 \}/);
+  assert.match(missionLayoutHookSource, /--mission-sidebar-resizer-width/);
+  assert.match(missionLayoutHookSource, /--mission-display-resizer-width/);
+  assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);
+  assert.match(missionLayoutHookSource, /effectiveDisplayCollapsed/);
+  assert.match(workspaceSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
+  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
+  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
+  assert.match(workspaceSource, /mission-pane-chat col-start-3 col-end-4/);
+  assert.doesNotMatch(workspaceSource, /max-\[860px\]:h-auto/);
+  assert.doesNotMatch(workspaceSource, /max-\[860px\]:flex-col/);
+  assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);
+  assert.match(displayPanelSource, /mission-pane-display col-start-5 col-end-6/);
+  assert.match(inspectorSource, /mission-pane-inspector col-start-7 col-end-8/);
+  assert.match(paneResizerSource, /col-start-2 col-end-3/);
+  assert.match(paneResizerSource, /col-start-4 col-end-5/);
+  assert.match(paneResizerSource, /col-start-6 col-end-7/);
 });

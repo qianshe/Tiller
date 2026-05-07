@@ -251,23 +251,23 @@ test("resolveMissionSelectedProjectId prefers the active session project over st
   );
 });
 
-test("resolveMissionSelectedProjectId falls back to the draft project before a session starts", () => {
+test("resolveMissionSelectedProjectId does not highlight a draft project before a session starts", () => {
   assert.equal(
     resolveMissionSelectedProjectId({
       activeSessionProjectId: null,
       selectedProjectId: "draft-project",
     }),
-    "draft-project",
+    null,
   );
 });
 
 test("resolvePromptPlaceholder uses the selected ACP command as empty-editor hint", () => {
   assert.equal(
     resolvePromptPlaceholder({ command: "codex-acp" }),
-    "向 codex-acp 下达指令；@ 引用上下文，/ 调用命令",
+    "向 codex-acp 下达指令；/ 调用命令",
   );
   assert.equal(
     resolvePromptPlaceholder({ command: "opencode", args: ["acp", "--pure"] }),
-    "向 opencode acp --pure 下达指令；@ 引用上下文，/ 调用命令",
+    "向 opencode acp --pure 下达指令；/ 调用命令",
   );
 });

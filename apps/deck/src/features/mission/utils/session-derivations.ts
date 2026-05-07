@@ -127,7 +127,7 @@ export function resolveMissionSelectedProjectId(input: {
   activeSessionProjectId: string | null | undefined;
   selectedProjectId: string | null | undefined;
 }) {
-  return input.activeSessionProjectId ?? input.selectedProjectId ?? null;
+  return input.activeSessionProjectId ?? null;
 }
 
 export function resolveModelOptionsFromConfig(
@@ -170,5 +170,5 @@ export function resolvePromptPlaceholder(agent?: { command?: string; args?: stri
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
     .join(" ")
     .trim();
-  return `向 ${command || "ACP 舰员"} 下达指令；@ 引用上下文，/ 调用命令`;
+  return `向 ${command || "ACP 舰员"} 下达指令；/ 调用命令`;
 }

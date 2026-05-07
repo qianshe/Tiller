@@ -65,7 +65,7 @@ export function MissionConfigControls({
   reasoningOptions,
 }: MissionConfigControlsProps) {
   return (
-    <div className="mission-composer-config flex flex-wrap items-center gap-2" aria-label="当前任务模型配置">
+    <div className="mission-composer-config grid min-w-0 gap-2" aria-label="当前任务模型配置">
       {showAgentModeSelect ? (
         <div
           className={`mission-config-picker mission-config-picker-agent ${picker === "agentMode" ? "open" : ""} relative`}
@@ -77,7 +77,7 @@ export function MissionConfigControls({
         >
           <button
             type="button"
-            className="mission-config-trigger inline-flex max-w-56 items-center gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
+            className="mission-config-trigger inline-flex w-full max-w-full items-center justify-between gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
             aria-haspopup="listbox"
             aria-expanded={picker === "agentMode"}
             onClick={() =>
@@ -90,7 +90,7 @@ export function MissionConfigControls({
           </button>
           {picker === "agentMode" ? (
             <div
-              className="mission-config-menu absolute bottom-full left-0 z-40 mb-2 grid max-h-72 min-w-56 gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+              className="mission-config-menu absolute bottom-full left-0 z-[60] mb-2 grid max-h-48 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-surface p-1 shadow-ambient"
               role="listbox"
               aria-label="Agent 列表"
             >
@@ -115,7 +115,7 @@ export function MissionConfigControls({
         </div>
       ) : null}
       <div
-        className={`mission-config-picker mission-config-picker-model ${picker === "model" ? "open" : ""} relative`}
+        className={`mission-config-picker mission-config-picker-model ${picker === "model" ? "open" : ""} min-w-0 relative`}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
             setPicker(null);
@@ -124,7 +124,7 @@ export function MissionConfigControls({
       >
         <button
           type="button"
-          className="mission-config-trigger inline-flex max-w-72 items-center gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
+          className="mission-config-trigger inline-flex w-full max-w-full items-center justify-between gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
           title={modelPlaceholder}
           aria-haspopup="listbox"
           aria-expanded={picker === "model"}
@@ -140,7 +140,7 @@ export function MissionConfigControls({
         </button>
         {picker === "model" ? (
           <div
-            className="mission-config-menu absolute bottom-full left-0 z-40 mb-2 grid max-h-72 min-w-64 gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+            className="mission-config-menu absolute bottom-full left-0 z-[60] mb-2 grid max-h-48 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-surface p-1 shadow-ambient"
             role="listbox"
             aria-label="模型列表"
           >
@@ -206,7 +206,7 @@ export function MissionConfigControls({
         >
           <button
             type="button"
-            className="mission-config-trigger inline-flex max-w-56 items-center gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis"
+            className="mission-config-trigger inline-flex w-full max-w-full items-center justify-between gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis"
             aria-haspopup="listbox"
             aria-expanded={picker === "reasoning"}
             onClick={() =>
@@ -219,7 +219,7 @@ export function MissionConfigControls({
           </button>
           {picker === "reasoning" ? (
             <div
-              className="mission-config-menu absolute bottom-full left-0 z-40 mb-2 grid max-h-72 min-w-48 gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+              className="mission-config-menu absolute bottom-full left-0 z-[60] mb-2 grid max-h-48 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-surface p-1 shadow-ambient"
               role="listbox"
               aria-label="推理级别"
             >

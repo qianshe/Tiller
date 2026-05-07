@@ -10,8 +10,22 @@ test("markdown tables render inside a responsive scroll wrapper", () => {
     />,
   );
 
-  assert.match(html, /<div class="markdown-table-scroll">/);
-  assert.match(html, /<table>/);
+  assert.match(html, /markdown-table-scroll/);
+  assert.match(html, /overflow-x-auto/);
+  assert.match(html, /overflow-y-hidden/);
+  assert.match(html, /max-w-full/);
+  assert.match(html, /<table/);
+  assert.match(html, /markdown-table-head/);
+  assert.match(html, /markdown-table-cell/);
+});
+
+test("inline code keeps the surrounding reading font instead of forcing monospace", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text="路径 `apps/deck/src/App.tsx` 已更新。" />,
+  );
+
+  assert.match(html, /rounded bg-surface-sunken/);
+  assert.doesNotMatch(html, /font-mono/);
 });
 
 test("assistant markdown text inserts paragraph breaks at ACP boundary markers", () => {
@@ -29,6 +43,6 @@ test("thinking paragraphs receive a dedicated markdown class hook", () => {
     <MarkdownMessage text={["Thinking: verify the session replay boundary.", "普通段落内容。"].join("\n\n")} />,
   );
 
-  assert.match(html, /markdown-paragraph markdown-paragraph-thinking/);
-  assert.match(html, /<p class="markdown-paragraph">普通段落内容。<\/p>/);
+  assert.match(html, /markdown-paragraph[^\"]*markdown-paragraph-thinking/);
+  assert.match(html, /<p class="markdown-paragraph[^\"]*">普通段落内容。<\/p>/);
 });

@@ -35,6 +35,7 @@ export function MissionWorkspace(props: any) {
     projectFileFilter,
     collapsedProjectFileDirectories,
     effectiveSidebarCollapsed,
+    effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
     missionLayoutRef,
     missionLayoutStyle,
@@ -197,12 +198,13 @@ export function MissionWorkspace(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation mission-pane mission-pane-chat flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
+    "chat-conversation mission-pane mission-pane-chat col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_8px_var(--mission-chat-width)_8px_var(--mission-display-width)_8px_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient max-[860px]:flex max-[860px]:h-auto max-[860px]:min-h-0 max-[860px]:flex-col",
+    "card surface-card chat-layout chat-layout-sidebar grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
+    effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
   return (
@@ -346,58 +348,62 @@ export function MissionWorkspace(props: any) {
             canSend={canSend}
           />{" "}
         </MissionChatPane>{" "}
-        <MissionPaneResizer
-          handle="display"
-          label="调整任务展示宽度"
-          onResizeStart={startMissionPaneResize}
-          onNudge={nudgeMissionPane}
-        />{" "}
-        <MissionDisplaySection
-          style={missionDisplayPaneStyle}
-          pages={missionPanelPages}
-          selectedPage={selectedMissionPanelPage}
-          selectedDiffFilePath={selectedMissionDiffFilePath}
-          diffs={activeDiffs}
-          diffCount={missionDiffCount}
-          logCount={missionLogCount}
-          overviewItems={projectOverviewItems}
-          noDiffSummary={copy.noDiffSummary}
-          activeSession={activeSession}
-          statusLabel={missionStatusLabel}
-          sessionToolCalls={activeToolCalls}
-          commandChunks={activeOutputs}
-          sessionMessages={
-            activeSession ? (messages[activeSession.id] ?? []) : []
-          }
-          historyState={
-            activeSession ? activityHistoryState[activeSession.id] : undefined
-          }
-          visibleCount={
-            activeSession
-              ? (activityVisibleCounts[activeSession.id] ??
-                defaultLogbookVisibleLimit)
-              : defaultLogbookVisibleLimit
-          }
-          visibleLimit={defaultLogbookVisibleLimit}
-          copy={copy}
-          collapsedDiffDirectories={collapsedMissionDiffDirectories}
-          onShowMore={(targetSessionId, nextVisibleCount) =>
-            setActivityVisibleCounts((current: any) => ({
-              ...current,
-              [targetSessionId]: nextVisibleCount,
-            }))
-          }
-          onLoadOlder={loadOlderActivities}
-          onAddPage={addMissionPanelPage}
-          onSelectPage={setSelectedMissionPanelPageId}
-          onDragStart={setDraggedMissionPanelPageId}
-          onDrop={dropMissionPanelPage}
-          onOpenDiffDetail={openDiffDetail}
-          onRenamePage={renameMissionPanelPage}
-          onMovePage={moveMissionPanelPage}
-          onDeletePage={deleteMissionPanelPage}
-          onToggleDiffDirectory={toggleMissionDiffDirectory}
-        />{" "}
+        {!effectiveDisplayCollapsed ? (
+          <MissionPaneResizer
+            handle="display"
+            label="调整任务展示宽度"
+            onResizeStart={startMissionPaneResize}
+            onNudge={nudgeMissionPane}
+          />
+        ) : null}{" "}
+        {!effectiveDisplayCollapsed ? (
+          <MissionDisplaySection
+            style={missionDisplayPaneStyle}
+            pages={missionPanelPages}
+            selectedPage={selectedMissionPanelPage}
+            selectedDiffFilePath={selectedMissionDiffFilePath}
+            diffs={activeDiffs}
+            diffCount={missionDiffCount}
+            logCount={missionLogCount}
+            overviewItems={projectOverviewItems}
+            noDiffSummary={copy.noDiffSummary}
+            activeSession={activeSession}
+            statusLabel={missionStatusLabel}
+            sessionToolCalls={activeToolCalls}
+            commandChunks={activeOutputs}
+            sessionMessages={
+              activeSession ? (messages[activeSession.id] ?? []) : []
+            }
+            historyState={
+              activeSession ? activityHistoryState[activeSession.id] : undefined
+            }
+            visibleCount={
+              activeSession
+                ? (activityVisibleCounts[activeSession.id] ??
+                  defaultLogbookVisibleLimit)
+                : defaultLogbookVisibleLimit
+            }
+            visibleLimit={defaultLogbookVisibleLimit}
+            copy={copy}
+            collapsedDiffDirectories={collapsedMissionDiffDirectories}
+            onShowMore={(targetSessionId, nextVisibleCount) =>
+              setActivityVisibleCounts((current: any) => ({
+                ...current,
+                [targetSessionId]: nextVisibleCount,
+              }))
+            }
+            onLoadOlder={loadOlderActivities}
+            onAddPage={addMissionPanelPage}
+            onSelectPage={setSelectedMissionPanelPageId}
+            onDragStart={setDraggedMissionPanelPageId}
+            onDrop={dropMissionPanelPage}
+            onOpenDiffDetail={openDiffDetail}
+            onRenamePage={renameMissionPanelPage}
+            onMovePage={moveMissionPanelPage}
+            onDeletePage={deleteMissionPanelPage}
+            onToggleDiffDirectory={toggleMissionDiffDirectory}
+          />
+        ) : null}{" "}
         <MissionInspector
           collapsed={effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}

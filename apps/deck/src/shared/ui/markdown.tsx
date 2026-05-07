@@ -81,7 +81,7 @@ const markdownComponents: Components = {
         {...props}
         className={[
           className,
-          "rounded bg-surface-sunken px-1 py-0.5 font-mono text-[0.92em] text-foreground",
+          "rounded bg-surface-sunken px-1 py-0.5 text-[0.95em] font-medium text-foreground",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -90,10 +90,30 @@ const markdownComponents: Components = {
       </code>
     );
   },
+  th({ children, node: _node, ...props }) {
+    return (
+      <th
+        {...props}
+        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-3 py-2 text-left text-xs font-semibold text-muted-foreground"
+      >
+        {children}
+      </th>
+    );
+  },
+  td({ children, node: _node, ...props }) {
+    return (
+      <td
+        {...props}
+        className="markdown-table-cell border-t border-border-ghost px-3 py-2 align-top text-sm text-foreground"
+      >
+        {children}
+      </td>
+    );
+  },
   table({ children, node: _node, ...props }) {
     return (
-      <div className="markdown-table-scroll rounded-md border border-border-ghost">
-        <table {...props} className="w-full border-collapse text-left text-sm">
+      <div className="markdown-table-scroll max-w-full overflow-x-auto overflow-y-hidden rounded-md border border-border-ghost">
+        <table {...props} className="w-full min-w-max border-collapse text-left text-sm">
           {children}
         </table>
       </div>

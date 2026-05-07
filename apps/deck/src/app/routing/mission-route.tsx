@@ -29,6 +29,7 @@ export function renderMissionRoute(source: any) {
     projectFileFilter,
     collapsedProjectFileDirectories,
     effectiveSidebarCollapsed,
+    effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
     missionLayoutRef,
     missionLayoutStyle,
@@ -178,6 +179,7 @@ export function renderMissionRoute(source: any) {
       projectFileFilter={projectFileFilter}
       collapsedProjectFileDirectories={collapsedProjectFileDirectories}
       effectiveSidebarCollapsed={effectiveSidebarCollapsed}
+      effectiveDisplayCollapsed={effectiveDisplayCollapsed}
       effectiveInspectorCollapsed={effectiveInspectorCollapsed}
       missionLayoutRef={missionLayoutRef}
       missionLayoutStyle={missionLayoutStyle}

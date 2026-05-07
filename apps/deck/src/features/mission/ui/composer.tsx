@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
   type SetStateAction,
+  useState,
 } from "react";
 import type {
   AcpAgentProvider,
@@ -169,6 +170,15 @@ export function MissionComposer({
   cancelSession,
   canSend,
 }: MissionComposerProps) {
+  const [toolsOpen, setToolsOpen] = useState(false);
+
+  function focusSlashCommand() {
+    if (!prompt.startsWith("/")) {
+      setPrompt((current) => (current ? `/${current}` : "/"));
+    }
+    missionPromptRef.current?.focus();
+  }
+
   return (
     <div className="chat-input-area draft-toolbar border-t border-border-ghost bg-surface p-3">
       {!activeSession ? (
@@ -219,39 +229,83 @@ export function MissionComposer({
             />
           ) : null}
         </div>
-        <div className="mission-composer-sidecar flex flex-wrap items-center justify-between gap-3">
-          <div className="mission-composer-tools flex items-center gap-1 text-muted-foreground" aria-hidden="true">
-            <span className="grid size-7 place-items-center rounded-full bg-surface text-sm">＋</span> <span className="grid size-7 place-items-center rounded-full bg-surface text-sm">◎</span>
+        <div className="mission-composer-sidecar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <div
+            className="mission-composer-tools relative flex min-w-0 items-center gap-1 text-muted-foreground"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setToolsOpen(false);
+              }
+            }}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-tools-trigger size-8 rounded-full bg-surface"
+              aria-haspopup="menu"
+              aria-expanded={toolsOpen}
+              aria-label="打开任务设置"
+              title="打开任务设置"
+              onClick={() => setToolsOpen((current) => !current)}
+            >
+              ＋
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-slash-trigger size-8 rounded-full bg-surface text-base"
+              aria-label="输入斜杠命令"
+              title="输入斜杠命令"
+              onClick={focusSlashCommand}
+            >
+              /
+            </Button>
+            {toolsOpen ? (
+              <div
+                className="mission-tools-menu absolute bottom-full left-0 z-50 mb-2 grid w-56 max-w-[calc(100vw-3rem)] gap-3 overflow-visible rounded-lg border border-border-ghost bg-popover-glass p-3 shadow-ambient backdrop-blur-2xl"
+                role="menu"
+                aria-label="任务设置"
+              >
+                <div className="grid gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    模型设置
+                  </span>
+                  <MissionConfigControls
+                    showAgentModeSelect={showDraftAgentModeSelect}
+                    picker={missionConfigPicker}
+                    setPicker={setMissionConfigPicker}
+                    agentModeLabel={draftAgentModePickerLabel}
+                    agentModeOptions={draftAgentModeOptions}
+                    effectiveAgentMode={effectiveDraftAgentMode}
+                    updatePreferences={updateSessionDraftPreferences}
+                    modelPlaceholder={draftModelPlaceholder}
+                    modelDisabled={draftModelPickerDisabled}
+                    modelLabel={draftModelPickerLabel}
+                    modelLoading={
+                      draftModelLoading ||
+                      (!activeSession &&
+                        selectedDraftAgent?.id === "opencode" &&
+                        draftConfigOptions.length === 0)
+                    }
+                    modelBaseOptions={draftModelBaseOptions}
+                    resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
+                    allModelOptions={draftAllModelOptions}
+                    configOptions={draftConfigOptions}
+                    effectiveReasoningEffort={effectiveDraftReasoningEffort}
+                    effectiveModelBase={effectiveDraftModelBase}
+                    resolveCombinedModelValue={resolveCombinedModelValue}
+                    showReasoningSelect={showDraftReasoningSelect}
+                    resolveReasoningLabel={resolveReasoningLabel}
+                    reasoningOptions={draftReasoningOptions}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
-          <MissionConfigControls
-            showAgentModeSelect={showDraftAgentModeSelect}
-            picker={missionConfigPicker}
-            setPicker={setMissionConfigPicker}
-            agentModeLabel={draftAgentModePickerLabel}
-            agentModeOptions={draftAgentModeOptions}
-            effectiveAgentMode={effectiveDraftAgentMode}
-            updatePreferences={updateSessionDraftPreferences}
-            modelPlaceholder={draftModelPlaceholder}
-            modelDisabled={draftModelPickerDisabled}
-            modelLabel={draftModelPickerLabel}
-            modelLoading={
-              draftModelLoading ||
-              (!activeSession &&
-                selectedDraftAgent?.id === "opencode" &&
-                draftConfigOptions.length === 0)
-            }
-            modelBaseOptions={draftModelBaseOptions}
-            resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
-            allModelOptions={draftAllModelOptions}
-            configOptions={draftConfigOptions}
-            effectiveReasoningEffort={effectiveDraftReasoningEffort}
-            effectiveModelBase={effectiveDraftModelBase}
-            resolveCombinedModelValue={resolveCombinedModelValue}
-            showReasoningSelect={showDraftReasoningSelect}
-            resolveReasoningLabel={resolveReasoningLabel}
-            reasoningOptions={draftReasoningOptions}
-          />
-          <div className="mission-composer-actions ml-auto flex items-center gap-2">
+          <div className="min-w-0" />
+          <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-2">
             {deckPreferences.promptEnhancer.enabled ? (
               <Button
                 variant="outline"

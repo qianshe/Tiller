@@ -335,6 +335,17 @@ export function applySessionUpdate(
         }
         return { ...current, [sessionId]: update.commands };
       });
+      {
+        const agentId = store.sessions.find((session) => session.id === sessionId)?.agentId;
+        if (agentId) {
+          store.setAgentAvailableCommands((current) => {
+            if (availableCommandListsEqual(current[agentId], update.commands)) {
+              return current;
+            }
+            return { ...current, [agentId]: update.commands };
+          });
+        }
+      }
       return true;
     case "model_options":
       store.setSessions((current) =>

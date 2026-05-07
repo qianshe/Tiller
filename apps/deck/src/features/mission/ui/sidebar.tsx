@@ -103,7 +103,7 @@ export function MissionSidebar({
   resizer,
 }: MissionSidebarProps) {
   const sidebarClassName = [
-    "chat-session-sidebar mission-pane mission-pane-sidebar flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface/95 p-2 shadow-none",
+    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface/95 p-2 shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
   ]
     .filter(Boolean)
@@ -287,7 +287,7 @@ export function MissionSidebar({
           type="button"
           variant="outline"
           size="icon"
-          className="mission-sidebar-toggle mission-sidebar-floating-toggle fixed left-4 top-28 z-30 rounded-full shadow-ambient"
+          className="mission-sidebar-toggle mission-sidebar-floating-toggle fixed left-6 top-8 z-30 rounded-full shadow-ambient"
           onClick={() => setMissionSidebarCollapsed(false)}
           aria-expanded="false"
           aria-label="展开任务导航"
