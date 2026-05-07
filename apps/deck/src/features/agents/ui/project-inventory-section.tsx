@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { Button, Input, Label } from "@/shared/ui";
 import type {
   AcpAgentProvider,
   ProjectSummary,
@@ -44,11 +45,12 @@ export function ProjectInventorySection({
   setSaveMessage,
 }: ProjectInventorySectionProps) {
   return (
-    <section className="helm-inventory-list-section">
-      <div className="helm-inventory-section-head">
-        <h3>项目列表</h3>
-        <button
-          className="secondary helm-list-add-button"
+    <section className="grid content-start gap-3">
+      <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <h3 className="m-0 text-base font-semibold text-foreground">项目列表</h3>
+        <Button
+          variant="outline"
+          size="icon"
           type="button"
           disabled={!connected}
           aria-label="添加项目"
@@ -56,11 +58,11 @@ export function ProjectInventorySection({
           onClick={() => setFormOpen((current) => !current)}
         >
           +
-        </button>
+        </Button>
       </div>
       {formOpen ? (
         <form
-          className="helm-inline-add-form helm-inline-add-form-project"
+          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto] sm:items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (!selectedHelmRpcClient || !draft.path.trim()) {
@@ -88,69 +90,77 @@ export function ProjectInventorySection({
             setFormOpen(false);
           }}
         >
-          <input
+          <Label className="sr-only" htmlFor="fleet-project-name">
+            项目名称
+          </Label>
+          <Input
+            id="fleet-project-name"
             value={draft.name}
             onChange={(event) =>
               setDraft((current) => ({ ...current, name: event.target.value }))
             }
             placeholder="项目名称，例如 Tiller"
           />
-          <input
+          <Label className="sr-only" htmlFor="fleet-project-path">
+            项目路径
+          </Label>
+          <Input
+            id="fleet-project-path"
             value={draft.path}
             onChange={(event) =>
               setDraft((current) => ({ ...current, path: event.target.value }))
             }
             placeholder="项目路径，例如 D:/projects/my-app"
           />
-          <button
-            className="primary"
-            type="submit"
-            disabled={!draft.path.trim()}
-          >
+          <Button type="submit" disabled={!draft.path.trim()}>
             保存项目
-          </button>
+          </Button>
         </form>
       ) : null}
       {selectedHelmProjects.length ? (
-        <ul className="helm-simple-list">
+        <ul className="m-0 grid list-none divide-y divide-border-ghost border-t border-border-ghost p-0">
           {selectedHelmProjects.map((project) => (
-            <li key={project.id}>
-              <details className="helm-simple-detail-row">
-                <summary>
-                  <strong>{project.name}</strong>
-                  <span>
+            <li key={project.id} className="py-3">
+              <details className="group grid gap-2">
+                <summary className="grid cursor-pointer list-none grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-baseline gap-3 marker:hidden max-md:grid-cols-1 max-md:gap-1 [&::-webkit-details-marker]:hidden">
+                  <strong className="text-sm font-semibold text-foreground group-open:text-primary group-hover:text-primary">
+                    {project.name}
+                  </strong>
+                  <span className="[overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {project.path
                       ? `路径 · ${project.path}`
                       : `项目 · ${project.id}`}
                   </span>
                 </summary>
-                <dl>
-                  <div>
-                    <dt>Project ID</dt>
-                    <dd>
+                <dl className="m-0 grid gap-2 rounded-md bg-surface-sunken p-3 text-sm">
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Project ID</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
                       {resolveProjectDisplayId(project, selectedHelmProjects)}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Path</dt>
-                    <dd>{project.path ?? "-"}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Path</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.path ?? "-"}</dd>
                   </div>
-                  <div>
-                    <dt>Helm ID</dt>
-                    <dd>{project.helmId}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Helm ID</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
                   </div>
-                  <div>
-                    <dt>默认分支</dt>
-                    <dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">默认分支</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
                       {resolveProjectWorkspaceLabel(
                         project,
                         selectedHelmWorkspaces,
                       )}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Default Agent</dt>
-                    <dd>{project.defaultAgentId ?? "-"}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Default Agent</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                      {project.defaultAgentId ?? "-"}
+                    </dd>
                   </div>
                 </dl>
               </details>
@@ -158,7 +168,7 @@ export function ProjectInventorySection({
           ))}
         </ul>
       ) : (
-        <div className="empty-state">
+        <div className="grid min-h-16 place-items-center rounded-md bg-surface-sunken px-4 text-sm text-muted-foreground">
           {connected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"}
         </div>
       )}

@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { Button, Input } from "@/shared/ui";
 import type { AcpAgentProvider } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { slugify } from "../utils/fleet-helpers";
@@ -29,25 +30,24 @@ export function AgentInventorySection({
   setFormOpen,
 }: AgentInventorySectionProps) {
   return (
-    <section className="helm-inventory-list-section">
-      <div className="helm-inventory-section-head">
-        <h3>ACP 舰员</h3>
-        <div className="helm-section-actions-inline">
-          <button
-            className="secondary helm-list-add-button"
-            type="button"
-            disabled={!connected}
-            aria-label="添加 ACP"
-            title="添加 ACP"
-            onClick={() => setFormOpen((current) => !current)}
-          >
-            +
-          </button>
-        </div>
+    <section className="grid content-start gap-3">
+      <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <h3 className="m-0 text-base font-semibold text-foreground">ACP 舰员</h3>
+        <Button
+          variant="outline"
+          size="icon"
+          type="button"
+          disabled={!connected}
+          aria-label="添加 ACP"
+          title="添加 ACP"
+          onClick={() => setFormOpen((current) => !current)}
+        >
+          +
+        </Button>
       </div>
       {formOpen ? (
         <form
-          className="helm-inline-add-form helm-inline-add-form-agent"
+          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (!selectedHelmRpcClient || !draft.command.trim()) {
@@ -71,8 +71,8 @@ export function AgentInventorySection({
             setFormOpen(false);
           }}
         >
-          <div className="helm-agent-core-row">
-            <input
+          <div className="grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_128px] items-center gap-3 max-md:grid-cols-1">
+            <Input
               value={draft.name}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -82,7 +82,7 @@ export function AgentInventorySection({
               }
               placeholder="舰员名称"
             />
-            <input
+            <Input
               value={draft.command}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -92,19 +92,16 @@ export function AgentInventorySection({
               }
               placeholder="command"
             />
-            <button
-              className="primary"
-              type="submit"
-              disabled={!draft.command.trim()}
-            >
+            <Button type="submit" disabled={!draft.command.trim()}>
               保存 ACP
-            </button>
+            </Button>
           </div>
-          <div className="helm-agent-args-column">
-            <div className="helm-agent-args-head">
+          <div className="grid gap-3 rounded-md border border-border-ghost bg-surface/60 p-3">
+            <div className="flex items-center justify-between gap-3 font-semibold text-foreground">
               <span>args 数组</span>
-              <button
-                className="secondary helm-arg-action-button"
+              <Button
+                variant="outline"
+                size="sm"
                 type="button"
                 onClick={() =>
                   setDraft((current) => ({
@@ -114,15 +111,18 @@ export function AgentInventorySection({
                 }
               >
                 + 参数
-              </button>
+              </Button>
             </div>
             {draft.args.map((arg, index) => (
               <div
-                className="helm-agent-arg-row"
+                className="grid grid-cols-[76px_minmax(0,1fr)_40px] items-center gap-2 max-md:grid-cols-1"
                 key={`fleet-agent-arg-${index}`}
               >
-                <span className="helm-agent-arg-index">args[{index}]</span>
-                <input
+                <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-border-ghost bg-surface-sunken px-2 font-mono text-xs font-semibold text-muted-foreground max-md:justify-start">
+                  args[{index}]
+                </span>
+                <Input
+                  className="font-mono"
                   value={arg}
                   onChange={(event) =>
                     setDraft((current) => ({
@@ -134,8 +134,9 @@ export function AgentInventorySection({
                   }
                   placeholder={index === 0 ? "acp" : "--pure"}
                 />
-                <button
-                  className="secondary helm-arg-icon-button"
+                <Button
+                  variant="outline"
+                  size="icon"
                   type="button"
                   aria-label={`删除第 ${index + 1} 个参数`}
                   title="删除参数"
@@ -152,43 +153,47 @@ export function AgentInventorySection({
                   }
                 >
                   −
-                </button>
+                </Button>
               </div>
             ))}
           </div>
         </form>
       ) : null}
       {selectedHelmAgents.length ? (
-        <ul className="helm-simple-list">
+        <ul className="m-0 grid list-none divide-y divide-border-ghost border-t border-border-ghost p-0">
           {selectedHelmAgents.map((agent) => (
-            <li key={agent.id}>
-              <details className="helm-simple-detail-row">
-                <summary>
-                  <strong>{agent.name}</strong>
-                  <span>
+            <li key={agent.id} className="py-3">
+              <details className="group grid gap-2">
+                <summary className="grid cursor-pointer list-none grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-baseline gap-3 marker:hidden max-md:grid-cols-1 max-md:gap-1 [&::-webkit-details-marker]:hidden">
+                  <strong className="text-sm font-semibold text-foreground group-open:text-primary group-hover:text-primary">
+                    {agent.name}
+                  </strong>
+                  <span className="[overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {`${agent.command} ${(agent.args ?? []).join(" ")}`.trim()}
                   </span>
                 </summary>
-                <dl>
-                  <div>
-                    <dt>Agent ID</dt>
-                    <dd>{agent.id}</dd>
+                <dl className="m-0 grid gap-2 rounded-md bg-surface-sunken p-3 text-sm">
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Agent ID</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.id}</dd>
                   </div>
-                  <div>
-                    <dt>Command</dt>
-                    <dd>{agent.command}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Command</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.command}</dd>
                   </div>
-                  <div>
-                    <dt>Arguments</dt>
-                    <dd>{(agent.args ?? []).join(" ") || "-"}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Arguments</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                      {(agent.args ?? []).join(" ") || "-"}
+                    </dd>
                   </div>
-                  <div>
-                    <dt>Transport</dt>
-                    <dd>{agent.transport}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Transport</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.transport}</dd>
                   </div>
-                  <div>
-                    <dt>Protocol</dt>
-                    <dd>{agent.protocol}</dd>
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+                    <dt className="font-semibold text-muted-foreground">Protocol</dt>
+                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.protocol}</dd>
                   </div>
                 </dl>
               </details>
@@ -196,7 +201,7 @@ export function AgentInventorySection({
           ))}
         </ul>
       ) : (
-        <div className="empty-state">
+        <div className="grid min-h-16 place-items-center rounded-md bg-surface-sunken px-4 text-sm text-muted-foreground">
           {connected ? emptyLabel : "请先连接该 Helm 后加载舰员"}
         </div>
       )}

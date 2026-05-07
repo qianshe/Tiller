@@ -1,9 +1,0 @@
-/* features/agents/styles.css — Fleet/Agents 页面样式聚合入口 */
-/* 按 UI 子模块归位；import 顺序保持原 shell/styles.css cascade。 */
-
-@import "./ui/trusted-devices-panel/styles.css";
-@import "./ui/page/fleet-profile.css";
-@import "./ui/page/fleet-model-card.css";
-@import "./ui/fleet-add-helm-dialog/helm-node-modal.css";
-@import "./ui/fleet-add-helm-dialog/connection-flow.css";
-@import "./ui/helm-detail-section/inventory.css";

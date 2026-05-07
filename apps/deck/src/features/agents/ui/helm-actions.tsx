@@ -4,6 +4,7 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from "react";
+import { Badge, Button } from "@/shared/ui";
 import type { DaemonProfile } from "../../helm-connection/facade";
 import type { HelmCard } from "./helm-hub";
 
@@ -48,10 +49,10 @@ export function HelmActions({
   socketRef,
 }: HelmActionsProps) {
   return (
-    <div className="section-actions">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {selectedHelmIsConnected ? (
-        <button
-          className="secondary helm-disconnect-button"
+        <Button
+          variant="outline"
           type="button"
           onClick={() => {
             manualDisconnectRef.current = selectedHelm.key;
@@ -70,12 +71,14 @@ export function HelmActions({
           }}
         >
           断开连接
-        </button>
+        </Button>
       ) : selectedHelmConnection === "connecting" ? (
-        <span className="helm-state-chip helm-state-connecting">连接中</span>
+        <Badge variant="secondary" className="min-h-10 px-4">
+          连接中
+        </Badge>
       ) : (
-        <button
-          className="secondary"
+        <Button
+          variant="outline"
           type="button"
           onClick={() => {
             if (selectedHelm.profile) {
@@ -86,17 +89,17 @@ export function HelmActions({
           }}
         >
           连接 Helm
-        </button>
+        </Button>
       )}
       {selectedHelmSavedProfile && !isEmbeddedHelmDeck ? (
-        <button
-          className="secondary helm-destroy-button"
+        <Button
+          variant="destructive"
           type="button"
           onClick={() => setPendingHelmDeleteProfile(selectedHelmSavedProfile)}
           title="仅删除 Deck 前端保存的 Helm 配置，不销毁远端 Helm 进程或后端配置"
         >
           删除配置
-        </button>
+        </Button>
       ) : null}
     </div>
   );

@@ -6,7 +6,6 @@ import { App } from "./root";
 import "./tokens.css";
 import "./styles.css";
 import "../../features/mission/styles.css";
-import "../../features/agents/styles.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

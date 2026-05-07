@@ -4,6 +4,16 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from "react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+} from "@/shared/ui";
 import { PairingBoxes } from "../../../shared/ui/primitives";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -59,111 +69,86 @@ export function FleetAddHelmDialog({
   const readyForPairing = stage === "pair";
 
   return (
-    <div className="fleet-modal-backdrop" role="presentation">
-      <section
-        className="card surface-card fleet-add-helm-modal fleet-add-helm-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="添加 Helm"
-      >
-        <div className="fleet-dialog-head fleet-dialog-head-simple">
-          <h3>添加 Helm</h3>
-          <button
-            className="secondary fleet-dialog-close"
-            type="button"
-            onClick={onClose}
-          >
-            关闭
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent aria-label="添加 Helm" className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>添加 Helm</DialogTitle>
+        </DialogHeader>
 
-        <div className="fleet-dialog-body fleet-dialog-body-single">
-          {!readyForPairing ? (
-            <form
-              className="fleet-dialog-card fleet-connect-card"
-              onSubmit={onConnect}
-            >
-              <div className="fleet-connect-grid">
-                <label className="fleet-field-full">
-                  <span>Helm 名称</span>
-                  <input
-                    value={helmName}
-                    onChange={(event) => setHelmName(event.target.value)}
-                    placeholder="本地 Helm"
-                    autoFocus
-                  />
-                </label>
-                <label>
-                  <span>Helm 地址</span>
-                  <input
-                    value={helmHost}
-                    onChange={(event) => setHelmHost(event.target.value)}
-                    placeholder={defaultHost}
-                  />
-                </label>
-                <label>
-                  <span>端口</span>
-                  <input
-                    value={helmPort}
-                    onChange={(event) =>
-                      setHelmPort(event.target.value.replace(/[^0-9]/g, ""))
-                    }
-                    placeholder={defaultPort}
-                  />
-                </label>
-              </div>
-
-              <div className="section-actions fleet-modal-actions">
-                <button
-                  className="primary"
-                  type="submit"
-                  disabled={stage === "connecting"}
-                >
-                  {stage === "connecting" ? "连接中..." : "连接 Helm"}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <form
-              className="fleet-dialog-card fleet-pair-card"
-              onSubmit={onSubmitPairingCode}
-            >
-              <strong className="fleet-pair-title">输入验证码</strong>
-
-              <PairingBoxes
-                refs={pairInputRefs}
-                value={pairingCodeInput}
-                disabled={pairingState === "waiting" || connection !== "connected"}
-                onChange={onUpdatePairingDigit}
-                onKeyDown={onPairingKeyDown}
-                onPaste={onPastePairingDigits}
-              />
-
-              <div className="section-actions pairing-actions fleet-pair-actions">
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={onSendPairingRequest}
-                  disabled={
-                    pairingCodeInput.length !== 6 ||
-                    pairingState === "waiting" ||
-                    connection !== "connected"
+        {!readyForPairing ? (
+          <form className="grid gap-4" onSubmit={onConnect}>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
+              <Label className="grid gap-2 sm:col-span-2">
+                <span>Helm 名称</span>
+                <Input
+                  value={helmName}
+                  onChange={(event) => setHelmName(event.target.value)}
+                  placeholder="本地 Helm"
+                  autoFocus
+                />
+              </Label>
+              <Label className="grid gap-2">
+                <span>Helm 地址</span>
+                <Input
+                  value={helmHost}
+                  onChange={(event) => setHelmHost(event.target.value)}
+                  placeholder={defaultHost}
+                />
+              </Label>
+              <Label className="grid gap-2">
+                <span>端口</span>
+                <Input
+                  value={helmPort}
+                  onChange={(event) =>
+                    setHelmPort(event.target.value.replace(/[^0-9]/g, ""))
                   }
-                >
-                  {pairingState === "waiting" ? "提交中..." : "提交验证码"}
-                </button>
-                <button
-                  className="secondary"
-                  type="button"
-                  onClick={() => void reconnect()}
-                >
-                  重新连接
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </section>
-    </div>
+                  placeholder={defaultPort}
+                />
+              </Label>
+            </div>
+
+            <DialogFooter>
+              <Button type="submit" disabled={stage === "connecting"}>
+                {stage === "connecting" ? "连接中..." : "连接 Helm"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <form className="grid gap-5" onSubmit={onSubmitPairingCode}>
+            <strong className="text-base font-semibold text-foreground">输入验证码</strong>
+
+            <PairingBoxes
+              refs={pairInputRefs}
+              value={pairingCodeInput}
+              disabled={pairingState === "waiting" || connection !== "connected"}
+              onChange={onUpdatePairingDigit}
+              onKeyDown={onPairingKeyDown}
+              onPaste={onPastePairingDigits}
+            />
+
+            <DialogFooter>
+              <Button
+                type="button"
+                onClick={onSendPairingRequest}
+                disabled={
+                  pairingCodeInput.length !== 6 ||
+                  pairingState === "waiting" ||
+                  connection !== "connected"
+                }
+              >
+                {pairingState === "waiting" ? "提交中..." : "提交验证码"}
+              </Button>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => void reconnect()}
+              >
+                重新连接
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

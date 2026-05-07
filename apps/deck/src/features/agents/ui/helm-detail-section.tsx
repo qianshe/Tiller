@@ -173,7 +173,7 @@ export function HelmDetailSection({
           setSaveMessage={setFleetProjectSaveMessage}
         />
         {fleetProjectSaveMessage ? (
-          <p className="muted compact helm-inline-save-message">
+          <p className="m-0 order-4 pl-0.5 text-sm text-muted-foreground">
             {fleetProjectSaveMessage}
           </p>
         ) : null}
