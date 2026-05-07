@@ -923,25 +923,6 @@ textarea {
     }
 }
 
-.app-error-boundary {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-}
-
-.app-error-card {
-  display: grid;
-  gap: 14px;
-  max-width: 640px;
-}
-
-.app-error-card h1 {
-  font-size: clamp(1.35rem, 2.5vw, 2rem);
-}
-
-.app-error-card .primary {
-  justify-self: start;
-}
 
 @keyframes mission-loading-pulse {
   0%,

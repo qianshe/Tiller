@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 2
-- Total lines: 1616
+- Total lines: 1597
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 1425
-- Top-level selectors: 214
+- Lines: 1406
+- Top-level selectors: 210
 - Hard-coded color tokens: 29
 
 Selectors:
@@ -23,9 +23,6 @@ Selectors:
 - `.admiral-connected`
 - `.admiral-connecting`
 - `.admiral-disconnected`
-- `.app-error-card`
-- `.app-error-card .primary`
-- `.app-error-card h1`
 - `.app-shell`
 - `.brand-block`
 - `.card`
@@ -193,18 +190,17 @@ Selectors:
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="system"] body`
-- `} .app-error-boundary`
 - `} .danger-soft`
 - `} .shell`
 - `} .shell > .top-nav`
 - `} .top-nav`
 - `} [data-deck-theme="dark"] .toast-item`
+- `} @keyframes mission-loading-pulse`
 - `} @keyframes toast-exit`
 - `} @media (max-width: 1120px)`
 - `} @media (max-width: 720px)`
 - `} @media (max-width: 860px)`
 - `} @media (prefers-color-scheme: dark)`
-- `@keyframes mission-loading-pulse`
 - `@keyframes mission-session-status-pulse`
 - `@keyframes surface-fade`
 - `@keyframes toast-enter`
