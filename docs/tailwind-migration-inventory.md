@@ -4,8 +4,8 @@
 
 ## Summary
 
-- CSS files: 31
-- Total lines: 11711
+- CSS files: 30
+- Total lines: 11654
 
 ## Files
 
@@ -2480,28 +2480,4 @@ Hard-coded colors:
 - `#f8fafc`
 - `#ffffff`
 - `rgba(`
-
-### apps/deck/src/features/settings/styles.css
-
-- Lines: 57
-- Top-level selectors: 10
-- Hard-coded color tokens: 2
-
-Selectors:
-
-- `.settings-card`
-- `.settings-card h3`
-- `.settings-card-full`
-- `.settings-card-head`
-- `.settings-card-wide`
-- `.settings-form label`
-- `.settings-grid`
-- `.settings-help`
-- `.settings-status`
-- `@media (max-width: 860px)`
-
-Hard-coded colors:
-
-- `#0d5f2a`
-- `#414755`
 

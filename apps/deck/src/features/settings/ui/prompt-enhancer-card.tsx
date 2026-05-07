@@ -1,4 +1,14 @@
 import type { RefObject } from "react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+  Textarea,
+} from "@/shared/ui";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
@@ -47,25 +57,23 @@ export function PromptEnhancerCard({
   testSelectedModel,
 }: PromptEnhancerCardProps) {
   return (
-    <section className="note-box settings-card settings-card-full prompt-enhancer-card">
-      <div className="settings-card-head">
-        <div>
-          <p className="eyebrow">提示词增强</p>
-          <h3>LLM 增强器</h3>
-        </div>
-      </div>
-      <div className="prompt-enhancer-grid prompt-llm-grid">
-        <label>
+    <Card className="prompt-enhancer-card grid content-start gap-4 p-4 shadow-card lg:col-span-3">
+      <CardHeader className="p-0">
+        <p className="eyebrow">提示词增强</p>
+        <CardTitle>LLM 增强器</CardTitle>
+      </CardHeader>
+      <CardContent className="prompt-enhancer-grid prompt-llm-grid p-0">
+        <Label className="grid gap-2">
           <span>OpenAI-compatible Base URL</span>
-          <input
+          <Input
             value={deckPreferences.promptEnhancer.llm.baseUrl}
             onChange={(event) =>
               updateLlmPreference("baseUrl", event.target.value)
             }
             placeholder="http://localhost:8317"
           />
-        </label>
-        <label>
+        </Label>
+        <Label className="grid gap-2">
           <span>增强模型</span>
           <PromptModelPicker
             busy={busy}
@@ -80,10 +88,10 @@ export function PromptEnhancerCard({
             setOpen={setModelPickerOpen}
             updateModelInput={updateModelInput}
           />
-        </label>
-        <label className="settings-card-full">
+        </Label>
+        <Label className="grid gap-2 md:col-span-2">
           <span>API Key</span>
-          <input
+          <Input
             type="password"
             value={deckPreferences.promptEnhancer.llm.apiKey}
             onChange={(event) =>
@@ -92,43 +100,47 @@ export function PromptEnhancerCard({
             placeholder="sk-..."
             autoComplete="off"
           />
-        </label>
-        <label className="settings-card-full">
+        </Label>
+        <Label className="grid gap-2 md:col-span-2">
           <span>增强器 System Prompt</span>
-          <textarea
+          <Textarea
+            className="min-h-32"
             value={deckPreferences.promptEnhancer.llm.systemPrompt}
             onChange={(event) =>
               updateLlmPreference("systemPrompt", event.target.value)
             }
             placeholder={DEFAULT_PROMPT_LLM_SYSTEM_PROMPT}
           />
-        </label>
-        <label className="settings-card-full">
+        </Label>
+        <Label className="grid gap-2 md:col-span-2">
           <span>增强器指令模板</span>
-          <textarea
+          <Textarea
+            className="min-h-32"
             value={deckPreferences.promptEnhancer.llm.instructionTemplate}
             onChange={(event) =>
               updateLlmPreference("instructionTemplate", event.target.value)
             }
             placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE}
           />
-        </label>
-        <div className="section-actions settings-card-full">
-          <button className="secondary" type="button" onClick={resetDefaults}>
+        </Label>
+        <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+          <Button variant="secondary" type="button" onClick={resetDefaults}>
             恢复默认模板
-          </button>
-          <button
-            className="secondary"
+          </Button>
+          <Button
+            variant="secondary"
             type="button"
             onClick={testSelectedModel}
             disabled={busy}
           >
             测试连通性
-          </button>
-          {status ? <span className="settings-status">{status}</span> : null}
+          </Button>
+          {status ? (
+            <span className="text-sm font-medium text-success">{status}</span>
+          ) : null}
         </div>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -164,21 +176,21 @@ function PromptModelPicker({
   return (
     <div className="prompt-model-combobox" ref={pickerRef}>
       <div className="prompt-model-input-row">
-        <input
+        <Input
           value={currentModel}
           onChange={(event) => updateModelInput(event.target.value)}
           onFocus={() => setOpen(true)}
           placeholder="gpt-4.1-mini"
           autoComplete="off"
         />
-        <button
-          className="secondary"
+        <Button
+          variant="secondary"
           type="button"
           onClick={refreshModels}
           disabled={busy}
         >
           {busy ? "加载" : "刷新"}
-        </button>
+        </Button>
       </div>
       {open ? (
         <div
@@ -186,7 +198,7 @@ function PromptModelPicker({
           role="listbox"
           aria-label="增强模型列表"
         >
-          <input
+          <Input
             className="prompt-model-filter"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}

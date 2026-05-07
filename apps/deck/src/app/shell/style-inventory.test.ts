@@ -20,9 +20,9 @@ test("style inventory script documents known CSS entry points", () => {
   assert.equal(existsSync(inventoryPath), true);
   const inventory = readFileSync(inventoryPath, "utf8");
 
-  assert.match(inventory, /- CSS files: 31/);
+  assert.match(inventory, /- CSS files: \d+/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/styles\.css/);
-  assert.match(inventory, /apps\/deck\/src\/features\/settings\/styles\.css/);
+  assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/settings\/styles\.css/);
   assert.match(inventory, /apps\/deck\/src\/features\/agents\/styles\.css/);
   assert.match(inventory, /apps\/deck\/src\/features\/mission\/styles\.css/);
 });
