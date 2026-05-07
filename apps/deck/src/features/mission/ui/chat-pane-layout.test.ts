@@ -74,7 +74,7 @@ test("assistant markdown paragraphs render with a green marker without shifting 
   );
   assert.match(
     source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph::before\s*\{[^}]*left:\s*0;[^}]*background:\s*#22c55e;/s,
+    /\.plain-assistant \.markdown-message > \.markdown-paragraph::before\s*\{[^}]*left:\s*0\.2rem;[^}]*background:\s*#22c55e;/s,
   );
   assert.match(
     source,

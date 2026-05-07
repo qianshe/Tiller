@@ -59,8 +59,8 @@ export class DeckRpcClient {
     });
   }
 
-  request(method: string, params: unknown): Promise<unknown> {
-    return this.connection.request(method, params, { timeoutMs: 30_000 });
+  request(method: string, params: unknown, options?: { timeoutMs?: number }): Promise<unknown> {
+    return this.connection.request(method, params, { timeoutMs: options?.timeoutMs ?? 30_000 });
   }
 
   notify(method: string, params: unknown): void {

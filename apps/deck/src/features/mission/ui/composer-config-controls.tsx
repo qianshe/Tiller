@@ -19,6 +19,7 @@ type MissionConfigControlsProps = {
   modelPlaceholder: string;
   modelDisabled: boolean;
   modelLabel: string;
+  modelLoading: boolean;
   modelBaseOptions: string[];
   resolveReasoningOptionsForModel: (
     model: string,
@@ -50,6 +51,7 @@ export function MissionConfigControls({
   modelPlaceholder,
   modelDisabled,
   modelLabel,
+  modelLoading,
   modelBaseOptions,
   resolveReasoningOptionsForModel,
   allModelOptions,
@@ -131,6 +133,9 @@ export function MissionConfigControls({
           }
         >
           <span>{modelLabel}</span>
+          {modelLoading ? (
+            <small className="mission-config-loading-badge">加载中</small>
+          ) : null}
         </button>
         {picker === "model" ? (
           <div
@@ -138,6 +143,16 @@ export function MissionConfigControls({
             role="listbox"
             aria-label="模型列表"
           >
+            {modelLoading ? (
+              <button type="button" role="option" aria-selected="false" disabled>
+                正在加载模型列表...
+              </button>
+            ) : null}
+            {modelBaseOptions.length === 0 ? (
+              <button type="button" role="option" aria-selected="false" disabled>
+                {modelLabel || modelPlaceholder}
+              </button>
+            ) : null}
             {modelBaseOptions.map((model) => {
               const modelReasoningOptions = resolveReasoningOptionsForModel(
                 model,

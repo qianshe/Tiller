@@ -79,7 +79,7 @@ test("mission light theme overrides Zed dark workbench surfaces", () => {
   );
   assert.match(
     styles,
-    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-conversation\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.chat-conversation\s*\{(?<body>[^}]*)background\s*:\s*transparent/,
   );
   assert.match(
     styles,
@@ -112,5 +112,29 @@ test("mission light theme overrides Zed dark workbench surfaces", () => {
   assert.match(
     styles,
     /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-worktree-menu,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-agent-menu,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-config-menu\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-tree-session-menu\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.mission-display-panel\s*\{(?<body>[^}]*)background\s*:\s*transparent/,
+  );
+  assert.match(
+    styles,
+    /\.plain-assistant\s+\.markdown-message\s*>\s+\.markdown-paragraph::before\s*\{(?<body>[^}]*)left\s*:\s*0\.2rem/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.session-overview-card\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.session-overview-metric,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.session-overview-preview\s*\{(?<body>[^}]*)background\s*:\s*var\(--surface-elevated\)/,
+  );
+  assert.match(
+    styles,
+    /\[data-deck-theme="light"\]\s+\.view-sessions\s+\.session-overview-metric\s+strong,\s*\[data-deck-theme="light"\]\s+\.view-sessions\s+\.session-overview-preview\s+strong\s*\{(?<body>[^}]*)color\s*:\s*var\(--foreground\)/,
   );
 });

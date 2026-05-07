@@ -137,3 +137,25 @@
 [data-deck-theme="light"] .view-sessions .mission-activity-log .tool-call-output {
   border-top-color: rgba(118, 125, 150, 0.16);
 }
+
+[data-deck-theme="light"] .view-sessions .session-overview-card {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border-ghost);
+}
+
+[data-deck-theme="light"] .view-sessions .session-overview-metric,
+[data-deck-theme="light"] .view-sessions .session-overview-preview {
+  background: var(--surface-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-ghost);
+}
+
+[data-deck-theme="light"] .view-sessions .session-overview-metric span,
+[data-deck-theme="light"] .view-sessions .session-overview-preview span,
+[data-deck-theme="light"] .view-sessions .session-overview-metric small {
+  color: var(--muted-foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .session-overview-metric strong,
+[data-deck-theme="light"] .view-sessions .session-overview-preview strong {
+  color: var(--foreground);
+}

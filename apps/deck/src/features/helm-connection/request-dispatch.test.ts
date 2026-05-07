@@ -30,6 +30,36 @@ test("dispatchWithTrace sends JSON-RPC requests and applies result callbacks", a
   assert.equal(trace.lastRequestType, "helm/list");
 });
 
+test("dispatchWithTrace gives model option probes a longer timeout", async () => {
+  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown, options?: unknown) => {
+      requested.push({ method, params, options });
+      return { ok: true };
+    },
+    notify: () => undefined,
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await dispatchWithTrace(
+    client as any,
+    "agent/get_model_options",
+    { providerId: "opencode", workspaceId: "main" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [
+    {
+      method: "agent/get_model_options",
+      params: { providerId: "opencode", workspaceId: "main" },
+      options: { timeoutMs: 120_000 },
+    },
+  ]);
+  assert.equal(trace.lastRequestType, "agent/get_model_options");
+});
+
 test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {
   const notified: Array<{ method: string; params: unknown }> = [];
   const client = {

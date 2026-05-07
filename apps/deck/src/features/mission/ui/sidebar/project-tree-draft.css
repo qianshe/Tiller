@@ -1044,3 +1044,28 @@
   background: rgba(186, 26, 26, 0.16);
   color: #fecaca;
 }
+
+[data-deck-theme="light"] .view-sessions .mission-tree-actions-trigger:hover {
+  background: var(--surface-elevated);
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-session-menu {
+  background: var(--surface);
+  border-color: rgba(118, 125, 150, 0.18);
+  box-shadow: 0 14px 30px rgba(30, 41, 59, 0.14);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-session-menu button {
+  color: var(--foreground);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-session-menu button:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+[data-deck-theme="light"] .view-sessions .mission-tree-session-menu button.danger:hover {
+  background: rgba(186, 26, 26, 0.1);
+  color: #ba1a1a;
+}

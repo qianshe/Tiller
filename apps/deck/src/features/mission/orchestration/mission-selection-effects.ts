@@ -258,9 +258,9 @@ export function useMissionSelectionEffects(source: any) {
       [key]: {
         loading: true,
         projectId: selectedProjectId,
-        modelOptions: [],
-        configOptions: [],
-        state: {},
+        modelOptions: cached?.modelOptions ?? [],
+        configOptions: cached?.configOptions ?? [],
+        state: cached?.state ?? {},
         message: "正在加载模型列表...",
       },
     }));

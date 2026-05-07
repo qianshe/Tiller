@@ -121,6 +121,7 @@ export function MissionWorkspace(props: any) {
     draftModelPlaceholder,
     draftModelPickerDisabled,
     draftModelPickerLabel,
+    draftModelLoading,
     draftModelBaseOptions,
     resolveReasoningOptionsForModel,
     draftAllModelOptions,
@@ -325,6 +326,7 @@ export function MissionWorkspace(props: any) {
             draftModelPlaceholder={draftModelPlaceholder}
             draftModelPickerDisabled={draftModelPickerDisabled}
             draftModelPickerLabel={draftModelPickerLabel}
+            draftModelLoading={draftModelLoading}
             draftModelBaseOptions={draftModelBaseOptions}
             resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
             draftAllModelOptions={draftAllModelOptions}

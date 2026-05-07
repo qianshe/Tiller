@@ -729,11 +729,7 @@
 }
 
 [data-deck-theme="light"] .view-sessions .mission-display-panel {
-  background: linear-gradient(
-    180deg,
-    rgba(248, 250, 252, 0.96),
-    rgba(241, 245, 249, 0.96)
-  );
+  background: transparent;
 }
 
 [data-deck-theme="light"] .view-sessions .mission-panel-head,
@@ -762,7 +758,7 @@
 }
 
 [data-deck-theme="light"] .view-sessions .chat-conversation {
-  background: var(--surface);
+  background: transparent;
   border-color: rgba(118, 125, 150, 0.16);
 }
 
@@ -807,7 +803,7 @@
 }
 
 [data-deck-theme="light"] .view-sessions .plain-assistant {
-  background: rgb(0 88 188 / 0.04);
+  background: transparent;
 }
 
 [data-deck-theme="light"] .view-sessions .plain-message-body-collapsed::after {

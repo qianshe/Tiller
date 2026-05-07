@@ -77,6 +77,7 @@ type MissionComposerProps = {
   draftModelPlaceholder: string;
   draftModelPickerDisabled: boolean;
   draftModelPickerLabel: string;
+  draftModelLoading: boolean;
   draftModelBaseOptions: string[];
   resolveReasoningOptionsForModel: (
     model: string,
@@ -146,6 +147,7 @@ export function MissionComposer({
   draftModelPlaceholder,
   draftModelPickerDisabled,
   draftModelPickerLabel,
+  draftModelLoading,
   draftModelBaseOptions,
   resolveReasoningOptionsForModel,
   draftAllModelOptions,
@@ -227,6 +229,7 @@ export function MissionComposer({
             modelPlaceholder={draftModelPlaceholder}
             modelDisabled={draftModelPickerDisabled}
             modelLabel={draftModelPickerLabel}
+            modelLoading={draftModelLoading}
             modelBaseOptions={draftModelBaseOptions}
             resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
             allModelOptions={draftAllModelOptions}

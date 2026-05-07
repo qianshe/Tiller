@@ -290,6 +290,11 @@
   border: 1px solid rgba(118, 125, 150, 0.16);
 }
 
+[data-deck-theme="light"] .view-sessions .mission-config-loading-badge {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
 [data-deck-theme="light"] .view-sessions .mission-worktree-trigger strong,
 [data-deck-theme="light"] .view-sessions .mission-agent-trigger strong,
 [data-deck-theme="light"] .view-sessions .mission-config-trigger span {
