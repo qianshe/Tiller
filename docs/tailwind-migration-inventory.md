@@ -4,8 +4,8 @@
 
 ## Summary
 
-- CSS files: 30
-- Total lines: 11654
+- CSS files: 29
+- Total lines: 11574
 
 ## Files
 
@@ -2362,38 +2362,6 @@ Hard-coded colors:
 - `#e8eefb`
 - `#eef4ff`
 - `rgb(`
-- `rgba(`
-
-### apps/deck/src/features/pairing/styles.css
-
-- Lines: 80
-- Top-level selectors: 16
-- Hard-coded color tokens: 4
-
-Selectors:
-
-- `.pairing-box`
-- `.pairing-box-group`
-- `.pairing-box:focus`
-- `.pairing-boxes`
-- `.pairing-card`
-- `.pairing-separator`
-- `[data-deck-theme="dark"] .pairing-box`
-- `[data-deck-theme="dark"] input`
-- `[data-deck-theme="dark"] select`
-- `[data-deck-theme="dark"] textarea`
-- `} .pairing-boxes-grouped`
-- `@media (max-width: 520px)`
-- `@media (prefers-color-scheme: dark)`
-- `input:focus`
-- `select:focus`
-- `textarea:focus`
-
-Hard-coded colors:
-
-- `#0f1724`
-- `#748197`
-- `#f8fafc`
 - `rgba(`
 
 ### apps/deck/src/features/prompt-enhancer/styles.css
