@@ -10,7 +10,7 @@ export function createFallbackSessionTitle(prompt: string) {
 }
 
 export function normalizeGeneratedSessionTitle(value: string) {
-  return value.replace(/["'“”‘’`#：:，,。.!！?？\s]+/gu, "").slice(0, 12);
+  return value.replace(/["'""''`#：:，,。.!！?？\s]+/gu, "").slice(0, 8);
 }
 
 export async function resolveRegeneratedSessionTitle(
@@ -52,7 +52,7 @@ export async function generateSessionTitleWithLlm(
           {
             role: "system",
             content:
-              "你是会话命名器。根据用户输入生成一个中文短标题，只输出标题本身，5到10个字，不要标点。",
+              "你是会话命名器。根据用户最近的对话内容生成一个简短、精准的中文标题。标题要求：2-5个中文字，绝对不要超过5个字，不要包含任何标点符号、空格、数字或特殊字符。只输出标题文字，不要解释。",
           },
           { role: "user", content: prompt },
         ],

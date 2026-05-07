@@ -229,7 +229,12 @@ export function MissionComposer({
             modelPlaceholder={draftModelPlaceholder}
             modelDisabled={draftModelPickerDisabled}
             modelLabel={draftModelPickerLabel}
-            modelLoading={draftModelLoading}
+            modelLoading={
+              draftModelLoading ||
+              (!activeSession &&
+                selectedDraftAgent?.id === "opencode" &&
+                draftConfigOptions.length === 0)
+            }
             modelBaseOptions={draftModelBaseOptions}
             resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
             allModelOptions={draftAllModelOptions}

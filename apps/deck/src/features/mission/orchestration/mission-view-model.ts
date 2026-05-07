@@ -192,9 +192,21 @@ const draftAgentModelOptionsKey =
   !activeSession && selectedAgentId && selectedWorkspaceId
     ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId)
     : null;
-const draftAgentModelOptions = draftAgentModelOptionsKey
-  ? agentModelOptions[draftAgentModelOptionsKey]
+const draftAgentModelOptionsPrefix =
+  selectedAgentId && selectedWorkspaceId
+    ? `${selectedAgentId}::${selectedWorkspaceId}`
+    : null;
+const draftLoadingAgentModelOptions = draftAgentModelOptionsPrefix
+  ? Object.entries(agentModelOptions).find(
+      ([key, entry]) =>
+        Boolean(entry?.loading) &&
+        (key === draftAgentModelOptionsPrefix ||
+          key.startsWith(`${draftAgentModelOptionsPrefix}::`)),
+    )?.[1]
   : undefined;
+const draftAgentModelOptions = draftAgentModelOptionsKey
+  ? (agentModelOptions[draftAgentModelOptionsKey] ?? draftLoadingAgentModelOptions)
+  : draftLoadingAgentModelOptions;
 const draftConfigOptions = activeSession
   ? resolveDraftConfigOptions(
       activeSession,
@@ -257,12 +269,21 @@ const draftModelBaseValid = draftModelBaseOptions.includes(draftModelBase);
 const effectiveDraftModelBase = draftModelBaseValid
   ? draftModelBase
   : (draftModelBaseOptions[0] ?? draftModelBase);
+const draftHasLoadedModelOptions =
+  (draftAgentModelOptions?.modelOptions.length ?? 0) > 0 ||
+  (draftAgentModelOptions?.configOptions.length ?? 0) > 0;
+const awaitingDraftAgentModelOptions =
+  !activeSession &&
+  Boolean(selectedAgentId && selectedWorkspaceId) &&
+  !draftHasLoadedModelOptions;
 const draftModelPickerLabel = draftModelBaseOptions.length
   ? effectiveDraftModelBase
-  : draftAgentModelOptions?.loading
+  : draftAgentModelOptions?.loading || awaitingDraftAgentModelOptions
     ? "加载模型..."
     : "暂无模型列表";
-const draftModelLoading = Boolean(draftAgentModelOptions?.loading);
+const draftModelLoading = Boolean(
+  draftAgentModelOptions?.loading || awaitingDraftAgentModelOptions,
+);
 const draftModelPickerDisabled =
   draftModelBaseOptions.length === 0 && !draftAgentModelOptions?.loading;
 const draftReasoningOptions = resolveReasoningOptionsForModel(

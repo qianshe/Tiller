@@ -1,4 +1,9 @@
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import type { SessionStatus, SessionSummary } from "@tiller/shared";
 
 type SessionRowProps = {
@@ -9,6 +14,7 @@ type SessionRowProps = {
   renderAgentIcon: (agentName: string) => ReactNode;
   resolveDisplayTitle: (session: SessionSummary) => string;
   regenerateSessionTitle: (session: SessionSummary) => void;
+  isRegenerating: boolean;
   session: SessionSummary;
   sessionStatus: SessionStatus;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
@@ -22,6 +28,7 @@ export function SessionRow({
   renderAgentIcon,
   resolveDisplayTitle,
   regenerateSessionTitle,
+  isRegenerating,
   session,
   sessionStatus,
   setPendingSessionCleanup,
@@ -100,12 +107,13 @@ export function SessionRow({
           <button
             type="button"
             role="menuitem"
+            disabled={isRegenerating}
             onClick={() => {
               regenerateSessionTitle(session);
               closeActions();
             }}
           >
-            重新生成名称
+            {isRegenerating ? "生成中…" : "重新生成名称"}
           </button>
           <button
             type="button"

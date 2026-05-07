@@ -27,6 +27,7 @@ import * as deviceList from "./device/list";
 import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
+import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
@@ -57,6 +58,7 @@ const METHOD_DESCRIPTORS = {
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
+  [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [deviceList.method]: deviceList.descriptor,
@@ -68,8 +70,8 @@ const METHOD_DESCRIPTORS = {
   [errorRaised.method]: errorRaised.descriptor,
 } as const;
 
-export const METHODS: typeof METHOD_DESCRIPTORS & Record<string, AnyDescriptor | undefined> =
-  METHOD_DESCRIPTORS;
+export const METHODS: typeof METHOD_DESCRIPTORS &
+  Record<string, AnyDescriptor | undefined> = METHOD_DESCRIPTORS;
 
 export type MethodName = keyof typeof METHOD_DESCRIPTORS;
 
@@ -95,6 +97,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionResume.method,
   sessionPrompt.method,
   sessionSetConfigOption.method,
+  sessionRename.method,
   sessionCleanup.method,
   permissionRespond.method,
   deviceList.method,
@@ -111,5 +114,7 @@ export const SERVER_NOTIFICATION_METHODS = [
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];
-export type ClientNotificationMethod = (typeof CLIENT_NOTIFICATION_METHODS)[number];
-export type ServerNotificationMethod = (typeof SERVER_NOTIFICATION_METHODS)[number];
+export type ClientNotificationMethod =
+  (typeof CLIENT_NOTIFICATION_METHODS)[number];
+export type ServerNotificationMethod =
+  (typeof SERVER_NOTIFICATION_METHODS)[number];

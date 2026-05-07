@@ -29,6 +29,7 @@ const expectedRequests = [
   "session/resume",
   "session/prompt",
   "session/set_config_option",
+  "session/rename",
   "session/cleanup",
   "permission/respond",
   "device/list",

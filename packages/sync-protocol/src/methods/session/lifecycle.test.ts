@@ -7,6 +7,7 @@ import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
 import * as sessionSetConfigOption from "./set-config-option";
+import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
 
 test("session/new requires project, workspace, agent", () => {
@@ -42,6 +43,13 @@ test("session/check_resume and session/resume share sessionId param", () => {
 test("session/set_config_option allows partial config", () => {
   assert.equal(sessionSetConfigOption.method, "session/set_config_option");
   sessionSetConfigOption.ParamsSchema.parse({ sessionId: "s1" });
+});
+
+test("session/rename requires session id and title", () => {
+  assert.equal(sessionRename.method, "session/rename");
+  sessionRename.ParamsSchema.parse({ sessionId: "s1", title: "New title" });
+  sessionRename.ResultSchema.parse({ ok: true });
+  assert.throws(() => sessionRename.ParamsSchema.parse({ sessionId: "s1" }));
 });
 
 test("session/cleanup carries result payload", () => {

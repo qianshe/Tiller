@@ -67,6 +67,7 @@ export function MissionWorkspace(props: any) {
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
     regenerateSessionTitle,
+    regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
     sessionHistoryState,
@@ -247,6 +248,7 @@ export function MissionWorkspace(props: any) {
           renderMissionAgentIcon={renderMissionAgentIcon}
           resolveDisplaySessionTitle={resolveDisplaySessionTitle}
           regenerateSessionTitle={regenerateSessionTitle}
+          regeneratingIds={regeneratingIds}
           formatRelativeTime={formatRelativeTime}
           setPendingSessionCleanup={setPendingSessionCleanup}
           sessionHistoryState={sessionHistoryState}

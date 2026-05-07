@@ -77,7 +77,10 @@ export function App() {
     [missionVisualMode],
   );
   const runtimeState = useAppRuntimeState(missionVisualFixture);
-  const deckDeviceId = useMemo(() => getOrCreateDeviceId(window.localStorage), []);
+  const deckDeviceId = useMemo(
+    () => getOrCreateDeviceId(window.localStorage),
+    [],
+  );
   const locale: Locale = "zh-CN";
   const defaultHelmEndpoint = useMemo(
     () =>
@@ -135,6 +138,7 @@ export function App() {
   const agentModelOptionsHydratedRef = useRef(false);
   const lastFilesScopeKeyRef = useRef<string | null>(null);
   const titleActions = useSessionTitles({
+    client: runtimeState.rpcClientRef.current,
     messages: deckData.messages,
     sessionTitles: deckData.sessionTitles,
     setSessionTitles: deckData.setSessionTitles,
@@ -202,8 +206,13 @@ export function App() {
     if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
       void dispatch(client, "session/set_config_option", {
         sessionId: activeSession.id,
-        agentMode: next.agentMode ?? activeSession.agentMode ?? missionView.effectiveDraftAgentMode,
-        model: normalizeModelSelection(next.model ?? activeSession.model ?? missionView.draftModel),
+        agentMode:
+          next.agentMode ??
+          activeSession.agentMode ??
+          missionView.effectiveDraftAgentMode,
+        model: normalizeModelSelection(
+          next.model ?? activeSession.model ?? missionView.draftModel,
+        ),
         reasoningEffort:
           next.reasoningEffort ??
           activeSession.reasoningEffort ??
@@ -211,13 +220,17 @@ export function App() {
       });
       return;
     }
-    if (typeof next.agentMode === "string") runtimeState.setSelectedAgentMode(next.agentMode);
-    if (typeof next.model === "string") runtimeState.setSelectedModel(next.model);
-    if (next.reasoningEffort) runtimeState.setSelectedReasoningEffort(next.reasoningEffort);
+    if (typeof next.agentMode === "string")
+      runtimeState.setSelectedAgentMode(next.agentMode);
+    if (typeof next.model === "string")
+      runtimeState.setSelectedModel(next.model);
+    if (next.reasoningEffort)
+      runtimeState.setSelectedReasoningEffort(next.reasoningEffort);
   }
 
   const agentLocked = Boolean(
-    missionView.activeSession?.runtimeSessionId ?? missionView.activeSession?.resume?.runtimeSessionId,
+    missionView.activeSession?.runtimeSessionId ??
+    missionView.activeSession?.resume?.runtimeSessionId,
   );
   const appActionsRef = useRef<any>({});
   const controllers = useAppControllers({

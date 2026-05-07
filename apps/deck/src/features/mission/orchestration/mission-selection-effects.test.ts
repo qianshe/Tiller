@@ -14,6 +14,10 @@ const composerShellSourceText = readFileSync(
   new URL("../ui/composer.tsx", import.meta.url),
   "utf8",
 );
+const viewModelSourceText = readFileSync(
+  new URL("./mission-view-model.ts", import.meta.url),
+  "utf8",
+);
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {
   const destructuredSource = sourceText.match(
@@ -43,5 +47,12 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(composerSourceText, /modelLoading:\s*boolean/);
   assert.match(composerSourceText, /mission-config-loading-badge/);
   assert.match(composerSourceText, /正在加载模型列表/);
-  assert.match(composerShellSourceText, /modelLoading=\{draftModelLoading\}/);
+  assert.match(composerShellSourceText, /modelLoading=\{/);
+  assert.match(composerShellSourceText, /selectedDraftAgent\?\.id === "opencode"/);
+  assert.match(composerShellSourceText, /draftConfigOptions\.length === 0/);
+  assert.match(viewModelSourceText, /draftLoadingAgentModelOptions/);
+  assert.match(viewModelSourceText, /key\.startsWith\(`\$\{draftAgentModelOptionsPrefix\}::`\)/);
+  assert.match(viewModelSourceText, /draftHasLoadedModelOptions/);
+  assert.match(viewModelSourceText, /awaitingDraftAgentModelOptions/);
+  assert.match(viewModelSourceText, /!draftHasLoadedModelOptions/);
 });

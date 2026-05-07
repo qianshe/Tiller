@@ -50,6 +50,7 @@ type MissionSidebarProps = {
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
   regenerateSessionTitle: (session: SessionSummary) => void;
+  regeneratingIds: ReadonlySet<string>;
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   sessionHistoryState: {
@@ -92,6 +93,7 @@ export function MissionSidebar({
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
   regenerateSessionTitle,
+  regeneratingIds,
   formatRelativeTime,
   setPendingSessionCleanup,
   sessionHistoryState,
@@ -212,7 +214,9 @@ export function MissionSidebar({
                               projectExpanded={projectExpanded}
                               sessionCountsByProject={sessionCountsByProject}
                               agents={agents}
-                              setSelectedMissionHelmId={setSelectedMissionHelmId}
+                              setSelectedMissionHelmId={
+                                setSelectedMissionHelmId
+                              }
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedWorkspaceId={setSelectedWorkspaceId}
                               setSelectedAgentId={setSelectedAgentId}
@@ -229,9 +233,14 @@ export function MissionSidebar({
                                 resolveDisplaySessionTitle
                               }
                               regenerateSessionTitle={regenerateSessionTitle}
+                              regeneratingIds={regeneratingIds}
                               formatRelativeTime={formatRelativeTime}
-                              setPendingSessionCleanup={setPendingSessionCleanup}
-                              toggleMissionProjectNode={toggleMissionProjectNode}
+                              setPendingSessionCleanup={
+                                setPendingSessionCleanup
+                              }
+                              toggleMissionProjectNode={
+                                toggleMissionProjectNode
+                              }
                             />
                           );
                         })}

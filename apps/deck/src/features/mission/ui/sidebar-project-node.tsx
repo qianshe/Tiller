@@ -29,6 +29,7 @@ type SidebarProjectNodeProps = {
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
   regenerateSessionTitle: (session: SessionSummary) => void;
+  regeneratingIds: ReadonlySet<string>;
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   toggleMissionProjectNode: (projectId: string) => void;
@@ -58,6 +59,7 @@ export function SidebarProjectNode({
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
   regenerateSessionTitle,
+  regeneratingIds,
   formatRelativeTime,
   setPendingSessionCleanup,
   toggleMissionProjectNode,
@@ -69,10 +71,7 @@ export function SidebarProjectNode({
   return (
     <div key={project.id} className="mission-tree-group" role="group">
       <div
-        className={[
-          "mission-tree-project-row",
-          selectedProject ? "active" : "",
-        ]
+        className={["mission-tree-project-row", selectedProject ? "active" : ""]
           .filter(Boolean)
           .join(" ")}
       >
@@ -141,6 +140,7 @@ export function SidebarProjectNode({
                   renderAgentIcon={renderMissionAgentIcon}
                   resolveDisplayTitle={resolveDisplaySessionTitle}
                   regenerateSessionTitle={regenerateSessionTitle}
+                  isRegenerating={regeneratingIds.has(session.id)}
                   session={session}
                   sessionStatus={sessionStatus}
                   setPendingSessionCleanup={setPendingSessionCleanup}

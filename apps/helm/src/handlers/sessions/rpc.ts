@@ -43,9 +43,15 @@ export async function handleSessionRpcRequest(
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
     case "session/list_messages":
-      return listMessages(params as { sessionId: string; limit?: number; before?: string }, context);
+      return listMessages(
+        params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
     case "session/get_artifacts":
-      return getArtifacts(params as { sessionId: string; limit?: number; before?: string }, context);
+      return getArtifacts(
+        params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
     case "session/check_resume":
       return checkResume(params as { sessionId: string }, context);
     case "session/resume":
@@ -87,6 +93,8 @@ export async function handleSessionRpcRequest(
         params as { permissionRequestId: string; decision: "allow" | "deny" },
         context,
       );
+    case "session/rename":
+      return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
       return cleanupSession(params as { sessionId: string }, context);
     default:
@@ -112,13 +120,8 @@ export async function handleSessionRpcNotification(
   return true;
 }
 
-function listSessions(
-  params: { limit?: number; before?: string },
-  context: HelmHandlerContext,
-) {
-  const normalizedSessions = context.sessionStore
-    .list()
-    .map(context.migrateStoredSessionSummary);
+function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
+  const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
   const page = pageSessionSummaries(normalizedSessions, {
     limit: params.limit,
     before: params.before,
@@ -459,15 +462,38 @@ function respondPermission(
   };
 }
 
+async function renameSession(
+  params: { sessionId: string; title: string },
+  context: HelmHandlerContext,
+) {
+  const summary =
+    context.sessions.get(params.sessionId)?.summary ??
+    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+  if (!summary) {
+    throw new Error("Session not found");
+  }
+  const next = { ...summary, title: params.title };
+  context.updateSessionSummary(params.sessionId, () => next);
+  broadcastSessionUpdate(context, params.sessionId, {
+    kind: "session_updated",
+    session: next,
+  });
+  return { ok: true };
+}
+
 async function cleanupSession(params: { sessionId: string }, context: HelmHandlerContext) {
   const record = context.sessions.get(params.sessionId);
   const summary =
-    record?.summary ?? context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    record?.summary ??
+    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
   if (!summary) {
-    context.logError(`[tiller] session.cleanup.failed session=${params.sessionId} reason=Session not found`);
+    context.logError(
+      `[tiller] session.cleanup.failed session=${params.sessionId} reason=Session not found`,
+    );
     throw new Error("Session not found");
   }
-  const provider = record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
+  const provider =
+    record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
   let remoteResult;
   if (record) {
     context.sessions.delete(summary.id);
