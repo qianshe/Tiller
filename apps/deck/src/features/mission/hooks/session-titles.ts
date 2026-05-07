@@ -3,7 +3,7 @@ import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 import {
   createFallbackSessionTitle,
-  generateSessionTitleWithLlm,
+  resolveRegeneratedSessionTitle,
 } from "../utils/session-title";
 import { writeSessionTitles } from "../utils/session-titles-storage";
 import { resolveSessionTitle } from "../utils/session-derivations";
@@ -33,13 +33,19 @@ export function useSessionTitles({
   }, [sessionTitles]);
 
   function resolveDisplaySessionTitle(session: SessionSummary) {
-    const firstUserMessage = messages[session.id]?.find(
-      (message) => message.role === "user",
-    )?.text;
+    const firstUserMessage = findFirstUserMessage(session.id);
     return resolveSessionTitle(
       session,
       sessionTitles[session.id] ?? firstUserMessage,
     );
+  }
+
+  function findFirstUserMessage(sessionId: string) {
+    return messages[sessionId]?.find((message) => message.role === "user")?.text;
+  }
+
+  function resolveSessionTitleSource(session: SessionSummary) {
+    return findFirstUserMessage(session.id) ?? session.lastMessagePreview ?? "";
   }
 
   function assignSessionTitleFromPrompt(sessionId: string, rawPrompt: string) {
@@ -58,16 +64,29 @@ export function useSessionTitles({
     ) {
       return;
     }
-    void generateSessionTitleWithLlm(promptText, promptEnhancerLlm)
-      .then((title) => {
+    void resolveRegeneratedSessionTitle(promptText, promptEnhancerLlm).then(
+      (title) => {
         if (title) {
           setSessionTitles((current) => ({ ...current, [sessionId]: title }));
         }
-      })
-      .catch(() => {
-        // Keep deterministic fallback title when the optional naming model is unavailable.
-      });
+      },
+    );
   }
 
-  return { resolveDisplaySessionTitle, assignSessionTitleFromPrompt };
+  function regenerateSessionTitle(session: SessionSummary) {
+    const source = resolveSessionTitleSource(session);
+    void resolveRegeneratedSessionTitle(source, promptEnhancerLlm).then(
+      (title) => {
+        if (title) {
+          setSessionTitles((current) => ({ ...current, [session.id]: title }));
+        }
+      },
+    );
+  }
+
+  return {
+    resolveDisplaySessionTitle,
+    assignSessionTitleFromPrompt,
+    regenerateSessionTitle,
+  };
 }

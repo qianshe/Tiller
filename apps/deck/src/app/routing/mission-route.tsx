@@ -60,6 +60,7 @@ export function renderMissionRoute(source: any) {
     openSession,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
+    regenerateSessionTitle,
     formatRelativeTime,
     setPendingSessionCleanup,
     sessionHistoryState,
@@ -207,6 +208,7 @@ export function renderMissionRoute(source: any) {
         openSession={openSession}
         renderMissionAgentIcon={renderMissionAgentIcon}
         resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+        regenerateSessionTitle={regenerateSessionTitle}
         formatRelativeTime={formatRelativeTime}
         setPendingSessionCleanup={setPendingSessionCleanup}
         sessionHistoryState={sessionHistoryState}

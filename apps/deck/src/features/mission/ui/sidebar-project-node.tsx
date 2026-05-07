@@ -28,6 +28,7 @@ type SidebarProjectNodeProps = {
   openSession: (sessionId: string) => void;
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
+  regenerateSessionTitle: (session: SessionSummary) => void;
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   toggleMissionProjectNode: (projectId: string) => void;
@@ -56,6 +57,7 @@ export function SidebarProjectNode({
   openSession,
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
+  regenerateSessionTitle,
   formatRelativeTime,
   setPendingSessionCleanup,
   toggleMissionProjectNode,
@@ -138,6 +140,7 @@ export function SidebarProjectNode({
                   openSession={openSession}
                   renderAgentIcon={renderMissionAgentIcon}
                   resolveDisplayTitle={resolveDisplaySessionTitle}
+                  regenerateSessionTitle={regenerateSessionTitle}
                   session={session}
                   sessionStatus={sessionStatus}
                   setPendingSessionCleanup={setPendingSessionCleanup}

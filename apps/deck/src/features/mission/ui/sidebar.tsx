@@ -49,6 +49,7 @@ type MissionSidebarProps = {
   openSession: (sessionId: string) => void;
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
+  regenerateSessionTitle: (session: SessionSummary) => void;
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   sessionHistoryState: {
@@ -90,6 +91,7 @@ export function MissionSidebar({
   openSession,
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
+  regenerateSessionTitle,
   formatRelativeTime,
   setPendingSessionCleanup,
   sessionHistoryState,
@@ -226,6 +228,7 @@ export function MissionSidebar({
                               resolveDisplaySessionTitle={
                                 resolveDisplaySessionTitle
                               }
+                              regenerateSessionTitle={regenerateSessionTitle}
                               formatRelativeTime={formatRelativeTime}
                               setPendingSessionCleanup={setPendingSessionCleanup}
                               toggleMissionProjectNode={toggleMissionProjectNode}
