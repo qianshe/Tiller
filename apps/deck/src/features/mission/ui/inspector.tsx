@@ -12,7 +12,6 @@ type MissionInspectorProps = {
   projectFileList: ReactNode;
   resizer: ReactNode;
   onFilterChange: (value: string) => void;
-  onExpand: () => void;
 };
 
 export function MissionInspector({
@@ -26,7 +25,6 @@ export function MissionInspector({
   projectFileList,
   resizer,
   onFilterChange,
-  onExpand,
 }: MissionInspectorProps) {
   return (
     <>

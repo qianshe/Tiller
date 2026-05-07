@@ -1,6 +1,7 @@
 import {
   Children,
   isValidElement,
+  memo,
   useEffect,
   useState,
   type ReactNode,
@@ -12,6 +13,16 @@ import remarkGfm from "remark-gfm";
 const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
 const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
 const THINKING_PARAGRAPH_PREFIX = /^(?:Thinking|Thought|思考)\b[:：-]?/iu;
+
+const markdownRemarkPlugins = [remarkGfm];
+const markdownRehypePlugins = [rehypeSanitize];
+
+type MarkdownHighlight = {
+  html: string;
+  language?: string;
+};
+
+const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 
 const markdownComponents: Components = {
   a({ children, href, ...props }) {
@@ -130,21 +141,61 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownMessage({ text }: { text: string }) {
+export const MarkdownMessage = memo(function MarkdownMessage({
+  text,
+}: {
+  text: string;
+}) {
   return (
     <div className="markdown-message space-y-3 text-sm leading-7 text-foreground">
       <ReactMarkdown
         components={markdownComponents}
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSanitize]}
+        remarkPlugins={markdownRemarkPlugins}
+        rehypePlugins={markdownRehypePlugins}
       >
         {normalizeMarkdownMessageText(text)}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 export { markdownComponents };
+
+export function clearMarkdownHighlightCache() {
+  markdownHighlightCache.clear();
+}
+
+export function getMarkdownHighlightCacheSize() {
+  return markdownHighlightCache.size;
+}
+
+export async function resolveMarkdownCodeHighlight(
+  code: string,
+  language?: string,
+): Promise<MarkdownHighlight | null> {
+  if (!code.trim()) {
+    return null;
+  }
+
+  const cacheKey = markdownHighlightCacheKey(code, language);
+  const cached = markdownHighlightCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const module = await import("highlight.js/lib/common");
+  const hljs = module.default;
+  const result =
+    language && hljs.getLanguage(language)
+      ? hljs.highlight(code, { language, ignoreIllegals: true })
+      : hljs.highlightAuto(code);
+  const highlighted = {
+    html: result.value,
+    language: result.language ?? language,
+  };
+  markdownHighlightCache.set(cacheKey, highlighted);
+  return highlighted;
+}
 
 export function normalizeMarkdownMessageText(text: string) {
   return text
@@ -168,33 +219,34 @@ function MarkdownCodeBlock({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
-  const [highlightedCode, setHighlightedCode] = useState<{
-    html: string;
-    language?: string;
-  } | null>(null);
+  const [highlightedCode, setHighlightedCode] = useState<MarkdownHighlight | null>(
+    () => readCachedMarkdownCodeHighlight(code, language),
+  );
 
   useEffect(() => {
     let mounted = true;
-    setHighlightedCode(null);
+    const cached = readCachedMarkdownCodeHighlight(code, language);
 
     if (!code.trim()) {
+      setHighlightedCode(null);
       return () => {
         mounted = false;
       };
     }
 
-    void import("highlight.js/lib/common")
-      .then((module) => {
-        const hljs = module.default;
-        const result =
-          language && hljs.getLanguage(language)
-            ? hljs.highlight(code, { language, ignoreIllegals: true })
-            : hljs.highlightAuto(code);
+    if (cached) {
+      setHighlightedCode(cached);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setHighlightedCode(null);
+
+    void resolveMarkdownCodeHighlight(code, language)
+      .then((result) => {
         if (mounted) {
-          setHighlightedCode({
-            html: result.value,
-            language: result.language ?? language,
-          });
+          setHighlightedCode(result);
         }
       })
       .catch(() => {
@@ -269,4 +321,17 @@ function findCodeLanguage(node: ReactNode): string | undefined {
     if (nested) return nested;
   }
   return undefined;
+}
+
+function readCachedMarkdownCodeHighlight(
+  code: string,
+  language?: string,
+): MarkdownHighlight | null {
+  return (
+    markdownHighlightCache.get(markdownHighlightCacheKey(code, language)) ?? null
+  );
+}
+
+function markdownHighlightCacheKey(code: string, language?: string) {
+  return `${language ?? ""}\0${code}`;
 }

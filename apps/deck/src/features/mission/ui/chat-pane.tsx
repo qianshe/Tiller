@@ -13,6 +13,7 @@ import type {
   UIEventHandler,
 } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
+import { useMemo } from "react";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionToolLoading } from "./tool-loading";
@@ -73,6 +74,11 @@ export function MissionChatPane({
   onRespondToPermission,
   children,
 }: MissionChatPaneProps) {
+  const boundaryTimestamps = useMemo(
+    () => activeSessionToolCalls.map((toolCall) => toolCall.timestamp),
+    [activeSessionToolCalls],
+  );
+
   return (
     <div className={className} style={style}>
       <div
@@ -92,9 +98,7 @@ export function MissionChatPane({
           <>
             <MissionMessageTimeline
               items={activeSessionMessages}
-              boundaryTimestamps={activeSessionToolCalls.map(
-                (toolCall) => toolCall.timestamp,
-              )}
+              boundaryTimestamps={boundaryTimestamps}
               sessionId={activeSession.id}
               assistantLabel={activeSession.agentName}
               copy={copy}

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Badge, Separator } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 
@@ -14,7 +15,11 @@ type StructuredMessageSection = {
   body: string;
 };
 
-export function StructuredAssistantMessage({ text }: { text: string }) {
+export const StructuredAssistantMessage = memo(function StructuredAssistantMessage({
+  text,
+}: {
+  text: string;
+}) {
   const message = parseStructuredAssistantMessage(text);
   if (!message) {
     return <MarkdownMessage text={text} />;
@@ -57,7 +62,7 @@ export function StructuredAssistantMessage({ text }: { text: string }) {
       </div>
     </div>
   );
-}
+});
 
 export function parseStructuredAssistantMessage(
   text: string,

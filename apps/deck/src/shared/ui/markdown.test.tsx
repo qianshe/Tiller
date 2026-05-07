@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownMessage, normalizeMarkdownMessageText } from "./markdown.js";
+import {
+  clearMarkdownHighlightCache,
+  getMarkdownHighlightCacheSize,
+  MarkdownMessage,
+  normalizeMarkdownMessageText,
+  resolveMarkdownCodeHighlight,
+} from "./markdown.js";
 
 test("markdown tables render inside a responsive scroll wrapper", () => {
   const html = renderToStaticMarkup(
@@ -45,4 +51,14 @@ test("thinking paragraphs receive a dedicated markdown class hook", () => {
 
   assert.match(html, /markdown-paragraph[^\"]*markdown-paragraph-thinking/);
   assert.match(html, /<p class="markdown-paragraph[^\"]*">普通段落内容。<\/p>/);
+});
+
+test("markdown code highlighting reuses cached results for identical code", async () => {
+  clearMarkdownHighlightCache();
+
+  const first = await resolveMarkdownCodeHighlight("const value = 1;", "ts");
+  const second = await resolveMarkdownCodeHighlight("const value = 1;", "ts");
+
+  assert.equal(first, second);
+  assert.equal(getMarkdownHighlightCacheSize(), 1);
 });

@@ -35,6 +35,10 @@ const cleanupDialogSource = readFileSync(
 const panelsSource = readFileSync(resolve(currentDir, "panels.tsx"), "utf8");
 const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
 const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
+const messageTimelineSource = readFileSync(
+  resolve(currentDir, "message-timeline.tsx"),
+  "utf8",
+);
 const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
 const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
@@ -44,6 +48,12 @@ test("mission chat reserves permission drawer space through localized drawer pos
 
   assert.match(permissionDrawerSource, /bottom-\[var\(--mission-permission-composer-offset,190px\)\]/);
   assert.doesNotMatch(chatPaneSource, /padding-bottom:\s*170px/);
+});
+
+test("mission message timeline keeps chat list props stable for unchanged messages", () => {
+  assert.match(messageTimelineSource, /memo\(function MissionMessageTimeline/);
+  assert.match(messageTimelineSource, /useCallback/);
+  assert.doesNotMatch(messageTimelineSource, /onLoadOlderMessages=\{\(\) => \{/);
 });
 
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {

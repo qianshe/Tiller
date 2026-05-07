@@ -157,7 +157,6 @@ export function MissionWorkspace(props: any) {
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
-    setMissionInspectorCollapsed,
     toggleProjectFileDirectory,
     defaultLogbookVisibleLimit,
   } = props;
@@ -422,7 +421,6 @@ export function MissionWorkspace(props: any) {
             />
           }
           onFilterChange={setProjectFileFilter}
-          onExpand={() => setMissionInspectorCollapsed(false)}
         />{" "}
       </>{" "}
     </MissionPage>

@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { PlainMessages } from "./plain-messages";
 
@@ -26,7 +27,7 @@ type MissionMessageTimelineProps = {
 /**
  * Binds session history state to the plain mission message list.
  */
-export function MissionMessageTimeline({
+export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   items,
   sessionId,
   assistantLabel,
@@ -37,6 +38,12 @@ export function MissionMessageTimeline({
   onLoadOlderMessages,
   onToggleExpandedMessage,
 }: MissionMessageTimelineProps) {
+  const loadOlderMessages = useCallback(() => {
+    if (sessionId) {
+      onLoadOlderMessages(sessionId);
+    }
+  }, [onLoadOlderMessages, sessionId]);
+
   return (
     <PlainMessages
       sessionId={sessionId ?? null}
@@ -47,12 +54,8 @@ export function MissionMessageTimeline({
       expandedMessageIds={expandedMessageIds}
       boundaryTimestamps={boundaryTimestamps}
       historyState={sessionId ? historyStateBySession[sessionId] : undefined}
-      onLoadOlderMessages={() => {
-        if (sessionId) {
-          onLoadOlderMessages(sessionId);
-        }
-      }}
+      onLoadOlderMessages={loadOlderMessages}
       onToggleExpandedMessage={onToggleExpandedMessage}
     />
   );
-}
+});

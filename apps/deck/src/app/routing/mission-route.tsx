@@ -150,7 +150,6 @@ export function renderMissionRoute(source: any) {
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
-    setMissionInspectorCollapsed,
     toggleProjectFileDirectory,
   } = source;
   return (
@@ -300,7 +299,6 @@ export function renderMissionRoute(source: any) {
       collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}
       missionInspectorPaneStyle={missionInspectorPaneStyle}
       setProjectFileFilter={setProjectFileFilter}
-      setMissionInspectorCollapsed={setMissionInspectorCollapsed}
       toggleProjectFileDirectory={toggleProjectFileDirectory}
       defaultLogbookVisibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
     />
