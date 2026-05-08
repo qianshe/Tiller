@@ -386,6 +386,8 @@ export function applySessionUpdate(
         ),
       );
       return true;
+    case "restore_replay_cached":
+      return true;
     case "status_change":
       store.setStatuses((current) => ({
         ...current,

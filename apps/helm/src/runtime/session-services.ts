@@ -30,6 +30,7 @@ import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
 import { createWarmRuntimePool, type WarmRuntimeKey } from "./warm-runtime-pool";
+import { createRestoreReplayBuffer } from "./replay-event-buffer";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -340,7 +341,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
     let attachedSessionId: string | null = null;
     options.logInfo(
-      `[tiller] session.prewarm.start warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
 
     const runtime = await createAcpRuntime({
@@ -355,7 +356,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         }
         if (event.type === "error") {
           options.logError(
-            `[tiller] session.prewarm.runtime.error warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+            `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
           );
         }
       },
@@ -368,7 +369,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       }
       expired.cancel();
       options.logInfo(
-        `[tiller] session.prewarm.expired runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+        `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
       );
     }, WARM_RUNTIME_TTL_MS);
     expiresTimer.unref?.();
@@ -382,7 +383,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       expiresTimer,
     });
     options.logInfo(
-      `[tiller] session.prewarm.ready warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
     return {
       ok: true,
@@ -405,7 +406,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     if (warm) {
       clearTimeout(warm.expiresTimer);
       options.logInfo(
-        `[tiller] session.prewarm.consume provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
+        `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
       );
     }
     return warm;
@@ -459,10 +460,17 @@ export function createSessionServices(options: SessionServicesOptions) {
 
     try {
       options.logInfo(
-        `[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
       );
       // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
-      // Do not merge provider replay into a local authoritative transcript.
+      // Restore replay is cache repair only; live events still use handleRuntimeEvent.
+      const restoreReplayBuffer = createRestoreReplayBuffer(
+        sessionId,
+        options.createHandlerContext(),
+      );
+      options.logInfo(
+        `[tiller] 阶段=恢复重放缓存打开 session=${sessionId}`,
+      );
       const runtime = await createAcpRuntime({
         sessionId,
         workspace,
@@ -477,7 +485,14 @@ export function createSessionServices(options: SessionServicesOptions) {
           replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
         onEvent: (event) => handleRuntimeEvent(sessionId, event),
+        onRestoreReplayEvent: (event) => {
+          restoreReplayBuffer.add(event);
+        },
       });
+      const replayCounts = restoreReplayBuffer.flush();
+      options.logInfo(
+        `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
+      );
       const restoredSummary = hydrateSessionSummary({
         ...summary,
         model: runtime.sessionConfigState?.model ?? summary.model,
@@ -497,7 +512,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         workspace.path,
       );
       options.logInfo(
-        `[tiller] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
       );
       return {
         ok: true,
@@ -506,7 +521,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       };
     } catch (error) {
       options.logError(
-        `[tiller] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`,
+        `[tiller] 阶段=恢复旧会话失败 session=${sessionId} message=${error instanceof Error ? error.message : "ACP restore failed."}`,
       );
       return {
         ok: false,

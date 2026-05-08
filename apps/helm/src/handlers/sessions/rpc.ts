@@ -149,6 +149,8 @@ function listSessions(params: { limit?: number; before?: string }, context: Helm
   };
 }
 
+// Deck consumes old session history through paged windows only. ACP restore replay may
+// repair Helm's local cache, but it must not push a full historical transcript to Deck.
 async function listMessages(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
@@ -188,7 +190,7 @@ async function getArtifacts(
 }
 
 function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] session.resume.check session=${params.sessionId}`);
+  context.logInfo(`[tiller] 阶段=恢复检查 session=${params.sessionId}`);
   const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
   if (!summary) {
     throw new Error("Session not found");
@@ -206,10 +208,10 @@ function checkResume(params: { sessionId: string }, context: HelmHandlerContext)
 }
 
 async function resumeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] session.resume.start session=${params.sessionId}`);
+  context.logInfo(`[tiller] 阶段=恢复请求开始 session=${params.sessionId}`);
   const result = await context.startSessionResume(params.sessionId);
   context.logInfo(
-    `[tiller] session.resume.start.result session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
+    `[tiller] 阶段=恢复请求完成 session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
   );
   return {
     sessionId: params.sessionId,
@@ -301,7 +303,7 @@ async function createSession(
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   context.logInfo(
-    `[tiller] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
+    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
   );
   const summaryBase: SessionSummary = {
     id: sessionId,
@@ -350,7 +352,7 @@ async function createSession(
       runtimeSessionId: runtime.runtimeSessionId,
     });
     context.logInfo(
-      `[tiller] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
+      `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, workspace, runtime });
     context.sessionStore.upsert(summaryWithRuntime);
@@ -364,7 +366,7 @@ async function createSession(
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
     context.logError(
-      `[tiller] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${message}`,
+      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} message=${message}`,
     );
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,
@@ -393,17 +395,17 @@ async function promptSession(
   let record = context.sessions.get(params.sessionId);
   if (!record) {
     context.logInfo(
-      `[tiller] session.prompt restore-required session=${params.sessionId} chars=${params.text.length}`,
+      `[tiller] 阶段=发送前需要恢复 session=${params.sessionId} chars=${params.text.length}`,
     );
     const restore = await context.startSessionResume(params.sessionId);
     context.logInfo(
-      `[tiller] session.prompt restore-result session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
+      `[tiller] 阶段=发送前恢复完成 session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
     );
     record = context.sessions.get(params.sessionId);
   }
   if (!record) {
     context.logError(
-      `[tiller] session.prompt failed session=${params.sessionId} reason=Session runtime not available`,
+      `[tiller] 阶段=发送失败 session=${params.sessionId} reason=Session runtime not available`,
     );
     throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
   }
@@ -415,7 +417,7 @@ async function promptSession(
   }
 
   context.logInfo(
-    `[tiller] session.prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
+    `[tiller] 阶段=发送Prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
   );
   const timestamp = new Date().toISOString();
   const userMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;

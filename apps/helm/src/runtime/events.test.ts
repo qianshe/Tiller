@@ -107,7 +107,10 @@ test("runtime session.message persists and broadcasts streaming chunks without p
     process.stdout.write = originalWrite;
   }
 
-  assert.deepEqual(logs, []);
+  assert.equal(logs.length, 2);
+  assert.match(logs[0], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=1/);
+  assert.match(logs[1], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=4/);
+  assert.doesNotMatch(logs.join("\n"), /好\n主人|preview=/);
   assert.deepEqual(writes, []);
   assert.equal(capture.persisted.length, 2);
   assert.deepEqual(
@@ -186,7 +189,7 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
   assert.deepEqual(capture.broadcasts, []);
 });
 
-test("runtime tool-call events are persisted and broadcast without noisy info logs", () => {
+test("runtime tool-call events log only frontend tool name and broadcast", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
   const appendedToolCalls: unknown[] = [];
@@ -211,7 +214,10 @@ test("runtime tool-call events are persisted and broadcast without noisy info lo
     context,
   );
 
-  assert.deepEqual(logs, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /阶段=直播工具调用/);
+  assert.match(logs[0], /tool=zhi/);
+  assert.doesNotMatch(logs[0], /id=call-1/);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, [
     {
@@ -234,7 +240,7 @@ test("runtime tool-call events are persisted and broadcast without noisy info lo
   ]);
 });
 
-test("runtime tool-call debug logs are routed through debug logger", () => {
+test("runtime tool-call stage log keeps frontend tool name", () => {
   const logs: string[] = [];
   const context = createTestContext(logs);
   context.logDebug = (message: string) => {
@@ -260,7 +266,7 @@ test("runtime tool-call debug logs are routed through debug logger", () => {
   assert.equal(logs.length, 1);
   assert.match(
     logs[0],
-    /^\[tiller\] session\.tool\.call session=session-1 agent=opencode workspace=workspace-1 id=call-1 title=zhi$/,
+    /^\[tiller\] 阶段=直播工具调用 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 tool=zhi status=running$/,
   );
 });
 
@@ -281,7 +287,7 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
   assert.equal(logs.length, 1);
   assert.match(
     logs[0],
-    /^\[tiller\] session\.status session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/,
+    /^\[tiller\] 阶段=运行状态流 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/,
   );
 });
 
@@ -310,7 +316,7 @@ test("runtime command-output logs metadata without streaming content", () => {
   );
 
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /session\.command\.output/);
+  assert.match(logs[0], /阶段=命令输出流/);
   assert.match(logs[0], /command=cmd-1/);
   assert.match(logs[0], /stream=stdout/);
   assert.match(logs[0], /chars=31/);

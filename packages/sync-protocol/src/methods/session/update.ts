@@ -34,6 +34,7 @@ export const SessionUpdateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session_updated"), session: typedUnknown<SessionSummary>() }),
   z.object({ kind: z.literal("permission_request"), permissionRequest: typedUnknown<PermissionRequest>() }),
   z.object({ kind: z.literal("permission_resolved"), permissionRequestId: z.string(), decision: typedUnknown<PermissionDecision>() }),
+  z.object({ kind: z.literal("restore_replay_cached"), count: z.number() }),
 ]);
 
 export const method = "session/update" as const;

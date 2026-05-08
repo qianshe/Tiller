@@ -16,7 +16,7 @@ export function createRestoreReplayEventSink(
 
   return {
     onEvent(event) {
-      if (suppressing && isReplayAssistantMessage(event, assistantBaseline)) {
+      if (suppressing && isRestoreReplayEvent(event, assistantBaseline)) {
         onSuppress?.(event);
         return;
       }
@@ -26,6 +26,17 @@ export function createRestoreReplayEventSink(
       suppressing = nextSuppressing;
     },
   };
+}
+
+function isRestoreReplayEvent(event: SessionRuntimeEvent, assistantBaseline: AgentMessage[]) {
+  if (isReplayAssistantMessage(event, assistantBaseline)) {
+    return true;
+  }
+  return (
+    event.type === "tool-call" ||
+    event.type === "command-output" ||
+    event.type === "diff-update"
+  );
 }
 
 function isReplayAssistantMessage(

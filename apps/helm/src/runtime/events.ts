@@ -4,9 +4,17 @@ import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 
+const liveEventSequenceBySession = new Map<string, number>();
+
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
   return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} workspace=${record?.workspace.id ?? "<stored>"}`;
+}
+
+function nextLiveEventSequence(sessionId: string) {
+  const next = (liveEventSequenceBySession.get(sessionId) ?? 0) + 1;
+  liveEventSequenceBySession.set(sessionId, next);
+  return next;
 }
 
 function oneLine(value: string, maxLength = 220) {
@@ -46,6 +54,10 @@ function normalizePromptText(text: string) {
   return text.replace(/\s+/gu, " ").trim();
 }
 
+function toolDisplayName(toolCall: { title?: string; kind?: string }) {
+  return formatLogValue(toolCall.title ?? toolCall.kind ?? "tool", 120);
+}
+
 export function handleRuntimeEvent(
   sessionId: string,
   event: SessionRuntimeEvent,
@@ -61,7 +73,7 @@ export function handleRuntimeEvent(
   switch (event.type) {
     case "status":
       context.logInfo(
-        `[tiller] session.status ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`,
+        `[tiller] 阶段=运行状态流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`,
       );
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
@@ -89,6 +101,9 @@ export function handleRuntimeEvent(
           return;
         }
       }
+      context.logInfo(
+        `[tiller] 阶段=直播消息流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} role=${event.message.role} id=${event.message.id} chars=${event.message.text.length}`,
+      );
       context.persistSessionMessage(sessionId, event.message);
       context.updateSessionSummary(sessionId, (current) =>
         applyAgentMessageToSummary(current, event.message),
@@ -100,7 +115,7 @@ export function handleRuntimeEvent(
       return;
     case "permission-request":
       context.logInfo(
-        `[tiller] session.permission.request ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
+        `[tiller] 阶段=权限请求 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
       );
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
@@ -115,8 +130,8 @@ export function handleRuntimeEvent(
       });
       return;
     case "tool-call":
-      context.logDebug(
-        `[tiller] session.tool.call ${runtimeLogScope(sessionId, context)} id=${event.toolCall.id} title=${formatLogValue(event.toolCall.title ?? event.toolCall.kind ?? "tool")}`,
+      context.logInfo(
+        `[tiller] 阶段=直播工具调用 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} tool=${toolDisplayName(event.toolCall)} status=${event.toolCall.status ?? "unknown"}`,
       );
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       broadcastSessionUpdate(context, sessionId, {
@@ -126,7 +141,7 @@ export function handleRuntimeEvent(
       return;
     case "command-output":
       context.logInfo(
-        `[tiller] session.command.output ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length}`,
+        `[tiller] 阶段=命令输出流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length}`,
       );
       context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
       broadcastSessionUpdate(context, sessionId, {
@@ -144,13 +159,13 @@ export function handleRuntimeEvent(
       return;
     case "diff-update":
       context.logInfo(
-        `[tiller] session.diff.update ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`,
+        `[tiller] 阶段=Diff更新 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`,
       );
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
       context.logInfo(
-        `[tiller] session.config.options ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
+        `[tiller] 阶段=配置选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
@@ -174,7 +189,7 @@ export function handleRuntimeEvent(
     }
     case "model-options": {
       context.logInfo(
-        `[tiller] session.model.options ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
+        `[tiller] 阶段=模型选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
@@ -196,6 +211,9 @@ export function handleRuntimeEvent(
       return;
     }
     case "available-commands": {
+      context.logInfo(
+        `[tiller] 阶段=可用命令 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} commands=${event.commands.length}`,
+      );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         availableCommands: event.commands,
@@ -215,7 +233,7 @@ export function handleRuntimeEvent(
     }
     case "error":
       context.logError(
-        `[tiller] session.error ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`,
+        `[tiller] 阶段=运行错误 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`,
       );
       context.persistSessionMessage(sessionId, {
         id: `${sessionId}-system-${Date.now()}`,

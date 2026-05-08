@@ -85,12 +85,15 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   const restoreReplaySink = createRestoreReplayEventSink(
     options.onEvent,
     (event) => {
+      options.onRestoreReplayEvent?.(event);
       if (event.type === "message") {
         writeLogLine(
           logFile,
           "restore-replay",
-          `suppressed assistant history replay id=${event.message.id} chars=${event.message.text.length}`,
+          `阶段=恢复重放缓存 type=assistant-message id=${event.message.id} chars=${event.message.text.length}`,
         );
+      } else {
+        writeLogLine(logFile, "restore-replay", `阶段=恢复重放缓存 type=${event.type}`);
       }
     },
     options.restore?.replayBaselineMessages,

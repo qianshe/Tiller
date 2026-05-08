@@ -84,6 +84,7 @@ export type AcpRuntimeOptions = {
     replayBaselineMessages?: AgentMessage[];
   };
   onEvent: (event: SessionRuntimeEvent) => void;
+  onRestoreReplayEvent?: (event: SessionRuntimeEvent) => void;
 };
 
 export type AcpAgentSessionListResult = {
