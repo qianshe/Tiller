@@ -22,6 +22,7 @@ type SidebarProjectNodeProps = {
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
+  setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
@@ -52,6 +53,7 @@ export function SidebarProjectNode({
   setSelectedProjectId,
   setSelectedWorkspaceId,
   setSelectedAgentId,
+  setAgentPickerOpen,
   setExpandedMissionProjectIds,
   setActiveSessionId,
   statuses,
@@ -118,7 +120,8 @@ export function SidebarProjectNode({
             setSelectedWorkspaceId(
               project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null,
             );
-            setSelectedAgentId(project.defaultAgentId ?? agents[0]?.id ?? null);
+            setSelectedAgentId(null);
+            setAgentPickerOpen(true);
             setExpandedMissionProjectIds(
               (current) => new Set([...current, project.id]),
             );

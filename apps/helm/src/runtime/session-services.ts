@@ -29,31 +29,21 @@ import {
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
+import { createWarmRuntimePool, type WarmRuntimeKey } from "./warm-runtime-pool";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
+
+type SessionRuntimeConfig = {
+  agentMode?: string;
+  model?: string;
+  reasoningEffort?: SessionReasoningEffort;
+};
 
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
   workspace: WorkspaceSummary;
-  runtime: {
-    runtimeSessionId: string;
-    sessionCapabilities?: StoredSessionRuntimeDescriptor["capabilities"];
-    sessionConfigState?: {
-      model?: string;
-      reasoningEffort?: SessionReasoningEffort;
-    };
-    sessionModelState?: AcpModelState;
-    prompt: (text: string, content?: AgentPromptContent[]) => void;
-    configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
-      runtimeApplied: boolean;
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
-      modelState?: AcpModelState;
-    }>;
-    respondPermission: (requestId: string, decision: "allow" | "deny") => void;
-    cancel: () => void;
-    supportsPermissionResponses: boolean;
-  };
+  runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
 type SessionServicesOptions = {
@@ -74,8 +64,18 @@ type SessionServicesOptions = {
 
 type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
+type WarmSessionRuntime = {
+  runtime: SessionRecord["runtime"];
+  attach: (sessionId: string) => void;
+  cancel: () => void;
+  expiresTimer: ReturnType<typeof setTimeout>;
+};
+
+const WARM_RUNTIME_TTL_MS = 5 * 60_000;
+
 export function createSessionServices(options: SessionServicesOptions) {
   const openCodeHistoryRefreshes = new Map<string, number>();
+  const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
 
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -303,6 +303,114 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
   }
 
+  function resolveWarmRuntimeKey(
+    workspace: WorkspaceSummary,
+    agent: AcpAgentProvider,
+    sessionConfig?: SessionRuntimeConfig,
+  ): WarmRuntimeKey {
+    return {
+      workspaceId: workspace.id,
+      agentId: agent.id,
+      configKey: JSON.stringify({
+        agentMode: sessionConfig?.agentMode ?? "",
+        model: sessionConfig?.model ?? "",
+        reasoningEffort: sessionConfig?.reasoningEffort ?? "",
+      }),
+    };
+  }
+
+  async function prewarmRuntime(params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: SessionRuntimeConfig;
+  }) {
+    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
+    const existing = warmRuntimes.get(key);
+    if (existing) {
+      return {
+        ok: true,
+        warmed: false,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: existing.runtime.runtimeSessionId,
+        message: "ACP runtime is already prewarmed.",
+      };
+    }
+
+    const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
+    let attachedSessionId: string | null = null;
+    options.logInfo(
+      `[tiller] session.prewarm.start warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+    );
+
+    const runtime = await createAcpRuntime({
+      sessionId: warmSessionId,
+      workspace: params.workspace,
+      agent: params.agent,
+      sessionConfig: params.sessionConfig,
+      onEvent: (event) => {
+        if (attachedSessionId) {
+          handleRuntimeEvent(attachedSessionId, event);
+          return;
+        }
+        if (event.type === "error") {
+          options.logError(
+            `[tiller] session.prewarm.runtime.error warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+          );
+        }
+      },
+    });
+
+    const expiresTimer = setTimeout(() => {
+      const expired = warmRuntimes.take(key);
+      if (!expired) {
+        return;
+      }
+      expired.cancel();
+      options.logInfo(
+        `[tiller] session.prewarm.expired runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      );
+    }, WARM_RUNTIME_TTL_MS);
+    expiresTimer.unref?.();
+
+    warmRuntimes.set(key, {
+      runtime,
+      attach: (sessionId) => {
+        attachedSessionId = sessionId;
+      },
+      cancel: () => runtime.cancel(),
+      expiresTimer,
+    });
+    options.logInfo(
+      `[tiller] session.prewarm.ready warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+    );
+    return {
+      ok: true,
+      warmed: true,
+      providerId: params.agent.id,
+      workspaceId: params.workspace.id,
+      runtimeSessionId: runtime.runtimeSessionId,
+      message: "ACP runtime prewarmed.",
+    };
+  }
+
+  function takePrewarmedRuntime(params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: SessionRuntimeConfig;
+  }) {
+    const warm = warmRuntimes.take(
+      resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig),
+    );
+    if (warm) {
+      clearTimeout(warm.expiresTimer);
+      options.logInfo(
+        `[tiller] session.prewarm.consume provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
+      );
+    }
+    return warm;
+  }
+
   async function startSessionResume(sessionId: string) {
     const activeRecord = options.sessions.get(sessionId);
     if (activeRecord) {
@@ -353,6 +461,8 @@ export function createSessionServices(options: SessionServicesOptions) {
       options.logInfo(
         `[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
       );
+      // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
+      // Do not merge provider replay into a local authoritative transcript.
       const runtime = await createAcpRuntime({
         sessionId,
         workspace,
@@ -364,6 +474,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         restore: {
           runtimeSessionId: resume.runtimeSessionId,
           strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
+          replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
         onEvent: (event) => handleRuntimeEvent(sessionId, event),
       });
@@ -506,9 +617,11 @@ export function createSessionServices(options: SessionServicesOptions) {
     migrateStoredSessionSummary,
     persistRuntimeDescriptor,
     persistSessionMessage,
+    prewarmRuntime,
     publishDiffUpdate,
     refreshAuthoritativeSessionHistory,
     startSessionResume,
+    takePrewarmedRuntime,
     updateSessionSummary,
   };
 }

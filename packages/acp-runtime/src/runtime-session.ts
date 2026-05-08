@@ -82,15 +82,19 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   let exitError: Error | null = null;
   const pendingPermissionReplies = new Map<string, AcpRuntimePendingPermissionReply>();
   const terminals = new Map<string, ManagedSdkTerminal>();
-  const restoreReplaySink = createRestoreReplayEventSink(options.onEvent, (event) => {
-    if (event.type === "message") {
-      writeLogLine(
-        logFile,
-        "restore-replay",
-        `suppressed assistant history replay id=${event.message.id} chars=${event.message.text.length}`,
-      );
-    }
-  });
+  const restoreReplaySink = createRestoreReplayEventSink(
+    options.onEvent,
+    (event) => {
+      if (event.type === "message") {
+        writeLogLine(
+          logFile,
+          "restore-replay",
+          `suppressed assistant history replay id=${event.message.id} chars=${event.message.text.length}`,
+        );
+      }
+    },
+    options.restore?.replayBaselineMessages,
+  );
 
   const failPendingPermissions = () => {
     for (const pendingPermission of pendingPermissionReplies.values()) {
@@ -214,6 +218,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
   if (options.restore) {
     sessionToken = options.restore.runtimeSessionId;
+    // Keep suppression active after session/load resolves because some ACP servers
+    // emit replayed session/update notifications asynchronously. The first real prompt
+    // marks the boundary between restore replay and live assistant output.
     restoreReplaySink.setSuppressing(true);
     try {
       if (options.restore.strategy === "load") {
@@ -239,8 +246,9 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
         currentConfigOptions = extractSessionConfigOptions(resumeResult);
         currentModelState = extractAcpModelState(resumeResult);
       }
-    } finally {
+    } catch (error) {
       restoreReplaySink.setSuppressing(false);
+      throw error;
     }
   } else {
     const sessionResult = await withSdkRequest<AcpSessionResponseWithModels>(
@@ -299,6 +307,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   options.onEvent({ type: "status", status: "idle", message: "ACP session ready" });
 
   const prompt = async (text: string, content?: AgentPromptContent[]) => {
+    restoreReplaySink.setSuppressing(false);
     const promptContent = content?.length ? content : [{ type: "text" as const, text }];
     const hasImages = promptContent.some((item) => item.type === "image");
     if (hasImages && !sessionCapabilities.imageInput) {

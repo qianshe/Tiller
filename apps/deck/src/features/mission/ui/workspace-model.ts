@@ -39,7 +39,7 @@ export function buildMissionWorkspaceModel(input: any) {
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
-  const effectiveAgentId = selectedAgentId || selectedDraftAgent?.id;
+  const effectiveAgentId = selectedAgentId;
   const canSend = Boolean(
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
@@ -106,6 +106,8 @@ export function buildMissionWorkspaceModel(input: any) {
     activeSession?.workspaceName ?? selectedWorkspace?.name ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
+  const currentGitBranch =
+    activeSessionProject?.gitCurrentBranch ?? draftProject?.gitCurrentBranch ?? null;
   const projectOverviewItems = overviewProject
     ? [
         `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
@@ -144,6 +146,7 @@ export function buildMissionWorkspaceModel(input: any) {
     overviewProjectName,
     overviewWorkspaceName,
     overviewAgentName,
+    currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,

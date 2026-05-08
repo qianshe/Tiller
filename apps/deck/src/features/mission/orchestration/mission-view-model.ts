@@ -161,9 +161,7 @@ const pendingPermission = activeSession
   ? (permissionRequests[activeSession.id] ?? null)
   : null;
 const selectedDraftAgent =
-  filteredAgents.find((agent) => agent.id === selectedAgentId) ??
-  filteredAgents[0] ??
-  null;
+  filteredAgents.find((agent) => agent.id === selectedAgentId) ?? null;
 const draftAgent =
   agents.find(
     (agent) => agent.id === (activeSession?.agentId ?? selectedAgentId),

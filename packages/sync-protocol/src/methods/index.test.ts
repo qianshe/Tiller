@@ -22,6 +22,7 @@ const expectedRequests = [
   "agent/get_model_options",
   "agent/save",
   "session/new",
+  "session/prewarm",
   "session/list",
   "session/list_messages",
   "session/get_artifacts",

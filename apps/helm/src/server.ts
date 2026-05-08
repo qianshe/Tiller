@@ -140,9 +140,11 @@ const {
   migrateStoredSessionSummary,
   persistRuntimeDescriptor,
   persistSessionMessage,
+  prewarmRuntime,
   publishDiffUpdate,
   refreshAuthoritativeSessionHistory,
   startSessionResume,
+  takePrewarmedRuntime,
   updateSessionSummary,
 } = sessionServices;
 
@@ -298,6 +300,8 @@ function createHandlerContext(): HelmHandlerContext {
     sessionArtifactStore,
     sessionRuntimeStore,
     createRuntime: createAcpRuntime,
+    prewarmRuntime,
+    takePrewarmedRuntime,
     testAcpConnection,
     resolveHelmById,
     resolveProjectById,

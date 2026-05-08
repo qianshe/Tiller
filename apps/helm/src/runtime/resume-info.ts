@@ -1,5 +1,6 @@
 import type { AcpAgentProvider, SessionResumeInfo, SessionSummary } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import { canRunSessionOperation, preferRestoreStrategy } from "./acp-connection-lifecycle";
 
 type ActiveSessionRecord = {
   runtime: {
@@ -39,17 +40,20 @@ export function buildSessionResumeInfo(
     };
   }
 
-  if (runtimeSessionId && (capabilities.sessionLoad || capabilities.sessionResume)) {
+  const restoreStrategy = runtimeSessionId
+    ? preferRestoreStrategy(capabilities, true)
+    : null;
+  if (runtimeSessionId && restoreStrategy) {
     return {
       mode: "reconnect",
       state: "resume-available",
-      reason: capabilities.sessionLoad
+      reason: canRunSessionOperation(capabilities, "load")
         ? "ACP agent advertises session/load; Helm can try agent-side restore and history replay."
         : "ACP agent advertises session.resume; Helm can try context restore without replaying old messages.",
       checkedAt,
       providerId: summary.agentId,
       runtimeSessionId,
-      restoreMethod: capabilities.sessionLoad ? "session/load" : "session/resume",
+      restoreMethod: restoreStrategy === "load" ? "session/load" : "session/resume",
       lastSeenAt: summary.updatedAt,
     };
   }

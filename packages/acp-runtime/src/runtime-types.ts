@@ -81,6 +81,7 @@ export type AcpRuntimeOptions = {
   restore?: {
     runtimeSessionId: string;
     strategy: AcpSessionRestoreStrategy;
+    replayBaselineMessages?: AgentMessage[];
   };
   onEvent: (event: SessionRuntimeEvent) => void;
 };

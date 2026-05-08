@@ -181,6 +181,7 @@ export function MissionWorkspace(props: any) {
     overviewProjectName,
     overviewWorkspaceName,
     overviewAgentName,
+    currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
@@ -238,6 +239,7 @@ export function MissionWorkspace(props: any) {
           setSelectedProjectId={setSelectedProjectId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}
           setSelectedAgentId={setSelectedAgentId}
+          setAgentPickerOpen={setAgentPickerOpen}
           setExpandedMissionProjectIds={setExpandedMissionProjectIds}
           setActiveSessionId={setActiveSessionId}
           statuses={statuses}
@@ -296,6 +298,7 @@ export function MissionWorkspace(props: any) {
             draftWorkspaceOptions={draftWorkspaceOptions}
             selectedWorkspaceId={selectedWorkspaceId}
             selectDraftWorkspace={selectDraftWorkspace}
+            currentGitBranch={currentGitBranch}
             copy={copy}
             agentLocked={agentLocked}
             selectedDraftAgent={selectedDraftAgent}

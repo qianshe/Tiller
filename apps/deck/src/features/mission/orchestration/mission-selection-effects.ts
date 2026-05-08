@@ -1,7 +1,7 @@
 // @ts-nocheck
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
-import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../utils/composer-options";
+import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
 import { resolveDraftSelectionId } from "../utils/session-derivations";
 
 export function useMissionSelectionEffects(source: any) {
@@ -37,11 +37,14 @@ export function useMissionSelectionEffects(source: any) {
     setSelectedAgentId,
     agentModelOptions,
     setAgentModelOptions,
+    selectedAgentMode,
     selectedModel,
     setSelectedModel,
+    selectedReasoningEffort,
     setSelectedAgentMode,
     setSelectedReasoningEffort,
   } = source;
+  const prewarmedDraftKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -151,19 +154,66 @@ export function useMissionSelectionEffects(source: any) {
     });
   }, [pairingState, selectedProjectId]);
   useEffect(() => {
-    if (!draftProject) {
+    if (!draftProject || !selectedAgentId) {
       return;
     }
-    const defaultProjectAgentId = draftProject.defaultAgentId;
-    const fallbackAgentId = resolveDraftSelectionId(
-      selectedAgentId,
-      filteredAgents,
-      defaultProjectAgentId ?? defaultAgentId(filteredAgents),
+    const selectedAgentAvailable = filteredAgents.some(
+      (agent) => agent.id === selectedAgentId,
     );
-    if (fallbackAgentId && fallbackAgentId !== selectedAgentId) {
-      setSelectedAgentId(fallbackAgentId);
+    if (!selectedAgentAvailable) {
+      setSelectedAgentId(null);
     }
   }, [draftProject, filteredAgents, selectedAgentId]);
+  useEffect(() => {
+    if (
+      activeSession ||
+      pairingState !== "paired" ||
+      !selectedProjectId ||
+      !selectedAgentId ||
+      !selectedWorkspaceId ||
+      !rpcClientRef.current ||
+      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+    const optionsKey = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
+    const cachedOptions = agentModelOptions[optionsKey];
+    if (!cachedOptions || cachedOptions.loading) {
+      return;
+    }
+    const prewarmModel = normalizeModelSelection(selectedModel) ?? cachedOptions.state.model;
+    const prewarmKey = JSON.stringify({
+      projectId: selectedProjectId,
+      workspaceId: selectedWorkspaceId,
+      agentId: selectedAgentId,
+      agentMode: selectedAgentMode || undefined,
+      model: prewarmModel,
+      reasoningEffort: selectedReasoningEffort,
+    });
+    if (prewarmedDraftKeyRef.current === prewarmKey) {
+      return;
+    }
+    prewarmedDraftKeyRef.current = prewarmKey;
+    void dispatch(rpcClientRef.current, "session/prewarm", {
+      projectId: selectedProjectId,
+      workspaceId: selectedWorkspaceId,
+      agentId: selectedAgentId,
+      agentMode: selectedAgentMode || undefined,
+      model: prewarmModel,
+      reasoningEffort: selectedReasoningEffort,
+    });
+  }, [
+    activeSession,
+    agentModelOptions,
+    normalizeModelSelection,
+    pairingState,
+    selectedAgentId,
+    selectedAgentMode,
+    selectedModel,
+    selectedProjectId,
+    selectedReasoningEffort,
+    selectedWorkspaceId,
+  ]);
   useEffect(() => {
     if (
       activeSession ||

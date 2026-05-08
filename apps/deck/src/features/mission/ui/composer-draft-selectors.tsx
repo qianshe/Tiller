@@ -21,6 +21,7 @@ type ComposerDraftSelectorsProps = {
   draftWorkspaceOptions: WorkspaceSummary[];
   selectedWorkspaceId: string | null;
   selectDraftWorkspace: (workspaceId: string) => void;
+  currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
   selectedDraftAgent: AcpAgentProvider | null;
@@ -43,6 +44,7 @@ export function ComposerDraftSelectors({
   draftWorkspaceOptions,
   selectedWorkspaceId,
   selectDraftWorkspace,
+  currentGitBranch,
   copy,
   agentLocked,
   selectedDraftAgent,
@@ -69,6 +71,9 @@ export function ComposerDraftSelectors({
         >
           <strong>{selectedWorkspaceName}</strong>
         </button>
+        <span className="text-xs text-muted-foreground">
+          当前分支：{currentGitBranch || "未检测"}
+        </span>
         {worktreePickerOpen ? (
           <div
             className="mission-worktree-menu absolute left-0 top-full z-40 mt-2 grid max-h-72 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
@@ -94,7 +99,7 @@ export function ComposerDraftSelectors({
         ref={agentPickerRef}
         className={`mission-agent-field ${agentPickerOpen ? "open" : ""} relative grid gap-1`}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{copy.selectedAgent}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">ACP Agent（创建前必选）</span>
         <button
           type="button"
           className="mission-agent-trigger flex min-h-10 items-center justify-between rounded-md border border-border-ghost bg-surface px-3 py-2 text-left text-sm text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
@@ -106,7 +111,7 @@ export function ComposerDraftSelectors({
           aria-expanded={agentPickerOpen}
           disabled={agentLocked}
         >
-          <strong>{selectedDraftAgent?.name ?? "选择舰员"}</strong>
+          <strong>{selectedDraftAgent?.name ?? "选择 ACP Agent"}</strong>
         </button>
         {agentPickerOpen ? (
           <div

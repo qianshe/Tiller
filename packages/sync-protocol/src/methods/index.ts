@@ -14,6 +14,7 @@ import * as agentTest from "./agent/test";
 import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
 import * as sessionNew from "./session/new";
+import * as sessionPrewarm from "./session/prewarm";
 import * as sessionList from "./session/list";
 import * as sessionListMessages from "./session/list-messages";
 import * as sessionGetArtifacts from "./session/get-artifacts";
@@ -51,6 +52,7 @@ const METHOD_DESCRIPTORS = {
   [agentGetModelOptions.method]: agentGetModelOptions.descriptor,
   [agentSave.method]: agentSave.descriptor,
   [sessionNew.method]: sessionNew.descriptor,
+  [sessionPrewarm.method]: sessionPrewarm.descriptor,
   [sessionList.method]: sessionList.descriptor,
   [sessionListMessages.method]: sessionListMessages.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
@@ -90,6 +92,7 @@ export const CLIENT_REQUEST_METHODS = [
   agentGetModelOptions.method,
   agentSave.method,
   sessionNew.method,
+  sessionPrewarm.method,
   sessionList.method,
   sessionListMessages.method,
   sessionGetArtifacts.method,

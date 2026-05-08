@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as sessionNew from "./new";
+import * as sessionPrewarm from "./prewarm";
 import * as sessionList from "./list";
 import * as sessionListMessages from "./list-messages";
 import * as sessionGetArtifacts from "./get-artifacts";
@@ -13,6 +14,19 @@ import * as sessionCleanup from "./cleanup";
 test("session/new requires project, workspace, agent", () => {
   assert.equal(sessionNew.method, "session/new");
   sessionNew.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
+});
+
+test("session/prewarm requires project, workspace, agent", () => {
+  assert.equal(sessionPrewarm.method, "session/prewarm");
+  sessionPrewarm.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
+  sessionPrewarm.ResultSchema.parse({
+    ok: true,
+    warmed: true,
+    providerId: "a1",
+    workspaceId: "ws1",
+    runtimeSessionId: "runtime-1",
+    message: "ACP runtime prewarmed.",
+  });
 });
 
 test("session/list returns paginated session summaries", () => {

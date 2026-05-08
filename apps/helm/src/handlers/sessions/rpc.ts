@@ -56,6 +56,18 @@ export async function handleSessionRpcRequest(
       return checkResume(params as { sessionId: string }, context);
     case "session/resume":
       return resumeSession(params as { sessionId: string }, context);
+    case "session/prewarm":
+      return prewarmSession(
+        params as {
+          projectId: string;
+          workspaceId: string;
+          agentId: string;
+          agentMode?: string;
+          model?: string;
+          reasoningEffort?: SessionReasoningEffort;
+        },
+        context,
+      );
     case "session/new":
       return createSession(
         params as {
@@ -207,6 +219,51 @@ async function resumeSession(params: { sessionId: string }, context: HelmHandler
   };
 }
 
+async function prewarmSession(
+  params: {
+    projectId: string;
+    workspaceId: string;
+    agentId: string;
+    agentMode?: string;
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+  },
+  context: HelmHandlerContext,
+) {
+  const helms = context.loadAvailableHelms();
+  const workspaces = context.loadAvailableWorkspaces();
+  const agents = context.loadAvailableAgents();
+  context.setHelms(helms);
+  context.setWorkspaces(workspaces);
+  context.setAgents(agents);
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  context.setProjects(projects);
+
+  const project = context.resolveProjectById(params.projectId, projects);
+  const workspace = project
+    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+    : undefined;
+  const agent = context.resolveProviderById(params.agentId, agents);
+  const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
+
+  if (!project || !workspace || !agent || !helm) {
+    throw new Error("Project, helm, workspace, or agent not found");
+  }
+  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
+    throw new Error("Workspace does not belong to the selected project");
+  }
+
+  return context.prewarmRuntime({
+    workspace,
+    agent,
+    sessionConfig: {
+      agentMode: params.agentMode,
+      model: params.model,
+      reasoningEffort: params.reasoningEffort,
+    },
+  });
+}
+
 async function createSession(
   params: {
     projectId: string;
@@ -269,17 +326,21 @@ async function createSession(
   broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
 
   try {
-    const runtime = await context.createRuntime({
-      sessionId,
-      workspace,
-      agent,
-      sessionConfig: {
-        agentMode: summary.agentMode,
-        model: summary.model,
-        reasoningEffort: summary.reasoningEffort,
-      },
-      onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
-    });
+    const sessionConfig = {
+      agentMode: summary.agentMode,
+      model: summary.model,
+      reasoningEffort: summary.reasoningEffort,
+    };
+    const prewarmed = context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
+    const runtime = prewarmed?.runtime ??
+      (await context.createRuntime({
+        sessionId,
+        workspace,
+        agent,
+        sessionConfig,
+        onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+      }));
+    prewarmed?.attach(sessionId);
     const summaryWithRuntime = context.hydrateSessionSummary({
       ...summary,
       agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,

@@ -43,6 +43,7 @@ type MissionSidebarProps = {
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
+  setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
@@ -86,6 +87,7 @@ export function MissionSidebar({
   setSelectedProjectId,
   setSelectedWorkspaceId,
   setSelectedAgentId,
+  setAgentPickerOpen,
   setExpandedMissionProjectIds,
   setActiveSessionId,
   statuses,
@@ -238,6 +240,7 @@ export function MissionSidebar({
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedWorkspaceId={setSelectedWorkspaceId}
                               setSelectedAgentId={setSelectedAgentId}
+                              setAgentPickerOpen={setAgentPickerOpen}
                               setExpandedMissionProjectIds={
                                 setExpandedMissionProjectIds
                               }

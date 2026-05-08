@@ -42,6 +42,7 @@ type MissionComposerProps = {
   draftWorkspaceOptions: WorkspaceSummary[];
   selectedWorkspaceId: string | null;
   selectDraftWorkspace: (workspaceId: string) => void;
+  currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
   selectedDraftAgent: AcpAgentProvider | null;
@@ -120,6 +121,7 @@ export function MissionComposer({
   draftWorkspaceOptions,
   selectedWorkspaceId,
   selectDraftWorkspace,
+  currentGitBranch,
   copy,
   agentLocked,
   selectedDraftAgent,
@@ -193,6 +195,7 @@ export function MissionComposer({
           draftWorkspaceOptions={draftWorkspaceOptions}
           selectedWorkspaceId={selectedWorkspaceId}
           selectDraftWorkspace={selectDraftWorkspace}
+          currentGitBranch={currentGitBranch}
           copy={copy}
           agentLocked={agentLocked}
           selectedDraftAgent={selectedDraftAgent}
