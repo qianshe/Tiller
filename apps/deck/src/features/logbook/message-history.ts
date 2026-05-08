@@ -1,5 +1,7 @@
 import type { AgentMessage } from "@tiller/shared";
 
+const PROVIDER_PARAGRAPH_MESSAGE_ID_PATTERN = /^(?<base>.+)#p\d+$/u;
+
 export function coalesceDisplayMessages(
   items: AgentMessage[],
   boundaryTimestamps: string[] = [],
@@ -36,6 +38,25 @@ export function mergeAgentMessages(
         return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
       }
       return [...items, incoming];
+    }
+
+    const duplicateProviderStream = resolveDuplicateProviderStreamMessage(
+      last,
+      incoming,
+    );
+    if (duplicateProviderStream === "skip-incoming") {
+      return items;
+    }
+    if (duplicateProviderStream === "replace-current") {
+      return [...items.slice(0, -1), { ...incoming, timestamp: last.timestamp }];
+    }
+
+    const duplicateAssistantText = resolveDuplicateAssistantText(last, incoming);
+    if (duplicateAssistantText === "skip-incoming") {
+      return items;
+    }
+    if (duplicateAssistantText === "replace-current") {
+      return [...items.slice(0, -1), { ...incoming, timestamp: last.timestamp }];
     }
 
     if (
@@ -92,6 +113,19 @@ export function mergeMessageHistory(
     const mergeIndex = index === -1 ? equivalentIndex : index;
 
     if (mergeIndex === -1) {
+      const duplicateStreamRange = findDuplicateAssistantStreamRange(
+        merged,
+        message,
+      );
+      if (duplicateStreamRange) {
+        merged.splice(
+          duplicateStreamRange.start,
+          duplicateStreamRange.count,
+          message,
+        );
+        continue;
+      }
+
       if (options.mode === "prepend") {
         merged.unshift(message);
       } else {
@@ -133,9 +167,117 @@ function shouldMergeAssistantStreamChunk(
   return (
     current.role === "assistant" &&
     incoming.role === "assistant" &&
-    isRuntimeGeneratedMessageId(current.id) &&
-    isRuntimeGeneratedMessageId(incoming.id)
+    ((isRuntimeGeneratedMessageId(current.id) &&
+      isRuntimeGeneratedMessageId(incoming.id)) ||
+      isSameProviderParagraphMessage(current.id, incoming.id))
   );
+}
+
+function isSameProviderParagraphMessage(leftId: string, rightId: string) {
+  const leftBase = providerParagraphMessageBase(leftId);
+  return Boolean(leftBase && leftBase === providerParagraphMessageBase(rightId));
+}
+
+function providerParagraphMessageBase(id: string) {
+  return PROVIDER_PARAGRAPH_MESSAGE_ID_PATTERN.exec(id)?.groups?.base;
+}
+
+function resolveDuplicateProviderStreamMessage(
+  current: AgentMessage,
+  incoming: AgentMessage,
+) {
+  const currentBase = providerParagraphMessageBase(current.id);
+  const incomingBase = providerParagraphMessageBase(incoming.id);
+
+  if (incomingBase && current.id === incomingBase && current.text.includes(incoming.text)) {
+    return "skip-incoming" as const;
+  }
+
+  if (currentBase && incoming.id === currentBase && incoming.text.includes(current.text)) {
+    return "replace-current" as const;
+  }
+
+  return null;
+}
+
+function resolveDuplicateAssistantText(
+  current: AgentMessage,
+  incoming: AgentMessage,
+) {
+  if (current.role !== "assistant" || incoming.role !== "assistant") {
+    return null;
+  }
+  if (current.id === incoming.id) {
+    return null;
+  }
+  if (current.text === incoming.text || current.text.includes(incoming.text)) {
+    return "skip-incoming" as const;
+  }
+  if (incoming.text.includes(current.text)) {
+    return "replace-current" as const;
+  }
+
+  const normalizedCurrent = normalizeAssistantDuplicateText(current.text);
+  const normalizedIncoming = normalizeAssistantDuplicateText(incoming.text);
+  if (!normalizedCurrent || !normalizedIncoming) {
+    return null;
+  }
+  if (normalizedCurrent === normalizedIncoming || normalizedCurrent.includes(normalizedIncoming)) {
+    return "skip-incoming" as const;
+  }
+  if (normalizedIncoming.includes(normalizedCurrent)) {
+    return "replace-current" as const;
+  }
+  return null;
+}
+
+function normalizeAssistantDuplicateText(text: string) {
+  return text
+    .replace(/[\s\u00a0]+/gu, "")
+    .replace(/[•·*-]+/gu, "")
+    .trim();
+}
+
+function findDuplicateAssistantStreamRange(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+) {
+  if (incoming.role !== "assistant") {
+    return null;
+  }
+
+  let text = "";
+  let start = messages.length;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const current = messages[index];
+    if (!current || current.role !== "assistant") {
+      break;
+    }
+
+    const nextText = `${current.text}${text}`;
+    if (!incoming.text.endsWith(nextText)) {
+      break;
+    }
+
+    start = index;
+    text = nextText;
+    if (text === incoming.text && isMergeableAssistantStreamRange(messages, start)) {
+      return { start, count: messages.length - start };
+    }
+  }
+
+  return null;
+}
+
+function isMergeableAssistantStreamRange(messages: AgentMessage[], start: number) {
+  for (let index = start + 1; index < messages.length; index += 1) {
+    const previous = messages[index - 1];
+    const current = messages[index];
+    if (!previous || !current || !shouldMergeAssistantStreamChunk(previous, current)) {
+      return false;
+    }
+  }
+  return start < messages.length;
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
