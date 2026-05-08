@@ -4,80 +4,177 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 
-const workspaceCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "workspace/workbench-layout.css",
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const workspaceSource = readFileSync(resolve(currentDir, "workspace.tsx"), "utf8");
+const shellStylesSource = readFileSync(
+  resolve(currentDir, "../../../app/shell/styles.css"),
+  "utf8",
 );
-const overflowCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "message-timeline/overflow.css",
+const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
+const sidebarProjectNodeSource = readFileSync(
+  resolve(currentDir, "sidebar-project-node.tsx"),
+  "utf8",
 );
-const threadSidebarCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "sidebar/thread-sidebar.css",
+const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
+const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
+const workspaceModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
+const missionSelectionEffectsSource = readFileSync(
+  resolve(currentDir, "../orchestration/mission-selection-effects.ts"),
+  "utf8",
 );
-const displayPanelCssPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "display-panel/styles.css",
+const projectFileListSource = readFileSync(
+  resolve(currentDir, "project-file-list.tsx"),
+  "utf8",
 );
+const inspectorSource = readFileSync(resolve(currentDir, "inspector.tsx"), "utf8");
+const logbookPanelSource = readFileSync(resolve(currentDir, "logbook-panel.tsx"), "utf8");
+const cleanupDialogSource = readFileSync(
+  resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
+  "utf8",
+);
+const panelsSource = readFileSync(resolve(currentDir, "panels.tsx"), "utf8");
+const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
+const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
+const messageTimelineSource = readFileSync(
+  resolve(currentDir, "message-timeline.tsx"),
+  "utf8",
+);
+const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
+const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
+const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
 
-test("mission chat only reserves large bottom space when the permission drawer is visible", () => {
-  const source = readFileSync(workspaceCssPath, "utf8");
+test("mission chat reserves permission drawer space through localized drawer positioning", () => {
+  const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
 
-  assert.match(
-    source,
-    /\.chat-conversation:has\(\.mission-permission-drawer\)\s*\{\s*--mission-chat-bottom-reserve:\s*170px;/s,
-  );
-  assert.doesNotMatch(
-    source,
-    /\.view-sessions \.chat-main\s*\{[^}]*padding-bottom:\s*170px;/s,
-  );
+  assert.match(workspaceSource, /mission-pane-chat relative/);
+  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.match(permissionDrawerSource, /left-3/);
+  assert.match(permissionDrawerSource, /right-3/);
+  assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);
+  assert.doesNotMatch(permissionDrawerSource, /-translate-x-1\/2/);
+  assert.doesNotMatch(permissionDrawerSource, /w-\[min\(720px/);
+  assert.doesNotMatch(chatPaneSource, /padding-bottom:\s*170px/);
 });
 
-test("markdown table wrapper opts out of the generic overflow clip rule", () => {
-  const source = readFileSync(overflowCssPath, "utf8");
+test("mission message timeline keeps chat list props stable for unchanged messages", () => {
+  assert.match(messageTimelineSource, /memo\(function MissionMessageTimeline/);
+  assert.match(messageTimelineSource, /useCallback/);
+  assert.doesNotMatch(messageTimelineSource, /onLoadOlderMessages=\{\(\) => \{/);
+});
 
-  assert.match(
-    source,
-    /\.markdown-message > \.markdown-table-scroll\s*\{[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/s,
-  );
-  assert.doesNotMatch(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph\s*\{[^}]*overflow-x:\s*visible;/s,
-  );
+test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
+  assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-x-auto/);
+  assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-y-hidden/);
+  assert.doesNotMatch(plainMessagesSource, /plain-assistant[^\n]+overflow-x-visible/);
 });
 
 test("collapsed plain-text user messages use a three-line visual clamp without an overlay", () => {
-  const source = readFileSync(threadSidebarCssPath, "utf8");
-
-  assert.match(
-    source,
-    /\.plain-message-text-collapsed\s*\{[^}]*display:\s*-webkit-box;[^}]*-webkit-line-clamp:\s*3;[^}]*overflow:\s*hidden;/s,
-  );
-  assert.doesNotMatch(source, /\.plain-message-body-collapsed::after/s);
+  assert.match(plainMessagesSource, /plain-message-text-collapsed line-clamp-3 overflow-hidden/);
+  assert.doesNotMatch(plainMessagesSource, /plain-message-body-collapsed::after/);
 });
 
-test("assistant markdown paragraphs render with a green marker without shifting the whole message block", () => {
-  const source = readFileSync(displayPanelCssPath, "utf8");
+test("assistant markdown uses readable prose styling without paragraph marker bullets", () => {
+  assert.doesNotMatch(plainMessagesSource, /markdown-paragraph\]:before/);
+  assert.doesNotMatch(plainMessagesSource, /before:bg-green-500/);
+  assert.match(markdownSource, /markdown-message space-y-3/);
+  assert.match(markdownSource, /className="my-2 list-disc/);
+  assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
+  assert.match(markdownSource, /className="overflow-x-auto/);
+  assert.match(markdownSource, /className="not-prose flex items-center justify-between/);
+});
 
-  assert.doesNotMatch(
-    source,
-    /\.plain-assistant \.markdown-message\s*\{[^}]*margin-left:\s*-0\.45rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > :where\(\.markdown-table-scroll, ul, ol, pre, blockquote\)\s*\{[^}]*margin-left:\s*0\.95rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph\s*\{[^}]*padding-left:\s*0\.95rem;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph::before\s*\{[^}]*left:\s*0;[^}]*background:\s*#22c55e;/s,
-  );
-  assert.match(
-    source,
-    /\.plain-assistant \.markdown-message > \.markdown-paragraph-thinking\s*\{[^}]*font-style:\s*italic;/s,
-  );
+test("mission workspace uses Tailwind pane layout instead of feature css", () => {
+  assert.match(workspaceSource, /grid-cols-\[var\(--mission-sidebar-width\)_var\(--mission-sidebar-resizer-width\)_minmax\(0,var\(--mission-chat-width\)\)_var\(--mission-display-resizer-width\)_var\(--mission-display-width\)_var\(--mission-inspector-resizer-width\)_var\(--mission-inspector-width\)\]/);
+  assert.doesNotMatch(workspaceSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
+  assert.match(workspaceSource, /mission-sidebar-collapsed/);
+  assert.match(workspaceSource, /mission-inspector-collapsed/);
+});
+
+test("mission shell fills the viewport so the project pane stays visible on desktop", () => {
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*width:\s*100vw;/s);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*8px 12px 12px;/s);
+  assert.doesNotMatch(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*96px 12px 12px;/s);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s+\.page-content\s*{[^}]*min-height:\s*calc\(100vh - 20px\);/s);
+});
+
+test("mission project sidebar uses shared primitives and explicit Tailwind tree rows", () => {
+  assert.match(sidebarSource, /Badge/);
+  assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
+  assert.match(sidebarProjectNodeSource, /Button/);
+  assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)\]/);
+});
+
+test("mission sidebar rows stay compact and session actions open below rows", () => {
+  assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken p-2/);
+  assert.match(sidebarProjectNodeSource, /px-2 py-1\.5/);
+  assert.match(sessionRowSource, /px-2 py-1\.5/);
+  assert.match(sessionRowSource, /DropdownMenuContent/);
+  assert.doesNotMatch(sessionRowSource, /mission-tree-session-menu absolute/);
+});
+
+test("mission session rows stay tree-like instead of selected card pills", () => {
+  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)\]/);
+  assert.match(sessionRowSource, /mission-tree-session-meta/);
+  assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
+  assert.doesNotMatch(sessionRowSource, /rounded-xl/);
+});
+
+test("mission logbook keeps session summary fixed while activity list scrolls", () => {
+  assert.match(displayPanelSource, /mission-logbook-page grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/);
+  assert.match(logbookPanelSource, /mission-logbook-layout grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\]/);
+  assert.match(logbookPanelSource, /mission-logbook-scroll min-h-0 overflow-auto/);
+});
+
+test("mission display page navigation is placed above the content", () => {
+  assert.match(displayPanelSource, /mission-panel-body grid min-h-0 flex-1 grid-rows-\[auto_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(displayPanelSource, /grid-cols-\[72px_minmax\(0,1fr\)\]/);
+  assert.match(panelsSource, /mission-panel-tree flex/);
+  assert.match(panelsSource, /border-b border-border-ghost/);
+  assert.doesNotMatch(panelsSource, /border-r border-border-ghost/);
+});
+
+test("mission project overview renders structured cards instead of raw info text", () => {
+  assert.match(displayPanelSource, /parseOverviewItem/);
+  assert.match(displayPanelSource, /mission-overview-card/);
+  assert.doesNotMatch(displayPanelSource, /<InfoList/);
+});
+
+test("mission avoids fetching or rendering every project file by default", () => {
+  assert.doesNotMatch(missionSelectionEffectsSource, /project\/list_files/);
+  assert.match(workspaceModelSource, /const projectFiles = \[\]/);
+  assert.match(workspaceModelSource, /const visibleProjectFiles = \[\]/);
+  assert.match(projectFileListSource, /暂不加载全量 Git 文件/);
+  assert.match(inspectorSource, /暂不拉取全量 Git 文件/);
+});
+
+test("session cleanup confirmation uses the shared centered dialog primitive", () => {
+  assert.match(cleanupDialogSource, /DialogContent/);
+  assert.match(cleanupDialogSource, /DialogFooter/);
+  assert.doesNotMatch(cleanupDialogSource, /fleet-modal-backdrop/);
+  assert.doesNotMatch(cleanupDialogSource, /fleet-delete-helm-modal/);
+});
+
+test("mission responsive collapse keeps chat as the last visible pane", () => {
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080/);
+  assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 24/);
+  assert.match(missionLayoutHookSource, /chat: \{ min: 280, max: 820 \}/);
+  assert.match(missionLayoutHookSource, /--mission-sidebar-resizer-width/);
+  assert.match(missionLayoutHookSource, /--mission-display-resizer-width/);
+  assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);
+  assert.match(missionLayoutHookSource, /effectiveDisplayCollapsed/);
+  assert.match(workspaceSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
+  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
+  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
+  assert.match(workspaceSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
+  assert.doesNotMatch(workspaceSource, /max-\[860px\]:h-auto/);
+  assert.doesNotMatch(workspaceSource, /max-\[860px\]:flex-col/);
+  assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);
+  assert.match(displayPanelSource, /mission-pane-display col-start-5 col-end-6/);
+  assert.match(inspectorSource, /mission-pane-inspector col-start-7 col-end-8/);
+  assert.match(paneResizerSource, /col-start-2 col-end-3/);
+  assert.match(paneResizerSource, /col-start-4 col-end-5/);
+  assert.match(paneResizerSource, /col-start-6 col-end-7/);
 });

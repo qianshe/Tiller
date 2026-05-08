@@ -35,6 +35,7 @@ export function MissionWorkspace(props: any) {
     projectFileFilter,
     collapsedProjectFileDirectories,
     effectiveSidebarCollapsed,
+    effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
     missionLayoutRef,
     missionLayoutStyle,
@@ -66,6 +67,8 @@ export function MissionWorkspace(props: any) {
     openSession,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
+    regenerateSessionTitle,
+    regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
     sessionHistoryState,
@@ -120,6 +123,7 @@ export function MissionWorkspace(props: any) {
     draftModelPlaceholder,
     draftModelPickerDisabled,
     draftModelPickerLabel,
+    draftModelLoading,
     draftModelBaseOptions,
     resolveReasoningOptionsForModel,
     draftAllModelOptions,
@@ -153,7 +157,6 @@ export function MissionWorkspace(props: any) {
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
-    setMissionInspectorCollapsed,
     toggleProjectFileDirectory,
     defaultLogbookVisibleLimit,
   } = props;
@@ -178,6 +181,7 @@ export function MissionWorkspace(props: any) {
     overviewProjectName,
     overviewWorkspaceName,
     overviewAgentName,
+    currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
@@ -194,14 +198,13 @@ export function MissionWorkspace(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation",
-    "mission-pane",
-    "mission-pane-chat",
+    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar",
+    "card surface-card chat-layout chat-layout-sidebar grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
+    effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
   return (
@@ -236,6 +239,7 @@ export function MissionWorkspace(props: any) {
           setSelectedProjectId={setSelectedProjectId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}
           setSelectedAgentId={setSelectedAgentId}
+          setAgentPickerOpen={setAgentPickerOpen}
           setExpandedMissionProjectIds={setExpandedMissionProjectIds}
           setActiveSessionId={setActiveSessionId}
           statuses={statuses}
@@ -244,6 +248,8 @@ export function MissionWorkspace(props: any) {
           openSession={openSession}
           renderMissionAgentIcon={renderMissionAgentIcon}
           resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+          regenerateSessionTitle={regenerateSessionTitle}
+          regeneratingIds={regeneratingIds}
           formatRelativeTime={formatRelativeTime}
           setPendingSessionCleanup={setPendingSessionCleanup}
           sessionHistoryState={sessionHistoryState}
@@ -267,6 +273,7 @@ export function MissionWorkspace(props: any) {
           helmConnected={pairingState === "paired"}
           activeSession={activeSession}
           activeSessionMessages={activeSessionMessages}
+          activeSessionToolCalls={activeToolCalls}
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
@@ -291,6 +298,7 @@ export function MissionWorkspace(props: any) {
             draftWorkspaceOptions={draftWorkspaceOptions}
             selectedWorkspaceId={selectedWorkspaceId}
             selectDraftWorkspace={selectDraftWorkspace}
+            currentGitBranch={currentGitBranch}
             copy={copy}
             agentLocked={agentLocked}
             selectedDraftAgent={selectedDraftAgent}
@@ -323,6 +331,7 @@ export function MissionWorkspace(props: any) {
             draftModelPlaceholder={draftModelPlaceholder}
             draftModelPickerDisabled={draftModelPickerDisabled}
             draftModelPickerLabel={draftModelPickerLabel}
+            draftModelLoading={draftModelLoading}
             draftModelBaseOptions={draftModelBaseOptions}
             resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
             draftAllModelOptions={draftAllModelOptions}
@@ -341,58 +350,62 @@ export function MissionWorkspace(props: any) {
             canSend={canSend}
           />{" "}
         </MissionChatPane>{" "}
-        <MissionPaneResizer
-          handle="display"
-          label="调整任务展示宽度"
-          onResizeStart={startMissionPaneResize}
-          onNudge={nudgeMissionPane}
-        />{" "}
-        <MissionDisplaySection
-          style={missionDisplayPaneStyle}
-          pages={missionPanelPages}
-          selectedPage={selectedMissionPanelPage}
-          selectedDiffFilePath={selectedMissionDiffFilePath}
-          diffs={activeDiffs}
-          diffCount={missionDiffCount}
-          logCount={missionLogCount}
-          overviewItems={projectOverviewItems}
-          noDiffSummary={copy.noDiffSummary}
-          activeSession={activeSession}
-          statusLabel={missionStatusLabel}
-          sessionToolCalls={activeToolCalls}
-          commandChunks={activeOutputs}
-          sessionMessages={
-            activeSession ? (messages[activeSession.id] ?? []) : []
-          }
-          historyState={
-            activeSession ? activityHistoryState[activeSession.id] : undefined
-          }
-          visibleCount={
-            activeSession
-              ? (activityVisibleCounts[activeSession.id] ??
-                defaultLogbookVisibleLimit)
-              : defaultLogbookVisibleLimit
-          }
-          visibleLimit={defaultLogbookVisibleLimit}
-          copy={copy}
-          collapsedDiffDirectories={collapsedMissionDiffDirectories}
-          onShowMore={(targetSessionId, nextVisibleCount) =>
-            setActivityVisibleCounts((current: any) => ({
-              ...current,
-              [targetSessionId]: nextVisibleCount,
-            }))
-          }
-          onLoadOlder={loadOlderActivities}
-          onAddPage={addMissionPanelPage}
-          onSelectPage={setSelectedMissionPanelPageId}
-          onDragStart={setDraggedMissionPanelPageId}
-          onDrop={dropMissionPanelPage}
-          onOpenDiffDetail={openDiffDetail}
-          onRenamePage={renameMissionPanelPage}
-          onMovePage={moveMissionPanelPage}
-          onDeletePage={deleteMissionPanelPage}
-          onToggleDiffDirectory={toggleMissionDiffDirectory}
-        />{" "}
+        {!effectiveDisplayCollapsed ? (
+          <MissionPaneResizer
+            handle="display"
+            label="调整任务展示宽度"
+            onResizeStart={startMissionPaneResize}
+            onNudge={nudgeMissionPane}
+          />
+        ) : null}{" "}
+        {!effectiveDisplayCollapsed ? (
+          <MissionDisplaySection
+            style={missionDisplayPaneStyle}
+            pages={missionPanelPages}
+            selectedPage={selectedMissionPanelPage}
+            selectedDiffFilePath={selectedMissionDiffFilePath}
+            diffs={activeDiffs}
+            diffCount={missionDiffCount}
+            logCount={missionLogCount}
+            overviewItems={projectOverviewItems}
+            noDiffSummary={copy.noDiffSummary}
+            activeSession={activeSession}
+            statusLabel={missionStatusLabel}
+            sessionToolCalls={activeToolCalls}
+            commandChunks={activeOutputs}
+            sessionMessages={
+              activeSession ? (messages[activeSession.id] ?? []) : []
+            }
+            historyState={
+              activeSession ? activityHistoryState[activeSession.id] : undefined
+            }
+            visibleCount={
+              activeSession
+                ? (activityVisibleCounts[activeSession.id] ??
+                  defaultLogbookVisibleLimit)
+                : defaultLogbookVisibleLimit
+            }
+            visibleLimit={defaultLogbookVisibleLimit}
+            copy={copy}
+            collapsedDiffDirectories={collapsedMissionDiffDirectories}
+            onShowMore={(targetSessionId, nextVisibleCount) =>
+              setActivityVisibleCounts((current: any) => ({
+                ...current,
+                [targetSessionId]: nextVisibleCount,
+              }))
+            }
+            onLoadOlder={loadOlderActivities}
+            onAddPage={addMissionPanelPage}
+            onSelectPage={setSelectedMissionPanelPageId}
+            onDragStart={setDraggedMissionPanelPageId}
+            onDrop={dropMissionPanelPage}
+            onOpenDiffDetail={openDiffDetail}
+            onRenamePage={renameMissionPanelPage}
+            onMovePage={moveMissionPanelPage}
+            onDeletePage={deleteMissionPanelPage}
+            onToggleDiffDirectory={toggleMissionDiffDirectory}
+          />
+        ) : null}{" "}
         <MissionInspector
           collapsed={effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
@@ -411,7 +424,6 @@ export function MissionWorkspace(props: any) {
             />
           }
           onFilterChange={setProjectFileFilter}
-          onExpand={() => setMissionInspectorCollapsed(false)}
         />{" "}
       </>{" "}
     </MissionPage>

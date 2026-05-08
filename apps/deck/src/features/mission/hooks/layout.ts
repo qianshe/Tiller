@@ -23,14 +23,15 @@ const MISSION_PANE_LIMITS: Record<
   { min: number; max?: number }
 > = {
   sidebar: { min: 240, max: 400 },
-  chat: { min: 420, max: 820 },
+  chat: { min: 280, max: 820 },
   display: { min: 320 },
   inspector: { min: 320, max: 520 },
 };
 const MISSION_RESIZER_WIDTH = 8;
-const MISSION_OUTER_GUTTER = 0;
-const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1584;
-const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1156;
+const MISSION_OUTER_GUTTER = 24;
+const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
+const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
+const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
 
 function getMissionPaneMax(pane: MissionPaneId) {
   return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
@@ -45,19 +46,22 @@ function clampPaneWidth(value: number, pane: MissionPaneId) {
 function normalizeMissionPaneWidths(
   widths: MissionPaneWidths,
   sidebarCollapsed: boolean,
+  displayCollapsed: boolean,
   inspectorCollapsed: boolean,
   viewportWidth: number,
 ): MissionPaneWidths {
   const next: MissionPaneWidths = {
     sidebar: sidebarCollapsed ? 0 : clampPaneWidth(widths.sidebar, "sidebar"),
     chat: clampPaneWidth(widths.chat, "chat"),
-    display: clampPaneWidth(widths.display, "display"),
+    display: displayCollapsed ? 0 : clampPaneWidth(widths.display, "display"),
     inspector: inspectorCollapsed
       ? 0
       : clampPaneWidth(widths.inspector, "inspector"),
   };
   const visibleResizerCount =
-    1 + (sidebarCollapsed ? 0 : 1) + (inspectorCollapsed ? 0 : 1);
+    (sidebarCollapsed ? 0 : 1) +
+    (displayCollapsed ? 0 : 1) +
+    (inspectorCollapsed ? 0 : 1);
   const availableWidth = Math.max(
     0,
     viewportWidth -
@@ -67,7 +71,11 @@ function normalizeMissionPaneWidths(
   const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
 
   if (totalWidth < availableWidth) {
-    return { ...next, display: next.display + availableWidth - totalWidth };
+    const fillerPane: MissionPaneId = displayCollapsed ? "chat" : "display";
+    return {
+      ...next,
+      [fillerPane]: next[fillerPane] + availableWidth - totalWidth,
+    };
   }
 
   let overflow = totalWidth - availableWidth;
@@ -84,19 +92,21 @@ function normalizeMissionPaneWidths(
     overflow -= inspectorReduction;
   }
 
-  const displayReduction = Math.min(
-    overflow,
-    Math.max(0, next.display - MISSION_PANE_LIMITS.display.min),
-  );
-  next.display -= displayReduction;
-  overflow -= displayReduction;
-
   if (!sidebarCollapsed && overflow > 0) {
     const sidebarReduction = Math.min(
       overflow,
       Math.max(0, next.sidebar - MISSION_PANE_LIMITS.sidebar.min),
     );
     next.sidebar -= sidebarReduction;
+    overflow -= sidebarReduction;
+  }
+
+  if (!displayCollapsed && overflow > 0) {
+    const displayReduction = Math.min(
+      overflow,
+      Math.max(0, next.display - MISSION_PANE_LIMITS.display.min),
+    );
+    next.display -= displayReduction;
   }
 
   return next;
@@ -141,8 +151,11 @@ function createMissionPaneStyles(widths: MissionPaneWidths) {
   return {
     layout: {
       "--mission-sidebar-width": `${widths.sidebar}px`,
+      "--mission-sidebar-resizer-width": `${widths.sidebar > 0 ? MISSION_RESIZER_WIDTH : 0}px`,
       "--mission-chat-width": `${widths.chat}px`,
+      "--mission-display-resizer-width": `${widths.display > 0 ? MISSION_RESIZER_WIDTH : 0}px`,
       "--mission-display-width": `${widths.display}px`,
+      "--mission-inspector-resizer-width": `${widths.inspector > 0 ? MISSION_RESIZER_WIDTH : 0}px`,
       "--mission-inspector-width": `${widths.inspector}px`,
     } as CSSProperties,
     sidebar: { flexBasis: `${widths.sidebar}px` } as CSSProperties,
@@ -191,12 +204,15 @@ export function useMissionLayout(measureKey: unknown) {
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||
     missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
+  const effectiveDisplayCollapsed =
+    missionViewportWidth < MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH;
   const effectiveInspectorCollapsed =
     missionInspectorCollapsed ||
     missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
   const resolvedMissionPaneWidths = normalizeMissionPaneWidths(
     missionPaneWidths,
     effectiveSidebarCollapsed,
+    effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
     missionViewportWidth,
   );
@@ -243,6 +259,7 @@ export function useMissionLayout(measureKey: unknown) {
     missionInspectorCollapsed,
     setMissionInspectorCollapsed,
     effectiveSidebarCollapsed,
+    effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
     paneStyles,
     startMissionPaneResize,

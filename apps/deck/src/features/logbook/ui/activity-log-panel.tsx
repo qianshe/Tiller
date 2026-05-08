@@ -1,5 +1,7 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
-import { CommandOutput } from "../../../shared/ui/primitives";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
+import { CommandOutput } from "./command-output";
 import { resolveToolCallTone } from "../tool-call-tone";
 import { commandChunkToToolCall, groupToolCalls } from "../timeline";
 
@@ -57,13 +59,11 @@ export function ActivityLogPanel({
   }
 
   return (
-    <section className="info-list mission-activity-log">
-      <div className="section-head section-head-soft">
-        <div>
-          <h3>{copy.commandOutput}</h3>
-        </div>
-      </div>
-      <div className="plain-message-list conversation-timeline activity-timeline">
+    <Card className="grid w-full gap-3 p-3 shadow-none">
+      <CardHeader className="p-0">
+        <CardTitle>{copy.commandOutput}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-2 p-0">
         {visibleTimelineItems.map((timelineItem) =>
           timelineItem.kind === "prompt" ? (
             <PromptActivityCard
@@ -78,8 +78,8 @@ export function ActivityLogPanel({
           ),
         )}
         {hiddenCount > 0 ? (
-          <button
-            className="secondary load-more-history"
+          <Button
+            variant="outline"
             type="button"
             onClick={() =>
               sessionId
@@ -88,19 +88,19 @@ export function ActivityLogPanel({
             }
           >
             展开更多（剩余 {hiddenCount} 条）
-          </button>
+          </Button>
         ) : historyState?.hasMore ? (
-          <button
-            className="secondary load-more-history"
+          <Button
+            variant="outline"
             type="button"
             onClick={() => (sessionId ? onLoadOlder(sessionId) : undefined)}
             disabled={historyState.loading}
           >
             {historyState.loading ? "加载中..." : "加载更早活动"}
-          </button>
+          </Button>
         ) : null}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -150,17 +150,11 @@ function buildActivityTimeline(
 
 function PromptActivityCard({ text }: { text: string }) {
   return (
-    <details className="tool-call-card acp-prompt-card">
-      <summary className="tool-call-head">
-        <span className="tool-call-icon" aria-hidden="true">
-          ↗
-        </span>
-        <span className="tool-call-kind">Prompt</span>
-        <strong>{summarizeActivityText(text)}</strong>
-        <span className="tool-call-stream">user</span>
-      </summary>
-      <pre className="tool-call-output">{text}</pre>
-    </details>
+    <ActivityDetails accent="prompt" icon="↗" kind="Prompt" title={summarizeActivityText(text)} stream="user">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
+        {text}
+      </pre>
+    </ActivityDetails>
   );
 }
 
@@ -171,26 +165,103 @@ function ToolActivityCard({
 }) {
   const toolTone = resolveToolCallTone(item.toolKind, item.title);
   const streamTone = item.streams.includes("stderr") ? "stderr" : "stdout";
+  const icon = toolTone.icon ?? "•";
+  const label = toolTone.label ?? "Tool";
+  const accent = streamTone === "stderr" ? "stderr" : (toolTone.className ?? "tool-call-default");
 
   return (
-    <details
-      className={`tool-call-card tool-call-${streamTone} ${toolTone.className}`}
+    <ActivityDetails
+      accent={accent}
+      icon={icon}
+      kind={label}
+      title={item.title}
+      stream={streamTone}
     >
-      <summary className="tool-call-head">
-        <span className="tool-call-icon" aria-hidden="true">
-          {toolTone.icon}
+      {item.text.trim() ? (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
+          {item.text}
+        </pre>
+      ) : null}
+    </ActivityDetails>
+  );
+}
+
+type ActivityDetailsProps = {
+  accent: string;
+  icon: string;
+  kind: string;
+  title: string;
+  stream: string;
+  children: React.ReactNode;
+};
+
+function ActivityDetails({
+  accent,
+  icon,
+  kind,
+  title,
+  stream,
+  children,
+}: ActivityDetailsProps) {
+  const tone = activityToneClass(accent);
+  return (
+    <details
+      className={cn(
+        "group w-full rounded-md border border-border-ghost bg-surface-sunken p-0 shadow-none transition-colors hover:bg-surface-emphasis",
+        tone.border,
+      )}
+    >
+      <summary className="grid min-h-9 cursor-pointer list-none grid-cols-[20px_minmax(56px,auto)_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 [&::-webkit-details-marker]:hidden">
+        <span
+          className={cn(
+            "grid size-5 place-items-center rounded-sm font-mono text-xs font-bold",
+            tone.icon,
+          )}
+          aria-hidden="true"
+        >
+          {icon}
         </span>
-        <span className="tool-call-kind">{toolTone.label}</span>
-        <strong>{item.title}</strong>
-        <span className={`tool-call-stream tool-call-stream-${streamTone}`}>
-          {streamTone}
+        <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {kind}
+        </span>
+        <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
+          {title}
+        </strong>
+        <span
+          className={cn(
+            "text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+            stream === "stderr" && "text-destructive",
+          )}
+        >
+          {stream}
         </span>
       </summary>
-      {item.text.trim() ? (
-        <pre className="tool-call-output">{item.text}</pre>
-      ) : null}
+      <div className="mx-3 mb-3 border-t border-border-ghost pt-2">{children}</div>
     </details>
   );
+}
+
+function activityToneClass(accent: string) {
+  switch (accent) {
+    case "prompt":
+      return { border: "border-l-2 border-l-sky-400", icon: "bg-sky-400/15 text-sky-500" };
+    case "tool-call-mcp":
+      return { border: "border-l-2 border-l-violet-400", icon: "bg-violet-400/15 text-violet-500" };
+    case "tool-call-shell":
+      return { border: "border-l-2 border-l-emerald-400", icon: "bg-emerald-400/15 text-emerald-500" };
+    case "tool-call-file":
+      return { border: "border-l-2 border-l-cyan-300", icon: "bg-cyan-300/15 text-cyan-500" };
+    case "tool-call-skill":
+      return { border: "border-l-2 border-l-amber-400", icon: "bg-amber-400/15 text-amber-500" };
+    case "tool-call-subagent":
+      return { border: "border-l-2 border-l-fuchsia-300", icon: "bg-fuchsia-300/15 text-fuchsia-500" };
+    case "tool-call-builtin":
+      return { border: "border-l-2 border-l-cyan-300", icon: "bg-cyan-300/15 text-cyan-500" };
+    case "stderr":
+      return { border: "border-l-2 border-l-destructive", icon: "bg-destructive/15 text-destructive" };
+    default:
+      return { border: "border-l-2 border-l-primary", icon: "bg-primary-soft text-primary" };
+  }
 }
 
 function summarizeActivityText(text: string) {

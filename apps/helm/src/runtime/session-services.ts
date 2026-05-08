@@ -21,34 +21,30 @@ import {
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
+import {
+  planProviderHistorySync,
+  shouldRepairProviderHistorySnapshot,
+  toParagraphMessages,
+} from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
+import { createWarmRuntimePool, type WarmRuntimeKey } from "./warm-runtime-pool";
+import { createRestoreReplayBuffer } from "./replay-event-buffer";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
+
+type SessionRuntimeConfig = {
+  agentMode?: string;
+  model?: string;
+  reasoningEffort?: SessionReasoningEffort;
+};
 
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
   workspace: WorkspaceSummary;
-  runtime: {
-    runtimeSessionId: string;
-    sessionCapabilities?: StoredSessionRuntimeDescriptor["capabilities"];
-    sessionConfigState?: {
-      model?: string;
-      reasoningEffort?: SessionReasoningEffort;
-    };
-    sessionModelState?: AcpModelState;
-    prompt: (text: string, content?: AgentPromptContent[]) => void;
-    configure: (next: { model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
-      runtimeApplied: boolean;
-      state: { model?: string; reasoningEffort?: SessionReasoningEffort };
-      modelState?: AcpModelState;
-    }>;
-    respondPermission: (requestId: string, decision: "allow" | "deny") => void;
-    cancel: () => void;
-    supportsPermissionResponses: boolean;
-  };
+  runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
 type SessionServicesOptions = {
@@ -69,8 +65,18 @@ type SessionServicesOptions = {
 
 type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
+type WarmSessionRuntime = {
+  runtime: SessionRecord["runtime"];
+  attach: (sessionId: string) => void;
+  cancel: () => void;
+  expiresTimer: ReturnType<typeof setTimeout>;
+};
+
+const WARM_RUNTIME_TTL_MS = 5 * 60_000;
+
 export function createSessionServices(options: SessionServicesOptions) {
   const openCodeHistoryRefreshes = new Map<string, number>();
+  const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
 
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -172,14 +178,48 @@ export function createSessionServices(options: SessionServicesOptions) {
       if (!history) {
         return false;
       }
-      if (history.messages.length) {
-        options.sessionMessageStore.replace(sessionId, history.messages);
+      if (!history.messages.length) {
+        if (history.toolCalls.length) {
+          options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+        }
+        options.logInfo(
+          `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+        );
+        return true;
       }
+
+      const descriptor = options.sessionRuntimeStore.get(sessionId);
+      const syncDecision = planProviderHistorySync({
+        currentState: descriptor?.providerHistory,
+        providerMessages: history.messages,
+      });
+
+      let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
+      let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
+      if (syncDecision.action === "replace") {
+        if (syncDecision.messages.length) {
+          options.sessionMessageStore.replace(sessionId, syncDecision.messages);
+        }
+      } else if (syncDecision.action === "append") {
+        for (const message of syncDecision.messages) {
+          options.sessionMessageStore.append(sessionId, message);
+        }
+      } else {
+        const localMessages = options.sessionMessageStore.list(sessionId);
+        if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
+          const repairedMessages = toParagraphMessages(history.messages);
+          options.sessionMessageStore.replace(sessionId, repairedMessages);
+          localMessageCount = repairedMessages.length;
+          logAction = "repair";
+        }
+      }
+
+      persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
       if (history.toolCalls.length) {
         options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
       }
       options.logInfo(
-        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} messages=${history.messages.length} toolCalls=${history.toolCalls.length}`,
+        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
       );
       return true;
     } catch (error) {
@@ -188,6 +228,46 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       return false;
     }
+  }
+
+  function persistProviderHistoryState(
+    sessionId: string,
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    providerHistory: StoredSessionRuntimeDescriptor["providerHistory"],
+  ) {
+    if (!providerHistory) {
+      return;
+    }
+
+    const descriptor = options.sessionRuntimeStore.get(sessionId);
+    if (descriptor) {
+      options.sessionRuntimeStore.upsert({
+        ...descriptor,
+        providerHistory,
+        lastSeenAt: providerHistory.syncedAt,
+      });
+      return;
+    }
+
+    const summary =
+      options.sessions.get(sessionId)?.summary ??
+      options.sessionStore.list().find((item) => item.id === sessionId);
+    if (!summary) {
+      return;
+    }
+
+    options.sessionRuntimeStore.upsert({
+      sessionId,
+      projectId: summary.projectId,
+      helmId: summary.helmId,
+      providerId: summary.agentId,
+      runtimeSessionId,
+      capabilities: resolveSessionRestoreCapabilities(agent, null),
+      providerHistory,
+      lastSeenAt: providerHistory.syncedAt,
+      state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
+    });
   }
 
   async function refreshAuthoritativeSessionHistory(sessionId: string) {
@@ -222,6 +302,114 @@ export function createSessionServices(options: SessionServicesOptions) {
     if (refreshed) {
       openCodeHistoryRefreshes.set(sessionId, Date.now());
     }
+  }
+
+  function resolveWarmRuntimeKey(
+    workspace: WorkspaceSummary,
+    agent: AcpAgentProvider,
+    sessionConfig?: SessionRuntimeConfig,
+  ): WarmRuntimeKey {
+    return {
+      workspaceId: workspace.id,
+      agentId: agent.id,
+      configKey: JSON.stringify({
+        agentMode: sessionConfig?.agentMode ?? "",
+        model: sessionConfig?.model ?? "",
+        reasoningEffort: sessionConfig?.reasoningEffort ?? "",
+      }),
+    };
+  }
+
+  async function prewarmRuntime(params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: SessionRuntimeConfig;
+  }) {
+    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
+    const existing = warmRuntimes.get(key);
+    if (existing) {
+      return {
+        ok: true,
+        warmed: false,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: existing.runtime.runtimeSessionId,
+        message: "ACP runtime is already prewarmed.",
+      };
+    }
+
+    const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
+    let attachedSessionId: string | null = null;
+    options.logInfo(
+      `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+    );
+
+    const runtime = await createAcpRuntime({
+      sessionId: warmSessionId,
+      workspace: params.workspace,
+      agent: params.agent,
+      sessionConfig: params.sessionConfig,
+      onEvent: (event) => {
+        if (attachedSessionId) {
+          handleRuntimeEvent(attachedSessionId, event);
+          return;
+        }
+        if (event.type === "error") {
+          options.logError(
+            `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+          );
+        }
+      },
+    });
+
+    const expiresTimer = setTimeout(() => {
+      const expired = warmRuntimes.take(key);
+      if (!expired) {
+        return;
+      }
+      expired.cancel();
+      options.logInfo(
+        `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      );
+    }, WARM_RUNTIME_TTL_MS);
+    expiresTimer.unref?.();
+
+    warmRuntimes.set(key, {
+      runtime,
+      attach: (sessionId) => {
+        attachedSessionId = sessionId;
+      },
+      cancel: () => runtime.cancel(),
+      expiresTimer,
+    });
+    options.logInfo(
+      `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+    );
+    return {
+      ok: true,
+      warmed: true,
+      providerId: params.agent.id,
+      workspaceId: params.workspace.id,
+      runtimeSessionId: runtime.runtimeSessionId,
+      message: "ACP runtime prewarmed.",
+    };
+  }
+
+  function takePrewarmedRuntime(params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: SessionRuntimeConfig;
+  }) {
+    const warm = warmRuntimes.take(
+      resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig),
+    );
+    if (warm) {
+      clearTimeout(warm.expiresTimer);
+      options.logInfo(
+        `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
+      );
+    }
+    return warm;
   }
 
   async function startSessionResume(sessionId: string) {
@@ -272,7 +460,16 @@ export function createSessionServices(options: SessionServicesOptions) {
 
     try {
       options.logInfo(
-        `[tiller] ACP restore begin session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+      );
+      // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
+      // Restore replay is cache repair only; live events still use handleRuntimeEvent.
+      const restoreReplayBuffer = createRestoreReplayBuffer(
+        sessionId,
+        options.createHandlerContext(),
+      );
+      options.logInfo(
+        `[tiller] 阶段=恢复重放缓存打开 session=${sessionId}`,
       );
       const runtime = await createAcpRuntime({
         sessionId,
@@ -285,9 +482,17 @@ export function createSessionServices(options: SessionServicesOptions) {
         restore: {
           runtimeSessionId: resume.runtimeSessionId,
           strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
+          replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
         onEvent: (event) => handleRuntimeEvent(sessionId, event),
+        onRestoreReplayEvent: (event) => {
+          restoreReplayBuffer.add(event);
+        },
       });
+      const replayCounts = restoreReplayBuffer.flush();
+      options.logInfo(
+        `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
+      );
       const restoredSummary = hydrateSessionSummary({
         ...summary,
         model: runtime.sessionConfigState?.model ?? summary.model,
@@ -307,7 +512,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         workspace.path,
       );
       options.logInfo(
-        `[tiller] ACP restore success session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
       );
       return {
         ok: true,
@@ -316,7 +521,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       };
     } catch (error) {
       options.logError(
-        `[tiller] ACP restore failed session=${sessionId}: ${error instanceof Error ? error.message : "ACP restore failed."}`,
+        `[tiller] 阶段=恢复旧会话失败 session=${sessionId} message=${error instanceof Error ? error.message : "ACP restore failed."}`,
       );
       return {
         ok: false,
@@ -336,9 +541,10 @@ export function createSessionServices(options: SessionServicesOptions) {
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) {
+    const existingDescriptor = options.sessionRuntimeStore.get(summary.id);
     const resolvedCapabilities = resolveSessionRestoreCapabilities(
       agent,
-      options.sessionRuntimeStore.get(summary.id),
+      existingDescriptor,
       capabilities,
     );
     if (
@@ -360,6 +566,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       providerId: summary.agentId,
       runtimeSessionId: summary.runtimeSessionId,
       capabilities: resolvedCapabilities,
+      providerHistory: existingDescriptor?.providerHistory,
       lastSeenAt: summary.updatedAt,
       state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
     });
@@ -425,9 +632,11 @@ export function createSessionServices(options: SessionServicesOptions) {
     migrateStoredSessionSummary,
     persistRuntimeDescriptor,
     persistSessionMessage,
+    prewarmRuntime,
     publishDiffUpdate,
     refreshAuthoritativeSessionHistory,
     startSessionResume,
+    takePrewarmedRuntime,
     updateSessionSummary,
   };
 }

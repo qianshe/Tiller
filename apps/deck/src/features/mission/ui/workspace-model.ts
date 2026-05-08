@@ -1,11 +1,8 @@
-import { sortProjectFileSummaries } from "@tiller/shared";
-import { projectFilesKey } from "../utils/project-files-key";
+import type { ProjectFileSummary } from "@tiller/shared";
 import { formatProjectSummaryForDisplay } from "../utils/project-display";
-import { resolveProjectFilesScope } from "../utils/session-derivations";
 import {
   buildMissionPanelPages,
-  joinClassNames,
-  resolveVisibleProjectFiles,
+  resolveMissionActivityLoading,
   selectMissionPanelPage,
 } from "../utils/session-render-state";
 import { isSessionExecutionPending } from "../utils/session-state";
@@ -29,13 +26,12 @@ export function buildMissionWorkspaceModel(input: any) {
     customMissionPanelPages,
     selectedMissionPanelPageId,
     activeSessionProjectId,
-    projectFilesByScope,
     activeSessionProject,
     draftProject,
     selectedWorkspace,
     selectedDraftAgent,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
+    activeSessionMessages,
+    pendingPermission,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -43,7 +39,7 @@ export function buildMissionWorkspaceModel(input: any) {
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
-  const effectiveAgentId = selectedAgentId || selectedDraftAgent?.id;
+  const effectiveAgentId = selectedAgentId;
   const canSend = Boolean(
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
@@ -69,13 +65,14 @@ export function buildMissionWorkspaceModel(input: any) {
     activeSession && isSessionExecutionPending(activeSessionStatus)
       ? resolvePendingToolActivity(activeToolCalls)
       : null;
-  const missionActivityLoading =
-    activeSession && isSessionExecutionPending(activeSessionStatus)
-      ? (pendingToolActivity ?? {
-          title: "Agent 响应",
-          status: activeSessionStatus,
-        })
-      : null;
+  const missionActivityLoading = activeSession
+    ? resolveMissionActivityLoading({
+        status: activeSessionStatus,
+        messages: activeSessionMessages ?? [],
+        toolCalls: activeToolCalls,
+        pendingPermission: pendingPermission ?? null,
+      })
+    : null;
   const missionDiffCount = activeDiffs.length;
   const missionLogCount = activeToolCalls.length || activeOutputs.length;
   const missionStatusLabel = activeSession
@@ -90,28 +87,27 @@ export function buildMissionWorkspaceModel(input: any) {
     missionPanelPages,
     selectedMissionPanelPageId,
   );
-  const projectFilesScope = resolveProjectFilesScope({
-    activeSession,
-    activeSessionProjectId,
-  });
-  const projectFilesEntry =
-    projectFilesScope.projectId && projectFilesScope.workspaceId
-      ? projectFilesByScope[
-          projectFilesKey(
-            projectFilesScope.projectId,
-            projectFilesScope.workspaceId,
-          )
-        ]
-      : undefined;
-  const projectFiles = [...(projectFilesEntry?.files ?? [])].sort(
-    sortProjectFileSummaries,
-  );
+  const projectFilesScope = {
+    projectId: activeSessionProjectId ?? null,
+    workspaceId: activeSession?.workspaceId ?? null,
+  };
+  const projectFilesEntry = activeSession
+    ? {
+        loading: false,
+        files: [],
+        message:
+          "Web 端暂不拉取全量 Git 文件；请通过 Git Diff 或航行日志查看结构变化。",
+      }
+    : undefined;
+  const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
   const overviewWorkspaceName =
     activeSession?.workspaceName ?? selectedWorkspace?.name ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
+  const currentGitBranch =
+    activeSessionProject?.gitCurrentBranch ?? draftProject?.gitCurrentBranch ?? null;
   const projectOverviewItems = overviewProject
     ? [
         `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
@@ -124,11 +120,7 @@ export function buildMissionWorkspaceModel(input: any) {
         `摘要 · ${formatProjectSummaryForDisplay(overviewProject.summary, overviewProjectName)}`,
       ]
     : [];
-  const visibleProjectFiles = resolveVisibleProjectFiles(
-    projectFiles,
-    projectFileFilter,
-    collapsedProjectFileDirectories,
-  );
+  const visibleProjectFiles = [] as ProjectFileSummary[];
   const sessionExecutionPending = Boolean(
     activeSession && isSessionExecutionPending(activeSessionStatus),
   );
@@ -154,6 +146,7 @@ export function buildMissionWorkspaceModel(input: any) {
     overviewProjectName,
     overviewWorkspaceName,
     overviewAgentName,
+    currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,

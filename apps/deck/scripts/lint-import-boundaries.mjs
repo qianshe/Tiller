@@ -49,6 +49,9 @@ function extensionless(path) {
 }
 
 function sourceModulePath(file, specifier) {
+  if (specifier.startsWith("@/")) {
+    return normalize(extensionless(specifier.slice(2)));
+  }
   if (!specifier.startsWith(".")) {
     return null;
   }

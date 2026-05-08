@@ -65,6 +65,165 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
   ]);
 });
 
+test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
+  const chunks: AgentMessage[] = [
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+      role: "assistant",
+      text: "先说明",
+      timestamp: "2026-05-06T01:10:01.000Z",
+    },
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+      role: "assistant",
+      text: "先说明再继续",
+      timestamp: "2026-05-06T01:10:03.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages(chunks, DEFAULT_VISIBLE_MESSAGE_LIMIT, [
+      "2026-05-06T01:10:02.000Z",
+    ]).map((item) => item.text),
+    ["先说明", "再继续"],
+  );
+});
+
+test("plain message timeline renders assistant segment dots for tool-boundary splits", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+          role: "assistant",
+          text: "第一段",
+          timestamp: "2026-05-06T01:10:01.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+          role: "assistant",
+          text: "第一段第二段",
+          timestamp: "2026-05-06T01:10:03.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-c",
+          role: "assistant",
+          text: "第一段第二段第三段",
+          timestamp: "2026-05-06T01:10:05.000Z",
+        },
+      ],
+      boundaryTimestamps: [
+        "2026-05-06T01:10:02.000Z",
+        "2026-05-06T01:10:04.000Z",
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 3);
+  assert.match(html, /第一段/);
+  assert.match(html, /第二段/);
+  assert.match(html, /第三段/);
+});
+
+test("plain message timeline does not render visual tool-boundary dividers", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+          role: "assistant",
+          text: "先说明",
+          timestamp: "2026-05-06T01:10:01.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+          role: "assistant",
+          text: "先说明再继续",
+          timestamp: "2026-05-06T01:10:03.000Z",
+        },
+      ],
+      boundaryTimestamps: ["2026-05-06T01:10:02.000Z"],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /mission-message-tool-boundary/);
+  assert.doesNotMatch(html, />---/);
+});
+
+test("assistant phase notes render as ordinary markdown instead of structured cards", () => {
+  const assistantText = [
+    "[⚔️金] 验证",
+    "**验证**：已定位会话栏问题。",
+    "普通补充说明。",
+  ].join("\n\n");
+
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-markdown-phase",
+          role: "assistant",
+          text: assistantText,
+          timestamp: "2026-05-06T01:30:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.match(html, /\[⚔️金\] 验证/);
+  assert.match(html, /<strong>验证<\/strong>：已定位会话栏问题/);
+  assert.doesNotMatch(html, /structured-assistant-message/);
+  assert.doesNotMatch(html, /structured-message-phase/);
+  assert.doesNotMatch(html, /Assistant response/);
+});
+
+test("assistant non-structured messages keep markdown fallback", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-markdown",
+          role: "assistant",
+          text: "这是一段普通回复，包含 **强调** 但没有结构字段。",
+          timestamp: "2026-05-06T01:40:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.doesNotMatch(html, /structured-assistant-message/);
+});
+
 test("user messages render as plain text and keep the collapse affordance", () => {
   const longUserMessage = [
     "# 标题",
@@ -101,4 +260,5 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.match(html, /很长的文本/);
   assert.doesNotMatch(html, /markdown-message/);
   assert.doesNotMatch(html, /<table>/);
+  assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });

@@ -8,6 +8,11 @@ export type DispatchToHelm = (
   options?: { onResult?: (method: string, result: unknown) => void },
 ) => Promise<void>;
 
+const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
+  "agent/get_model_options": 120_000,
+  "session/prewarm": 180_000,
+};
+
 export async function dispatchWithTrace(
   client: DeckRpcClient,
   method: string,
@@ -24,7 +29,9 @@ export async function dispatchWithTrace(
     client.notify(method, params);
     return;
   }
-  const result = await client.request(method, params);
+  const result = await client.request(method, params, {
+    timeoutMs: REQUEST_TIMEOUT_OVERRIDES_MS[method],
+  });
   onResult?.(method, result);
 }
 

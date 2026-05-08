@@ -3,6 +3,7 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
+  AvailableCommand,
   SessionSummary,
 } from "@tiller/shared";
 import { toast } from "../toast";
@@ -22,6 +23,19 @@ import {
   upsertSessionSummary,
 } from "./helpers";
 
+function deriveAvailableCommandMapsFromSessions(sessions: SessionSummary[]) {
+  const bySession: Record<string, AvailableCommand[]> = {};
+  const byAgent: Record<string, AvailableCommand[]> = {};
+  for (const session of sessions) {
+    const commands = session.availableCommands ?? [];
+    if (commands.length === 0) {
+      continue;
+    }
+    bySession[session.id] = commands;
+    byAgent[session.agentId] = commands;
+  }
+  return { bySession, byAgent };
+}
 type SessionUpdateParams = {
   sessionId: string;
   update: { kind: string } & Record<string, any>;
@@ -160,6 +174,17 @@ export function applySessionResult(
         store.setSessionConfigOptions((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
+        {
+          const commandMaps = deriveAvailableCommandMapsFromSessions(nextSessions);
+          store.setSessionAvailableCommands((current) => ({
+            ...pruneSessionScopedMap(current, nextSessions),
+            ...commandMaps.bySession,
+          }));
+          store.setAgentAvailableCommands((current) => ({
+            ...current,
+            ...commandMaps.byAgent,
+          }));
+        }
         store.setActiveSessionId((current: string | null) =>
           resolveActiveSessionId(current, nextSessions),
         );
@@ -335,6 +360,17 @@ export function applySessionUpdate(
         }
         return { ...current, [sessionId]: update.commands };
       });
+      {
+        const agentId = store.sessions.find((session) => session.id === sessionId)?.agentId;
+        if (agentId) {
+          store.setAgentAvailableCommands((current) => {
+            if (availableCommandListsEqual(current[agentId], update.commands)) {
+              return current;
+            }
+            return { ...current, [agentId]: update.commands };
+          });
+        }
+      }
       return true;
     case "model_options":
       store.setSessions((current) =>
@@ -349,6 +385,8 @@ export function applySessionUpdate(
             : session,
         ),
       );
+      return true;
+    case "restore_replay_cached":
       return true;
     case "status_change":
       store.setStatuses((current) => ({
@@ -371,3 +409,6 @@ export function applySessionUpdate(
       return false;
   }
 }
+
+
+

@@ -1,6 +1,5 @@
 export { useAppActions } from "./actions/deck-actions";
 export { useAgentDraftActions } from "./actions/agent-draft-actions";
-export { AgentsPage } from "./ui/page";
 export {
   agentModelOptionsKey,
   readAgentModelOptionsCache,

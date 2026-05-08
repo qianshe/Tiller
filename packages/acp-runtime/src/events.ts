@@ -1,4 +1,4 @@
-import type { AcpModelOption, AcpModelState, AvailableCommand, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
+import type { AcpModelOption, AcpModelState, AvailableCommand, AvailableCommandKind, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime-types";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 
@@ -23,6 +23,36 @@ type AcpSessionResponseWithModels = {
 
 function timestamp() {
   return new Date().toISOString();
+}
+
+function readRawCommandKind(cmd: Record<string, unknown>) {
+  for (const key of ["kind", "type", "source", "category"]) {
+    const value = cmd[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function normalizeAvailableCommandKind(
+  rawKind: string | undefined,
+  description: string | undefined,
+): AvailableCommandKind {
+  const normalized = rawKind?.trim().toLowerCase();
+  if (normalized === "skill" || normalized === "skills") return "skill";
+  if (normalized === "builtin" || normalized === "built-in") return "builtin";
+  if (normalized === "prompt" || normalized === "prompts") return "prompt";
+  if (normalized === "workflow" || normalized === "workflows") return "workflow";
+  if (
+    normalized === "command" ||
+    normalized === "commands" ||
+    normalized === "slash"
+  ) {
+    return "command";
+  }
+  if (/^\s*[\[(]builtin[\])]/iu.test(description ?? "")) return "builtin";
+  return rawKind ? "unknown" : "command";
 }
 
 export function mapSessionUpdateNotification(payload: any): { sessionId: string; event: SessionRuntimeEvent } | null {
@@ -70,11 +100,17 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
     const rawCommands = Array.isArray(update.availableCommands) ? update.availableCommands : [];
     const commands: AvailableCommand[] = rawCommands
       .filter((cmd: any) => cmd && typeof cmd.name === "string")
-      .map((cmd: any) => ({
-        name: cmd.name,
-        description: typeof cmd.description === "string" ? cmd.description : undefined,
-        input: cmd.input && typeof cmd.input === "object" ? { hint: typeof cmd.input.hint === "string" ? cmd.input.hint : undefined } : undefined,
-      }));
+      .map((cmd: any) => {
+        const rawKind = readRawCommandKind(cmd);
+        const description = typeof cmd.description === "string" ? cmd.description : undefined;
+        return {
+          name: cmd.name,
+          description,
+          input: cmd.input && typeof cmd.input === "object" ? { hint: typeof cmd.input.hint === "string" ? cmd.input.hint : undefined } : undefined,
+          kind: normalizeAvailableCommandKind(rawKind, description),
+          rawKind,
+        };
+      });
     return {
       sessionId,
       event: {

@@ -1,3 +1,4 @@
+import { Badge, Button } from "@/shared/ui";
 import type { TrustedDeviceSummary } from "@tiller/shared";
 import type { DeckLanguage } from "../../preferences";
 import { formatDeviceTime } from "../../../shared/utils/format-time";
@@ -31,48 +32,55 @@ export function TrustedDevicesPanel({
   const deviceRows = resolveTrustedDeviceRows(devices, deckDeviceId);
 
   return (
-    <section className="helm-beacon-section">
-      <div className="helm-beacon-head">
-        <h3>{labels.title}</h3>
-        <span className="muted compact">{labels.count}</span>
+    <section className="grid gap-3 border-t border-border-ghost pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="m-0 text-base font-semibold text-foreground">{labels.title}</h3>
+        <span className="text-sm text-muted-foreground">{labels.count}</span>
       </div>
       {deviceRows.length ? (
-        <ul className="helm-beacon-simple-list">
+        <ul className="m-0 grid list-none divide-y divide-border-ghost p-0">
           {deviceRows.map((device) => (
-            <li key={device.deviceId} className="helm-beacon-simple-row">
+            <li
+              key={device.deviceId}
+              className="grid min-h-12 grid-cols-[minmax(150px,1fr)_auto_auto_minmax(132px,auto)_minmax(132px,auto)_auto] items-center gap-2 py-2 text-sm text-muted-foreground max-xl:grid-cols-[minmax(0,1fr)_auto_auto] max-xl:[grid-template-areas:'name_kind_action'_'last_expires_action'_'current_current_action'] max-md:grid-cols-1 max-md:[grid-template-areas:'name'_'kind'_'current'_'last'_'expires'_'action']"
+            >
               <strong
-                className="helm-beacon-device-name"
+                className="min-w-0 truncate text-foreground [grid-area:name]"
                 title={device.displayName}
               >
                 {device.displayName}
               </strong>
-              <span className="status-chip subtle-chip helm-beacon-kind">
+              <Badge variant="outline" className="justify-self-start [grid-area:kind]">
                 {device.clientKind === "app" ? labels.app : labels.web}
-              </span>
+              </Badge>
               {device.isCurrentDevice ? (
-                <span className="status-chip helm-beacon-current">
+                <Badge className="justify-self-start [grid-area:current]">
                   {labels.current}
-                </span>
+                </Badge>
               ) : null}
-              <span className="helm-beacon-meta helm-beacon-last">
+              <span className="whitespace-nowrap [grid-area:last]">
                 {labels.lastSeen} · {formatDeviceTime(device.lastSeenAt)}
               </span>
-              <span className="helm-beacon-meta helm-beacon-expires">
+              <span className="whitespace-nowrap [grid-area:expires]">
                 {labels.expiresAt} · {formatDeviceTime(device.expiresAt)}
               </span>
-              <button
+              <Button
                 aria-label={labels.revokeDevice(device.displayName)}
-                className="secondary helm-beacon-action"
+                variant="outline"
+                size="sm"
+                className="justify-self-end max-md:w-full max-md:justify-self-stretch [grid-area:action]"
                 type="button"
                 onClick={() => onRevokeDevice(device.deviceId, targetSocket)}
               >
                 {labels.revoke}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       ) : (
-        <div className="empty-state helm-beacon-empty">{labels.empty}</div>
+        <div className="grid min-h-16 place-items-center rounded-md bg-surface-sunken px-4 text-sm text-muted-foreground">
+          {labels.empty}
+        </div>
       )}
     </section>
   );
@@ -134,7 +142,7 @@ function resolveTrustedDeviceRows(
     });
 }
 
-function deviceCreatedAtTime(device: TrustedDeviceSummary) {
+function deviceCreatedAtTime(device: TrustedDeviceSummary): number {
   const createdAt = Date.parse(device.createdAt);
-  return Number.isFinite(createdAt) ? createdAt : 0;
+  return Number.isNaN(createdAt) ? 0 : createdAt;
 }

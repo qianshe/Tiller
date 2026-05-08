@@ -1,17 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as sessionNew from "./new";
+import * as sessionPrewarm from "./prewarm";
 import * as sessionList from "./list";
 import * as sessionListMessages from "./list-messages";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
 import * as sessionSetConfigOption from "./set-config-option";
+import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
 
 test("session/new requires project, workspace, agent", () => {
   assert.equal(sessionNew.method, "session/new");
   sessionNew.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
+});
+
+test("session/prewarm requires project, workspace, agent", () => {
+  assert.equal(sessionPrewarm.method, "session/prewarm");
+  sessionPrewarm.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
+  sessionPrewarm.ResultSchema.parse({
+    ok: true,
+    warmed: true,
+    providerId: "a1",
+    workspaceId: "ws1",
+    runtimeSessionId: "runtime-1",
+    message: "ACP runtime prewarmed.",
+  });
 });
 
 test("session/list returns paginated session summaries", () => {
@@ -42,6 +57,13 @@ test("session/check_resume and session/resume share sessionId param", () => {
 test("session/set_config_option allows partial config", () => {
   assert.equal(sessionSetConfigOption.method, "session/set_config_option");
   sessionSetConfigOption.ParamsSchema.parse({ sessionId: "s1" });
+});
+
+test("session/rename requires session id and title", () => {
+  assert.equal(sessionRename.method, "session/rename");
+  sessionRename.ParamsSchema.parse({ sessionId: "s1", title: "New title" });
+  sessionRename.ResultSchema.parse({ ok: true });
+  assert.throws(() => sessionRename.ParamsSchema.parse({ sessionId: "s1" }));
 });
 
 test("session/cleanup carries result payload", () => {

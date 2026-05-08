@@ -65,7 +65,8 @@ export function useDeckData(missionVisualFixture: any) {
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
-  const permissionRequests = useDeckStore((state) => state.permissionRequests);
+  const storedPermissionRequests = useDeckStore((state) => state.permissionRequests);
+  const permissionRequests = (missionVisualFixture?.permissionRequests ?? storedPermissionRequests) as Record<string, any>;
   const setPermissionRequests = useDeckStore((state) => state.setPermissionRequests);
 
   const storedOutputs = useDeckStore((state) => state.outputs);
@@ -92,6 +93,9 @@ export function useDeckData(missionVisualFixture: any) {
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
   const sessionAvailableCommands = useDeckStore((state) => state.sessionAvailableCommands);
   const setSessionAvailableCommands = useDeckStore((state) => state.setSessionAvailableCommands);
+  const agentAvailableCommands = useDeckStore((state) => state.agentAvailableCommands);
+  const setAgentAvailableCommands = useDeckStore((state) => state.setAgentAvailableCommands);
+  const refreshAgentAvailableCommands = useDeckStore((state) => state.refreshAgentAvailableCommands);
 
   const agentModelOptions = useDeckStore((state) => state.agentModelOptions);
   const setAgentModelOptions = useDeckStore((state) => state.setAgentModelOptions);
@@ -164,6 +168,9 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionConfigOptions,
     sessionAvailableCommands,
     setSessionAvailableCommands,
+    agentAvailableCommands,
+    setAgentAvailableCommands,
+    refreshAgentAvailableCommands,
     agentModelOptions,
     setAgentModelOptions,
     deckPreferences,

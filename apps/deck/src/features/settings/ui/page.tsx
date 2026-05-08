@@ -1,4 +1,18 @@
 import type { RefObject } from "react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from "@/shared/ui";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import type {
   DeckLanguage,
@@ -8,6 +22,7 @@ import type {
 } from "../../preferences";
 import { resolveSettingsCopy } from "../utils/copy";
 import { PromptEnhancerCard } from "./prompt-enhancer-card";
+
 type SettingsPageProps = {
   deckPreferences: DeckPreferences;
   technicalPanels: TechnicalPanelPreferences;
@@ -40,6 +55,7 @@ type SettingsPageProps = {
   resetPromptEnhancerDefaults: () => void;
   testPromptEnhancerSelectedModel: () => void;
 };
+
 export function SettingsPage({
   deckPreferences,
   technicalPanels,
@@ -62,139 +78,115 @@ export function SettingsPage({
   testPromptEnhancerSelectedModel,
 }: SettingsPageProps) {
   const settingsCopy = resolveSettingsCopy(deckPreferences.language);
+
   return (
     <section className="workspace-single">
-      <section className="card surface-card stack-gap">
-        <div className="section-head section-head-soft">
+      <Card className="grid gap-6 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2>{settingsCopy.title}</h2>
+            <h2 className="text-xl font-semibold text-foreground">
+              {settingsCopy.title}
+            </h2>
           </div>
-          <button
-            className="secondary"
-            type="button"
-            onClick={resetDeckPreferences}
-          >
+          <Button variant="secondary" type="button" onClick={resetDeckPreferences}>
             {settingsCopy.reset}
-          </button>
+          </Button>
         </div>
-        <div className="settings-grid settings-form">
-          <section className="note-box settings-card">
-            <label>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="grid content-start gap-3 p-4 shadow-card">
+            <Label className="grid gap-2">
               <span>{settingsCopy.languageLabel}</span>
-              <select
-                aria-label={settingsCopy.languageLabel}
+              <Select
                 value={deckPreferences.language}
-                onChange={(event) =>
-                  updateDeckPreference(
-                    "language",
-                    event.target.value as DeckLanguage,
-                  )
+                onValueChange={(value) =>
+                  updateDeckPreference("language", value as DeckLanguage)
                 }
               >
-                <option value="zh-CN">中文</option>
-                <option value="en-US">English</option>
-              </select>
-            </label>
-          </section>
-          <section className="note-box settings-card">
-            <label>
+                <SelectTrigger aria-label={settingsCopy.languageLabel}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="zh-CN">中文</SelectItem>
+                  <SelectItem value="en-US">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+          </Card>
+          <Card className="grid content-start gap-3 p-4 shadow-card">
+            <Label className="grid gap-2">
               <span>{settingsCopy.themeLabel}</span>
-              <select
+              <Select
                 value={deckPreferences.theme}
-                onChange={(event) =>
-                  updateDeckPreference("theme", event.target.value as DeckTheme)
+                onValueChange={(value) =>
+                  updateDeckPreference("theme", value as DeckTheme)
                 }
               >
-                <option value="system">{settingsCopy.themeSystem}</option>
-                <option value="light">{settingsCopy.themeLight}</option>
-                <option value="dark">{settingsCopy.themeDark}</option>
-              </select>
-            </label>
-          </section>
-          <section className="note-box settings-card">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">{settingsCopy.themeSystem}</SelectItem>
+                  <SelectItem value="light">{settingsCopy.themeLight}</SelectItem>
+                  <SelectItem value="dark">{settingsCopy.themeDark}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+          </Card>
+          <Card className="grid content-start gap-3 p-4 shadow-card">
             <p className="eyebrow">{settingsCopy.motionEyebrow}</p>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
+            <Label className="flex items-center gap-3">
+              <Switch
                 checked={deckPreferences.reduceMotion}
-                onChange={(event) =>
-                  updateDeckPreference("reduceMotion", event.target.checked)
+                onCheckedChange={(checked) =>
+                  updateDeckPreference("reduceMotion", checked)
                 }
               />
               <span>{settingsCopy.reduceMotion}</span>
-            </label>
-          </section>
-          <section className="note-box settings-card settings-card-full">
-            <p className="eyebrow">{settingsCopy.technicalEyebrow}</p>
-            <h3>{settingsCopy.technicalTitle}</h3>
-            <div className="settings-control-grid">
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={technicalPanels.logbookDefaultOpen}
-                  onChange={(event) =>
-                    updateTechnicalPanelPreference(
-                      "logbookDefaultOpen",
-                      event.target.checked,
-                    )
-                  }
-                />
-                <span>{settingsCopy.logbookOpen}</span>
-              </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={technicalPanels.diffDefaultOpen}
-                  onChange={(event) =>
-                    updateTechnicalPanelPreference(
-                      "diffDefaultOpen",
-                      event.target.checked,
-                    )
-                  }
-                />
-                <span>{settingsCopy.diffOpen}</span>
-              </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={technicalPanels.showSessionRuntimeMeta}
-                  onChange={(event) =>
-                    updateTechnicalPanelPreference(
-                      "showSessionRuntimeMeta",
-                      event.target.checked,
-                    )
-                  }
-                />
-                <span>{settingsCopy.runtimeMeta}</span>
-              </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={technicalPanels.showPermissionWorkspace}
-                  onChange={(event) =>
-                    updateTechnicalPanelPreference(
-                      "showPermissionWorkspace",
-                      event.target.checked,
-                    )
-                  }
-                />
-                <span>{settingsCopy.permissionWorkspace}</span>
-              </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={technicalPanels.showConnectionDebug}
-                  onChange={(event) =>
-                    updateTechnicalPanelPreference(
-                      "showConnectionDebug",
-                      event.target.checked,
-                    )
-                  }
-                />
-                <span>{settingsCopy.connectionDebug}</span>
-              </label>
-            </div>
-          </section>
+            </Label>
+          </Card>
+          <Card className="grid content-start gap-3 p-4 shadow-card lg:col-span-3">
+            <CardHeader className="p-0">
+              <p className="eyebrow">{settingsCopy.technicalEyebrow}</p>
+              <CardTitle>{settingsCopy.technicalTitle}</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-0 sm:grid-cols-2">
+              <TechnicalSwitch
+                checked={technicalPanels.logbookDefaultOpen}
+                label={settingsCopy.logbookOpen}
+                onCheckedChange={(checked) =>
+                  updateTechnicalPanelPreference("logbookDefaultOpen", checked)
+                }
+              />
+              <TechnicalSwitch
+                checked={technicalPanels.diffDefaultOpen}
+                label={settingsCopy.diffOpen}
+                onCheckedChange={(checked) =>
+                  updateTechnicalPanelPreference("diffDefaultOpen", checked)
+                }
+              />
+              <TechnicalSwitch
+                checked={technicalPanels.showSessionRuntimeMeta}
+                label={settingsCopy.runtimeMeta}
+                onCheckedChange={(checked) =>
+                  updateTechnicalPanelPreference("showSessionRuntimeMeta", checked)
+                }
+              />
+              <TechnicalSwitch
+                checked={technicalPanels.showPermissionWorkspace}
+                label={settingsCopy.permissionWorkspace}
+                onCheckedChange={(checked) =>
+                  updateTechnicalPanelPreference("showPermissionWorkspace", checked)
+                }
+              />
+              <TechnicalSwitch
+                checked={technicalPanels.showConnectionDebug}
+                label={settingsCopy.connectionDebug}
+                onCheckedChange={(checked) =>
+                  updateTechnicalPanelPreference("showConnectionDebug", checked)
+                }
+              />
+            </CardContent>
+          </Card>
           <PromptEnhancerCard
             deckPreferences={deckPreferences}
             pickerRef={promptModelPickerRef}
@@ -213,7 +205,26 @@ export function SettingsPage({
             testSelectedModel={testPromptEnhancerSelectedModel}
           />
         </div>
-      </section>
+      </Card>
     </section>
+  );
+}
+
+type TechnicalSwitchProps = {
+  checked: boolean;
+  label: string;
+  onCheckedChange: (checked: boolean) => void;
+};
+
+function TechnicalSwitch({
+  checked,
+  label,
+  onCheckedChange,
+}: TechnicalSwitchProps) {
+  return (
+    <Label className="flex items-center gap-3 rounded-md bg-surface-sunken px-3 py-2">
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <span>{label}</span>
+    </Label>
   );
 }

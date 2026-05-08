@@ -8,6 +8,7 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import { resolveNewSessionIdentity } from "../utils/session-identity";
 
 type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
 
@@ -99,20 +100,25 @@ export function createSession(
     navigateToView,
   } = context;
 
-  const projectId = selectedProjectId || projects[0]?.id;
-  const workspaceId = selectedWorkspace?.id || filteredWorkspaces[0]?.id;
-  const agentId = selectedAgentId || filteredAgents[0]?.id;
+  const identity = resolveNewSessionIdentity({
+    selectedProjectId,
+    projects,
+    selectedWorkspace,
+    workspaces: filteredWorkspaces,
+    selectedAgentId,
+    agents: filteredAgents,
+  });
   const client = rpcClientRef.current;
-  if (!projectId || !workspaceId || !agentId || !isClientOpen(client)) {
+  if (!identity || !isClientOpen(client)) {
     return false;
   }
 
   pendingPromptRef.current = initialPrompt ?? null;
   pendingPromptContentRef.current = initialContent;
   void dispatch(client, "session/new", {
-    projectId,
-    workspaceId,
-    agentId,
+    projectId: identity.projectId,
+    workspaceId: identity.workspaceId,
+    agentId: identity.agentId,
     agentMode: effectiveDraftAgentMode,
     model: normalizeModelSelection(selectedModel),
     reasoningEffort: selectedReasoningEffort,

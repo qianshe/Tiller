@@ -7,6 +7,7 @@ import type {
 import type { StateCreator } from "zustand";
 
 const SESSION_TITLES_STORAGE_KEY = "tiller.session-titles";
+const AGENT_AVAILABLE_COMMANDS_STORAGE_KEY = "tiller.agent-available-commands";
 
 export type SessionHistoryState = {
   nextCursor?: string;
@@ -33,6 +34,11 @@ export type SessionAvailableCommandsUpdater =
   | ((
       current: Record<string, AvailableCommand[]>,
     ) => Record<string, AvailableCommand[]>);
+export type AgentAvailableCommandsUpdater =
+  | Record<string, AvailableCommand[]>
+  | ((
+      current: Record<string, AvailableCommand[]>,
+    ) => Record<string, AvailableCommand[]>);
 export type SessionHistoryStateUpdater =
   | SessionHistoryState
   | ((current: SessionHistoryState) => SessionHistoryState);
@@ -48,6 +54,7 @@ export type SessionsSlice = {
   sessionTitles: Record<string, string>;
   sessionConfigOptions: Record<string, SessionConfigOption[]>;
   sessionAvailableCommands: Record<string, AvailableCommand[]>;
+  agentAvailableCommands: Record<string, AvailableCommand[]>;
   activeSessionId: string | null;
   setSessions: (updater: SessionsUpdater) => void;
   setStatuses: (updater: StatusesUpdater) => void;
@@ -58,6 +65,10 @@ export type SessionsSlice = {
   setSessionAvailableCommands: (
     updater: SessionAvailableCommandsUpdater,
   ) => void;
+  setAgentAvailableCommands: (
+    updater: AgentAvailableCommandsUpdater,
+  ) => void;
+  refreshAgentAvailableCommands: () => void;
   setSessionHistoryState: (updater: SessionHistoryStateUpdater) => void;
   setActiveSessionId: (updater: ActiveSessionIdUpdater) => void;
 };
@@ -83,6 +94,69 @@ function readSessionTitles(): Record<string, string> {
   }
 }
 
+function readAgentAvailableCommands(): Record<string, AvailableCommand[]> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(AGENT_AVAILABLE_COMMANDS_STORAGE_KEY) ?? "{}",
+    ) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, AvailableCommand[]] =>
+          typeof entry[0] === "string" && Array.isArray(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeAgentAvailableCommands(commands: Record<string, AvailableCommand[]>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      AGENT_AVAILABLE_COMMANDS_STORAGE_KEY,
+      JSON.stringify(commands),
+    );
+  } catch {
+    // Ignore storage quota or privacy-mode failures; the in-memory cache still works.
+  }
+}
+
+function agentAvailableCommandMapsEqual(
+  left: Record<string, AvailableCommand[]>,
+  right: Record<string, AvailableCommand[]>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+  return leftKeys.every((key) => {
+    const leftCommands = left[key] ?? [];
+    const rightCommands = right[key] ?? [];
+    if (leftCommands.length !== rightCommands.length) {
+      return false;
+    }
+    return leftCommands.every((command, index) => {
+      const other = rightCommands[index];
+      return (
+        other !== undefined &&
+        command.name === other.name &&
+        command.description === other.description &&
+        command.input?.hint === other.input?.hint
+      );
+    });
+  });
+}
+
 export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   sessions: [],
   sessionHistoryState: { hasMore: false, loading: false },
@@ -90,6 +164,7 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   sessionTitles: readSessionTitles(),
   sessionConfigOptions: {},
   sessionAvailableCommands: {},
+  agentAvailableCommands: readAgentAvailableCommands(),
   activeSessionId: null,
   setSessions: (updater) =>
     set((state) => ({
@@ -124,6 +199,23 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
           ? updater(state.sessionAvailableCommands)
           : updater,
     })),
+  setAgentAvailableCommands: (updater) =>
+    set((state) => {
+      const next =
+        typeof updater === "function"
+          ? updater(state.agentAvailableCommands)
+          : updater;
+      writeAgentAvailableCommands(next);
+      return { agentAvailableCommands: next };
+    }),
+  refreshAgentAvailableCommands: () =>
+    set((state) => {
+      const next = readAgentAvailableCommands();
+      if (agentAvailableCommandMapsEqual(state.agentAvailableCommands, next)) {
+        return {};
+      }
+      return { agentAvailableCommands: next };
+    }),
   setSessionHistoryState: (updater) =>
     set((state) => ({
       sessionHistoryState:

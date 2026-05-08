@@ -5,6 +5,7 @@ import type {
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
+  PermissionRequest,
   ProjectSummary,
   SessionStatus,
   SessionSummary,
@@ -22,6 +23,7 @@ type MissionVisualFixture = {
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
   diffs: Record<string, FileDiffSummary[]>;
+  permissionRequests: Record<string, PermissionRequest>;
   activeSessionId: string;
   selectedProjectId: string;
   selectedWorkspaceId: string;
@@ -110,22 +112,29 @@ export function createMissionVisualFixture({
         {
           id: "visual-user-1",
           role: "user",
-          text: `# ??????
-
-?? Zed ? Agent Panel ???? ????`,
+          text: `请复核 Mission Review UI：Markdown、权限审核与 Diff 详情。`,
           timestamp: now,
         },
         {
           id: "visual-assistant-1",
           role: "assistant",
-          text: `## ??/??
+          text: `[⚔️金] 验证
 
-?? ?????? Zed-like ?????
+**验证**：这是普通 Markdown 段落，不再转换成结构化卡片。
 
-- ????? / ?? rail
-- ????????
-- ???sticky composer
-- ?????? inspector`,
+| 项目 | 内容 |
+| --- | --- |
+| 产物 | apps/deck/src/features/mission/ui/plain-messages.tsx |
+| 根因 | 结构化渲染抢占了源 Markdown |
+
+- 普通列表保持列表
+- 只有源 Markdown 表格渲染为表格`,
+          timestamp: now,
+        },
+        {
+          id: "visual-user-2",
+          role: "user",
+          text: "继续执行 diff 渲染与权限审核复核。",
           timestamp: now,
         },
       ],
@@ -146,11 +155,11 @@ export function createMissionVisualFixture({
       [sessionId]: [
         {
           id: "visual-tool-1",
-          kind: "terminal",
-          title: "pnpm --filter @tiller/deck build",
-          status: "completed",
+          kind: "tool",
+          title: "mcp_router/search_context",
+          status: "waiting_for_permission",
           commandId: "visual-command-1",
-          output: "✓ built in 2.0s",
+          output: "",
           stream: "stdout",
           timestamp: now,
           updatedAt: now,
@@ -160,18 +169,56 @@ export function createMissionVisualFixture({
     diffs: {
       [sessionId]: [
         {
-          path: "apps/deck/src/App.tsx",
+          path: "apps/deck/src/features/mission/hooks/slash-commands.ts",
           status: "modified",
-          additions: 44,
-          deletions: 18,
+          additions: 3,
+          deletions: 0,
+          patch: [
+            "diff --git a/apps/deck/src/features/mission/hooks/slash-commands.ts b/apps/deck/src/features/mission/hooks/slash-commands.ts",
+            "index 111..222 100644",
+            "@@ -1,2 +1,3 @@",
+            " const keep = true;",
+            "-const oldValue = 1;",
+            "+const newValue = 2;",
+          ].join("\n"),
         },
         {
-          path: "apps/deck/src/styles.css",
+          path: "apps/deck/src/features/mission/ui/slash-command-popup.tsx",
           status: "modified",
-          additions: 134,
-          deletions: 0,
+          additions: 12,
+          deletions: 4,
+          patch: [
+            "diff --git a/apps/deck/src/features/mission/ui/slash-command-popup.tsx b/apps/deck/src/features/mission/ui/slash-command-popup.tsx",
+            "@@ -8,2 +8,2 @@",
+            "-const tone = 'raw';",
+            "+const tone = 'polished';",
+          ].join("\n"),
+        },
+        {
+          path: "apps/helm/src/runtime/events.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: [
+            "diff --git a/apps/helm/src/runtime/events.ts b/apps/helm/src/runtime/events.ts",
+            "@@ -1 +1 @@",
+            "-export const stale = true;",
+            "+export const stale = false;",
+          ].join("\n"),
         },
       ],
+    },
+    permissionRequests: {
+      [sessionId]: {
+        id: "visual-permission-1",
+        command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
+        reason: "需要读取代码上下文以完成 UI 复核。",
+        workspacePath: "D:/myProject/tools/Tiller",
+        options: [
+          { decision: "allow", label: "同意" },
+          { decision: "deny", label: "取消" },
+        ],
+      },
     },
   };
 }

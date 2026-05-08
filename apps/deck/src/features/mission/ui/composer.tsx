@@ -1,10 +1,15 @@
 import {
+  Button,
+  Textarea,
+} from "../../../shared/ui";
+import {
   type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
   type SetStateAction,
+  useState,
 } from "react";
 import type {
   AcpAgentProvider,
@@ -37,6 +42,7 @@ type MissionComposerProps = {
   draftWorkspaceOptions: WorkspaceSummary[];
   selectedWorkspaceId: string | null;
   selectDraftWorkspace: (workspaceId: string) => void;
+  currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
   selectedDraftAgent: AcpAgentProvider | null;
@@ -77,6 +83,7 @@ type MissionComposerProps = {
   draftModelPlaceholder: string;
   draftModelPickerDisabled: boolean;
   draftModelPickerLabel: string;
+  draftModelLoading: boolean;
   draftModelBaseOptions: string[];
   resolveReasoningOptionsForModel: (
     model: string,
@@ -114,6 +121,7 @@ export function MissionComposer({
   draftWorkspaceOptions,
   selectedWorkspaceId,
   selectDraftWorkspace,
+  currentGitBranch,
   copy,
   agentLocked,
   selectedDraftAgent,
@@ -146,6 +154,7 @@ export function MissionComposer({
   draftModelPlaceholder,
   draftModelPickerDisabled,
   draftModelPickerLabel,
+  draftModelLoading,
   draftModelBaseOptions,
   resolveReasoningOptionsForModel,
   draftAllModelOptions,
@@ -163,8 +172,17 @@ export function MissionComposer({
   cancelSession,
   canSend,
 }: MissionComposerProps) {
+  const [toolsOpen, setToolsOpen] = useState(false);
+
+  function focusSlashCommand() {
+    if (!prompt.startsWith("/")) {
+      setPrompt((current) => (current ? `/${current}` : "/"));
+    }
+    missionPromptRef.current?.focus();
+  }
+
   return (
-    <div className="chat-input-area draft-toolbar">
+    <div className="chat-input-area draft-toolbar border-t border-border-ghost bg-surface p-3">
       {!activeSession ? (
         <ComposerDraftSelectors
           worktreePickerRef={worktreePickerRef}
@@ -177,6 +195,7 @@ export function MissionComposer({
           draftWorkspaceOptions={draftWorkspaceOptions}
           selectedWorkspaceId={selectedWorkspaceId}
           selectDraftWorkspace={selectDraftWorkspace}
+          currentGitBranch={currentGitBranch}
           copy={copy}
           agentLocked={agentLocked}
           selectedDraftAgent={selectedDraftAgent}
@@ -186,22 +205,23 @@ export function MissionComposer({
         />
       ) : null}
       <form
-        className="chat-input-form mission-order-editor"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface-sunken p-3"
         onSubmit={submitPrompt}
       >
-        <div ref={slashWrapperRef} className="slash-command-wrapper">
+        <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
             imagePasteNotice={imagePasteNotice}
           />
-          <textarea
+          <Textarea
             ref={missionPromptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
+            className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup
@@ -212,36 +232,87 @@ export function MissionComposer({
             />
           ) : null}
         </div>
-        <div className="mission-composer-sidecar">
-          <div className="mission-composer-tools" aria-hidden="true">
-            <span>＋</span> <span>◎</span>
+        <div className="mission-composer-sidecar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <div
+            className="mission-composer-tools relative flex min-w-0 items-center gap-1 text-muted-foreground"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setToolsOpen(false);
+              }
+            }}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-tools-trigger size-8 rounded-full bg-surface"
+              aria-haspopup="menu"
+              aria-expanded={toolsOpen}
+              aria-label="打开任务设置"
+              title="打开任务设置"
+              onClick={() => setToolsOpen((current) => !current)}
+            >
+              ＋
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-slash-trigger size-8 rounded-full bg-surface text-base"
+              aria-label="输入斜杠命令"
+              title="输入斜杠命令"
+              onClick={focusSlashCommand}
+            >
+              /
+            </Button>
+            {toolsOpen ? (
+              <div
+                className="mission-tools-menu absolute bottom-full left-0 z-50 mb-2 grid w-56 max-w-[calc(100vw-3rem)] gap-3 overflow-visible rounded-lg border border-border-ghost bg-popover-glass p-3 shadow-ambient backdrop-blur-2xl"
+                role="menu"
+                aria-label="任务设置"
+              >
+                <div className="grid gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    模型设置
+                  </span>
+                  <MissionConfigControls
+                    showAgentModeSelect={showDraftAgentModeSelect}
+                    picker={missionConfigPicker}
+                    setPicker={setMissionConfigPicker}
+                    agentModeLabel={draftAgentModePickerLabel}
+                    agentModeOptions={draftAgentModeOptions}
+                    effectiveAgentMode={effectiveDraftAgentMode}
+                    updatePreferences={updateSessionDraftPreferences}
+                    modelPlaceholder={draftModelPlaceholder}
+                    modelDisabled={draftModelPickerDisabled}
+                    modelLabel={draftModelPickerLabel}
+                    modelLoading={
+                      draftModelLoading ||
+                      (!activeSession &&
+                        selectedDraftAgent?.id === "opencode" &&
+                        draftConfigOptions.length === 0)
+                    }
+                    modelBaseOptions={draftModelBaseOptions}
+                    resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
+                    allModelOptions={draftAllModelOptions}
+                    configOptions={draftConfigOptions}
+                    effectiveReasoningEffort={effectiveDraftReasoningEffort}
+                    effectiveModelBase={effectiveDraftModelBase}
+                    resolveCombinedModelValue={resolveCombinedModelValue}
+                    showReasoningSelect={showDraftReasoningSelect}
+                    resolveReasoningLabel={resolveReasoningLabel}
+                    reasoningOptions={draftReasoningOptions}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
-          <MissionConfigControls
-            showAgentModeSelect={showDraftAgentModeSelect}
-            picker={missionConfigPicker}
-            setPicker={setMissionConfigPicker}
-            agentModeLabel={draftAgentModePickerLabel}
-            agentModeOptions={draftAgentModeOptions}
-            effectiveAgentMode={effectiveDraftAgentMode}
-            updatePreferences={updateSessionDraftPreferences}
-            modelPlaceholder={draftModelPlaceholder}
-            modelDisabled={draftModelPickerDisabled}
-            modelLabel={draftModelPickerLabel}
-            modelBaseOptions={draftModelBaseOptions}
-            resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
-            allModelOptions={draftAllModelOptions}
-            configOptions={draftConfigOptions}
-            effectiveReasoningEffort={effectiveDraftReasoningEffort}
-            effectiveModelBase={effectiveDraftModelBase}
-            resolveCombinedModelValue={resolveCombinedModelValue}
-            showReasoningSelect={showDraftReasoningSelect}
-            resolveReasoningLabel={resolveReasoningLabel}
-            reasoningOptions={draftReasoningOptions}
-          />
-          <div className="mission-composer-actions">
+          <div className="min-w-0" />
+          <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-2">
             {deckPreferences.promptEnhancer.enabled ? (
-              <button
-                className="secondary composer-icon-button"
+              <Button
+                variant="outline"
+                size="icon"
                 type="button"
                 onClick={enhancePromptDraft}
                 disabled={!prompt.trim() || promptEnhancerBusy}
@@ -249,28 +320,29 @@ export function MissionComposer({
                 title="增强提示词"
               >
                 ✦
-              </button>
+              </Button>
             ) : null}
             {activeSession && sessionExecutionPending ? (
-              <button
-                className="composer-send-icon composer-cancel-icon"
+              <Button
+                variant="destructive"
+                size="icon"
                 type="button"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
               >
                 ■
-              </button>
+              </Button>
             ) : (
-              <button
-                className="primary composer-send-icon"
+              <Button
+                size="icon"
                 type="submit"
                 disabled={!canSend}
                 aria-label="发送"
                 title="发送"
               >
                 ➤
-              </button>
+              </Button>
             )}
           </div>
         </div>

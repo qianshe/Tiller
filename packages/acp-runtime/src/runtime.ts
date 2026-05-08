@@ -3,7 +3,12 @@ import type { AcpAgentProvider } from "@tiller/shared";
 export { createAcpRuntime } from "./runtime-session";
 export { testAcpConnection } from "./connection-test";
 export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./session-list";
-export { DEFAULT_ACP_PROMPT_TIMEOUT_MS, DEFAULT_ACP_REQUEST_TIMEOUT_MS } from "./constants";
+export {
+  DEFAULT_ACP_PROMPT_TIMEOUT_MS,
+  DEFAULT_ACP_REQUEST_TIMEOUT_MS,
+  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  resolveAcpRequestTimeout,
+} from "./constants";
 
 export function resolvePreferredAgentId(provider: Pick<AcpAgentProvider, "defaultAgent">) {
   return normalizePreferredAgentId(provider.defaultAgent);

@@ -7,6 +7,190 @@ import {
   mergeMessageHistory,
 } from "./timeline.js";
 
+test("mergeAgentMessages collapses duplicate assistant text with different markdown bullet formatting", () => {
+  const merged = [
+    {
+      id: "assistant-combined",
+      role: "assistant",
+      text: "我可以帮你：- 🚀 实现功能 - 添加新特性🐛 调试问题 - 排查异常",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "assistant-markdown",
+      role: "assistant",
+      text: "我可以帮你：\n\n- 🚀 **实现功能** - 添加新特性\n- 🐛 **调试问题** - 排查异常",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.id, "assistant-combined");
+});
+
+test("mergeAgentMessages skips provider paragraph chunks already covered by a combined stream message", () => {
+  const merged = [
+    {
+      id: "provider-message-1",
+      role: "assistant",
+      text: "你好！我可以帮你：- 实现功能",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "你好！",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "我可以帮你：",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+    {
+      id: "provider-message-1#p2",
+      role: "assistant",
+      text: "- 实现功能",
+      timestamp: "2026-05-07T08:00:03.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => [message.id, message.text]),
+    [["provider-message-1", "你好！我可以帮你：- 实现功能"]],
+  );
+});
+
+test("mergeAgentMessages replaces provider paragraph chunks with a later combined stream message", () => {
+  const merged = [
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "你好！",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "我可以帮你：",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1",
+      role: "assistant",
+      text: "你好！我可以帮你：",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => [message.id, message.text]),
+    [["provider-message-1", "你好！我可以帮你："]],
+  );
+});
+
+test("mergeAgentMessages merges provider paragraph chunks from the same ACP stream segment", () => {
+  const merged = [
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "你好！",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "我可以帮你：",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1#p2",
+      role: "assistant",
+      text: "- 实现功能",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "你好！我可以帮你：- 实现功能");
+  assert.equal(merged[0]?.id, "provider-message-1#p0");
+});
+
+test("mergeAgentMessages splits provider paragraph chunks at tool boundaries", () => {
+  const boundary = Date.parse("2026-05-07T08:00:01.500Z");
+  const merged = [
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "工具前说明",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "工具后继续",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage, [boundary]),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["工具前说明", "工具后继续"],
+  );
+});
+
+test("mergeMessageHistory collapses accumulated assistant chunks when history returns the same stream segment", () => {
+  const current: AgentMessage[] = [
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "你好！",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "我可以帮你：",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1#p2",
+      role: "assistant",
+      text: "- 实现功能",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ];
+
+  const merged = mergeMessageHistory(current, [
+    {
+      id: "provider-message-1",
+      role: "assistant",
+      text: "你好！我可以帮你：- 实现功能",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+  ]);
+
+  assert.deepEqual(
+    merged.map((message) => [message.id, message.text]),
+    [["provider-message-1", "你好！我可以帮你：- 实现功能"]],
+  );
+});
+
 test("coalesceDisplayMessages collapses repeated assistant snapshots", () => {
   const finalAnswer = "主人，已完成本轮最小改动喵~\n\n| 项目 | 内容 |";
   const bridge =

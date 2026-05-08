@@ -161,9 +161,7 @@ const pendingPermission = activeSession
   ? (permissionRequests[activeSession.id] ?? null)
   : null;
 const selectedDraftAgent =
-  filteredAgents.find((agent) => agent.id === selectedAgentId) ??
-  filteredAgents[0] ??
-  null;
+  filteredAgents.find((agent) => agent.id === selectedAgentId) ?? null;
 const draftAgent =
   agents.find(
     (agent) => agent.id === (activeSession?.agentId ?? selectedAgentId),
@@ -192,9 +190,21 @@ const draftAgentModelOptionsKey =
   !activeSession && selectedAgentId && selectedWorkspaceId
     ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId)
     : null;
-const draftAgentModelOptions = draftAgentModelOptionsKey
-  ? agentModelOptions[draftAgentModelOptionsKey]
+const draftAgentModelOptionsPrefix =
+  selectedAgentId && selectedWorkspaceId
+    ? `${selectedAgentId}::${selectedWorkspaceId}`
+    : null;
+const draftLoadingAgentModelOptions = draftAgentModelOptionsPrefix
+  ? Object.entries(agentModelOptions).find(
+      ([key, entry]) =>
+        Boolean(entry?.loading) &&
+        (key === draftAgentModelOptionsPrefix ||
+          key.startsWith(`${draftAgentModelOptionsPrefix}::`)),
+    )?.[1]
   : undefined;
+const draftAgentModelOptions = draftAgentModelOptionsKey
+  ? (agentModelOptions[draftAgentModelOptionsKey] ?? draftLoadingAgentModelOptions)
+  : draftLoadingAgentModelOptions;
 const draftConfigOptions = activeSession
   ? resolveDraftConfigOptions(
       activeSession,
@@ -202,8 +212,9 @@ const draftConfigOptions = activeSession
       sessionConfigOptions,
       selectedAgentId,
     )
-  : (draftAgentModelOptions?.configOptions ??
-    resolveDraftConfigOptions(
+  : ((draftAgentModelOptions?.configOptions.length ?? 0) > 0
+    ? draftAgentModelOptions?.configOptions
+    : resolveDraftConfigOptions(
       activeSession,
       sessions,
       sessionConfigOptions,
@@ -218,8 +229,9 @@ const cachedModelSession = activeSession
     );
 const draftNativeModelOptions =
   activeSession?.modelOptions ??
-  draftAgentModelOptions?.modelOptions ??
-  cachedModelSession?.modelOptions ??
+  ((draftAgentModelOptions?.modelOptions.length ?? 0) > 0
+    ? draftAgentModelOptions?.modelOptions
+    : cachedModelSession?.modelOptions) ??
   [];
 const draftAgentModeOptions = resolveAgentModeOptions(draftConfigOptions);
 const effectiveDraftAgentMode = resolveCurrentAgentMode(
@@ -255,12 +267,23 @@ const draftModelBaseValid = draftModelBaseOptions.includes(draftModelBase);
 const effectiveDraftModelBase = draftModelBaseValid
   ? draftModelBase
   : (draftModelBaseOptions[0] ?? draftModelBase);
+const draftHasLoadedModelOptions =
+  (draftAgentModelOptions?.modelOptions.length ?? 0) > 0 ||
+  (draftAgentModelOptions?.configOptions.length ?? 0) > 0;
+const awaitingDraftAgentModelOptions =
+  !activeSession &&
+  Boolean(selectedAgentId && selectedWorkspaceId) &&
+  !draftHasLoadedModelOptions;
 const draftModelPickerLabel = draftModelBaseOptions.length
   ? effectiveDraftModelBase
-  : draftAgentModelOptions?.loading
+  : draftAgentModelOptions?.loading || awaitingDraftAgentModelOptions
     ? "加载模型..."
     : "暂无模型列表";
-const draftModelPickerDisabled = draftModelBaseOptions.length === 0;
+const draftModelLoading = Boolean(
+  draftAgentModelOptions?.loading || awaitingDraftAgentModelOptions,
+);
+const draftModelPickerDisabled =
+  draftModelBaseOptions.length === 0 && !draftAgentModelOptions?.loading;
 const draftReasoningOptions = resolveReasoningOptionsForModel(
   effectiveDraftModelBase,
   draftAllModelOptions,
@@ -324,6 +347,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     draftModelBaseValid,
     effectiveDraftModelBase,
     draftModelPickerLabel,
+    draftModelLoading,
     draftModelPickerDisabled,
     draftReasoningOptions,
     effectiveDraftReasoningEffort,

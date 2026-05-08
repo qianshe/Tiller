@@ -1,3 +1,4 @@
+import { cn } from "../../../shared/utils/cn";
 import { resolveMissionPanelIcon } from "./diff-tree";
 
 export type MissionPanelPage = {
@@ -19,12 +20,12 @@ export function MissionPanelNav({
   onDrop: (pageId: string) => void;
 }) {
   return (
-    <nav className="mission-panel-tree" aria-label="展示页">
+    <nav className="mission-panel-tree flex gap-1 overflow-x-auto border-b border-border-ghost bg-surface-sunken/60 p-2" aria-label="展示页">
       {pages.map((page) => {
         const custom = page.id.startsWith("custom-");
         return (
           <button
-            className={`mission-panel-node ${selectedPageId === page.id ? "active" : ""}`}
+            className={cn("mission-panel-node inline-flex min-h-10 min-w-20 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground", selectedPageId === page.id && "active bg-primary-soft text-primary")}
             draggable={custom}
             key={page.id}
             type="button"
@@ -33,7 +34,7 @@ export function MissionPanelNav({
             onDragOver={(event) => { if (custom) event.preventDefault(); }}
             onDrop={() => custom ? onDrop(page.id) : undefined}
           >
-            <span className="mission-panel-node-icon">{resolveMissionPanelIcon(page.id)}</span>
+            <span className="mission-panel-node-icon text-base">{resolveMissionPanelIcon(page.id)}</span>
             <span>{page.title}</span>
           </button>
         );

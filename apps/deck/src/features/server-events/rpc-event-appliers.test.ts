@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
 import { useDeckStore } from "../../store";
-import { applyDeviceResult, applySessionUpdate } from "./rpc-event-appliers.js";
+import { applyDeviceResult, applySessionResult, applySessionUpdate } from "./rpc-event-appliers.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -27,6 +27,8 @@ function resetStore() {
     sessions: [],
     messages: {},
     trustedDevices: [],
+    sessionAvailableCommands: {},
+    agentAvailableCommands: {},
   });
 }
 
@@ -101,5 +103,68 @@ test("applySessionUpdate routes agent_message notifications into activity state 
   assert.equal(
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
+  );
+});
+
+test("applySessionUpdate caches available commands by session and agent", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "commands_available",
+        commands: [{ name: "review" }, { name: "compact" }],
+      },
+    },
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionAvailableCommands.s1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+});
+
+test("applySessionResult hydrates available commands from persisted session summaries", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [
+        {
+          ...session("s1"),
+          availableCommands: [{ name: "review" }, { name: "compact" }],
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set<string>() },
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionAvailableCommands.s1?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
+    ["review", "compact"],
   );
 });

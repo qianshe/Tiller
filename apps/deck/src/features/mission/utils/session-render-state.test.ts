@@ -1,10 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ProjectFileSummary } from "@tiller/shared";
-import { resolveVisibleProjectFiles } from "./session-render-state.js";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  PermissionRequest,
+  ProjectFileSummary,
+} from "@tiller/shared";
+import {
+  resolveMissionActivityLoading,
+  resolveVisibleProjectFiles,
+} from "./session-render-state.js";
 
 function entry(path: string, kind: ProjectFileSummary["kind"]): ProjectFileSummary {
   return { path, kind } as ProjectFileSummary;
+}
+
+function agentMessage(
+  id: string,
+  role: AgentMessage["role"],
+  timestamp: string,
+): AgentMessage {
+  return {
+    id,
+    role,
+    text: `${role} ${id}`,
+    timestamp,
+  };
+}
+
+function toolCall(status: AgentToolCall["status"]): AgentToolCall {
+  return {
+    id: `tool-${status}`,
+    commandId: `cmd-${status}`,
+    kind: "tool",
+    title: "mcp_router/search_context",
+    status,
+    input: "",
+    output: "",
+    timestamp: "2026-05-08T01:00:00.000Z",
+    updatedAt: "2026-05-08T01:01:00.000Z",
+  } as AgentToolCall;
 }
 
 test("project file tree defaults directories to collapsed", () => {
@@ -48,4 +83,44 @@ test("project file search ignores collapsed tree state", () => {
     resolveVisibleProjectFiles(files, "chat", new Set()).map((file) => file.path),
     ["src/features/chat.ts"],
   );
+});
+
+test("mission activity loading hides fallback after latest assistant result", () => {
+  const loading = resolveMissionActivityLoading({
+    status: "running",
+    messages: [
+      agentMessage("user-1", "user", "2026-05-08T01:00:00.000Z"),
+      agentMessage("assistant-1", "assistant", "2026-05-08T01:02:00.000Z"),
+    ],
+    toolCalls: [toolCall("completed"), toolCall("failed")],
+    pendingPermission: null,
+  });
+
+  assert.equal(loading, null);
+});
+
+test("mission activity loading shows agent fallback after latest user message", () => {
+  const loading = resolveMissionActivityLoading({
+    status: "running",
+    messages: [agentMessage("user-1", "user", "2026-05-08T01:00:00.000Z")],
+    toolCalls: [],
+    pendingPermission: null,
+  });
+
+  assert.deepEqual(loading, { title: "Agent 响应", status: "running" });
+});
+
+test("mission activity loading prioritizes pending tool activity", () => {
+  const loading = resolveMissionActivityLoading({
+    status: "running",
+    messages: [
+      agentMessage("user-1", "user", "2026-05-08T01:00:00.000Z"),
+      agentMessage("assistant-1", "assistant", "2026-05-08T01:02:00.000Z"),
+    ],
+    toolCalls: [toolCall("waiting_for_permission")],
+    pendingPermission: {} as PermissionRequest,
+  });
+
+  assert.equal(loading?.title, "mcp_router/search_context");
+  assert.equal(loading?.status, "waiting_for_permission");
 });

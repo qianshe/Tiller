@@ -16,6 +16,8 @@ import {
   daemonProfileKey,
   formatConnectionStatus,
 } from "../../helm-connection/facade";
+import { Badge, Button } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
 import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type MissionSidebarProps = {
@@ -41,6 +43,7 @@ type MissionSidebarProps = {
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
+  setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
@@ -49,6 +52,8 @@ type MissionSidebarProps = {
   openSession: (sessionId: string) => void;
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
+  regenerateSessionTitle: (session: SessionSummary) => void;
+  regeneratingIds: ReadonlySet<string>;
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   sessionHistoryState: {
@@ -82,6 +87,7 @@ export function MissionSidebar({
   setSelectedProjectId,
   setSelectedWorkspaceId,
   setSelectedAgentId,
+  setAgentPickerOpen,
   setExpandedMissionProjectIds,
   setActiveSessionId,
   statuses,
@@ -90,6 +96,8 @@ export function MissionSidebar({
   openSession,
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
+  regenerateSessionTitle,
+  regeneratingIds,
   formatRelativeTime,
   setPendingSessionCleanup,
   sessionHistoryState,
@@ -97,10 +105,8 @@ export function MissionSidebar({
   resizer,
 }: MissionSidebarProps) {
   const sidebarClassName = [
-    "chat-session-sidebar",
-    "mission-pane",
-    "mission-pane-sidebar",
-    effectiveSidebarCollapsed ? "collapsed" : "",
+    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface/95 p-2 shadow-none",
+    effectiveSidebarCollapsed ? "collapsed hidden" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -114,28 +120,35 @@ export function MissionSidebar({
         onScroll={handleMissionTreeScroll}
       >
         {!effectiveSidebarCollapsed ? (
-          <button
+          <Button
             type="button"
-            className="mission-sidebar-toggle"
+            variant="ghost"
+            size="icon"
+            className="mission-sidebar-toggle ml-auto size-7 text-muted-foreground hover:text-foreground"
             onClick={() => setMissionSidebarCollapsed(true)}
             aria-expanded="true"
             aria-label="收起任务导航"
             title="收起任务导航"
           >
             ‹
-          </button>
+          </Button>
         ) : null}
         {missionSidebarCollapsed ? null : (
-          <div className="sidebar-section mission-tree-switcher">
-            <div className="section-head section-head-soft sidebar-heading-block">
-              <div>
-                <h2>项目</h2>
-                <p className="muted compact">
-                  Helm → Project → Session（绑定 ACP）
+          <div className="sidebar-section mission-tree-switcher grid gap-3">
+            <div className="section-head section-head-soft sidebar-heading-block rounded-xl border border-border-ghost bg-surface-sunken p-2">
+              <div className="grid gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">项目</h2>
+                  <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
+                    {projects.length} 个
+                  </Badge>
+                </div>
+                <p className="muted compact text-xs leading-relaxed text-muted-foreground">
+                  Helm → Project → Session
                 </p>
               </div>
             </div>
-            <div className="mission-tree" role="tree" aria-label="任务层级树">
+            <div className="mission-tree grid gap-2" role="tree" aria-label="任务层级树">
               {missionHelms.map((helm) => {
                 const selectedHelm = helm.id === effectiveMissionHelmId;
                 const helmExpanded = expandedMissionHelmIds.has(helm.id);
@@ -154,44 +167,55 @@ export function MissionSidebar({
                 return (
                   <div
                     key={helm.id}
-                    className="mission-tree-group"
+                    className="mission-tree-group grid gap-1"
                     role="group"
                   >
                     <button
                       type="button"
-                      className={[
-                        "mission-tree-row",
-                        "mission-tree-row-helm",
-                        selectedHelm ? "active" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
+                      className={cn(
+                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[18px_24px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-transparent px-2.5 py-1.5 text-left text-sm text-foreground transition hover:border-border-ghost hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        selectedHelm && "active border-primary/20 bg-primary-soft text-primary",
+                      )}
                       onClick={() => toggleMissionHelmNode(helm.id)}
                       role="treeitem"
                       aria-level={1}
                       aria-expanded={helmExpanded}
                       aria-selected={selectedHelm}
                     >
-                      <span className="mission-tree-caret">
+                      <span className="mission-tree-caret text-xs text-muted-foreground">
                         {helmExpanded ? "▾" : "▸"}
                       </span>
-                      <span className="mission-tree-icon">⎈</span>
-                      <span className="mission-tree-main">
-                        <strong>{helm.name}</strong>
-                        <span>
+                      <span
+                        className="mission-tree-icon grid size-5 place-items-center rounded-md bg-surface-sunken text-xs"
+                        aria-hidden="true"
+                      >
+                        ⎈
+                      </span>
+                      <span className="mission-tree-main grid min-w-0 gap-0.5">
+                        <strong className="truncate font-semibold">{helm.name}</strong>
+                        <span className="truncate text-xs text-muted-foreground">
                           {helm.host}:{helm.port} · {helmProjects.length}
                           项目
                         </span>
                       </span>
-                      <span
-                        className={`mission-tree-status-dot helm-status-${helmConnectionState}`}
+                      <Badge
+                        variant={
+                          helmConnectionState === "connected"
+                            ? "success"
+                            : helmConnectionState === "connecting"
+                              ? "warning"
+                              : "outline"
+                        }
+                        className="shrink-0 px-2 py-0.5 text-[10px]"
                         title={formatConnectionStatus(helmConnectionState)}
                         aria-label={formatConnectionStatus(helmConnectionState)}
-                      />
+                      >
+                        {helmProjects.length}
+                      </Badge>
                     </button>
                     {helmExpanded ? (
                       <div
-                        className="mission-tree-children mission-tree-children-projects"
+                        className="mission-tree-children mission-tree-children-projects ml-3 grid gap-1.5 border-l border-border-ghost pl-2"
                         role="group"
                       >
                         {helmProjects.map((project) => {
@@ -210,10 +234,13 @@ export function MissionSidebar({
                               projectExpanded={projectExpanded}
                               sessionCountsByProject={sessionCountsByProject}
                               agents={agents}
-                              setSelectedMissionHelmId={setSelectedMissionHelmId}
+                              setSelectedMissionHelmId={
+                                setSelectedMissionHelmId
+                              }
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedWorkspaceId={setSelectedWorkspaceId}
                               setSelectedAgentId={setSelectedAgentId}
+                              setAgentPickerOpen={setAgentPickerOpen}
                               setExpandedMissionProjectIds={
                                 setExpandedMissionProjectIds
                               }
@@ -226,14 +253,20 @@ export function MissionSidebar({
                               resolveDisplaySessionTitle={
                                 resolveDisplaySessionTitle
                               }
+                              regenerateSessionTitle={regenerateSessionTitle}
+                              regeneratingIds={regeneratingIds}
                               formatRelativeTime={formatRelativeTime}
-                              setPendingSessionCleanup={setPendingSessionCleanup}
-                              toggleMissionProjectNode={toggleMissionProjectNode}
+                              setPendingSessionCleanup={
+                                setPendingSessionCleanup
+                              }
+                              toggleMissionProjectNode={
+                                toggleMissionProjectNode
+                              }
                             />
                           );
                         })}
                         {!helmProjects.length ? (
-                          <div className="mission-tree-empty">
+                          <div className="mission-tree-empty rounded-md bg-surface-sunken p-3 text-sm text-muted-foreground">
                             这个 Helm 还没有项目。
                           </div>
                         ) : null}
@@ -243,26 +276,28 @@ export function MissionSidebar({
                 );
               })}
               {!missionHelms.length ? (
-                <div className="empty-state sidebar-empty">暂无 Helm。</div>
+                <div className="empty-state sidebar-empty rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">暂无 Helm。</div>
               ) : null}
               {sessionHistoryState.loading ? (
-                <div className="mission-tree-empty"> 正在加载更多任务... </div>
+                <div className="mission-tree-empty rounded-md bg-surface-sunken p-3 text-sm text-muted-foreground"> 正在加载更多任务... </div>
               ) : null}
             </div>
           </div>
         )}
       </aside>
       {missionSidebarCollapsed ? (
-        <button
+        <Button
           type="button"
-          className="mission-sidebar-toggle mission-sidebar-floating-toggle"
+          variant="outline"
+          size="icon"
+          className="mission-sidebar-toggle mission-sidebar-floating-toggle fixed left-6 top-8 z-30 rounded-full shadow-ambient"
           onClick={() => setMissionSidebarCollapsed(false)}
           aria-expanded="false"
           aria-label="展开任务导航"
           title="展开任务导航"
         >
           ›
-        </button>
+        </Button>
       ) : null}
       {resizer}
     </>

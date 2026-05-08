@@ -208,10 +208,20 @@ export type AcpModelState = {
   options: AcpModelOption[];
 };
 
+export type AvailableCommandKind =
+  | "command"
+  | "skill"
+  | "builtin"
+  | "prompt"
+  | "workflow"
+  | "unknown";
+
 export type AvailableCommand = {
   name: string;
   description?: string;
   input?: { hint?: string };
+  kind?: AvailableCommandKind;
+  rawKind?: string;
 };
 
 export type SessionConfigSupport = {
@@ -265,6 +275,8 @@ export type SessionSummary = {
   resume?: SessionResumeInfo;
   /** Whether the underlying ACP agent supports image content in prompts. */
   imageInput?: boolean;
+  /** Last ACP slash commands reported for this session, persisted for later Deck sync. */
+  availableCommands?: AvailableCommand[];
 };
 
 export type AgentMessage = {
@@ -349,4 +361,6 @@ export function isWildcardHost(host: string) {
 
 export const ACP_IMAGE_INPUT_UNSUPPORTED_CODE = "ACP_IMAGE_INPUT_UNSUPPORTED";
 export const ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE = "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~";
+
+
 

@@ -14,7 +14,10 @@ type UseSlashCommandsOptions = {
   prompt: string;
   setPrompt: Dispatch<SetStateAction<string>>;
   activeSessionId: string | null;
+  activeSessionAgentId?: string | null;
   sessionAvailableCommands: Record<string, AvailableCommand[]>;
+  agentAvailableCommands: Record<string, AvailableCommand[]>;
+  refreshAgentAvailableCommands?: () => void;
   promptRef: RefObject<HTMLTextAreaElement | null>;
   onFallbackKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
 };
@@ -26,7 +29,10 @@ export function useSlashCommands({
   prompt,
   setPrompt,
   activeSessionId,
+  activeSessionAgentId,
   sessionAvailableCommands,
+  agentAvailableCommands,
+  refreshAgentAvailableCommands,
   promptRef,
   onFallbackKeyDown,
 }: UseSlashCommandsOptions) {
@@ -40,17 +46,50 @@ export function useSlashCommands({
   }, [prompt]);
 
   const filteredCommands = useMemo(() => {
-    if (commandToken === null || !activeSessionId) {
+    if (commandToken === null) {
       return [] as AvailableCommand[];
     }
-    const all = sessionAvailableCommands[activeSessionId] ?? [];
+    const sessionCommands = activeSessionId
+      ? sessionAvailableCommands[activeSessionId] ?? []
+      : [];
+    const commands = sessionCommands.length
+      ? sessionCommands
+      : activeSessionAgentId
+        ? agentAvailableCommands[activeSessionAgentId] ?? []
+        : [];
     if (!commandToken) {
-      return all;
+      return commands;
     }
-    return all.filter((cmd) => cmd.name.toLowerCase().startsWith(commandToken));
-  }, [commandToken, activeSessionId, sessionAvailableCommands]);
+    return commands.filter((cmd) => cmd.name.toLowerCase().startsWith(commandToken));
+  }, [
+    commandToken,
+    activeSessionId,
+    activeSessionAgentId,
+    sessionAvailableCommands,
+    agentAvailableCommands,
+  ]);
 
   const popupOpen = filteredCommands.length > 0 && suppressedFor !== prompt;
+
+  useEffect(() => {
+    if (commandToken === null || !activeSessionAgentId) {
+      return;
+    }
+    const sessionCommands = activeSessionId
+      ? sessionAvailableCommands[activeSessionId] ?? []
+      : [];
+    const agentCommands = agentAvailableCommands[activeSessionAgentId] ?? [];
+    if (sessionCommands.length === 0 && agentCommands.length === 0) {
+      refreshAgentAvailableCommands?.();
+    }
+  }, [
+    commandToken,
+    activeSessionId,
+    activeSessionAgentId,
+    sessionAvailableCommands,
+    agentAvailableCommands,
+    refreshAgentAvailableCommands,
+  ]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -143,3 +182,5 @@ export function useSlashCommands({
     handleMissionPromptKeyDown: handlePromptKeyDown,
   };
 }
+
+

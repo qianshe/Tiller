@@ -43,13 +43,31 @@ export async function handleSessionRpcRequest(
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
     case "session/list_messages":
-      return listMessages(params as { sessionId: string; limit?: number; before?: string }, context);
+      return listMessages(
+        params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
     case "session/get_artifacts":
-      return getArtifacts(params as { sessionId: string; limit?: number; before?: string }, context);
+      return getArtifacts(
+        params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
     case "session/check_resume":
       return checkResume(params as { sessionId: string }, context);
     case "session/resume":
       return resumeSession(params as { sessionId: string }, context);
+    case "session/prewarm":
+      return prewarmSession(
+        params as {
+          projectId: string;
+          workspaceId: string;
+          agentId: string;
+          agentMode?: string;
+          model?: string;
+          reasoningEffort?: SessionReasoningEffort;
+        },
+        context,
+      );
     case "session/new":
       return createSession(
         params as {
@@ -87,6 +105,8 @@ export async function handleSessionRpcRequest(
         params as { permissionRequestId: string; decision: "allow" | "deny" },
         context,
       );
+    case "session/rename":
+      return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
       return cleanupSession(params as { sessionId: string }, context);
     default:
@@ -112,13 +132,8 @@ export async function handleSessionRpcNotification(
   return true;
 }
 
-function listSessions(
-  params: { limit?: number; before?: string },
-  context: HelmHandlerContext,
-) {
-  const normalizedSessions = context.sessionStore
-    .list()
-    .map(context.migrateStoredSessionSummary);
+function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
+  const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
   const page = pageSessionSummaries(normalizedSessions, {
     limit: params.limit,
     before: params.before,
@@ -134,6 +149,8 @@ function listSessions(
   };
 }
 
+// Deck consumes old session history through paged windows only. ACP restore replay may
+// repair Helm's local cache, but it must not push a full historical transcript to Deck.
 async function listMessages(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
@@ -173,7 +190,7 @@ async function getArtifacts(
 }
 
 function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] session.resume.check session=${params.sessionId}`);
+  context.logInfo(`[tiller] 阶段=恢复检查 session=${params.sessionId}`);
   const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
   if (!summary) {
     throw new Error("Session not found");
@@ -191,10 +208,10 @@ function checkResume(params: { sessionId: string }, context: HelmHandlerContext)
 }
 
 async function resumeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] session.resume.start session=${params.sessionId}`);
+  context.logInfo(`[tiller] 阶段=恢复请求开始 session=${params.sessionId}`);
   const result = await context.startSessionResume(params.sessionId);
   context.logInfo(
-    `[tiller] session.resume.start.result session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
+    `[tiller] 阶段=恢复请求完成 session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
   );
   return {
     sessionId: params.sessionId,
@@ -202,6 +219,51 @@ async function resumeSession(params: { sessionId: string }, context: HelmHandler
     resume: result.resume,
     message: result.message,
   };
+}
+
+async function prewarmSession(
+  params: {
+    projectId: string;
+    workspaceId: string;
+    agentId: string;
+    agentMode?: string;
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+  },
+  context: HelmHandlerContext,
+) {
+  const helms = context.loadAvailableHelms();
+  const workspaces = context.loadAvailableWorkspaces();
+  const agents = context.loadAvailableAgents();
+  context.setHelms(helms);
+  context.setWorkspaces(workspaces);
+  context.setAgents(agents);
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  context.setProjects(projects);
+
+  const project = context.resolveProjectById(params.projectId, projects);
+  const workspace = project
+    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+    : undefined;
+  const agent = context.resolveProviderById(params.agentId, agents);
+  const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
+
+  if (!project || !workspace || !agent || !helm) {
+    throw new Error("Project, helm, workspace, or agent not found");
+  }
+  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
+    throw new Error("Workspace does not belong to the selected project");
+  }
+
+  return context.prewarmRuntime({
+    workspace,
+    agent,
+    sessionConfig: {
+      agentMode: params.agentMode,
+      model: params.model,
+      reasoningEffort: params.reasoningEffort,
+    },
+  });
 }
 
 async function createSession(
@@ -241,7 +303,7 @@ async function createSession(
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   context.logInfo(
-    `[tiller] session.create requested session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
+    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
   );
   const summaryBase: SessionSummary = {
     id: sessionId,
@@ -266,17 +328,21 @@ async function createSession(
   broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
 
   try {
-    const runtime = await context.createRuntime({
-      sessionId,
-      workspace,
-      agent,
-      sessionConfig: {
-        agentMode: summary.agentMode,
-        model: summary.model,
-        reasoningEffort: summary.reasoningEffort,
-      },
-      onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
-    });
+    const sessionConfig = {
+      agentMode: summary.agentMode,
+      model: summary.model,
+      reasoningEffort: summary.reasoningEffort,
+    };
+    const prewarmed = context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
+    const runtime = prewarmed?.runtime ??
+      (await context.createRuntime({
+        sessionId,
+        workspace,
+        agent,
+        sessionConfig,
+        onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+      }));
+    prewarmed?.attach(sessionId);
     const summaryWithRuntime = context.hydrateSessionSummary({
       ...summary,
       agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
@@ -286,7 +352,7 @@ async function createSession(
       runtimeSessionId: runtime.runtimeSessionId,
     });
     context.logInfo(
-      `[tiller] ACP session ready session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
+      `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, workspace, runtime });
     context.sessionStore.upsert(summaryWithRuntime);
@@ -300,7 +366,7 @@ async function createSession(
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
     context.logError(
-      `[tiller] session.create failed for project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path}: ${message}`,
+      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} message=${message}`,
     );
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,
@@ -329,17 +395,17 @@ async function promptSession(
   let record = context.sessions.get(params.sessionId);
   if (!record) {
     context.logInfo(
-      `[tiller] session.prompt restore-required session=${params.sessionId} chars=${params.text.length}`,
+      `[tiller] 阶段=发送前需要恢复 session=${params.sessionId} chars=${params.text.length}`,
     );
     const restore = await context.startSessionResume(params.sessionId);
     context.logInfo(
-      `[tiller] session.prompt restore-result session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
+      `[tiller] 阶段=发送前恢复完成 session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
     );
     record = context.sessions.get(params.sessionId);
   }
   if (!record) {
     context.logError(
-      `[tiller] session.prompt failed session=${params.sessionId} reason=Session runtime not available`,
+      `[tiller] 阶段=发送失败 session=${params.sessionId} reason=Session runtime not available`,
     );
     throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
   }
@@ -351,7 +417,7 @@ async function promptSession(
   }
 
   context.logInfo(
-    `[tiller] session.prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
+    `[tiller] 阶段=发送Prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
   );
   const timestamp = new Date().toISOString();
   const userMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;
@@ -459,15 +525,38 @@ function respondPermission(
   };
 }
 
+async function renameSession(
+  params: { sessionId: string; title: string },
+  context: HelmHandlerContext,
+) {
+  const summary =
+    context.sessions.get(params.sessionId)?.summary ??
+    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+  if (!summary) {
+    throw new Error("Session not found");
+  }
+  const next = { ...summary, title: params.title };
+  context.updateSessionSummary(params.sessionId, () => next);
+  broadcastSessionUpdate(context, params.sessionId, {
+    kind: "session_updated",
+    session: next,
+  });
+  return { ok: true };
+}
+
 async function cleanupSession(params: { sessionId: string }, context: HelmHandlerContext) {
   const record = context.sessions.get(params.sessionId);
   const summary =
-    record?.summary ?? context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    record?.summary ??
+    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
   if (!summary) {
-    context.logError(`[tiller] session.cleanup.failed session=${params.sessionId} reason=Session not found`);
+    context.logError(
+      `[tiller] session.cleanup.failed session=${params.sessionId} reason=Session not found`,
+    );
     throw new Error("Session not found");
   }
-  const provider = record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
+  const provider =
+    record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
   let remoteResult;
   if (record) {
     context.sessions.delete(summary.id);

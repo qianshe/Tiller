@@ -73,6 +73,38 @@ export type HelmHandlerContext = {
   sessionRuntimeStore: any;
 
   createRuntime: typeof createAcpRuntime;
+  prewarmRuntime: (params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: {
+      agentMode?: string;
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
+    };
+  }) => Promise<{
+    ok: boolean;
+    warmed: boolean;
+    providerId: string;
+    workspaceId: string;
+    runtimeSessionId?: string;
+    message: string;
+  }>;
+  takePrewarmedRuntime: (params: {
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+    sessionConfig?: {
+      agentMode?: string;
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
+    };
+  }) =>
+    | {
+        runtime: SessionRecord["runtime"];
+        attach: (sessionId: string) => void;
+        cancel: () => void;
+        expiresTimer: ReturnType<typeof setTimeout>;
+      }
+    | undefined;
   testAcpConnection: (
     agent: AcpAgentProvider,
     cwd?: string,

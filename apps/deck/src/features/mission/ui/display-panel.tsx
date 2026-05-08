@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { FileDiffSummary } from "@tiller/shared";
-import { InfoList } from "../../../shared/ui/primitives";
+import { Button, Card, CardContent, Input } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
 import {
   buildMissionDiffTree,
   formatDiffStatus,
@@ -11,6 +12,23 @@ import {
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
 
 const EMPTY_COLLAPSED_DIFF_DIRECTORIES: ReadonlySet<string> = new Set();
+
+type OverviewItem = {
+  label: string;
+  value: string;
+};
+
+function parseOverviewItem(item: string): OverviewItem {
+  const [label, ...valueParts] = item.split(" · ");
+  return {
+    label: label || "信息",
+    value: valueParts.join(" · ") || item,
+  };
+}
+
+function isWideOverviewItem(label: string): boolean {
+  return label === "路径" || label === "摘要";
+}
 
 type MissionDisplayPanelProps = {
   style: CSSProperties;
@@ -69,11 +87,11 @@ export function MissionDisplayPanel({
         <button
           key={node.id}
           type="button"
-          className="mission-file-row mission-file-row-compact mission-file-row-button"
+          className="mission-file-row mission-file-row-compact mission-file-row-button grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           style={{ paddingLeft: `${8 + depth * 14}px` }}
           onClick={() => onOpenDiffDetail(file.path)}
         >
-          <span className={`mission-file-status status-${file.status}`}>
+          <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
             {" "}
             {formatDiffStatus(file.status)}{" "}
           </span>{" "}
@@ -85,19 +103,19 @@ export function MissionDisplayPanel({
     return (
       <section
         key={node.id}
-        className={`mission-change-group ${collapsed ? "collapsed" : ""}`}
+        className={`mission-change-group ${collapsed ? "collapsed" : ""} grid gap-1`}
       >
         {" "}
         <button
           type="button"
-          className="mission-change-group-title"
+          className="mission-change-group-title grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-foreground transition hover:bg-surface-emphasis"
           style={{ paddingLeft: `${2 + depth * 14}px` }}
           onClick={() => onToggleDiffDirectory(node.path)}
           aria-expanded={!collapsed}
         >
           {" "}
           <span>{collapsed ? "▸" : "▾"}</span> <span>{node.name}</span>{" "}
-          <span className="mission-change-count">{node.count}</span>{" "}
+          <span className="mission-change-count rounded-full bg-surface-emphasis px-2 py-0.5 text-xs text-muted-foreground">{node.count}</span>{" "}
         </button>{" "}
         {!collapsed
           ? node.children?.map((child) => renderDiffTreeNode(child, depth + 1))
@@ -108,30 +126,31 @@ export function MissionDisplayPanel({
   const renderSelectedPage = () => {
     if (selectedPage.id === "changes") {
       return (
-        <div className="mission-panel-page mission-change-tree">
+        <div className="mission-panel-page mission-change-tree grid gap-1">
           {" "}
           {diffTree.length ? (
             diffTree.map((node) => renderDiffTreeNode(node))
           ) : (
-            <div className="empty-state">{noDiffSummary}</div>
+            <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{noDiffSummary}</div>
           )}{" "}
         </div>
       );
     }
     if (selectedPage.id === "diff-detail") {
       return (
-        <div className="mission-panel-page mission-diff-detail">
+        <div className="mission-panel-page mission-diff-detail grid gap-2">
           {" "}
           {diffs.length ? (
             diffs.map((file) => (
               <details
                 key={file.path}
-                className={`mission-diff-file ${selectedDiffFilePath === file.path ? "active" : ""}`}
+                className={cn("mission-diff-file rounded-md border border-border-ghost bg-surface-sunken", selectedDiffFilePath === file.path && "active ring-2 ring-ring/30")}
+                open={selectedDiffFilePath === file.path || diffs.length === 1 || undefined}
               >
                 {" "}
-                <summary className="mission-file-row mission-diff-file-summary">
+                <summary className="mission-file-row mission-diff-file-summary grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground [&::-webkit-details-marker]:hidden">
                   {" "}
-                  <span className={`mission-file-status status-${file.status}`}>
+                  <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
                     {" "}
                     {formatDiffStatus(file.status)}{" "}
                   </span>{" "}
@@ -144,7 +163,7 @@ export function MissionDisplayPanel({
                 {file.patch ? (
                   renderDiffPatch(file.patch)
                 ) : (
-                  <div className="mission-diff-patch-empty">
+                  <div className="mission-diff-patch-empty p-3 text-sm text-muted-foreground">
                     {" "}
                     该 diff 事件没有携带 patch/hunk 内容。{" "}
                   </div>
@@ -152,14 +171,14 @@ export function MissionDisplayPanel({
               </details>
             ))
           ) : (
-            <div className="empty-state">{noDiffSummary}</div>
+            <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{noDiffSummary}</div>
           )}{" "}
         </div>
       );
     }
     if (selectedPage.id === "logbook") {
       return (
-        <div className="mission-panel-page mission-logbook-page">
+        <div className="mission-panel-page mission-logbook-page grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
           {" "}
           {logbookContent}{" "}
         </div>
@@ -167,49 +186,51 @@ export function MissionDisplayPanel({
     }
     if (selectedPage.id.startsWith("custom-")) {
       return (
-        <div className="mission-panel-page mission-custom-page">
+        <div className="mission-panel-page mission-custom-page grid gap-3">
           {" "}
-          <div className="mission-custom-page-tools">
-            {" "}
-            <label>
+          <Card className="mission-custom-page-tools shadow-none">
+            <CardContent className="grid gap-3 p-3">
               {" "}
-              <span>展示页名称</span>{" "}
-              <input
+              <label className="grid gap-1 text-sm font-medium text-foreground">
+                {" "}
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">展示页名称</span>{" "}
+              <Input
                 value={selectedPage.title}
                 onChange={(event) =>
                   onRenamePage(selectedPage.id, event.target.value)
                 }
               />{" "}
             </label>{" "}
-            <div className="mission-custom-page-actions">
+            <div className="mission-custom-page-actions flex flex-wrap gap-2">
               {" "}
-              <button
-                className="secondary"
+              <Button
+                variant="outline"
                 type="button"
                 onClick={() => onMovePage(selectedPage.id, -1)}
               >
                 {" "}
                 上移{" "}
-              </button>{" "}
-              <button
-                className="secondary"
+              </Button>{" "}
+              <Button
+                variant="outline"
                 type="button"
                 onClick={() => onMovePage(selectedPage.id, 1)}
               >
                 {" "}
                 下移{" "}
-              </button>{" "}
-              <button
-                className="secondary danger-button"
+              </Button>{" "}
+              <Button
+                variant="destructive"
                 type="button"
                 onClick={() => onDeletePage(selectedPage.id)}
               >
                 {" "}
                 删除展示页{" "}
-              </button>{" "}
+              </Button>{" "}
             </div>{" "}
-          </div>{" "}
-          <div className="empty-state">
+            </CardContent>
+          </Card>{" "}
+          <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
             {" "}
             自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。{" "}
           </div>{" "}
@@ -217,40 +238,70 @@ export function MissionDisplayPanel({
       );
     }
     return (
-      <div className="mission-panel-page mission-overview-page">
-        {" "}
-        <InfoList
-          title="项目信息"
-          items={overviewItems}
-          empty="选择左侧任务后显示项目信息"
-        />{" "}
+      <div className="mission-panel-page mission-overview-page grid gap-3">
+        {overviewItems.length ? (
+          <div className="mission-overview-grid grid grid-cols-2 gap-2 max-xl:grid-cols-1">
+            {overviewItems.map((item) => {
+              const overviewItem = parseOverviewItem(item);
+              return (
+                <Card
+                  key={item}
+                  className={cn(
+                    "mission-overview-card border-border-ghost bg-surface-sunken shadow-none",
+                    isWideOverviewItem(overviewItem.label) && "col-span-2 max-xl:col-span-1",
+                  )}
+                >
+                  <CardContent className="grid gap-1 p-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {overviewItem.label}
+                    </span>
+                    <strong
+                      className={cn(
+                        "text-sm font-semibold leading-relaxed text-foreground",
+                        overviewItem.label === "路径" && "break-all font-mono text-xs",
+                        overviewItem.label === "摘要" && "font-normal text-muted-foreground",
+                      )}
+                    >
+                      {overviewItem.value}
+                    </strong>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+            选择左侧任务后显示项目信息
+          </div>
+        )}
       </div>
     );
   };
   return (
     <aside
-      className="mission-display-panel mission-pane mission-pane-display"
+      className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
       style={style}
       aria-label="任务展示容器"
     >
       {" "}
-      <div className="mission-panel-head">
+      <div className="mission-panel-head flex items-start justify-between gap-3 border-b border-border-ghost p-3">
         {" "}
         <div>
           {" "}
-          <p className="eyebrow">展示</p> <h3>任务展示</h3>{" "}
+          <p className="eyebrow text-xs font-semibold uppercase tracking-wider text-muted-foreground">展示</p> <h3 className="text-base font-semibold text-foreground">任务展示</h3>{" "}
         </div>{" "}
-        <button
-          className="mission-panel-add"
+        <Button
+          size="icon"
+          variant="outline"
           type="button"
           onClick={onAddPage}
           aria-label="增加展示页"
         >
           {" "}
           ＋{" "}
-        </button>{" "}
+        </Button>{" "}
       </div>{" "}
-      <div className="mission-panel-body">
+      <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
         {" "}
         <MissionPanelNav
           pages={pages}
@@ -259,7 +310,7 @@ export function MissionDisplayPanel({
           onDragStart={onDragStart}
           onDrop={onDrop}
         />{" "}
-        <section className="mission-panel-content">
+        <section className="mission-panel-content min-h-0 overflow-auto p-3">
           {" "}
           {renderSelectedPage()}{" "}
         </section>{" "}

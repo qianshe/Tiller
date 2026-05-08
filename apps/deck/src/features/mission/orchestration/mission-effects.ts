@@ -115,6 +115,9 @@ useEffect(() => {
   messageHistoryState,
   sessionOpenScrollTick,
 ]);
+// Opening an old session is windowed: Deck asks Helm for the latest message/artifact
+// page, then starts ACP resume separately. Restore replay is handled inside Helm and
+// must not be treated as a replacement for these paged history requests.
 useEffect(() => {
   if (
     !activeSessionId ||

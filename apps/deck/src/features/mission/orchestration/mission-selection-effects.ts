@@ -1,9 +1,8 @@
 // @ts-nocheck
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
-import { resolveModelOptions, resolvePreferredModel, defaultAgentId } from "../utils/composer-options";
-import { projectFilesKey } from "../utils/project-files-key";
-import { resolveDraftSelectionId, resolveProjectFilesScope, resolveSessionProjectId } from "../utils/session-derivations";
+import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
+import { resolveDraftSelectionId } from "../utils/session-derivations";
 
 export function useMissionSelectionEffects(source: any) {
   const {
@@ -33,18 +32,19 @@ export function useMissionSelectionEffects(source: any) {
     rpcClientRef,
     setWorktreeGitByProject,
     dispatch,
-    lastFilesScopeKeyRef,
-    setProjectFilesByScope,
     selectedAgentId,
     filteredAgents,
     setSelectedAgentId,
     agentModelOptions,
     setAgentModelOptions,
+    selectedAgentMode,
     selectedModel,
     setSelectedModel,
+    selectedReasoningEffort,
     setSelectedAgentMode,
     setSelectedReasoningEffort,
   } = source;
+  const prewarmedDraftKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -154,60 +154,66 @@ export function useMissionSelectionEffects(source: any) {
     });
   }, [pairingState, selectedProjectId]);
   useEffect(() => {
-    const scope = resolveProjectFilesScope({
-      activeSession,
-      activeSessionProjectId: activeSession
-        ? resolveSessionProjectId(activeSession, projects)
-        : null,
-    });
+    if (!draftProject || !selectedAgentId) {
+      return;
+    }
+    const selectedAgentAvailable = filteredAgents.some(
+      (agent) => agent.id === selectedAgentId,
+    );
+    if (!selectedAgentAvailable) {
+      setSelectedAgentId(null);
+    }
+  }, [draftProject, filteredAgents, selectedAgentId]);
+  useEffect(() => {
     if (
-      !scope.projectId ||
-      !scope.workspaceId ||
+      activeSession ||
       pairingState !== "paired" ||
+      !selectedProjectId ||
+      !selectedAgentId ||
+      !selectedWorkspaceId ||
       !rpcClientRef.current ||
       rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
-    const key = projectFilesKey(scope.projectId, scope.workspaceId);
-    if (lastFilesScopeKeyRef.current === key) {
-      // 同一 project+workspace,只是切换会话 — 复用现有文件列表,避免 loading 闪烁与重复请求。
+    const optionsKey = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
+    const cachedOptions = agentModelOptions[optionsKey];
+    if (!cachedOptions || cachedOptions.loading) {
       return;
     }
-    lastFilesScopeKeyRef.current = key;
-    setProjectFilesByScope((current) => ({
-      ...current,
-      [key]: {
-        loading: true,
-        files: current[key]?.files ?? [],
-        message: "正在加载项目文件...",
-      },
-    }));
-    void dispatch(rpcClientRef.current, "project/list_files", {
-      projectId: scope.projectId,
-      workspaceId: scope.workspaceId,
+    const prewarmModel = normalizeModelSelection(selectedModel) ?? cachedOptions.state.model;
+    const prewarmKey = JSON.stringify({
+      projectId: selectedProjectId,
+      workspaceId: selectedWorkspaceId,
+      agentId: selectedAgentId,
+      agentMode: selectedAgentMode || undefined,
+      model: prewarmModel,
+      reasoningEffort: selectedReasoningEffort,
+    });
+    if (prewarmedDraftKeyRef.current === prewarmKey) {
+      return;
+    }
+    prewarmedDraftKeyRef.current = prewarmKey;
+    void dispatch(rpcClientRef.current, "session/prewarm", {
+      projectId: selectedProjectId,
+      workspaceId: selectedWorkspaceId,
+      agentId: selectedAgentId,
+      agentMode: selectedAgentMode || undefined,
+      model: prewarmModel,
+      reasoningEffort: selectedReasoningEffort,
     });
   }, [
-    activeSession?.id,
-    activeSession?.projectId,
-    activeSession?.workspaceId,
+    activeSession,
+    agentModelOptions,
+    normalizeModelSelection,
     pairingState,
-    projects,
+    selectedAgentId,
+    selectedAgentMode,
+    selectedModel,
+    selectedProjectId,
+    selectedReasoningEffort,
+    selectedWorkspaceId,
   ]);
-  useEffect(() => {
-    if (!draftProject) {
-      return;
-    }
-    const defaultProjectAgentId = draftProject.defaultAgentId;
-    const fallbackAgentId = resolveDraftSelectionId(
-      selectedAgentId,
-      filteredAgents,
-      defaultProjectAgentId ?? defaultAgentId(filteredAgents),
-    );
-    if (fallbackAgentId && fallbackAgentId !== selectedAgentId) {
-      setSelectedAgentId(fallbackAgentId);
-    }
-  }, [draftProject, filteredAgents, selectedAgentId]);
   useEffect(() => {
     if (
       activeSession ||
@@ -258,9 +264,9 @@ export function useMissionSelectionEffects(source: any) {
       [key]: {
         loading: true,
         projectId: selectedProjectId,
-        modelOptions: [],
-        configOptions: [],
-        state: {},
+        modelOptions: cached?.modelOptions ?? [],
+        configOptions: cached?.configOptions ?? [],
+        state: cached?.state ?? {},
         message: "正在加载模型列表...",
       },
     }));

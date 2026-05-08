@@ -1,12 +1,30 @@
-import { AgentsPage } from "../../features/agents";
-import { OverviewPage } from "../../features/overview";
-import { SettingsPage } from "../../features/settings";
+import { lazy, Suspense } from "react";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
-import { renderMissionRoute } from "./mission-route";
+
+const OverviewPage = lazy(() =>
+  import("../../features/overview/ui/page").then((module) => ({
+    default: module.OverviewPage,
+  })),
+);
+const AgentsPage = lazy(() =>
+  import("../../features/agents/ui/page").then((module) => ({
+    default: module.AgentsPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("../../features/settings/ui/page").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const MissionRoute = lazy(() =>
+  import("./mission-route").then((module) => ({
+    default: ({ source }: { source: any }) => module.renderMissionRoute(source),
+  })),
+);
 export function AppRoutes({ ctx }: { ctx: any }) {
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
@@ -219,10 +237,12 @@ function renderSettings() {
 }
   return (
     <div className="page-content stack-gap">
-      {activeView === "overview" && renderOverview()}
-      {activeView === "sessions" && renderMissionRoute(source)}
-      {activeView === "agents" && renderAgents()}
-      {activeView === "settings" && renderSettings()}
+      <Suspense fallback={null}>
+        {activeView === "overview" && renderOverview()}
+        {activeView === "sessions" && <MissionRoute source={source} />}
+        {activeView === "agents" && renderAgents()}
+        {activeView === "settings" && renderSettings()}
+      </Suspense>
     </div>
   );
 }
