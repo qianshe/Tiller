@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { Button } from "../../../shared/ui";
+import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { cn } from "../../../shared/utils/cn";
 import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
-import { StructuredAssistantMessage } from "./structured-assistant-message";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -198,7 +198,7 @@ function renderPlainMessageContent(
     </div>
   ) : (
     <div className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden">
-      <StructuredAssistantMessage text={message.text} />
+      <MarkdownMessage text={message.text} />
     </div>
   );
 }

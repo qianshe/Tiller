@@ -65,7 +65,8 @@ export function useDeckData(missionVisualFixture: any) {
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
-  const permissionRequests = useDeckStore((state) => state.permissionRequests);
+  const storedPermissionRequests = useDeckStore((state) => state.permissionRequests);
+  const permissionRequests = (missionVisualFixture?.permissionRequests ?? storedPermissionRequests) as Record<string, any>;
   const setPermissionRequests = useDeckStore((state) => state.setPermissionRequests);
 
   const storedOutputs = useDeckStore((state) => state.outputs);

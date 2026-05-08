@@ -63,7 +63,7 @@ export function buildMissionDiffTree(
 
   updateMissionDiffTreeCounts(root);
   sortMissionDiffTree(root);
-  return root.children ?? [];
+  return (root.children ?? []).map(compactMissionDiffTreeNode);
 }
 
 function updateMissionDiffTreeCounts(node: MissionDiffTreeNode): number {
@@ -94,33 +94,77 @@ function normalizeDiffPath(path: string) {
   return path.replace(/\\/g, "/");
 }
 
+function compactMissionDiffTreeNode(
+  node: MissionDiffTreeNode,
+): MissionDiffTreeNode {
+  if (node.kind === "file") return node;
+
+  let compacted: MissionDiffTreeNode = {
+    ...node,
+    children: node.children?.map(compactMissionDiffTreeNode),
+  };
+
+  while (
+    compacted.children?.length === 1 &&
+    compacted.children[0]?.kind === "directory"
+  ) {
+    const child = compacted.children[0];
+    compacted = {
+      ...child,
+      id: `${compacted.id}/${child.name}`,
+      name: `${compacted.name}/${child.name}`,
+      path: child.path,
+      count: child.count,
+      children: child.children,
+    };
+  }
+
+  return compacted;
+}
+
 export function formatDiffStatus(status: FileDiffSummary["status"]) {
   return status === "modified" ? "M" : status === "added" ? "A" : "D";
 }
 
 export function renderDiffStats(file: FileDiffSummary) {
   return (
-    <span className="diff-meta diff-meta-split">
-      <span className="diff-additions">+{file.additions}</span>
-      <span className="diff-separator">/</span>
-      <span className="diff-deletions">-{file.deletions}</span>
+    <span className="diff-meta diff-meta-split inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
+      <span className={`diff-additions ${resolveDiffStatClass(file.additions, "additions")}`}>+{file.additions}</span>
+      <span className="diff-separator text-muted-foreground/60">/</span>
+      <span className={`diff-deletions ${resolveDiffStatClass(file.deletions, "deletions")}`}>-{file.deletions}</span>
     </span>
   );
 }
 
+function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
+  if (value === 0) return "text-muted-foreground/60";
+  return kind === "additions" ? "text-success" : "text-destructive";
+}
+
 export function renderDiffPatch(patch: string) {
   return (
-    <pre className="mission-diff-patch">
+    <pre className="mission-diff-patch overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
       {patch.split(/\r?\n/u).map((line, index) => (
         <span
           key={`${index}-${line.slice(0, 12)}`}
-          className={`mission-diff-line ${resolveDiffLineClass(line)}`}
+          className={`mission-diff-line block min-w-max whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
         >
+          <span className="mr-3 inline-block w-10 select-none text-right text-muted-foreground/70">
+            {index + 1}
+          </span>
           {line || " "}
         </span>
       ))}
     </pre>
   );
+}
+
+function resolveDiffLineStyleClass(lineClass: string) {
+  if (lineClass === "line-added") return "diff-line-added bg-success-container/30 text-foreground";
+  if (lineClass === "line-deleted") return "diff-line-deleted bg-destructive/10 text-foreground";
+  if (lineClass === "line-hunk") return "diff-line-hunk bg-primary-soft text-primary font-semibold";
+  if (lineClass === "line-meta") return "diff-line-meta bg-surface-emphasis text-muted-foreground";
+  return "diff-line-context text-foreground";
 }
 
 export function resolveDiffLineClass(line: string) {

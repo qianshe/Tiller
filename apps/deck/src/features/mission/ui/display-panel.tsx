@@ -145,6 +145,7 @@ export function MissionDisplayPanel({
               <details
                 key={file.path}
                 className={cn("mission-diff-file rounded-md border border-border-ghost bg-surface-sunken", selectedDiffFilePath === file.path && "active ring-2 ring-ring/30")}
+                open={selectedDiffFilePath === file.path || diffs.length === 1 || undefined}
               >
                 {" "}
                 <summary className="mission-file-row mission-diff-file-summary grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground [&::-webkit-details-marker]:hidden">

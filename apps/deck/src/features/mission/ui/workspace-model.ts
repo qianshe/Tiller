@@ -2,6 +2,7 @@ import type { ProjectFileSummary } from "@tiller/shared";
 import { formatProjectSummaryForDisplay } from "../utils/project-display";
 import {
   buildMissionPanelPages,
+  resolveMissionActivityLoading,
   selectMissionPanelPage,
 } from "../utils/session-render-state";
 import { isSessionExecutionPending } from "../utils/session-state";
@@ -29,6 +30,8 @@ export function buildMissionWorkspaceModel(input: any) {
     draftProject,
     selectedWorkspace,
     selectedDraftAgent,
+    activeSessionMessages,
+    pendingPermission,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -62,13 +65,14 @@ export function buildMissionWorkspaceModel(input: any) {
     activeSession && isSessionExecutionPending(activeSessionStatus)
       ? resolvePendingToolActivity(activeToolCalls)
       : null;
-  const missionActivityLoading =
-    activeSession && isSessionExecutionPending(activeSessionStatus)
-      ? (pendingToolActivity ?? {
-          title: "Agent 响应",
-          status: activeSessionStatus,
-        })
-      : null;
+  const missionActivityLoading = activeSession
+    ? resolveMissionActivityLoading({
+        status: activeSessionStatus,
+        messages: activeSessionMessages ?? [],
+        toolCalls: activeToolCalls,
+        pendingPermission: pendingPermission ?? null,
+      })
+    : null;
   const missionDiffCount = activeDiffs.length;
   const missionLogCount = activeToolCalls.length || activeOutputs.length;
   const missionStatusLabel = activeSession

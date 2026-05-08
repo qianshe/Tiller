@@ -199,42 +199,53 @@ export function MissionPermissionDrawer({
 
   return (
     <section
-      className="mission-permission-drawer absolute bottom-[var(--mission-permission-composer-offset,190px)] left-1/2 z-30 grid w-[min(720px,calc(100%-2rem))] -translate-x-1/2 grid-rows-[auto_auto_auto] gap-2 overflow-visible rounded-lg border border-warning/30 bg-popover-glass p-3 text-foreground shadow-ambient backdrop-blur-2xl"
+      className="mission-permission-drawer absolute bottom-[calc(var(--mission-permission-composer-offset,190px)+24px)] left-3 right-3 z-40 grid grid-rows-[auto_auto] gap-3 rounded-2xl border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient sm:right-auto sm:w-[min(560px,calc(100%-1.5rem))]"
       role="region"
       aria-live="polite"
       aria-label={copy.permissionRequest}
     >
-      <div className="mission-permission-header grid gap-1">
-        <strong className="mission-permission-title break-words text-[0.98rem] font-semibold text-foreground">
-          {commandDisplay.title}
-        </strong>
+      <div className="mission-permission-header grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
+        <span
+          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning"
+          aria-hidden="true"
+        >
+          !
+        </span>
+        <div className="grid min-w-0 gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-warning">
+            {copy.permissionRequest}
+          </span>
+          <strong className="mission-permission-title break-words text-[0.98rem] font-semibold text-foreground">
+            {commandDisplay.title}
+          </strong>
+        </div>
       </div>
-      <div className="mission-permission-copy min-h-0 overflow-visible text-sm text-muted-foreground">
+      <div className="mission-permission-copy grid min-h-0 gap-2 text-sm text-muted-foreground">
         {showWorkspace ? (
-          <p className="subtle compact mission-permission-workspace truncate text-xs">
+          <p className="mission-permission-workspace break-all text-xs">
             {request.workspacePath}
           </p>
         ) : (
-          <p className="muted compact mission-permission-reason text-xs">
+          <p className="mission-permission-reason text-xs">
             {request.reason}
           </p>
         )}
         {commandDisplay.detail ? (
-          <p className="mission-permission-detail whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">{commandDisplay.detail}</p>
+          <p className="mission-permission-detail max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-sunken p-2 font-mono text-xs leading-relaxed text-foreground">{commandDisplay.detail}</p>
         ) : null}
-      </div>
-      <div className="permission-actions mission-permission-actions flex items-center gap-2 self-stretch pb-0">
-        {permissionOptions.map((option) => (
-          <Button
-            variant={isAllowDecision(option.decision) ? "default" : "outline"}
-            className="min-h-8 min-w-[72px] px-3 py-1.5 shadow-none"
-            type="button"
-            key={`${option.decision}-${option.label}`}
-            onClick={() => onRespond(option.decision)}
-          >
-            {resolvePermissionActionLabel(option, copy)}
-          </Button>
-        ))}
+        <div className="permission-actions mission-permission-actions flex flex-wrap items-center justify-end gap-2 self-stretch pb-0">
+          {permissionOptions.map((option) => (
+            <Button
+              variant={isAllowDecision(option.decision) ? "default" : "outline"}
+              className="min-h-8 min-w-[72px] px-3 py-1.5 shadow-none"
+              type="button"
+              key={`${option.decision}-${option.label}`}
+              onClick={() => onRespond(option.decision)}
+            >
+              {resolvePermissionActionLabel(option, copy)}
+            </Button>
+          ))}
+        </div>
       </div>
     </section>
   );

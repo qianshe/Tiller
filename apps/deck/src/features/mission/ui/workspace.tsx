@@ -197,7 +197,7 @@ export function MissionWorkspace(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation mission-pane mission-pane-chat col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
+    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
   const missionLayoutClassName = joinClassNames([

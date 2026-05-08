@@ -25,6 +25,40 @@ test("markdown tables render inside a responsive scroll wrapper", () => {
   assert.match(html, /markdown-table-cell/);
 });
 
+test("markdown renders only source tables as tables", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage
+      text={[
+        "| 项目 | 内容 |",
+        "| --- | --- |",
+        "| 产物 | apps/deck/src/features/logbook/message-history.ts |",
+        "| 根因 | provider paragraph chunk 被当成独立 assistant |",
+      ].join("\n")}
+    />,
+  );
+
+  assert.equal((html.match(/<table/g) ?? []).length, 1);
+  assert.match(html, /<th[^>]*>项目<\/th>/);
+  assert.match(html, /<td[^>]*>apps\/deck\/src\/features\/logbook\/message-history\.ts<\/td>/);
+});
+
+test("markdown keeps labeled paragraphs as paragraphs instead of generated tables", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage
+      text={[
+        "自然语言说明。",
+        "",
+        "**产物**：apps/deck/src/features/logbook/message-history.ts",
+        "**根因**：provider paragraph chunk 被当成独立 assistant",
+      ].join("\n")}
+    />,
+  );
+
+  assert.doesNotMatch(html, /<table/);
+  assert.match(html, /markdown-paragraph/);
+  assert.match(html, /<strong>产物<\/strong>：apps\/deck\/src\/features\/logbook\/message-history\.ts/);
+});
+
 test("inline code keeps the surrounding reading font instead of forcing monospace", () => {
   const html = renderToStaticMarkup(
     <MarkdownMessage text="路径 `apps/deck/src/App.tsx` 已更新。" />,

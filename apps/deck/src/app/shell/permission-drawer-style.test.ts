@@ -11,29 +11,36 @@ const permissionDrawerSource = readFileSync(
   "utf8",
 );
 
-test("mission permission drawer keeps three compact rows visible", () => {
-  assert.match(permissionDrawerSource, /grid-rows-\[auto_auto_auto\]/);
+test("mission permission drawer uses an in-pane solid elevated review card", () => {
+  assert.match(permissionDrawerSource, /grid-rows-\[auto_auto\]/);
   assert.match(permissionDrawerSource, /absolute/);
-  assert.match(permissionDrawerSource, /bottom-\[var\(--mission-permission-composer-offset,190px\)\]/);
-  assert.match(permissionDrawerSource, /-translate-x-1\/2/);
-  assert.match(permissionDrawerSource, /z-30/);
-  assert.match(permissionDrawerSource, /overflow-visible/);
-  assert.match(permissionDrawerSource, /mission-permission-copy[^\n]+overflow-visible/);
-  assert.match(permissionDrawerSource, /mission-permission-actions[^\n]+items-center/);
-  assert.match(permissionDrawerSource, /mission-permission-actions[^\n]+pb-0/);
+  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.match(permissionDrawerSource, /left-3/);
+  assert.match(permissionDrawerSource, /right-3/);
+  assert.match(permissionDrawerSource, /sm:right-auto/);
+  assert.match(permissionDrawerSource, /sm:w-\[min\(560px,calc\(100%-1\.5rem\)\)\]/);
+  assert.match(permissionDrawerSource, /z-40/);
+  assert.match(permissionDrawerSource, /border-warning\/40/);
+  assert.match(permissionDrawerSource, /bg-surface-elevated/);
+  assert.match(permissionDrawerSource, /shadow-ambient/);
+  assert.doesNotMatch(permissionDrawerSource, /bg-popover-glass/);
+  assert.doesNotMatch(permissionDrawerSource, /backdrop-blur/);
 });
 
-test("permission drawer path stays on a single second row", () => {
-  assert.match(permissionDrawerSource, /mission-permission-header[^\n]+gap-1/);
-  assert.match(permissionDrawerSource, /mission-permission-title[^\n]+text-\[0\.98rem\]/);
+test("permission drawer path and actions can wrap within the chat pane", () => {
+  assert.match(permissionDrawerSource, /mission-permission-header[^\n]+grid-cols-\[auto_minmax\(0,1fr\)\]/);
   assert.match(permissionDrawerSource, /mission-permission-title[^\n]+break-words/);
-  assert.match(permissionDrawerSource, /mission-permission-workspace[^\n]+truncate/);
+  assert.match(permissionDrawerSource, /mission-permission-workspace[^\n]+break-all/);
+  assert.match(permissionDrawerSource, /mission-permission-actions[^\n]+flex-wrap/);
 });
 
 test("permission drawer detail block keeps raw approval payload readable", () => {
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+font-mono/);
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+whitespace-pre-wrap/);
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+break-words/);
+  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+max-h-28/);
+  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+overflow-auto/);
+  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+bg-surface-sunken/);
   assert.match(permissionDrawerSource, /mission-permission-reason[^\n]+text-xs/);
   assert.match(permissionDrawerSource, /min-w-\[72px\]/);
   assert.match(permissionDrawerSource, /min-h-8/);

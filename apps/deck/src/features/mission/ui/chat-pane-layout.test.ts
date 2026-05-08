@@ -46,7 +46,13 @@ const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/mark
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
 
-  assert.match(permissionDrawerSource, /bottom-\[var\(--mission-permission-composer-offset,190px\)\]/);
+  assert.match(workspaceSource, /mission-pane-chat relative/);
+  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.match(permissionDrawerSource, /left-3/);
+  assert.match(permissionDrawerSource, /right-3/);
+  assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);
+  assert.doesNotMatch(permissionDrawerSource, /-translate-x-1\/2/);
+  assert.doesNotMatch(permissionDrawerSource, /w-\[min\(720px/);
   assert.doesNotMatch(chatPaneSource, /padding-bottom:\s*170px/);
 });
 
@@ -162,7 +168,7 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(workspaceSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
   assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
   assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
-  assert.match(workspaceSource, /mission-pane-chat col-start-3 col-end-4/);
+  assert.match(workspaceSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
   assert.doesNotMatch(workspaceSource, /max-\[860px\]:h-auto/);
   assert.doesNotMatch(workspaceSource, /max-\[860px\]:flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);

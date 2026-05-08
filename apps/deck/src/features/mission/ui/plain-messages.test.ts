@@ -164,11 +164,10 @@ test("plain message timeline does not render visual tool-boundary dividers", () 
   assert.doesNotMatch(html, />---/);
 });
 
-test("assistant structured messages render phase badges and section cards", () => {
-  const structuredAssistantText = [
-    "[🌳木] 范围",
-    "**状态**：已定位会话栏问题。",
-    "**目标**：重做消息展示。",
+test("assistant phase notes render as ordinary markdown instead of structured cards", () => {
+  const assistantText = [
+    "[⚔️金] 验证",
+    "**验证**：已定位会话栏问题。",
     "普通补充说明。",
   ].join("\n\n");
 
@@ -177,9 +176,9 @@ test("assistant structured messages render phase badges and section cards", () =
       sessionId: "session-1",
       items: [
         {
-          id: "assistant-structured",
+          id: "assistant-markdown-phase",
           role: "assistant",
-          text: structuredAssistantText,
+          text: assistantText,
           timestamp: "2026-05-06T01:30:00.000Z",
         },
       ],
@@ -192,14 +191,12 @@ test("assistant structured messages render phase badges and section cards", () =
     }),
   );
 
-  assert.match(html, /structured-assistant-message/);
-  assert.doesNotMatch(html, /plain-assistant[^\"]*border-border-ghost/);
-  assert.doesNotMatch(html, /plain-assistant[^\"]*bg-surface/);
-  assert.match(html, /structured-message-phase/);
-  assert.match(html, />🌳木</);
-  assert.match(html, /structured-message-section/);
-  assert.match(html, /状态/);
-  assert.match(html, /目标/);
+  assert.match(html, /markdown-message/);
+  assert.match(html, /\[⚔️金\] 验证/);
+  assert.match(html, /<strong>验证<\/strong>：已定位会话栏问题/);
+  assert.doesNotMatch(html, /structured-assistant-message/);
+  assert.doesNotMatch(html, /structured-message-phase/);
+  assert.doesNotMatch(html, /Assistant response/);
 });
 
 test("assistant non-structured messages keep markdown fallback", () => {
