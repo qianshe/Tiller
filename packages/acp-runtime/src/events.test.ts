@@ -187,6 +187,52 @@ test("mapSessionUpdateNotification maps inferred permission requests", () => {
   assert.equal(mapped.event.request.command, "pnpm test");
 });
 
+test("mapSessionUpdateNotification preserves available command kind metadata", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_commands",
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "ralph-loop",
+            description: "(builtin) Start self-referential loop.",
+          },
+          {
+            name: "frontend-design",
+            description: "Use this skill for polished UI.",
+            type: "skill",
+          },
+          {
+            name: "review",
+            description: "Review current changes.",
+          },
+        ],
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "available-commands");
+  if (mapped?.event.type !== "available-commands") {
+    throw new Error("Expected available-commands event");
+  }
+  assert.deepEqual(
+    mapped.event.commands.map((command) => ({
+      name: command.name,
+      kind: command.kind,
+      rawKind: command.rawKind,
+    })),
+    [
+      { name: "ralph-loop", kind: "builtin", rawKind: undefined },
+      { name: "frontend-design", kind: "skill", rawKind: "skill" },
+      { name: "review", kind: "command", rawKind: undefined },
+    ],
+  );
+});
+
 test("mapSessionUpdateNotification maps inferred command output", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

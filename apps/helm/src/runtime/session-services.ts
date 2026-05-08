@@ -21,7 +21,11 @@ import {
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
-import { planProviderHistorySync } from "../sessions/provider-history-sync.js";
+import {
+  planProviderHistorySync,
+  shouldRepairProviderHistorySnapshot,
+  toParagraphMessages,
+} from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
@@ -189,6 +193,8 @@ export function createSessionServices(options: SessionServicesOptions) {
         providerMessages: history.messages,
       });
 
+      let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
+      let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
       if (syncDecision.action === "replace") {
         if (syncDecision.messages.length) {
           options.sessionMessageStore.replace(sessionId, syncDecision.messages);
@@ -197,6 +203,14 @@ export function createSessionServices(options: SessionServicesOptions) {
         for (const message of syncDecision.messages) {
           options.sessionMessageStore.append(sessionId, message);
         }
+      } else {
+        const localMessages = options.sessionMessageStore.list(sessionId);
+        if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
+          const repairedMessages = toParagraphMessages(history.messages);
+          options.sessionMessageStore.replace(sessionId, repairedMessages);
+          localMessageCount = repairedMessages.length;
+          logAction = "repair";
+        }
       }
 
       persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
@@ -204,7 +218,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
       }
       options.logInfo(
-        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${syncDecision.action} providerMessages=${history.messages.length} localMessages=${syncDecision.action === "skip" ? 0 : syncDecision.messages.length} toolCalls=${history.toolCalls.length}`,
+        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
       );
       return true;
     } catch (error) {

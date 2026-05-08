@@ -208,10 +208,20 @@ export type AcpModelState = {
   options: AcpModelOption[];
 };
 
+export type AvailableCommandKind =
+  | "command"
+  | "skill"
+  | "builtin"
+  | "prompt"
+  | "workflow"
+  | "unknown";
+
 export type AvailableCommand = {
   name: string;
   description?: string;
   input?: { hint?: string };
+  kind?: AvailableCommandKind;
+  rawKind?: string;
 };
 
 export type SessionConfigSupport = {

@@ -4,6 +4,7 @@ import type { AgentMessage } from "@tiller/shared";
 import {
   buildProviderHistoryState,
   planProviderHistorySync,
+  shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
 } from "./provider-history-sync.js";
 import type { StoredProviderHistoryState } from "./runtime-store.js";
@@ -151,5 +152,31 @@ test("toParagraphMessages keeps stable paragraph ids and trims blank paragraphs"
       ["provider-1#p1", "第二段"],
       ["provider-1#p2", "第三段"],
     ],
+  );
+});
+
+test("shouldRepairProviderHistorySnapshot detects persisted restore replay mixed with authoritative paragraphs", () => {
+  const providerMessages = [baseMessage("provider-1", "第一段\n\n第二段")];
+  const authoritativeParagraphs = toParagraphMessages(providerMessages);
+  const pollutedLocalMessages: AgentMessage[] = [
+    baseMessage("provider-1", "第一段\n\n第二段", "2026-05-08T08:00:00.000Z"),
+    ...authoritativeParagraphs,
+  ];
+
+  assert.equal(
+    shouldRepairProviderHistorySnapshot(pollutedLocalMessages, providerMessages),
+    true,
+  );
+});
+
+test("shouldRepairProviderHistorySnapshot keeps matching authoritative paragraphs", () => {
+  const providerMessages = [baseMessage("provider-1", "第一段\n\n第二段")];
+
+  assert.equal(
+    shouldRepairProviderHistorySnapshot(
+      toParagraphMessages(providerMessages),
+      providerMessages,
+    ),
+    false,
   );
 });

@@ -60,6 +60,30 @@ export function toParagraphMessages(providerMessages: AgentMessage[]): AgentMess
   return providerMessages.flatMap((message) => splitMessageIntoParagraphs(message));
 }
 
+export function shouldRepairProviderHistorySnapshot(
+  localMessages: AgentMessage[],
+  providerMessages: AgentMessage[],
+): boolean {
+  const authoritativeMessages = toParagraphMessages(providerMessages);
+  if (localMessages.length !== authoritativeMessages.length) {
+    return true;
+  }
+
+  return authoritativeMessages.some((message, index) => {
+    const localMessage = localMessages[index];
+    return !localMessage || !isSameStoredMessage(localMessage, message);
+  });
+}
+
+function isSameStoredMessage(left: AgentMessage, right: AgentMessage) {
+  return (
+    left.id === right.id &&
+    left.role === right.role &&
+    left.timestamp === right.timestamp &&
+    left.text === right.text
+  );
+}
+
 function splitMessageIntoParagraphs(message: AgentMessage): AgentMessage[] {
   const paragraphs = message.text
     .split(/\n\s*\n/u)

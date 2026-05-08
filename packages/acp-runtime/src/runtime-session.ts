@@ -8,6 +8,7 @@ import { resolveLaunchSpec, terminateChildProcess } from "./process";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine, writeProtocolLog } from "./protocol-logging";
 import { resolveAcpLaunchConfig } from "./adapters";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "./events";
+import { createRestoreReplayEventSink } from "./restore-replay";
 import { resolveRuntimeSessionId } from "./requests";
 import { createRuntimeClientMethods, type AcpRuntimePendingPermissionReply } from "./runtime-client-methods";
 import { SDK_RUNTIME_CLIENT_CAPABILITIES, mapPromptContentToSdkBlocks, mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
@@ -81,6 +82,15 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   let exitError: Error | null = null;
   const pendingPermissionReplies = new Map<string, AcpRuntimePendingPermissionReply>();
   const terminals = new Map<string, ManagedSdkTerminal>();
+  const restoreReplaySink = createRestoreReplayEventSink(options.onEvent, (event) => {
+    if (event.type === "message") {
+      writeLogLine(
+        logFile,
+        "restore-replay",
+        `suppressed assistant history replay id=${event.message.id} chars=${event.message.text.length}`,
+      );
+    }
+  });
 
   const failPendingPermissions = () => {
     for (const pendingPermission of pendingPermissionReplies.values()) {
@@ -144,7 +154,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
   const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
   const agent = new acp.ClientSideConnection(() => createRuntimeClientMethods({
-    options,
+    options: { ...options, onEvent: restoreReplaySink.onEvent },
     launchCwd,
     childEnv,
     logFile,
@@ -204,28 +214,33 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
 
   if (options.restore) {
     sessionToken = options.restore.runtimeSessionId;
-    if (options.restore.strategy === "load") {
-      if (!sessionCapabilities.sessionLoad) {
-        throw new Error("ACP agent does not advertise session/load capability.");
+    restoreReplaySink.setSuppressing(true);
+    try {
+      if (options.restore.strategy === "load") {
+        if (!sessionCapabilities.sessionLoad) {
+          throw new Error("ACP agent does not advertise session/load capability.");
+        }
+        const loadResult = await withSdkRequest<AcpSessionResponseWithModels>(
+          "session/load",
+          agent.loadSession({ sessionId: options.restore.runtimeSessionId, cwd: launchCwd, mcpServers }),
+        );
+        sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
+        currentConfigOptions = extractSessionConfigOptions(loadResult);
+        currentModelState = extractAcpModelState(loadResult);
+      } else {
+        if (!sessionCapabilities.sessionResume) {
+          throw new Error("ACP agent does not advertise session.resume capability.");
+        }
+        const resumeResult = await withSdkRequest<AcpSessionResponseWithModels>(
+          "session/resume",
+          agent.resumeSession({ sessionId: options.restore.runtimeSessionId, cwd: launchCwd, mcpServers }),
+        );
+        sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
+        currentConfigOptions = extractSessionConfigOptions(resumeResult);
+        currentModelState = extractAcpModelState(resumeResult);
       }
-      const loadResult = await withSdkRequest<AcpSessionResponseWithModels>(
-        "session/load",
-        agent.loadSession({ sessionId: options.restore.runtimeSessionId, cwd: launchCwd, mcpServers }),
-      );
-      sessionToken = resolveRuntimeSessionId(loadResult, options.restore.runtimeSessionId);
-      currentConfigOptions = extractSessionConfigOptions(loadResult);
-      currentModelState = extractAcpModelState(loadResult);
-    } else {
-      if (!sessionCapabilities.sessionResume) {
-        throw new Error("ACP agent does not advertise session.resume capability.");
-      }
-      const resumeResult = await withSdkRequest<AcpSessionResponseWithModels>(
-        "session/resume",
-        agent.resumeSession({ sessionId: options.restore.runtimeSessionId, cwd: launchCwd, mcpServers }),
-      );
-      sessionToken = resolveRuntimeSessionId(resumeResult, options.restore.runtimeSessionId);
-      currentConfigOptions = extractSessionConfigOptions(resumeResult);
-      currentModelState = extractAcpModelState(resumeResult);
+    } finally {
+      restoreReplaySink.setSuppressing(false);
     }
   } else {
     const sessionResult = await withSdkRequest<AcpSessionResponseWithModels>(
