@@ -31,3 +31,36 @@ test("config RPC lists projects and updates context cache", async () => {
   assert.deepEqual(result, { projects });
   assert.equal(cached, projects);
 });
+
+test("config RPC reconnects an agent provider without prewarming a session", async () => {
+  let reconnectCalled = false;
+  const provider = { id: "codex", name: "Codex", command: "codex-acp" };
+  const workspace = { id: "main", name: "main", path: "D:/repo" };
+  const result = await handleConfigRpcRequest(
+    "agent/reconnect",
+    { providerId: "codex", workspaceId: "main" },
+    {
+      getAgents: () => [provider],
+      getWorkspaces: () => [workspace],
+      getProjects: () => [],
+      resolveProviderById: (id: string) => (id === "codex" ? provider : undefined),
+      reconnectAcpConnection: async () => {
+        reconnectCalled = true;
+        return {
+          inventory: () => ({ runtimeConnectionId: "conn-1" }),
+        };
+      },
+      logInfo: () => undefined,
+      logError: () => undefined,
+    } as any,
+  );
+
+  assert.equal(reconnectCalled, true);
+  assert.deepEqual(result, {
+    ok: true,
+    providerId: "codex",
+    workspaceId: "main",
+    runtimeConnectionId: "conn-1",
+    message: "ACP provider reconnected.",
+  });
+});

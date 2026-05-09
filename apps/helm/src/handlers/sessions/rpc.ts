@@ -347,6 +347,7 @@ async function createSession(
             "connection-reuse": "ACP连接复用",
             "connection-pending": "ACP连接等待",
             "connection-replace": "ACP连接替换",
+            "connection-reconnect": "ACP连接重连",
           } as const;
           context.logInfo(
             `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,

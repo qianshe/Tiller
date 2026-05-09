@@ -5,6 +5,16 @@ import type { AcpRuntimeOptions } from "./runtime-types";
 
 const defaultAcpConnectionManager = createAcpConnectionManager();
 
+export async function reconnectAcpConnection(options: AcpRuntimeOptions) {
+  return defaultAcpConnectionManager.reconnect({
+    sessionId: options.sessionId,
+    workspace: options.workspace,
+    provider: options.agent,
+    sessionConfig: options.sessionConfig,
+    onLifecycleEvent: options.onConnectionLifecycleEvent,
+  });
+}
+
 export async function createAcpRuntime(options: AcpRuntimeOptions) {
   const restoreReplaySink = createRestoreReplayEventSink(
     options.onEvent,

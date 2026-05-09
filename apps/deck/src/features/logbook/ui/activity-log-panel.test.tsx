@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityLogPanel } from "./activity-log-panel.js";
 
-test("activity log panel renders assistant stream messages alongside tool activity", () => {
+test("activity log panel hides user and assistant messages while keeping tool activity", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
       sessionId: "session-1",
@@ -43,15 +43,15 @@ test("activity log panel renders assistant stream messages alongside tool activi
     }),
   );
 
-  assert.match(html, /Assistant/);
-  assert.match(html, /当前分支是 main。/);
-  assert.match(html, /Prompt/);
-  assert.match(html, /查看当前分支/);
+  assert.doesNotMatch(html, /Assistant/);
+  assert.doesNotMatch(html, /当前分支是 main。/);
+  assert.doesNotMatch(html, /Prompt/);
+  assert.doesNotMatch(html, /查看当前分支/);
   assert.match(html, /Shell/);
   assert.match(html, /git branch --show-current/);
 });
 
-test("activity log panel coalesces repeated assistant stream snapshots", () => {
+test("activity log panel does not render provider diagnostics as assistant activity", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
       sessionId: "session-1",
@@ -89,6 +89,8 @@ test("activity log panel coalesces repeated assistant stream snapshots", () => {
   );
 
   const assistantCards = html.match(/Assistant/g) ?? [];
-  assert.equal(assistantCards.length, 1);
-  assert.match(html, /this can degrade performance/);
+  assert.equal(assistantCards.length, 0);
+  assert.doesNotMatch(html, /this can degrade performance/);
+  assert.match(html, /Tool/);
+  assert.match(html, /Tool: read_file/);
 });

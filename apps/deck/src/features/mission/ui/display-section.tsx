@@ -28,6 +28,7 @@ type MissionDisplaySectionProps = {
   logCount: number;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
+  onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   noDiffSummary: string;
   activeSession: SessionSummary | null;
   statusLabel: string;
@@ -65,6 +66,7 @@ export function MissionDisplaySection({
   logCount,
   overviewItems,
   runtimeOverviewItems,
+  onReconnectRuntime,
   noDiffSummary,
   activeSession,
   statusLabel,
@@ -99,6 +101,7 @@ export function MissionDisplaySection({
       logCount={logCount}
       overviewItems={overviewItems}
       runtimeOverviewItems={runtimeOverviewItems}
+      onReconnectRuntime={onReconnectRuntime}
       noDiffSummary={noDiffSummary}
       logbookContent={
         <LogbookPanel

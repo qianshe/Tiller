@@ -1,6 +1,6 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
-export { createAcpRuntime } from "./runtime-session";
+export { createAcpRuntime, reconnectAcpConnection } from "./runtime-session";
 export { AcpConnection } from "./connection/acp-connection";
 export { createAcpConnectionManager } from "./connection/connection-manager";
 export type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
@@ -53,9 +53,6 @@ function normalizePreferredAgentId(agent: string | undefined) {
 
   return aliasMap[canonical] ?? canonical;
 }
-
-// TODO(real-acp): introduce createAcpRuntime(provider, workspace) using stdio JSON-RPC notifications beyond initialize.
-// TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
 
 export { resolveRuntimeSessionId } from "./requests";
 export { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "./capabilities";

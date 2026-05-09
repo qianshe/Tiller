@@ -4,7 +4,12 @@ import { resolveAcpConnectionKey, type AcpConnectionKey } from "./connection-key
 import type { AcpConnectionInventoryItem } from "./connection-types";
 
 export type AcpConnectionLifecycleEvent = {
-  type: "connection-open" | "connection-reuse" | "connection-pending" | "connection-replace";
+  type:
+    | "connection-open"
+    | "connection-reuse"
+    | "connection-pending"
+    | "connection-replace"
+    | "connection-reconnect";
   key: AcpConnectionKey;
   providerId: string;
   workspaceId: string;
@@ -90,6 +95,34 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
     return promise;
   }
 
+  async function reconnect(params: OpenManagedConnectionOptions) {
+    const key = resolveAcpConnectionKey(params);
+    params.onLifecycleEvent?.({
+      type: "connection-reconnect",
+      key,
+      providerId: params.provider.id,
+      workspaceId: params.workspace.id,
+      workspacePath: params.workspace.path,
+      sessionId: params.sessionId,
+    });
+    const pending = pendingConnections.get(key);
+    pendingConnections.delete(key);
+    if (pending) {
+      try {
+        const connection = await pending;
+        await connection.dispose();
+      } catch {
+        // Ignore failed pending opens; reconnect will open a fresh connection below.
+      }
+    }
+    const existing = connections.get(key);
+    connections.delete(key);
+    if (existing) {
+      await existing.dispose();
+    }
+    return openManagedConnection(params);
+  }
+
   async function openSession(params: OpenManagedSessionOptions) {
     const connection = await openManagedConnection(params);
     const request: OpenAcpSessionRequest = params.restore
@@ -115,6 +148,7 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
 
   return {
     openConnection: openManagedConnection,
+    reconnect,
     openSession,
     listInventory,
   };

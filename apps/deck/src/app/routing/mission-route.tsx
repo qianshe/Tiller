@@ -7,6 +7,8 @@ export function renderMissionRoute(source: any) {
   const {
     prompt,
     promptImages,
+    rpcClientRef,
+    dispatch,
     socketRef,
     activeSessionId,
     selectedProjectId,
@@ -157,6 +159,8 @@ export function renderMissionRoute(source: any) {
     <MissionWorkspace
       prompt={prompt}
       promptImages={promptImages}
+      rpcClientRef={rpcClientRef}
+      dispatch={dispatch}
       socketRef={socketRef}
       activeSessionId={activeSessionId}
       selectedProjectId={selectedProjectId}

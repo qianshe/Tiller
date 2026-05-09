@@ -201,3 +201,50 @@ test("connection manager replaces a closed cached connection", async () => {
   assert.equal(openCount, 2);
   assert.notEqual(first, second);
 });
+
+test("connection manager reconnect disposes cached connection before opening a new one", async () => {
+  let openCount = 0;
+  let disposeCount = 0;
+  const lifecycleEvents: string[] = [];
+  const manager = createAcpConnectionManager({
+    openConnection: async () => {
+      openCount += 1;
+      const runtimeConnectionId = `conn-${openCount}`;
+      return {
+        inventory: () => ({
+          key: resolveAcpConnectionKey({ provider, workspace }),
+          providerId: provider.id,
+          workspaceId: workspace.id,
+          workspacePath: workspace.path,
+          launchCwd: workspace.path,
+          status: "ready" as const,
+          runtimeConnectionId,
+          initialized: true,
+          activeSessionCount: 0,
+          pendingSessionCount: 0,
+          sessions: [],
+          capabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
+        }),
+        dispose: async () => {
+          disposeCount += 1;
+        },
+        openOrCreateSession: async () => {
+          throw new Error("reconnect should not create sessions");
+        },
+      };
+    },
+  });
+
+  const first = await manager.openConnection({ provider, workspace });
+  const second = await manager.reconnect({
+    provider,
+    workspace,
+    onLifecycleEvent: (event) => lifecycleEvents.push(event.type),
+  });
+
+  assert.equal(openCount, 2);
+  assert.equal(disposeCount, 1);
+  assert.notEqual(first, second);
+  assert.deepEqual(lifecycleEvents, ["connection-reconnect", "connection-open"]);
+  assert.equal(manager.listInventory()[0]?.runtimeConnectionId, "conn-2");
+});

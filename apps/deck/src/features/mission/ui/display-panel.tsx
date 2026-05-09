@@ -32,6 +32,9 @@ function isWideOverviewItem(label: string): boolean {
 
 export type RuntimeOverviewItem = {
   id: string;
+  agentId?: string;
+  projectId?: string;
+  workspaceId?: string;
   label: string;
   meta: string;
   status: string;
@@ -56,6 +59,7 @@ type MissionDisplayPanelProps = {
   logCount: number;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
+  onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   noDiffSummary: string;
   logbookContent: ReactNode;
   collapsedDiffDirectories: ReadonlySet<string>;
@@ -79,6 +83,7 @@ export function MissionDisplayPanel({
   logCount,
   overviewItems,
   runtimeOverviewItems,
+  onReconnectRuntime,
   noDiffSummary,
   logbookContent,
   collapsedDiffDirectories,
@@ -314,8 +319,23 @@ export function MissionDisplayPanel({
                       <strong className="min-w-0 truncate text-sm text-foreground">
                         {runtime.label}
                       </strong>
-                      <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
-                        {runtime.status}
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          className="rounded-full border border-border-ghost px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onReconnectRuntime?.(runtime);
+                          }}
+                          disabled={!runtime.agentId || !onReconnectRuntime}
+                          title="重连 ACP"
+                        >
+                          重连
+                        </button>
+                        <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
+                          {runtime.status}
+                        </span>
                       </span>
                     </summary>
                     <code className="mt-1 block break-all text-[11px] text-muted-foreground">

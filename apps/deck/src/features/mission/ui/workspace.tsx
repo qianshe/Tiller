@@ -13,6 +13,8 @@ export function MissionWorkspace(props: any) {
   const {
     prompt,
     promptImages,
+    rpcClientRef,
+    dispatch,
     socketRef,
     activeSessionId,
     selectedProjectId,
@@ -237,6 +239,9 @@ export function MissionWorkspace(props: any) {
       }
       grouped.set(key, {
         id: `acp:${key}`,
+        agentId: session.agentId ?? key,
+        projectId: session.projectId,
+        workspaceId: session.workspaceId,
         label: session.agentName ?? session.agentId ?? "ACP",
         meta: `${projectName} · ${branchName} · ${statusLabel}`,
         status: "ACP",
@@ -260,6 +265,8 @@ export function MissionWorkspace(props: any) {
         "Workspace";
       grouped.set(groupKey, {
         id: `acp:${groupKey}`,
+        agentId,
+        workspaceId,
         label: agentName,
         meta: workspaceName,
         status: entry.loading ? "预热中" : "已预热",
@@ -275,6 +282,9 @@ export function MissionWorkspace(props: any) {
       }
       grouped.set(groupKey, {
         id: `acp:${groupKey}`,
+        agentId: agent.id,
+        projectId: selectedProjectId ?? undefined,
+        workspaceId: selectedWorkspaceId ?? undefined,
         label: agent.name ?? agent.id ?? "ACP",
         meta: "暂无会话",
         status: "未连接",
@@ -291,6 +301,17 @@ export function MissionWorkspace(props: any) {
         : item,
     );
   })();
+  const reconnectAcpRuntime = (runtime: { agentId?: string; projectId?: string; workspaceId?: string }) => {
+    const client = rpcClientRef?.current;
+    if (!runtime.agentId || !client || client.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    void dispatch?.(client, "agent/reconnect", {
+      providerId: runtime.agentId,
+      projectId: runtime.projectId ?? selectedProjectId ?? undefined,
+      workspaceId: runtime.workspaceId ?? selectedWorkspaceId ?? undefined,
+    });
+  };
   const shouldShowComposer = Boolean(activeSession);
   const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId);
   return (
@@ -466,6 +487,7 @@ export function MissionWorkspace(props: any) {
             logCount={missionLogCount}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
+            onReconnectRuntime={reconnectAcpRuntime}
             noDiffSummary={copy.noDiffSummary}
             activeSession={activeSession}
             statusLabel={missionStatusLabel}

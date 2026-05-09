@@ -1,5 +1,5 @@
 import type { WebSocket } from "ws";
-import type { createAcpRuntime } from "@tiller/acp-runtime";
+import type { createAcpRuntime, reconnectAcpConnection } from "@tiller/acp-runtime";
 import type {
   AcpAgentProvider,
   AcpModelState,
@@ -73,6 +73,7 @@ export type HelmHandlerContext = {
   sessionRuntimeStore: any;
 
   createRuntime: typeof createAcpRuntime;
+  reconnectAcpConnection: typeof reconnectAcpConnection;
   prewarmRuntime: (params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;

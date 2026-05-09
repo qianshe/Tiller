@@ -54,6 +54,11 @@ export async function handleConfigRpcRequest(
       return saveAgent(params as { provider: AcpAgentProvider }, context);
     case "agent/test":
       return testAgent(params as { providerId: string }, context);
+    case "agent/reconnect":
+      return reconnectAgent(
+        params as { providerId: string; workspaceId?: string; projectId?: string },
+        context,
+      );
     case "agent/get_model_options":
       return getModelOptions(
         params as { providerId: string; workspaceId: string; projectId?: string },
@@ -325,6 +330,72 @@ async function testAgent(params: { providerId: string }, context: HelmHandlerCon
     providerId: params.providerId,
     message: result.message,
   };
+}
+
+async function reconnectAgent(
+  params: { providerId: string; workspaceId?: string; projectId?: string },
+  context: HelmHandlerContext,
+) {
+  const agent = context.resolveProviderById(params.providerId, context.getAgents());
+  const workspaces = context.getWorkspaces();
+  const baseWorkspace = params.workspaceId
+    ? workspaces.find((item) => item.id === params.workspaceId)
+    : workspaces[0];
+  const project = params.projectId
+    ? context.resolveProjectById(params.projectId, context.getProjects())
+    : undefined;
+  const workspace =
+    project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
+      ? { ...baseWorkspace, path: project.path }
+      : baseWorkspace;
+
+  if (!agent || !workspace) {
+    return {
+      ok: false,
+      providerId: params.providerId,
+      workspaceId: params.workspaceId,
+      message: !agent ? "Provider not found" : "Workspace not found",
+    };
+  }
+
+  context.logInfo(
+    `[tiller] 阶段=ACP重连请求 provider=${agent.id} workspace=${workspace.id} cwd=${workspace.path}`,
+  );
+  try {
+    const connection = await context.reconnectAcpConnection({
+      sessionId: `reconnect-${agent.id}-${Date.now()}`,
+      agent,
+      workspace,
+      onEvent: () => undefined,
+      onConnectionLifecycleEvent: (event) => {
+        context.logInfo(
+          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} workspace=${event.workspaceId}`,
+        );
+      },
+    });
+    const inventory = connection.inventory();
+    context.logInfo(
+      `[tiller] 阶段=ACP重连完成 provider=${agent.id} workspace=${workspace.id} connection=${inventory.runtimeConnectionId}`,
+    );
+    return {
+      ok: true,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      runtimeConnectionId: inventory.runtimeConnectionId,
+      message: "ACP provider reconnected.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to reconnect ACP provider";
+    context.logError(
+      `[tiller] 阶段=ACP重连失败 provider=${agent.id} workspace=${workspace.id} message=${message}`,
+    );
+    return {
+      ok: false,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      message,
+    };
+  }
 }
 
 async function getModelOptions(

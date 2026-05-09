@@ -2,7 +2,6 @@ import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { CommandOutput } from "./command-output";
-import { coalesceDisplayMessages } from "../message-history";
 import { resolveToolCallTone } from "../tool-call-tone";
 import { commandChunkToToolCall, groupToolCalls } from "../timeline";
 
@@ -28,13 +27,12 @@ type ActivityLogPanelProps = {
 };
 
 /**
- * Merges prompt and tool activity into the mission activity timeline.
+ * Shows tool activity only; user prompts and assistant text remain in the conversation pane.
  */
 export function ActivityLogPanel({
   sessionId,
   sessionToolCalls,
   commandChunks,
-  sessionMessages,
   historyState,
   visibleCount,
   visibleLimit,
@@ -42,11 +40,7 @@ export function ActivityLogPanel({
   onShowMore,
   onLoadOlder,
 }: ActivityLogPanelProps) {
-  const timelineItems = buildActivityTimeline(
-    sessionToolCalls,
-    commandChunks,
-    sessionMessages,
-  );
+  const timelineItems = buildActivityTimeline(sessionToolCalls, commandChunks);
   const visibleTimelineItems = timelineItems.slice(0, visibleCount);
   const hiddenCount = Math.max(
     0,
@@ -65,24 +59,12 @@ export function ActivityLogPanel({
         <CardTitle>{copy.commandOutput}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-2 p-0">
-        {visibleTimelineItems.map((timelineItem) =>
-          timelineItem.kind === "prompt" ? (
-            <PromptActivityCard
-              key={timelineItem.id}
-              text={timelineItem.text}
-            />
-          ) : timelineItem.kind === "assistant" ? (
-            <AssistantActivityCard
-              key={timelineItem.id}
-              text={timelineItem.text}
-            />
-          ) : (
-            <ToolActivityCard
-              key={timelineItem.item.id}
-              item={timelineItem.item}
-            />
-          ),
-        )}
+        {visibleTimelineItems.map((timelineItem) => (
+          <ToolActivityCard
+            key={timelineItem.item.id}
+            item={timelineItem.item}
+          />
+        ))}
         {hiddenCount > 0 ? (
           <Button
             variant="outline"
@@ -110,89 +92,28 @@ export function ActivityLogPanel({
   );
 }
 
-type ActivityTimelineItem =
-  | {
-      kind: "prompt";
-      id: string;
-      timestamp: string;
-      text: string;
-    }
-  | {
-      kind: "assistant";
-      id: string;
-      timestamp: string;
-      text: string;
-    }
-  | {
-      kind: "tool";
-      timestamp: string;
-      item: ReturnType<typeof groupToolCalls>[number];
-    };
+type ActivityTimelineItem = {
+  kind: "tool";
+  timestamp: string;
+  item: ReturnType<typeof groupToolCalls>[number];
+};
 
 function buildActivityTimeline(
   sessionToolCalls: AgentToolCall[],
   commandChunks: CommandChunk[],
-  sessionMessages: AgentMessage[],
 ): ActivityTimelineItem[] {
   const toolItems = groupToolCalls(
     sessionToolCalls.length
       ? sessionToolCalls
       : commandChunks.map(commandChunkToToolCall),
   );
-  const promptItems = sessionMessages
-    .filter((message) => message.role === "user")
-    .map((message) => ({
-      kind: "prompt" as const,
-      id: message.id,
-      timestamp: message.timestamp,
-      text: message.text,
-    }));
 
-  const assistantItems = coalesceDisplayMessages(
-    sessionMessages.filter((message) => message.role === "assistant"),
-  ).map((message) => ({
-    kind: "assistant" as const,
-    id: message.id,
-    timestamp: message.timestamp,
-    text: message.text,
-  }));
-
-  return [
-    ...promptItems,
-    ...assistantItems,
-    ...toolItems.map((item) => ({
-      kind: "tool" as const,
-      timestamp: item.timestamp,
-      item,
-    })),
-  ].sort(
+  return toolItems.map((item) => ({
+    kind: "tool" as const,
+    timestamp: item.timestamp,
+    item,
+  })).sort(
     (left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp),
-  );
-}
-
-function PromptActivityCard({ text }: { text: string }) {
-  return (
-    <ActivityDetails accent="prompt" icon="↗" kind="Prompt" title={summarizeActivityText(text)} stream="user">
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
-        {text}
-      </pre>
-    </ActivityDetails>
-  );
-}
-
-function AssistantActivityCard({ text }: { text: string }) {
-  return (
-    <ActivityDetails
-      accent="assistant"
-      icon="↙"
-      kind="Assistant"
-      title={summarizeActivityText(text) || "ACP 回复"}
-      stream="assistant"
-    >
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
-        {text}
-      </pre>
-    </ActivityDetails>
   );
 }
 
@@ -281,10 +202,6 @@ function ActivityDetails({
 
 function activityToneClass(accent: string) {
   switch (accent) {
-    case "prompt":
-      return { border: "border-l-2 border-l-sky-400", icon: "bg-sky-400/15 text-sky-500" };
-    case "assistant":
-      return { border: "border-l-2 border-l-lime-400", icon: "bg-lime-400/15 text-lime-600" };
     case "tool-call-mcp":
       return { border: "border-l-2 border-l-violet-400", icon: "bg-violet-400/15 text-violet-500" };
     case "tool-call-shell":
@@ -302,11 +219,4 @@ function activityToneClass(accent: string) {
     default:
       return { border: "border-l-2 border-l-primary", icon: "bg-primary-soft text-primary" };
   }
-}
-
-function summarizeActivityText(text: string) {
-  const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length > 72
-    ? `${compact.slice(0, 72)}…`
-    : compact || "发送给 ACP";
 }

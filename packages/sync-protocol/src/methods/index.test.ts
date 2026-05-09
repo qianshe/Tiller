@@ -19,6 +19,7 @@ const expectedRequests = [
   "workspace/git/create_branch",
   "agent/list",
   "agent/test",
+  "agent/reconnect",
   "agent/get_model_options",
   "agent/save",
   "session/new",
