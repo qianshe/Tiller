@@ -55,7 +55,64 @@ test("activity log panel shows real user prompts and tool activity but hides ass
   assert.match(html, /Prompt/);
   assert.match(html, /查看当前分支/);
   assert.match(html, /Shell/);
+  assert.match(html, /完成/);
   assert.match(html, /git branch --show-current/);
+});
+
+test("activity log panel labels namespaced tools as MCP", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogPanel, {
+      sessionId: "session-1",
+      sessionToolCalls: [
+        {
+          id: "tool-1",
+          kind: "tool",
+          title: "Tool: sanshu/zhi",
+          status: "completed",
+          timestamp: "2026-05-08T01:00:02.000Z",
+          updatedAt: "2026-05-08T01:00:02.000Z",
+        },
+      ],
+      commandChunks: [],
+      sessionMessages: [],
+      visibleCount: 10,
+      visibleLimit: 10,
+      copy: { commandOutput: "航行日志", noCommandOutput: "暂无活动" },
+      onShowMore: () => {},
+      onLoadOlder: () => {},
+    }),
+  );
+
+  assert.match(html, /MCP/);
+  assert.match(html, /Tool: sanshu\/zhi/);
+});
+
+test("activity log panel labels command-shaped generic tools as shell", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogPanel, {
+      sessionId: "session-1",
+      sessionToolCalls: [
+        {
+          id: "tool-1",
+          kind: "tool",
+          title: "Write-Output \"hello\"",
+          status: "completed",
+          timestamp: "2026-05-08T01:00:02.000Z",
+          updatedAt: "2026-05-08T01:00:02.000Z",
+        },
+      ],
+      commandChunks: [],
+      sessionMessages: [],
+      visibleCount: 10,
+      visibleLimit: 10,
+      copy: { commandOutput: "航行日志", noCommandOutput: "暂无活动" },
+      onShowMore: () => {},
+      onLoadOlder: () => {},
+    }),
+  );
+
+  assert.match(html, /Shell/);
+  assert.match(html, /Write-Output/);
 });
 
 test("activity log panel does not render provider diagnostics as assistant activity", () => {

@@ -86,11 +86,12 @@ export function PlainMessages({
           {historyState?.loading ? "加载中..." : "查看更多"}
         </button>
       ) : null}
-      {visibleRenderMessages.map(({ message, renderKey }) => {
+      {visibleRenderMessages.map(({ message, renderKey, isContinuation }) => {
         const isExpanded = expandedMessageIds.has(message.id);
         return (
           <PlainMessageItem
             key={renderKey}
+            isContinuation={isContinuation}
             isExpanded={isExpanded}
             message={message}
             onToggleExpandedMessage={onToggleExpandedMessage}
@@ -107,6 +108,7 @@ export function PlainMessages({
 }
 
 type PlainMessageItemProps = {
+  isContinuation: boolean;
   isExpanded: boolean;
   message: AgentMessage;
   onToggleExpandedMessage: (messageId: string) => void;
@@ -114,6 +116,7 @@ type PlainMessageItemProps = {
 };
 
 const PlainMessageItem = memo(function PlainMessageItem({
+  isContinuation,
   isExpanded,
   message,
   onToggleExpandedMessage,
@@ -146,7 +149,12 @@ const PlainMessageItem = memo(function PlainMessageItem({
         </span>
       ) : null}
       <div className="grid min-w-0 gap-2">
-        <span className="plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <span
+          className={cn(
+            "plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+            isContinuation && "sr-only",
+          )}
+        >
           {roleLabel}
         </span>
         <div
@@ -225,6 +233,7 @@ export function resolveVisiblePlainMessages(
 }
 
 type PlainMessageRenderItem = {
+  isContinuation: boolean;
   message: AgentMessage;
   renderKey: string;
 };
@@ -234,10 +243,12 @@ export function resolvePlainMessageRenderItems(
 ): PlainMessageRenderItem[] {
   const seenKeys = new Map<string, number>();
   return items.map((message, index) => {
+    const previous = items[index - 1];
     const baseKey = message.id || `${message.role}-${message.timestamp || index}`;
     const seenCount = seenKeys.get(baseKey) ?? 0;
     seenKeys.set(baseKey, seenCount + 1);
     return {
+      isContinuation: message.role === "assistant" && previous?.role === "assistant",
       message,
       renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
     };

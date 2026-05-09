@@ -204,6 +204,7 @@ test("plain message timeline renders assistant segment dots for tool-boundary sp
   );
 
   assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 3);
+  assert.equal(html.match(/plain-message-role[^>]*sr-only/g)?.length, 2);
   assert.match(html, /第一段/);
   assert.match(html, /第二段/);
   assert.match(html, /第三段/);
