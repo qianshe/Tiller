@@ -177,18 +177,6 @@ function toolDebugDetails(toolCall: {
     .join(" ");
 }
 
-function runtimeUserEchoActivity(message: { id: string; text: string; timestamp: string }) {
-  return {
-    id: `${message.id}-activity`,
-    kind: "unknown" as const,
-    title: "ACP 用户回显",
-    status: "completed" as const,
-    input: message.text,
-    timestamp: message.timestamp,
-    updatedAt: message.timestamp,
-  };
-}
-
 export function handleRuntimeEvent(
   sessionId: string,
   event: SessionRuntimeEvent,
@@ -228,12 +216,6 @@ export function handleRuntimeEvent(
         context.logInfo(
           `[tiller] 阶段=用户回显忽略 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} id=${event.message.id} chars=${event.message.text.length} text=${formatLogValue(event.message.text, 520)}`,
         );
-        const userEchoActivity = runtimeUserEchoActivity(event.message);
-        context.sessionArtifactStore.appendToolCall(sessionId, userEchoActivity);
-        broadcastSessionUpdate(context, sessionId, {
-          kind: "tool_call",
-          toolCall: userEchoActivity,
-        });
         return;
       }
       const message = {

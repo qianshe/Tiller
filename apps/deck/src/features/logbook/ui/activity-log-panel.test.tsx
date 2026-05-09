@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityLogPanel } from "./activity-log-panel.js";
 
-test("activity log panel hides user and assistant messages while keeping tool activity", () => {
+test("activity log panel shows real user prompts and tool activity but hides assistant messages", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
       sessionId: "session-1",
@@ -29,6 +29,12 @@ test("activity log panel hides user and assistant messages while keeping tool ac
           timestamp: "2026-05-08T01:00:01.000Z",
         },
         {
+          id: "wrapper-echo",
+          role: "user",
+          text: "[analyze-mode]\nSYNTHESIZE findings before proceeding.\n---\n查看当前分支",
+          timestamp: "2026-05-08T01:00:01.500Z",
+        },
+        {
           id: "assistant-1",
           role: "assistant",
           text: "当前分支是 main。",
@@ -45,8 +51,9 @@ test("activity log panel hides user and assistant messages while keeping tool ac
 
   assert.doesNotMatch(html, /Assistant/);
   assert.doesNotMatch(html, /当前分支是 main。/);
-  assert.doesNotMatch(html, /Prompt/);
-  assert.doesNotMatch(html, /查看当前分支/);
+  assert.doesNotMatch(html, /SYNTHESIZE findings/);
+  assert.match(html, /Prompt/);
+  assert.match(html, /查看当前分支/);
   assert.match(html, /Shell/);
   assert.match(html, /git branch --show-current/);
 });

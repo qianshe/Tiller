@@ -211,11 +211,8 @@ test("runtime user echo messages are ignored because prompts are already persist
   assert.match(logs[0], /text=你好/);
   assert.deepEqual(writes, []);
   assert.deepEqual(capture.persisted, []);
-  assert.equal(appendedToolCalls.length, 1);
-  assert.equal(appendedToolCalls[0]?.title, "ACP 用户回显");
-  assert.equal(appendedToolCalls[0]?.input, "你好");
-  assert.equal(capture.broadcasts.length, 1);
-  assert.deepEqual((capture.broadcasts[0] as any).params.update.kind, "tool_call");
+  assert.equal(appendedToolCalls.length, 0);
+  assert.equal(capture.broadcasts.length, 0);
 });
 
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
@@ -251,7 +248,7 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
   assert.match(logs[0], /阶段=用户回显忽略/);
   assert.match(logs[0], /MAXIMIZE SEARCH EFFORT/);
   assert.deepEqual(capture.persisted, []);
-  assert.deepEqual(capture.broadcasts.map((item: any) => item.params.update.kind), ["tool_call"]);
+  assert.deepEqual(capture.broadcasts, []);
 });
 
 test("runtime assistant chunks stay split when tool activity occurs between text streams", () => {
