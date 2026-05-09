@@ -2,6 +2,7 @@ import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { CommandOutput } from "./command-output";
+import { coalesceDisplayMessages } from "../message-history";
 import { resolveToolCallTone } from "../tool-call-tone";
 import { commandChunkToToolCall, groupToolCalls } from "../timeline";
 
@@ -147,14 +148,14 @@ function buildActivityTimeline(
       text: message.text,
     }));
 
-  const assistantItems = sessionMessages
-    .filter((message) => message.role === "assistant")
-    .map((message) => ({
-      kind: "assistant" as const,
-      id: message.id,
-      timestamp: message.timestamp,
-      text: message.text,
-    }));
+  const assistantItems = coalesceDisplayMessages(
+    sessionMessages.filter((message) => message.role === "assistant"),
+  ).map((message) => ({
+    kind: "assistant" as const,
+    id: message.id,
+    timestamp: message.timestamp,
+    text: message.text,
+  }));
 
   return [
     ...promptItems,

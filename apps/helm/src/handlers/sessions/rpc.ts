@@ -333,7 +333,7 @@ async function createSession(
       model: summary.model,
       reasoningEffort: summary.reasoningEffort,
     };
-    const prewarmed = context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
+    const prewarmed = await context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
     const runtime = prewarmed?.runtime ??
       (await context.createRuntime({
         sessionId,
@@ -345,6 +345,8 @@ async function createSession(
     prewarmed?.attach(sessionId);
     const summaryWithRuntime = context.hydrateSessionSummary({
       ...summary,
+      status: "idle",
+      updatedAt: new Date().toISOString(),
       agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
       model: runtime.sessionConfigState?.model ?? summary.model,
       modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,

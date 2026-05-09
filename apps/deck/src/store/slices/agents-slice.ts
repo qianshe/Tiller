@@ -8,6 +8,7 @@ import type { StateCreator } from "zustand";
 
 export type AgentModelOptionsEntry = {
   loading?: boolean;
+  warmed?: boolean;
   message?: string;
   /** projectId used when probing, echoed back for cache-key reconstruction. */
   projectId?: string | null;

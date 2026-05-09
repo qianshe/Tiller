@@ -50,3 +50,45 @@ test("activity log panel renders assistant stream messages alongside tool activi
   assert.match(html, /Shell/);
   assert.match(html, /git branch --show-current/);
 });
+
+test("activity log panel coalesces repeated assistant stream snapshots", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogPanel, {
+      sessionId: "session-1",
+      sessionToolCalls: [
+        {
+          id: "tool-1",
+          kind: "tool",
+          title: "Tool: read_file",
+          status: "completed",
+          timestamp: "2026-05-08T01:00:02.000Z",
+          updatedAt: "2026-05-08T01:00:02.000Z",
+        },
+      ],
+      commandChunks: [],
+      sessionMessages: [
+        {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata;",
+          timestamp: "2026-05-08T01:00:01.000Z",
+        },
+        {
+          id: "session-1-msg-s1",
+          role: "assistant",
+          text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance.",
+          timestamp: "2026-05-08T01:00:03.000Z",
+        },
+      ],
+      visibleCount: 10,
+      visibleLimit: 10,
+      copy: { commandOutput: "航行日志", noCommandOutput: "暂无活动" },
+      onShowMore: () => {},
+      onLoadOlder: () => {},
+    }),
+  );
+
+  const assistantCards = html.match(/Assistant/g) ?? [];
+  assert.equal(assistantCards.length, 1);
+  assert.match(html, /this can degrade performance/);
+});

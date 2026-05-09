@@ -166,6 +166,68 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
+test("session prewarm result hydrates draft agent model options", () => {
+  resetStore();
+  let cached: unknown;
+  let selectedModel = "provider-default";
+  const handled = applyInventoryResult(
+    "session/prewarm",
+    {
+      ok: true,
+      warmed: true,
+      providerId: "codex",
+      workspaceId: "main",
+      currentModelId: "gpt-5.5",
+      modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [],
+      state: { model: "gpt-5.5" },
+      message: "ACP runtime prewarmed.",
+    },
+    "helm-1",
+    true,
+    {
+      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      setProjectFilesByScope: () => undefined,
+      setSelectedWorkspaceId: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+      setAgentTestResult: () => undefined,
+      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      writeAgentModelOptionsCache: (entries) => {
+        cached = entries;
+      },
+      selectedAgentId: "codex",
+      selectedWorkspaceId: "main",
+      resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
+      resolvePreferredModel: (_current, options) => options[0],
+      selectedModel,
+      setSelectedModel: (model) => {
+        selectedModel = model;
+      },
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+      setConfigSaveMessage: () => undefined,
+      setFleetProjectSaveMessage: () => undefined,
+      setSelectedProjectId: () => undefined,
+      rpcClientRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(selectedModel, "gpt-5.5");
+  assert.deepEqual(useDeckStore.getState().agentModelOptions["codex:main"], {
+    loading: false,
+    warmed: true,
+    projectId: undefined,
+    message: "ACP runtime prewarmed.",
+    modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+    configOptions: [],
+    state: { model: "gpt-5.5" },
+  });
+  assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
+});
+
 test("session RPC results apply session list results and prune scoped maps", () => {
   resetStore();
   useDeckStore.setState({

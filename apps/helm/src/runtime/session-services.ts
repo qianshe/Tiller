@@ -70,6 +70,9 @@ type WarmSessionRuntime = {
   attach: (sessionId: string) => void;
   cancel: () => void;
   expiresTimer: ReturnType<typeof setTimeout>;
+  modelState?: AcpModelState;
+  configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"];
+  configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"];
 };
 
 const WARM_RUNTIME_TTL_MS = 5 * 60_000;
@@ -77,6 +80,10 @@ const WARM_RUNTIME_TTL_MS = 5 * 60_000;
 export function createSessionServices(options: SessionServicesOptions) {
   const openCodeHistoryRefreshes = new Map<string, number>();
   const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
+  const inFlightWarmRuntimes = createWarmRuntimePool<{
+    consumed: boolean;
+    promise: Promise<WarmSessionRuntime>;
+  }>();
 
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -334,82 +341,155 @@ export function createSessionServices(options: SessionServicesOptions) {
         providerId: params.agent.id,
         workspaceId: params.workspace.id,
         runtimeSessionId: existing.runtime.runtimeSessionId,
+        currentModelId: existing.modelState?.currentModelId ?? existing.configState.model,
+        modelOptions: existing.modelState?.options ?? [],
+        configOptions: existing.configOptions,
+        state: existing.configState,
         message: "ACP runtime is already prewarmed.",
+      };
+    }
+
+    const pending = inFlightWarmRuntimes.get(key);
+    if (pending) {
+      const warm = await pending.promise;
+      return {
+        ok: true,
+        warmed: false,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: warm.runtime.runtimeSessionId,
+        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
+        modelOptions: warm.modelState?.options ?? [],
+        configOptions: warm.configOptions,
+        state: warm.configState,
+        message: "ACP runtime prewarm is already in progress.",
       };
     }
 
     const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
     let attachedSessionId: string | null = null;
+    let modelState: AcpModelState | undefined;
+    let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
+    let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     options.logInfo(
       `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
 
-    const runtime = await createAcpRuntime({
-      sessionId: warmSessionId,
-      workspace: params.workspace,
-      agent: params.agent,
-      sessionConfig: params.sessionConfig,
-      onEvent: (event) => {
-        if (attachedSessionId) {
-          handleRuntimeEvent(attachedSessionId, event);
-          return;
-        }
-        if (event.type === "error") {
-          options.logError(
-            `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+    const reservation = {
+      consumed: false,
+      promise: createAcpRuntime({
+        sessionId: warmSessionId,
+        workspace: params.workspace,
+        agent: params.agent,
+        sessionConfig: params.sessionConfig,
+        onEvent: (event) => {
+          if (attachedSessionId) {
+            handleRuntimeEvent(attachedSessionId, event);
+            return;
+          }
+          if (event.type === "model-options") {
+            modelState = event.state;
+            return;
+          }
+          if (event.type === "config-options") {
+            configState = event.state;
+            configOptions = event.options;
+            return;
+          }
+          if (event.type === "error") {
+            options.logError(
+              `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+            );
+          }
+        },
+      }).then((runtime) => {
+        const expiresTimer = setTimeout(() => {
+          const expired = warmRuntimes.take(key);
+          if (!expired) {
+            return;
+          }
+          expired.cancel();
+          options.logInfo(
+            `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
           );
-        }
-      },
-    });
+        }, WARM_RUNTIME_TTL_MS);
+        expiresTimer.unref?.();
 
-    const expiresTimer = setTimeout(() => {
-      const expired = warmRuntimes.take(key);
-      if (!expired) {
-        return;
-      }
-      expired.cancel();
-      options.logInfo(
-        `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-      );
-    }, WARM_RUNTIME_TTL_MS);
-    expiresTimer.unref?.();
-
-    warmRuntimes.set(key, {
-      runtime,
-      attach: (sessionId) => {
-        attachedSessionId = sessionId;
-      },
-      cancel: () => runtime.cancel(),
-      expiresTimer,
-    });
-    options.logInfo(
-      `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-    );
-    return {
-      ok: true,
-      warmed: true,
-      providerId: params.agent.id,
-      workspaceId: params.workspace.id,
-      runtimeSessionId: runtime.runtimeSessionId,
-      message: "ACP runtime prewarmed.",
+        return {
+          runtime,
+          attach: (sessionId: string) => {
+            attachedSessionId = sessionId;
+          },
+          cancel: () => runtime.cancel(),
+          expiresTimer,
+          modelState,
+          configState,
+          configOptions,
+        } satisfies WarmSessionRuntime;
+      }),
     };
+    inFlightWarmRuntimes.set(key, reservation);
+
+    try {
+      const warm = await reservation.promise;
+      inFlightWarmRuntimes.delete(key);
+      if (!reservation.consumed) {
+        warmRuntimes.set(key, warm);
+      }
+      options.logInfo(
+        `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${warm.runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      );
+      return {
+        ok: true,
+        warmed: true,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: warm.runtime.runtimeSessionId,
+        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
+        modelOptions: warm.modelState?.options ?? [],
+        configOptions: warm.configOptions,
+        state: warm.configState,
+        message: "ACP runtime prewarmed.",
+      };
+    } catch (error) {
+      inFlightWarmRuntimes.delete(key);
+      throw error;
+    }
   }
 
-  function takePrewarmedRuntime(params: {
+  async function takePrewarmedRuntime(params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
     sessionConfig?: SessionRuntimeConfig;
   }) {
-    const warm = warmRuntimes.take(
-      resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig),
-    );
+    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
+    const warm = warmRuntimes.take(key);
     if (warm) {
       clearTimeout(warm.expiresTimer);
       options.logInfo(
         `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
       );
+      return warm;
     }
-    return warm;
+
+    const pending = inFlightWarmRuntimes.take(key);
+    if (!pending) {
+      return undefined;
+    }
+    pending.consumed = true;
+    try {
+      const inFlightWarm = await pending.promise;
+      clearTimeout(inFlightWarm.expiresTimer);
+      options.logInfo(
+        `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${inFlightWarm.runtime.runtimeSessionId}`,
+      );
+      return inFlightWarm;
+    } catch (error) {
+      options.logError(
+        `[tiller] 阶段=预热ACP复用失败 provider=${params.agent.id} workspace=${params.workspace.id} message=${error instanceof Error ? error.message : "Unknown prewarm error"}`,
+      );
+      return undefined;
+    }
   }
 
   async function startSessionResume(sessionId: string) {

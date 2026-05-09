@@ -148,7 +148,8 @@ export function applyInventoryResult(
     case "agent/test":
       setAgentTestResult(payload.message);
       return true;
-    case "agent/get_model_options": {
+    case "agent/get_model_options":
+    case "session/prewarm": {
       // Reconstruct the cache key including projectId.
       // The loading entry carries the projectId used when the probe was dispatched;
       // find it by matching the providerId::workspaceId prefix.
@@ -161,6 +162,7 @@ export function applyInventoryResult(
       const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
       const nextEntry = {
         loading: false,
+        warmed: method === "session/prewarm" && Boolean(payload.ok),
         projectId: loadingProjectId,
         message: payload.message,
         modelOptions: payload.modelOptions,

@@ -41,6 +41,8 @@ export function useMissionSelectionEffects(source: any) {
     setSelectedModel,
     setSelectedAgentMode,
     setSelectedReasoningEffort,
+    effectiveDraftAgentMode,
+    selectedReasoningEffort,
   } = source;
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
@@ -165,6 +167,7 @@ export function useMissionSelectionEffects(source: any) {
     if (
       activeSession ||
       pairingState !== "paired" ||
+      !selectedProjectId ||
       !selectedAgentId ||
       !selectedWorkspaceId ||
       !rpcClientRef.current ||
@@ -174,7 +177,7 @@ export function useMissionSelectionEffects(source: any) {
     }
     const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
     const cached = agentModelOptions[key];
-    if (cached && !cached.loading) {
+    if (cached && !cached.loading && cached.warmed) {
       const realOptions = resolveModelOptions(
         cached.state.model,
         cached.configOptions,
@@ -210,17 +213,21 @@ export function useMissionSelectionEffects(source: any) {
       ...current,
       [key]: {
         loading: true,
+        warmed: false,
         projectId: selectedProjectId,
         modelOptions: cached?.modelOptions ?? [],
         configOptions: cached?.configOptions ?? [],
         state: cached?.state ?? {},
-        message: "正在加载模型列表...",
+        message: "正在预热 ACP...",
       },
     }));
-    void dispatch(rpcClientRef.current, "agent/get_model_options", {
-      providerId: selectedAgentId,
+    void dispatch(rpcClientRef.current, "session/prewarm", {
+      projectId: selectedProjectId,
       workspaceId: selectedWorkspaceId,
-      projectId: selectedProjectId ?? undefined,
+      agentId: selectedAgentId,
+      agentMode: effectiveDraftAgentMode,
+      model: selectedModel === "provider-default" ? undefined : selectedModel,
+      reasoningEffort: selectedReasoningEffort,
     });
   }, [
     agentModelOptions,
@@ -229,5 +236,7 @@ export function useMissionSelectionEffects(source: any) {
     selectedModel,
     selectedProjectId,
     selectedWorkspaceId,
+    effectiveDraftAgentMode,
+    selectedReasoningEffort,
   ]);
 }

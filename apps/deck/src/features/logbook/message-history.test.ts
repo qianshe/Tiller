@@ -454,6 +454,30 @@ test("mergeAgentMessages merges stable alphanumeric runtime assistant chunks", (
   assert.equal(merged[0]?.text, "具体消息内容");
 });
 
+test("mergeAgentMessages keeps normalized runtime assistant segments separate without tool history", () => {
+  const merged = mergeAgentMessages(
+    [
+      {
+        id: "session-1-msg-s0",
+        role: "assistant",
+        text: "工具前说明",
+        timestamp: "2026-04-28T10:00:01.000Z",
+      },
+    ],
+    {
+      id: "session-1-msg-s1",
+      role: "assistant",
+      text: "工具后继续",
+      timestamp: "2026-04-28T10:00:03.000Z",
+    },
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["工具前说明", "工具后继续"],
+  );
+});
+
 test("mergeAgentMessages keeps non-runtime assistant ids separate", () => {
   const merged = mergeAgentMessages(
     [

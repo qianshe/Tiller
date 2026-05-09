@@ -167,10 +167,28 @@ function shouldMergeAssistantStreamChunk(
   return (
     current.role === "assistant" &&
     incoming.role === "assistant" &&
-    ((isRuntimeGeneratedMessageId(current.id) &&
-      isRuntimeGeneratedMessageId(incoming.id)) ||
+    (shouldMergeRuntimeGeneratedMessageIds(current.id, incoming.id) ||
       isSameProviderParagraphMessage(current.id, incoming.id))
   );
+}
+
+function shouldMergeRuntimeGeneratedMessageIds(leftId: string, rightId: string) {
+  if (!isRuntimeGeneratedMessageId(leftId) || !isRuntimeGeneratedMessageId(rightId)) {
+    return false;
+  }
+
+  const leftSegment = normalizedRuntimeSegmentId(leftId);
+  const rightSegment = normalizedRuntimeSegmentId(rightId);
+  if (leftSegment || rightSegment) {
+    return Boolean(leftSegment && leftSegment === rightSegment);
+  }
+
+  return true;
+}
+
+function normalizedRuntimeSegmentId(id: string) {
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-s(?<segment>\d+)$/iu.exec(id)
+    ?.groups?.segment;
 }
 
 function isSameProviderParagraphMessage(leftId: string, rightId: string) {

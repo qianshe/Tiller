@@ -103,21 +103,74 @@ test("runtime session.message persists and broadcasts streaming chunks with debu
       } satisfies SessionRuntimeEvent,
       context,
     );
+
+    handleRuntimeEvent(
+      "session-1",
+      {
+        type: "status",
+        status: "idle",
+        message: "done",
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
   } finally {
     process.stdout.write = originalWrite;
   }
 
   assert.equal(logs.length, 2);
-  assert.match(logs[0], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=1 .*text=你/);
-  assert.match(logs[1], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=4 .*text=好 主人/);
-  assert.doesNotMatch(logs.join("\n"), /preview=/);
-  assert.deepEqual(writes, []);
+  assert.match(logs[0], /阶段=直播消息流开始 seq=\d+ .*role=assistant .*id=message-1/);
+  assert.match(logs[1], /阶段=运行状态流/);
+  assert.doesNotMatch(logs[0], /preview=|text=|chars=/);
+  assert.deepEqual(writes, ["你", "好\n主人", "\n"]);
   assert.equal(capture.persisted.length, 2);
   assert.deepEqual(
     capture.persisted.map((message) => message.text),
     ["你", "好\n主人"],
   );
-  assert.equal(capture.broadcasts.length, 2);
+  assert.equal(capture.broadcasts.length, 3);
+});
+
+test("runtime assistant stream closes before the next stage log", () => {
+  const logs: string[] = [];
+  const context = createTestContext(logs);
+  const writes: string[] = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
+
+  try {
+    handleRuntimeEvent(
+      "session-1",
+      {
+        type: "message",
+        message: {
+          id: "message-1",
+          role: "assistant",
+          text: "连续输出",
+          timestamp: "2026-04-30T00:00:01.000Z",
+        },
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
+    handleRuntimeEvent(
+      "session-1",
+      {
+        type: "status",
+        status: "idle",
+        message: "done",
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  assert.equal(logs.length, 2);
+  assert.match(logs[0], /阶段=直播消息流开始/);
+  assert.match(logs[1], /阶段=运行状态流/);
+  assert.deepEqual(writes, ["连续输出", "\n"]);
 });
 
 test("runtime user echo messages are ignored because prompts are already persisted before sending", () => {
@@ -295,8 +348,8 @@ test("runtime tool-call events log explicit debug details and broadcast", () => 
   assert.match(logs[0], /call=call-1/);
   assert.match(logs[0], /kind=tool/);
   assert.match(logs[0], /title=zhi/);
-  assert.match(logs[0], /input=git branch --show-current/);
-  assert.match(logs[0], /output=main/);
+  assert.doesNotMatch(logs[0], /input=git branch --show-current/);
+  assert.doesNotMatch(logs[0], /output=main/);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, [
     {

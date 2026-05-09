@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { SessionReasoningEffort } from "@tiller/shared";
+import type {
+  AcpModelOption,
+  SessionConfigOption,
+  SessionReasoningEffort,
+} from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
@@ -18,6 +22,14 @@ export const ResultSchema = z.object({
   providerId: z.string(),
   workspaceId: z.string(),
   runtimeSessionId: z.string().optional(),
+  currentModelId: z.string().optional(),
+  modelOptions: z.array(typedUnknown<AcpModelOption>()).default([]),
+  configOptions: z.array(typedUnknown<SessionConfigOption>()).default([]),
+  state: z.object({
+    agentMode: z.string().optional(),
+    model: z.string().optional(),
+    reasoningEffort: typedUnknown<SessionReasoningEffort>().optional(),
+  }).default({}),
   message: z.string(),
 });
 export type Params = z.infer<typeof ParamsSchema>;

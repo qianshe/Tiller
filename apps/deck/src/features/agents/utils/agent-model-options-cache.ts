@@ -9,6 +9,7 @@ const AGENT_MODEL_OPTIONS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export type AgentModelOptionsEntry = {
   loading?: boolean;
+  warmed?: boolean;
   message?: string;
   /** projectId used when probing, echoed back for cache-key reconstruction. */
   projectId?: string | null;
@@ -48,6 +49,7 @@ export function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEn
           key,
           {
             loading: false,
+            warmed: false,
             projectId: entry.projectId,
             message: entry.message,
             modelOptions: entry.modelOptions ?? [],

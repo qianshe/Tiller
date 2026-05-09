@@ -42,7 +42,7 @@ test("mission draft agent selection resets model before creating an ACP session"
   assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
   assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
   assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
-  assert.doesNotMatch(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
+  assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
 });
 
 test("mission project plus owns the ACP picker and selected agent creates a real session", () => {
@@ -62,9 +62,9 @@ test("mission selection effects reads setAgentModelOptions from source context",
   assert.match(destructuredSource, /\bsetAgentModelOptions\b/);
 });
 
-test("mission selection effects leaves ACP startup to session/new", () => {
-  assert.doesNotMatch(sourceText, /session\/prewarm/);
-  assert.match(sourceText, /agent\/get_model_options/);
+test("mission selection effects prewarms the selected ACP runtime", () => {
+  assert.match(sourceText, /session\/prewarm/);
+  assert.doesNotMatch(sourceText, /agent\/get_model_options/);
 });
 
 test("mission selection effects preserves available model options while probing", () => {
@@ -85,7 +85,8 @@ test("mission selection effects preserves available model options while probing"
 test("mission model picker surfaces loading state without hiding cached options", () => {
   assert.match(composerSourceText, /modelLoading:\s*boolean/);
   assert.match(composerSourceText, /mission-config-loading-badge/);
-  assert.match(composerSourceText, /正在加载模型列表/);
+  assert.doesNotMatch(composerSourceText, /正在加载模型列表/);
+  assert.match(composerSourceText, /正在预热 ACP/);
   assert.match(composerShellSourceText, /modelLoading=\{/);
   assert.match(composerShellSourceText, /selectedDraftAgent\?\.id === "opencode"/);
   assert.match(composerShellSourceText, /draftConfigOptions\.length === 0/);

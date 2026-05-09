@@ -97,14 +97,15 @@ export type HelmHandlerContext = {
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     };
-  }) =>
+  }) => Promise<
     | {
         runtime: SessionRecord["runtime"];
         attach: (sessionId: string) => void;
         cancel: () => void;
         expiresTimer: ReturnType<typeof setTimeout>;
       }
-    | undefined;
+    | undefined
+  >;
   testAcpConnection: (
     agent: AcpAgentProvider,
     cwd?: string,
