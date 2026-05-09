@@ -69,10 +69,19 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const [fleetAddHelmHost, setFleetAddHelmHost] = useState<string>(DEFAULT_DAEMON_HOST);
   const [fleetAddHelmPort, setFleetAddHelmPort] = useState<string>(DEFAULT_DAEMON_PORT);
   const [fleetProjectFormOpen, setFleetProjectFormOpen] = useState(false);
-  const [fleetProjectDraft, setFleetProjectDraft] = useState({ name: "", path: "" });
+  const [fleetProjectDraft, setFleetProjectDraft] = useState<{
+    id?: string;
+    name: string;
+    path: string;
+  }>({ name: "", path: "" });
   const [fleetProjectSaveMessage, setFleetProjectSaveMessage] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
-  const [fleetAgentDraft, setFleetAgentDraft] = useState({ name: "", command: "", args: [""] });
+  const [fleetAgentDraft, setFleetAgentDraft] = useState<{
+    id?: string;
+    name: string;
+    command: string;
+    args: string[];
+  }>({ name: "", command: "", args: [""] });
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
   const [pendingSessionCleanup, setPendingSessionCleanup] = useState<SessionSummary | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");

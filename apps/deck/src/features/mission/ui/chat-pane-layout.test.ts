@@ -102,7 +102,7 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
-  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)\]/);
+  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)_auto\]/);
 });
 
 test("mission sidebar rows stay compact and session actions open below rows", () => {
@@ -114,8 +114,9 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 });
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
-  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)\]/);
+  assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)_auto\]/);
   assert.match(sessionRowSource, /mission-tree-session-meta/);
+  assert.match(sessionRowSource, /mission-tree-worktree-indicator/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
 });
@@ -145,7 +146,8 @@ test("mission avoids fetching or rendering every project file by default", () =>
   assert.match(workspaceModelSource, /const projectFiles = \[\]/);
   assert.match(workspaceModelSource, /const visibleProjectFiles = \[\]/);
   assert.match(projectFileListSource, /暂不加载全量 Git 文件/);
-  assert.match(inspectorSource, /暂不拉取全量 Git 文件/);
+  assert.match(inspectorSource, /Git Diff/);
+  assert.match(inspectorSource, /Worktrees/);
 });
 
 test("session cleanup confirmation uses the shared centered dialog primitive", () => {

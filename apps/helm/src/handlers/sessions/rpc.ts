@@ -531,6 +531,22 @@ function respondPermission(
     permissionRequestId: params.permissionRequestId,
     decision: params.decision,
   });
+  const updated = context.updateSessionSummary(permission.sessionId, (current) => ({
+    ...current,
+    status: "running",
+    updatedAt: new Date().toISOString(),
+  }));
+  broadcastSessionUpdate(context, permission.sessionId, {
+    kind: "status_change",
+    status: "running",
+    message: "Permission response sent",
+  });
+  if (updated) {
+    broadcastSessionUpdate(context, permission.sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
   record.runtime.respondPermission(params.permissionRequestId, params.decision);
   return {
     ok: true,

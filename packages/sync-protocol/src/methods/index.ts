@@ -5,6 +5,7 @@ import * as helmSave from "./helm/save";
 import * as projectList from "./project/list";
 import * as projectListFiles from "./project/list-files";
 import * as projectSave from "./project/save";
+import * as projectDelete from "./project/delete";
 import * as workspaceList from "./workspace/list";
 import * as workspaceSave from "./workspace/save";
 import * as workspaceGitListBranches from "./workspace/git/list-branches";
@@ -14,6 +15,7 @@ import * as agentTest from "./agent/test";
 import * as agentReconnect from "./agent/reconnect";
 import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
+import * as agentDelete from "./agent/delete";
 import * as sessionNew from "./session/new";
 import * as sessionPrewarm from "./session/prewarm";
 import * as sessionList from "./session/list";
@@ -44,6 +46,7 @@ const METHOD_DESCRIPTORS = {
   [projectList.method]: projectList.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
   [projectSave.method]: projectSave.descriptor,
+  [projectDelete.method]: projectDelete.descriptor,
   [workspaceList.method]: workspaceList.descriptor,
   [workspaceSave.method]: workspaceSave.descriptor,
   [workspaceGitListBranches.method]: workspaceGitListBranches.descriptor,
@@ -53,6 +56,7 @@ const METHOD_DESCRIPTORS = {
   [agentReconnect.method]: agentReconnect.descriptor,
   [agentGetModelOptions.method]: agentGetModelOptions.descriptor,
   [agentSave.method]: agentSave.descriptor,
+  [agentDelete.method]: agentDelete.descriptor,
   [sessionNew.method]: sessionNew.descriptor,
   [sessionPrewarm.method]: sessionPrewarm.descriptor,
   [sessionList.method]: sessionList.descriptor,
@@ -85,6 +89,7 @@ export const CLIENT_REQUEST_METHODS = [
   projectList.method,
   projectListFiles.method,
   projectSave.method,
+  projectDelete.method,
   workspaceList.method,
   workspaceSave.method,
   workspaceGitListBranches.method,
@@ -94,6 +99,7 @@ export const CLIENT_REQUEST_METHODS = [
   agentReconnect.method,
   agentGetModelOptions.method,
   agentSave.method,
+  agentDelete.method,
   sessionNew.method,
   sessionPrewarm.method,
   sessionList.method,

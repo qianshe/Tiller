@@ -18,6 +18,10 @@ const workspaceSourceText = readFileSync(
   new URL("../ui/workspace.tsx", import.meta.url),
   "utf8",
 );
+const workspaceModelSourceText = readFileSync(
+  new URL("../ui/workspace-model.ts", import.meta.url),
+  "utf8",
+);
 const selectionSourceText = readFileSync(
   new URL("../hooks/selection.ts", import.meta.url),
   "utf8",
@@ -68,7 +72,7 @@ test("mission starting sessions disable send without showing cancel", () => {
   assert.match(workspaceSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
   assert.match(composerShellSourceText, /activeSession && sessionCanCancel/);
   assert.match(composerShellSourceText, /disabled=\{!canSend\}/);
-  assert.match(workspaceSourceText, /activeSessionStatus !== "starting" &&/);
+  assert.match(workspaceModelSourceText, /activeSessionStatus !== "starting" &&/);
 });
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {

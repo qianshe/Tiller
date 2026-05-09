@@ -27,6 +27,28 @@ test("default ACP request timeout allows slow session/new responses", () => {
 
 test("default ACP prompt timeout allows long-running agent turns", () => {
   assert.equal(DEFAULT_ACP_PROMPT_TIMEOUT_MS, 30 * 60_000);
+  assert.equal(
+    resolveAcpRequestTimeout(
+      { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
+      "session/prompt",
+    ),
+    DEFAULT_ACP_PROMPT_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveAcpRequestTimeout(
+      {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+        initializeTimeoutMs: 5_000,
+        promptTimeoutMs: 45_000,
+      },
+      "session/prompt",
+    ),
+    45_000,
+  );
 });
 
 test("OpenCode ACP session creation uses a longer request timeout", () => {

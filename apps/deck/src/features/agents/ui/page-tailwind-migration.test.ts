@@ -57,3 +57,15 @@ test("agents feature no longer depends on feature CSS class hooks", () => {
     assert.doesNotMatch(source, new RegExp(`className=[^\\n]*${legacyClass}`));
   }
 });
+
+test("project and agent inventory expose edit and delete RPC actions", () => {
+  const projectInventory = readUiFile("project-inventory-section.tsx");
+  const agentInventory = readUiFile("agent-inventory-section.tsx");
+
+  assert.match(projectInventory, /aria-label=\{`编辑项目/);
+  assert.match(projectInventory, /aria-label=\{`删除项目/);
+  assert.match(projectInventory, /"project\/delete"/);
+  assert.match(agentInventory, /aria-label=\{`编辑 ACP/);
+  assert.match(agentInventory, /aria-label=\{`删除 ACP/);
+  assert.match(agentInventory, /"agent\/delete"/);
+});

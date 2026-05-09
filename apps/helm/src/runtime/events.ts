@@ -188,6 +188,12 @@ export function handleRuntimeEvent(
   ) {
     return;
   }
+  if (shouldIgnoreLateRuntimeEvent(sessionId, event, context)) {
+    context.logInfo(
+      `[tiller] 阶段=忽略迟到运行事件 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} type=${event.type}`,
+    );
+    return;
+  }
 
   switch (event.type) {
     case "status":
@@ -388,3 +394,16 @@ export function handleRuntimeEvent(
   }
 }
 
+function shouldIgnoreLateRuntimeEvent(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: HelmHandlerContext,
+) {
+  const current =
+    context.sessions.get(sessionId)?.summary ??
+    context.sessionStore.list().find((item: { id: string }) => item.id === sessionId);
+  if (current?.status !== "error" && current?.status !== "cancelled") {
+    return false;
+  }
+  return event.type === "status" || event.type === "message" || event.type === "permission-request" || event.type === "tool-call" || event.type === "command-output";
+}

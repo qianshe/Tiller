@@ -13,7 +13,7 @@ import {
   resolveProjectWorkspaceLabel,
 } from "../utils/fleet-helpers";
 
-export type FleetProjectDraft = { name: string; path: string };
+export type FleetProjectDraft = { id?: string; name: string; path: string };
 
 type ProjectInventorySectionProps = {
   connected: boolean;
@@ -72,18 +72,30 @@ export function ProjectInventorySection({
             const fallbackProjectName =
               projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
             const projectName = draft.name.trim() || fallbackProjectName;
-            const projectId = createProjectId(selectedHelmProjects);
-            const workspaceId = `${projectId}-workspace`;
+            const existingProject = draft.id
+              ? selectedHelmProjects.find((project) => project.id === draft.id)
+              : undefined;
+            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects);
+            const workspaceId =
+              existingProject?.defaultWorkspaceId ??
+              existingProject?.workspaceIds?.[0] ??
+              `${projectId}-workspace`;
             setSaveMessage(`正在保存项目：${projectName}...`);
             void dispatch(selectedHelmRpcClient, "project/save", {
               project: {
+                ...existingProject,
                 id: projectId,
                 name: projectName,
-                helmId: selectedHelmId,
+                helmId: existingProject?.helmId ?? selectedHelmId,
                 path: projectPath,
-                workspaceIds: [workspaceId],
-                defaultWorkspaceId: workspaceId,
-                defaultAgentId: defaultAgentId(selectedHelmAgents) ?? undefined,
+                workspaceIds: existingProject?.workspaceIds?.length
+                  ? existingProject.workspaceIds
+                  : [workspaceId],
+                defaultWorkspaceId: existingProject?.defaultWorkspaceId ?? workspaceId,
+                defaultAgentId:
+                  existingProject?.defaultAgentId ??
+                  defaultAgentId(selectedHelmAgents) ??
+                  undefined,
               },
             });
             setDraft({ name: "", path: "" });
@@ -113,7 +125,7 @@ export function ProjectInventorySection({
             placeholder="项目路径，例如 D:/projects/my-app"
           />
           <Button type="submit" disabled={!draft.path.trim()}>
-            保存项目
+            {draft.id ? "更新项目" : "保存项目"}
           </Button>
         </form>
       ) : null}
@@ -161,6 +173,43 @@ export function ProjectInventorySection({
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
                       {project.defaultAgentId ?? "-"}
                     </dd>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected}
+                      aria-label={`编辑项目 ${project.name}`}
+                      onClick={() => {
+                        setDraft({
+                          id: project.id,
+                          name: project.name,
+                          path: project.path ?? "",
+                        });
+                        setFormOpen(true);
+                      }}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected || !selectedHelmRpcClient}
+                      aria-label={`删除项目 ${project.name}`}
+                      onClick={() => {
+                        if (!selectedHelmRpcClient) {
+                          return;
+                        }
+                        setSaveMessage(`正在删除项目：${project.name}...`);
+                        void dispatch(selectedHelmRpcClient, "project/delete", {
+                          projectId: project.id,
+                        });
+                      }}
+                    >
+                      删除
+                    </Button>
                   </div>
                 </dl>
               </details>

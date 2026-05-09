@@ -8,6 +8,7 @@ type AcpRequestTimeoutProvider = {
   id: string;
   command: string;
   initializeTimeoutMs?: number;
+  promptTimeoutMs?: number;
   [key: string]: unknown;
 };
 
@@ -15,6 +16,10 @@ export function resolveAcpRequestTimeout(
   provider: AcpRequestTimeoutProvider,
   method: string,
 ) {
+  if (method === "session/prompt") {
+    return provider.promptTimeoutMs ?? DEFAULT_ACP_PROMPT_TIMEOUT_MS;
+  }
+
   if (typeof provider.initializeTimeoutMs === "number") {
     return provider.initializeTimeoutMs;
   }

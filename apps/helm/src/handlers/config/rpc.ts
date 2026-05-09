@@ -1,4 +1,6 @@
 import {
+  deleteProjectFromConfig,
+  deleteProviderFromConfig,
   listAvailableProviders,
   saveHelmToConfig,
   saveProjectToConfig,
@@ -41,6 +43,8 @@ export async function handleConfigRpcRequest(
       return listFiles(params as { projectId: string; workspaceId?: string }, context);
     case "project/save":
       return saveProject(params as { project: ProjectSummary }, context);
+    case "project/delete":
+      return deleteProject(params as { projectId: string }, context);
     case "workspace/list":
       return listWorkspaces(context);
     case "workspace/save":
@@ -53,6 +57,8 @@ export async function handleConfigRpcRequest(
       return listAgents(context);
     case "agent/save":
       return saveAgent(params as { provider: AcpAgentProvider }, context);
+    case "agent/delete":
+      return deleteAgent(params as { providerId: string }, context);
     case "agent/test":
       return testAgent(params as { providerId: string }, context);
     case "agent/reconnect":
@@ -159,6 +165,19 @@ async function saveProject(params: { project: ProjectSummary }, context: HelmHan
     ok: true,
     projectId: params.project.id,
     message: `Saved project to ${result.configPath}`,
+  };
+}
+
+async function deleteProject(params: { projectId: string }, context: HelmHandlerContext) {
+  const result = deleteProjectFromConfig(params.projectId, context.configPath);
+  context.setWorkspaces(context.loadAvailableWorkspaces());
+  context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+  return {
+    ok: result.deleted,
+    projectId: params.projectId,
+    message: result.deleted
+      ? `Deleted project from ${result.configPath}`
+      : `Project not found in ${result.configPath}`,
   };
 }
 
@@ -355,6 +374,19 @@ async function saveAgent(params: { provider: AcpAgentProvider }, context: HelmHa
     ok: true,
     providerId: provider.id,
     message: `Saved provider to ${result.configPath}`,
+  };
+}
+
+async function deleteAgent(params: { providerId: string }, context: HelmHandlerContext) {
+  const result = deleteProviderFromConfig(params.providerId, context.configPath);
+  context.setAgents(listAvailableProviders(context.configPath));
+  context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+  return {
+    ok: result.deleted,
+    providerId: params.providerId,
+    message: result.deleted
+      ? `Deleted provider from ${result.configPath}`
+      : `Provider not found in ${result.configPath}`,
   };
 }
 

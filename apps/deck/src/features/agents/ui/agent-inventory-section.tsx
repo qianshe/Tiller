@@ -4,7 +4,7 @@ import type { AcpAgentProvider } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { slugify } from "../utils/fleet-helpers";
 
-export type FleetAgentDraft = { name: string; command: string; args: string[] };
+export type FleetAgentDraft = { id?: string; name: string; command: string; args: string[] };
 
 type AgentInventorySectionProps = {
   connected: boolean;
@@ -53,17 +53,25 @@ export function AgentInventorySection({
             if (!selectedHelmRpcClient || !draft.command.trim()) {
               return;
             }
-            const providerId = slugify(draft.name || draft.command);
+            const providerId = draft.id ?? slugify(draft.name || draft.command);
+            const existingAgent = draft.id
+              ? selectedHelmAgents.find((agent) => agent.id === draft.id)
+              : undefined;
             const agentArgs = draft.args
               .map((item) => item.trim())
               .filter(Boolean);
             void dispatch(selectedHelmRpcClient, "agent/save", {
               provider: {
+                ...existingAgent,
                 id: providerId,
-                name: draft.name.trim() || providerId,
-                kind: "custom",
+                name: draft.name.trim() || existingAgent?.name || providerId,
+                kind: existingAgent?.kind ?? "custom",
                 command: draft.command.trim(),
                 args: agentArgs,
+                env: existingAgent?.env,
+                cwd: existingAgent?.cwd,
+                initializeTimeoutMs: existingAgent?.initializeTimeoutMs,
+                defaultAgent: existingAgent?.defaultAgent,
                 installHint: `请确认命令 \`${[draft.command.trim(), ...agentArgs].join(" ")}\` 可以在终端运行。`,
               },
             });
@@ -93,7 +101,7 @@ export function AgentInventorySection({
               placeholder="command"
             />
             <Button type="submit" disabled={!draft.command.trim()}>
-              保存 ACP
+              {draft.id ? "更新 ACP" : "保存 ACP"}
             </Button>
           </div>
           <div className="grid gap-3 rounded-md border border-border-ghost bg-surface/60 p-3">
@@ -194,6 +202,43 @@ export function AgentInventorySection({
                   <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
                     <dt className="font-semibold text-muted-foreground">Protocol</dt>
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.protocol}</dd>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected}
+                      aria-label={`编辑 ACP ${agent.name}`}
+                      onClick={() => {
+                        setDraft({
+                          id: agent.id,
+                          name: agent.name,
+                          command: agent.command,
+                          args: agent.args?.length ? agent.args : [""],
+                        });
+                        setFormOpen(true);
+                      }}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected || !selectedHelmRpcClient}
+                      aria-label={`删除 ACP ${agent.name}`}
+                      onClick={() => {
+                        if (!selectedHelmRpcClient) {
+                          return;
+                        }
+                        void dispatch(selectedHelmRpcClient, "agent/delete", {
+                          providerId: agent.id,
+                        });
+                      }}
+                    >
+                      删除
+                    </Button>
                   </div>
                 </dl>
               </details>

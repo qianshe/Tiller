@@ -11,7 +11,7 @@ import { AcpConnection } from "./acp-connection";
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -39,6 +39,7 @@ const resumeSessionCountPath = ${JSON.stringify(resumeSessionCountPath)};
 const resumeSessionCwdPath = ${JSON.stringify(resumeSessionCwdPath)};
 const launchArgsPath = ${JSON.stringify(launchArgsPath)};
 const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
+const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 const incrementCount = (path) => {
   const current = existsSync(path) ? Number(readFileSync(path, "utf8")) : 0;
@@ -62,7 +63,7 @@ const agent = {
   async newSession(params) {
     incrementCount(newSessionCountPath);
     writeFileSync(newSessionCwdPath, params.cwd, "utf8");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, newSessionDelayMs));
     return { sessionId: "runtime-session-1" };
   },
   async loadSession(params) {
@@ -196,6 +197,35 @@ test("openOrCreateSession reuses the same pending new-session request", async ()
     assert.equal(first.runtimeSessionId, "runtime-session-1");
     assert.equal(second.runtimeSessionId, first.runtimeSessionId);
     assert.equal(connection.inventory().activeSessionCount, 1);
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("session requests time out and clear pending state", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-timeout-"));
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { newSessionDelayMs: 2_000 });
+    const connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 1_500 },
+      workspace: { ...workspace, path: tempDir },
+    });
+
+    await assert.rejects(
+      connection.openOrCreateSession({
+        tillerSessionId: "session-timeout",
+        workspace: { ...workspace, path: tempDir },
+        kind: "new",
+        onEvent: () => undefined,
+      }),
+      /Timed out waiting for ACP response: session\/new/u,
+    );
+    assert.equal(connection.inventory().pendingSessionCount, 0);
+    assert.equal(connection.inventory().activeSessionCount, 0);
 
     await connection.dispose();
   } finally {

@@ -83,6 +83,17 @@ export function applyInventoryResult(
     dispatch,
   } = context;
   const store = useDeckStore.getState();
+  const refreshInventory = (methods: string[]) => {
+    const refreshClient = sourceIsCurrentHelm
+      ? rpcClientRef.current
+      : (helmRpcClientRefs.current.get(sourceHelmKey) ?? null);
+    if (refreshClient?.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    methods.forEach((refreshMethod) => {
+      void dispatch(refreshClient, refreshMethod, {});
+    });
+  };
 
   switch (method) {
     case "helm/list":
@@ -222,16 +233,21 @@ export function applyInventoryResult(
       if (sourceIsCurrentHelm) {
         setSelectedProjectId(payload.projectId);
       }
+      refreshInventory(["project/list", "workspace/list"]);
       return true;
-    case "agent/save": {
+    case "project/delete": {
       setConfigSaveMessage(payload.message);
-      const refreshClient = sourceIsCurrentHelm
-        ? rpcClientRef.current
-        : (helmRpcClientRefs.current.get(sourceHelmKey) ?? null);
-      if (refreshClient?.socket.readyState === WebSocket.OPEN) {
-        void dispatch(refreshClient, "agent/list", {});
-        void dispatch(refreshClient, "project/list", {});
+      setFleetProjectSaveMessage(payload.message);
+      if (sourceIsCurrentHelm) {
+        setSelectedProjectId(null);
       }
+      refreshInventory(["project/list", "workspace/list"]);
+      return true;
+    }
+    case "agent/save":
+    case "agent/delete": {
+      setConfigSaveMessage(payload.message);
+      refreshInventory(["agent/list", "project/list"]);
       return true;
     }
     case "helm/save":

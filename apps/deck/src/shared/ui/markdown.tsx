@@ -272,12 +272,12 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[#0d1117] text-sm shadow-sm">
-      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-surface-sunken text-sm text-foreground shadow-sm">
+      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-surface-emphasis px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
           type="button"
-          className="rounded px-2 py-0.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+          className="rounded px-2 py-0.5 text-muted-foreground transition hover:bg-surface hover:text-foreground disabled:opacity-50"
           onClick={copyCode}
           disabled={!code}
           aria-label="复制代码块"
@@ -290,14 +290,14 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-3 text-xs leading-6">
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-foreground">
           <code
             className={`hljs language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-3 text-xs leading-6">{children}</pre>
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-foreground">{children}</pre>
       )}
     </div>
   );

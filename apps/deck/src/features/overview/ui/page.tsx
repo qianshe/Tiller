@@ -129,6 +129,30 @@ export function OverviewPage({
           </div>
         </div>
       </aside>
+
+      <div className="landing-ship-hotspots" aria-label="战舰快捷导航">
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-sessions"
+          onClick={() => onNavigate("sessions")}
+          aria-label="进入任务"
+          data-tooltip="任务"
+        />
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-agents"
+          onClick={() => onNavigate("agents")}
+          aria-label="进入舰队"
+          data-tooltip="舰队"
+        />
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-settings"
+          onClick={() => onNavigate("settings")}
+          aria-label="进入设置"
+          data-tooltip="设置"
+        />
+      </div>
     </section>
   );
 }

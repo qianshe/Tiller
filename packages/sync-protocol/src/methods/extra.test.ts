@@ -5,6 +5,8 @@ import * as workspaceGitListBranches from "./workspace/git/list-branches";
 import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
 import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
+import * as projectDelete from "./project/delete";
+import * as agentDelete from "./agent/delete";
 import * as permissionRespond from "./permission/respond";
 
 test("project/list_files validates required projectId", () => {
@@ -56,6 +58,28 @@ test("agent/save expects provider and reports providerId", () => {
   assert.deepEqual(
     agentSave.ResultSchema.parse({ ok: true, providerId: "x", message: "saved" }),
     { ok: true, providerId: "x", message: "saved" },
+  );
+});
+
+test("project/delete validates projectId and reports deletion", () => {
+  assert.equal(projectDelete.method, "project/delete");
+  assert.deepEqual(projectDelete.ParamsSchema.parse({ projectId: "p1" }), {
+    projectId: "p1",
+  });
+  assert.deepEqual(
+    projectDelete.ResultSchema.parse({ ok: true, projectId: "p1", message: "deleted" }),
+    { ok: true, projectId: "p1", message: "deleted" },
+  );
+});
+
+test("agent/delete validates providerId and reports deletion", () => {
+  assert.equal(agentDelete.method, "agent/delete");
+  assert.deepEqual(agentDelete.ParamsSchema.parse({ providerId: "codex" }), {
+    providerId: "codex",
+  });
+  assert.deepEqual(
+    agentDelete.ResultSchema.parse({ ok: true, providerId: "codex", message: "deleted" }),
+    { ok: true, providerId: "codex", message: "deleted" },
   );
 });
 

@@ -6,6 +6,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
+import { resolveAcpRequestTimeout } from "../constants";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
 import { resolveLaunchSpec, terminateChildProcess } from "../process";
@@ -153,6 +154,7 @@ export class AcpConnection {
       child,
       stderrBuffer,
       logFile,
+      options.provider,
     );
 
     connection = new AcpConnection({
@@ -315,6 +317,7 @@ export class AcpConnection {
         this.state.child,
         "",
         this.state.logFile,
+        this.state.provider,
       );
       const nextOptions = extractSessionConfigOptions(result);
       if (nextOptions.length) {
@@ -334,6 +337,7 @@ export class AcpConnection {
         this.state.child,
         "",
         this.state.logFile,
+        this.state.provider,
       );
       session.modelState = { ...session.modelState, currentModelId: nextConfig.model };
       session.onEvent({ type: "model-options", state: session.modelState });
@@ -362,6 +366,7 @@ export class AcpConnection {
         this.state.child,
         "",
         this.state.logFile,
+        this.state.provider,
       );
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
@@ -404,6 +409,7 @@ export class AcpConnection {
       this.state.child,
       "",
       this.state.logFile,
+      this.state.provider,
     );
   }
 
@@ -419,6 +425,7 @@ export class AcpConnection {
         this.state.child,
         "",
         this.state.logFile,
+        this.state.provider,
       );
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
@@ -438,6 +445,7 @@ export class AcpConnection {
         this.state.child,
         "",
         this.state.logFile,
+        this.state.provider,
       );
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
@@ -455,6 +463,7 @@ export class AcpConnection {
       this.state.child,
       "",
       this.state.logFile,
+      this.state.provider,
     );
     return {
       runtimeSessionId: resolveRuntimeSessionId(result, request.tillerSessionId),
@@ -766,20 +775,37 @@ async function withConnectionRequest<T>(
   child: ChildProcess,
   stderrBuffer: string,
   logFile: string,
+  provider: AcpAgentProvider,
 ): Promise<T> {
+  const timeoutMs = resolveAcpRequestTimeout(provider, method);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let exitHandler: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined;
   const exited = new Promise<never>((_resolve, reject) => {
-    child.once("exit", (code, signal) => {
+    exitHandler = (code, signal) => {
       reject(new Error(`ACP process exited before ${method}: code=${code ?? "none"} signal=${signal ?? "none"}`));
-    });
+    };
+    child.once("exit", exitHandler);
+  });
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(stderrBuffer.trim() || `Timed out waiting for ACP response: ${method}`));
+    }, timeoutMs);
   });
 
   try {
     writeLogLine(logFile, "sdk-request", method);
-    return await Promise.race([operation, exited]);
+    return await Promise.race([operation, exited, timedOut]);
   } catch (error) {
-    if (stderrBuffer.trim() && error instanceof Error) {
+    if (stderrBuffer.trim() && error instanceof Error && !error.message.includes(stderrBuffer.trim())) {
       throw new Error(`${error.message}: ${stderrBuffer.trim()}`);
     }
     throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (exitHandler) {
+      child.off("exit", exitHandler);
+    }
   }
 }
