@@ -7,7 +7,7 @@ import type {
 } from "@tiller/shared";
 import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
-import { MissionDisplayPanel } from "./display-panel";
+import { MissionDisplayPanel, type RuntimeOverviewItem } from "./display-panel";
 import { LogbookPanel } from "./logbook-panel";
 import type { MissionPanelPage } from "./panels";
 
@@ -27,6 +27,7 @@ type MissionDisplaySectionProps = {
   diffCount: number;
   logCount: number;
   overviewItems: string[];
+  runtimeOverviewItems: RuntimeOverviewItem[];
   noDiffSummary: string;
   activeSession: SessionSummary | null;
   statusLabel: string;
@@ -63,6 +64,7 @@ export function MissionDisplaySection({
   diffCount,
   logCount,
   overviewItems,
+  runtimeOverviewItems,
   noDiffSummary,
   activeSession,
   statusLabel,
@@ -96,6 +98,7 @@ export function MissionDisplaySection({
       diffCount={diffCount}
       logCount={logCount}
       overviewItems={overviewItems}
+      runtimeOverviewItems={runtimeOverviewItems}
       noDiffSummary={noDiffSummary}
       logbookContent={
         <LogbookPanel

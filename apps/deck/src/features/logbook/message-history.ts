@@ -113,6 +113,10 @@ export function mergeMessageHistory(
     const mergeIndex = index === -1 ? equivalentIndex : index;
 
     if (mergeIndex === -1) {
+      if (isDuplicateAssistantHistoryComposite(merged, message)) {
+        continue;
+      }
+
       const duplicateStreamRange = findDuplicateAssistantStreamRange(
         merged,
         message,
@@ -254,6 +258,41 @@ function normalizeAssistantDuplicateText(text: string) {
     .replace(/[\s\u00a0]+/gu, "")
     .replace(/[•·*-]+/gu, "")
     .trim();
+}
+
+function isDuplicateAssistantHistoryComposite(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+) {
+  if (incoming.role !== "assistant") {
+    return false;
+  }
+
+  const normalizedIncoming = normalizeAssistantDuplicateText(incoming.text);
+  if (normalizedIncoming.length < 32) {
+    return false;
+  }
+
+  let normalizedRecent = "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const current = messages[index];
+    if (!current || current.role !== "assistant") {
+      break;
+    }
+
+    normalizedRecent = `${normalizeAssistantDuplicateText(current.text)}${normalizedRecent}`;
+    if (normalizedRecent.length < 32) {
+      continue;
+    }
+    if (
+      normalizedRecent.includes(normalizedIncoming) ||
+      normalizedIncoming.includes(normalizedRecent)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function findDuplicateAssistantStreamRange(

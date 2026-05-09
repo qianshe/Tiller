@@ -30,6 +30,15 @@ function isWideOverviewItem(label: string): boolean {
   return label === "路径" || label === "摘要";
 }
 
+export type RuntimeOverviewItem = {
+  id: string;
+  label: string;
+  meta: string;
+  status: string;
+  runtimeSessionId: string;
+  model?: string;
+};
+
 type MissionDisplayPanelProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
@@ -39,6 +48,7 @@ type MissionDisplayPanelProps = {
   diffCount: number;
   logCount: number;
   overviewItems: string[];
+  runtimeOverviewItems: RuntimeOverviewItem[];
   noDiffSummary: string;
   logbookContent: ReactNode;
   collapsedDiffDirectories: ReadonlySet<string>;
@@ -61,6 +71,7 @@ export function MissionDisplayPanel({
   diffCount,
   logCount,
   overviewItems,
+  runtimeOverviewItems,
   noDiffSummary,
   logbookContent,
   collapsedDiffDirectories,
@@ -274,6 +285,45 @@ export function MissionDisplayPanel({
             选择左侧任务后显示项目信息
           </div>
         )}
+        <Card className="mission-runtime-overview border-border-ghost bg-surface-sunken shadow-none">
+          <CardContent className="grid gap-2 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                ACP Runtime
+              </span>
+              <span className="rounded-full bg-surface-emphasis px-2 py-0.5 text-[10px] text-muted-foreground">
+                {runtimeOverviewItems.length} 个
+              </span>
+            </div>
+            {runtimeOverviewItems.length ? (
+              <div className="grid gap-2">
+                {runtimeOverviewItems.map((runtime) => (
+                  <article
+                    key={runtime.id}
+                    className="grid gap-1 rounded-md border border-border-ghost bg-surface px-2.5 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="min-w-0 truncate text-sm text-foreground">
+                        {runtime.label}
+                      </strong>
+                      <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        {runtime.status}
+                      </span>
+                    </div>
+                    <code className="break-all text-[11px] text-muted-foreground">
+                      {runtime.runtimeSessionId}
+                    </code>
+                    <small className="text-xs text-muted-foreground">
+                      {runtime.meta}{runtime.model ? ` · ${runtime.model}` : ""}
+                    </small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">暂无正在运行或预热的 ACP runtime。</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   };

@@ -164,6 +164,7 @@ export function applyInventoryResult(
         loading: false,
         warmed: method === "session/prewarm" && Boolean(payload.ok),
         projectId: loadingProjectId,
+        runtimeSessionId: payload.runtimeSessionId,
         message: payload.message,
         modelOptions: payload.modelOptions,
         configOptions: payload.configOptions,

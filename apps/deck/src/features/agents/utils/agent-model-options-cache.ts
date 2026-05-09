@@ -13,6 +13,7 @@ export type AgentModelOptionsEntry = {
   message?: string;
   /** projectId used when probing, echoed back for cache-key reconstruction. */
   projectId?: string | null;
+  runtimeSessionId?: string;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
   state: {
@@ -51,6 +52,7 @@ export function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEn
             loading: false,
             warmed: false,
             projectId: entry.projectId,
+            runtimeSessionId: undefined,
             message: entry.message,
             modelOptions: entry.modelOptions ?? [],
             configOptions: entry.configOptions ?? [],
@@ -76,7 +78,10 @@ export function writeAgentModelOptionsCache(
             ((entry.modelOptions?.length ?? 0) > 0 ||
               (entry.configOptions?.length ?? 0) > 0),
         )
-        .map(([key, entry]) => [key, { ...entry, cachedAt: now }]),
+        .map(([key, entry]) => {
+          const { runtimeSessionId: _runtimeSessionId, ...cacheableEntry } = entry;
+          return [key, { ...cacheableEntry, cachedAt: now }];
+        }),
     );
     window.localStorage.setItem(
       AGENT_MODEL_OPTIONS_CACHE_KEY,

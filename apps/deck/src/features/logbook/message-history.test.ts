@@ -527,6 +527,37 @@ test("mergeMessageHistory preserves server order even when timestamps are out of
   );
 });
 
+test("mergeMessageHistory skips assistant history composites already represented by recent messages", () => {
+  const current: AgentMessage[] = [
+    {
+      id: "session-1-msg-s0",
+      role: "assistant",
+      text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\n\n我会使用 superpowers:using-superpowers 技能来遵守本会话的技能调用规则，喵~",
+      timestamp: "2026-05-09T09:00:00.000Z",
+    },
+    {
+      id: "session-1-msg-s1",
+      role: "assistant",
+      text: "你好主人，喵~\n\n我在 D:\\myProject\\tools\\Tiller，会按你给的 AGENTS.md / 五行协议来协助：目标先行、最小变更、验证后再交付。需要我做什么？",
+      timestamp: "2026-05-09T09:00:01.000Z",
+    },
+  ];
+
+  const merged = mergeMessageHistory(current, [
+    {
+      id: "provider-message-1",
+      role: "assistant",
+      text: "我会使用 superpowers:using-superpowers 技能来遵守本会话的技能调用规则，喵~\n\n你好主人，喵~\n\n我在 D:\\myProject\\tools\\Tiller，会按你给的 AGENTS.md / 五行协议来协助：目标先行、最小变更、验证后再交付。需要我做什么？",
+      timestamp: "2026-05-09T09:00:02.000Z",
+    },
+  ]);
+
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["session-1-msg-s0", "session-1-msg-s1"],
+  );
+});
+
 test("mergeMessageHistory prepends older pages before current messages", () => {
   const current: AgentMessage[] = [
     {

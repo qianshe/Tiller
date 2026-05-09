@@ -160,6 +160,7 @@ export function MissionWorkspace(props: any) {
     setProjectFileFilter,
     toggleProjectFileDirectory,
     defaultLogbookVisibleLimit,
+    agentModelOptions,
   } = props;
   const {
     canSend,
@@ -208,6 +209,45 @@ export function MissionWorkspace(props: any) {
     effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
+  const runtimeOverviewItems = (() => {
+    const seen = new Set<string>();
+    const items = sessions
+      .filter((session: any) => Boolean(session.runtimeSessionId))
+      .map((session: any) => {
+        seen.add(session.runtimeSessionId);
+        return {
+          id: `session:${session.id}`,
+          label: session.agentName ?? session.agentId,
+          meta: `会话 · ${session.workspaceName ?? session.workspaceId} · ${copy.status[statuses[session.id] ?? session.status] ?? session.status}`,
+          status: "会话",
+          runtimeSessionId: session.runtimeSessionId,
+          model: session.model,
+        };
+      });
+
+    for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
+      if (!entry?.runtimeSessionId || seen.has(entry.runtimeSessionId)) {
+        continue;
+      }
+      const [agentId, workspaceId] = key.split("::");
+      const agentName = agents.find((agent: any) => agent.id === agentId)?.name ?? agentId ?? "ACP";
+      const workspaceName =
+        draftWorkspaceOptions.find((workspace: any) => workspace.id === workspaceId)?.name ??
+        workspaceId ??
+        "Workspace";
+      seen.add(entry.runtimeSessionId);
+      items.push({
+        id: `warm:${key}`,
+        label: agentName,
+        meta: `预热 · ${workspaceName}`,
+        status: entry.loading ? "预热中" : "已预热",
+        runtimeSessionId: entry.runtimeSessionId,
+        model: entry.state?.model,
+      });
+    }
+
+    return items;
+  })();
   const shouldShowComposer = Boolean(activeSession);
   const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId);
   return (
@@ -383,6 +423,7 @@ export function MissionWorkspace(props: any) {
             diffCount={missionDiffCount}
             logCount={missionLogCount}
             overviewItems={projectOverviewItems}
+            runtimeOverviewItems={runtimeOverviewItems}
             noDiffSummary={copy.noDiffSummary}
             activeSession={activeSession}
             statusLabel={missionStatusLabel}
