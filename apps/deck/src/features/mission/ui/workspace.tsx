@@ -210,43 +210,86 @@ export function MissionWorkspace(props: any) {
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
   const runtimeOverviewItems = (() => {
-    const seen = new Set<string>();
-    const items = sessions
-      .filter((session: any) => Boolean(session.runtimeSessionId))
-      .map((session: any) => {
-        seen.add(session.runtimeSessionId);
-        return {
-          id: `session:${session.id}`,
-          label: session.agentName ?? session.agentId,
-          meta: `会话 · ${session.workspaceName ?? session.workspaceId} · ${copy.status[statuses[session.id] ?? session.status] ?? session.status}`,
-          status: "会话",
-          runtimeSessionId: session.runtimeSessionId,
-          model: session.model,
-        };
-      });
-
-    for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
-      if (!entry?.runtimeSessionId || seen.has(entry.runtimeSessionId)) {
+    const grouped = new Map<string, any>();
+    for (const session of sessions as any[]) {
+      if (!session.runtimeSessionId) {
         continue;
       }
+      const key = String(session.agentId ?? session.agentName ?? "acp");
+      const statusLabel = copy.status[statuses[session.id] ?? session.status] ?? session.status;
+      const projectName =
+        projects.find((project: any) => project.id === session.projectId)?.name ??
+        session.projectName ??
+        "未选项目";
+      const branchName = session.workspaceName ?? session.workspaceId ?? "默认分支";
+      const child = {
+        id: session.id,
+        projectName,
+        branchName,
+        status: statusLabel,
+        model: session.model,
+      };
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.sessionCount += 1;
+        existing.children.push(child);
+        continue;
+      }
+      grouped.set(key, {
+        id: `acp:${key}`,
+        label: session.agentName ?? session.agentId ?? "ACP",
+        meta: `${projectName} · ${branchName} · ${statusLabel}`,
+        status: "ACP",
+        runtimeSessionId: "1 个会话",
+        model: session.model,
+        sessionCount: 1,
+        children: [child],
+      });
+    }
+
+    for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
       const [agentId, workspaceId] = key.split("::");
+      const groupKey = String(agentId ?? "acp");
+      if (!entry?.runtimeSessionId || grouped.has(groupKey)) {
+        continue;
+      }
       const agentName = agents.find((agent: any) => agent.id === agentId)?.name ?? agentId ?? "ACP";
       const workspaceName =
         draftWorkspaceOptions.find((workspace: any) => workspace.id === workspaceId)?.name ??
         workspaceId ??
         "Workspace";
-      seen.add(entry.runtimeSessionId);
-      items.push({
-        id: `warm:${key}`,
+      grouped.set(groupKey, {
+        id: `acp:${groupKey}`,
         label: agentName,
-        meta: `预热 · ${workspaceName}`,
+        meta: workspaceName,
         status: entry.loading ? "预热中" : "已预热",
-        runtimeSessionId: entry.runtimeSessionId,
+        runtimeSessionId: `${workspaceName} · 预热连接`,
         model: entry.state?.model,
       });
     }
 
-    return items;
+    for (const agent of agents as any[]) {
+      const groupKey = String(agent.id ?? agent.name ?? "acp");
+      if (grouped.has(groupKey)) {
+        continue;
+      }
+      grouped.set(groupKey, {
+        id: `acp:${groupKey}`,
+        label: agent.name ?? agent.id ?? "ACP",
+        meta: "暂无会话",
+        status: "未连接",
+        runtimeSessionId: "暂无会话",
+      });
+    }
+
+    return Array.from(grouped.values()).map((item) =>
+      item.sessionCount
+        ? {
+            ...item,
+            runtimeSessionId: `${item.sessionCount} 个会话`,
+          }
+        : item,
+    );
   })();
   const shouldShowComposer = Boolean(activeSession);
   const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId);
@@ -280,7 +323,6 @@ export function MissionWorkspace(props: any) {
           agents={agents}
           selectedAgentId={selectedAgentId}
           agentPickerOpen={agentPickerOpen}
-          selectDraftAgent={selectDraftAgent}
           createDraftSessionForAgent={createDraftSessionForAgent}
           setSelectedMissionHelmId={setSelectedMissionHelmId}
           setSelectedProjectId={setSelectedProjectId}

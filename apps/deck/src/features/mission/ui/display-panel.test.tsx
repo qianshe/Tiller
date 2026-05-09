@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MissionDisplayPanel } from "./display-panel.js";
 
-test("mission overview renders active ACP runtimes below project cards", () => {
+test("mission overview renders active ACP connections below project cards", () => {
   const html = renderToStaticMarkup(
     createElement(MissionDisplayPanel, {
       style: {},
@@ -17,12 +17,20 @@ test("mission overview renders active ACP runtimes below project cards", () => {
       overviewItems: ["Project · Tiller"],
       runtimeOverviewItems: [
         {
-          id: "session:session-1",
+          id: "acp:codex",
           label: "Codex",
-          meta: "会话 · main · 空闲",
-          status: "会话",
-          runtimeSessionId: "runtime-1",
-          model: "gpt-5.5",
+          meta: "Tiller · main · 空闲",
+          status: "ACP",
+          runtimeSessionId: "2 个会话",
+          children: [
+            {
+              id: "session-1",
+              projectName: "Tiller",
+              branchName: "main",
+              status: "空闲",
+              model: "gpt-5.5",
+            },
+          ],
         },
       ],
       noDiffSummary: "暂无 diff",
@@ -40,8 +48,9 @@ test("mission overview renders active ACP runtimes below project cards", () => {
     }),
   );
 
-  assert.match(html, /ACP Runtime/);
-  assert.match(html, /runtime-1/);
+  assert.match(html, /ACP/);
+  assert.match(html, /2 个会话/);
   assert.match(html, /Codex/);
-  assert.match(html, /会话 · main · 空闲/);
+  assert.match(html, /Tiller/);
+  assert.match(html, /main · 空闲 · gpt-5.5/);
 });

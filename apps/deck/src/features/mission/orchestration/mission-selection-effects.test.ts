@@ -45,10 +45,11 @@ test("mission draft agent selection resets model before creating an ACP session"
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
 });
 
-test("mission project plus owns the ACP picker and selected agent creates a real session", () => {
+test("mission project plus owns the ACP picker and selected agent creates a real session without draft prewarm", () => {
   assert.match(sidebarSourceText, /mission-tree-agent-menu/);
-  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
+  assert.doesNotMatch(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
+  assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
   assert.match(workspaceSourceText, /正在创建 ACP 会话/);
 });
@@ -95,4 +96,10 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(viewModelSourceText, /draftHasLoadedModelOptions/);
   assert.match(viewModelSourceText, /awaitingDraftAgentModelOptions/);
   assert.match(viewModelSourceText, /!draftHasLoadedModelOptions/);
+});
+
+test("mission model picker shows current agent mode even before full mode options arrive", () => {
+  assert.match(viewModelSourceText, /visibleDraftAgentModeOptions/);
+  assert.match(viewModelSourceText, /formatAgentModeLabel\(effectiveDraftAgentMode\)/);
+  assert.match(viewModelSourceText, /draftAgentModeOptions: visibleDraftAgentModeOptions/);
 });

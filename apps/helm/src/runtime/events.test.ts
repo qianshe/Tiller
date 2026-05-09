@@ -315,6 +315,128 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.equal(appendedToolCalls.length, 1);
 });
 
+test("runtime-generated independent assistant messages get distinct stream segment ids", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-alpha",
+        role: "assistant",
+        text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-beta",
+        role: "assistant",
+        text: "你好主人，我会按你的项目规则继续处理。",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.persisted[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
+  assert.equal(capture.persisted[1]?.text, "你好主人，我会按你的项目规则继续处理。");
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+});
+
+test("runtime-generated short assistant replies split after provider diagnostics", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-diagnostic",
+        role: "assistant",
+        text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-ok",
+        role: "assistant",
+        text: "OK",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.persisted[0]?.text.startsWith("Model metadata for"), true);
+  assert.equal(capture.persisted[1]?.text, "OK");
+  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+});
+
+test("runtime running status starts a fresh assistant segment for the next prompt", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-first",
+        role: "assistant",
+        text: "第一轮回复",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "running",
+      message: "ACP agent is responding",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-second",
+        role: "assistant",
+        text: "第二轮回复",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+});
+
 test("runtime tool-call events log explicit debug details and broadcast", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };

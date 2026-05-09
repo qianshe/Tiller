@@ -13,6 +13,7 @@ import type {
   SessionStatus,
   WorkspaceSummary,
 } from "@tiller/shared";
+import type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
 
 export type ProviderCleanupResult =
   | { kind: "unsupported"; providerId: string; message: string }
@@ -85,6 +86,7 @@ export type AcpRuntimeOptions = {
   };
   onEvent: (event: SessionRuntimeEvent) => void;
   onRestoreReplayEvent?: (event: SessionRuntimeEvent) => void;
+  onConnectionLifecycleEvent?: (event: AcpConnectionLifecycleEvent) => void;
 };
 
 export type AcpAgentSessionListResult = {

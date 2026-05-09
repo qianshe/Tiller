@@ -9,6 +9,10 @@ const activeAssistantStreamLogBySession = new Map<
   string,
   { key: string; endsWithNewline: boolean }
 >();
+const activeAssistantRuntimeMessageBySession = new Map<
+  string,
+  { sourceId: string; segmentId: string; text: string }
+>();
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
@@ -26,16 +30,71 @@ function bumpAssistantStreamSegment(sessionId: string) {
     sessionId,
     (assistantStreamSegmentBySession.get(sessionId) ?? 0) + 1,
   );
+  activeAssistantRuntimeMessageBySession.delete(sessionId);
 }
 
 function currentAssistantStreamSegmentMessageId(sessionId: string) {
   return `${sessionId}-msg-s${assistantStreamSegmentBySession.get(sessionId) ?? 0}`;
 }
 
-function normalizeRuntimeAssistantMessageId(sessionId: string, messageId: string) {
-  return isRuntimeGeneratedMessageId(messageId)
-    ? currentAssistantStreamSegmentMessageId(sessionId)
-    : messageId;
+function startNextAssistantResponseSegment(sessionId: string) {
+  if (activeAssistantRuntimeMessageBySession.has(sessionId)) {
+    bumpAssistantStreamSegment(sessionId);
+  }
+}
+
+function normalizeRuntimeAssistantMessageId(
+  sessionId: string,
+  message: { id: string; text: string },
+) {
+  if (!isRuntimeGeneratedMessageId(message.id)) {
+    return message.id;
+  }
+
+  let segmentId = currentAssistantStreamSegmentMessageId(sessionId);
+  const active = activeAssistantRuntimeMessageBySession.get(sessionId);
+  if (
+    active?.segmentId === segmentId &&
+    active.sourceId !== message.id &&
+    shouldStartNewRuntimeAssistantSegment(active.text, message.text)
+  ) {
+    bumpAssistantStreamSegment(sessionId);
+    segmentId = currentAssistantStreamSegmentMessageId(sessionId);
+  }
+
+  activeAssistantRuntimeMessageBySession.set(sessionId, {
+    sourceId: message.id,
+    segmentId,
+    text: mergeAssistantStreamText(active?.segmentId === segmentId ? active.text : "", message.text),
+  });
+  return segmentId;
+}
+
+function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText: string) {
+  if (!currentText || !incomingText) {
+    return false;
+  }
+  if (incomingText.startsWith(currentText) || currentText.endsWith(incomingText)) {
+    return false;
+  }
+  if (isProviderDiagnosticAssistantText(currentText) && !isProviderDiagnosticAssistantText(incomingText)) {
+    return true;
+  }
+  return currentText.length > 16 && incomingText.length > 16;
+}
+
+function isProviderDiagnosticAssistantText(text: string) {
+  return /^Model metadata for\b/u.test(text.trim());
+}
+
+function mergeAssistantStreamText(currentText: string, incomingText: string) {
+  if (!currentText || incomingText.startsWith(currentText)) {
+    return incomingText || currentText;
+  }
+  if (currentText.endsWith(incomingText)) {
+    return currentText;
+  }
+  return `${currentText}${incomingText}`;
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
@@ -145,6 +204,9 @@ export function handleRuntimeEvent(
   switch (event.type) {
     case "status":
       closeAssistantStreamLog(sessionId);
+      if (event.status === "running") {
+        startNextAssistantResponseSegment(sessionId);
+      }
       context.logInfo(
         `[tiller] 阶段=运行状态流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`,
       );
@@ -162,6 +224,7 @@ export function handleRuntimeEvent(
     case "message":
       if (event.message.role === "user") {
         closeAssistantStreamLog(sessionId);
+        startNextAssistantResponseSegment(sessionId);
         context.logInfo(
           `[tiller] 阶段=用户回显忽略 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} id=${event.message.id} chars=${event.message.text.length} text=${formatLogValue(event.message.text, 520)}`,
         );
@@ -175,7 +238,7 @@ export function handleRuntimeEvent(
       }
       const message = {
         ...event.message,
-        id: normalizeRuntimeAssistantMessageId(sessionId, event.message.id),
+        id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
       };
       ensureAssistantStreamLogStarted(sessionId, message, context);
       writeAssistantStreamText(sessionId, message.text);

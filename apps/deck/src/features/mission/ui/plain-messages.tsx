@@ -50,6 +50,10 @@ export function PlainMessages({
     () => displayMessages.slice(-visibleMessageCount),
     [displayMessages, visibleMessageCount],
   );
+  const visibleRenderMessages = useMemo(
+    () => resolvePlainMessageRenderItems(visibleMessages),
+    [visibleMessages],
+  );
   const hasHiddenLoadedMessages = visibleMessages.length < displayMessages.length;
   const canLoadMoreMessages =
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
@@ -82,11 +86,11 @@ export function PlainMessages({
           {historyState?.loading ? "加载中..." : "查看更多"}
         </button>
       ) : null}
-      {visibleMessages.map((message) => {
+      {visibleRenderMessages.map(({ message, renderKey }) => {
         const isExpanded = expandedMessageIds.has(message.id);
         return (
           <PlainMessageItem
-            key={message.id}
+            key={renderKey}
             isExpanded={isExpanded}
             message={message}
             onToggleExpandedMessage={onToggleExpandedMessage}
@@ -138,7 +142,7 @@ const PlainMessageItem = memo(function PlainMessageItem({
           aria-hidden="true"
           className="plain-assistant-segment-marker flex min-h-6 justify-center pt-2"
         >
-          <span className="plain-assistant-segment-dot size-2 rounded-full bg-success-container ring-4 ring-surface-sunken" />
+          <span className="plain-assistant-segment-dot size-2 rounded-full bg-success ring-4 ring-surface-sunken" />
         </span>
       ) : null}
       <div className="grid min-w-0 gap-2">
@@ -218,6 +222,26 @@ export function resolveVisiblePlainMessages(
   boundaryTimestamps: string[] = [],
 ) {
   return sortDisplayMessages(items, boundaryTimestamps).slice(-visibleCount);
+}
+
+type PlainMessageRenderItem = {
+  message: AgentMessage;
+  renderKey: string;
+};
+
+export function resolvePlainMessageRenderItems(
+  items: AgentMessage[],
+): PlainMessageRenderItem[] {
+  const seenKeys = new Map<string, number>();
+  return items.map((message, index) => {
+    const baseKey = message.id || `${message.role}-${message.timestamp || index}`;
+    const seenCount = seenKeys.get(baseKey) ?? 0;
+    seenKeys.set(baseKey, seenCount + 1);
+    return {
+      message,
+      renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
+    };
+  });
 }
 
 function shouldCollapsePlainMessage(text: string) {

@@ -37,6 +37,13 @@ export type RuntimeOverviewItem = {
   status: string;
   runtimeSessionId: string;
   model?: string;
+  children?: Array<{
+    id: string;
+    projectName: string;
+    branchName: string;
+    status: string;
+    model?: string;
+  }>;
 };
 
 type MissionDisplayPanelProps = {
@@ -289,7 +296,7 @@ export function MissionDisplayPanel({
           <CardContent className="grid gap-2 p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                ACP Runtime
+                ACP
               </span>
               <span className="rounded-full bg-surface-emphasis px-2 py-0.5 text-[10px] text-muted-foreground">
                 {runtimeOverviewItems.length} 个
@@ -298,29 +305,43 @@ export function MissionDisplayPanel({
             {runtimeOverviewItems.length ? (
               <div className="grid gap-2">
                 {runtimeOverviewItems.map((runtime) => (
-                  <article
+                  <details
                     key={runtime.id}
                     className="grid gap-1 rounded-md border border-border-ghost bg-surface px-2.5 py-2"
+                    open
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 marker:hidden">
                       <strong className="min-w-0 truncate text-sm text-foreground">
                         {runtime.label}
                       </strong>
                       <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
                         {runtime.status}
                       </span>
-                    </div>
-                    <code className="break-all text-[11px] text-muted-foreground">
+                    </summary>
+                    <code className="mt-1 block break-all text-[11px] text-muted-foreground">
                       {runtime.runtimeSessionId}
                     </code>
-                    <small className="text-xs text-muted-foreground">
-                      {runtime.meta}{runtime.model ? ` · ${runtime.model}` : ""}
-                    </small>
-                  </article>
+                    {runtime.children?.length ? (
+                      <ul className="mt-1 grid gap-1 text-xs text-muted-foreground">
+                        {runtime.children.map((child) => (
+                          <li key={child.id} className="grid gap-0.5 rounded bg-surface-sunken px-2 py-1">
+                            <span className="font-medium text-foreground">{child.projectName}</span>
+                            <span>
+                              {child.branchName} · {child.status}{child.model ? ` · ${child.model}` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <small className="mt-1 block text-xs text-muted-foreground">
+                        {runtime.meta}{runtime.model ? ` · ${runtime.model}` : ""}
+                      </small>
+                    )}
+                  </details>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">暂无正在运行或预热的 ACP runtime。</p>
+              <p className="text-sm text-muted-foreground">暂无正在运行或预热的 ACP。</p>
             )}
           </CardContent>
         </Card>

@@ -215,6 +215,8 @@ export function MissionComposer({
             imagePasteNotice={imagePasteNotice}
           />
           <Textarea
+            id="mission-prompt-input"
+            name="missionPrompt"
             ref={missionPromptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}

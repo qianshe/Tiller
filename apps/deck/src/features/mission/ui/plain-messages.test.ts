@@ -6,6 +6,7 @@ import type { AgentMessage } from "@tiller/shared";
 import {
   DEFAULT_VISIBLE_MESSAGE_LIMIT,
   PlainMessages,
+  resolvePlainMessageRenderItems,
   resolveVisiblePlainMessages,
 } from "./plain-messages.js";
 
@@ -17,6 +18,19 @@ function message(index: number): AgentMessage {
     timestamp: `2026-05-06T00:${String(index).padStart(2, "0")}:00.000Z`,
   };
 }
+
+test("plain message render keys stay unique for duplicate provider ids", () => {
+  const duplicateMessages: AgentMessage[] = [
+    { ...message(1), id: "session-1-msg-s0", text: "第一段" },
+    { ...message(2), id: "session-1-msg-s0", text: "第二段" },
+    { ...message(3), id: "session-1-msg-s1", text: "第三段" },
+  ];
+
+  assert.deepEqual(
+    resolvePlainMessageRenderItems(duplicateMessages).map((item) => item.renderKey),
+    ["session-1-msg-s0", "session-1-msg-s0#1", "session-1-msg-s1"],
+  );
+});
 
 test("plain message timeline initially renders the latest 20 messages", () => {
   const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));

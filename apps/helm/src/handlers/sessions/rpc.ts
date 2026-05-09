@@ -341,6 +341,17 @@ async function createSession(
         agent,
         sessionConfig,
         onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+        onConnectionLifecycleEvent: (event) => {
+          const phaseMap = {
+            "connection-open": "ACP连接新建",
+            "connection-reuse": "ACP连接复用",
+            "connection-pending": "ACP连接等待",
+            "connection-replace": "ACP连接替换",
+          } as const;
+          context.logInfo(
+            `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+          );
+        },
       }));
     prewarmed?.attach(sessionId);
     const summaryWithRuntime = context.hydrateSessionSummary({

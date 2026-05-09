@@ -41,7 +41,6 @@ type MissionSidebarProps = {
   agents: AcpAgentProvider[];
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
-  selectDraftAgent: (agentId: string) => void;
   createDraftSessionForAgent: (agentId: string) => boolean;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
@@ -89,7 +88,6 @@ export function MissionSidebar({
   agents,
   selectedAgentId,
   agentPickerOpen,
-  selectDraftAgent,
   createDraftSessionForAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
@@ -244,11 +242,8 @@ export function MissionSidebar({
                               agents={agents}
                               selectedAgentId={selectedAgentId}
                               agentPickerOpen={agentPickerOpen}
-                              selectDraftAgent={selectDraftAgent}
                               createDraftSessionForAgent={createDraftSessionForAgent}
-                              setSelectedMissionHelmId={
-                                setSelectedMissionHelmId
-                              }
+                              setSelectedMissionHelmId={setSelectedMissionHelmId}
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedWorkspaceId={setSelectedWorkspaceId}
                               setSelectedAgentId={setSelectedAgentId}

@@ -1,4 +1,4 @@
-import { createAcpRuntime, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { createAcpRuntime, type AcpConnectionLifecycleEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
@@ -79,6 +79,19 @@ const WARM_RUNTIME_TTL_MS = 5 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
   const openCodeHistoryRefreshes = new Map<string, number>();
+
+  function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
+    const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
+      "connection-open": "ACP连接新建",
+      "connection-reuse": "ACP连接复用",
+      "connection-pending": "ACP连接等待",
+      "connection-replace": "ACP连接替换",
+    };
+    options.logInfo(
+      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+    );
+  }
+
   const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
   const inFlightWarmRuntimes = createWarmRuntimePool<{
     consumed: boolean;
@@ -382,6 +395,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         workspace: params.workspace,
         agent: params.agent,
         sessionConfig: params.sessionConfig,
+        onConnectionLifecycleEvent: logConnectionLifecycle,
         onEvent: (event) => {
           if (attachedSessionId) {
             handleRuntimeEvent(attachedSessionId, event);
@@ -568,6 +582,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         onRestoreReplayEvent: (event) => {
           restoreReplayBuffer.add(event);
         },
+        onConnectionLifecycleEvent: logConnectionLifecycle,
       });
       const replayCounts = restoreReplayBuffer.flush();
       options.logInfo(
