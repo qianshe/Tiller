@@ -10,10 +10,6 @@ test("mission overview renders active ACP connections below project cards", () =
       style: {},
       pages: [{ id: "overview", title: "概览" }],
       selectedPage: { id: "overview", title: "概览" },
-      selectedDiffFilePath: null,
-      diffs: [],
-      diffCount: 0,
-      logCount: 0,
       overviewItems: ["Project · Tiller"],
       runtimeOverviewItems: [
         {
@@ -33,18 +29,17 @@ test("mission overview renders active ACP connections below project cards", () =
           ],
         },
       ],
-      noDiffSummary: "暂无 diff",
+      selectedDiffFilePath: null,
+      diffs: [],
+      noDiffSummary: "还没有文件变更。",
       logbookContent: null,
-      collapsedDiffDirectories: new Set<string>(),
       onAddPage: () => undefined,
       onSelectPage: () => undefined,
       onDragStart: () => undefined,
       onDrop: () => undefined,
-      onOpenDiffDetail: () => undefined,
       onRenamePage: () => undefined,
       onMovePage: () => undefined,
       onDeletePage: () => undefined,
-      onToggleDiffDirectory: () => undefined,
     }),
   );
 

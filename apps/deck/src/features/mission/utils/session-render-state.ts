@@ -16,9 +16,8 @@ export function buildMissionPanelPages(
 ): MissionPanelPage[] {
   return [
     { id: "overview", title: "概览" },
-    { id: "changes", title: `Git Diff (${diffCount})` },
-    { id: "diff-detail", title: "Diff 详情" },
     { id: "logbook", title: `航行日志 (${logCount})` },
+    ...(diffCount > 0 ? [{ id: "diff-detail", title: "Diff 详情" }] : []),
     ...customPages,
   ];
 }

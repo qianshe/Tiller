@@ -12,9 +12,16 @@ const routePath = resolve(
 test("renderMissionRoute forwards diff directory collapse state to the mission workspace", () => {
   const source = readFileSync(routePath, "utf8");
 
-  assert.match(source, /collapsedMissionDiffDirectories,\n\s+missionInspectorPaneStyle,/);
+  assert.match(source, /collapsedMissionDiffDirectories,[\s\S]*?missionInspectorPaneStyle,/);
   assert.match(
     source,
     /collapsedMissionDiffDirectories=\{collapsedMissionDiffDirectories\}/,
   );
+});
+
+test("renderMissionRoute forwards all workspaces for scanned worktrees", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /workspaces,/);
+  assert.match(source, /workspaces=\{workspaces\}/);
 });

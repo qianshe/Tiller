@@ -1,17 +1,9 @@
-import type { CSSProperties, ReactNode } from "react";
 import type { FileDiffSummary } from "@tiller/shared";
+import type { CSSProperties, ReactNode } from "react";
 import { Button, Card, CardContent, Input } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
-import {
-  buildMissionDiffTree,
-  formatDiffStatus,
-  renderDiffPatch,
-  renderDiffStats,
-  type MissionDiffTreeNode,
-} from "./diff-tree";
+import { formatDiffStatus, renderDiffPatch, renderDiffStats } from "./diff-tree";
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
-
-const EMPTY_COLLAPSED_DIFF_DIRECTORIES: ReadonlySet<string> = new Set();
 
 type OverviewItem = {
   label: string;
@@ -53,152 +45,41 @@ type MissionDisplayPanelProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
   selectedPage: MissionPanelPage;
-  selectedDiffFilePath: string | null;
-  diffs: FileDiffSummary[];
-  diffCount: number;
-  logCount: number;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
-  onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
+  selectedDiffFilePath: string | null;
+  diffs: FileDiffSummary[];
   noDiffSummary: string;
+  onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   logbookContent: ReactNode;
-  collapsedDiffDirectories: ReadonlySet<string>;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
   onDrop: (pageId: string) => void;
-  onOpenDiffDetail: (path: string) => void;
   onRenamePage: (pageId: string, title: string) => void;
   onMovePage: (pageId: string, direction: -1 | 1) => void;
   onDeletePage: (pageId: string) => void;
-  onToggleDiffDirectory: (path: string) => void;
 };
 export function MissionDisplayPanel({
   style,
   pages,
   selectedPage,
-  selectedDiffFilePath,
-  diffs,
-  diffCount,
-  logCount,
   overviewItems,
   runtimeOverviewItems,
-  onReconnectRuntime,
+  selectedDiffFilePath,
+  diffs,
   noDiffSummary,
+  onReconnectRuntime,
   logbookContent,
-  collapsedDiffDirectories,
   onAddPage,
   onSelectPage,
   onDragStart,
   onDrop,
-  onOpenDiffDetail,
   onRenamePage,
   onMovePage,
   onDeletePage,
-  onToggleDiffDirectory,
 }: MissionDisplayPanelProps) {
-  const diffTree = buildMissionDiffTree(diffs);
-  const collapsedDirectorySet =
-    collapsedDiffDirectories ?? EMPTY_COLLAPSED_DIFF_DIRECTORIES;
-  const renderDiffTreeNode = (
-    node: MissionDiffTreeNode,
-    depth = 0,
-  ): ReactNode => {
-    if (node.kind === "file" && node.file) {
-      const file = node.file;
-      return (
-        <button
-          key={node.id}
-          type="button"
-          className="mission-file-row mission-file-row-compact mission-file-row-button grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          style={{ paddingLeft: `${8 + depth * 14}px` }}
-          onClick={() => onOpenDiffDetail(file.path)}
-        >
-          <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
-            {" "}
-            {formatDiffStatus(file.status)}{" "}
-          </span>{" "}
-          <strong>{node.name}</strong> {renderDiffStats(file)}{" "}
-        </button>
-      );
-    }
-    const collapsed = collapsedDirectorySet.has(node.path);
-    return (
-      <section
-        key={node.id}
-        className={`mission-change-group ${collapsed ? "collapsed" : ""} grid gap-1`}
-      >
-        {" "}
-        <button
-          type="button"
-          className="mission-change-group-title grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-foreground transition hover:bg-surface-emphasis"
-          style={{ paddingLeft: `${2 + depth * 14}px` }}
-          onClick={() => onToggleDiffDirectory(node.path)}
-          aria-expanded={!collapsed}
-        >
-          {" "}
-          <span>{collapsed ? "▸" : "▾"}</span> <span>{node.name}</span>{" "}
-          <span className="mission-change-count rounded-full bg-surface-emphasis px-2 py-0.5 text-xs text-muted-foreground">{node.count}</span>{" "}
-        </button>{" "}
-        {!collapsed
-          ? node.children?.map((child) => renderDiffTreeNode(child, depth + 1))
-          : null}{" "}
-      </section>
-    );
-  };
   const renderSelectedPage = () => {
-    if (selectedPage.id === "changes") {
-      return (
-        <div className="mission-panel-page mission-change-tree grid gap-1">
-          {" "}
-          {diffTree.length ? (
-            diffTree.map((node) => renderDiffTreeNode(node))
-          ) : (
-            <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{noDiffSummary}</div>
-          )}{" "}
-        </div>
-      );
-    }
-    if (selectedPage.id === "diff-detail") {
-      return (
-        <div className="mission-panel-page mission-diff-detail grid min-w-0 gap-2">
-          {" "}
-          {diffs.length ? (
-            diffs.map((file) => (
-              <details
-                key={file.path}
-                className={cn("mission-diff-file min-w-0 overflow-hidden rounded-md border border-border-ghost bg-surface-sunken", selectedDiffFilePath === file.path && "active ring-2 ring-ring/30")}
-                open={selectedDiffFilePath === file.path || diffs.length === 1 || undefined}
-              >
-                {" "}
-                <summary className="mission-file-row mission-diff-file-summary grid min-w-0 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground [&::-webkit-details-marker]:hidden">
-                  {" "}
-                  <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
-                    {" "}
-                    {formatDiffStatus(file.status)}{" "}
-                  </span>{" "}
-                  <strong className="min-w-0 truncate">{file.path}</strong> {renderDiffStats(file)}{" "}
-                  <span className="mission-diff-expand-icon" aria-hidden="true">
-                    {" "}
-                    ▸{" "}
-                  </span>{" "}
-                </summary>{" "}
-                {file.patch ? (
-                  renderDiffPatch(file.patch)
-                ) : (
-                  <div className="mission-diff-patch-empty p-3 text-sm text-muted-foreground">
-                    {" "}
-                    该 diff 事件没有携带 patch/hunk 内容。{" "}
-                  </div>
-                )}{" "}
-              </details>
-            ))
-          ) : (
-            <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{noDiffSummary}</div>
-          )}{" "}
-        </div>
-      );
-    }
     if (selectedPage.id === "logbook") {
       return (
         <div className="mission-panel-page mission-logbook-page grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
@@ -206,6 +87,9 @@ export function MissionDisplayPanel({
           {logbookContent}{" "}
         </div>
       );
+    }
+    if (selectedPage.id === "diff-detail") {
+      return renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary });
     }
     if (selectedPage.id.startsWith("custom-")) {
       return (
@@ -407,5 +291,42 @@ export function MissionDisplayPanel({
         </section>{" "}
       </div>{" "}
     </aside>
+  );
+}
+
+type RenderDiffDetailPageInput = {
+  selectedDiffFilePath: string | null;
+  diffs: FileDiffSummary[];
+  noDiffSummary: string;
+};
+
+function renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary }: RenderDiffDetailPageInput) {
+  const selectedFile = diffs.find((file) => file.path === selectedDiffFilePath) ?? diffs[0];
+  if (!selectedFile) {
+    return (
+      <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+        {noDiffSummary}
+      </div>
+    );
+  }
+  return (
+    <div className="mission-panel-page mission-diff-detail grid min-h-0 gap-2 overflow-hidden" aria-label="Diff 详情">
+      <div className="mission-diff-file min-w-0 overflow-hidden rounded-md border border-border-ghost bg-surface-sunken">
+        <div className="mission-file-row mission-diff-file-summary grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground">
+          <span className={`mission-file-status status-${selectedFile.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
+            {formatDiffStatus(selectedFile.status)}
+          </span>
+          <strong className="min-w-0 truncate">{selectedFile.path}</strong>
+          {renderDiffStats(selectedFile)}
+        </div>
+        {selectedFile.patch ? (
+          renderDiffPatch(selectedFile.patch)
+        ) : (
+          <div className="mission-diff-patch-empty p-3 text-sm text-muted-foreground">
+            该 diff 事件没有携带 patch/hunk 内容。
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

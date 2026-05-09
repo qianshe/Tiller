@@ -63,6 +63,15 @@ function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
   return Boolean(client && client.socket.readyState === WebSocket.OPEN);
 }
 
+function mergeWorkspaceOptions(
+  left: WorkspaceSummary[],
+  right: WorkspaceSummary[],
+): WorkspaceSummary[] {
+  const byId = new Map(left.map((workspace) => [workspace.id, workspace]));
+  right.forEach((workspace) => byId.set(workspace.id, workspace));
+  return Array.from(byId.values());
+}
+
 export function useSessionCommandActions({
   prompt,
   promptImages,
@@ -96,12 +105,15 @@ export function useSessionCommandActions({
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
     agentIdOverride?: string,
+    workspaceOverride?: WorkspaceSummary,
   ) {
     return createSessionImpl(initialPrompt, initialContent, {
       selectedProjectId,
       projects,
-      selectedWorkspace,
-      filteredWorkspaces,
+      selectedWorkspace: workspaceOverride ?? selectedWorkspace,
+      filteredWorkspaces: workspaceOverride
+        ? mergeWorkspaceOptions(filteredWorkspaces, [workspaceOverride])
+        : filteredWorkspaces,
       selectedAgentId: agentIdOverride ?? selectedAgentId,
       filteredAgents,
       rpcClientRef,
@@ -116,8 +128,8 @@ export function useSessionCommandActions({
     });
   }
 
-  function createDraftSessionForAgent(agentId: string) {
-    return createSession(undefined, undefined, agentId);
+  function createDraftSessionForAgent(agentId: string, workspaceOverride?: WorkspaceSummary) {
+    return createSession(undefined, undefined, agentId, workspaceOverride);
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {

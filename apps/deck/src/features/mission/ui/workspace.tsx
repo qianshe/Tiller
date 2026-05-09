@@ -1,12 +1,18 @@
 import { MissionChatPane } from "./chat-pane";
 import { MissionComposer } from "./composer";
+import { MissionDiffPanel } from "./diff-panel";
 import { MissionDisplaySection } from "./display-section";
 import { MissionInspector } from "./inspector";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
-import { ProjectFileList } from "./project-file-list";
 import { MissionSidebar } from "./sidebar";
 import { buildMissionWorkspaceModel } from "./workspace-model";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../../shared/ui";
 import { joinClassNames } from "../utils/session-render-state";
 
 export function MissionWorkspace(props: any) {
@@ -33,6 +39,7 @@ export function MissionWorkspace(props: any) {
     activeSessionProject,
     draftProject,
     selectedWorkspace,
+    workspaces,
     selectedDraftAgent,
     projectFileFilter,
     collapsedProjectFileDirectories,
@@ -190,15 +197,79 @@ export function MissionWorkspace(props: any) {
     visibleProjectFiles,
     sessionExecutionPending,
   } = buildMissionWorkspaceModel(props);
-  const renderProjectFileList = () => (
-    <ProjectFileList
-      activeSessionPresent={Boolean(activeSession)}
-      loading={projectFilesEntry?.loading}
-      message={projectFilesEntry?.message}
-      projectFiles={projectFiles}
-      visibleProjectFiles={visibleProjectFiles}
-      expandedDirectories={collapsedProjectFileDirectories}
-      onToggleDirectory={toggleProjectFileDirectory}
+  const workspaceOptions = draftWorkspaceOptions.length
+    ? draftWorkspaceOptions
+    : selectedWorkspace
+      ? [selectedWorkspace]
+      : [];
+  const projectWorktreeOptions = (workspaces ?? []).filter((workspace: any) =>
+    isManagedWorktreeWorkspace(workspace),
+  );
+  const worktreeOptions = mergeWorkspaceOptions(
+    workspaceOptions.filter(isManagedWorktreeWorkspace),
+    projectWorktreeOptions,
+  );
+  const renderWorktreeList = () => (
+    <div className="mission-worktree-list grid gap-2">
+      {worktreeOptions.length ? (
+        worktreeOptions.map((workspace: any) => {
+          const selected = workspace.id === (activeSession?.workspaceId ?? selectedWorkspaceId);
+          return (
+            <div
+              key={workspace.id}
+              className={joinClassNames([
+                "rounded-lg border border-border-ghost bg-surface-sunken p-3 text-sm",
+                selected ? "border-primary/50 bg-primary-soft/30" : "",
+              ])}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <strong className="min-w-0 truncate text-foreground">{workspace.name}</strong>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
+                      aria-label={`${workspace.name} 的 Worktree 操作`}
+                      title="Worktree 操作"
+                    >
+                      ⋯
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-48">
+                    {filteredAgents.length ? (
+                      filteredAgents.map((agent: any) => (
+                        <DropdownMenuItem
+                          key={`${workspace.id}:${agent.id}`}
+                          onSelect={() => createDraftSessionForAgent(agent.id, workspace)}
+                        >
+                          用 {agent.name ?? agent.id} 创建会话
+                        </DropdownMenuItem>
+                      ))
+                    ) : (
+                      <DropdownMenuItem disabled>暂无可用 ACP Agent</DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <p className="mt-1 break-all text-xs text-muted-foreground">{workspace.path}</p>
+            </div>
+          );
+        })
+      ) : (
+        <p className="subtle compact text-sm leading-relaxed text-muted-foreground">
+当前项目暂无 Tiller Worktree 记录。
+        </p>
+      )}
+    </div>
+  );
+  const renderInspectorDiffPanel = () => (
+    <MissionDiffPanel
+      selectedDiffFilePath={selectedMissionDiffFilePath}
+      diffs={activeDiffs}
+      noDiffSummary={copy.noDiffSummary}
+      collapsedDiffDirectories={collapsedMissionDiffDirectories}
+      onOpenDiffDetail={openDiffDetail}
+      onToggleDiffDirectory={toggleMissionDiffDirectory}
     />
   );
   const chatPaneClassName = joinClassNames([
@@ -214,11 +285,13 @@ export function MissionWorkspace(props: any) {
   const runtimeOverviewItems = (() => {
     const grouped = new Map<string, any>();
     for (const session of sessions as any[]) {
+      const status = statuses[session.id] ?? session.status;
       if (!session.runtimeSessionId) {
         continue;
       }
+      const active = status !== "error" && status !== "cancelled";
       const key = String(session.agentId ?? session.agentName ?? "acp");
-      const statusLabel = copy.status[statuses[session.id] ?? session.status] ?? session.status;
+      const statusLabel = copy.status[status] ?? status;
       const projectName =
         projects.find((project: any) => project.id === session.projectId)?.name ??
         session.projectName ??
@@ -234,6 +307,7 @@ export function MissionWorkspace(props: any) {
       const existing = grouped.get(key);
       if (existing) {
         existing.sessionCount += 1;
+        existing.activeSessionCount += active ? 1 : 0;
         existing.children.push(child);
         continue;
       }
@@ -248,6 +322,7 @@ export function MissionWorkspace(props: any) {
         runtimeSessionId: "1 个会话",
         model: session.model,
         sessionCount: 1,
+        activeSessionCount: active ? 1 : 0,
         children: [child],
       });
     }
@@ -268,6 +343,7 @@ export function MissionWorkspace(props: any) {
         agentId,
         workspaceId,
         label: agentName,
+
         meta: workspaceName,
         status: entry.loading ? "预热中" : "已预热",
         runtimeSessionId: `${workspaceName} · 预热连接`,
@@ -292,14 +368,13 @@ export function MissionWorkspace(props: any) {
       });
     }
 
-    return Array.from(grouped.values()).map((item) =>
-      item.sessionCount
-        ? {
-            ...item,
-            runtimeSessionId: `${item.sessionCount} 个会话`,
-          }
-        : item,
-    );
+    return Array.from(grouped.values()).map((item) => ({
+      ...item,
+      runtimeSessionId:
+        typeof item.sessionCount === "number"
+          ? formatRuntimeSessionCount(item.sessionCount, item.activeSessionCount)
+          : item.runtimeSessionId,
+    }));
   })();
   const reconnectAcpRuntime = (runtime: { agentId?: string; projectId?: string; workspaceId?: string }) => {
     const client = rpcClientRef?.current;
@@ -462,7 +537,7 @@ export function MissionWorkspace(props: any) {
               deckPreferences={deckPreferences}
               enhancePromptDraft={enhancePromptDraft}
               promptEnhancerBusy={promptEnhancerBusy}
-              sessionExecutionPending={sessionExecutionPending}
+              sessionCanCancel={sessionExecutionPending && activeSessionStatus !== "starting"}
               cancelSession={cancelSession}
               canSend={canSend}
             />
@@ -481,14 +556,14 @@ export function MissionWorkspace(props: any) {
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
             selectedPage={selectedMissionPanelPage}
-            selectedDiffFilePath={selectedMissionDiffFilePath}
-            diffs={activeDiffs}
             diffCount={missionDiffCount}
             logCount={missionLogCount}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
-            onReconnectRuntime={reconnectAcpRuntime}
+            selectedDiffFilePath={selectedMissionDiffFilePath}
+            diffs={activeDiffs}
             noDiffSummary={copy.noDiffSummary}
+            onReconnectRuntime={reconnectAcpRuntime}
             activeSession={activeSession}
             statusLabel={missionStatusLabel}
             sessionToolCalls={activeToolCalls}
@@ -507,7 +582,6 @@ export function MissionWorkspace(props: any) {
             }
             visibleLimit={defaultLogbookVisibleLimit}
             copy={copy}
-            collapsedDiffDirectories={collapsedMissionDiffDirectories}
             onShowMore={(targetSessionId, nextVisibleCount) =>
               setActivityVisibleCounts((current: any) => ({
                 ...current,
@@ -519,22 +593,19 @@ export function MissionWorkspace(props: any) {
             onSelectPage={setSelectedMissionPanelPageId}
             onDragStart={setDraggedMissionPanelPageId}
             onDrop={dropMissionPanelPage}
-            onOpenDiffDetail={openDiffDetail}
             onRenamePage={renameMissionPanelPage}
             onMovePage={moveMissionPanelPage}
             onDeletePage={deleteMissionPanelPage}
-            onToggleDiffDirectory={toggleMissionDiffDirectory}
           />
         ) : null}{" "}
         <MissionInspector
           collapsed={effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
           activeSessionPresent={Boolean(activeSession)}
-          projectFileCount={projectFiles.length}
-          loading={projectFilesEntry?.loading}
-          message={projectFilesEntry?.message}
-          filter={projectFileFilter}
-          projectFileList={renderProjectFileList()}
+          worktreeCount={worktreeOptions.length}
+          worktreeList={renderWorktreeList()}
+          diffCount={missionDiffCount}
+          diffPanel={renderInspectorDiffPanel()}
           resizer={
             <MissionPaneResizer
               handle="inspector"
@@ -543,9 +614,31 @@ export function MissionWorkspace(props: any) {
               onNudge={nudgeMissionPane}
             />
           }
-          onFilterChange={setProjectFileFilter}
         />{" "}
       </>{" "}
     </MissionPage>
   );
+}
+
+function mergeWorkspaceOptions(...groups: Array<Array<{ id: string; name?: string; path?: string }>>) {
+  const byId = new Map<string, { id: string; name?: string; path?: string }>();
+  groups.flat().forEach((workspace) => byId.set(workspace.id, workspace));
+  return Array.from(byId.values());
+}
+
+function isManagedWorktreeWorkspace(workspace: { id?: string; path?: string }) {
+  const normalizedPath = workspace.path?.replace(/\\/g, "/") ?? "";
+  return Boolean(
+    workspace.id?.includes("-worktree-") ||
+      normalizedPath.includes("/.worktrees/") ||
+      normalizedPath.includes("/.tiller/worktrees/"),
+  );
+}
+
+function formatRuntimeSessionCount(sessionCount: number, activeSessionCount?: number) {
+  const base = `${sessionCount} 个会话`;
+  if (activeSessionCount === undefined || activeSessionCount === sessionCount) {
+    return base;
+  }
+  return `${base} · ${activeSessionCount} 活跃`;
 }

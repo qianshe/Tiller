@@ -105,7 +105,7 @@ type MissionComposerProps = {
   deckPreferences: DeckPreferences;
   enhancePromptDraft: () => void;
   promptEnhancerBusy: boolean;
-  sessionExecutionPending: boolean;
+  sessionCanCancel: boolean;
   cancelSession: (sessionId: string) => void;
   canSend: boolean;
 };
@@ -168,7 +168,7 @@ export function MissionComposer({
   deckPreferences,
   enhancePromptDraft,
   promptEnhancerBusy,
-  sessionExecutionPending,
+  sessionCanCancel,
   cancelSession,
   canSend,
 }: MissionComposerProps) {
@@ -254,7 +254,7 @@ export function MissionComposer({
               title="打开任务设置"
               onClick={() => setToolsOpen((current) => !current)}
             >
-              ＋
+              ⋯
             </Button>
             <Button
               type="button"
@@ -324,7 +324,7 @@ export function MissionComposer({
                 ✦
               </Button>
             ) : null}
-            {activeSession && sessionExecutionPending ? (
+            {activeSession && sessionCanCancel ? (
               <Button
                 variant="destructive"
                 size="icon"

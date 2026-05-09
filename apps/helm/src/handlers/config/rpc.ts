@@ -17,6 +17,7 @@ import { listProjectFiles, resolveProjectFileRoot } from "./project-files";
 import {
   createProjectWorktree,
   listGitBranches,
+  listGitWorktreeWorkspaces,
   persistProjectGitInfo,
   persistProjectGitInfoIfAvailable,
   projectWorkspaceItems,
@@ -207,15 +208,26 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       context.setWorkspaces(context.loadAvailableWorkspaces());
     }
     const latestWorkspaces = context.loadAvailableWorkspaces();
+    const latestProject = context.resolveProjectById(project.id, context.getProjects()) ?? project;
+    const configuredWorkspaces = projectWorkspaceItems(latestProject, latestWorkspaces);
+    const gitWorktreeWorkspaces = gitRoot
+      ? await listGitWorktreeWorkspaces(latestProject, gitRoot)
+      : [];
+    const nextProject = persistDiscoveredWorktrees(
+      latestProject,
+      gitWorktreeWorkspaces,
+      context.configPath,
+    );
+    if (nextProject !== latestProject) {
+      context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+      context.setWorkspaces(context.loadAvailableWorkspaces());
+    }
     return {
       ok: true,
       projectId: project.id,
       branches: gitInfo.branches,
       currentBranch: gitInfo.currentBranch,
-      workspaces: projectWorkspaceItems(
-        context.resolveProjectById(project.id, context.getProjects()) ?? project,
-        latestWorkspaces,
-      ),
+      workspaces: mergeWorkspaceItems(configuredWorkspaces, gitWorktreeWorkspaces),
       selectedWorkspaceId: gitInfo.currentBranch ?? project.defaultWorkspaceId,
       message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
     };
@@ -228,6 +240,38 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       message: error instanceof Error ? error.message : "Failed to list Git worktrees",
     };
   }
+}
+
+function mergeWorkspaceItems(
+  configuredWorkspaces: WorkspaceSummary[],
+  gitWorktreeWorkspaces: WorkspaceSummary[],
+) {
+  const byId = new Map(configuredWorkspaces.map((workspace) => [workspace.id, workspace]));
+  gitWorktreeWorkspaces.forEach((workspace) => byId.set(workspace.id, workspace));
+  return Array.from(byId.values());
+}
+
+function persistDiscoveredWorktrees(
+  project: ProjectSummary,
+  worktrees: WorkspaceSummary[],
+  configPath: string,
+) {
+  if (!worktrees.length) {
+    return project;
+  }
+  worktrees.forEach((workspace) => saveWorkspaceToConfig(workspace, configPath));
+  const workspaceIds = Array.from(
+    new Set([...(project.workspaceIds ?? []), ...worktrees.map((workspace) => workspace.id)]),
+  );
+  if (
+    workspaceIds.length === (project.workspaceIds ?? []).length &&
+    workspaceIds.every((id, index) => id === project.workspaceIds?.[index])
+  ) {
+    return project;
+  }
+  const nextProject = { ...project, workspaceIds };
+  saveProjectToConfig(nextProject, configPath);
+  return nextProject;
 }
 
 async function createBranch(

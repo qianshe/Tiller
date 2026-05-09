@@ -58,7 +58,7 @@ export function ComposerDraftSelectors({
         ref={worktreePickerRef}
         className={`mission-worktree-field ${worktreePickerOpen ? "open" : ""} relative grid gap-1`}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Workspace</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Worktree</span>
         <button
           type="button"
           className="mission-worktree-trigger flex min-h-10 items-center justify-between rounded-md border border-border-ghost bg-surface px-3 py-2 text-left text-sm text-foreground transition hover:bg-surface-emphasis"
@@ -78,7 +78,7 @@ export function ComposerDraftSelectors({
           <div
             className="mission-worktree-menu absolute left-0 top-full z-40 mt-2 grid max-h-72 w-full gap-1 overflow-auto rounded-md border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
             role="listbox"
-            aria-label="Workspace"
+            aria-label="Worktree"
           >
             {draftWorkspaceOptions.map((workspace) => (
               <button

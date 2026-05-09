@@ -16,7 +16,9 @@ test("overview page uses the starship landing hero treatment", () => {
 
   assert.match(pageSource, /className="landing-hero"/);
   assert.match(pageSource, /AI COMMAND PLATFORM/);
-  assert.match(pageSource, /Command AI\.\s*<br\s*\/?>\s*Unify Everything\./s);
+  assert.match(pageSource, /Command AI\.\s*<br\s*\/?>\s*One Deck\./s);
+  assert.match(pageSource, /landing-telemetry-track/);
+  assert.match(stylesSource, /landingTelemetryScroll/);
   assert.match(stylesSource, /\.shell\.view-overview/);
   assert.match(stylesSource, /url\("\/landing\/command-deck-bg\.png"\)/);
   assert.match(stylesSource, /\.landing-hero \{/);

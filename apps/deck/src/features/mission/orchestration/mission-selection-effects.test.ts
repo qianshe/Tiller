@@ -47,11 +47,28 @@ test("mission draft agent selection resets model before creating an ACP session"
 
 test("mission project plus owns the ACP picker and selected agent creates a real session without draft prewarm", () => {
   assert.match(sidebarSourceText, /mission-tree-agent-menu/);
+  assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
+  assert.match(composerShellSourceText, /aria-label="打开任务设置"/);
+  assert.match(composerShellSourceText, />\s*⋯\s*<\/Button>/);
   assert.doesNotMatch(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
   assert.match(workspaceSourceText, /正在创建 ACP 会话/);
+});
+
+test("mission ACP overview lists provider sessions and separates active count", () => {
+  assert.match(workspaceSourceText, /const status = statuses\[session\.id\] \?\? session\.status/);
+  assert.match(workspaceSourceText, /const active = status !== "error" && status !== "cancelled"/);
+  assert.match(workspaceSourceText, /existing\.activeSessionCount \+= active \? 1 : 0/);
+  assert.match(workspaceSourceText, /formatRuntimeSessionCount\(item\.sessionCount, item\.activeSessionCount\)/);
+});
+
+test("mission starting sessions disable send without showing cancel", () => {
+  assert.match(workspaceSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
+  assert.match(composerShellSourceText, /activeSession && sessionCanCancel/);
+  assert.match(composerShellSourceText, /disabled=\{!canSend\}/);
+  assert.match(workspaceSourceText, /activeSessionStatus !== "starting" &&/);
 });
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {

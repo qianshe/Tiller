@@ -7,6 +7,7 @@ import type {
   ProjectFileSummary,
 } from "@tiller/shared";
 import {
+  buildMissionPanelPages,
   resolveMissionActivityLoading,
   resolveVisibleProjectFiles,
 } from "./session-render-state.js";
@@ -82,6 +83,18 @@ test("project file search ignores collapsed tree state", () => {
   assert.deepEqual(
     resolveVisibleProjectFiles(files, "chat", new Set()).map((file) => file.path),
     ["src/features/chat.ts"],
+  );
+});
+
+test("mission display pages keep the Git diff list out but preserve diff detail", () => {
+  assert.deepEqual(
+    buildMissionPanelPages(3, 2, [{ id: "custom-1", title: "自定义" }]),
+    [
+      { id: "overview", title: "概览" },
+      { id: "logbook", title: "航行日志 (2)" },
+      { id: "diff-detail", title: "Diff 详情" },
+      { id: "custom-1", title: "自定义" },
+    ],
   );
 });
 

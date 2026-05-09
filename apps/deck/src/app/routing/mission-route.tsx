@@ -27,6 +27,7 @@ export function renderMissionRoute(source: any) {
     activeSessionProject,
     draftProject,
     selectedWorkspace,
+    workspaces,
     selectedDraftAgent,
     projectFileFilter,
     collapsedProjectFileDirectories,
@@ -179,6 +180,7 @@ export function renderMissionRoute(source: any) {
       activeSessionProject={activeSessionProject}
       draftProject={draftProject}
       selectedWorkspace={selectedWorkspace}
+      workspaces={workspaces}
       selectedDraftAgent={selectedDraftAgent}
       projectFileFilter={projectFileFilter}
       collapsedProjectFileDirectories={collapsedProjectFileDirectories}
