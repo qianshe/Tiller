@@ -143,7 +143,7 @@ function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
 
 export function renderDiffPatch(patch: string) {
   return (
-    <pre className="mission-diff-patch overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
+    <pre className="mission-diff-patch max-w-full min-w-0 overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
       {patch.split(/\r?\n/u).map((line, index) => (
         <span
           key={`${index}-${line.slice(0, 12)}`}

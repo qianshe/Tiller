@@ -95,13 +95,14 @@ export function useSessionCommandActions({
   function createSession(
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
+    agentIdOverride?: string,
   ) {
     return createSessionImpl(initialPrompt, initialContent, {
       selectedProjectId,
       projects,
       selectedWorkspace,
       filteredWorkspaces,
-      selectedAgentId,
+      selectedAgentId: agentIdOverride ?? selectedAgentId,
       filteredAgents,
       rpcClientRef,
       pendingPromptRef,
@@ -113,6 +114,10 @@ export function useSessionCommandActions({
       selectedReasoningEffort,
       navigateToView,
     });
+  }
+
+  function createDraftSessionForAgent(agentId: string) {
+    return createSession(undefined, undefined, agentId);
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {
@@ -215,6 +220,7 @@ export function useSessionCommandActions({
   return {
     cancelSession,
     cleanupSession,
+    createDraftSessionForAgent,
     createSession,
     requestSessionResumeStart,
     respondToPermission,

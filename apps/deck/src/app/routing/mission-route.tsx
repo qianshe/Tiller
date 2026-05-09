@@ -93,6 +93,7 @@ export function renderMissionRoute(source: any) {
     agentLocked,
     filteredAgents,
     selectDraftAgent,
+    createDraftSessionForAgent,
     submitPrompt,
     slashWrapperRef,
     removePromptImage,
@@ -242,6 +243,7 @@ export function renderMissionRoute(source: any) {
       agentLocked={agentLocked}
       filteredAgents={filteredAgents}
       selectDraftAgent={selectDraftAgent}
+      createDraftSessionForAgent={createDraftSessionForAgent}
       submitPrompt={submitPrompt}
       slashWrapperRef={slashWrapperRef}
       removePromptImage={removePromptImage}

@@ -205,7 +205,9 @@ function renderPlainMessageContent(
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   return coalesceDisplayMessages(
-    sortAgentMessagesByTimeline(items),
+    sortAgentMessagesByTimeline(items).filter(
+      (message) => !isAcpPromptWrapperEcho(message),
+    ),
     boundaryTimestamps,
   );
 }
@@ -223,6 +225,19 @@ function shouldCollapsePlainMessage(text: string) {
   return (
     lineCount > COLLAPSED_MESSAGE_LINE_LIMIT ||
     text.length > COLLAPSED_MESSAGE_CHAR_LIMIT
+  );
+}
+
+function isAcpPromptWrapperEcho(message: AgentMessage) {
+  if (message.role !== "user") {
+    return false;
+  }
+  const text = message.text.trim();
+  return (
+    /^\[[a-z-]+mode\]/iu.test(text) ||
+    text === "---" ||
+    text.includes("SYNTHESIZE findings before proceeding.") ||
+    text.includes("MANDATORY delegate_task params")
   );
 }
 

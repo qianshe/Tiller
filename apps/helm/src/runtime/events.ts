@@ -1,10 +1,10 @@
 import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 
 const liveEventSequenceBySession = new Map<string, number>();
+const assistantStreamSegmentBySession = new Map<string, number>();
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
@@ -15,6 +15,27 @@ function nextLiveEventSequence(sessionId: string) {
   const next = (liveEventSequenceBySession.get(sessionId) ?? 0) + 1;
   liveEventSequenceBySession.set(sessionId, next);
   return next;
+}
+
+function bumpAssistantStreamSegment(sessionId: string) {
+  assistantStreamSegmentBySession.set(
+    sessionId,
+    (assistantStreamSegmentBySession.get(sessionId) ?? 0) + 1,
+  );
+}
+
+function currentAssistantStreamSegmentMessageId(sessionId: string) {
+  return `${sessionId}-msg-s${assistantStreamSegmentBySession.get(sessionId) ?? 0}`;
+}
+
+function normalizeRuntimeAssistantMessageId(sessionId: string, messageId: string) {
+  return isRuntimeGeneratedMessageId(messageId)
+    ? currentAssistantStreamSegmentMessageId(sessionId)
+    : messageId;
+}
+
+function isRuntimeGeneratedMessageId(id: string) {
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-[a-z0-9]+$/iu.test(id);
 }
 
 function oneLine(value: string, maxLength = 220) {
@@ -32,30 +53,41 @@ function formatLogValue(value: unknown, maxLength = 220) {
   }
 }
 
-function isDuplicateUserEcho(recorded: AgentMessage, incoming: AgentMessage) {
-  if (
-    recorded.id === incoming.id ||
-    recorded.text === incoming.text ||
-    recorded.text.endsWith(incoming.text) ||
-    incoming.text.endsWith(recorded.text)
-  ) {
-    return true;
-  }
-
-  const delta = Math.abs(Date.parse(recorded.timestamp) - Date.parse(incoming.timestamp));
-  if (!Number.isFinite(delta) || delta > 60_000) {
-    return false;
-  }
-
-  return normalizePromptText(incoming.text).includes(normalizePromptText(recorded.text));
-}
-
-function normalizePromptText(text: string) {
-  return text.replace(/\s+/gu, " ").trim();
-}
 
 function toolDisplayName(toolCall: { title?: string; kind?: string }) {
   return formatLogValue(toolCall.title ?? toolCall.kind ?? "tool", 120);
+}
+
+function toolDebugDetails(toolCall: {
+  id: string;
+  kind?: string;
+  title?: string;
+  commandId?: string;
+  input?: string;
+  output?: string;
+}) {
+  return [
+    `call=${formatLogValue(toolCall.id, 120)}`,
+    `kind=${formatLogValue(toolCall.kind ?? "unknown", 80)}`,
+    `title=${formatLogValue(toolCall.title ?? "", 220)}`,
+    toolCall.commandId ? `command=${formatLogValue(toolCall.commandId, 160)}` : null,
+    toolCall.input ? `input=${formatLogValue(toolCall.input, 520)}` : null,
+    toolCall.output ? `output=${formatLogValue(toolCall.output, 520)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function runtimeUserEchoActivity(message: { id: string; text: string; timestamp: string }) {
+  return {
+    id: `${message.id}-activity`,
+    kind: "unknown" as const,
+    title: "ACP 用户回显",
+    status: "completed" as const,
+    input: message.text,
+    timestamp: message.timestamp,
+    updatedAt: message.timestamp,
+  };
 }
 
 export function handleRuntimeEvent(
@@ -88,29 +120,31 @@ export function handleRuntimeEvent(
       return;
     case "message":
       if (event.message.role === "user") {
-        const existingMessages = context.sessionMessageStore?.list(sessionId) as
-          | AgentMessage[]
-          | undefined;
-        if (!existingMessages) {
-          return;
-        }
-        const alreadyRecorded = existingMessages.some(
-          (message) => message.role === "user" && isDuplicateUserEcho(message, event.message),
+        context.logInfo(
+          `[tiller] 阶段=用户回显忽略 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} id=${event.message.id} chars=${event.message.text.length} text=${formatLogValue(event.message.text, 520)}`,
         );
-        if (alreadyRecorded) {
-          return;
-        }
+        const userEchoActivity = runtimeUserEchoActivity(event.message);
+        context.sessionArtifactStore.appendToolCall(sessionId, userEchoActivity);
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "tool_call",
+          toolCall: userEchoActivity,
+        });
+        return;
       }
+      const message = {
+        ...event.message,
+        id: normalizeRuntimeAssistantMessageId(sessionId, event.message.id),
+      };
       context.logInfo(
-        `[tiller] 阶段=直播消息流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} role=${event.message.role} id=${event.message.id} chars=${event.message.text.length}`,
+        `[tiller] 阶段=直播消息流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} role=${message.role} id=${message.id} chars=${message.text.length} text=${formatLogValue(message.text, 520)}`,
       );
-      context.persistSessionMessage(sessionId, event.message);
+      context.persistSessionMessage(sessionId, message);
       context.updateSessionSummary(sessionId, (current) =>
-        applyAgentMessageToSummary(current, event.message),
+        applyAgentMessageToSummary(current, message),
       );
       broadcastSessionUpdate(context, sessionId, {
         kind: "agent_message",
-        message: event.message,
+        message,
       });
       return;
     case "permission-request":
@@ -130,8 +164,9 @@ export function handleRuntimeEvent(
       });
       return;
     case "tool-call":
+      bumpAssistantStreamSegment(sessionId);
       context.logInfo(
-        `[tiller] 阶段=直播工具调用 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} tool=${toolDisplayName(event.toolCall)} status=${event.toolCall.status ?? "unknown"}`,
+        `[tiller] 阶段=直播工具调用 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} tool=${toolDisplayName(event.toolCall)} status=${event.toolCall.status ?? "unknown"} ${toolDebugDetails(event.toolCall)}`,
       );
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       broadcastSessionUpdate(context, sessionId, {
@@ -140,8 +175,9 @@ export function handleRuntimeEvent(
       });
       return;
     case "command-output":
+      bumpAssistantStreamSegment(sessionId);
       context.logInfo(
-        `[tiller] 阶段=命令输出流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length}`,
+        `[tiller] 阶段=命令输出流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} text=${formatLogValue(event.chunk.text, 520)}`,
       );
       context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
       broadcastSessionUpdate(context, sessionId, {

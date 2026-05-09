@@ -30,6 +30,8 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
 
   const html = renderToStaticMarkup(renderDiffPatch(patch));
 
+  assert.match(html, /max-w-full/);
+  assert.match(html, /min-w-0/);
   assert.match(html, /overflow-x-auto/);
   assert.match(html, /diff-line-meta/);
   assert.match(html, /diff-line-hunk/);

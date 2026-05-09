@@ -138,23 +138,23 @@ export function MissionDisplayPanel({
     }
     if (selectedPage.id === "diff-detail") {
       return (
-        <div className="mission-panel-page mission-diff-detail grid gap-2">
+        <div className="mission-panel-page mission-diff-detail grid min-w-0 gap-2">
           {" "}
           {diffs.length ? (
             diffs.map((file) => (
               <details
                 key={file.path}
-                className={cn("mission-diff-file rounded-md border border-border-ghost bg-surface-sunken", selectedDiffFilePath === file.path && "active ring-2 ring-ring/30")}
+                className={cn("mission-diff-file min-w-0 overflow-hidden rounded-md border border-border-ghost bg-surface-sunken", selectedDiffFilePath === file.path && "active ring-2 ring-ring/30")}
                 open={selectedDiffFilePath === file.path || diffs.length === 1 || undefined}
               >
                 {" "}
-                <summary className="mission-file-row mission-diff-file-summary grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground [&::-webkit-details-marker]:hidden">
+                <summary className="mission-file-row mission-diff-file-summary grid min-w-0 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground [&::-webkit-details-marker]:hidden">
                   {" "}
                   <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary`}>
                     {" "}
                     {formatDiffStatus(file.status)}{" "}
                   </span>{" "}
-                  <strong>{file.path}</strong> {renderDiffStats(file)}{" "}
+                  <strong className="min-w-0 truncate">{file.path}</strong> {renderDiffStats(file)}{" "}
                   <span className="mission-diff-expand-icon" aria-hidden="true">
                     {" "}
                     ▸{" "}

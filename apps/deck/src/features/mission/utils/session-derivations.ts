@@ -127,7 +127,7 @@ export function resolveMissionSelectedProjectId(input: {
   activeSessionProjectId: string | null | undefined;
   selectedProjectId: string | null | undefined;
 }) {
-  return input.activeSessionProjectId ?? null;
+  return input.activeSessionProjectId ?? input.selectedProjectId ?? null;
 }
 
 export function resolveModelOptionsFromConfig(

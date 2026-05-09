@@ -64,7 +64,7 @@ function createTestContext(
   } as unknown as HelmHandlerContext;
 }
 
-test("runtime session.message persists and broadcasts streaming chunks without printing content", () => {
+test("runtime session.message persists and broadcasts streaming chunks with debug text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
@@ -108,9 +108,9 @@ test("runtime session.message persists and broadcasts streaming chunks without p
   }
 
   assert.equal(logs.length, 2);
-  assert.match(logs[0], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=1/);
-  assert.match(logs[1], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=4/);
-  assert.doesNotMatch(logs.join("\n"), /好\n主人|preview=/);
+  assert.match(logs[0], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=1 .*text=你/);
+  assert.match(logs[1], /阶段=直播消息流 seq=\d+ .*role=assistant .*chars=4 .*text=好 主人/);
+  assert.doesNotMatch(logs.join("\n"), /preview=/);
   assert.deepEqual(writes, []);
   assert.equal(capture.persisted.length, 2);
   assert.deepEqual(
@@ -123,7 +123,11 @@ test("runtime session.message persists and broadcasts streaming chunks without p
 test("runtime user echo messages are ignored because prompts are already persisted before sending", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture);
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+  };
   const writes: string[] = [];
   const originalWrite = process.stdout.write;
   process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -149,10 +153,16 @@ test("runtime user echo messages are ignored because prompts are already persist
     process.stdout.write = originalWrite;
   }
 
-  assert.deepEqual(logs, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /阶段=用户回显忽略/);
+  assert.match(logs[0], /text=你好/);
   assert.deepEqual(writes, []);
   assert.deepEqual(capture.persisted, []);
-  assert.deepEqual(capture.broadcasts, []);
+  assert.equal(appendedToolCalls.length, 1);
+  assert.equal(appendedToolCalls[0]?.title, "ACP 用户回显");
+  assert.equal(appendedToolCalls[0]?.input, "你好");
+  assert.equal(capture.broadcasts.length, 1);
+  assert.deepEqual((capture.broadcasts[0] as any).params.update.kind, "tool_call");
 });
 
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
@@ -184,12 +194,75 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
     context,
   );
 
-  assert.deepEqual(logs, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /阶段=用户回显忽略/);
+  assert.match(logs[0], /MAXIMIZE SEARCH EFFORT/);
   assert.deepEqual(capture.persisted, []);
-  assert.deepEqual(capture.broadcasts, []);
+  assert.deepEqual(capture.broadcasts.map((item: any) => item.params.update.kind), ["tool_call"]);
 });
 
-test("runtime tool-call events log only frontend tool name and broadcast", () => {
+test("runtime assistant chunks stay split when tool activity occurs between text streams", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const appendedToolCalls: AgentToolCall[] = [];
+  const context = createTestContext(logs, capture);
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-a",
+        role: "assistant",
+        text: "工具前说明",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-branch",
+        kind: "tool",
+        title: "Show branch",
+        status: "completed",
+        timestamp: "2026-04-30T00:00:02.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-b",
+        role: "assistant",
+        text: "工具后继续",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.persisted.map((message) => [message.id, message.text]),
+    [
+      ["session-1-msg-s0", "工具前说明"],
+      ["session-1-msg-s1", "工具后继续"],
+    ],
+  );
+  assert.equal(appendedToolCalls.length, 1);
+});
+
+test("runtime tool-call events log explicit debug details and broadcast", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
   const appendedToolCalls: unknown[] = [];
@@ -209,6 +282,8 @@ test("runtime tool-call events log only frontend tool name and broadcast", () =>
         status: "running",
         timestamp: "2026-04-30T00:00:01.000Z",
         updatedAt: "2026-04-30T00:00:01.000Z",
+        input: "git branch --show-current",
+        output: "main",
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -217,7 +292,11 @@ test("runtime tool-call events log only frontend tool name and broadcast", () =>
   assert.equal(logs.length, 1);
   assert.match(logs[0], /阶段=直播工具调用/);
   assert.match(logs[0], /tool=zhi/);
-  assert.doesNotMatch(logs[0], /id=call-1/);
+  assert.match(logs[0], /call=call-1/);
+  assert.match(logs[0], /kind=tool/);
+  assert.match(logs[0], /title=zhi/);
+  assert.match(logs[0], /input=git branch --show-current/);
+  assert.match(logs[0], /output=main/);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, [
     {
@@ -233,6 +312,8 @@ test("runtime tool-call events log only frontend tool name and broadcast", () =>
             status: "running",
             timestamp: "2026-04-30T00:00:01.000Z",
             updatedAt: "2026-04-30T00:00:01.000Z",
+            input: "git branch --show-current",
+            output: "main",
           },
         },
       },
@@ -266,7 +347,7 @@ test("runtime tool-call stage log keeps frontend tool name", () => {
   assert.equal(logs.length, 1);
   assert.match(
     logs[0],
-    /^\[tiller\] 阶段=直播工具调用 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 tool=zhi status=running$/,
+    /^\[tiller\] 阶段=直播工具调用 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 tool=zhi status=running call=call-1 kind=tool title=zhi$/,
   );
 });
 
@@ -291,7 +372,7 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
   );
 });
 
-test("runtime command-output logs metadata without streaming content", () => {
+test("runtime command-output logs debug stream text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
   const appendedOutputs: unknown[] = [];
@@ -320,7 +401,8 @@ test("runtime command-output logs metadata without streaming content", () => {
   assert.match(logs[0], /command=cmd-1/);
   assert.match(logs[0], /stream=stdout/);
   assert.match(logs[0], /chars=31/);
-  assert.doesNotMatch(logs[0], /SECRET_STREAM_TEXT|with details|preview=/);
+  assert.match(logs[0], /text=SECRET_STREAM_TEXT with details/);
+  assert.doesNotMatch(logs[0], /preview=/);
   assert.equal(appendedOutputs.length, 1);
   assert.equal(capture.broadcasts.length, 1);
 });

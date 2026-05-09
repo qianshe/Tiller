@@ -99,6 +99,7 @@ export function MissionWorkspace(props: any) {
     agentLocked,
     filteredAgents,
     selectDraftAgent,
+    createDraftSessionForAgent,
     submitPrompt,
     slashWrapperRef,
     removePromptImage,
@@ -207,6 +208,8 @@ export function MissionWorkspace(props: any) {
     effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
   ]);
+  const shouldShowComposer = Boolean(activeSession);
+  const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId);
   return (
     <MissionPage
       layoutRef={missionLayoutRef}
@@ -235,6 +238,10 @@ export function MissionWorkspace(props: any) {
           sessions={sessions}
           sessionCountsByProject={sessionCountsByProject}
           agents={agents}
+          selectedAgentId={selectedAgentId}
+          agentPickerOpen={agentPickerOpen}
+          selectDraftAgent={selectDraftAgent}
+          createDraftSessionForAgent={createDraftSessionForAgent}
           setSelectedMissionHelmId={setSelectedMissionHelmId}
           setSelectedProjectId={setSelectedProjectId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}
@@ -286,69 +293,77 @@ export function MissionWorkspace(props: any) {
           showPermissionWorkspace={technicalPanels.showPermissionWorkspace}
           onRespondToPermission={respondToPermission}
         >
-          <MissionComposer
-            activeSession={activeSession}
-            worktreePickerRef={worktreePickerRef}
-            worktreePickerOpen={worktreePickerOpen}
-            setWorktreePickerOpen={setWorktreePickerOpen}
-            agentPickerRef={agentPickerRef}
-            agentPickerOpen={agentPickerOpen}
-            setAgentPickerOpen={setAgentPickerOpen}
-            selectedWorkspaceName={selectedWorkspaceName}
-            draftWorkspaceOptions={draftWorkspaceOptions}
-            selectedWorkspaceId={selectedWorkspaceId}
-            selectDraftWorkspace={selectDraftWorkspace}
-            currentGitBranch={currentGitBranch}
-            copy={copy}
-            agentLocked={agentLocked}
-            selectedDraftAgent={selectedDraftAgent}
-            filteredAgents={filteredAgents}
-            selectedAgentId={selectedAgentId}
-            selectDraftAgent={selectDraftAgent}
-            submitPrompt={submitPrompt}
-            slashWrapperRef={slashWrapperRef}
-            promptImages={promptImages}
-            removePromptImage={removePromptImage}
-            imagePasteNotice={imagePasteNotice}
-            missionPromptRef={missionPromptRef}
-            prompt={prompt}
-            setPrompt={setPrompt}
-            handleMissionPromptKeyDown={handleMissionPromptKeyDown}
-            handleMissionPromptPaste={handleMissionPromptPaste}
-            draftPromptPlaceholder={draftPromptPlaceholder}
-            slashPopupOpen={slashPopupOpen}
-            filteredSlashCommands={filteredSlashCommands}
-            slashSelectedIndex={slashSelectedIndex}
-            applySlashCommand={applySlashCommand}
-            setSlashSelectedIndex={setSlashSelectedIndex}
-            showDraftAgentModeSelect={showDraftAgentModeSelect}
-            missionConfigPicker={missionConfigPicker}
-            setMissionConfigPicker={setMissionConfigPicker}
-            draftAgentModePickerLabel={draftAgentModePickerLabel}
-            draftAgentModeOptions={draftAgentModeOptions}
-            effectiveDraftAgentMode={effectiveDraftAgentMode}
-            updateSessionDraftPreferences={updateSessionDraftPreferences}
-            draftModelPlaceholder={draftModelPlaceholder}
-            draftModelPickerDisabled={draftModelPickerDisabled}
-            draftModelPickerLabel={draftModelPickerLabel}
-            draftModelLoading={draftModelLoading}
-            draftModelBaseOptions={draftModelBaseOptions}
-            resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
-            draftAllModelOptions={draftAllModelOptions}
-            draftConfigOptions={draftConfigOptions}
-            effectiveDraftReasoningEffort={effectiveDraftReasoningEffort}
-            effectiveDraftModelBase={effectiveDraftModelBase}
-            resolveCombinedModelValue={resolveCombinedModelValue}
-            showDraftReasoningSelect={showDraftReasoningSelect}
-            resolveReasoningLabel={resolveReasoningLabel}
-            draftReasoningOptions={draftReasoningOptions}
-            deckPreferences={deckPreferences}
-            enhancePromptDraft={enhancePromptDraft}
-            promptEnhancerBusy={promptEnhancerBusy}
-            sessionExecutionPending={sessionExecutionPending}
-            cancelSession={cancelSession}
-            canSend={canSend}
-          />{" "}
+          {shouldShowDraftPreparing ? (
+            <div className="mission-draft-preparing m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+              <strong className="block text-foreground">正在创建 ACP 会话</strong>
+              <span>{selectedDraftAgent?.name ?? "ACP Agent"} 正在启动新会话，完成后将显示会话输入框。</span>
+            </div>
+          ) : null}
+          {shouldShowComposer ? (
+            <MissionComposer
+              activeSession={activeSession}
+              worktreePickerRef={worktreePickerRef}
+              worktreePickerOpen={worktreePickerOpen}
+              setWorktreePickerOpen={setWorktreePickerOpen}
+              agentPickerRef={agentPickerRef}
+              agentPickerOpen={agentPickerOpen}
+              setAgentPickerOpen={setAgentPickerOpen}
+              selectedWorkspaceName={selectedWorkspaceName}
+              draftWorkspaceOptions={draftWorkspaceOptions}
+              selectedWorkspaceId={selectedWorkspaceId}
+              selectDraftWorkspace={selectDraftWorkspace}
+              currentGitBranch={currentGitBranch}
+              copy={copy}
+              agentLocked={agentLocked}
+              selectedDraftAgent={selectedDraftAgent}
+              filteredAgents={filteredAgents}
+              selectedAgentId={selectedAgentId}
+              selectDraftAgent={selectDraftAgent}
+              submitPrompt={submitPrompt}
+              slashWrapperRef={slashWrapperRef}
+              promptImages={promptImages}
+              removePromptImage={removePromptImage}
+              imagePasteNotice={imagePasteNotice}
+              missionPromptRef={missionPromptRef}
+              prompt={prompt}
+              setPrompt={setPrompt}
+              handleMissionPromptKeyDown={handleMissionPromptKeyDown}
+              handleMissionPromptPaste={handleMissionPromptPaste}
+              draftPromptPlaceholder={draftPromptPlaceholder}
+              slashPopupOpen={slashPopupOpen}
+              filteredSlashCommands={filteredSlashCommands}
+              slashSelectedIndex={slashSelectedIndex}
+              applySlashCommand={applySlashCommand}
+              setSlashSelectedIndex={setSlashSelectedIndex}
+              showDraftAgentModeSelect={showDraftAgentModeSelect}
+              missionConfigPicker={missionConfigPicker}
+              setMissionConfigPicker={setMissionConfigPicker}
+              draftAgentModePickerLabel={draftAgentModePickerLabel}
+              draftAgentModeOptions={draftAgentModeOptions}
+              effectiveDraftAgentMode={effectiveDraftAgentMode}
+              updateSessionDraftPreferences={updateSessionDraftPreferences}
+              draftModelPlaceholder={draftModelPlaceholder}
+              draftModelPickerDisabled={draftModelPickerDisabled}
+              draftModelPickerLabel={draftModelPickerLabel}
+              draftModelLoading={draftModelLoading}
+              draftModelBaseOptions={draftModelBaseOptions}
+              resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
+              draftAllModelOptions={draftAllModelOptions}
+              draftConfigOptions={draftConfigOptions}
+              effectiveDraftReasoningEffort={effectiveDraftReasoningEffort}
+              effectiveDraftModelBase={effectiveDraftModelBase}
+              resolveCombinedModelValue={resolveCombinedModelValue}
+              showDraftReasoningSelect={showDraftReasoningSelect}
+              resolveReasoningLabel={resolveReasoningLabel}
+              draftReasoningOptions={draftReasoningOptions}
+              deckPreferences={deckPreferences}
+              enhancePromptDraft={enhancePromptDraft}
+              promptEnhancerBusy={promptEnhancerBusy}
+              sessionExecutionPending={sessionExecutionPending}
+              cancelSession={cancelSession}
+              canSend={canSend}
+            />
+          ) : null}{" "}
         </MissionChatPane>{" "}
         {!effectiveDisplayCollapsed ? (
           <MissionPaneResizer

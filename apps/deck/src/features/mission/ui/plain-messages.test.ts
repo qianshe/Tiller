@@ -65,6 +65,69 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
   ]);
 });
 
+test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
+  const messages: AgentMessage[] = [
+    {
+      id: "wrapper-1",
+      role: "user",
+      text: "[analyze-mode]\nANALYSIS MODE. Gather context before diving deep:",
+      timestamp: "2026-05-06T01:05:01.000Z",
+    },
+    {
+      id: "wrapper-2",
+      role: "user",
+      text: "SYNTHESIZE findings before proceeding.",
+      timestamp: "2026-05-06T01:05:02.000Z",
+    },
+    {
+      id: "wrapper-3",
+      role: "user",
+      text: "---",
+      timestamp: "2026-05-06T01:05:03.000Z",
+    },
+    {
+      id: "real-user",
+      role: "user",
+      text: "帮我分析下现在项目的分支是什么？",
+      timestamp: "2026-05-06T01:05:04.000Z",
+    },
+  ];
+
+  assert.deepEqual(resolveVisiblePlainMessages(messages).map((item) => item.text), [
+    "帮我分析下现在项目的分支是什么？",
+  ]);
+});
+
+test("plain message timeline filters whole OpenCode wrapper echo messages", () => {
+  const wrappedPrompt = [
+    "[analyze-mode]",
+    "ANALYSIS MODE. Gather context before diving deep:",
+    "SYNTHESIZE findings before proceeding.",
+    "---",
+    "MANDATORY delegate_task params: ALWAYS include load_skills=[] and run_in_background when calling delegate_task.",
+    "---",
+    "帮我分析下现在项目的分支是什么？",
+  ].join("\n");
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages([
+      {
+        id: "real-user",
+        role: "user",
+        text: "帮我分析下现在项目的分支是什么？",
+        timestamp: "2026-05-06T01:05:00.000Z",
+      },
+      {
+        id: "wrapper-whole",
+        role: "user",
+        text: wrappedPrompt,
+        timestamp: "2026-05-06T01:05:01.000Z",
+      },
+    ]).map((item) => item.text),
+    ["帮我分析下现在项目的分支是什么？"],
+  );
+});
+
 test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
   const chunks: AgentMessage[] = [
     {

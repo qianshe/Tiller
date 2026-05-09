@@ -187,6 +187,7 @@ export function App() {
     setSelectedProjectId: runtimeState.setSelectedProjectId,
     setSelectedWorkspaceId: runtimeState.setSelectedWorkspaceId,
     setSelectedAgentId: runtimeState.setSelectedAgentId,
+    setSelectedModel: runtimeState.setSelectedModel,
     setActiveSessionId: deckData.setActiveSessionId,
     setWorktreePickerOpen: runtimeState.setWorktreePickerOpen,
     setAgentPickerOpen: runtimeState.setAgentPickerOpen,

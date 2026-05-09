@@ -251,13 +251,13 @@ test("resolveMissionSelectedProjectId prefers the active session project over st
   );
 });
 
-test("resolveMissionSelectedProjectId does not highlight a draft project before a session starts", () => {
+test("resolveMissionSelectedProjectId highlights the draft project before a session starts", () => {
   assert.equal(
     resolveMissionSelectedProjectId({
       activeSessionProjectId: null,
       selectedProjectId: "draft-project",
     }),
-    null,
+    "draft-project",
   );
 });
 

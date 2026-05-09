@@ -70,6 +70,11 @@ export function ActivityLogPanel({
               key={timelineItem.id}
               text={timelineItem.text}
             />
+          ) : timelineItem.kind === "assistant" ? (
+            <AssistantActivityCard
+              key={timelineItem.id}
+              text={timelineItem.text}
+            />
           ) : (
             <ToolActivityCard
               key={timelineItem.item.id}
@@ -112,6 +117,12 @@ type ActivityTimelineItem =
       text: string;
     }
   | {
+      kind: "assistant";
+      id: string;
+      timestamp: string;
+      text: string;
+    }
+  | {
       kind: "tool";
       timestamp: string;
       item: ReturnType<typeof groupToolCalls>[number];
@@ -136,8 +147,18 @@ function buildActivityTimeline(
       text: message.text,
     }));
 
+  const assistantItems = sessionMessages
+    .filter((message) => message.role === "assistant")
+    .map((message) => ({
+      kind: "assistant" as const,
+      id: message.id,
+      timestamp: message.timestamp,
+      text: message.text,
+    }));
+
   return [
     ...promptItems,
+    ...assistantItems,
     ...toolItems.map((item) => ({
       kind: "tool" as const,
       timestamp: item.timestamp,
@@ -151,6 +172,22 @@ function buildActivityTimeline(
 function PromptActivityCard({ text }: { text: string }) {
   return (
     <ActivityDetails accent="prompt" icon="↗" kind="Prompt" title={summarizeActivityText(text)} stream="user">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
+        {text}
+      </pre>
+    </ActivityDetails>
+  );
+}
+
+function AssistantActivityCard({ text }: { text: string }) {
+  return (
+    <ActivityDetails
+      accent="assistant"
+      icon="↙"
+      kind="Assistant"
+      title={summarizeActivityText(text) || "ACP 回复"}
+      stream="assistant"
+    >
       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
         {text}
       </pre>
@@ -245,6 +282,8 @@ function activityToneClass(accent: string) {
   switch (accent) {
     case "prompt":
       return { border: "border-l-2 border-l-sky-400", icon: "bg-sky-400/15 text-sky-500" };
+    case "assistant":
+      return { border: "border-l-2 border-l-lime-400", icon: "bg-lime-400/15 text-lime-600" };
     case "tool-call-mcp":
       return { border: "border-l-2 border-l-violet-400", icon: "bg-violet-400/15 text-violet-500" };
     case "tool-call-shell":

@@ -14,10 +14,44 @@ const composerShellSourceText = readFileSync(
   new URL("../ui/composer.tsx", import.meta.url),
   "utf8",
 );
+const workspaceSourceText = readFileSync(
+  new URL("../ui/workspace.tsx", import.meta.url),
+  "utf8",
+);
+const selectionSourceText = readFileSync(
+  new URL("../hooks/selection.ts", import.meta.url),
+  "utf8",
+);
+const sidebarSourceText = readFileSync(
+  new URL("../ui/sidebar-project-node.tsx", import.meta.url),
+  "utf8",
+);
 const viewModelSourceText = readFileSync(
   new URL("./mission-view-model.ts", import.meta.url),
   "utf8",
 );
+
+test("mission draft composer stays empty until an ACP session exists", () => {
+  assert.match(workspaceSourceText, /const shouldShowComposer = Boolean\(activeSession\)/);
+  assert.doesNotMatch(workspaceSourceText, /selectedAgentId && !draftAgentPreparing/);
+  assert.match(workspaceSourceText, /\{shouldShowComposer \? \(/);
+  assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
+});
+
+test("mission draft agent selection resets model before creating an ACP session", () => {
+  assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
+  assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
+  assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
+  assert.doesNotMatch(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
+});
+
+test("mission project plus owns the ACP picker and selected agent creates a real session", () => {
+  assert.match(sidebarSourceText, /mission-tree-agent-menu/);
+  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
+  assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
+  assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
+  assert.match(workspaceSourceText, /正在创建 ACP 会话/);
+});
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {
   const destructuredSource = sourceText.match(
@@ -26,6 +60,11 @@ test("mission selection effects reads setAgentModelOptions from source context",
 
   assert.ok(destructuredSource, "source destructuring block should exist");
   assert.match(destructuredSource, /\bsetAgentModelOptions\b/);
+});
+
+test("mission selection effects leaves ACP startup to session/new", () => {
+  assert.doesNotMatch(sourceText, /session\/prewarm/);
+  assert.match(sourceText, /agent\/get_model_options/);
 });
 
 test("mission selection effects preserves available model options while probing", () => {
