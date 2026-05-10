@@ -94,6 +94,18 @@ h3 {
   display: none;
 }
 
+.mission-panel-head > div,
+.mission-inspector-section-head > div {
+  min-width: 0;
+}
+
+.mission-panel-head h3,
+.mission-inspector-section-head h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .compact {
   margin-top: 4px;
 }

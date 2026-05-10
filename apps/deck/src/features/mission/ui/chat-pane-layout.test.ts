@@ -292,6 +292,11 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
 });
 
+test("mission wide headers truncate long titles instead of consuming layout", () => {
+  assert.match(shellStylesSource, /\.mission-panel-head > div,\s*\.mission-inspector-section-head > div\s*{[^}]*min-width:\s*0;/s);
+  assert.match(shellStylesSource, /\.mission-panel-head h3,\s*\.mission-inspector-section-head h3\s*{[^}]*text-overflow:\s*ellipsis;/s);
+});
+
 test("mission display and logbook headers stay compact on mobile", () => {
   assert.match(sessionOverviewCardSource, /mission-session-overview/);
   assert.match(sessionOverviewCardSource, /mission-session-metrics/);
