@@ -29,7 +29,6 @@ import {
   type MissionConfigPicker,
 } from "./composer-config-controls";
 import { ComposerAttachments } from "./composer-attachments";
-import { ComposerDraftSelectors } from "./composer-draft-selectors";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
@@ -190,27 +189,6 @@ export function MissionComposer({
       className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost bg-surface p-3"
       data-mission-swipe-lock="true"
     >
-      {!activeSession ? (
-        <ComposerDraftSelectors
-          worktreePickerRef={worktreePickerRef}
-          worktreePickerOpen={worktreePickerOpen}
-          setWorktreePickerOpen={setWorktreePickerOpen}
-          agentPickerRef={agentPickerRef}
-          agentPickerOpen={agentPickerOpen}
-          setAgentPickerOpen={setAgentPickerOpen}
-          selectedWorkspaceName={selectedWorkspaceName}
-          draftWorkspaceOptions={draftWorkspaceOptions}
-          selectedWorkspaceId={selectedWorkspaceId}
-          selectDraftWorkspace={selectDraftWorkspace}
-          currentGitBranch={currentGitBranch}
-          copy={copy}
-          agentLocked={agentLocked}
-          selectedDraftAgent={selectedDraftAgent}
-          filteredAgents={filteredAgents}
-          selectedAgentId={selectedAgentId}
-          selectDraftAgent={selectDraftAgent}
-        />
-      ) : null}
       <form
         className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface p-3"
         onSubmit={submitPrompt}

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
-export const method = "agent/reconnect" as const;
+export const method = "agent/connect" as const;
 export const ParamsSchema = z.object({
   providerId: z.string(),
   projectId: z.string().optional(),
@@ -24,5 +24,5 @@ export const descriptor = requestDescriptor({
   method,
   paramsSchema: ParamsSchema,
   resultSchema: ResultSchema,
-  description: "Reconnect an ACP provider process without creating a session.",
+  description: "Open or reuse an ACP provider connection without creating a session.",
 });

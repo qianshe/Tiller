@@ -12,6 +12,8 @@ import * as workspaceGitListBranches from "./workspace/git/list-branches";
 import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
 import * as agentList from "./agent/list";
 import * as agentTest from "./agent/test";
+import * as agentConnections from "./agent/connections";
+import * as agentConnect from "./agent/connect";
 import * as agentReconnect from "./agent/reconnect";
 import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
@@ -54,6 +56,8 @@ const METHOD_DESCRIPTORS = {
   [workspaceGitCreateBranch.method]: workspaceGitCreateBranch.descriptor,
   [agentList.method]: agentList.descriptor,
   [agentTest.method]: agentTest.descriptor,
+  [agentConnections.method]: agentConnections.descriptor,
+  [agentConnect.method]: agentConnect.descriptor,
   [agentReconnect.method]: agentReconnect.descriptor,
   [agentGetModelOptions.method]: agentGetModelOptions.descriptor,
   [agentSave.method]: agentSave.descriptor,
@@ -98,6 +102,8 @@ export const CLIENT_REQUEST_METHODS = [
   workspaceGitCreateBranch.method,
   agentList.method,
   agentTest.method,
+  agentConnections.method,
+  agentConnect.method,
   agentReconnect.method,
   agentGetModelOptions.method,
   agentSave.method,

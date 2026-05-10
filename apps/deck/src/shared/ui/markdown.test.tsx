@@ -110,6 +110,15 @@ test("markdown renders Mermaid fences with a diagram shell", () => {
   assert.doesNotMatch(html, /markdown-code-block/);
 });
 
+test("markdown waits for a closing Mermaid fence before rendering a diagram shell", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["```mermaid", "flowchart TD", "  A -->"].join("\n")} />,
+  );
+
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.match(html, /markdown-code-block/);
+});
+
 test("markdown code highlighting reuses cached results for identical code", async () => {
   clearMarkdownHighlightCache();
 

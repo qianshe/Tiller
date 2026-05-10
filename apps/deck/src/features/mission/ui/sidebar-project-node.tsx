@@ -20,7 +20,7 @@ type SidebarProjectNodeProps = {
   agents: AcpAgentProvider[];
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
-  createDraftSessionForAgent: (agentId: string) => boolean;
+  selectDraftAgent: (agentId: string) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
@@ -54,7 +54,7 @@ export function SidebarProjectNode({
   agents,
   selectedAgentId,
   agentPickerOpen,
-  createDraftSessionForAgent,
+  selectDraftAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
   setSelectedWorkspaceId,
@@ -159,7 +159,7 @@ export function SidebarProjectNode({
                 )}
                 onClick={() => {
                   setAgentPickerOpen(false);
-                  createDraftSessionForAgent(agent.id);
+                  selectDraftAgent(agent.id);
                 }}
               >
                 {agent.name}

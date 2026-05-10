@@ -43,6 +43,22 @@ export type RuntimeOverviewItem = {
   }>;
 };
 
+function runtimeStatusBadgeClass(status: string): string {
+  if (status.includes("已连接") || status.includes("ready")) {
+    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status.includes("未连接") || status.includes("closed")) {
+    return "bg-surface-emphasis text-muted-foreground";
+  }
+  if (status.includes("错误") || status.includes("失败") || status.includes("error")) {
+    return "bg-destructive/15 text-destructive";
+  }
+  if (status.includes("连接中") || status.includes("预热中") || status.includes("starting")) {
+    return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  }
+  return "bg-primary-soft text-primary";
+}
+
 type MissionDisplayPanelProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
@@ -220,7 +236,12 @@ export function MissionDisplayPanel({
                             {runtime.canReconnect ? "重连" : "连接"}
                           </button>
                         ) : null}
-                        <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            runtimeStatusBadgeClass(runtime.status),
+                          )}
+                        >
                           {runtime.status}
                         </span>
                       </span>

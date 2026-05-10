@@ -246,7 +246,14 @@ export function useMissionSelectionEffects(source: any) {
       return;
     }
     if (cached?.loading) {
-      return;
+      const loadingStartedAt = (cached as any).requestedAt;
+      if (typeof loadingStartedAt === "number" && Date.now() - loadingStartedAt < 15_000) {
+        const retryDelayMs = Math.max(0, 15_000 - (Date.now() - loadingStartedAt) + 50);
+        const retryTimer = window.setTimeout(() => {
+          setAgentModelOptions((current) => ({ ...current }));
+        }, retryDelayMs);
+        return () => window.clearTimeout(retryTimer);
+      }
     }
     setAgentModelOptions((current) => ({
       ...current,
@@ -254,6 +261,7 @@ export function useMissionSelectionEffects(source: any) {
         loading: true,
         warmed: false,
         projectId: selectedProjectId,
+        requestedAt: Date.now(),
         modelOptions: cached?.modelOptions ?? [],
         configOptions: cached?.configOptions ?? [],
         state: cached?.state ?? {},

@@ -28,6 +28,9 @@ type MermaidRenderState = {
 };
 
 const MERMAID_LANGUAGE = "mermaid";
+const OPEN_MERMAID_FENCE_LINE = /^([ \t]{0,3})(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/iu;
+const OPEN_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})(?:[ \t].*)?$/u;
+const CLOSE_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/u;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
@@ -224,9 +227,67 @@ export async function resolveMarkdownCodeHighlight(
 }
 
 export function normalizeMarkdownMessageText(text: string) {
-  return text
-    .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
-    .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2");
+  return deferOpenMermaidFence(
+    text
+      .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
+      .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2"),
+  );
+}
+
+function deferOpenMermaidFence(text: string) {
+  const lines = text.split("\n");
+  let openFence: { marker: "`" | "~"; length: number; mermaidLineIndex?: number } | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.replace(/\r$/, "") ?? "";
+
+    if (openFence) {
+      const closeMatch = CLOSE_MARKDOWN_FENCE_LINE.exec(line);
+      const closeMarker = closeMatch?.[1];
+      if (
+        closeMarker?.[0] === openFence.marker &&
+        closeMarker.length >= openFence.length
+      ) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    const mermaidMatch = OPEN_MERMAID_FENCE_LINE.exec(line);
+    if (mermaidMatch?.[2]) {
+      const marker = mermaidMatch[2];
+      openFence = {
+        marker: marker[0] as "`" | "~",
+        length: marker.length,
+        mermaidLineIndex: index,
+      };
+      continue;
+    }
+
+    const openMatch = OPEN_MARKDOWN_FENCE_LINE.exec(line);
+    const openMarker = openMatch?.[1];
+    if (openMarker) {
+      openFence = {
+        marker: openMarker[0] as "`" | "~",
+        length: openMarker.length,
+      };
+    }
+  }
+
+  if (openFence?.mermaidLineIndex === undefined) {
+    return text;
+  }
+
+  const mermaidFenceLine = lines[openFence.mermaidLineIndex];
+  if (mermaidFenceLine === undefined) {
+    return text;
+  }
+
+  lines[openFence.mermaidLineIndex] = mermaidFenceLine.replace(
+    /mermaid/iu,
+    "text",
+  );
+  return lines.join("\n");
 }
 
 function isThinkingParagraph(node: ReactNode) {

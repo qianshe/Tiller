@@ -177,7 +177,7 @@ export function MissionWorkspace(props: any) {
     setProjectFileFilter,
     toggleProjectFileDirectory,
     defaultLogbookVisibleLimit,
-    agentModelOptions,
+    agentModelOptions = {},
   } = props;
   const {
     canSend,
@@ -245,9 +245,13 @@ export function MissionWorkspace(props: any) {
                       filteredAgents.map((agent: any) => (
                         <DropdownMenuItem
                           key={`${workspace.id}:${agent.id}`}
-                          onSelect={() => createDraftSessionForAgent(agent.id, workspace)}
+                          onSelect={() => {
+                            setActiveSessionId(null);
+                            selectDraftWorkspace(workspace.id);
+                            selectDraftAgent(agent.id);
+                          }}
                         >
-                          用 {agent.name ?? agent.id} 创建会话
+                          用 {agent.name ?? agent.id} 连接 ACP
                         </DropdownMenuItem>
                       ))
                     ) : (
@@ -446,7 +450,7 @@ export function MissionWorkspace(props: any) {
           agents={agents}
           selectedAgentId={selectedAgentId}
           agentPickerOpen={agentPickerOpen}
-          createDraftSessionForAgent={createDraftSessionForAgent}
+          selectDraftAgent={selectDraftAgent}
           setSelectedMissionHelmId={setSelectedMissionHelmId}
           setSelectedProjectId={setSelectedProjectId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}

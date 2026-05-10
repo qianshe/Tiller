@@ -45,7 +45,8 @@ test("mission draft composer waits for ACP connection before creating a session"
 test("mission draft agent selection resets model before creating an ACP session", () => {
   assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
   assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
-  assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
+  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
+  assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "agent\/connect"/);
   assert.doesNotMatch(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
 });
@@ -55,8 +56,8 @@ test("mission project plus owns the ACP picker and selected agent connects befor
   assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
   assert.match(composerShellSourceText, /aria-label="打开任务设置"/);
   assert.match(composerShellSourceText, />\s*⋯\s*<\/Button>/);
-  assert.doesNotMatch(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
-  assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
+  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
+  assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
   assert.match(workspaceSourceText, /正在连接 ACP/);
