@@ -21,6 +21,7 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "./session-actions";
+import { resolveSessionRestoreGate } from "../utils/session-state";
 
 type MutableRef<T> = { current: T };
 
@@ -31,6 +32,8 @@ type UseSessionCommandActionsOptions = {
   rpcClientRef: MutableRef<DeckRpcClient | null>;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
+  activeSession?: SessionSummary | null;
+  statuses: Record<string, SessionSummary["status"]>;
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
   selectedWorkspace?: WorkspaceSummary | null;
@@ -79,6 +82,8 @@ export function useSessionCommandActions({
   rpcClientRef,
   setImagePasteNotice,
   activeSessionId,
+  activeSession,
+  statuses,
   selectedProjectId,
   projects,
   selectedWorkspace,
@@ -154,12 +159,23 @@ export function useSessionCommandActions({
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
+    const activeSessionStatus = activeSession
+      ? (statuses[activeSession.id] ?? activeSession.status)
+      : "idle";
+    const activeSessionRestoreGate = resolveSessionRestoreGate({
+      activeSession,
+      activeSessionStatus,
+      resumeStartPending: Boolean(
+        activeSession && resumeStartRequestsRef.current.has(activeSession.id),
+      ),
+    });
     submitPromptImpl(event, {
       prompt,
       promptImages,
       rpcClientRef,
       setImagePasteNotice,
       activeSessionId,
+      activeSessionCanChat: activeSessionRestoreGate.canChat,
       createSession,
       setPrompt,
       setPromptImages,

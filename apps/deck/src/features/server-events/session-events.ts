@@ -136,6 +136,8 @@ export function applySessionResult(
     requestSessionResumeStart,
     setResumeFeedback,
     resumeStartRequestsRef,
+    rpcClientRef,
+    dispatch,
   } = context;
   const store = useDeckStore.getState();
   const currentSessions = store.sessions;
@@ -274,9 +276,7 @@ export function applySessionResult(
       return true;
     case "session/resume":
       setResumeFeedback(payload.message);
-      if (!payload.ok) {
-        resumeStartRequestsRef.current.delete(payload.sessionId);
-      }
+      resumeStartRequestsRef.current.delete(payload.sessionId);
       store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
@@ -289,6 +289,9 @@ export function applySessionResult(
             : session,
         ),
       );
+      if (sourceIsCurrentHelm && payload.ok && rpcClientRef.current?.socket?.readyState === 1) {
+        void dispatch(rpcClientRef.current, "agent/connections", {});
+      }
       return true;
     case "session/cleanup":
       if (payload.result.remoteDeleted) {

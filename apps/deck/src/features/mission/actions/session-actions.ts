@@ -47,6 +47,7 @@ type SubmitPromptContext = {
   rpcClientRef: RpcClientRef;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
+  activeSessionCanChat?: boolean;
   createSession: (
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
@@ -156,6 +157,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     rpcClientRef,
     setImagePasteNotice,
     activeSessionId,
+    activeSessionCanChat = true,
     createSession,
     setPrompt,
     setPromptImages,
@@ -180,6 +182,10 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
       setPrompt("");
       setPromptImages([]);
     }
+    return;
+  }
+
+  if (!activeSessionCanChat) {
     return;
   }
 

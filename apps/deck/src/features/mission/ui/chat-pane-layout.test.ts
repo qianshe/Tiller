@@ -43,6 +43,7 @@ const messageTimelineSource = readFileSync(
 const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
 const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
 const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash-commands.ts"), "utf8");
+const sessionEventsSource = readFileSync(resolve(currentDir, "../../server-events/session-events.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
@@ -97,6 +98,16 @@ test("mission composer falls back to active session available commands", () => {
   assert.match(appRootSource, /activeSessionSlashCommands/);
   assert.match(appRootSource, /missionView\.activeSession\?\.availableCommands/);
   assert.match(appRootSource, /\[missionView\.activeSession\.id\]: activeSessionSlashCommands/);
+});
+
+test("ACP runtime overview refreshes after restore and does not stay connected during reconnect", () => {
+  assert.match(sessionEventsSource, /"agent\/connections"/);
+  assert.match(workspaceSource, /pendingAcpReconnects/);
+  assert.match(workspaceSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
+  assert.match(workspaceSource, /canReconnect: !reconnectPending/);
+  assert.match(workspaceSource, /canConnect: reconnectPending/);
+  assert.match(workspaceSource, /agentOrder/);
+  assert.match(workspaceSource, /return items\.sort/);
 });
 
 test("mission workspace uses Tailwind pane layout instead of feature css", () => {

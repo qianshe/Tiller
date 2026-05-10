@@ -5,7 +5,10 @@ import {
   resolveMissionActivityLoading,
   selectMissionPanelPage,
 } from "../utils/session-render-state";
-import { isSessionExecutionPending } from "../utils/session-state";
+import {
+  isSessionExecutionPending,
+  resolveSessionRestoreGate,
+} from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
 
 export function buildMissionWorkspaceModel(input: any) {
@@ -37,6 +40,7 @@ export function buildMissionWorkspaceModel(input: any) {
     activeHelm,
     missionProjects,
     workspaces,
+    resumeStartRequestsRef,
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
@@ -44,7 +48,15 @@ export function buildMissionWorkspaceModel(input: any) {
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
     : "idle";
+  const activeSessionRestoreGate = resolveSessionRestoreGate({
+    activeSession,
+    activeSessionStatus,
+    resumeStartPending: Boolean(
+      activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
+    ),
+  });
   const canSend = Boolean(
+    activeSessionRestoreGate.canChat &&
     activeSessionStatus !== "starting" &&
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
@@ -134,6 +146,7 @@ export function buildMissionWorkspaceModel(input: any) {
 
   return {
     canSend,
+    activeSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,

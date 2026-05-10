@@ -554,6 +554,57 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("successful session resume clears the pending restore request", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: string[] = [];
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "same-process",
+        restoreMethod: "client-reconnect",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method) => {
+        dispatched.push(method);
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
 test("permission list results hydrate pending permission requests", () => {
   resetStore();
   const request: PermissionRequest = {

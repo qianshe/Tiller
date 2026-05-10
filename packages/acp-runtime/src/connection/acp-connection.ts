@@ -385,10 +385,16 @@ export class AcpConnection {
       );
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
+      writeLogLine(this.state.logFile, "sdk-error", message);
+      if (/ACP connection closed/iu.test(message)) {
+        this.status = "error";
+        this.lastError = message;
+      }
       session.onEvent({
         type: "error",
         code: "ACP_PROMPT_FAILED",
-        message: error instanceof Error ? error.message : "Failed to send ACP prompt.",
+        message,
       });
       session.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
     }

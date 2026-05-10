@@ -11,7 +11,7 @@ import { AcpConnection } from "./acp-connection";
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -39,6 +39,7 @@ const resumeSessionCountPath = ${JSON.stringify(resumeSessionCountPath)};
 const resumeSessionCwdPath = ${JSON.stringify(resumeSessionCwdPath)};
 const launchArgsPath = ${JSON.stringify(launchArgsPath)};
 const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
+const exitOnPrompt = ${JSON.stringify(options.exitOnPrompt ?? false)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 const incrementCount = (path) => {
@@ -86,6 +87,9 @@ const agent = {
     return { sessionId: params.sessionId };
   },
   async prompt(params) {
+    if (exitOnPrompt) {
+      process.exit(0);
+    }
     const result = await client.readTextFile({ sessionId: params.sessionId, path: "marker.txt" });
     await client.sessionUpdate({
       sessionId: params.sessionId,
@@ -472,6 +476,39 @@ test("openOrCreateSession supports resume with the requested runtime session id"
 
     assert.equal(handle.runtimeSessionId, "remote-session-1");
     assert.equal(readFileSync(resumeSessionCountPath, "utf8"), "1");
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("prompt transport close marks the connection as errored", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-prompt-close-"));
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitOnPrompt: true });
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      workspace: { ...workspace, path: tempDir },
+    });
+    const events: Array<{ type: string; message?: string }> = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      workspace: { ...workspace, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event as { type: string; message?: string }),
+    });
+
+    await handle.prompt("close now");
+
+    assert.equal(connection.inventory().status, "error");
+    assert.match(connection.inventory().lastError ?? "", /ACP connection closed/u);
+    assert.equal(
+      events.some((event) => event.type === "error" && event.message?.includes("ACP connection closed")),
+      true,
+    );
 
     await connection.dispose();
   } finally {

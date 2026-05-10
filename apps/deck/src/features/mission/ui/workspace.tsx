@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { MissionChatPane } from "./chat-pane";
 import { MissionComposer } from "./composer";
 import { MissionDiffPanel } from "./diff-panel";
@@ -179,8 +180,10 @@ export function MissionWorkspace(props: any) {
     defaultLogbookVisibleLimit,
     agentModelOptions = {},
   } = props;
+  const [pendingAcpReconnects, setPendingAcpReconnects] = useState<Record<string, string | null>>({});
   const {
     canSend,
+    activeSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,
@@ -302,6 +305,24 @@ export function MissionWorkspace(props: any) {
     isMissionMobile && "mission-mobile-mode",
     `mission-mobile-pane-${resolvedMissionMobilePane}`,
   ]);
+  useEffect(() => {
+    setPendingAcpReconnects((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const connection of agentConnectionInventory as any[]) {
+        const key = acpReconnectKey(connection.providerId, connection.workspaceId);
+        if (
+          key in next &&
+          connection.status === "ready" &&
+          connection.runtimeConnectionId !== next[key]
+        ) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [agentConnectionInventory]);
   const runtimeOverviewItems = (() => {
     const sessionById = new Map((sessions as any[]).map((session) => [session.id, session]));
     const items: any[] = (agentConnectionInventory as any[]).map((connection) => {
@@ -323,20 +344,23 @@ export function MissionWorkspace(props: any) {
           model: session?.model ?? runtimeSession.model,
         };
       });
+      const reconnectKey = acpReconnectKey(connection.providerId, connection.workspaceId);
+      const reconnectPending = reconnectKey in pendingAcpReconnects;
       return {
         id: `acp:${connection.providerId}:${connection.workspaceId}`,
         agentId: connection.providerId,
         projectId: selectedProjectId ?? undefined,
         workspaceId: connection.workspaceId,
         label: agent?.name ?? connection.providerId ?? "ACP",
-        meta: connection.lastError ?? workspace?.name ?? connection.workspacePath ?? "Workspace",
-        status: formatAcpConnectionStatus(connection.status),
+        meta: reconnectPending ? "等待重新连接成功" : connection.lastError ?? workspace?.name ?? connection.workspacePath ?? "Workspace",
+        status: reconnectPending ? "未连接" : formatAcpConnectionStatus(connection.status),
         runtimeSessionId: formatRuntimeSessionCount(
           connection.activeSessionCount ?? children.length,
           Math.max(0, (connection.activeSessionCount ?? children.length) - (connection.pendingSessionCount ?? 0)),
         ),
         model: children[0]?.model,
-        canReconnect: true,
+        canReconnect: !reconnectPending,
+        canConnect: reconnectPending,
         children,
       };
     });
@@ -383,7 +407,15 @@ export function MissionWorkspace(props: any) {
       });
     }
 
-    return items;
+    const agentOrder = new Map(
+      (agents as any[]).map((agent, index) => [agent.id, index]),
+    );
+    return items.sort(
+      (left, right) =>
+        (agentOrder.get(left.agentId) ?? Number.MAX_SAFE_INTEGER) -
+          (agentOrder.get(right.agentId) ?? Number.MAX_SAFE_INTEGER) ||
+        left.label.localeCompare(right.label),
+    );
   })();
   const reconnectAcpRuntime = (runtime: {
     agentId?: string;
@@ -396,6 +428,16 @@ export function MissionWorkspace(props: any) {
     if (!runtime.agentId || !client || client.socket.readyState !== WebSocket.OPEN) {
       return;
     }
+    const reconnectKey = acpReconnectKey(runtime.agentId, runtime.workspaceId);
+    const currentConnection = (agentConnectionInventory as any[]).find(
+      (connection) =>
+        connection.providerId === runtime.agentId &&
+        connection.workspaceId === runtime.workspaceId,
+    );
+    setPendingAcpReconnects((current) => ({
+      ...current,
+      [reconnectKey]: currentConnection?.runtimeConnectionId ?? null,
+    }));
     void dispatch?.(client, runtime.canReconnect ? "agent/reconnect" : "agent/connect", {
       providerId: runtime.agentId,
       projectId: runtime.projectId ?? selectedProjectId ?? undefined,
@@ -420,6 +462,12 @@ export function MissionWorkspace(props: any) {
     : null;
   const shouldShowComposer = Boolean(activeSession || selectedDraftConnection);
   const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId && !selectedDraftConnection);
+  const shouldShowRestoreGateNotice = Boolean(
+    activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
+  );
+  const composerPromptPlaceholder = shouldShowRestoreGateNotice
+    ? activeSessionRestoreGate.message
+    : draftPromptPlaceholder;
   return (
     <MissionPage
       layoutRef={missionLayoutRef}
@@ -510,6 +558,16 @@ export function MissionWorkspace(props: any) {
               </span>
             </div>
           ) : null}
+          {shouldShowRestoreGateNotice ? (
+            <div className="mission-restore-gate m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+              <strong className="block text-foreground">
+                {activeSessionRestoreGate.state === "history-only" || activeSessionRestoreGate.state === "failed"
+                  ? "ACP 会话未恢复"
+                  : "正在恢复 ACP"}
+              </strong>
+              <span>{activeSessionRestoreGate.message}</span>
+            </div>
+          ) : null}
           {shouldShowComposer ? (
             <MissionComposer
               activeSession={activeSession}
@@ -541,7 +599,7 @@ export function MissionWorkspace(props: any) {
               handleMissionPromptKeyDown={handleMissionPromptKeyDown}
               handleMissionPromptPaste={handleMissionPromptPaste}
               onAddPromptImages={onAddPromptImages}
-              draftPromptPlaceholder={draftPromptPlaceholder}
+              draftPromptPlaceholder={composerPromptPlaceholder}
               slashPopupOpen={slashPopupOpen}
               filteredSlashCommands={filteredSlashCommands}
               slashSelectedIndex={slashSelectedIndex}
@@ -684,6 +742,10 @@ function isManagedWorktreeWorkspace(workspace: { id?: string; path?: string }) {
       normalizedPath.includes("/.worktrees/") ||
       normalizedPath.includes("/.tiller/worktrees/"),
   );
+}
+
+function acpReconnectKey(agentId?: string, workspaceId?: string) {
+  return `${agentId ?? "unknown"}::${workspaceId ?? "global"}`;
 }
 
 function formatRuntimeSessionCount(sessionCount: number, activeSessionCount?: number) {
