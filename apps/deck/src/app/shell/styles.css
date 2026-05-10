@@ -90,6 +90,10 @@ h3 {
   animation: surface-fade 220ms ease;
 }
 
+.mission-mobile-pager {
+  display: none;
+}
+
 .compact {
   margin-top: 4px;
 }
@@ -275,6 +279,44 @@ h3 {
   .top-nav-mobile-item:focus-visible {
     background: var(--primary-soft);
     color: var(--primary);
+  }
+
+  .mission-mobile-pager {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 44px;
+    gap: 4px;
+    padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .mission-mobile-pager-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 4px;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+  }
+
+  .mission-mobile-pager-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .mission-mobile-pager-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.6;
   }
 }
 

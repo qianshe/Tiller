@@ -197,3 +197,24 @@ test("mission layout hook exposes guarded mobile pointer swipe handlers", () => 
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
   assert.match(missionLayoutHookSource, /PointerEvent/);
 });
+
+const mobilePagerSource = readFileSync(resolve(currentDir, "mobile-pager.tsx"), "utf8");
+
+test("mission mobile pager is compact and exposes four pane destinations", () => {
+  assert.match(mobilePagerSource, /MissionMobilePager/);
+  assert.match(mobilePagerSource, /项目/);
+  assert.match(mobilePagerSource, /对话/);
+  assert.match(mobilePagerSource, /面板/);
+  assert.match(mobilePagerSource, /检视/);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*44px;/s);
+  assert.match(shellStylesSource, /safe-area-inset-bottom/);
+  assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
+});
+
+test("mission workspace renders mobile pager and hides desktop resizers in mobile mode", () => {
+  assert.match(workspaceSource, /MissionMobilePager/);
+  assert.match(workspaceSource, /isMissionMobile/);
+  assert.match(workspaceSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
+  assert.match(workspaceSource, /!isMissionMobile && !effectiveDisplayCollapsed/);
+  assert.match(workspaceSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
+});

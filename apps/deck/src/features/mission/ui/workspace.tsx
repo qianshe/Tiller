@@ -3,6 +3,7 @@ import { MissionComposer } from "./composer";
 import { MissionDiffPanel } from "./diff-panel";
 import { MissionDisplaySection } from "./display-section";
 import { MissionInspector } from "./inspector";
+import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
@@ -46,6 +47,9 @@ export function MissionWorkspace(props: any) {
     effectiveSidebarCollapsed,
     effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
+    isMissionMobile,
+    selectedMissionMobilePane,
+    setSelectedMissionMobilePane,
     missionLayoutRef,
     missionLayoutStyle,
     missionSidebarCollapsed,
@@ -281,6 +285,8 @@ export function MissionWorkspace(props: any) {
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
+    isMissionMobile && "mission-mobile-mode",
+    isMissionMobile && `mission-mobile-pane-${selectedMissionMobilePane}`,
   ]);
   const runtimeOverviewItems = (() => {
     const grouped = new Map<string, any>();
@@ -440,7 +446,7 @@ export function MissionWorkspace(props: any) {
           sessionHistoryState={sessionHistoryState}
           toggleMissionProjectNode={toggleMissionProjectNode}
           resizer={
-            !effectiveSidebarCollapsed ? (
+            !isMissionMobile && !effectiveSidebarCollapsed ? (
               <MissionPaneResizer
                 handle="sidebar"
                 label="调整任务列表宽度"
@@ -543,7 +549,7 @@ export function MissionWorkspace(props: any) {
             />
           ) : null}{" "}
         </MissionChatPane>{" "}
-        {!effectiveDisplayCollapsed ? (
+        {!isMissionMobile && !effectiveDisplayCollapsed ? (
           <MissionPaneResizer
             handle="display"
             label="调整任务展示宽度"
@@ -551,7 +557,7 @@ export function MissionWorkspace(props: any) {
             onNudge={nudgeMissionPane}
           />
         ) : null}{" "}
-        {!effectiveDisplayCollapsed ? (
+        {isMissionMobile || !effectiveDisplayCollapsed ? (
           <MissionDisplaySection
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
@@ -607,14 +613,22 @@ export function MissionWorkspace(props: any) {
           diffCount={missionDiffCount}
           diffPanel={renderInspectorDiffPanel()}
           resizer={
-            <MissionPaneResizer
-              handle="inspector"
-              label="调整检视器宽度"
-              onResizeStart={startMissionPaneResize}
-              onNudge={nudgeMissionPane}
-            />
+            !isMissionMobile ? (
+              <MissionPaneResizer
+                handle="inspector"
+                label="调整检视器宽度"
+                onResizeStart={startMissionPaneResize}
+                onNudge={nudgeMissionPane}
+              />
+            ) : null
           }
         />{" "}
+        {isMissionMobile ? (
+          <MissionMobilePager
+            selectedPane={selectedMissionMobilePane}
+            onSelectPane={setSelectedMissionMobilePane}
+          />
+        ) : null}
       </>{" "}
     </MissionPage>
   );
