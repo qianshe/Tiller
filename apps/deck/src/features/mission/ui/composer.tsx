@@ -219,7 +219,6 @@ export function MissionComposer({
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
-            imagePasteNotice={imagePasteNotice}
           />
           <Textarea
             id="mission-prompt-input"

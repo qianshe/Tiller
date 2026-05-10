@@ -251,6 +251,10 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 
 const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
 const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
+const composerAttachmentsSource = readFileSync(
+  resolve(currentDir, "composer-attachments.tsx"),
+  "utf8",
+);
 const sessionOverviewCardSource = readFileSync(
   resolve(currentDir, "session-overview-card.tsx"),
   "utf8",
@@ -275,6 +279,8 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-image-upload-input/);
   assert.match(composerSource, /accept="image\/\*"/);
   assert.match(composerSource, /onAddPromptImages\(event\.currentTarget\.files\)/);
+  assert.doesNotMatch(composerSource, /imagePasteNotice=\{imagePasteNotice\}/);
+  assert.doesNotMatch(composerAttachmentsSource, /mission-composer-notice/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-pane-chat\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
   assert.match(shellStylesSource, /bottom:\s*0;/);
