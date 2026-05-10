@@ -151,9 +151,6 @@ export function App() {
   });
   const panelPages = usePanelPages();
   const route = useRouteView();
-  const layout = useMissionLayout(route.activeView);
-  const layoutContext = buildAppLayoutContext(layout);
-  const panelContext = buildMissionPanelContext(panelPages);
 
   usePreferencesEffects();
   useEffect(() => {
@@ -200,6 +197,12 @@ export function App() {
     copy,
     locale,
   });
+  const layout = useMissionLayout({
+    activeView: route.activeView,
+    hasActiveSession: Boolean(missionView.activeSession),
+  });
+  const layoutContext = buildAppLayoutContext(layout);
+  const panelContext = buildMissionPanelContext(panelPages);
 
   function updateSessionDraftPreferences(next: SessionDraftPreferencePatch) {
     const activeSession = missionView.activeSession;

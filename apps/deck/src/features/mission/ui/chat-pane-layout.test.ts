@@ -180,3 +180,20 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(paneResizerSource, /col-start-4 col-end-5/);
   assert.match(paneResizerSource, /col-start-6 col-end-7/);
 });
+
+test("mission layout hook exposes mobile pane state and intelligent defaults", () => {
+  assert.match(missionLayoutHookSource, /export type MissionMobilePane = "project" \| "chat" \| "display" \| "inspector"/);
+  assert.match(missionLayoutHookSource, /MISSION_MOBILE_WIDTH = 768/);
+  assert.match(missionLayoutHookSource, /selectedMissionMobilePane/);
+  assert.match(missionLayoutHookSource, /setSelectedMissionMobilePane/);
+  assert.match(missionLayoutHookSource, /hasActiveSession \? "chat" : "project"/);
+});
+
+test("mission layout hook exposes guarded mobile pointer swipe handlers", () => {
+  assert.match(missionLayoutHookSource, /startMissionMobileSwipe/);
+  assert.match(missionLayoutHookSource, /finishMissionMobileSwipe/);
+  assert.match(missionLayoutHookSource, /isMissionSwipeIgnoredTarget/);
+  assert.match(missionLayoutHookSource, /textarea, input, select, button, a/);
+  assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
+  assert.match(missionLayoutHookSource, /PointerEvent/);
+});

@@ -4,9 +4,12 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 export type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
+
+export type MissionMobilePane = "project" | "chat" | "display" | "inspector";
 
 export type MissionPaneWidths = Record<MissionPaneId, number>;
 
@@ -32,6 +35,42 @@ const MISSION_OUTER_GUTTER = 24;
 const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
+const MISSION_MOBILE_WIDTH = 768;
+const MISSION_MOBILE_SWIPE_THRESHOLD = 48;
+const MISSION_MOBILE_PANES: MissionMobilePane[] = [
+  "project",
+  "chat",
+  "display",
+  "inspector",
+];
+
+type MissionLayoutOptions = {
+  activeView: unknown;
+  hasActiveSession: boolean;
+};
+
+function isMissionSwipeIgnoredTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return Boolean(
+    target.closest(
+      'textarea, input, select, button, a, [data-mission-swipe-lock="true"]',
+    ),
+  );
+}
+
+function getAdjacentMissionMobilePane(
+  current: MissionMobilePane,
+  direction: -1 | 1,
+) {
+  const index = MISSION_MOBILE_PANES.indexOf(current);
+  const nextIndex = Math.min(
+    MISSION_MOBILE_PANES.length - 1,
+    Math.max(0, index + direction),
+  );
+  return MISSION_MOBILE_PANES[nextIndex] ?? current;
+}
 
 function getMissionPaneMax(pane: MissionPaneId) {
   return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
@@ -165,13 +204,17 @@ function createMissionPaneStyles(widths: MissionPaneWidths) {
   };
 }
 
-export function useMissionLayout(measureKey: unknown) {
+export function useMissionLayout(options: MissionLayoutOptions) {
+  const { activeView, hasActiveSession } = options;
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
     DEFAULT_MISSION_PANE_WIDTHS,
   );
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(false);
+  const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
+    useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
+  const missionSwipeStartXRef = useRef<number | null>(null);
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
@@ -199,7 +242,16 @@ export function useMissionLayout(measureKey: unknown) {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureMissionLayout);
     };
-  }, [measureKey]);
+  }, [activeView]);
+
+  const isMissionMobile = missionViewportWidth < MISSION_MOBILE_WIDTH;
+
+  useEffect(() => {
+    if (!isMissionMobile) {
+      return;
+    }
+    setSelectedMissionMobilePane(hasActiveSession ? "chat" : "project");
+  }, [activeView, hasActiveSession, isMissionMobile]);
 
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||
@@ -252,6 +304,29 @@ export function useMissionLayout(measureKey: unknown) {
     applyMissionPaneDelta(handle, direction * 24, resolvedMissionPaneWidths);
   }
 
+  function startMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
+    if (!isMissionMobile || isMissionSwipeIgnoredTarget(event.target)) {
+      missionSwipeStartXRef.current = null;
+      return;
+    }
+    missionSwipeStartXRef.current = event.clientX;
+  }
+
+  function finishMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
+    const startX = missionSwipeStartXRef.current;
+    missionSwipeStartXRef.current = null;
+    if (startX === null || !isMissionMobile) {
+      return;
+    }
+    const deltaX = event.clientX - startX;
+    if (Math.abs(deltaX) < MISSION_MOBILE_SWIPE_THRESHOLD) {
+      return;
+    }
+    setSelectedMissionMobilePane((current) =>
+      getAdjacentMissionMobilePane(current, deltaX < 0 ? 1 : -1),
+    );
+  }
+
   return {
     missionLayoutRef,
     missionSidebarCollapsed,
@@ -263,6 +338,11 @@ export function useMissionLayout(measureKey: unknown) {
     effectiveInspectorCollapsed,
     paneStyles,
     startMissionPaneResize,
+    startMissionMobileSwipe,
+    finishMissionMobileSwipe,
     nudgeMissionPane,
+    isMissionMobile,
+    selectedMissionMobilePane,
+    setSelectedMissionMobilePane,
   };
 }
