@@ -34,7 +34,7 @@ export function resolvePermissionCommandDisplay(
   const parsedDetail = parseJsonRecord(detailSource);
   const shellCommand = resolveShellCommand(parsedDetail);
   if (shellCommand) {
-    return { title: shellCommand, detail: null };
+    return buildPermissionCommandDisplay(shellCommand);
   }
 
   const mcpName = resolveMcpToolName(parsedDetail);
@@ -46,10 +46,32 @@ export function resolvePermissionCommandDisplay(
   }
 
   if (detailSource && isLikelyShellPermissionLabel(label)) {
-    return { title: detailSource, detail: null };
+    return buildPermissionCommandDisplay(detailSource);
   }
 
   return { title: label || command, detail: detailSource };
+}
+
+function buildPermissionCommandDisplay(command: string): MissionPermissionCommandDisplay {
+  const title = summarizePermissionCommand(command);
+  return {
+    title,
+    detail: title === command ? null : command,
+  };
+}
+
+function summarizePermissionCommand(command: string): string {
+  const normalized = command.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 96) {
+    return normalized;
+  }
+
+  const processMatch = normalized.match(/(?:pwsh|powershell)(?:\.exe)?\b.*?\bStart-Process\b.*?-FilePath\s+([^\s]+)/iu);
+  if (processMatch?.[1]) {
+    return `PowerShell · Start-Process ${processMatch[1]}`;
+  }
+
+  return `${normalized.slice(0, 93)}…`;
 }
 
 function splitCommand(command: string): [string, string | null] {
@@ -220,7 +242,7 @@ export function MissionPermissionDrawer({
           </strong>
         </div>
       </div>
-      <div className="mission-permission-copy grid min-h-0 gap-2 text-sm text-muted-foreground">
+      <div className="mission-permission-copy grid min-h-0 min-w-0 gap-2 text-sm text-muted-foreground">
         {showWorkspace ? (
           <p className="mission-permission-workspace break-all text-xs">
             {request.workspacePath}
@@ -231,7 +253,14 @@ export function MissionPermissionDrawer({
           </p>
         )}
         {commandDisplay.detail ? (
-          <p className="mission-permission-detail max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-sunken p-2 font-mono text-xs leading-relaxed text-foreground">{commandDisplay.detail}</p>
+          <details className="mission-permission-detail min-w-0 max-w-full overflow-hidden rounded-md bg-surface-sunken p-2 text-xs text-foreground">
+            <summary className="cursor-pointer select-none font-medium text-muted-foreground">
+              查看完整命令
+            </summary>
+            <pre className="mt-2 max-h-28 max-w-full overflow-auto whitespace-pre-wrap break-all font-mono leading-relaxed">
+              {commandDisplay.detail}
+            </pre>
+          </details>
         ) : null}
         <div className="permission-actions mission-permission-actions flex flex-wrap items-center justify-end gap-2 self-stretch pb-0">
           {permissionOptions.map((option) => (

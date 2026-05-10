@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import type {
   AgentMessage,
   AgentToolCall,
+  PermissionRequest,
   SessionSummary,
   TrustedDeviceSummary,
 } from "@tiller/shared";
@@ -85,6 +86,39 @@ test("activity RPC notifications append assistant messages without changing sess
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
   );
+});
+
+test("permission resolved notifications clear pending permission requests", () => {
+  resetStore();
+  useDeckStore.setState({
+    permissionRequests: {
+      s1: {
+        id: "permission-1",
+        command: "Approve MCP tool call :: {}",
+        reason: "等待审核",
+        workspacePath: "D:/repo",
+      },
+    },
+  });
+
+  const handled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "permission_resolved",
+        permissionRequestId: "permission-1",
+        decision: "allow",
+      },
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().permissionRequests.s1, null);
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {
@@ -272,4 +306,82 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.equal(useDeckStore.getState().sessions[0]?.id, "s1");
   assert.equal(useDeckStore.getState().messages.stale, undefined);
   assert.deepEqual(dispatched, []);
+});
+
+test("permission list results hydrate pending permission requests", () => {
+  resetStore();
+  const request: PermissionRequest = {
+    id: "permission-1",
+    command: "Approve MCP tool call :: {}",
+    reason: "需要审核工具调用",
+    workspacePath: "D:/repo",
+  };
+
+  const handled = applySessionResult(
+    "permission/list_pending",
+    { permissions: [{ sessionId: "s1", request }] },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().permissionRequests, {
+    s1: request,
+  });
+});
+
+test("empty permission list clears stale pending permission requests", () => {
+  resetStore();
+  useDeckStore.setState({
+    permissionRequests: {
+      s1: {
+        id: "permission-1",
+        command: "Approve MCP tool call :: {}",
+        reason: "已过期的审核请求",
+        workspacePath: "D:/repo",
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "permission/list_pending",
+    { permissions: [] },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().permissionRequests, {});
 });

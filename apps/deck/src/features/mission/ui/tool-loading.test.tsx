@@ -20,3 +20,17 @@ test("mission tool loading renders as a compact elevated status card", () => {
   assert.match(html, /正在执行工具/);
   assert.match(html, /mcp_router\/search_context/);
 });
+
+test("mission loading renders stable ACP running copy without tool wording", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionToolLoading, {
+      activity: { title: "ACP 正在运行" },
+      pendingToolPresent: false,
+    }),
+  );
+
+  assert.match(html, /ACP 正在运行/);
+  assert.match(html, /等待下一次状态更新/);
+  assert.doesNotMatch(html, /正在执行工具/);
+  assert.doesNotMatch(html, /等待 ACP 运行中 返回结果/);
+});

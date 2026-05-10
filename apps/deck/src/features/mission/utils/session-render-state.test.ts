@@ -98,7 +98,7 @@ test("mission display pages keep the Git diff list out but preserve diff detail"
   );
 });
 
-test("mission activity loading hides fallback after latest assistant result", () => {
+test("mission activity loading keeps ACP fallback visible while session is running", () => {
   const loading = resolveMissionActivityLoading({
     status: "running",
     messages: [
@@ -109,7 +109,7 @@ test("mission activity loading hides fallback after latest assistant result", ()
     pendingPermission: null,
   });
 
-  assert.equal(loading, null);
+  assert.deepEqual(loading, { title: "ACP 正在运行", status: "running" });
 });
 
 test("mission activity loading shows agent fallback after latest user message", () => {
@@ -120,7 +120,7 @@ test("mission activity loading shows agent fallback after latest user message", 
     pendingPermission: null,
   });
 
-  assert.deepEqual(loading, { title: "Agent 响应", status: "running" });
+  assert.deepEqual(loading, { title: "ACP 正在运行", status: "running" });
 });
 
 test("mission activity loading prioritizes pending tool activity", () => {

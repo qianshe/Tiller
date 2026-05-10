@@ -254,6 +254,18 @@ export function applySessionResult(
         );
       }
       return true;
+    case "permission/list_pending":
+      if (sourceIsCurrentHelm) {
+        store.setPermissionRequests(
+          Object.fromEntries(
+            (payload.permissions ?? []).map((permission: any) => [
+              permission.sessionId,
+              permission.request,
+            ]),
+          ),
+        );
+      }
+      return true;
     case "session/resume":
       setResumeFeedback(payload.message);
       if (!payload.ok) {

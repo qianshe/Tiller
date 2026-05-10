@@ -26,6 +26,7 @@ import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
+import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as deviceList from "./device/list";
 import * as deviceRevoke from "./device/revoke";
@@ -68,6 +69,7 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
+  [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [deviceList.method]: deviceList.descriptor,
   [deviceRevoke.method]: deviceRevoke.descriptor,
@@ -111,6 +113,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
+  permissionListPending.method,
   permissionRespond.method,
   deviceList.method,
   deviceRevoke.method,

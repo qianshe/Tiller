@@ -103,6 +103,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "workspace/list", params: {} },
     { method: "agent/list", params: {} },
     { method: "session/list", params: { limit: 25 } },
+    { method: "permission/list_pending", params: {} },
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);

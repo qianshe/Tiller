@@ -4,7 +4,6 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 export type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
@@ -36,41 +35,10 @@ const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
 const MISSION_MOBILE_WIDTH = 1081;
-const MISSION_MOBILE_SWIPE_THRESHOLD = 36;
-const MISSION_MOBILE_PANES: MissionMobilePane[] = [
-  "project",
-  "chat",
-  "display",
-  "inspector",
-];
-
 type MissionLayoutOptions = {
   activeView: unknown;
   hasActiveSession: boolean;
 };
-
-function isMissionSwipeIgnoredTarget(target: EventTarget | null) {
-  if (!(target instanceof Element)) {
-    return false;
-  }
-  return Boolean(
-    target.closest(
-      'textarea, input, select, a, [data-mission-swipe-lock="true"]',
-    ),
-  );
-}
-
-function getAdjacentMissionMobilePane(
-  current: MissionMobilePane,
-  direction: -1 | 1,
-) {
-  const index = MISSION_MOBILE_PANES.indexOf(current);
-  const nextIndex = Math.min(
-    MISSION_MOBILE_PANES.length - 1,
-    Math.max(0, index + direction),
-  );
-  return MISSION_MOBILE_PANES[nextIndex] ?? current;
-}
 
 function getMissionPaneMax(pane: MissionPaneId) {
   return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
@@ -214,10 +182,6 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     useState(false);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
     useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
-  const [missionMobileSwipeOffset, setMissionMobileSwipeOffset] = useState(0);
-  const missionSwipeStartXRef = useRef<number | null>(null);
-  const missionSwipeStartYRef = useRef<number | null>(null);
-  const missionSwipeLastDeltaRef = useRef({ x: 0, y: 0 });
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
@@ -278,10 +242,6 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     missionViewportWidth,
   );
   const paneStyles = createMissionPaneStyles(resolvedMissionPaneWidths);
-  const missionLayoutStyle = {
-    ...paneStyles.layout,
-    "--mission-mobile-swipe-offset": `${missionMobileSwipeOffset}px`,
-  } as CSSProperties;
 
   function applyMissionPaneDelta(
     handle: MissionResizeHandle,
@@ -317,75 +277,6 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     applyMissionPaneDelta(handle, direction * 24, resolvedMissionPaneWidths);
   }
 
-  function commitMissionMobileSwipe(deltaX: number, deltaY: number) {
-    if (
-      Math.abs(deltaX) < MISSION_MOBILE_SWIPE_THRESHOLD ||
-      Math.abs(deltaX) <= Math.abs(deltaY)
-    ) {
-      return;
-    }
-    setSelectedMissionMobilePane((current) =>
-      getAdjacentMissionMobilePane(current, deltaX < 0 ? 1 : -1),
-    );
-  }
-
-  function resetMissionMobileSwipe() {
-    missionSwipeStartXRef.current = null;
-    missionSwipeStartYRef.current = null;
-    missionSwipeLastDeltaRef.current = { x: 0, y: 0 };
-    setMissionMobileSwipeOffset(0);
-  }
-
-  function startMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
-    if (!isMissionMobile || isMissionSwipeIgnoredTarget(event.target)) {
-      resetMissionMobileSwipe();
-      return;
-    }
-    event.currentTarget.setPointerCapture(event.pointerId);
-    missionSwipeStartXRef.current = event.clientX;
-    missionSwipeStartYRef.current = event.clientY;
-    missionSwipeLastDeltaRef.current = { x: 0, y: 0 };
-    setMissionMobileSwipeOffset(0);
-  }
-
-  function trackMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
-    const startX = missionSwipeStartXRef.current;
-    if (startX === null || !isMissionMobile) {
-      return;
-    }
-    const startY = missionSwipeStartYRef.current ?? event.clientY;
-    const maxOffset = Math.max(48, missionViewportWidth * 0.5);
-    const deltaX = event.clientX - startX;
-    const deltaY = event.clientY - startY;
-    missionSwipeLastDeltaRef.current = { x: deltaX, y: deltaY };
-    if (Math.abs(deltaX) <= Math.abs(deltaY)) {
-      setMissionMobileSwipeOffset(0);
-      return;
-    }
-    setMissionMobileSwipeOffset(
-      Math.max(-maxOffset, Math.min(maxOffset, Math.round(deltaX))),
-    );
-  }
-
-  function finishMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
-    const startX = missionSwipeStartXRef.current;
-    const startY = missionSwipeStartYRef.current;
-    const lastDelta = missionSwipeLastDeltaRef.current;
-    resetMissionMobileSwipe();
-    if (startX === null || startY === null || !isMissionMobile) {
-      return;
-    }
-    const deltaX = lastDelta.x || event.clientX - startX;
-    const deltaY = lastDelta.y || event.clientY - startY;
-    commitMissionMobileSwipe(deltaX, deltaY);
-  }
-
-  function cancelMissionMobileSwipe() {
-    const lastDelta = missionSwipeLastDeltaRef.current;
-    resetMissionMobileSwipe();
-    commitMissionMobileSwipe(lastDelta.x, lastDelta.y);
-  }
-
   return {
     missionLayoutRef,
     missionSidebarCollapsed,
@@ -395,15 +286,8 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     effectiveSidebarCollapsed,
     effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
-    paneStyles: {
-      ...paneStyles,
-      layout: missionLayoutStyle,
-    },
+    paneStyles,
     startMissionPaneResize,
-    startMissionMobileSwipe,
-    trackMissionMobileSwipe,
-    finishMissionMobileSwipe,
-    cancelMissionMobileSwipe,
     nudgeMissionPane,
     isMissionMobile,
     selectedMissionMobilePane,

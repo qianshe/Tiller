@@ -64,6 +64,22 @@ import { useRouteView } from "../routing/route-view";
 import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
+const MOBILE_ADDRESSBAR_SCROLL_OFFSET = 80;
+
+function tryCollapseMobileAddressBar() {
+  if (!window.matchMedia("(max-width: 1080px)").matches) {
+    return;
+  }
+  if (window.scrollY >= MOBILE_ADDRESSBAR_SCROLL_OFFSET / 2) {
+    return;
+  }
+  if (document.documentElement.scrollHeight <= window.innerHeight + 24) {
+    return;
+  }
+
+  window.scrollTo({ top: MOBILE_ADDRESSBAR_SCROLL_OFFSET, behavior: "smooth" });
+}
+
 export function App() {
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(
@@ -350,56 +366,83 @@ export function App() {
     deckData.deckPreferences.reduceMotion,
   );
 
+  useEffect(() => {
+    let collapsed = false;
+    const collapseOnce = () => {
+      if (collapsed) {
+        return;
+      }
+      collapsed = true;
+      tryCollapseMobileAddressBar();
+    };
+
+    window.addEventListener("pointerdown", collapseOnce, {
+      once: true,
+      passive: true,
+    });
+    window.addEventListener("touchstart", collapseOnce, {
+      once: true,
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener("pointerdown", collapseOnce);
+      window.removeEventListener("touchstart", collapseOnce);
+    };
+  }, []);
+
   return (
-    <main className={shellClassName}>
-      <TopNav
-        activeView={route.activeView}
-        onNavigate={route.navigateToView}
-        connection={helmConnection.connection}
-        language={deckData.deckPreferences.language}
-      />
-      <AppRoutes
-        ctx={buildAppRouteContext({
-          runtimeState,
-          deckData,
-          missionView,
-          titleActions,
-          formatRelativeTime,
-          resolveCombinedModelValue,
-          resolveReasoningOptionsForModel,
-          resolveReasoningLabel,
-          appActions,
-          controllers,
-          panelPages: panelContext,
-          selection,
-          layout: layoutContext,
-          history,
-          preferenceActions,
-          promptEnhancerSettings,
-          slash,
-          codeActions,
-          helmConnection,
-          route,
-          activeProfileId,
-          copy,
-          agentLocked,
-          enhancePromptDraft,
-          updateSessionDraftPreferences,
-          toggleProjectFileDirectory,
-          openDiffDetail,
-          toggleExpandedMessage,
-          renderMissionAgentIcon,
-        })}
-      />
-      <SessionCleanupConfirmDialog
-        session={runtimeState.pendingSessionCleanup}
-        resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
-        onCancel={() => runtimeState.setPendingSessionCleanup(null)}
-        onConfirm={(sessionId) => {
-          controllers.cleanupSession(sessionId);
-          runtimeState.setPendingSessionCleanup(null);
-        }}
-      />
-    </main>
+    <div className="mobile-addressbar-scroll-shell">
+      <main className={shellClassName}>
+        <TopNav
+          activeView={route.activeView}
+          onNavigate={route.navigateToView}
+          connection={helmConnection.connection}
+          language={deckData.deckPreferences.language}
+        />
+        <AppRoutes
+          ctx={buildAppRouteContext({
+            runtimeState,
+            deckData,
+            missionView,
+            titleActions,
+            formatRelativeTime,
+            resolveCombinedModelValue,
+            resolveReasoningOptionsForModel,
+            resolveReasoningLabel,
+            appActions,
+            controllers,
+            panelPages: panelContext,
+            selection,
+            layout: layoutContext,
+            history,
+            preferenceActions,
+            promptEnhancerSettings,
+            slash,
+            codeActions,
+            helmConnection,
+            route,
+            activeProfileId,
+            copy,
+            agentLocked,
+            enhancePromptDraft,
+            updateSessionDraftPreferences,
+            toggleProjectFileDirectory,
+            openDiffDetail,
+            toggleExpandedMessage,
+            renderMissionAgentIcon,
+          })}
+        />
+        <SessionCleanupConfirmDialog
+          session={runtimeState.pendingSessionCleanup}
+          resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
+          onCancel={() => runtimeState.setPendingSessionCleanup(null)}
+          onConfirm={(sessionId) => {
+            controllers.cleanupSession(sessionId);
+            runtimeState.setPendingSessionCleanup(null);
+          }}
+        />
+      </main>
+    </div>
   );
 }

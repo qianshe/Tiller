@@ -194,24 +194,28 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
   assert.match(missionLayoutHookSource, /Math\.min\(layoutWidth, documentWidth\)/);
 });
 
-test("mission layout hook exposes guarded mobile pointer swipe handlers", () => {
-  assert.match(missionLayoutHookSource, /startMissionMobileSwipe/);
-  assert.match(missionLayoutHookSource, /finishMissionMobileSwipe/);
-  assert.match(missionLayoutHookSource, /trackMissionMobileSwipe/);
-  assert.match(missionLayoutHookSource, /cancelMissionMobileSwipe/);
-  assert.match(missionLayoutHookSource, /isMissionSwipeIgnoredTarget/);
-  assert.match(missionLayoutHookSource, /textarea, input, select, a/);
-  assert.doesNotMatch(missionLayoutHookSource, /select, button, a/);
-  assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
-  assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 36/);
-  assert.match(missionLayoutHookSource, /missionMobileSwipeOffset/);
-  assert.match(missionLayoutHookSource, /missionViewportWidth \* 0\.5/);
-  assert.match(missionLayoutHookSource, /missionSwipeStartYRef/);
-  assert.match(missionLayoutHookSource, /missionSwipeLastDeltaRef/);
-  assert.match(missionLayoutHookSource, /commitMissionMobileSwipe/);
-  assert.match(missionLayoutHookSource, /Math\.abs\(deltaX\) <= Math\.abs\(deltaY\)/);
-  assert.match(missionLayoutHookSource, /--mission-mobile-swipe-offset/);
-  assert.match(missionLayoutHookSource, /PointerEvent/);
+test("mission mobile uses explicit edge paging zones instead of draggable cards", () => {
+  assert.match(workspaceSource, /mission-mobile-edge-pager/);
+  assert.match(workspaceSource, /selectAdjacentMissionMobilePane/);
+  assert.doesNotMatch(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.doesNotMatch(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
+  assert.doesNotMatch(workspaceSource, /--mission-mobile-swipe-offset/);
+  assert.match(workspaceSource, /aria-label="上一页"\s*\/?>/);
+  assert.match(workspaceSource, /aria-label="下一页"\s*\/?>/);
+  assert.doesNotMatch(workspaceSource, />\s*上一页\s*<\/button>/);
+  assert.doesNotMatch(workspaceSource, />\s*下一页\s*<\/button>/);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*z-index:\s*6;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*grid-template-columns:\s*14px minmax\(0, 1fr\) 14px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*align-items:\s*start;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*padding-top:\s*96px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*pointer-events:\s*none;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*width:\s*14px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*height:\s*min\(48vh, 420px\);/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*border:\s*0;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*background:\s*transparent;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*font-size:\s*0;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-edge-pager-button\s*{[^}]*pointer-events:\s*auto;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] button,[\s\S]*?z-index:\s*7;/);
 });
 
 const mobilePagerSource = readFileSync(resolve(currentDir, "mobile-pager.tsx"), "utf8");
@@ -268,15 +272,13 @@ const sessionOverviewCardSource = readFileSync(
   "utf8",
 );
 
-test("mission workspace attaches mobile pointer swipe handlers and locks horizontal regions", () => {
-  assert.match(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
-  assert.match(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
-  assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
-  assert.match(workspaceSource, /onPointerCancel=\{cancelMissionMobileSwipe\}/);
+test("mission workspace locks outer scroll while edge zones handle mobile paging", () => {
+  assert.match(workspaceSource, /mission-mobile-edge-pager/);
+  assert.doesNotMatch(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.doesNotMatch(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
   assert.match(shellStylesSource, /body\s*{[^}]*overscroll-behavior-x:\s*contain;/s);
   assert.match(shellStylesSource, /overscroll-behavior-x:\s*contain/);
   assert.match(shellStylesSource, /touch-action:\s*pan-y/);
-  assert.match(shellStylesSource, /transform:\s*translate3d\(var\(--mission-mobile-swipe-offset, 0px\), 0, 0\)/);
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
   assert.match(shellStylesSource, /overflow-y:\s*auto/);

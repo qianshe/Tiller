@@ -23,6 +23,10 @@ body {
   background: var(--deck-body-background);
 }
 
+.mobile-addressbar-scroll-shell {
+  min-height: 100%;
+}
+
 button,
 textarea,
 input,
@@ -232,6 +236,15 @@ h3 {
     overscroll-behavior-x: contain;
   }
 
+  .mobile-addressbar-scroll-shell {
+    min-height: calc(100dvh + 80px);
+  }
+
+  .mobile-addressbar-scroll-shell > .shell {
+    position: sticky;
+    top: 0;
+  }
+
   .shell {
     width: 100vw;
     padding: 64px 12px 20px;
@@ -367,9 +380,48 @@ h3 {
     height: 100%;
     min-height: 0;
     padding: 0;
+    position: relative;
     overflow: hidden;
     overscroll-behavior-x: contain;
     touch-action: pan-y;
+  }
+
+  .mission-mobile-edge-pager {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) 14px;
+    align-items: start;
+    padding-top: 96px;
+    pointer-events: none;
+  }
+
+  .mission-mobile-edge-pager-button {
+    width: 14px;
+    height: min(48vh, 420px);
+    pointer-events: auto;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    font-size: 0;
+    font-weight: 700;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+
+  .mission-mobile-edge-pager-button:disabled {
+    opacity: 0.25;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] button,
+  .mission-responsive-mode [data-mission-mobile-pane] a,
+  .mission-responsive-mode [data-mission-mobile-pane] input,
+  .mission-responsive-mode [data-mission-mobile-pane] select,
+  .mission-responsive-mode [data-mission-mobile-pane] textarea,
+  .mission-responsive-mode [data-mission-mobile-pane] [role="button"] {
+    position: relative;
+    z-index: 7;
   }
 
   .mission-responsive-mode .mission-pane-resizer {
@@ -393,8 +445,6 @@ h3 {
   .mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"],
   .mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"] {
     display: flex;
-    transform: translate3d(var(--mission-mobile-swipe-offset, 0px), 0, 0);
-    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
     animation: mission-mobile-card-switch 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     will-change: opacity, transform;
   }

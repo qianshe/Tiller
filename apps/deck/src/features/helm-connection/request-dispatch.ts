@@ -54,5 +54,6 @@ export async function requestInitialSync(
   await dispatch(client, "agent/list", {});
   setSessionHistoryState({ hasMore: false, loading: true });
   await dispatch(client, "session/list", { limit: sessionPageLimit });
+  await dispatch(client, "permission/list_pending", {});
   await dispatch(client, "device/list", {});
 }

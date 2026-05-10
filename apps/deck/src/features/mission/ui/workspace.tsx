@@ -16,6 +16,8 @@ import {
 } from "../../../shared/ui";
 import { joinClassNames } from "../utils/session-render-state";
 
+const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "display", "inspector"] as const;
+
 export function MissionWorkspace(props: any) {
   const {
     prompt,
@@ -87,10 +89,6 @@ export function MissionWorkspace(props: any) {
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
-    startMissionMobileSwipe,
-    trackMissionMobileSwipe,
-    finishMissionMobileSwipe,
-    cancelMissionMobileSwipe,
     nudgeMissionPane,
     missionChatPaneStyle,
     chatMainRef,
@@ -286,6 +284,14 @@ export function MissionWorkspace(props: any) {
     !activeSession && "mission-draft-chat",
   ]);
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
+  const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
+  function selectAdjacentMissionMobilePane(direction: -1 | 1) {
+    const nextIndex = Math.min(
+      MISSION_MOBILE_PANE_ORDER.length - 1,
+      Math.max(0, currentMobilePaneIndex + direction),
+    );
+    setSelectedMissionMobilePane(MISSION_MOBILE_PANE_ORDER[nextIndex]);
+  }
   const missionLayoutClassName = joinClassNames([
     "card surface-card chat-layout chat-layout-sidebar mission-responsive-mode grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
@@ -406,10 +412,6 @@ export function MissionWorkspace(props: any) {
       layoutRef={missionLayoutRef}
       className={missionLayoutClassName}
       style={missionLayoutStyle}
-      onPointerDown={startMissionMobileSwipe}
-      onPointerMove={trackMissionMobileSwipe}
-      onPointerUp={finishMissionMobileSwipe}
-      onPointerCancel={cancelMissionMobileSwipe}
     >
       {" "}
       <>
@@ -632,6 +634,25 @@ export function MissionWorkspace(props: any) {
             ) : null
           }
         />{" "}
+        {isMissionMobile ? (
+          <nav className="mission-mobile-edge-pager" aria-label="移动端左右翻页热区">
+            <button
+              type="button"
+              className="mission-mobile-edge-pager-button mission-mobile-edge-pager-prev"
+              onClick={() => selectAdjacentMissionMobilePane(-1)}
+              disabled={currentMobilePaneIndex <= 0}
+              aria-label="上一页"
+            />
+            <span aria-hidden="true" />
+            <button
+              type="button"
+              className="mission-mobile-edge-pager-button mission-mobile-edge-pager-next"
+              onClick={() => selectAdjacentMissionMobilePane(1)}
+              disabled={currentMobilePaneIndex >= MISSION_MOBILE_PANE_ORDER.length - 1}
+              aria-label="下一页"
+            />
+          </nav>
+        ) : null}
         <MissionMobilePager
           selectedPane={resolvedMissionMobilePane}
           onSelectPane={setSelectedMissionMobilePane}

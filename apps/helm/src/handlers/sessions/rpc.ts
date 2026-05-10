@@ -105,6 +105,8 @@ export async function handleSessionRpcRequest(
         params as { permissionRequestId: string; decision: "allow" | "deny" },
         context,
       );
+    case "permission/list_pending":
+      return listPendingPermissions(context);
     case "session/rename":
       return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
@@ -553,6 +555,15 @@ function respondPermission(
     ok: true,
     permissionRequestId: params.permissionRequestId,
     decision: params.decision,
+  };
+}
+
+function listPendingPermissions(context: HelmHandlerContext) {
+  return {
+    permissions: Array.from(context.permissionIndex.values()).map((permission) => ({
+      sessionId: permission.sessionId,
+      request: permission.request,
+    })),
   };
 }
 

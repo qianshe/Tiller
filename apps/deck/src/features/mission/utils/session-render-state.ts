@@ -66,29 +66,5 @@ export function resolveMissionActivityLoading({
   if (pendingToolActivity) return pendingToolActivity;
   if (pendingPermission) return null;
   if (!isSessionExecutionPending(status)) return null;
-  return shouldShowAgentResponseFallback(messages)
-    ? { title: "Agent 响应", status }
-    : null;
-}
-
-function shouldShowAgentResponseFallback(messages: AgentMessage[]) {
-  const sortedMessages = [...messages].sort(
-    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
-  );
-  const latestUser = findLastMessageByRole(sortedMessages, "user");
-  if (!latestUser) return false;
-  const latestAssistant = findLastMessageByRole(sortedMessages, "assistant");
-  if (!latestAssistant) return true;
-  return Date.parse(latestUser.timestamp) > Date.parse(latestAssistant.timestamp);
-}
-
-function findLastMessageByRole(
-  messages: AgentMessage[],
-  role: AgentMessage["role"],
-) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === role) return message;
-  }
-  return null;
+  return { title: "ACP 正在运行", status };
 }

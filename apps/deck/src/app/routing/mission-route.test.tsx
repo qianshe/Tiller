@@ -26,19 +26,16 @@ test("renderMissionRoute forwards all workspaces for scanned worktrees", () => {
   assert.match(source, /workspaces=\{workspaces\}/);
 });
 
-test("renderMissionRoute forwards mobile pane state and swipe handlers", () => {
+test("renderMissionRoute forwards mobile pane state", () => {
   const source = readFileSync(routePath, "utf8");
 
   assert.match(source, /isMissionMobile,/);
   assert.match(source, /selectedMissionMobilePane,/);
   assert.match(source, /setSelectedMissionMobilePane,/);
-  assert.match(source, /startMissionMobileSwipe,/);
-  assert.match(source, /trackMissionMobileSwipe,/);
-  assert.match(source, /finishMissionMobileSwipe,/);
+  assert.doesNotMatch(source, /startMissionMobileSwipe/);
+  assert.doesNotMatch(source, /trackMissionMobileSwipe/);
+  assert.doesNotMatch(source, /finishMissionMobileSwipe/);
   assert.match(source, /isMissionMobile=\{isMissionMobile\}/);
   assert.match(source, /selectedMissionMobilePane=\{selectedMissionMobilePane\}/);
   assert.match(source, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
-  assert.match(source, /startMissionMobileSwipe=\{startMissionMobileSwipe\}/);
-  assert.match(source, /trackMissionMobileSwipe=\{trackMissionMobileSwipe\}/);
-  assert.match(source, /finishMissionMobileSwipe=\{finishMissionMobileSwipe\}/);
 });

@@ -74,9 +74,6 @@ export function renderMissionRoute(source: any) {
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
-    startMissionMobileSwipe,
-    trackMissionMobileSwipe,
-    finishMissionMobileSwipe,
     nudgeMissionPane,
     missionChatPaneStyle,
     chatMainRef,
@@ -234,9 +231,6 @@ export function renderMissionRoute(source: any) {
       sessionHistoryState={sessionHistoryState}
       toggleMissionProjectNode={toggleMissionProjectNode}
       startMissionPaneResize={startMissionPaneResize}
-      startMissionMobileSwipe={startMissionMobileSwipe}
-      trackMissionMobileSwipe={trackMissionMobileSwipe}
-      finishMissionMobileSwipe={finishMissionMobileSwipe}
       nudgeMissionPane={nudgeMissionPane}
       missionChatPaneStyle={missionChatPaneStyle}
       chatMainRef={chatMainRef}
