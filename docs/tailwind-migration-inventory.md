@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1351
+- Total lines: 1757
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 465
-- Top-level selectors: 76
+- Lines: 744
+- Top-level selectors: 135
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -24,6 +24,59 @@ Selectors:
 - `.admiral-disconnected`
 - `.compact`
 - `.device-mono`
+- `.mission-inspector-section-head > div`
+- `.mission-inspector-section-head h3`
+- `.mission-mobile-edge-pager`
+- `.mission-mobile-edge-pager-button`
+- `.mission-mobile-edge-pager-button:disabled`
+- `.mission-mobile-mode .mission-sidebar-toggle`
+- `.mission-mobile-pager`
+- `.mission-mobile-pager-dot`
+- `.mission-mobile-pager-item`
+- `.mission-mobile-pager-item.active`
+- `.mission-mobile-pager-item.active .mission-mobile-pager-dot`
+- `.mission-mobile-pager-label`
+- `.mission-panel-head > div`
+- `.mission-panel-head h3`
+- `.mission-responsive-mode`
+- `.mission-responsive-mode .mission-composer`
+- `.mission-responsive-mode .mission-inspector-section-head`
+- `.mission-responsive-mode .mission-inspector-section-head .eyebrow`
+- `.mission-responsive-mode .mission-inspector-section-head h3`
+- `.mission-responsive-mode .mission-logbook-layout`
+- `.mission-responsive-mode .mission-mobile-pager`
+- `.mission-responsive-mode .mission-order-editor`
+- `.mission-responsive-mode .mission-pane-chat`
+- `.mission-responsive-mode .mission-pane-resizer`
+- `.mission-responsive-mode .mission-panel-content`
+- `.mission-responsive-mode .mission-panel-head`
+- `.mission-responsive-mode .mission-panel-head .eyebrow`
+- `.mission-responsive-mode .mission-panel-head h3`
+- `.mission-responsive-mode .mission-panel-tree`
+- `.mission-responsive-mode .mission-permission-drawer`
+- `.mission-responsive-mode .mission-session-meta`
+- `.mission-responsive-mode .mission-session-metric`
+- `.mission-responsive-mode .mission-session-metrics`
+- `.mission-responsive-mode .mission-session-overview`
+- `.mission-responsive-mode .mission-session-overview-content`
+- `.mission-responsive-mode .mission-session-overview-header`
+- `.mission-responsive-mode .mission-session-preview`
+- `.mission-responsive-mode [data-mission-mobile-pane]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [role="button"]`
+- `.mission-responsive-mode [data-mission-mobile-pane] a`
+- `.mission-responsive-mode [data-mission-mobile-pane] button`
+- `.mission-responsive-mode [data-mission-mobile-pane] input`
+- `.mission-responsive-mode [data-mission-mobile-pane] select`
+- `.mission-responsive-mode [data-mission-mobile-pane] textarea`
+- `.mission-responsive-mode #mission-prompt-input`
+- `.mission-responsive-mode:focus-within .mission-mobile-pager`
+- `.mission-responsive-mode:focus-within .mission-mobile-pager-label`
+- `.mission-responsive-mode.mission-mobile-pane-chat [data-mission-mobile-pane="chat"]`
+- `.mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"]`
+- `.mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"]`
+- `.mission-responsive-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"]`
+- `.mobile-addressbar-scroll-shell`
+- `.mobile-addressbar-scroll-shell > .shell`
 - `.motion-reduced *`
 - `.motion-reduced *::after`
 - `.motion-reduced *::before`
@@ -35,9 +88,10 @@ Selectors:
 - `.stack-gap`
 - `.subtle`
 - `.top-nav`
+- `.top-nav .top-nav-github-link`
+- `.top-nav .top-nav-github-link.top-nav-github-link-mobile-visible`
 - `.top-nav-actions`
 - `.top-nav-brand`
-- `.top-nav-github-link`
 - `.top-nav-item`
 - `.top-nav-item:hover`
 - `.top-nav-item.active`
@@ -66,13 +120,18 @@ Selectors:
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="system"] body`
+- `[data-deck-theme="tiller"]`
+- `[data-deck-theme="tiller"] *`
+- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb`
+- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
+- `[data-deck-theme="tiller"] body`
 - `} .admiral-avatar`
 - `} @keyframes mission-loading-pulse`
+- `} @keyframes mission-mobile-card-switch`
 - `} @keyframes mission-session-status-pulse`
 - `} *`
 - `@keyframes surface-fade`
-- `@media (max-width: 767px)`
-- `@media (max-width: 860px)`
+- `@media (max-width: 1080px)`
 - `*`
 - `*::-webkit-scrollbar`
 - `*::-webkit-scrollbar-corner`
@@ -100,13 +159,14 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 191
-- Top-level selectors: 4
-- Hard-coded color tokens: 37
+- Lines: 290
+- Top-level selectors: 5
+- Hard-coded color tokens: 88
 
 Selectors:
 
 - `[data-deck-theme="dark"]`
+- `[data-deck-theme="tiller"]`
 - `} } @theme inline`
 - `@layer base`
 - `@media (prefers-color-scheme: dark)`
@@ -114,46 +174,97 @@ Selectors:
 Hard-coded colors:
 
 - `#002e69`
+- `#003f8a`
 - `#0058bc`
 - `#006b27`
 - `#0070eb`
 - `#008733`
+- `#064b23`
+- `#0d1117`
 - `#0e0e0e`
+- `#0e5530`
+- `#10241a`
+- `#111820`
 - `#131313`
+- `#18212a`
 - `#1a1c1d`
 - `#1b1b1b`
 - `#1f1f1f`
+- `#1f242c`
+- `#1f2933`
+- `#1f5e90`
+- `#22c55e`
+- `#244563`
+- `#252b33`
+- `#26313b`
+- `#263440`
+- `#28734f`
 - `#2a2a2a`
+- `#2c3742`
 - `#2f3132`
 - `#2f3645`
+- `#314963`
+- `#33404d`
 - `#353535`
 - `#414755`
+- `#4a5568`
 - `#4ade80`
 - `#4b8eff`
+- `#52606e`
 - `#64748b`
+- `#762525`
+- `#86efac`
 - `#8a5600`
+- `#8b6419`
+- `#8e1515`
+- `#909ba6`
 - `#94a3b8`
+- `#9b3131`
 - `#a8a8ac`
+- `#a8b2bd`
+- `#aab4c0`
 - `#adc6ff`
+- `#aeb7c0`
+- `#b0bac4`
+- `#b8c1ca`
 - `#ba1a1a`
+- `#bfdbfe`
+- `#c6ced6`
+- `#c9e0d0`
+- `#ccd8e4`
+- `#d7dee5`
+- `#d7f3df`
+- `#d8dee6`
 - `#d8e2ff`
 - `#e2e2e4`
+- `#e5ebf0`
+- `#e6c7c7`
+- `#e6edf3`
 - `#e6eefc`
+- `#e7e9ee`
+- `#e8eef5`
+- `#edf3f8`
 - `#eef4ff`
 - `#f0f0f2`
+- `#f1f6fa`
 - `#f3f3f5`
+- `#f7fafc`
 - `#f7fff2`
+- `#f87171`
 - `#f9f9fb`
 - `#facc15`
+- `#fca5a5`
 - `#ff6b6b`
 - `#ffb000`
+- `#ffe0e0`
+- `#fff6df`
 - `#ffffff`
 - `rgb(`
 - `rgba(`
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 533
+- Lines: 561
 - Top-level selectors: 60
 - Hard-coded color tokens: 12
 

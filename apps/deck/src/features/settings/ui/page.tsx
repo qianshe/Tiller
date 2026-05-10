@@ -128,6 +128,7 @@ export function SettingsPage({
                   <SelectItem value="system">{settingsCopy.themeSystem}</SelectItem>
                   <SelectItem value="light">{settingsCopy.themeLight}</SelectItem>
                   <SelectItem value="dark">{settingsCopy.themeDark}</SelectItem>
+                  <SelectItem value="tiller">{settingsCopy.themeTiller}</SelectItem>
                 </SelectContent>
               </Select>
             </Label>

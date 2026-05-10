@@ -22,7 +22,14 @@ type MarkdownHighlight = {
   language?: string;
 };
 
+type MermaidRenderState = {
+  svg?: string;
+  error?: string;
+};
+
+const MERMAID_LANGUAGE = "mermaid";
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
+let mermaidRenderSequence = 0;
 
 const markdownComponents: Components = {
   a({ children, href, ...props }) {
@@ -87,6 +94,21 @@ const markdownComponents: Components = {
     );
   },
   code({ children, className, node: _node, ...props }) {
+    const isBlockCode = typeof className === "string" && className.includes("language-");
+
+    if (isBlockCode) {
+      return (
+        <code
+          {...props}
+          className={[className, "!bg-transparent text-[var(--markdown-code-fg)]"]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {children}
+        </code>
+      );
+    }
+
     return (
       <code
         {...props}
@@ -133,6 +155,10 @@ const markdownComponents: Components = {
   pre({ children }) {
     const code = extractTextFromReactNode(children).replace(/\n$/, "");
     const language = findCodeLanguage(children);
+    if (language === MERMAID_LANGUAGE) {
+      return <MarkdownMermaidBlock code={code} />;
+    }
+
     return (
       <MarkdownCodeBlock code={code} language={language}>
         {children}
@@ -272,8 +298,8 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-surface-sunken text-sm text-foreground shadow-sm">
-      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-surface-emphasis px-3 py-1.5 text-xs text-muted-foreground">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-sm text-[var(--markdown-code-fg)] shadow-sm">
+      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-[var(--markdown-code-head)] px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
           type="button"
@@ -290,14 +316,87 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-3 text-xs leading-6 text-foreground">
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">
           <code
-            className={`hljs language-${highlightedCode.language ?? language ?? "text"}`}
+            className={`hljs !bg-transparent language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-3 text-xs leading-6 text-foreground">{children}</pre>
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">{children}</pre>
+      )}
+    </div>
+  );
+}
+
+function MarkdownMermaidBlock({ code }: { code: string }) {
+  const [renderState, setRenderState] = useState<MermaidRenderState>({});
+
+  useEffect(() => {
+    let mounted = true;
+    const diagramSource = code.trim();
+
+    if (!diagramSource) {
+      setRenderState({ error: "Mermaid 图表内容为空。" });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setRenderState({});
+    const renderId = `tiller-mermaid-${++mermaidRenderSequence}`;
+
+    void import("mermaid")
+      .then(async (module) => {
+        const mermaid = module.default;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "base",
+          themeVariables: {
+            background: "transparent",
+            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+            primaryColor: "#d7dee5",
+            primaryTextColor: "#111820",
+            primaryBorderColor: "#909ba6",
+            lineColor: "#314963",
+            secondaryColor: "#e5ebf0",
+            tertiaryColor: "#c6ced6",
+          },
+        });
+        return mermaid.render(renderId, diagramSource);
+      })
+      .then(({ svg }) => {
+        if (mounted) {
+          setRenderState({ svg });
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setRenderState({ error: "Mermaid 图表渲染失败，已保留源码。" });
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [code]);
+
+  return (
+    <div className="markdown-mermaid-block overflow-hidden rounded-lg border border-border-ghost bg-surface text-sm text-foreground shadow-sm">
+      <div className="not-prose flex items-center justify-between border-b border-border-ghost bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground">
+        <span>Mermaid</span>
+        {renderState.error ? <span>{renderState.error}</span> : null}
+      </div>
+      {renderState.svg ? (
+        <div
+          className="overflow-x-auto p-3 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: renderState.svg }}
+        />
+      ) : (
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-muted-foreground">
+          <code>{code}</code>
+        </pre>
       )}
     </div>
   );

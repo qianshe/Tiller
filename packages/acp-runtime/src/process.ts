@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { Transform } from "node:stream";
 
 export function resolveLaunchSpec(
   command: string,
@@ -61,6 +62,46 @@ export function terminateChildProcess(pid: number | undefined) {
     process.kill(pid, "SIGTERM");
   } catch {
     // ignore: process already exited
+  }
+}
+
+export function createProtocolStdoutStream(
+  source: NodeJS.ReadableStream,
+  onDiscardLine?: (line: string) => void,
+): Transform {
+  let pending = "";
+  const filter = new Transform({
+    transform(chunk, _encoding, callback) {
+      pending += String(chunk);
+      const lines = pending.split(/(?<=\n)/u);
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        pushProtocolLine(this, line, onDiscardLine);
+      }
+      callback();
+    },
+    flush(callback) {
+      if (pending) {
+        pushProtocolLine(this, pending, onDiscardLine);
+      }
+      callback();
+    },
+  });
+  return source.pipe(filter);
+}
+
+function pushProtocolLine(
+  stream: Transform,
+  line: string,
+  onDiscardLine?: (line: string) => void,
+) {
+  if (line.trimStart().startsWith("{")) {
+    stream.push(line);
+    return;
+  }
+  const trimmed = line.trim();
+  if (trimmed) {
+    onDiscardLine?.(trimmed);
   }
 }
 

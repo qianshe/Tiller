@@ -149,14 +149,16 @@ const PlainMessageItem = memo(function PlainMessageItem({
         </span>
       ) : null}
       <div className="grid min-w-0 gap-2">
-        <span
-          className={cn(
-            "plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-            isContinuation && "sr-only",
-          )}
-        >
-          {roleLabel}
-        </span>
+        {message.role === "user" ? null : (
+          <span
+            className={cn(
+              "plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+              isContinuation && "sr-only",
+            )}
+          >
+            {roleLabel}
+          </span>
+        )}
         <div
           className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`}
         >

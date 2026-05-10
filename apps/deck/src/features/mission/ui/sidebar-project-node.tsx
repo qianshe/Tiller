@@ -107,9 +107,8 @@ export function SidebarProjectNode({
           >
             {projectExpanded ? "📂" : "📁"}
           </span>
-          <span className="mission-tree-main grid min-w-0 gap-0.5">
+          <span className="mission-tree-main grid min-w-0">
             <strong className="truncate font-semibold">{project.name}</strong>
-            <span className="truncate text-xs text-muted-foreground">Project</span>
           </span>
           <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
             {sessionCountsByProject[project.id] ?? 0}

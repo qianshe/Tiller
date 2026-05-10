@@ -253,11 +253,11 @@ export function MissionPermissionDrawer({
           </p>
         )}
         {commandDisplay.detail ? (
-          <details className="mission-permission-detail min-w-0 max-w-full overflow-hidden rounded-md bg-surface-sunken p-2 text-xs text-foreground">
-            <summary className="cursor-pointer select-none font-medium text-muted-foreground">
+          <details className="mission-permission-detail min-w-0 max-h-28 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-sunken p-2 font-mono text-xs text-foreground">
+            <summary className="cursor-pointer select-none font-sans font-medium text-muted-foreground">
               查看完整命令
             </summary>
-            <pre className="mt-2 max-h-28 max-w-full overflow-auto whitespace-pre-wrap break-all font-mono leading-relaxed">
+            <pre className="mt-2 max-w-full whitespace-pre-wrap break-words leading-relaxed">
               {commandDisplay.detail}
             </pre>
           </details>

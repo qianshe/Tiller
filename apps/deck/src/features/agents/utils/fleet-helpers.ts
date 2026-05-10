@@ -68,14 +68,24 @@ export function resolveProjectDisplayId(
   return sameNameProjects.length > 1 ? project.id : project.name;
 }
 
-export function resolveProjectWorkspaceLabel(
+export function resolveProjectWorktrees(
   project: ProjectSummary,
   workspaces: WorkspaceSummary[],
 ) {
-  const workspace = workspaces.find(
-    (item) => item.id === project.defaultWorkspaceId,
+  const workspaceIds = new Set(project.workspaceIds ?? []);
+  return workspaces.filter(
+    (workspace) =>
+      (workspaceIds.has(workspace.id) ||
+        workspace.id.startsWith(`${project.id}-worktree-`)) &&
+      isManagedWorktreeWorkspace(workspace),
   );
-  return (
-    workspace?.name ?? project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? "-"
+}
+
+function isManagedWorktreeWorkspace(workspace: Pick<WorkspaceSummary, "id" | "path">) {
+  const normalizedPath = workspace.path.replace(/\\/g, "/");
+  return Boolean(
+    workspace.id.includes("-worktree-") ||
+      normalizedPath.includes("/.worktrees/") ||
+      normalizedPath.includes("/.tiller/worktrees/"),
   );
 }

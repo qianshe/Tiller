@@ -69,3 +69,15 @@ test("project and agent inventory expose edit and delete RPC actions", () => {
   assert.match(agentInventory, /aria-label=\{`删除 ACP/);
   assert.match(agentInventory, /"agent\/delete"/);
 });
+
+test("fleet project detail favors worktree and hides branch and default agent", () => {
+  const helmDetail = readUiFile("helm-detail-section.tsx");
+  const projectInventory = readUiFile("project-inventory-section.tsx");
+
+  assert.doesNotMatch(helmDetail, />\s*分支\s*</);
+  assert.doesNotMatch(projectInventory, />\s*默认分支\s*</);
+  assert.doesNotMatch(projectInventory, />\s*Default Agent\s*</);
+  assert.match(projectInventory, />Git Branch</);
+  assert.match(projectInventory, />Worktrees</);
+  assert.match(projectInventory, /resolveProjectWorktrees/);
+});

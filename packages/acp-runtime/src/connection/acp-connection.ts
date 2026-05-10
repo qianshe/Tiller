@@ -9,7 +9,7 @@ import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from 
 import { resolveAcpRequestTimeout } from "../constants";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
-import { resolveLaunchSpec, terminateChildProcess } from "../process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
@@ -129,7 +129,10 @@ export class AcpConnection {
     });
 
     let connection: AcpConnection | undefined;
-    const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
+    const protocolStdout = createProtocolStdoutStream(child.stdout, (line) => {
+      writeLogLine(logFile, "stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
+    });
+    const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(protocolStdout));
     const agent = new acp.ClientSideConnection(
       () => createConnectionClientMethods({
         onSessionUpdate: (params) => connection?.handleSessionUpdate(params),

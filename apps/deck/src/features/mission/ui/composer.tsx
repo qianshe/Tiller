@@ -212,7 +212,7 @@ export function MissionComposer({
         />
       ) : null}
       <form
-        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface-sunken p-3"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface p-3"
         onSubmit={submitPrompt}
       >
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">

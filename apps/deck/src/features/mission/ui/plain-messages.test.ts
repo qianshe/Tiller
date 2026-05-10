@@ -338,5 +338,6 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.match(html, /很长的文本/);
   assert.doesNotMatch(html, /markdown-message/);
   assert.doesNotMatch(html, /<table>/);
+  assert.doesNotMatch(html, />你<\/span>/);
   assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });

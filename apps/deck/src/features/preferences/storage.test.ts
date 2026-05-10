@@ -5,6 +5,7 @@ import {
   DEFAULT_DECK_PREFERENCES,
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
   DECK_PREFERENCES_STORAGE_KEY,
+  isDeckTheme,
   readDeckPreferences,
 } from "./storage.js";
 
@@ -66,6 +67,16 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
       });
     },
   );
+});
+
+test("readDeckPreferences preserves the Tiller theme", () => {
+  assert.equal(isDeckTheme("tiller"), true);
+
+  withStoredPreferences(JSON.stringify({ theme: "tiller" }), () => {
+    const preferences = readDeckPreferences();
+
+    assert.equal(preferences.theme, "tiller");
+  });
 });
 
 test("default preferences use the prompt enhancer engine template", () => {

@@ -2,7 +2,11 @@
 import { useEffect } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
-import { resolveDraftSelectionId } from "../utils/session-derivations";
+import {
+  resolveDefaultMissionSessionId,
+  resolveDraftSelectionId,
+  resolveSessionProjectId,
+} from "../utils/session-derivations";
 
 export function useMissionSelectionEffects(source: any) {
   const {
@@ -14,12 +18,14 @@ export function useMissionSelectionEffects(source: any) {
     setAgentPickerOpen,
     selectedMissionHelmId,
     activeSession,
+    activeSessionId,
+    sessions,
+    statuses,
     draftProject,
     projects,
     helms,
     setSelectedMissionHelmId,
     selectedProjectId,
-    missionProjects,
     setSelectedProjectId,
     requestChatScrollToBottom,
     setActiveSessionId,
@@ -98,16 +104,26 @@ export function useMissionSelectionEffects(source: any) {
     selectedMissionHelmId,
   ]);
   useEffect(() => {
-    if (!selectedProjectId && missionProjects.length) {
-      const nextProject = missionProjects[0];
-      if (!nextProject) {
-        return;
-      }
-      setSelectedProjectId(nextProject.id);
-      requestChatScrollToBottom(null);
-      setActiveSessionId(null);
+    if (activeSession || selectedProjectId) {
+      return;
     }
-  }, [missionProjects, selectedProjectId]);
+    const nextActiveSessionId = resolveDefaultMissionSessionId(
+      activeSessionId,
+      sessions,
+      statuses,
+    );
+    if (!nextActiveSessionId) {
+      return;
+    }
+    const nextSession = sessions.find((session) => session.id === nextActiveSessionId);
+    if (!nextSession) {
+      return;
+    }
+    const nextProjectId = resolveSessionProjectId(nextSession, projects);
+    setSelectedProjectId(nextProjectId);
+    requestChatScrollToBottom(nextActiveSessionId);
+    setActiveSessionId(nextActiveSessionId);
+  }, [activeSession, activeSessionId, projects, selectedProjectId, sessions, statuses]);
   useEffect(() => {
     if (effectiveMissionHelmId) {
       setExpandedMissionHelmIds((current) =>

@@ -75,6 +75,26 @@ test("mission starting sessions disable send without showing cancel", () => {
   assert.match(workspaceModelSourceText, /activeSessionStatus !== "starting" &&/);
 });
 
+test("mission selection effects does not auto-select the first project", () => {
+  assert.doesNotMatch(sourceText, /setSelectedProjectId\(nextProject\.id\)/);
+  assert.doesNotMatch(sourceText, /!selectedProjectId && missionProjects\.length/);
+});
+
+test("mission worktree panel only lists project-scoped worktrees", () => {
+  assert.doesNotMatch(workspaceSourceText, /const projectWorktreeOptions = \(workspaces \?\? \[\]\)\.filter/);
+  assert.match(workspaceSourceText, /const hasWorktreeScope = Boolean\(activeSession \|\| selectedProjectId\)/);
+  assert.match(
+    workspaceSourceText,
+    /const worktreeOptions = workspaceOptions\.filter\(isManagedWorktreeWorkspace\)/,
+  );
+  assert.match(viewModelSourceText, /if \(!draftProject\) \{\s*return \[\];\s*\}/);
+});
+
+test("mission selection effects can auto-open the preferred running session", () => {
+  assert.match(sourceText, /resolveDefaultMissionSessionId/);
+  assert.match(sourceText, /setActiveSessionId\(nextActiveSessionId\)/);
+});
+
 test("mission selection effects reads setAgentModelOptions from source context", () => {
   const destructuredSource = sourceText.match(
     /const\s*\{([\s\S]*?)\}\s*=\s*source;/,

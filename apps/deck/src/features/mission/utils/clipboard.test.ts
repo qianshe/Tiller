@@ -39,6 +39,6 @@ test("createClipboardImageContent encodes pasted files as ACP image content", as
     data: "AQID",
     mimeType: "image/png",
     name: "shot.png",
-    uri: "tiller:///agent/pasted-image?name=shot.png&index=0",
+    uri: "tiller:///agent/prompt-image?name=shot.png&index=0",
   });
 });

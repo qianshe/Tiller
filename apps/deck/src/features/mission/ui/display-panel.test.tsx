@@ -48,4 +48,6 @@ test("mission overview renders active ACP connections below project cards", () =
   assert.match(html, /Codex/);
   assert.match(html, /Tiller/);
   assert.match(html, /main · 空闲 · gpt-5.5/);
+  assert.match(html, /<details[^>]*class="[^"]*mission-runtime-item/);
+  assert.doesNotMatch(html, /<details[^>]*\sopen=""/);
 });

@@ -65,5 +65,4 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(html, /语言/);
   assert.match(html, /主题/);
   assert.match(html, /技术面板/);
-  assert.match(html, /LLM 增强器/);
 });

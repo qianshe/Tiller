@@ -103,6 +103,7 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
+  assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
   assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)_auto\]/);
 });
 
@@ -302,6 +303,8 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*field-sizing:\s*content;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*min-height:\s*1\.5rem;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-order-editor\s*{[^}]*padding:\s*8px;/s);
+  assert.match(composerSource, /mission-order-editor[^\n]+bg-surface\s/);
+  assert.doesNotMatch(composerSource, /mission-order-editor[^\n]+bg-surface-sunken/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
   assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
 });

@@ -3,7 +3,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "./adapters";
-import { resolveLaunchSpec, terminateChildProcess } from "./process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "./protocol-logging";
 import { SDK_PROBE_CLIENT_CAPABILITIES } from "./sdk-helpers";
 import { resolve } from "node:path";
@@ -54,7 +54,10 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
     writeChunkLog(logFile, "stderr", text);
   });
 
-  const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
+  const protocolStdout = createProtocolStdoutStream(child.stdout, (line) => {
+    writeLogLine(logFile, "stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
+  });
+  const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(protocolStdout));
   const agent = new acp.ClientSideConnection(() => ({
     async sessionUpdate() {
       return undefined;

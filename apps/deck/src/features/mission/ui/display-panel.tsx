@@ -196,8 +196,7 @@ export function MissionDisplayPanel({
                 {runtimeOverviewItems.map((runtime) => (
                   <details
                     key={runtime.id}
-                    className="grid gap-1 rounded-md border border-border-ghost bg-surface px-2.5 py-2"
-                    open
+                    className="mission-runtime-item grid gap-1 rounded-md border border-border-ghost bg-surface px-2.5 py-2"
                   >
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 marker:hidden">
                       <strong className="min-w-0 truncate text-sm text-foreground">

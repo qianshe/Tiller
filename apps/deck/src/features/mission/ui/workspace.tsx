@@ -204,18 +204,15 @@ export function MissionWorkspace(props: any) {
     visibleProjectFiles,
     sessionExecutionPending,
   } = buildMissionWorkspaceModel(props);
-  const workspaceOptions = draftWorkspaceOptions.length
-    ? draftWorkspaceOptions
-    : selectedWorkspace
-      ? [selectedWorkspace]
-      : [];
-  const projectWorktreeOptions = (workspaces ?? []).filter((workspace: any) =>
-    isManagedWorktreeWorkspace(workspace),
-  );
-  const worktreeOptions = mergeWorkspaceOptions(
-    workspaceOptions.filter(isManagedWorktreeWorkspace),
-    projectWorktreeOptions,
-  );
+  const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
+  const workspaceOptions = hasWorktreeScope
+    ? draftWorkspaceOptions.length
+      ? draftWorkspaceOptions
+      : selectedWorkspace
+        ? [selectedWorkspace]
+        : []
+    : [];
+  const worktreeOptions = workspaceOptions.filter(isManagedWorktreeWorkspace);
   const renderWorktreeList = () => (
     <div className="mission-worktree-list grid gap-2">
       {worktreeOptions.length ? (
@@ -660,12 +657,6 @@ export function MissionWorkspace(props: any) {
       </>{" "}
     </MissionPage>
   );
-}
-
-function mergeWorkspaceOptions(...groups: Array<Array<{ id: string; name?: string; path?: string }>>) {
-  const byId = new Map<string, { id: string; name?: string; path?: string }>();
-  groups.flat().forEach((workspace) => byId.set(workspace.id, workspace));
-  return Array.from(byId.values());
 }
 
 function isManagedWorktreeWorkspace(workspace: { id?: string; path?: string }) {

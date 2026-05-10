@@ -40,6 +40,20 @@
     --on-warning:           #8a5600;
     --destructive:          #ba1a1a;
 
+    --diff-added-bg:        #d7f3df;
+    --diff-added-text:      #064b23;
+    --diff-added-border:    #008733;
+    --diff-deleted-bg:      #ffe0e0;
+    --diff-deleted-text:    #8e1515;
+    --diff-deleted-border:  #ba1a1a;
+    --diff-hunk-bg:         #d8e2ff;
+    --diff-hunk-text:       #003f8a;
+    --diff-meta-bg:         #e7e9ee;
+    --diff-meta-text:       #4a5568;
+    --markdown-code-bg:     #1f2933;
+    --markdown-code-fg:     #e8eef5;
+    --markdown-code-head:   #d8dee6;
+
     --border-ghost:         rgb(193 198 215 / 0.20);
     --ring:                 #0058bc;
 
@@ -102,6 +116,20 @@
     --on-warning:           #facc15;
     --destructive:          #ff6b6b;
 
+    --diff-added-bg:        rgb(34 197 94 / 0.18);
+    --diff-added-text:      #86efac;
+    --diff-added-border:    #22c55e;
+    --diff-deleted-bg:      rgb(248 113 113 / 0.18);
+    --diff-deleted-text:    #fca5a5;
+    --diff-deleted-border:  #f87171;
+    --diff-hunk-bg:         rgb(96 165 250 / 0.20);
+    --diff-hunk-text:       #bfdbfe;
+    --diff-meta-bg:         #252b33;
+    --diff-meta-text:       #aab4c0;
+    --markdown-code-bg:     #0d1117;
+    --markdown-code-fg:     #e6edf3;
+    --markdown-code-head:   #1f242c;
+
     --border-ghost:         rgb(65 71 85 / 0.10);
     --ring:                 #adc6ff;
 
@@ -119,6 +147,64 @@
     --shadow-panel:         0 20px 44px rgba(0, 0, 0, 0.28);
     --shadow-card:          0 16px 34px rgba(0, 0, 0, 0.24);
     --deck-color-scheme:    dark;
+    --deck-body-background: var(--background);
+  }
+
+  [data-deck-theme="tiller"] {
+    --background:           #b8c1ca;
+    --canvas:               #c6ced6;
+    --surface:              #d7dee5;
+    --surface-elevated:     #e5ebf0;
+    --surface-sunken:       #aeb7c0;
+    --surface-emphasis:     #909ba6;
+    --popover-glass:        rgb(229 235 240 / 0.82);
+
+    --foreground:           #111820;
+    --muted-foreground:     #33404d;
+
+    --primary:              #314963;
+    --primary-strong:       #1f5e90;
+    --on-primary:           #f7fafc;
+    --primary-soft:         rgb(49 73 99 / 0.14);
+
+    --success:              #28734f;
+    --success-container:    rgb(40 115 79 / 0.14);
+    --on-success-container: #10241a;
+    --warning:              #8b6419;
+    --on-warning:           #fff6df;
+    --destructive:          #9b3131;
+
+    --diff-added-bg:        #c9e0d0;
+    --diff-added-text:      #0e5530;
+    --diff-added-border:    #28734f;
+    --diff-deleted-bg:      #e6c7c7;
+    --diff-deleted-text:    #762525;
+    --diff-deleted-border:  #9b3131;
+    --diff-hunk-bg:         #ccd8e4;
+    --diff-hunk-text:       #244563;
+    --diff-meta-bg:         #a8b2bd;
+    --diff-meta-text:       #2c3742;
+    --markdown-code-bg:     #26313b;
+    --markdown-code-fg:     #edf3f8;
+    --markdown-code-head:   #b0bac4;
+
+    --border-ghost:         rgb(26 36 46 / 0.15);
+    --ring:                 #314963;
+
+    --terminal-bg:          #18212a;
+    --terminal-fg:          #f1f6fa;
+
+    --shadow-ambient:       0 0 84px rgb(49 73 99 / 0.12);
+
+    --color-text-inverse:   #f7fafc;
+    --color-subtle:         #52606e;
+    --color-surface:        rgba(215, 222, 229, 0.88);
+    --color-surface-strong: rgba(229, 235, 240, 0.96);
+    --color-secondary-text: #263440;
+    --color-border-strong:  rgba(26, 36, 46, 0.22);
+    --shadow-panel:         0 24px 52px rgba(17, 24, 32, 0.16);
+    --shadow-card:          0 18px 38px rgba(17, 24, 32, 0.12);
+    --deck-color-scheme:    light;
     --deck-body-background: var(--background);
   }
 
@@ -143,6 +229,19 @@
       --warning:              #facc15;
       --on-warning:           #facc15;
       --destructive:          #ff6b6b;
+      --diff-added-bg:        rgb(34 197 94 / 0.18);
+      --diff-added-text:      #86efac;
+      --diff-added-border:    #22c55e;
+      --diff-deleted-bg:      rgb(248 113 113 / 0.18);
+      --diff-deleted-text:    #fca5a5;
+      --diff-deleted-border:  #f87171;
+      --diff-hunk-bg:         rgb(96 165 250 / 0.20);
+      --diff-hunk-text:       #bfdbfe;
+      --diff-meta-bg:         #252b33;
+      --diff-meta-text:       #aab4c0;
+      --markdown-code-bg:     #0d1117;
+      --markdown-code-fg:     #e6edf3;
+      --markdown-code-head:   #1f242c;
       --border-ghost:         rgb(65 71 85 / 0.10);
       --ring:                 #adc6ff;
       --terminal-bg:          #0e0e0e;

@@ -20,6 +20,7 @@ export function resolveSettingsCopy(language: DeckLanguage) {
         themeSystem: "System",
         themeLight: "Light",
         themeDark: "Dark",
+        themeTiller: "Tiller",
         themeHelp:
           "Theme only affects this Deck and is not written to Helm or Crew config.",
         motionEyebrow: "Motion",
@@ -76,6 +77,7 @@ export function resolveSettingsCopy(language: DeckLanguage) {
         themeSystem: "跟随系统",
         themeLight: "浅色",
         themeDark: "深色",
+        themeTiller: "Tiller",
         themeHelp: "主题只影响当前 Deck，不会写入 Helm 或舰员配置。",
         motionEyebrow: "动效",
         reduceMotion: "减少过渡动画",

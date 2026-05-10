@@ -17,7 +17,6 @@ export function useMissionEffects(ctx: any) {
   const source = buildMissionEffectsSource(ctx);
   const {
     projects,
-    setSelectedProjectId,
     pairingState,
     rpcClientRef,
     dispatch,
@@ -197,7 +196,6 @@ useSnapshotCache({
   setWorkspaces,
   setAgents,
   setStatuses,
-  setSelectedProjectId,
 });
 useReconnectEffects({
   activeProfileId,

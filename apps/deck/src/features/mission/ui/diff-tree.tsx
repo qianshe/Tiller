@@ -160,10 +160,14 @@ export function renderDiffPatch(patch: string) {
 }
 
 function resolveDiffLineStyleClass(lineClass: string) {
-  if (lineClass === "line-added") return "diff-line-added bg-success-container/30 text-foreground";
-  if (lineClass === "line-deleted") return "diff-line-deleted bg-destructive/10 text-foreground";
-  if (lineClass === "line-hunk") return "diff-line-hunk bg-primary-soft text-primary font-semibold";
-  if (lineClass === "line-meta") return "diff-line-meta bg-surface-emphasis text-muted-foreground";
+  if (lineClass === "line-added")
+    return "diff-line-added border-l-2 border-[var(--diff-added-border)] bg-[var(--diff-added-bg)] text-[var(--diff-added-text)]";
+  if (lineClass === "line-deleted")
+    return "diff-line-deleted border-l-2 border-[var(--diff-deleted-border)] bg-[var(--diff-deleted-bg)] text-[var(--diff-deleted-text)]";
+  if (lineClass === "line-hunk")
+    return "diff-line-hunk bg-[var(--diff-hunk-bg)] text-[var(--diff-hunk-text)] font-semibold";
+  if (lineClass === "line-meta")
+    return "diff-line-meta bg-[var(--diff-meta-bg)] text-[var(--diff-meta-text)]";
   return "diff-line-context text-foreground";
 }
 

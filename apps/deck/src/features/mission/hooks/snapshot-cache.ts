@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect } from "react";
 import type {
   AcpAgentProvider,
   ProjectSummary,
@@ -24,7 +24,6 @@ type UseSnapshotCacheOptions = {
   setWorkspaces: (workspaces: WorkspaceSummary[]) => void;
   setAgents: (agents: AcpAgentProvider[]) => void;
   setStatuses: (statuses: StatusMap) => void;
-  setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
 };
 
 /**
@@ -43,7 +42,6 @@ export function useSnapshotCache({
   setWorkspaces,
   setAgents,
   setStatuses,
-  setSelectedProjectId,
 }: UseSnapshotCacheOptions) {
   useEffect(() => {
     if (missionVisualMode) {
@@ -58,9 +56,6 @@ export function useSnapshotCache({
     setWorkspaces(snapshot.workspaces);
     setAgents(snapshot.agents);
     setStatuses(createSessionStatusMap(snapshot.sessions));
-    setSelectedProjectId(
-      (current) => current ?? snapshot.projects[0]?.id ?? null,
-    );
   }, [activeProfileId, missionVisualMode]);
 
   useEffect(() => {

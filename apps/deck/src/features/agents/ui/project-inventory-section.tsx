@@ -10,7 +10,7 @@ import {
   createProjectId,
   defaultAgentId,
   resolveProjectDisplayId,
-  resolveProjectWorkspaceLabel,
+  resolveProjectWorktrees,
 } from "../utils/fleet-helpers";
 
 export type FleetProjectDraft = { id?: string; name: string; path: string };
@@ -168,18 +168,18 @@ export function ProjectInventorySection({
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
                   </div>
                   <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">默认分支</dt>
+                    <dt className="font-semibold text-muted-foreground">Git Branch</dt>
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {resolveProjectWorkspaceLabel(
-                        project,
-                        selectedHelmWorkspaces,
-                      )}
+                      {project.gitCurrentBranch ?? "-"}
                     </dd>
                   </div>
                   <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Default Agent</dt>
+                    <dt className="font-semibold text-muted-foreground">Worktrees</dt>
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {project.defaultAgentId ?? "-"}
+                      <ProjectWorktreeList
+                        project={project}
+                        workspaces={selectedHelmWorkspaces}
+                      />
                     </dd>
                   </div>
                   <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
@@ -230,5 +230,30 @@ export function ProjectInventorySection({
         </div>
       )}
     </section>
+  );
+}
+
+function ProjectWorktreeList({
+  project,
+  workspaces,
+}: {
+  project: ProjectSummary;
+  workspaces: WorkspaceSummary[];
+}) {
+  const worktrees = resolveProjectWorktrees(project, workspaces);
+
+  if (!worktrees.length) {
+    return <span>-</span>;
+  }
+
+  return (
+    <ul className="m-0 grid list-none gap-1 p-0">
+      {worktrees.map((workspace) => (
+        <li key={workspace.id} className="grid gap-0.5">
+          <span className="font-medium text-foreground">{workspace.name}</span>
+          <span className="break-all text-xs text-muted-foreground">{workspace.path}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
