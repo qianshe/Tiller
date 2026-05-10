@@ -210,7 +210,9 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(mobilePagerSource, /对话/);
   assert.match(mobilePagerSource, /面板/);
   assert.match(mobilePagerSource, /检视/);
-  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*44px;/s);
+  assert.match(mobilePagerSource, /aria-label=\{item\.label\}/);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*32px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager-label\s*{[^}]*display:\s*none;/s);
   assert.match(shellStylesSource, /safe-area-inset-bottom/);
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
 });
@@ -254,5 +256,5 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
-  assert.match(shellStylesSource, /bottom:\s*calc\(44px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(shellStylesSource, /bottom:\s*calc\(32px \+ env\(safe-area-inset-bottom\)\)/);
 });

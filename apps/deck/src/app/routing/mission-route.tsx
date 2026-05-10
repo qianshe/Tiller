@@ -34,6 +34,9 @@ export function renderMissionRoute(source: any) {
     effectiveSidebarCollapsed,
     effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
+    isMissionMobile,
+    selectedMissionMobilePane,
+    setSelectedMissionMobilePane,
     missionLayoutRef,
     missionLayoutStyle,
     missionSidebarCollapsed,
@@ -71,6 +74,8 @@ export function renderMissionRoute(source: any) {
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
+    startMissionMobileSwipe,
+    finishMissionMobileSwipe,
     nudgeMissionPane,
     missionChatPaneStyle,
     chatMainRef,
@@ -187,6 +192,9 @@ export function renderMissionRoute(source: any) {
       effectiveSidebarCollapsed={effectiveSidebarCollapsed}
       effectiveDisplayCollapsed={effectiveDisplayCollapsed}
       effectiveInspectorCollapsed={effectiveInspectorCollapsed}
+      isMissionMobile={isMissionMobile}
+      selectedMissionMobilePane={selectedMissionMobilePane}
+      setSelectedMissionMobilePane={setSelectedMissionMobilePane}
       missionLayoutRef={missionLayoutRef}
       missionLayoutStyle={missionLayoutStyle}
       missionSidebarCollapsed={missionSidebarCollapsed}
@@ -224,6 +232,8 @@ export function renderMissionRoute(source: any) {
       sessionHistoryState={sessionHistoryState}
       toggleMissionProjectNode={toggleMissionProjectNode}
       startMissionPaneResize={startMissionPaneResize}
+      startMissionMobileSwipe={startMissionMobileSwipe}
+      finishMissionMobileSwipe={finishMissionMobileSwipe}
       nudgeMissionPane={nudgeMissionPane}
       missionChatPaneStyle={missionChatPaneStyle}
       chatMainRef={chatMainRef}

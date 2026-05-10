@@ -23,6 +23,7 @@ export function MissionMobilePager({
           key={item.id}
           type="button"
           className={`mission-mobile-pager-item ${item.id === selectedPane ? "active" : ""}`}
+          aria-label={item.label}
           aria-current={item.id === selectedPane ? "page" : undefined}
           onClick={() => onSelectPane(item.id)}
         >
