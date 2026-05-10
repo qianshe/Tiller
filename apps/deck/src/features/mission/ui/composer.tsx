@@ -229,6 +229,7 @@ export function MissionComposer({
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
+            rows={1}
             className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (

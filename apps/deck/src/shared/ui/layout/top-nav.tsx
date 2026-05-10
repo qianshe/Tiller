@@ -21,6 +21,7 @@ export function TopNav({
   const labels = NAV_LABELS[language];
   const showLandingMusic = activeView === "overview";
   const showGlobalMenu = activeView !== "overview";
+  const navRef = useRef<HTMLElement>(null);
   const musicRef = useRef<HTMLAudioElement>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -34,6 +35,25 @@ export function TopNav({
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [activeView]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+
+    function closeMobileMenuOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node) || navRef.current?.contains(target)) {
+        return;
+      }
+      setMobileMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeMobileMenuOnOutsidePointer);
+    return () => {
+      document.removeEventListener("pointerdown", closeMobileMenuOnOutsidePointer);
+    };
+  }, [mobileMenuOpen]);
 
   const toggleLandingMusic = () => {
     const music = musicRef.current;
@@ -56,7 +76,7 @@ export function TopNav({
   }
 
   return (
-    <header className="top-nav">
+    <header ref={navRef} className="top-nav">
       <div className="top-nav-brand">
         <span className="top-nav-logo" aria-hidden="true">
           <svg className="top-nav-logo-mark" viewBox="0 0 32 28" role="presentation">

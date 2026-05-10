@@ -19,6 +19,9 @@ test("mobile top nav uses an explicit menu instead of hover-only navigation", ()
   assert.match(topNavSource, /top-nav-menu-trigger/);
   assert.match(topNavSource, /top-nav-mobile-menu/);
   assert.match(topNavSource, /aria-expanded=\{mobileMenuOpen\}/);
+  assert.match(topNavSource, /const navRef = useRef<HTMLElement>\(null\)/);
+  assert.match(topNavSource, /document\.addEventListener\("pointerdown", closeMobileMenuOnOutsidePointer\)/);
+  assert.match(topNavSource, /navRef\.current\?\.contains\(target\)/);
   assert.match(topNavSource, /useEffect\(\(\) => \{\s*setMobileMenuOpen\(false\);\s*\}, \[activeView\]\)/s);
 });
 

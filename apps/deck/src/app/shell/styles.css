@@ -398,6 +398,26 @@ h3 {
     padding: 8px;
   }
 
+  .mission-responsive-mode .mission-panel-head,
+  .mission-responsive-mode .mission-inspector-section-head {
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  .mission-responsive-mode .mission-panel-head .eyebrow,
+  .mission-responsive-mode .mission-inspector-section-head .eyebrow {
+    display: none;
+  }
+
+  .mission-responsive-mode .mission-panel-head h3,
+  .mission-responsive-mode .mission-inspector-section-head h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.25;
+  }
+
   .mission-responsive-mode .mission-logbook-layout {
     gap: 6px;
   }
@@ -440,6 +460,14 @@ h3 {
   .mission-responsive-mode .mission-order-editor {
     gap: 8px;
     padding: 8px;
+  }
+
+  .mission-responsive-mode #mission-prompt-input {
+    field-sizing: content;
+    min-height: 1.5rem;
+    max-height: 8rem;
+    overflow-y: auto;
+    line-height: 1.5;
   }
 
   .mission-responsive-mode .mission-permission-drawer {
