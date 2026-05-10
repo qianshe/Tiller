@@ -203,7 +203,7 @@ test("mission layout hook exposes guarded mobile pointer swipe handlers", () => 
   assert.match(missionLayoutHookSource, /textarea, input, select, a/);
   assert.doesNotMatch(missionLayoutHookSource, /select, button, a/);
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
-  assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 28/);
+  assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 36/);
   assert.match(missionLayoutHookSource, /missionMobileSwipeOffset/);
   assert.match(missionLayoutHookSource, /missionViewportWidth \* 0\.5/);
   assert.match(missionLayoutHookSource, /missionSwipeStartYRef/);
@@ -273,6 +273,8 @@ test("mission workspace attaches mobile pointer swipe handlers and locks horizon
   assert.match(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerCancel=\{cancelMissionMobileSwipe\}/);
+  assert.match(shellStylesSource, /body\s*{[^}]*overscroll-behavior-x:\s*contain;/s);
+  assert.match(shellStylesSource, /overscroll-behavior-x:\s*contain/);
   assert.match(shellStylesSource, /touch-action:\s*pan-y/);
   assert.match(shellStylesSource, /transform:\s*translate3d\(var\(--mission-mobile-swipe-offset, 0px\), 0, 0\)/);
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);

@@ -228,6 +228,10 @@ h3 {
 }
 
 @media (max-width: 1080px) {
+  body {
+    overscroll-behavior-x: contain;
+  }
+
   .shell {
     width: 100vw;
     padding: 64px 12px 20px;
@@ -364,6 +368,7 @@ h3 {
     min-height: 0;
     padding: 0;
     overflow: hidden;
+    overscroll-behavior-x: contain;
     touch-action: pan-y;
   }
 
