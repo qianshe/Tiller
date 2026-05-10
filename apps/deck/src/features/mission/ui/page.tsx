@@ -11,6 +11,7 @@ type MissionPageProps = {
   style: CSSProperties;
   children: ReactNode;
   onPointerDown?: PointerEventHandler<HTMLElement>;
+  onPointerMove?: PointerEventHandler<HTMLElement>;
   onPointerUp?: PointerEventHandler<HTMLElement>;
   onPointerCancel?: PointerEventHandler<HTMLElement>;
 };
@@ -24,6 +25,7 @@ export function MissionPage({
   style,
   children,
   onPointerDown,
+  onPointerMove,
   onPointerUp,
   onPointerCancel,
 }: MissionPageProps) {
@@ -33,6 +35,7 @@ export function MissionPage({
       className={className}
       style={style}
       onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >

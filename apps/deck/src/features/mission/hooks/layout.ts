@@ -214,6 +214,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     useState(false);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
     useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
+  const [missionMobileSwipeOffset, setMissionMobileSwipeOffset] = useState(0);
   const missionSwipeStartXRef = useRef<number | null>(null);
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
@@ -275,6 +276,10 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     missionViewportWidth,
   );
   const paneStyles = createMissionPaneStyles(resolvedMissionPaneWidths);
+  const missionLayoutStyle = {
+    ...paneStyles.layout,
+    "--mission-mobile-swipe-offset": `${missionMobileSwipeOffset}px`,
+  } as CSSProperties;
 
   function applyMissionPaneDelta(
     handle: MissionResizeHandle,
@@ -310,17 +315,36 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     applyMissionPaneDelta(handle, direction * 24, resolvedMissionPaneWidths);
   }
 
+  function resetMissionMobileSwipe() {
+    missionSwipeStartXRef.current = null;
+    setMissionMobileSwipeOffset(0);
+  }
+
   function startMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
     if (!isMissionMobile || isMissionSwipeIgnoredTarget(event.target)) {
-      missionSwipeStartXRef.current = null;
+      resetMissionMobileSwipe();
       return;
     }
+    event.currentTarget.setPointerCapture(event.pointerId);
     missionSwipeStartXRef.current = event.clientX;
+    setMissionMobileSwipeOffset(0);
+  }
+
+  function trackMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
+    const startX = missionSwipeStartXRef.current;
+    if (startX === null || !isMissionMobile) {
+      return;
+    }
+    const maxOffset = Math.max(24, missionViewportWidth * 0.28);
+    const deltaX = event.clientX - startX;
+    setMissionMobileSwipeOffset(
+      Math.max(-maxOffset, Math.min(maxOffset, Math.round(deltaX))),
+    );
   }
 
   function finishMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
     const startX = missionSwipeStartXRef.current;
-    missionSwipeStartXRef.current = null;
+    resetMissionMobileSwipe();
     if (startX === null || !isMissionMobile) {
       return;
     }
@@ -334,7 +358,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   }
 
   function cancelMissionMobileSwipe() {
-    missionSwipeStartXRef.current = null;
+    resetMissionMobileSwipe();
   }
 
   return {
@@ -346,9 +370,13 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     effectiveSidebarCollapsed,
     effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
-    paneStyles,
+    paneStyles: {
+      ...paneStyles,
+      layout: missionLayoutStyle,
+    },
     startMissionPaneResize,
     startMissionMobileSwipe,
+    trackMissionMobileSwipe,
     finishMissionMobileSwipe,
     cancelMissionMobileSwipe,
     nudgeMissionPane,

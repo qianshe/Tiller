@@ -197,12 +197,15 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
 test("mission layout hook exposes guarded mobile pointer swipe handlers", () => {
   assert.match(missionLayoutHookSource, /startMissionMobileSwipe/);
   assert.match(missionLayoutHookSource, /finishMissionMobileSwipe/);
+  assert.match(missionLayoutHookSource, /trackMissionMobileSwipe/);
   assert.match(missionLayoutHookSource, /cancelMissionMobileSwipe/);
   assert.match(missionLayoutHookSource, /isMissionSwipeIgnoredTarget/);
   assert.match(missionLayoutHookSource, /textarea, input, select, a/);
   assert.doesNotMatch(missionLayoutHookSource, /select, button, a/);
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
   assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 36/);
+  assert.match(missionLayoutHookSource, /missionMobileSwipeOffset/);
+  assert.match(missionLayoutHookSource, /--mission-mobile-swipe-offset/);
   assert.match(missionLayoutHookSource, /PointerEvent/);
 });
 
@@ -262,9 +265,11 @@ const sessionOverviewCardSource = readFileSync(
 
 test("mission workspace attaches mobile pointer swipe handlers and locks horizontal regions", () => {
   assert.match(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.match(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerCancel=\{cancelMissionMobileSwipe\}/);
   assert.match(shellStylesSource, /touch-action:\s*pan-y/);
+  assert.match(shellStylesSource, /transform:\s*translate3d\(var\(--mission-mobile-swipe-offset, 0px\), 0, 0\)/);
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
   assert.match(shellStylesSource, /overflow-y:\s*auto/);

@@ -33,10 +33,12 @@ test("renderMissionRoute forwards mobile pane state and swipe handlers", () => {
   assert.match(source, /selectedMissionMobilePane,/);
   assert.match(source, /setSelectedMissionMobilePane,/);
   assert.match(source, /startMissionMobileSwipe,/);
+  assert.match(source, /trackMissionMobileSwipe,/);
   assert.match(source, /finishMissionMobileSwipe,/);
   assert.match(source, /isMissionMobile=\{isMissionMobile\}/);
   assert.match(source, /selectedMissionMobilePane=\{selectedMissionMobilePane\}/);
   assert.match(source, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
   assert.match(source, /startMissionMobileSwipe=\{startMissionMobileSwipe\}/);
+  assert.match(source, /trackMissionMobileSwipe=\{trackMissionMobileSwipe\}/);
   assert.match(source, /finishMissionMobileSwipe=\{finishMissionMobileSwipe\}/);
 });

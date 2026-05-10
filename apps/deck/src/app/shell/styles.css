@@ -388,6 +388,8 @@ h3 {
   .mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"],
   .mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"] {
     display: flex;
+    transform: translate3d(var(--mission-mobile-swipe-offset, 0px), 0, 0);
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
     animation: mission-mobile-card-switch 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     will-change: opacity, transform;
   }

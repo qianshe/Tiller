@@ -75,6 +75,7 @@ export function renderMissionRoute(source: any) {
     toggleMissionProjectNode,
     startMissionPaneResize,
     startMissionMobileSwipe,
+    trackMissionMobileSwipe,
     finishMissionMobileSwipe,
     nudgeMissionPane,
     missionChatPaneStyle,
@@ -234,6 +235,7 @@ export function renderMissionRoute(source: any) {
       toggleMissionProjectNode={toggleMissionProjectNode}
       startMissionPaneResize={startMissionPaneResize}
       startMissionMobileSwipe={startMissionMobileSwipe}
+      trackMissionMobileSwipe={trackMissionMobileSwipe}
       finishMissionMobileSwipe={finishMissionMobileSwipe}
       nudgeMissionPane={nudgeMissionPane}
       missionChatPaneStyle={missionChatPaneStyle}

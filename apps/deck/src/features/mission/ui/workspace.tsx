@@ -88,6 +88,7 @@ export function MissionWorkspace(props: any) {
     toggleMissionProjectNode,
     startMissionPaneResize,
     startMissionMobileSwipe,
+    trackMissionMobileSwipe,
     finishMissionMobileSwipe,
     cancelMissionMobileSwipe,
     nudgeMissionPane,
@@ -406,6 +407,7 @@ export function MissionWorkspace(props: any) {
       className={missionLayoutClassName}
       style={missionLayoutStyle}
       onPointerDown={startMissionMobileSwipe}
+      onPointerMove={trackMissionMobileSwipe}
       onPointerUp={finishMissionMobileSwipe}
       onPointerCancel={cancelMissionMobileSwipe}
     >
