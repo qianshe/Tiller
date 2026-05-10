@@ -35,7 +35,7 @@ const MISSION_OUTER_GUTTER = 24;
 const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
-const MISSION_MOBILE_WIDTH = 768;
+const MISSION_MOBILE_WIDTH = 1081;
 const MISSION_MOBILE_SWIPE_THRESHOLD = 48;
 const MISSION_MOBILE_PANES: MissionMobilePane[] = [
   "project",
@@ -224,9 +224,15 @@ export function useMissionLayout(options: MissionLayoutOptions) {
 
   useEffect(() => {
     const measureMissionLayout = () => {
-      const width =
-        missionLayoutRef.current?.getBoundingClientRect().width ??
-        document.documentElement.clientWidth;
+      const documentWidth = Math.min(
+        document.documentElement.clientWidth,
+        window.innerWidth,
+      );
+      const layoutWidth =
+        missionLayoutRef.current?.getBoundingClientRect().width ?? documentWidth;
+      const width = window.matchMedia("(max-width: 1080px)").matches
+        ? Math.min(layoutWidth, documentWidth, MISSION_MOBILE_WIDTH - 1)
+        : Math.min(layoutWidth, documentWidth);
       setMissionViewportWidth(Math.max(0, Math.round(width)));
     };
     measureMissionLayout();

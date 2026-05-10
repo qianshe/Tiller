@@ -168,7 +168,8 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);
   assert.match(missionLayoutHookSource, /effectiveDisplayCollapsed/);
   assert.match(workspaceSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
-  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
+  assert.match(workspaceSource, /<MissionDisplaySection/);
+  assert.doesNotMatch(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
   assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
   assert.match(workspaceSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
   assert.doesNotMatch(workspaceSource, /max-\[860px\]:h-auto/);
@@ -183,10 +184,13 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
 
 test("mission layout hook exposes mobile pane state and intelligent defaults", () => {
   assert.match(missionLayoutHookSource, /export type MissionMobilePane = "project" \| "chat" \| "display" \| "inspector"/);
-  assert.match(missionLayoutHookSource, /MISSION_MOBILE_WIDTH = 768/);
+  assert.match(missionLayoutHookSource, /MISSION_MOBILE_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /selectedMissionMobilePane/);
   assert.match(missionLayoutHookSource, /setSelectedMissionMobilePane/);
   assert.match(missionLayoutHookSource, /hasActiveSession \? "chat" : "project"/);
+  assert.match(missionLayoutHookSource, /window\.innerWidth/);
+  assert.match(missionLayoutHookSource, /matchMedia\("\(max-width: 1080px\)"\)/);
+  assert.match(missionLayoutHookSource, /Math\.min\(layoutWidth, documentWidth\)/);
 });
 
 test("mission layout hook exposes guarded mobile pointer swipe handlers", () => {
@@ -215,7 +219,8 @@ test("mission workspace renders mobile pager and hides desktop resizers in mobil
   assert.match(workspaceSource, /MissionMobilePager/);
   assert.match(workspaceSource, /isMissionMobile/);
   assert.match(workspaceSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
-  assert.match(workspaceSource, /!isMissionMobile && !effectiveDisplayCollapsed/);
+  assert.match(workspaceSource, /<MissionDisplaySection/);
+  assert.doesNotMatch(workspaceSource, /isMissionMobile \|\| !effectiveDisplayCollapsed \? \(/);
   assert.match(workspaceSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
 });
 
@@ -224,6 +229,10 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
   assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
   assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
+  assert.match(workspaceSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(activeSession \? "chat" : "project"\)/);
+  assert.match(workspaceSource, /mission-responsive-mode/);
+  assert.match(workspaceSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
+  assert.match(workspaceSource, /selectedPane=\{resolvedMissionMobilePane\}/);
   assert.match(shellStylesSource, /mission-mobile-pane-chat \[data-mission-mobile-pane="chat"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-project \[data-mission-mobile-pane="project"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-display \[data-mission-mobile-pane="display"\]/);
@@ -244,6 +253,6 @@ test("mission workspace attaches mobile pointer swipe handlers and locks horizon
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
-  assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-composer/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
   assert.match(shellStylesSource, /bottom:\s*calc\(44px \+ env\(safe-area-inset-bottom\)\)/);
 });

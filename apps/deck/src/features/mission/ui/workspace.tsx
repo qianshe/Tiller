@@ -282,13 +282,14 @@ export function MissionWorkspace(props: any) {
     "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
+  const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
+    "card surface-card chat-layout chat-layout-sidebar mission-responsive-mode grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveDisplayCollapsed && "mission-display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
     isMissionMobile && "mission-mobile-mode",
-    isMissionMobile && `mission-mobile-pane-${selectedMissionMobilePane}`,
+    `mission-mobile-pane-${resolvedMissionMobilePane}`,
   ]);
   const runtimeOverviewItems = (() => {
     const grouped = new Map<string, any>();
@@ -561,8 +562,7 @@ export function MissionWorkspace(props: any) {
             onNudge={nudgeMissionPane}
           />
         ) : null}{" "}
-        {isMissionMobile || !effectiveDisplayCollapsed ? (
-          <MissionDisplaySection
+        <MissionDisplaySection
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
             selectedPage={selectedMissionPanelPage}
@@ -606,8 +606,7 @@ export function MissionWorkspace(props: any) {
             onRenamePage={renameMissionPanelPage}
             onMovePage={moveMissionPanelPage}
             onDeletePage={deleteMissionPanelPage}
-          />
-        ) : null}{" "}
+        />{" "}
         <MissionInspector
           collapsed={isMissionMobile ? false : effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
@@ -627,12 +626,10 @@ export function MissionWorkspace(props: any) {
             ) : null
           }
         />{" "}
-        {isMissionMobile ? (
-          <MissionMobilePager
-            selectedPane={selectedMissionMobilePane}
-            onSelectPane={setSelectedMissionMobilePane}
-          />
-        ) : null}
+        <MissionMobilePager
+          selectedPane={resolvedMissionMobilePane}
+          onSelectPane={setSelectedMissionMobilePane}
+        />
       </>{" "}
     </MissionPage>
   );

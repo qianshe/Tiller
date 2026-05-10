@@ -215,7 +215,7 @@ h3 {
   transform: translateY(-1px);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1080px) {
   .shell {
     width: 100vw;
     padding: 64px 12px 20px;
@@ -237,9 +237,16 @@ h3 {
   }
 
   .top-nav::after,
-  .top-nav-links,
-  .top-nav-github-link {
+  .top-nav-links {
     display: none;
+  }
+
+  .top-nav .top-nav-github-link {
+    display: none;
+  }
+
+  .top-nav .top-nav-github-link.top-nav-github-link-mobile-visible {
+    display: inline-grid;
   }
 
   .top-nav-menu-trigger {
@@ -319,7 +326,7 @@ h3 {
     opacity: 0.6;
   }
 
-  .mission-mobile-mode {
+  .mission-responsive-mode {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
@@ -328,7 +335,11 @@ h3 {
     padding: 0;
   }
 
-  .mission-mobile-mode [data-mission-mobile-pane] {
+  .mission-responsive-mode .mission-pane-resizer {
+    display: none;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] {
     grid-column: 1;
     grid-row: 1;
     display: none;
@@ -338,19 +349,19 @@ h3 {
     height: 100%;
   }
 
-  .mission-mobile-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"],
-  .mission-mobile-mode.mission-mobile-pane-chat [data-mission-mobile-pane="chat"],
-  .mission-mobile-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"],
-  .mission-mobile-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"] {
+  .mission-responsive-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"],
+  .mission-responsive-mode.mission-mobile-pane-chat [data-mission-mobile-pane="chat"],
+  .mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"],
+  .mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"] {
     display: flex;
   }
 
-  .mission-mobile-mode .mission-mobile-pager {
+  .mission-responsive-mode .mission-mobile-pager {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .mission-mobile-mode .mission-composer {
+  .mission-responsive-mode .mission-composer {
     position: sticky;
     bottom: calc(44px + env(safe-area-inset-bottom));
     z-index: 6;
@@ -359,13 +370,13 @@ h3 {
     background: var(--color-surface);
   }
 
-  .mission-mobile-mode:focus-within .mission-mobile-pager {
+  .mission-responsive-mode:focus-within .mission-mobile-pager {
     min-height: 28px;
     padding-top: 3px;
     padding-bottom: max(3px, env(safe-area-inset-bottom));
   }
 
-  .mission-mobile-mode:focus-within .mission-mobile-pager-label {
+  .mission-responsive-mode:focus-within .mission-mobile-pager-label {
     display: none;
   }
 }
@@ -534,23 +545,3 @@ h3 {
   background-clip: padding-box;
 }
 
-@media (max-width: 860px) {
-  .shell {
-    width: min(100vw - 16px, 100%);
-    padding-top: 90px;
-    padding-bottom: 32px;
-  }
-
-  .top-nav {
-    left: 8px;
-    width: calc(100vw - 16px);
-    min-height: 150px;
-    max-height: none;
-    transform: translateY(-142px);
-  }
-
-  .top-nav:hover,
-  .top-nav:focus-within {
-    transform: translateY(0);
-  }
-}

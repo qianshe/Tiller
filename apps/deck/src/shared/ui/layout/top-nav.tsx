@@ -20,6 +20,7 @@ export function TopNav({
 }: TopNavProps) {
   const labels = NAV_LABELS[language];
   const showLandingMusic = activeView === "overview";
+  const showGlobalMenu = activeView !== "overview";
   const musicRef = useRef<HTMLAudioElement>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -81,7 +82,7 @@ export function TopNav({
       </nav>
       <div className="top-nav-actions">
         <a
-          className={`admiral-avatar top-nav-github-link admiral-${connection}`}
+          className={`admiral-avatar top-nav-github-link admiral-${connection} ${showLandingMusic ? "top-nav-github-link-mobile-visible" : ""}`}
           href={TILLER_REPOSITORY_URL}
           target="_blank"
           rel="noreferrer noopener"
@@ -95,15 +96,17 @@ export function TopNav({
             />
           </svg>
         </a>
-        <button
-          className="top-nav-menu-trigger"
-          type="button"
-          aria-label="打开全局导航菜单"
-          aria-expanded={mobileMenuOpen}
-          onClick={() => setMobileMenuOpen((current) => !current)}
-        >
-          ☰
-        </button>
+        {showGlobalMenu ? (
+          <button
+            className="top-nav-menu-trigger"
+            type="button"
+            aria-label="打开全局导航菜单"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((current) => !current)}
+          >
+            ☰
+          </button>
+        ) : null}
         {showLandingMusic ? (
           <>
             <button

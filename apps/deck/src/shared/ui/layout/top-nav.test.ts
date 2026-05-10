@@ -23,10 +23,10 @@ test("mobile top nav uses an explicit menu instead of hover-only navigation", ()
 
 test("mobile top nav hides github and avoids large blank gutters", () => {
   assert.match(topNavSource, /top-nav-github-link/);
-  assert.match(shellStylesSource, /@media \(max-width: 767px\)/);
+  assert.match(shellStylesSource, /@media \(max-width: 1080px\)/);
   assert.match(
     shellStylesSource,
-    /\.top-nav-github-link\s*{[^}]*display:\s*none;/s,
+    /\.top-nav \.top-nav-github-link\s*{[^}]*display:\s*none;/s,
   );
   assert.match(
     shellStylesSource,
@@ -37,3 +37,14 @@ test("mobile top nav hides github and avoids large blank gutters", () => {
     /\.shell\.view-sessions\s*{[^}]*padding:\s*56px 8px 8px;/s,
   );
 });
+
+test("mobile overview keeps github as the top-right action", () => {
+  assert.match(topNavSource, /const showGlobalMenu = activeView !== "overview"/);
+  assert.match(topNavSource, /top-nav-github-link-mobile-visible/);
+  assert.match(topNavSource, /\{showGlobalMenu \? \(/);
+  assert.match(
+    shellStylesSource,
+    /\.top-nav \.top-nav-github-link\.top-nav-github-link-mobile-visible\s*{[^}]*display:\s*inline-grid;/s,
+  );
+});
+
