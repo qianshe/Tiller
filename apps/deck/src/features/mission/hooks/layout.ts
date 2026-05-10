@@ -216,6 +216,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
   const [missionMobileSwipeOffset, setMissionMobileSwipeOffset] = useState(0);
   const missionSwipeStartXRef = useRef<number | null>(null);
+  const missionSwipeStartYRef = useRef<number | null>(null);
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
@@ -317,6 +318,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
 
   function resetMissionMobileSwipe() {
     missionSwipeStartXRef.current = null;
+    missionSwipeStartYRef.current = null;
     setMissionMobileSwipeOffset(0);
   }
 
@@ -327,6 +329,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     missionSwipeStartXRef.current = event.clientX;
+    missionSwipeStartYRef.current = event.clientY;
     setMissionMobileSwipeOffset(0);
   }
 
@@ -335,8 +338,14 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     if (startX === null || !isMissionMobile) {
       return;
     }
+    const startY = missionSwipeStartYRef.current ?? event.clientY;
     const maxOffset = Math.max(24, missionViewportWidth * 0.28);
     const deltaX = event.clientX - startX;
+    const deltaY = event.clientY - startY;
+    if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+      setMissionMobileSwipeOffset(0);
+      return;
+    }
     setMissionMobileSwipeOffset(
       Math.max(-maxOffset, Math.min(maxOffset, Math.round(deltaX))),
     );
@@ -344,12 +353,17 @@ export function useMissionLayout(options: MissionLayoutOptions) {
 
   function finishMissionMobileSwipe(event: ReactPointerEvent<HTMLElement>) {
     const startX = missionSwipeStartXRef.current;
+    const startY = missionSwipeStartYRef.current;
     resetMissionMobileSwipe();
-    if (startX === null || !isMissionMobile) {
+    if (startX === null || startY === null || !isMissionMobile) {
       return;
     }
     const deltaX = event.clientX - startX;
-    if (Math.abs(deltaX) < MISSION_MOBILE_SWIPE_THRESHOLD) {
+    const deltaY = event.clientY - startY;
+    if (
+      Math.abs(deltaX) < MISSION_MOBILE_SWIPE_THRESHOLD ||
+      Math.abs(deltaX) <= Math.abs(deltaY)
+    ) {
       return;
     }
     setSelectedMissionMobilePane((current) =>

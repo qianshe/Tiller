@@ -205,6 +205,8 @@ test("mission layout hook exposes guarded mobile pointer swipe handlers", () => 
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
   assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 36/);
   assert.match(missionLayoutHookSource, /missionMobileSwipeOffset/);
+  assert.match(missionLayoutHookSource, /missionSwipeStartYRef/);
+  assert.match(missionLayoutHookSource, /Math\.abs\(deltaX\) <= Math\.abs\(deltaY\)/);
   assert.match(missionLayoutHookSource, /--mission-mobile-swipe-offset/);
   assert.match(missionLayoutHookSource, /PointerEvent/);
 });
