@@ -12,7 +12,7 @@ import { useDeckStore } from "../../store";
 import { applyActivityUpdate } from "./activity-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
-import { applySessionResult } from "./session-events.js";
+import { applySessionResult, applySessionUpdate } from "./session-events.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -200,12 +200,12 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
-test("session prewarm result hydrates draft agent model options", () => {
+test("agent model options result hydrates draft model options and commands", () => {
   resetStore();
   let cached: unknown;
   let selectedModel = "provider-default";
   const handled = applyInventoryResult(
-    "session/prewarm",
+    "agent/get_model_options",
     {
       ok: true,
       warmed: true,
@@ -215,6 +215,7 @@ test("session prewarm result hydrates draft agent model options", () => {
       currentModelId: "gpt-5.5",
       modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
       configOptions: [],
+      availableCommands: [{ name: "review" }, { name: "compact" }],
       state: { model: "gpt-5.5" },
       message: "ACP runtime prewarmed.",
     },
@@ -261,7 +262,78 @@ test("session prewarm result hydrates draft agent model options", () => {
     configOptions: [],
     state: { model: "gpt-5.5" },
   });
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.codex?.map((command) => command.name),
+    ["review", "compact"],
+  );
   assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
+});
+
+test("starting session update activates chat and preserves first pending prompt", () => {
+  resetStore();
+  const pendingPromptRef: MutableRefObject<string | null> = { current: "你好" };
+  const pendingPromptContentRef: MutableRefObject<any[] | undefined> = {
+    current: [{ type: "text", text: "你好" }],
+  };
+  const dispatched: Array<{ method: string; params: any }> = [];
+  const context = {
+    setSelectedProjectId: () => undefined,
+    pendingPromptRef,
+    pendingPromptContentRef,
+    rpcClientRef: { current: {} as any },
+    assignSessionTitleFromPrompt: () => undefined,
+    createClientUserMessageId: () => "unused",
+    appendUserMessage: (sessionId: string, text: string, id: string) => {
+      const current = useDeckStore.getState().messages;
+      const messages = current[sessionId] ?? [];
+      if (messages.some((message) => message.id === id)) {
+        return;
+      }
+      useDeckStore.setState({
+        messages: {
+          ...current,
+          [sessionId]: [
+            ...messages,
+            { id, role: "user", text, timestamp: "2026-05-04T00:00:00.000Z" },
+          ],
+        },
+      });
+    },
+    dispatch: async (_client: any, method: string, params: any) => {
+      dispatched.push({ method, params });
+    },
+    toolCallsRef: { current: {} },
+    mergeSessionToolCalls: () => undefined,
+    shouldAutoStartSessionResume: () => false,
+    requestSessionResumeStart: () => undefined,
+    setResumeFeedback: () => undefined,
+    resumeStartRequestsRef: { current: new Set<string>() },
+  };
+
+  const starting = { ...session("s1"), status: "starting" as const };
+  const updateHandled = applySessionUpdate(
+    { sessionId: "s1", update: { kind: "session_updated", session: starting } },
+    context,
+  );
+
+  assert.equal(updateHandled, true);
+  assert.equal(useDeckStore.getState().activeSessionId, "s1");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "你好");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.id, "s1-user-pending");
+
+  const resultHandled = applySessionResult(
+    "session/new",
+    { session: { ...starting, status: "idle" as const, runtimeSessionId: "remote-s1" } },
+    "helm-1",
+    true,
+    context,
+  );
+
+  assert.equal(resultHandled, true);
+  assert.equal(useDeckStore.getState().messages.s1?.length, 1);
+  assert.equal(pendingPromptRef.current, null);
+  assert.equal(dispatched[0]?.method, "session/prompt");
+  assert.equal(dispatched[0]?.params.clientMessageId, "s1-user-pending");
 });
 
 test("session RPC results apply session list results and prune scoped maps", () => {

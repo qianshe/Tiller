@@ -107,6 +107,7 @@ test("markdown renders Mermaid fences with a diagram shell", () => {
 
   assert.match(html, /markdown-mermaid-block/);
   assert.match(html, /Mermaid/);
+  assert.match(html, /全屏查看/);
   assert.doesNotMatch(html, /markdown-code-block/);
 });
 

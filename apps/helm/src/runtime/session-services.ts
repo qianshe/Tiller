@@ -433,6 +433,13 @@ export function createSessionServices(options: SessionServicesOptions) {
           );
         }, WARM_RUNTIME_TTL_MS);
         expiresTimer.unref?.();
+        const initialModelState = modelState ?? runtime.sessionModelState;
+        const initialConfigOptions = configOptions.length
+          ? configOptions
+          : runtime.sessionConfigOptions;
+        const initialConfigState = Object.keys(configState).length
+          ? configState
+          : runtime.sessionConfigState;
 
         return {
           runtime,
@@ -441,9 +448,9 @@ export function createSessionServices(options: SessionServicesOptions) {
           },
           cancel: () => runtime.cancel(),
           expiresTimer,
-          modelState,
-          configState,
-          configOptions,
+          modelState: initialModelState,
+          configState: initialConfigState,
+          configOptions: initialConfigOptions,
         } satisfies WarmSessionRuntime;
       }),
     };

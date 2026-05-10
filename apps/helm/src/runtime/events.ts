@@ -361,6 +361,12 @@ export function handleRuntimeEvent(
         updatedAt: new Date().toISOString(),
         lastMessagePreview: event.message.slice(0, 160),
       }));
+      if (event.code === "ACP_CONNECTION_EXITED") {
+        context.sessions.delete(sessionId);
+        context.logInfo(
+          `[tiller] 阶段=运行时已标记为可恢复 ${runtimeLogScope(sessionId, context)} code=${event.code}`,
+        );
+      }
       broadcastErrorRaised(context, {
         sessionId,
         message: event.message,

@@ -575,6 +575,7 @@ async function getModelOptions(
       message: !agent ? "Provider not found" : "Workspace not found",
       modelOptions: [],
       configOptions: [],
+      availableCommands: [],
       state: {},
     };
   }

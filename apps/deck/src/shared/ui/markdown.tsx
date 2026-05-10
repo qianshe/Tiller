@@ -3,12 +3,24 @@ import {
   isValidElement,
   memo,
   useEffect,
+  useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+
+import { Button } from "./button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "./dialog";
+import { MermaidViewportController, type MermaidViewportState } from "./mermaid-viewport-controller";
 
 const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
 const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
@@ -392,6 +404,7 @@ function MarkdownCodeBlock({
 
 function MarkdownMermaidBlock({ code }: { code: string }) {
   const [renderState, setRenderState] = useState<MermaidRenderState>({});
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -445,9 +458,21 @@ function MarkdownMermaidBlock({ code }: { code: string }) {
 
   return (
     <div className="markdown-mermaid-block overflow-hidden rounded-lg border border-border-ghost bg-surface text-sm text-foreground shadow-sm">
-      <div className="not-prose flex items-center justify-between border-b border-border-ghost bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground">
+      <div className="not-prose flex items-center justify-between gap-3 border-b border-border-ghost bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground">
         <span>Mermaid</span>
-        {renderState.error ? <span>{renderState.error}</span> : null}
+        <div className="flex items-center gap-2">
+          {renderState.error ? <span>{renderState.error}</span> : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setViewerOpen(true)}
+            disabled={!renderState.svg}
+          >
+            全屏查看
+          </Button>
+        </div>
       </div>
       {renderState.svg ? (
         <div
@@ -459,7 +484,217 @@ function MarkdownMermaidBlock({ code }: { code: string }) {
           <code>{code}</code>
         </pre>
       )}
+      {renderState.svg ? (
+        <MermaidFullscreenViewer
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+          svg={renderState.svg}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function MermaidFullscreenViewer({
+  open,
+  onOpenChange,
+  svg,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  svg: string;
+}) {
+  const controllerRef = useRef(new MermaidViewportController());
+  const viewportContentRef = useRef<HTMLDivElement | null>(null);
+  const viewportFrameRef = useRef<number | null>(null);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const [viewportState, setViewportState] = useState<MermaidViewportState>(() =>
+    controllerRef.current.getState(),
+  );
+
+  useEffect(() => {
+    if (open) {
+      controllerRef.current.reset();
+      setViewportState(controllerRef.current.getState());
+      applyViewportTransform();
+    }
+  }, [open, svg]);
+
+  useEffect(() => {
+    return () => {
+      if (viewportFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewportFrameRef.current);
+      }
+      activePointersRef.current.clear();
+    };
+  }, []);
+
+  function applyViewportTransform() {
+    const viewportContent = viewportContentRef.current;
+    if (!viewportContent) {
+      return;
+    }
+    viewportContent.style.transform = controllerRef.current.getTransformStyle();
+  }
+
+  function scheduleViewportTransform() {
+    if (viewportFrameRef.current !== null) {
+      return;
+    }
+    viewportFrameRef.current = window.requestAnimationFrame(() => {
+      viewportFrameRef.current = null;
+      applyViewportTransform();
+    });
+  }
+
+  function syncViewportState() {
+    setViewportState(controllerRef.current.getState());
+    scheduleViewportTransform();
+  }
+
+  function pointerDistance() {
+    const pointers = Array.from(activePointersRef.current.values());
+    const first = pointers[0];
+    const second = pointers[1];
+    if (!first || !second) {
+      return 0;
+    }
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }
+
+  function remainingPointer() {
+    return Array.from(activePointersRef.current.values())[0];
+  }
+
+  function zoomIn() {
+    controllerRef.current.zoomIn();
+    syncViewportState();
+  }
+
+  function zoomOut() {
+    controllerRef.current.zoomOut();
+    syncViewportState();
+  }
+
+  function resetViewport() {
+    controllerRef.current.reset();
+    syncViewportState();
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.beginPinch(pointerDistance());
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.beginDrag(event.clientX, event.clientY);
+    syncViewportState();
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activePointersRef.current.has(event.pointerId)) {
+      return;
+    }
+    activePointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.pinchTo(pointerDistance());
+      scheduleViewportTransform();
+      return;
+    }
+
+    if (!controllerRef.current.getState().dragging) {
+      return;
+    }
+    controllerRef.current.dragTo(event.clientX, event.clientY);
+    scheduleViewportTransform();
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    activePointersRef.current.delete(event.pointerId);
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.beginPinch(pointerDistance());
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.endPinch();
+    const pointer = remainingPointer();
+    if (pointer) {
+      controllerRef.current.beginDrag(pointer.x, pointer.y);
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.endDrag();
+    syncViewportState();
+  }
+
+  function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    controllerRef.current.zoomByWheel(event.deltaY);
+    syncViewportState();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[92vh] w-[94vw] max-w-none grid-rows-[auto_1fr] flex-col gap-3 overflow-hidden p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+          <div>
+            <DialogTitle>Mermaid 全屏查看</DialogTitle>
+            <DialogDescription>单指拖动平移，双指或滚轮缩放。</DialogDescription>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Button type="button" variant="secondary" size="sm" onClick={zoomOut}>
+              缩小
+            </Button>
+            <span className="min-w-12 text-center">{Math.round(viewportState.scale * 100)}%</span>
+            <Button type="button" variant="secondary" size="sm" onClick={zoomIn}>
+              放大
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={resetViewport}>
+              重置
+            </Button>
+          </div>
+        </div>
+        <div
+          className="relative min-h-0 flex-1 touch-none overflow-hidden overscroll-contain rounded-lg border border-border-ghost bg-surface-sunken"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onWheel={handleWheel}
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgb(148_163_184_/_0.2)_1px,transparent_0)] [background-size:24px_24px]" />
+          <div
+            ref={viewportContentRef}
+            className="absolute left-1/2 top-1/2 max-w-none select-none [&_svg]:h-auto [&_svg]:max-w-none"
+            style={{
+              cursor: viewportState.dragging ? "grabbing" : "grab",
+              transform: controllerRef.current.getTransformStyle(),
+              transformOrigin: "center",
+              touchAction: "none",
+              willChange: "transform",
+            }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

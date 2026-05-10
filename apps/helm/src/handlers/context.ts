@@ -4,6 +4,7 @@ import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AvailableCommand,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
@@ -33,6 +34,7 @@ export type ModelOptionsProbeResult = {
     import("@tiller/acp-runtime").SessionRuntimeEvent,
     { type: "config-options" }
   >["options"];
+  availableCommands: AvailableCommand[];
   state: Extract<
     import("@tiller/acp-runtime").SessionRuntimeEvent,
     { type: "config-options" }

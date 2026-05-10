@@ -215,6 +215,27 @@ test("runtime user echo messages are ignored because prompts are already persist
   assert.equal(capture.broadcasts.length, 0);
 });
 
+test("fatal ACP connection errors mark the active runtime stale", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "error",
+      code: "ACP_CONNECTION_EXITED",
+      message: "ACP process exited with code=1 signal=none",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(context.sessions.has("session-1"), false);
+  assert.equal(capture.persisted[0]?.role, "system");
+  assert.equal(capture.persisted[0]?.text, "ACP process exited with code=1 signal=none");
+  assert.match(logs.join("\n"), /阶段=运行时已标记为可恢复/);
+});
+
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };

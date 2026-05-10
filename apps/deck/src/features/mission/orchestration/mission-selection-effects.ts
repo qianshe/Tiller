@@ -203,7 +203,10 @@ export function useMissionSelectionEffects(source: any) {
         connection.status !== "error",
     );
     if (hasReadyConnection) {
-      if (cached && !cached.loading && cached.warmed) {
+      const hasLoadedOptions = Boolean(
+        (cached?.modelOptions?.length ?? 0) > 0 || (cached?.configOptions?.length ?? 0) > 0,
+      );
+      if (cached && !cached.loading && cached.warmed && hasLoadedOptions) {
         const realOptions = resolveModelOptions(
           cached.state.model,
           cached.configOptions,
@@ -233,16 +236,34 @@ export function useMissionSelectionEffects(source: any) {
         return;
       }
       if (cached?.loading) {
-        setAgentModelOptions((current) => ({
-          ...current,
-          [key]: {
-            ...cached,
-            loading: false,
-            warmed: true,
-            message: "ACP 已连接",
-          },
-        }));
+        return;
       }
+      const shouldProbeModelOptions =
+        !cached?.message ||
+        cached.message === "ACP provider connected." ||
+        cached.message === "ACP 已连接" ||
+        cached.message === "正在连接 ACP...";
+      if (!shouldProbeModelOptions) {
+        return;
+      }
+      setAgentModelOptions((current) => ({
+        ...current,
+        [key]: {
+          loading: true,
+          warmed: true,
+          projectId: selectedProjectId,
+          requestedAt: Date.now(),
+          modelOptions: cached?.modelOptions ?? [],
+          configOptions: cached?.configOptions ?? [],
+          state: cached?.state ?? {},
+          message: "正在加载模型信息...",
+        },
+      }));
+      void dispatch(rpcClientRef.current, "agent/get_model_options", {
+        projectId: selectedProjectId,
+        workspaceId: selectedWorkspaceId,
+        providerId: selectedAgentId,
+      });
       return;
     }
     if (cached?.loading) {

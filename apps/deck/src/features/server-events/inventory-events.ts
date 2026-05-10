@@ -206,7 +206,7 @@ export function applyInventoryResult(
       const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
       const nextEntry = {
         loading: false,
-        warmed: method === "session/prewarm" && Boolean(payload.ok),
+        warmed: Boolean(payload.ok),
         projectId: loadingProjectId,
         runtimeSessionId: payload.runtimeSessionId,
         message: payload.message,
@@ -223,6 +223,12 @@ export function applyInventoryResult(
         writeAgentModelOptionsCache(next);
         return next;
       });
+      if (payload.providerId && Array.isArray(payload.availableCommands)) {
+        store.setAgentAvailableCommands((current) => ({
+          ...current,
+          [payload.providerId]: payload.availableCommands,
+        }));
+      }
       if (
         sourceIsCurrentHelm &&
         payload.providerId === selectedAgentId &&

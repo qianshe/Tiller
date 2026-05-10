@@ -332,6 +332,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   let modelState: AcpModelState | undefined;
   let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
   let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
+  let availableCommands: Extract<SessionRuntimeEvent, { type: "available-commands" }>["commands"] = [];
 
   logInfo(
     `[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`,
@@ -351,6 +352,8 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
         } else if (event.type === "config-options") {
           configState = event.state;
           configOptions = event.options;
+        } else if (event.type === "available-commands") {
+          availableCommands = event.commands;
         } else if (event.type === "error") {
           logError(
             `[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
@@ -359,6 +362,14 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
       },
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    modelState = modelState ?? runtime.sessionModelState;
+    if (!configOptions.length) {
+      configOptions = runtime.sessionConfigOptions;
+    }
+    if (!Object.keys(configState).length) {
+      configState = runtime.sessionConfigState;
+    }
     runtime.cancel();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
@@ -371,24 +382,29 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
       currentModelId: undefined,
       modelOptions: [],
       configOptions: [],
+      availableCommands: [],
       state: {},
     };
   }
 
   const modelCount = modelState?.options.length ?? 0;
+  const commandCount = availableCommands.length;
   logInfo(
-    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length}`,
+    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length} commands=${commandCount}`,
   );
 
   return {
-    ok: modelCount > 0 || configOptions.length > 0,
+    ok: modelCount > 0 || configOptions.length > 0 || commandCount > 0,
     message:
       modelCount > 0 || configOptions.length > 0
         ? `Loaded ${modelCount || configOptions.length} model option(s).`
-        : "Agent did not return model options.",
+        : commandCount > 0
+          ? `Loaded ${commandCount} command(s).`
+          : "Agent did not return model options.",
     currentModelId: modelState?.currentModelId ?? configState.model,
     modelOptions: modelState?.options ?? [],
     configOptions,
+    availableCommands,
     state: configState,
   };
 }

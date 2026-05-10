@@ -41,6 +41,16 @@ type SessionUpdateParams = {
   update: { kind: string } & Record<string, any>;
 };
 
+function pendingInitialPromptMessageId(sessionId: string) {
+  return `${sessionId}-user-pending`;
+}
+
+function pendingPromptImages(content: AgentPromptContent[] | undefined) {
+  return content?.filter(
+    (item): item is AgentPromptImageContent => item.type === "image",
+  ) ?? [];
+}
+
 export type SessionServerEventContext = {
   setSelectedProjectId: (projectId: string | null) => void;
   pendingPromptRef: MutableRefObject<string | null>;
@@ -72,7 +82,6 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
     pendingPromptContentRef,
     rpcClientRef,
     assignSessionTitleFromPrompt,
-    createClientUserMessageId,
     appendUserMessage,
     dispatch,
   } = context;
@@ -91,14 +100,11 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
   if (pendingPromptRef.current && rpcClientRef.current) {
     const pendingPrompt = pendingPromptRef.current;
     const pendingContent = pendingPromptContentRef.current;
-    const pendingImages =
-      pendingContent?.filter(
-        (item): item is AgentPromptImageContent => item.type === "image",
-      ) ?? [];
+    const pendingImages = pendingPromptImages(pendingContent);
     pendingPromptRef.current = null;
     pendingPromptContentRef.current = undefined;
     assignSessionTitleFromPrompt(payload.session.id, pendingPrompt);
-    const clientMessageId = createClientUserMessageId(payload.session.id);
+    const clientMessageId = pendingInitialPromptMessageId(payload.session.id);
     appendUserMessage(
       payload.session.id,
       pendingPrompt,
@@ -344,6 +350,16 @@ export function applySessionUpdate(
       store.setSessions((current) =>
         upsertSessionSummary(current, update.session),
       );
+      if (!update.session.runtimeSessionId && context.pendingPromptRef.current) {
+        store.setActiveSessionId(update.session.id);
+        context.assignSessionTitleFromPrompt(update.session.id, context.pendingPromptRef.current);
+        context.appendUserMessage(
+          update.session.id,
+          context.pendingPromptRef.current,
+          pendingInitialPromptMessageId(update.session.id),
+          pendingPromptImages(context.pendingPromptContentRef.current),
+        );
+      }
       return true;
     case "config_options":
       store.setSessionConfigOptions((current) => ({

@@ -52,6 +52,7 @@ export type AcpSessionRuntimeHandle = {
   runtimeSessionId: string;
   sessionCapabilities: DetectedAcpSessionCapabilities;
   sessionConfigState: ReturnType<typeof resolveCombinedSessionConfigState>;
+  sessionConfigOptions: AcpSessionConfigOption[];
   sessionModelState: ReturnType<typeof extractAcpModelState>;
   prompt: (text: string, content?: AgentPromptContent[]) => Promise<void>;
   configure: (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
@@ -244,7 +245,7 @@ export class AcpConnection {
       if (this.state.capabilities.sessionClose) {
         await this.closeRemoteSession(runtimeSessionId);
       }
-      this.disposeIfIdle();
+      pending.promise.finally(() => this.disposeIfIdle()).catch(() => undefined);
       return {
         kind: this.state.capabilities.sessionClose ? "remote-closed" : "unsupported",
         providerId: this.state.provider.id,
@@ -288,6 +289,7 @@ export class AcpConnection {
       runtimeSessionId: entry.runtimeSessionId,
       sessionCapabilities: this.state.capabilities,
       sessionConfigState: state(),
+      sessionConfigOptions: entry.configOptions,
       sessionModelState: entry.modelState,
       prompt: (text, content) => this.promptSession(tillerSessionId, text, content),
       configure: (nextConfig) => this.configureSession(tillerSessionId, nextConfig),

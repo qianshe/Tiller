@@ -176,6 +176,9 @@ export function MissionComposer({
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const modelSettingsLoading =
+    draftModelLoading ||
+    (!activeSession && selectedDraftAgent?.id === "opencode" && draftConfigOptions.length === 0);
 
   function focusSlashCommand() {
     if (!prompt.startsWith("/")) {
@@ -237,10 +240,21 @@ export function MissionComposer({
               aria-expanded={toolsOpen}
               aria-label="打开任务设置"
               title="打开任务设置"
-              onClick={() => setToolsOpen((current) => !current)}
+              disabled={modelSettingsLoading}
+              onClick={() => {
+                if (modelSettingsLoading) {
+                  return;
+                }
+                setToolsOpen((current) => !current);
+              }}
             >
               ⋯
             </Button>
+            {modelSettingsLoading ? (
+              <span className="truncate px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                models loading...
+              </span>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -274,7 +288,7 @@ export function MissionComposer({
             >
               +
             </Button>
-            {toolsOpen ? (
+            {toolsOpen && !modelSettingsLoading ? (
               <div
                 className="mission-tools-menu absolute bottom-full left-0 z-50 mb-2 grid w-56 max-w-[calc(100vw-3rem)] gap-3 overflow-visible rounded-lg border border-border-ghost bg-popover-glass p-3 shadow-ambient backdrop-blur-2xl"
                 role="menu"
@@ -295,12 +309,7 @@ export function MissionComposer({
                     modelPlaceholder={draftModelPlaceholder}
                     modelDisabled={draftModelPickerDisabled}
                     modelLabel={draftModelPickerLabel}
-                    modelLoading={
-                      draftModelLoading ||
-                      (!activeSession &&
-                        selectedDraftAgent?.id === "opencode" &&
-                        draftConfigOptions.length === 0)
-                    }
+                    modelLoading={modelSettingsLoading}
                     modelBaseOptions={draftModelBaseOptions}
                     resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
                     allModelOptions={draftAllModelOptions}
