@@ -147,6 +147,11 @@ h3 {
   transform: translateY(0);
 }
 
+.top-nav-menu-trigger,
+.top-nav-mobile-menu {
+  display: none;
+}
+
 .top-nav-brand,
 .top-nav-links {
   display: flex;
@@ -204,6 +209,73 @@ h3 {
 
 .top-nav-item:hover {
   transform: translateY(-1px);
+}
+
+@media (max-width: 767px) {
+  .shell {
+    width: 100vw;
+    padding: 64px 12px 20px;
+  }
+
+  .shell.view-sessions {
+    padding: 56px 8px 8px;
+  }
+
+  .top-nav {
+    top: 0;
+    left: 0;
+    width: 100vw;
+    min-height: 52px;
+    max-height: none;
+    padding: 8px 12px;
+    transform: none;
+    border-radius: 0;
+  }
+
+  .top-nav::after,
+  .top-nav-links,
+  .top-nav-github-link {
+    display: none;
+  }
+
+  .top-nav-menu-trigger {
+    display: inline-grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--color-surface-strong);
+    color: var(--color-text);
+  }
+
+  .top-nav-mobile-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 12px;
+    display: grid;
+    min-width: 180px;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .top-nav-mobile-item {
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-muted);
+    text-align: left;
+  }
+
+  .top-nav-mobile-item.active,
+  .top-nav-mobile-item:hover,
+  .top-nav-mobile-item:focus-visible {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
 }
 
 /* Shell-owned avatar/status affordance; decorative gradients are intentionally local to the shell. */

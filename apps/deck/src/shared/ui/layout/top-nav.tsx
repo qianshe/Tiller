@@ -22,6 +22,7 @@ export function TopNav({
   const showLandingMusic = activeView === "overview";
   const musicRef = useRef<HTMLAudioElement>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const items: { id: AppView; label: string }[] = [
     { id: "overview", label: labels.overview },
     { id: "sessions", label: labels.sessions },
@@ -43,6 +44,11 @@ export function TopNav({
     music.pause();
     setIsMusicPlaying(false);
   };
+
+  function navigateFromMenu(view: AppView) {
+    onNavigate(view);
+    setMobileMenuOpen(false);
+  }
 
   return (
     <header className="top-nav">
@@ -75,7 +81,7 @@ export function TopNav({
       </nav>
       <div className="top-nav-actions">
         <a
-          className={`admiral-avatar admiral-${connection}`}
+          className={`admiral-avatar top-nav-github-link admiral-${connection}`}
           href={TILLER_REPOSITORY_URL}
           target="_blank"
           rel="noreferrer noopener"
@@ -89,6 +95,15 @@ export function TopNav({
             />
           </svg>
         </a>
+        <button
+          className="top-nav-menu-trigger"
+          type="button"
+          aria-label="打开全局导航菜单"
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen((current) => !current)}
+        >
+          ☰
+        </button>
         {showLandingMusic ? (
           <>
             <button
@@ -111,6 +126,20 @@ export function TopNav({
           </>
         ) : null}
       </div>
+      {mobileMenuOpen ? (
+        <nav className="top-nav-mobile-menu" aria-label="移动端全局导航">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`top-nav-mobile-item ${activeView === item.id ? "active" : ""}`}
+              onClick={() => navigateFromMenu(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
     </header>
   );
 }
