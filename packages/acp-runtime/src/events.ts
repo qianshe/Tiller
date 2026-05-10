@@ -180,6 +180,49 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
   return null;
 }
 
+export function summarizeSessionUpdateNotification(
+  params: any,
+  mappedEventType?: SessionRuntimeEvent["type"],
+) {
+  const update = params?.update;
+  const updateType = update?.sessionUpdate ?? update?.type;
+  return {
+    sessionId: stringFrom(params?.sessionId),
+    updateType: typeof updateType === "string" ? updateType : undefined,
+    updateKeys: objectKeys(update),
+    contentShape: describeContentShape(update?.content ?? update?.delta ?? update?.message),
+    mappedEventType: mappedEventType ?? null,
+  };
+}
+
+function objectKeys(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).sort()
+    : [];
+}
+
+function describeContentShape(content: unknown): unknown {
+  if (typeof content === "string") {
+    return { kind: "string", chars: content.length };
+  }
+  if (Array.isArray(content)) {
+    return {
+      kind: "array",
+      length: content.length,
+      itemShapes: content.slice(0, 5).map((item) => describeContentShape(item)),
+    };
+  }
+  if (content && typeof content === "object") {
+    const record = content as Record<string, unknown>;
+    return {
+      kind: "object",
+      type: typeof record.type === "string" ? record.type : undefined,
+      keys: Object.keys(record).sort(),
+    };
+  }
+  return content == null ? null : { kind: typeof content };
+}
+
 export function extractSessionConfigOptions(payload: any): AcpSessionConfigOption[] {
   const rawOptions = Array.isArray(payload?.configOptions)
     ? payload.configOptions

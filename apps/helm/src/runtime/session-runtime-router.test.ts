@@ -1,0 +1,214 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type { HelmHandlerContext } from "../handlers/context";
+import { sendPromptToSession } from "./session-runtime-router";
+
+function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: "session-1",
+    projectId: "project-1",
+    projectName: "Project One",
+    helmId: "helm-1",
+    workspaceId: "workspace-1",
+    workspaceName: "Workspace One",
+    agentId: "codex",
+    agentName: "Codex",
+    status: "idle",
+    createdAt: "2026-05-10T00:00:00.000Z",
+    updatedAt: "2026-05-10T00:00:00.000Z",
+    messageCount: 0,
+    runtimeSessionId: "runtime-1",
+    ...overrides,
+  };
+}
+
+function createContext(options: {
+  activeRuntime?: {
+    prompt: (text: string, content?: any[]) => Promise<void>;
+    sessionCapabilities?: { imageInput?: boolean };
+  };
+  restoreRuntime?: {
+    prompt: (text: string, content?: any[]) => Promise<void>;
+    sessionCapabilities?: { imageInput?: boolean };
+  };
+  restoreOk?: boolean;
+} = {}) {
+  const summary = createSummary();
+  const persisted: AgentMessage[] = [];
+  const broadcasts: Array<{ method: string; params: any }> = [];
+  let currentSummary = summary;
+  const sessions = new Map<string, any>();
+  if (options.activeRuntime) {
+    sessions.set("session-1", {
+      summary,
+      agent: { id: "codex" },
+      workspace: { id: "workspace-1", path: "D:/repo" },
+      runtime: options.activeRuntime,
+    });
+  }
+  const context = {
+    sessions,
+    logInfo: () => undefined,
+    logError: () => undefined,
+    persistSessionMessage: (_sessionId: string, message: AgentMessage) => persisted.push(message),
+    updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
+      currentSummary = mutate(currentSummary);
+      return currentSummary;
+    },
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    sessionStore: { list: () => [currentSummary] },
+    broadcastNotification: (method: string, params: any) => broadcasts.push({ method, params }),
+    startSessionResume: async () => {
+      if (!options.restoreOk || !options.restoreRuntime) {
+        return {
+          ok: false,
+          resume: { restoreMethod: "ui-history" },
+          message: "restore unavailable",
+        };
+      }
+      sessions.set("session-1", {
+        summary,
+        agent: { id: "codex" },
+        workspace: { id: "workspace-1", path: "D:/repo" },
+        runtime: options.restoreRuntime,
+      });
+      return {
+        ok: true,
+        resume: { restoreMethod: "session/load" },
+        message: "restored",
+      };
+    },
+  } as unknown as HelmHandlerContext;
+  return { context, persisted, broadcasts, sessions };
+}
+
+test("sendPromptToSession dispatches through an active runtime", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "你好", clientMessageId: "client-1" },
+    context,
+  );
+
+  assert.deepEqual(prompted, ["你好"]);
+  assert.equal(result.stopReason, "end_turn");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.id, "client-1");
+});
+
+test("sendPromptToSession restores a stale session before dispatch", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    restoreOk: true,
+    restoreRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "恢复后发送", clientMessageId: "client-restore" },
+    context,
+  );
+
+  assert.deepEqual(prompted, ["恢复后发送"]);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.text, "恢复后发送");
+});
+
+test("sendPromptToSession fails when no runtime can be restored", async () => {
+  const { context, persisted } = createContext({ restoreOk: false });
+
+  await assert.rejects(
+    sendPromptToSession({ sessionId: "session-1", text: "失败" }, context),
+    /Session runtime is not available/u,
+  );
+  assert.equal(persisted.length, 0);
+});
+
+test("configureSessionRuntime applies config through an active runtime", async () => {
+  const configured: any[] = [];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async (next: any) => {
+        configured.push(next);
+        return {
+          runtimeApplied: true,
+          state: { model: next.model, reasoningEffort: next.reasoningEffort },
+          modelState: { currentModelId: next.model, options: [{ id: next.model, name: next.model }] },
+        };
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "gpt-5.5", reasoningEffort: "high" },
+    context,
+  );
+
+  assert.equal(configured[0]?.model, "gpt-5.5");
+  assert.equal(configured[0]?.reasoningEffort, "high");
+  assert.equal(configured[0]?.agentMode, undefined);
+  assert.equal(result.message, "Session config updated.");
+  assert.equal(result.state.model, "gpt-5.5");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "session_updated");
+});
+
+test("configureSessionRuntime saves config when no runtime is active", async () => {
+  const { context } = createContext();
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", agentMode: "bypass", model: "provider-default" },
+    context,
+  );
+
+  assert.equal(result.message, "Session config saved.");
+  assert.equal(result.state.agentMode, "bypass");
+  assert.equal(result.state.model, "provider-default");
+});
+
+test("cancelSessionRuntime cancels and clears an active runtime", async () => {
+  let cancelled = false;
+  const { context, sessions } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      cancel: () => {
+        cancelled = true;
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+  const { cancelSessionRuntime } = await import("./session-runtime-router");
+
+  const handled = await cancelSessionRuntime("session-1", context);
+
+  assert.equal(handled, true);
+  assert.equal(cancelled, true);
+  assert.equal(sessions.has("session-1"), false);
+});
+
+test("cancelSessionRuntime broadcasts an error when the runtime is missing", async () => {
+  const { context, broadcasts } = createContext();
+  const { cancelSessionRuntime } = await import("./session-runtime-router");
+
+  const handled = await cancelSessionRuntime("missing-session", context);
+
+  assert.equal(handled, true);
+  assert.equal(broadcasts.at(-1)?.method, "error/raised");
+  assert.equal(broadcasts.at(-1)?.params.message, "Session not found");
+});

@@ -324,12 +324,23 @@ export function App() {
     lastFilesScopeKeyRef,
   });
   appActionsRef.current = appActions;
+  const activeSessionSlashCommands = missionView.activeSession?.availableCommands ?? [];
+  const sessionAvailableCommandsForComposer = useMemo(
+    () =>
+      missionView.activeSession && activeSessionSlashCommands.length
+        ? {
+            ...deckData.sessionAvailableCommands,
+            [missionView.activeSession.id]: activeSessionSlashCommands,
+          }
+        : deckData.sessionAvailableCommands,
+    [deckData.sessionAvailableCommands, missionView.activeSession, activeSessionSlashCommands],
+  );
   const slash = useSlashCommands({
     prompt: runtimeState.prompt,
     setPrompt: runtimeState.setPrompt,
     activeSessionId: deckData.activeSessionId,
     activeSessionAgentId: missionView.activeSession?.agentId ?? runtimeState.selectedAgentId,
-    sessionAvailableCommands: deckData.sessionAvailableCommands,
+    sessionAvailableCommands: sessionAvailableCommandsForComposer,
     agentAvailableCommands: deckData.agentAvailableCommands,
     refreshAgentAvailableCommands: deckData.refreshAgentAvailableCommands,
     promptRef: runtimeState.missionPromptRef,

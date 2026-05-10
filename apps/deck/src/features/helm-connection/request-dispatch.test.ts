@@ -60,6 +60,66 @@ test("dispatchWithTrace gives model option probes a longer timeout", async () =>
   assert.equal(trace.lastRequestType, "agent/get_model_options");
 });
 
+test("dispatchWithTrace gives session creation a longer timeout", async () => {
+  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown, options?: unknown) => {
+      requested.push({ method, params, options });
+      return { session: { id: "s1" } };
+    },
+    notify: () => undefined,
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await dispatchWithTrace(
+    client as any,
+    "session/new",
+    { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [
+    {
+      method: "session/new",
+      params: { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      options: { timeoutMs: 180_000 },
+    },
+  ]);
+  assert.equal(trace.lastRequestType, "session/new");
+});
+
+test("dispatchWithTrace gives session prewarm a longer timeout", async () => {
+  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown, options?: unknown) => {
+      requested.push({ method, params, options });
+      return { ok: true };
+    },
+    notify: () => undefined,
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await dispatchWithTrace(
+    client as any,
+    "session/prewarm",
+    { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [
+    {
+      method: "session/prewarm",
+      params: { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      options: { timeoutMs: 180_000 },
+    },
+  ]);
+  assert.equal(trace.lastRequestType, "session/prewarm");
+});
+
 test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {
   const notified: Array<{ method: string; params: unknown }> = [];
   const client = {

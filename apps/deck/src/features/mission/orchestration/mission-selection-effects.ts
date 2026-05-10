@@ -256,13 +256,21 @@ export function useMissionSelectionEffects(source: any) {
           modelOptions: cached?.modelOptions ?? [],
           configOptions: cached?.configOptions ?? [],
           state: cached?.state ?? {},
-          message: "正在加载模型信息...",
+          message: "正在加载模型并预热 ACP...",
         },
       }));
       void dispatch(rpcClientRef.current, "agent/get_model_options", {
         projectId: selectedProjectId,
         workspaceId: selectedWorkspaceId,
         providerId: selectedAgentId,
+      });
+      void dispatch(rpcClientRef.current, "session/prewarm", {
+        projectId: selectedProjectId,
+        workspaceId: selectedWorkspaceId,
+        agentId: selectedAgentId,
+        agentMode: effectiveDraftAgentMode,
+        model: selectedModel === "provider-default" ? undefined : selectedModel,
+        reasoningEffort: selectedReasoningEffort,
       });
       return;
     }

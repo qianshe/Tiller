@@ -10,6 +10,7 @@ export type DispatchToHelm = (
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
   "agent/get_model_options": 120_000,
+  "session/new": 180_000,
   "session/prewarm": 180_000,
 };
 

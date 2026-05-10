@@ -92,6 +92,10 @@ export function useSlashCommands({
   ]);
 
   useEffect(() => {
+    if (commandToken === null) {
+      setSuppressedFor(null);
+      return;
+    }
     setSelectedIndex(0);
   }, [commandToken, activeSessionId]);
 

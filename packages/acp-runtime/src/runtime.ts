@@ -66,7 +66,7 @@ export type {
   SessionRuntimeEvent,
 } from "./runtime-types";
 
-export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
+export { mapSessionUpdateNotification, normalizeProviderCleanupResult, summarizeSessionUpdateNotification } from "./events";
 export { sanitizeProtocolLogPayload } from "./protocol-logging";
 
 export { buildOpenCodeConfigOverride } from "./config-adapters";

@@ -194,31 +194,46 @@ export function applyInventoryResult(
       return true;
     case "agent/get_model_options":
     case "session/prewarm": {
-      // Reconstruct the cache key including projectId.
-      // The loading entry carries the projectId used when the probe was dispatched;
-      // find it by matching the providerId::workspaceId prefix.
+      // Reconstruct the cache key including projectId. Prefer the loading entry,
+      // but model probing and prewarm may complete in either order, so fall back
+      // to an existing project-scoped entry for the same provider/workspace.
       const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
       const currentEntries = store.agentModelOptions;
-      const loadingEntry = Object.entries(currentEntries).find(
-        ([k, entry]) => k.startsWith(baseKey) && entry.loading,
+      const matchingEntries = Object.entries(currentEntries).filter(([key]) =>
+        key.startsWith(baseKey),
       );
-      const loadingProjectId = loadingEntry?.[1]?.projectId;
-      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
+      const loadingEntry = matchingEntries.find(([, entry]) => entry.loading);
+      const existingEntry = loadingEntry ?? matchingEntries.find(([, entry]) => entry.projectId);
+      const existingProjectId = existingEntry?.[1]?.projectId;
+      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, existingProjectId);
+      const previous = currentEntries[key] ?? existingEntry?.[1];
+      const payloadModelOptions = Array.isArray(payload.modelOptions) ? payload.modelOptions : [];
+      const payloadConfigOptions = Array.isArray(payload.configOptions) ? payload.configOptions : [];
+      const nextModelOptions = payloadModelOptions.length
+        ? payloadModelOptions
+        : (previous?.modelOptions ?? []);
+      const nextConfigOptions = payloadConfigOptions.length
+        ? payloadConfigOptions
+        : (previous?.configOptions ?? []);
+      const nextState = {
+        ...(previous?.state ?? {}),
+        ...(payload.state ?? {}),
+      };
       const nextEntry = {
         loading: false,
-        warmed: Boolean(payload.ok),
-        projectId: loadingProjectId,
-        runtimeSessionId: payload.runtimeSessionId,
-        message: payload.message,
-        modelOptions: payload.modelOptions,
-        configOptions: payload.configOptions,
-        state: payload.state,
+        warmed: Boolean(payload.ok) || Boolean(previous?.warmed),
+        projectId: existingProjectId,
+        runtimeSessionId: payload.runtimeSessionId ?? previous?.runtimeSessionId,
+        message: payload.message ?? previous?.message,
+        modelOptions: nextModelOptions,
+        configOptions: nextConfigOptions,
+        state: nextState,
       };
       store.setAgentModelOptions((current) => {
         const next = { ...current, [key]: nextEntry };
         // If the loading sentinel lived under a different key variant, clean it up.
-        if (loadingEntry && loadingEntry[0] !== key) {
-          delete next[loadingEntry[0]];
+        if (existingEntry && existingEntry[0] !== key) {
+          delete next[existingEntry[0]];
         }
         writeAgentModelOptionsCache(next);
         return next;
@@ -235,18 +250,18 @@ export function applyInventoryResult(
         payload.workspaceId === selectedWorkspaceId
       ) {
         const realOptions = resolveModelOptions(
-          payload.currentModelId ?? payload.state.model,
-          payload.configOptions,
-          payload.modelOptions,
+          payload.currentModelId ?? nextState.model,
+          nextConfigOptions,
+          nextModelOptions,
         );
         const allOptions = Array.from(
           new Set([
             ...realOptions,
-            ...payload.modelOptions.map((option: AcpModelOption) => option.id),
+            ...nextModelOptions.map((option: AcpModelOption) => option.id),
           ]),
         );
         const nextModel = resolvePreferredModel(
-          payload.currentModelId ?? payload.state.model,
+          payload.currentModelId ?? nextState.model,
           allOptions,
         );
         if (
@@ -257,11 +272,22 @@ export function applyInventoryResult(
         ) {
           setSelectedModel(nextModel);
         }
-        if (payload.state.agentMode) {
-          setSelectedAgentMode(payload.state.agentMode);
+        if (nextState.agentMode) {
+          setSelectedAgentMode(nextState.agentMode);
         }
-        if (payload.state.reasoningEffort) {
-          setSelectedReasoningEffort(payload.state.reasoningEffort);
+        if (nextState.reasoningEffort) {
+          setSelectedReasoningEffort(nextState.reasoningEffort);
+        }
+        const client = rpcClientRef.current;
+        if (method === "agent/get_model_options" && client && nextModel) {
+          void dispatch(client, "session/prewarm", {
+            projectId: existingProjectId ?? undefined,
+            workspaceId: payload.workspaceId,
+            agentId: payload.providerId,
+            agentMode: nextState.agentMode,
+            model: nextModel,
+            reasoningEffort: nextState.reasoningEffort,
+          });
         }
       }
       return true;

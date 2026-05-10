@@ -7,7 +7,7 @@ import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionR
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { resolveAcpRequestTimeout } from "../constants";
-import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState } from "../events";
+import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
@@ -91,10 +91,14 @@ export class AcpConnection {
   private permissionRequestCounter = 0;
   private terminalCounter = 0;
   private readonly terminals = new Map<string, ManagedSdkTerminal>();
+  private suppressExitError = false;
 
   private constructor(private readonly state: AcpConnectionState) {
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
+      if (this.suppressExitError) {
+        return;
+      }
       if (code !== 0) {
         this.lastError = `ACP process exited with code=${code ?? "none"} signal=${signal ?? "none"}`;
         this.status = "error";
@@ -687,6 +691,11 @@ export class AcpConnection {
 
   private handleSessionUpdate(params: unknown): void {
     const mapped = mapSessionUpdateNotification({ method: "session/update", params });
+    writeLogLine(
+      this.state.logFile,
+      "session-update",
+      JSON.stringify(summarizeSessionUpdateNotification(params, mapped?.event.type)),
+    );
     if (!mapped) {
       return;
     }
@@ -728,6 +737,7 @@ export class AcpConnection {
 
   async dispose(): Promise<void> {
     this.status = "closed";
+    this.suppressExitError = true;
     if (this.state.child.pid) {
       terminateChildProcess(this.state.child.pid);
     }

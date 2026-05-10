@@ -345,6 +345,71 @@ export function createSessionServices(options: SessionServicesOptions) {
     };
   }
 
+  function warmRuntimeMatchesConfig(
+    warm: WarmSessionRuntime,
+    sessionConfig?: SessionRuntimeConfig,
+    matchOptions?: { requireKnownModel?: boolean },
+  ) {
+    const currentModel = warm.modelState?.currentModelId ?? warm.configState.model;
+    if (sessionConfig?.model && !currentModel && matchOptions?.requireKnownModel) {
+      return false;
+    }
+    if (sessionConfig?.model && currentModel && sessionConfig.model !== currentModel) {
+      return false;
+    }
+    if (
+      sessionConfig?.agentMode &&
+      warm.configState.agentMode &&
+      sessionConfig.agentMode !== warm.configState.agentMode
+    ) {
+      return false;
+    }
+    if (
+      sessionConfig?.reasoningEffort &&
+      warm.configState.reasoningEffort &&
+      sessionConfig.reasoningEffort !== warm.configState.reasoningEffort
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  async function takeWarmRuntimeByKey(
+    key: WarmRuntimeKey,
+    sessionConfig?: SessionRuntimeConfig,
+    matchOptions?: { requireKnownModel?: boolean },
+  ) {
+    const warm = warmRuntimes.take(key);
+    if (warm) {
+      if (!warmRuntimeMatchesConfig(warm, sessionConfig, matchOptions)) {
+        warmRuntimes.set(key, warm);
+        return undefined;
+      }
+      clearTimeout(warm.expiresTimer);
+      return warm;
+    }
+
+    const pending = inFlightWarmRuntimes.take(key);
+    if (!pending) {
+      return undefined;
+    }
+    pending.consumed = true;
+    try {
+      const inFlightWarm = await pending.promise;
+      if (!warmRuntimeMatchesConfig(inFlightWarm, sessionConfig, matchOptions)) {
+        warmRuntimes.set(key, inFlightWarm);
+        return undefined;
+      }
+      clearTimeout(inFlightWarm.expiresTimer);
+      return inFlightWarm;
+    } catch (error) {
+      options.logError(
+        `[tiller] 阶段=预热ACP复用失败 message=${error instanceof Error ? error.message : "Unknown prewarm error"}`,
+      );
+      return undefined;
+    }
+  }
+
   async function prewarmRuntime(params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
@@ -489,33 +554,31 @@ export function createSessionServices(options: SessionServicesOptions) {
     sessionConfig?: SessionRuntimeConfig;
   }) {
     const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
-    const warm = warmRuntimes.take(key);
+    const warm = await takeWarmRuntimeByKey(key, params.sessionConfig);
     if (warm) {
-      clearTimeout(warm.expiresTimer);
       options.logInfo(
         `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
       );
       return warm;
     }
 
-    const pending = inFlightWarmRuntimes.take(key);
-    if (!pending) {
-      return undefined;
+    if (params.sessionConfig?.model) {
+      const defaultModelKey = resolveWarmRuntimeKey(params.workspace, params.agent, {
+        ...params.sessionConfig,
+        model: undefined,
+      });
+      const defaultModelWarm = await takeWarmRuntimeByKey(defaultModelKey, params.sessionConfig, {
+        requireKnownModel: true,
+      });
+      if (defaultModelWarm) {
+        options.logInfo(
+          `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${defaultModelWarm.runtime.runtimeSessionId}`,
+        );
+        return defaultModelWarm;
+      }
     }
-    pending.consumed = true;
-    try {
-      const inFlightWarm = await pending.promise;
-      clearTimeout(inFlightWarm.expiresTimer);
-      options.logInfo(
-        `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${inFlightWarm.runtime.runtimeSessionId}`,
-      );
-      return inFlightWarm;
-    } catch (error) {
-      options.logError(
-        `[tiller] 阶段=预热ACP复用失败 provider=${params.agent.id} workspace=${params.workspace.id} message=${error instanceof Error ? error.message : "Unknown prewarm error"}`,
-      );
-      return undefined;
-    }
+
+    return undefined;
   }
 
   async function startSessionResume(sessionId: string) {

@@ -509,3 +509,32 @@ test("child exit broadcasts an error to active sessions", async () => {
     }
   }
 });
+
+test("intentional connection dispose does not broadcast an exit error", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-dispose-"));
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      workspace: { ...workspace, path: tempDir },
+    });
+    const events: Array<{ type: string; message?: string }> = [];
+
+    await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      workspace: { ...workspace, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event as { type: string; message?: string }),
+    });
+
+    await connection.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 160));
+
+    assert.equal(connection.inventory().status, "closed");
+    assert.equal(events.some((event) => event.type === "error" && event.message?.includes("ACP process exited")), false);
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});

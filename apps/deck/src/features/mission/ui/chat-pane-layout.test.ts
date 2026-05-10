@@ -22,6 +22,7 @@ const missionSelectionEffectsSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-selection-effects.ts"),
   "utf8",
 );
+const appRootSource = readFileSync(resolve(currentDir, "../../../app/shell/root.tsx"), "utf8");
 const projectFileListSource = readFileSync(
   resolve(currentDir, "project-file-list.tsx"),
   "utf8",
@@ -41,6 +42,7 @@ const messageTimelineSource = readFileSync(
 );
 const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
 const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
+const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash-commands.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
@@ -82,6 +84,19 @@ test("assistant markdown uses readable prose styling without paragraph marker bu
   assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
   assert.match(markdownSource, /className="overflow-x-auto/);
   assert.match(markdownSource, /className="not-prose flex items-center justify-between/);
+});
+
+test("slash command suppression resets after leaving slash mode", () => {
+  assert.match(
+    slashCommandsHookSource,
+    /if \(commandToken === null\) \{\s*setSuppressedFor\(null\);\s*return;/,
+  );
+});
+
+test("mission composer falls back to active session available commands", () => {
+  assert.match(appRootSource, /activeSessionSlashCommands/);
+  assert.match(appRootSource, /missionView\.activeSession\?\.availableCommands/);
+  assert.match(appRootSource, /\[missionView\.activeSession\.id\]: activeSessionSlashCommands/);
 });
 
 test("mission workspace uses Tailwind pane layout instead of feature css", () => {
