@@ -61,7 +61,10 @@ export function LogbookPanel({
           logCount={logCount}
         />
       </div>
-      <div className="mission-logbook-scroll min-h-0 overflow-auto pr-1">
+      <div
+        className="mission-logbook-scroll min-h-0 overflow-auto pr-1"
+        data-mission-swipe-lock="true"
+      >
         <ActivityLogPanel
           sessionId={activeSession?.id}
           sessionToolCalls={sessionToolCalls}

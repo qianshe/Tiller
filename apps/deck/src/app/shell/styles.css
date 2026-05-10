@@ -349,6 +349,25 @@ h3 {
     grid-column: 1;
     grid-row: 2;
   }
+
+  .mission-mobile-mode .mission-composer {
+    position: sticky;
+    bottom: calc(44px + env(safe-area-inset-bottom));
+    z-index: 6;
+    margin: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    background: var(--color-surface);
+  }
+
+  .mission-mobile-mode:focus-within .mission-mobile-pager {
+    min-height: 28px;
+    padding-top: 3px;
+    padding-bottom: max(3px, env(safe-area-inset-bottom));
+  }
+
+  .mission-mobile-mode:focus-within .mission-mobile-pager-label {
+    display: none;
+  }
 }
 
 /* Shell-owned avatar/status affordance; decorative gradients are intentionally local to the shell. */

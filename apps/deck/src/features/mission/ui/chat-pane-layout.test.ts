@@ -229,3 +229,21 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(shellStylesSource, /mission-mobile-pane-display \[data-mission-mobile-pane="display"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-inspector \[data-mission-mobile-pane="inspector"\]/);
 });
+
+const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
+const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
+
+test("mission workspace attaches mobile pointer swipe handlers and locks horizontal regions", () => {
+  assert.match(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
+  assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
+  assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
+  assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
+});
+
+test("mission composer is sticky and swipe-locked on mobile", () => {
+  assert.match(composerSource, /mission-composer/);
+  assert.match(composerSource, /data-mission-swipe-lock="true"/);
+  assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-composer/);
+  assert.match(shellStylesSource, /bottom:\s*calc\(44px \+ env\(safe-area-inset-bottom\)\)/);
+});

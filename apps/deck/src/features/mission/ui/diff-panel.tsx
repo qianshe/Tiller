@@ -42,6 +42,7 @@ export function MissionDiffPanel({
     <div
       className="mission-inspector-diff mission-change-tree grid min-h-0 gap-1 overflow-y-auto pr-1"
       aria-label="Git Diff 文件列表"
+      data-mission-swipe-lock="true"
     >
       {diffTree.map((node) =>
         renderDiffTreeNode({
