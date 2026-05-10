@@ -33,21 +33,67 @@ test("resolveDefaultHelmEndpoint ignores saved endpoints in embedded single Helm
   assert.deepEqual(endpoint, { host: "192.168.1.50", port: "47631" });
 });
 
-test("resolveDefaultHelmEndpoint keeps saved endpoints in development multi Helm mode", () => {
+test("resolveDefaultHelmEndpoint uses browser host when dev fallback is loopback", () => {
+  const emptyStorage = { getItem: () => null };
+
+  const endpoint = resolveDefaultHelmEndpoint({
+    embedded: false,
+    location: {
+      protocol: "http:",
+      hostname: "10.20.30.40",
+      host: "10.20.30.40:5173",
+      port: "5173",
+    },
+    storage: emptyStorage,
+    fallbackHost: "localhost",
+    fallbackPort: "47631",
+  });
+
+  assert.deepEqual(endpoint, { host: "10.20.30.40", port: "47631" });
+});
+
+test("resolveDefaultHelmEndpoint uses browser host instead of saved endpoint", () => {
+  const savedEndpointStorage = {
+    getItem(key: string) {
+      return key === "tiller.daemon-host"
+        ? "192.168.1.9"
+        : key === "tiller.daemon-port"
+          ? "47631"
+          : null;
+    },
+  };
+
+  const endpoint = resolveDefaultHelmEndpoint({
+    embedded: false,
+    location: {
+      protocol: "http:",
+      hostname: "10.20.30.41",
+      host: "10.20.30.41:5173",
+      port: "5173",
+    },
+    storage: savedEndpointStorage,
+    fallbackHost: "localhost",
+    fallbackPort: "47631",
+  });
+
+  assert.deepEqual(endpoint, { host: "10.20.30.41", port: "47631" });
+});
+
+test("resolveDefaultHelmEndpoint keeps saved port in development mode", () => {
   const endpoint = resolveDefaultHelmEndpoint({
     embedded: false,
     location: {
       protocol: "http:",
       hostname: "192.168.1.50",
-      host: "192.168.1.50:47631",
-      port: "47631",
+      host: "192.168.1.50:5173",
+      port: "5173",
     },
     storage,
     fallbackHost: "127.0.0.1",
     fallbackPort: "47631",
   });
 
-  assert.deepEqual(endpoint, { host: "10.0.0.8", port: "49000" });
+  assert.deepEqual(endpoint, { host: "192.168.1.50", port: "49000" });
 });
 
 test("createHelmWebSocketUrl uses same origin in embedded mode", () => {

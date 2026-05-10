@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { ensureTillerConfigDefaults } from "@tiller/agent-registry";
 import { handleConfigRpcRequest } from "./rpc";
 
 test("config RPC lists helms and updates context cache", async () => {
@@ -65,6 +66,70 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
     workspaceId: "main",
     runtimeConnectionId: "conn-1",
     message: "ACP provider reconnected.",
+  });
+});
+
+test("ensureTillerConfigDefaults creates daemon auth config when file is missing", () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+
+  const result = ensureTillerConfigDefaults(configPath);
+  const saved = JSON.parse(readFileSync(configPath, "utf8"));
+
+  assert.equal(result.updated, true);
+  assert.deepEqual(saved, {
+    daemon: {
+      host: "127.0.0.1",
+      port: 47631,
+      auth: "none",
+    },
+  });
+});
+
+test("ensureTillerConfigDefaults adds missing daemon auth without changing endpoint", () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      daemon: { host: "0.0.0.0", port: 47631 },
+      projects: [{ id: "p1", name: "Project", helmId: "local" }],
+    }),
+  );
+
+  const result = ensureTillerConfigDefaults(configPath);
+  const saved = JSON.parse(readFileSync(configPath, "utf8"));
+
+  assert.equal(result.updated, true);
+  assert.deepEqual(saved.daemon, {
+    host: "0.0.0.0",
+    port: 47631,
+    auth: "none",
+  });
+  assert.deepEqual(saved.projects, [{ id: "p1", name: "Project", helmId: "local" }]);
+});
+
+test("config RPC save helm creates daemon auth config field", async () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  const helm = { id: "local", name: "Local", host: "0.0.0.0", port: 47631 };
+
+  const result = await handleConfigRpcRequest("helm/save", { helm }, {
+    configPath,
+    loadAvailableHelms: () => [helm],
+    loadAvailableProjectsWithSemanticSummaries: async () => [],
+    setHelms: () => undefined,
+    setProjects: () => undefined,
+  } as any);
+
+  const saved = JSON.parse(readFileSync(configPath, "utf8"));
+
+  assert.deepEqual(result, {
+    ok: true,
+    helmId: "local",
+    message: `Saved Helm model config to ${configPath}`,
+  });
+  assert.deepEqual(saved.daemon, {
+    host: "127.0.0.1",
+    port: 47631,
+    auth: "none",
   });
 });
 

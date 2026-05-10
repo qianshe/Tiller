@@ -3,6 +3,7 @@ import qrcode from "qrcode-terminal";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import {
+  ensureTillerConfigDefaults,
   getDefaultConfigPath,
   listAvailableProjects as listConfiguredProjects,
   listAvailableProviders,
@@ -57,6 +58,7 @@ import { createSocketState } from "./state/socket";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
+ensureTillerConfigDefaults(configPath);
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
 const {

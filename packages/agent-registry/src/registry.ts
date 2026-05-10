@@ -15,6 +15,22 @@ export type TillerConfig = {
   };
 };
 
+const DEFAULT_DAEMON_CONFIG: NonNullable<TillerConfig["daemon"]> = {
+  host: "127.0.0.1",
+  port: 47631,
+  auth: "none",
+};
+
+function resolveDaemonConfig(daemon: TillerConfig["daemon"]) {
+  if (!daemon) {
+    return DEFAULT_DAEMON_CONFIG;
+  }
+  if (daemon.auth) {
+    return daemon;
+  }
+  return { ...daemon, auth: "none" as const };
+}
+
 export function resolveProviderById(id: string, providers: AcpAgentProvider[]) {
   return providers.find((provider) => provider.id === id);
 }
@@ -92,6 +108,17 @@ export function readTillerConfig(configPath = getDefaultConfigPath()): TillerCon
   return parseTillerConfig(stub.raw, configPath);
 }
 
+export function ensureTillerConfigDefaults(configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextDaemon = resolveDaemonConfig(current.daemon);
+  const updated = current.daemon !== nextDaemon;
+  if (updated) {
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({ ...current, daemon: nextDaemon }, null, 2), "utf8");
+  }
+  return { configPath, updated };
+}
+
 export function parseTillerConfig(raw: string, configPath = "<memory>"): TillerConfig {
   try {
     return JSON.parse(raw) as TillerConfig;
@@ -135,10 +162,7 @@ export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfi
     projects: current.projects ?? [],
     workspaces: current.workspaces ?? [],
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -165,10 +189,7 @@ export function saveProviderToConfig(provider: AcpAgentProvider, configPath = ge
     projects: current.projects ?? [],
     workspaces: current.workspaces ?? [],
     agents: nextAgents,
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -190,10 +211,7 @@ export function saveProjectToConfig(project: ProjectSummary, configPath = getDef
     projects: nextProjects,
     workspaces: current.workspaces ?? [],
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -214,10 +232,7 @@ export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = 
     projects: current.projects ?? [],
     workspaces: nextWorkspaces,
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -240,10 +255,7 @@ export function deleteProjectFromConfig(projectId: string, configPath = getDefau
       ? (current.workspaces ?? []).filter((item) => !workspaceIds.has(item.id))
       : (current.workspaces ?? []),
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -273,10 +285,7 @@ export function deleteProviderFromConfig(providerId: string, configPath = getDef
     projects: nextProjects,
     workspaces: current.workspaces ?? [],
     agents: nextAgents,
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });

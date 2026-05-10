@@ -30,9 +30,11 @@ export function resolveDefaultHelmEndpoint(input: ResolveDefaultHelmEndpointInpu
     };
   }
 
+  const savedPort = input.storage.getItem(DAEMON_PORT_KEY);
+
   return {
-    host: input.storage.getItem(DAEMON_HOST_KEY) ?? input.fallbackHost,
-    port: input.storage.getItem(DAEMON_PORT_KEY) ?? input.fallbackPort,
+    host: input.location.hostname || input.fallbackHost,
+    port: savedPort ?? input.fallbackPort,
   };
 }
 

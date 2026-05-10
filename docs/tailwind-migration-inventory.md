@@ -5,20 +5,19 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1283
+- Total lines: 1351
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 393
-- Top-level selectors: 68
+- Lines: 465
+- Top-level selectors: 76
 - Hard-coded color tokens: 1
 
 Selectors:
 
 - `:root`
-- `.admiral-avatar`
 - `.admiral-avatar svg`
 - `.admiral-connected`
 - `.admiral-connecting`
@@ -38,6 +37,7 @@ Selectors:
 - `.top-nav`
 - `.top-nav-actions`
 - `.top-nav-brand`
+- `.top-nav-github-link`
 - `.top-nav-item`
 - `.top-nav-item:hover`
 - `.top-nav-item.active`
@@ -45,6 +45,12 @@ Selectors:
 - `.top-nav-links::-webkit-scrollbar`
 - `.top-nav-logo`
 - `.top-nav-logo-mark`
+- `.top-nav-menu-trigger`
+- `.top-nav-mobile-item`
+- `.top-nav-mobile-item:focus-visible`
+- `.top-nav-mobile-item:hover`
+- `.top-nav-mobile-item.active`
+- `.top-nav-mobile-menu`
 - `.top-nav::after`
 - `.top-nav:focus-within`
 - `.top-nav:hover`
@@ -60,10 +66,12 @@ Selectors:
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="system"] body`
+- `} .admiral-avatar`
 - `} @keyframes mission-loading-pulse`
 - `} @keyframes mission-session-status-pulse`
 - `} *`
 - `@keyframes surface-fade`
+- `@media (max-width: 767px)`
 - `@media (max-width: 860px)`
 - `*`
 - `*::-webkit-scrollbar`
@@ -145,7 +153,7 @@ Hard-coded colors:
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 537
+- Lines: 533
 - Top-level selectors: 60
 - Hard-coded color tokens: 12
 

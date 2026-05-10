@@ -6,6 +6,7 @@ import {
   loadTillerConfigStub,
   readTillerConfig,
   saveProjectToConfig,
+  ensureTillerConfigDefaults,
 } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
@@ -116,6 +117,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     logs: resolve(configDir, "logs"),
   };
 
+  ensureTillerConfigDefaults(configPath);
   const configStub = loadTillerConfigStub(configPath);
   const tillerConfig = readTillerConfig(configPath);
   const runtime = resolveTillerRuntimeOptions({

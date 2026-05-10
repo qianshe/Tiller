@@ -76,6 +76,23 @@ export function applyDeviceResult(
     );
   const sourceIsCurrentHelm = sourceHelmKey === currentEventHelmKey;
 
+  function completePendingAddHelmProfile() {
+    const pairedProfile = pendingAddHelmProfileRef.current;
+    if (!pairedProfile) {
+      return;
+    }
+
+    persistDaemonProfile(pairedProfile);
+    store.setDaemonHost(pairedProfile.host);
+    store.setDaemonPort(pairedProfile.port);
+    window.localStorage.setItem(daemonHostStorageKey, pairedProfile.host);
+    window.localStorage.setItem(daemonPortStorageKey, pairedProfile.port);
+    store.selectHelmKey(daemonProfileKey(pairedProfile.host, pairedProfile.port));
+    pendingAddHelmProfileRef.current = null;
+    setFleetAddHelmModalOpen(false);
+    setFleetAddHelmStage("connect");
+  }
+
   switch (method) {
     case "device/pair":
       if (payload.ok && payload.token) {
@@ -89,17 +106,7 @@ export function applyDeviceResult(
         const pairedHost = pairedProfile?.host ?? (daemonHost.trim() || defaultDaemonHost);
         const pairedPort = pairedProfile?.port ?? (daemonPort.trim() || defaultDaemonPort);
         writeTrustedDeviceCache(window.localStorage, pairedHost, pairedPort, nextCache);
-        if (pairedProfile) {
-          persistDaemonProfile(pairedProfile);
-          store.setDaemonHost(pairedProfile.host);
-          store.setDaemonPort(pairedProfile.port);
-          window.localStorage.setItem(daemonHostStorageKey, pairedProfile.host);
-          window.localStorage.setItem(daemonPortStorageKey, pairedProfile.port);
-          store.selectHelmKey(daemonProfileKey(pairedProfile.host, pairedProfile.port));
-          pendingAddHelmProfileRef.current = null;
-          setFleetAddHelmModalOpen(false);
-          setFleetAddHelmStage("connect");
-        }
+        completePendingAddHelmProfile();
         store.setTrustedDevice(nextCache);
         autoConnectAttemptRef.current = null;
         store.setPairingFeedback(payload.message);
@@ -155,6 +162,9 @@ export function applyDeviceResult(
       store.applyHelmInventory(sourceHelmKey, { trustedDevices: payload.devices as TrustedDeviceSummary[] });
       if (sourceIsCurrentHelm) {
         store.setTrustedDevices(payload.devices as TrustedDeviceSummary[]);
+        if (store.pairingState === "paired") {
+          completePendingAddHelmProfile();
+        }
       }
       return true;
     case "device/revoke":
