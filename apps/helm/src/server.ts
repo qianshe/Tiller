@@ -17,7 +17,7 @@ import {
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
-import { createAcpRuntime, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
@@ -302,7 +302,9 @@ function createHandlerContext(): HelmHandlerContext {
     sessionArtifactStore,
     sessionRuntimeStore,
     createRuntime: createAcpRuntime,
+    connectAcpConnection,
     reconnectAcpConnection,
+    listAcpConnectionInventory,
     prewarmRuntime,
     takePrewarmedRuntime,
     testAcpConnection,

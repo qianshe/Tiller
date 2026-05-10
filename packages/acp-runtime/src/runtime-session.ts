@@ -5,6 +5,16 @@ import type { AcpRuntimeOptions } from "./runtime-types";
 
 const defaultAcpConnectionManager = createAcpConnectionManager();
 
+export async function connectAcpConnection(options: AcpRuntimeOptions) {
+  return defaultAcpConnectionManager.openConnection({
+    sessionId: options.sessionId,
+    workspace: options.workspace,
+    provider: options.agent,
+    sessionConfig: options.sessionConfig,
+    onLifecycleEvent: options.onConnectionLifecycleEvent,
+  });
+}
+
 export async function reconnectAcpConnection(options: AcpRuntimeOptions) {
   return defaultAcpConnectionManager.reconnect({
     sessionId: options.sessionId,
@@ -13,6 +23,10 @@ export async function reconnectAcpConnection(options: AcpRuntimeOptions) {
     sessionConfig: options.sessionConfig,
     onLifecycleEvent: options.onConnectionLifecycleEvent,
   });
+}
+
+export function listAcpConnectionInventory() {
+  return defaultAcpConnectionManager.listInventory();
 }
 
 export async function createAcpRuntime(options: AcpRuntimeOptions) {

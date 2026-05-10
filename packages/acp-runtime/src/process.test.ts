@@ -27,3 +27,18 @@ test("createProtocolStdoutStream drops taskkill success lines before ACP JSON pa
   );
   assert.deepEqual(discarded, ["SUCCESS: The process with PID 43752 has been terminated."]);
 });
+
+test("createProtocolStdoutStream emits a newline-terminated ACP JSON line immediately", async () => {
+  const source = new Readable({ read() {} });
+  const output = createProtocolStdoutStream(source);
+  const chunks: string[] = [];
+  output.on("data", (chunk) => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk));
+  });
+
+  source.push('{"jsonrpc":"2.0","id":1,"result":{}}\n');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(chunks, ['{"jsonrpc":"2.0","id":1,"result":{}}\n']);
+  source.push(null);
+});

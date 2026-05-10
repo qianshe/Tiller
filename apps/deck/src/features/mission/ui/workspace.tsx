@@ -73,6 +73,7 @@ export function MissionWorkspace(props: any) {
     sessions,
     sessionCountsByProject,
     agents,
+    agentConnectionInventory = [],
     setSelectedMissionHelmId,
     setSelectedProjectId,
     setSelectedWorkspaceId,
@@ -298,54 +299,47 @@ export function MissionWorkspace(props: any) {
     `mission-mobile-pane-${resolvedMissionMobilePane}`,
   ]);
   const runtimeOverviewItems = (() => {
-    const grouped = new Map<string, any>();
-    for (const session of sessions as any[]) {
-      const status = statuses[session.id] ?? session.status;
-      if (!session.runtimeSessionId) {
-        continue;
-      }
-      const active = status !== "error" && status !== "cancelled";
-      const key = String(session.agentId ?? session.agentName ?? "acp");
-      const statusLabel = copy.status[status] ?? status;
-      const projectName =
-        projects.find((project: any) => project.id === session.projectId)?.name ??
-        session.projectName ??
-        "未选项目";
-      const branchName = session.workspaceName ?? session.workspaceId ?? "默认分支";
-      const child = {
-        id: session.id,
-        projectName,
-        branchName,
-        status: statusLabel,
-        model: session.model,
-      };
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.sessionCount += 1;
-        existing.activeSessionCount += active ? 1 : 0;
-        existing.children.push(child);
-        continue;
-      }
-      grouped.set(key, {
-        id: `acp:${key}`,
-        agentId: session.agentId ?? key,
-        projectId: session.projectId,
-        workspaceId: session.workspaceId,
-        label: session.agentName ?? session.agentId ?? "ACP",
-        meta: `${projectName} · ${branchName} · ${statusLabel}`,
-        status: "ACP",
-        runtimeSessionId: "1 个会话",
-        model: session.model,
-        sessionCount: 1,
-        activeSessionCount: active ? 1 : 0,
-        children: [child],
+    const sessionById = new Map((sessions as any[]).map((session) => [session.id, session]));
+    const items: any[] = (agentConnectionInventory as any[]).map((connection) => {
+      const agent = (agents as any[]).find((item) => item.id === connection.providerId);
+      const workspace = (workspaces ?? []).find((item: any) => item.id === connection.workspaceId);
+      const children = (connection.sessions ?? []).map((runtimeSession: any) => {
+        const session = sessionById.get(runtimeSession.tillerSessionId) as any;
+        const status = session ? (statuses[session.id] ?? session.status) : runtimeSession.status;
+        const statusLabel = copy.status[status] ?? status;
+        const projectName =
+          projects.find((project: any) => project.id === session?.projectId)?.name ??
+          session?.projectName ??
+          "未选项目";
+        return {
+          id: runtimeSession.tillerSessionId,
+          projectName,
+          branchName: session?.workspaceName ?? workspace?.name ?? connection.workspaceId,
+          status: statusLabel,
+          model: session?.model ?? runtimeSession.model,
+        };
       });
-    }
+      return {
+        id: `acp:${connection.providerId}:${connection.workspaceId}`,
+        agentId: connection.providerId,
+        projectId: selectedProjectId ?? undefined,
+        workspaceId: connection.workspaceId,
+        label: agent?.name ?? connection.providerId ?? "ACP",
+        meta: connection.lastError ?? workspace?.name ?? connection.workspacePath ?? "Workspace",
+        status: formatAcpConnectionStatus(connection.status),
+        runtimeSessionId: formatRuntimeSessionCount(
+          connection.activeSessionCount ?? children.length,
+          Math.max(0, (connection.activeSessionCount ?? children.length) - (connection.pendingSessionCount ?? 0)),
+        ),
+        model: children[0]?.model,
+        canReconnect: true,
+        children,
+      };
+    });
 
     for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
       const [agentId, workspaceId] = key.split("::");
-      const groupKey = String(agentId ?? "acp");
-      if (!entry?.runtimeSessionId || grouped.has(groupKey)) {
+      if (!entry?.runtimeSessionId || items.some((item) => item.agentId === agentId && item.workspaceId === workspaceId)) {
         continue;
       }
       const agentName = agents.find((agent: any) => agent.id === agentId)?.name ?? agentId ?? "ACP";
@@ -353,57 +347,75 @@ export function MissionWorkspace(props: any) {
         draftWorkspaceOptions.find((workspace: any) => workspace.id === workspaceId)?.name ??
         workspaceId ??
         "Workspace";
-      grouped.set(groupKey, {
-        id: `acp:${groupKey}`,
+      items.push({
+        id: `acp:${agentId}:${workspaceId}:prewarm`,
         agentId,
         workspaceId,
         label: agentName,
-
         meta: workspaceName,
         status: entry.loading ? "预热中" : "已预热",
         runtimeSessionId: `${workspaceName} · 预热连接`,
         model: entry.state?.model,
+        canReconnect: true,
       });
     }
 
     for (const agent of agents as any[]) {
-      const groupKey = String(agent.id ?? agent.name ?? "acp");
-      if (grouped.has(groupKey)) {
+      const hasConnection = items.some((item) => item.agentId === agent.id);
+      if (hasConnection) {
         continue;
       }
-      grouped.set(groupKey, {
-        id: `acp:${groupKey}`,
+      items.push({
+        id: `acp:${agent.id ?? agent.name ?? "acp"}`,
         agentId: agent.id,
         projectId: selectedProjectId ?? undefined,
         workspaceId: selectedWorkspaceId ?? undefined,
         label: agent.name ?? agent.id ?? "ACP",
-        meta: "暂无会话",
+        meta: "暂无连接",
         status: "未连接",
-        runtimeSessionId: "暂无会话",
+        runtimeSessionId: "暂无连接",
+        canConnect: Boolean(agent.id && selectedWorkspaceId),
+        canReconnect: false,
       });
     }
 
-    return Array.from(grouped.values()).map((item) => ({
-      ...item,
-      runtimeSessionId:
-        typeof item.sessionCount === "number"
-          ? formatRuntimeSessionCount(item.sessionCount, item.activeSessionCount)
-          : item.runtimeSessionId,
-    }));
+    return items;
   })();
-  const reconnectAcpRuntime = (runtime: { agentId?: string; projectId?: string; workspaceId?: string }) => {
+  const reconnectAcpRuntime = (runtime: {
+    agentId?: string;
+    projectId?: string;
+    workspaceId?: string;
+    canConnect?: boolean;
+    canReconnect?: boolean;
+  }) => {
     const client = rpcClientRef?.current;
     if (!runtime.agentId || !client || client.socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    void dispatch?.(client, "agent/reconnect", {
+    void dispatch?.(client, runtime.canReconnect ? "agent/reconnect" : "agent/connect", {
       providerId: runtime.agentId,
       projectId: runtime.projectId ?? selectedProjectId ?? undefined,
       workspaceId: runtime.workspaceId ?? selectedWorkspaceId ?? undefined,
     });
   };
-  const shouldShowComposer = Boolean(activeSession);
-  const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId);
+  const selectedDraftConnection = !activeSession && selectedAgentId && selectedWorkspaceId
+    ? (agentConnectionInventory as any[]).find(
+        (connection) =>
+          connection.providerId === selectedAgentId &&
+          connection.workspaceId === selectedWorkspaceId &&
+          connection.initialized &&
+          connection.status !== "closed" &&
+          connection.status !== "error",
+      )
+    : null;
+  const draftConnectionEntry = !activeSession && selectedAgentId && selectedWorkspaceId
+    ? (agentModelOptions as Record<string, any>)[`${selectedAgentId}::${selectedWorkspaceId}::${selectedProjectId ?? "global"}`] ??
+      Object.entries(agentModelOptions as Record<string, any>).find(
+        ([key, entry]) => key.startsWith(`${selectedAgentId}::${selectedWorkspaceId}`) && entry?.loading,
+      )?.[1]
+    : null;
+  const shouldShowComposer = Boolean(activeSession || selectedDraftConnection);
+  const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId && !selectedDraftConnection);
   return (
     <MissionPage
       layoutRef={missionLayoutRef}
@@ -488,8 +500,10 @@ export function MissionWorkspace(props: any) {
         >
           {shouldShowDraftPreparing ? (
             <div className="mission-draft-preparing m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
-              <strong className="block text-foreground">正在创建 ACP 会话</strong>
-              <span>{selectedDraftAgent?.name ?? "ACP Agent"} 正在启动新会话，完成后将显示会话输入框。</span>
+              <strong className="block text-foreground">正在连接 ACP</strong>
+              <span>
+                {selectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
+              </span>
             </div>
           ) : null}
           {shouldShowComposer ? (
@@ -674,4 +688,19 @@ function formatRuntimeSessionCount(sessionCount: number, activeSessionCount?: nu
     return base;
   }
   return `${base} · ${activeSessionCount} 活跃`;
+}
+
+function formatAcpConnectionStatus(status: string) {
+  switch (status) {
+    case "ready":
+      return "已连接";
+    case "opening":
+      return "连接中";
+    case "error":
+      return "连接异常";
+    case "closed":
+      return "已关闭";
+    default:
+      return status || "未知";
+  }
 }

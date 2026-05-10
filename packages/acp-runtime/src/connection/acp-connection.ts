@@ -147,18 +147,24 @@ export class AcpConnection {
       }),
       stream,
     );
-    const initializeResult = await withConnectionRequest(
-      "initialize",
-      agent.initialize({
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: SDK_RUNTIME_CLIENT_CAPABILITIES,
-        clientInfo: { name: "tiller", version: "0.1.0" },
-      }),
-      child,
-      stderrBuffer,
-      logFile,
-      options.provider,
-    );
+    let initializeResult: Awaited<ReturnType<typeof agent.initialize>>;
+    try {
+      initializeResult = await withConnectionRequest(
+        "initialize",
+        agent.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: SDK_RUNTIME_CLIENT_CAPABILITIES,
+          clientInfo: { name: "tiller", version: "0.1.0" },
+        }),
+        child,
+        stderrBuffer,
+        logFile,
+        options.provider,
+      );
+    } catch (error) {
+      terminateChildProcess(child.pid);
+      throw error;
+    }
 
     connection = new AcpConnection({
       provider: options.provider,

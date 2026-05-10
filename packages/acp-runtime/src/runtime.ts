@@ -1,6 +1,6 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
-export { createAcpRuntime, reconnectAcpConnection } from "./runtime-session";
+export { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection } from "./runtime-session";
 export { AcpConnection } from "./connection/acp-connection";
 export { createAcpConnectionManager } from "./connection/connection-manager";
 export type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";

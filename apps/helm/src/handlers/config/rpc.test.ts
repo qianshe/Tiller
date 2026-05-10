@@ -36,6 +36,56 @@ test("config RPC lists projects and updates context cache", async () => {
   assert.equal(cached, projects);
 });
 
+test("config RPC lists ACP connection inventory", async () => {
+  const connections = [{ providerId: "codex", workspaceId: "main", status: "ready" }];
+
+  const result = await handleConfigRpcRequest("agent/connections", {}, {
+    listAcpConnectionInventory: () => connections,
+  } as any);
+
+  assert.deepEqual(result, { connections });
+});
+
+
+
+test("config RPC connects an agent provider without creating a session", async () => {
+  let connectCalled = false;
+  const provider = { id: "codex", name: "Codex", command: "codex-acp" };
+  const workspace = { id: "main", name: "main", path: "D:/repo" };
+
+  const result = await handleConfigRpcRequest(
+    "agent/connect",
+    { providerId: "codex", workspaceId: "main" },
+    {
+      getAgents: () => [provider],
+      getWorkspaces: () => [workspace],
+      getProjects: () => [],
+      resolveProviderById: (id: string) => (id === "codex" ? provider : undefined),
+      connectAcpConnection: async () => {
+        connectCalled = true;
+        return {
+          inventory: () => ({ runtimeConnectionId: "conn-connect" }),
+        };
+      },
+      listAcpConnectionInventory: () => [{ runtimeConnectionId: "conn-connect" }],
+      logInfo: () => undefined,
+      logError: () => undefined,
+    } as any,
+  );
+
+  assert.equal(connectCalled, true);
+  assert.deepEqual(result, {
+    ok: true,
+    providerId: "codex",
+    workspaceId: "main",
+    runtimeConnectionId: "conn-connect",
+    connection: { runtimeConnectionId: "conn-connect" },
+    connections: [{ runtimeConnectionId: "conn-connect" }],
+    message: "ACP provider connected.",
+  });
+});
+
+
 test("config RPC reconnects an agent provider without prewarming a session", async () => {
   let reconnectCalled = false;
   const provider = { id: "codex", name: "Codex", command: "codex-acp" };
@@ -54,6 +104,7 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
           inventory: () => ({ runtimeConnectionId: "conn-1" }),
         };
       },
+      listAcpConnectionInventory: () => [{ runtimeConnectionId: "conn-1" }],
       logInfo: () => undefined,
       logError: () => undefined,
     } as any,
@@ -65,6 +116,8 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
     providerId: "codex",
     workspaceId: "main",
     runtimeConnectionId: "conn-1",
+    connection: { runtimeConnectionId: "conn-1" },
+    connections: [{ runtimeConnectionId: "conn-1" }],
     message: "ACP provider reconnected.",
   });
 });

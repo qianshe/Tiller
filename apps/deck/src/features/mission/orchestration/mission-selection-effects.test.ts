@@ -35,10 +35,10 @@ const viewModelSourceText = readFileSync(
   "utf8",
 );
 
-test("mission draft composer stays empty until an ACP session exists", () => {
-  assert.match(workspaceSourceText, /const shouldShowComposer = Boolean\(activeSession\)/);
-  assert.doesNotMatch(workspaceSourceText, /selectedAgentId && !draftAgentPreparing/);
-  assert.match(workspaceSourceText, /\{shouldShowComposer \? \(/);
+test("mission draft composer waits for ACP connection before creating a session", () => {
+  assert.match(workspaceSourceText, /const selectedDraftConnection = !activeSession && selectedAgentId && selectedWorkspaceId/);
+  assert.match(workspaceSourceText, /const shouldShowComposer = Boolean\(activeSession \|\| selectedDraftConnection\)/);
+  assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean\(!activeSession && selectedAgentId && !selectedDraftConnection\)/);
   assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
 });
 
@@ -46,10 +46,11 @@ test("mission draft agent selection resets model before creating an ACP session"
   assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
   assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
   assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
-  assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
+  assert.match(sourceText, /dispatch\(rpcClientRef\.current, "agent\/connect"/);
+  assert.doesNotMatch(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
 });
 
-test("mission project plus owns the ACP picker and selected agent creates a real session without draft prewarm", () => {
+test("mission project plus owns the ACP picker and selected agent connects before showing composer", () => {
   assert.match(sidebarSourceText, /mission-tree-agent-menu/);
   assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
   assert.match(composerShellSourceText, /aria-label="打开任务设置"/);
@@ -58,14 +59,16 @@ test("mission project plus owns the ACP picker and selected agent creates a real
   assert.match(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
-  assert.match(workspaceSourceText, /正在创建 ACP 会话/);
+  assert.match(workspaceSourceText, /正在连接 ACP/);
 });
 
-test("mission ACP overview lists provider sessions and separates active count", () => {
-  assert.match(workspaceSourceText, /const status = statuses\[session\.id\] \?\? session\.status/);
-  assert.match(workspaceSourceText, /const active = status !== "error" && status !== "cancelled"/);
-  assert.match(workspaceSourceText, /existing\.activeSessionCount \+= active \? 1 : 0/);
-  assert.match(workspaceSourceText, /formatRuntimeSessionCount\(item\.sessionCount, item\.activeSessionCount\)/);
+test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {
+  assert.match(workspaceSourceText, /agentConnectionInventory as any\[\]/);
+  assert.match(workspaceSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
+  assert.match(workspaceSourceText, /canReconnect: true/);
+  assert.match(workspaceSourceText, /canConnect: Boolean/);
+  assert.match(workspaceSourceText, /canReconnect: false/);
+  assert.doesNotMatch(workspaceSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
 });
 
 test("mission starting sessions disable send without showing cancel", () => {
@@ -104,8 +107,9 @@ test("mission selection effects reads setAgentModelOptions from source context",
   assert.match(destructuredSource, /\bsetAgentModelOptions\b/);
 });
 
-test("mission selection effects prewarms the selected ACP runtime", () => {
-  assert.match(sourceText, /session\/prewarm/);
+test("mission selection effects connects the selected ACP runtime", () => {
+  assert.match(sourceText, /agent\/connect/);
+  assert.doesNotMatch(sourceText, /session\/prewarm/);
   assert.doesNotMatch(sourceText, /agent\/get_model_options/);
 });
 
@@ -128,7 +132,7 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(composerSourceText, /modelLoading:\s*boolean/);
   assert.match(composerSourceText, /mission-config-loading-badge/);
   assert.doesNotMatch(composerSourceText, /正在加载模型列表/);
-  assert.match(composerSourceText, /正在预热 ACP/);
+  assert.match(sourceText, /正在连接 ACP/);
   assert.match(composerShellSourceText, /modelLoading=\{/);
   assert.match(composerShellSourceText, /selectedDraftAgent\?\.id === "opencode"/);
   assert.match(composerShellSourceText, /draftConfigOptions\.length === 0/);

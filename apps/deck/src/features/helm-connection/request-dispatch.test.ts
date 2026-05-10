@@ -102,6 +102,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "project/list", params: {} },
     { method: "workspace/list", params: {} },
     { method: "agent/list", params: {} },
+    { method: "agent/connections", params: {} },
     { method: "session/list", params: { limit: 25 } },
     { method: "permission/list_pending", params: {} },
     { method: "device/list", params: {} },

@@ -32,6 +32,8 @@ export type RuntimeOverviewItem = {
   status: string;
   runtimeSessionId: string;
   model?: string;
+  canConnect?: boolean;
+  canReconnect?: boolean;
   children?: Array<{
     id: string;
     projectName: string;
@@ -203,19 +205,21 @@ export function MissionDisplayPanel({
                         {runtime.label}
                       </strong>
                       <span className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          className="rounded-full border border-border-ghost px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onReconnectRuntime?.(runtime);
-                          }}
-                          disabled={!runtime.agentId || !onReconnectRuntime}
-                          title="重连 ACP"
-                        >
-                          重连
-                        </button>
+                        {runtime.canConnect || runtime.canReconnect ? (
+                          <button
+                            type="button"
+                            className="rounded-full border border-border-ghost px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onReconnectRuntime?.(runtime);
+                            }}
+                            disabled={!runtime.agentId || !onReconnectRuntime}
+                            title={runtime.canReconnect ? "重连 ACP" : "连接 ACP"}
+                          >
+                            {runtime.canReconnect ? "重连" : "连接"}
+                          </button>
+                        ) : null}
                         <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
                           {runtime.status}
                         </span>

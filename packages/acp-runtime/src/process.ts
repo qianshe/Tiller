@@ -73,10 +73,12 @@ export function createProtocolStdoutStream(
   const filter = new Transform({
     transform(chunk, _encoding, callback) {
       pending += String(chunk);
-      const lines = pending.split(/(?<=\n)/u);
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
+      let newlineIndex = pending.indexOf("\n");
+      while (newlineIndex >= 0) {
+        const line = pending.slice(0, newlineIndex + 1);
+        pending = pending.slice(newlineIndex + 1);
         pushProtocolLine(this, line, onDiscardLine);
+        newlineIndex = pending.indexOf("\n");
       }
       callback();
     },

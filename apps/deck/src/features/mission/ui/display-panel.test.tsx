@@ -51,3 +51,51 @@ test("mission overview renders active ACP connections below project cards", () =
   assert.match(html, /<details[^>]*class="[^"]*mission-runtime-item/);
   assert.doesNotMatch(html, /<details[^>]*\sopen=""/);
 });
+
+
+test("mission overview only shows reconnect for real ACP connections", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "overview", title: "概览" }],
+      selectedPage: { id: "overview", title: "概览" },
+      overviewItems: [],
+      runtimeOverviewItems: [
+        {
+          id: "acp:codex:main",
+          label: "Codex",
+          meta: "main",
+          status: "已连接",
+          runtimeSessionId: "0 个会话",
+          canReconnect: true,
+        },
+        {
+          id: "acp:claude",
+          label: "ClaudeCode",
+          meta: "暂无连接",
+          status: "未连接",
+          runtimeSessionId: "暂无连接",
+          canConnect: true,
+          canReconnect: false,
+        },
+      ],
+      selectedDiffFilePath: null,
+      diffs: [],
+      noDiffSummary: "还没有文件变更。",
+      logbookContent: null,
+      onReconnectRuntime: () => undefined,
+      onAddPage: () => undefined,
+      onSelectPage: () => undefined,
+      onDragStart: () => undefined,
+      onDrop: () => undefined,
+      onRenamePage: () => undefined,
+      onMovePage: () => undefined,
+      onDeletePage: () => undefined,
+    }),
+  );
+
+  assert.equal((html.match(/>重连</g) ?? []).length, 1);
+  assert.equal((html.match(/>连接</g) ?? []).length, 1);
+  assert.match(html, /已连接/);
+  assert.match(html, /未连接/);
+});

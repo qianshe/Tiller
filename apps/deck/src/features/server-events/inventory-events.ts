@@ -156,6 +156,39 @@ export function applyInventoryResult(
         store.setAgents(payload.agents);
       }
       return true;
+    case "agent/connections":
+      if (sourceIsCurrentHelm) {
+        store.setAgentConnectionInventory(payload.connections ?? []);
+      }
+      return true;
+    case "agent/connect":
+    case "agent/reconnect":
+      if (sourceIsCurrentHelm) {
+        store.setAgentConnectionInventory(payload.connections ?? []);
+        if (payload.providerId && payload.workspaceId) {
+          const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+          const currentEntries = store.agentModelOptions;
+          const loadingEntry = Object.entries(currentEntries).find(
+            ([k, entry]) => k.startsWith(baseKey) && entry.loading,
+          );
+          const loadingProjectId = loadingEntry?.[1]?.projectId;
+          const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
+          const previous = currentEntries[key] ?? loadingEntry?.[1];
+          store.setAgentModelOptions((current) => ({
+            ...current,
+            [key]: {
+              loading: false,
+              warmed: Boolean(payload.ok),
+              projectId: loadingProjectId,
+              modelOptions: previous?.modelOptions ?? [],
+              configOptions: previous?.configOptions ?? [],
+              state: previous?.state ?? {},
+              message: payload.message ?? (payload.ok ? "ACP 已连接" : "ACP 连接失败"),
+            },
+          }));
+        }
+      }
+      return true;
     case "agent/test":
       setAgentTestResult(payload.message);
       return true;

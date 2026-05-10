@@ -43,6 +43,7 @@ export function useMissionSelectionEffects(source: any) {
     setSelectedAgentId,
     agentModelOptions,
     setAgentModelOptions,
+    agentConnectionInventory,
     selectedModel,
     setSelectedModel,
     setSelectedAgentMode,
@@ -193,32 +194,54 @@ export function useMissionSelectionEffects(source: any) {
     }
     const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
     const cached = agentModelOptions[key];
-    if (cached && !cached.loading && cached.warmed) {
-      const realOptions = resolveModelOptions(
-        cached.state.model,
-        cached.configOptions,
-        cached.modelOptions,
-      );
-      const allOptions = Array.from(
-        new Set([
-          ...realOptions,
-          ...cached.modelOptions.map((option) => option.id),
-        ]),
-      );
-      const nextModel = resolvePreferredModel(cached.state.model, allOptions);
-      if (
-        nextModel &&
-        (!selectedModel ||
-          selectedModel === "provider-default" ||
-          !allOptions.includes(selectedModel))
-      ) {
-        setSelectedModel(nextModel);
+    const hasReadyConnection = (agentConnectionInventory ?? []).some(
+      (connection) =>
+        connection.providerId === selectedAgentId &&
+        connection.workspaceId === selectedWorkspaceId &&
+        connection.initialized &&
+        connection.status !== "closed" &&
+        connection.status !== "error",
+    );
+    if (hasReadyConnection) {
+      if (cached && !cached.loading && cached.warmed) {
+        const realOptions = resolveModelOptions(
+          cached.state.model,
+          cached.configOptions,
+          cached.modelOptions,
+        );
+        const allOptions = Array.from(
+          new Set([
+            ...realOptions,
+            ...cached.modelOptions.map((option) => option.id),
+          ]),
+        );
+        const nextModel = resolvePreferredModel(cached.state.model, allOptions);
+        if (
+          nextModel &&
+          (!selectedModel ||
+            selectedModel === "provider-default" ||
+            !allOptions.includes(selectedModel))
+        ) {
+          setSelectedModel(nextModel);
+        }
+        if (cached.state.agentMode) {
+          setSelectedAgentMode(cached.state.agentMode);
+        }
+        if (cached.state.reasoningEffort) {
+          setSelectedReasoningEffort(cached.state.reasoningEffort);
+        }
+        return;
       }
-      if (cached.state.agentMode) {
-        setSelectedAgentMode(cached.state.agentMode);
-      }
-      if (cached.state.reasoningEffort) {
-        setSelectedReasoningEffort(cached.state.reasoningEffort);
+      if (cached?.loading) {
+        setAgentModelOptions((current) => ({
+          ...current,
+          [key]: {
+            ...cached,
+            loading: false,
+            warmed: true,
+            message: "ACP 已连接",
+          },
+        }));
       }
       return;
     }
@@ -234,19 +257,17 @@ export function useMissionSelectionEffects(source: any) {
         modelOptions: cached?.modelOptions ?? [],
         configOptions: cached?.configOptions ?? [],
         state: cached?.state ?? {},
-        message: "正在预热 ACP...",
+        message: "正在连接 ACP...",
       },
     }));
-    void dispatch(rpcClientRef.current, "session/prewarm", {
+    void dispatch(rpcClientRef.current, "agent/connect", {
       projectId: selectedProjectId,
       workspaceId: selectedWorkspaceId,
-      agentId: selectedAgentId,
-      agentMode: effectiveDraftAgentMode,
-      model: selectedModel === "provider-default" ? undefined : selectedModel,
-      reasoningEffort: selectedReasoningEffort,
+      providerId: selectedAgentId,
     });
   }, [
     agentModelOptions,
+    agentConnectionInventory,
     pairingState,
     selectedAgentId,
     selectedModel,

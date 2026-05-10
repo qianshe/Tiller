@@ -283,6 +283,7 @@ const draftHasLoadedModelOptions =
 const awaitingDraftAgentModelOptions =
   !activeSession &&
   Boolean(selectedAgentId && selectedWorkspaceId) &&
+  !draftAgentModelOptions &&
   !draftHasLoadedModelOptions;
 const draftModelPickerLabel = draftModelBaseOptions.length
   ? effectiveDraftModelBase

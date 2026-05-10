@@ -118,6 +118,38 @@ if (typeof exitAfterMs === "number") {
   return { agentPath, initializeCountPath, newSessionCountPath, newSessionCwdPath, closeSessionCountPath, closeSessionIdPath, loadSessionCountPath, loadSessionCwdPath, resumeSessionCountPath, resumeSessionCwdPath, launchArgsPath };
 }
 
+function writeSilentAgent(tempDir: string) {
+  const pidPath = join(tempDir, "silent-agent-pid.txt");
+  const agentPath = join(tempDir, "silent-agent.mjs");
+  writeFileSync(agentPath, `
+import { writeFileSync } from "node:fs";
+const pidPath = ${JSON.stringify(pidPath)};
+writeFileSync(pidPath, String(process.pid), "utf8");
+setInterval(() => undefined, 1_000);
+`, "utf8");
+  return { agentPath, pidPath };
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 2_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!isProcessRunning(pid)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+function isProcessRunning(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createProvider(command: string, args: string[]): AcpAgentProvider {
   return {
     id: "fake-acp",
@@ -149,6 +181,28 @@ test("AcpConnection.open initializes exactly once", async () => {
     assert.equal(connection.inventory().activeSessionCount, 0);
 
     await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("AcpConnection.open terminates the child process when initialize times out", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-open-timeout-"));
+  try {
+    const { agentPath, pidPath } = writeSilentAgent(tempDir);
+
+    await assert.rejects(
+      AcpConnection.open({
+        provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 100 },
+        workspace: { ...workspace, path: tempDir },
+      }),
+      /Timed out waiting for ACP response: initialize/u,
+    );
+
+    const pid = Number(readFileSync(pidPath, "utf8"));
+    assert.equal(await waitForProcessExit(pid), true);
   } finally {
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true });

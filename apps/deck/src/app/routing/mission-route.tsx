@@ -58,6 +58,7 @@ export function renderMissionRoute(source: any) {
     sessions,
     sessionCountsByProject,
     agents,
+    agentConnectionInventory,
     setSelectedMissionHelmId,
     setSelectedProjectId,
     setSelectedWorkspaceId,
@@ -215,6 +216,7 @@ export function renderMissionRoute(source: any) {
       sessions={sessions}
       sessionCountsByProject={sessionCountsByProject}
       agents={agents}
+      agentConnectionInventory={agentConnectionInventory}
       setSelectedMissionHelmId={setSelectedMissionHelmId}
       setSelectedProjectId={setSelectedProjectId}
       setSelectedWorkspaceId={setSelectedWorkspaceId}
