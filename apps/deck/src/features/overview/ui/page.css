@@ -73,12 +73,10 @@
   width: 46px;
   height: 46px;
   border-radius: 999px;
-  color: #050914;
-  background: rgb(248 251 255 / 0.7);
-  border: 1px solid rgb(5 9 20 / 0.12);
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.5),
-    0 16px 36px rgb(2 8 23 / 0.16);
+  color: #f8fbff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   backdrop-filter: blur(12px);
 }
 
@@ -106,13 +104,11 @@
   width: 46px;
   height: 46px;
   padding: 0;
-  border: 1px solid rgb(5 9 20 / 0.14);
+  border: 0;
   border-radius: 999px;
-  background: rgb(248 251 255 / 0.7);
+  background: transparent;
   color: #050914;
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.42),
-    0 16px 36px rgb(2 8 23 / 0.16);
+  box-shadow: none;
   backdrop-filter: blur(12px);
   cursor: pointer;
 }

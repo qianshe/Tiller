@@ -62,7 +62,8 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(topNavSource, /aria-label=\{isMusicPlaying \? "暂停首页音乐" : "播放首页音乐"\}/);
   assert.doesNotMatch(topNavSource, /Ⅱ/);
   assert.match(stylesSource, /\.shell\.view-overview > \.top-nav \.top-nav-actions/);
-  assert.match(stylesSource, /\.shell\.view-overview > \.top-nav \.landing-cd-player[\s\S]*?width: 46px;[\s\S]*?height: 46px;/);
+  assert.match(stylesSource, /\.shell\.view-overview > \.top-nav \.admiral-avatar \{[\s\S]*?color: #f8fbff;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
+  assert.match(stylesSource, /\.shell\.view-overview > \.top-nav \.landing-cd-player[\s\S]*?width: 46px;[\s\S]*?height: 46px;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
   assert.doesNotMatch(topNavSource, /☭/);
   assert.doesNotMatch(topNavSource, /🚀/);
 });
