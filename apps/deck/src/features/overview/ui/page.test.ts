@@ -52,6 +52,9 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(stylesSource, /\.landing-ship-hotspot-agents/);
   assert.match(stylesSource, /\.landing-ship-hotspot-settings/);
   assert.match(stylesSource, /@media \(max-width: 1180px\)/);
+  assert.match(stylesSource, /@media \(max-width: 720px\)/);
+  assert.match(stylesSource, /\.shell\.view-overview\s*{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
+  assert.match(stylesSource, /\.landing-hero\s*{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
   assert.match(stylesSource, /landingJetPulse/);
   assert.match(topNavSource, /TILLER_REPOSITORY_URL = "https:\/\/github\.com\/qianshe\/Tiller"/);
   assert.match(topNavSource, /aria-label="打开 Tiller GitHub 仓库"/);

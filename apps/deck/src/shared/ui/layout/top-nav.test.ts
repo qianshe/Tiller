@@ -19,6 +19,7 @@ test("mobile top nav uses an explicit menu instead of hover-only navigation", ()
   assert.match(topNavSource, /top-nav-menu-trigger/);
   assert.match(topNavSource, /top-nav-mobile-menu/);
   assert.match(topNavSource, /aria-expanded=\{mobileMenuOpen\}/);
+  assert.match(topNavSource, /useEffect\(\(\) => \{\s*setMobileMenuOpen\(false\);\s*\}, \[activeView\]\)/s);
 });
 
 test("mobile top nav hides github and avoids large blank gutters", () => {

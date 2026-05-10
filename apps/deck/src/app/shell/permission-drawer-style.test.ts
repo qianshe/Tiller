@@ -10,11 +10,13 @@ const permissionDrawerSource = readFileSync(
   resolve(deckRoot, "src/features/mission/ui/permission-drawer.tsx"),
   "utf8",
 );
+const shellStylesSource = readFileSync(resolve(currentDir, "styles.css"), "utf8");
 
 test("mission permission drawer uses an in-pane solid elevated review card", () => {
   assert.match(permissionDrawerSource, /grid-rows-\[auto_auto\]/);
   assert.match(permissionDrawerSource, /absolute/);
   assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
   assert.match(permissionDrawerSource, /left-3/);
   assert.match(permissionDrawerSource, /right-3/);
   assert.match(permissionDrawerSource, /sm:right-auto/);

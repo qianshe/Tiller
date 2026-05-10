@@ -482,6 +482,18 @@ button.landing-telemetry-line:hover {
 }
 
 @media (max-width: 720px) {
+  .shell.view-overview {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .shell.view-overview .page-content {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .shell.view-overview > .top-nav {
     grid-template-columns: 1fr auto;
     min-height: 92px;
@@ -513,17 +525,33 @@ button.landing-telemetry-line:hover {
   }
 
   .landing-hero {
-    padding: 116px 20px 36px;
+    height: 100%;
+    min-height: 0;
+    align-content: center;
+    padding: 96px 20px 24px;
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(2.55rem, 10.5vw, 4rem);
+  }
+
+  .landing-copy {
+    margin-top: 18px;
+    line-height: 1.48;
   }
 
   .landing-actions {
-    margin-top: 32px;
+    margin-top: 28px;
   }
 
   .landing-primary,
   .landing-secondary {
     width: 100%;
     justify-content: center;
+  }
+
+  .landing-telemetry-stream {
+    height: 126px;
   }
 
   .landing-telemetry-grid {

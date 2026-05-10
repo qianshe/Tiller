@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DeckLanguage } from "../../config/deck-language";
 import { NAV_LABELS, type AppView } from "../../utils/routes";
 
@@ -30,6 +30,10 @@ export function TopNav({
     { id: "agents", label: labels.agents },
     { id: "settings", label: labels.settings },
   ];
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [activeView]);
 
   const toggleLandingMusic = () => {
     const music = musicRef.current;

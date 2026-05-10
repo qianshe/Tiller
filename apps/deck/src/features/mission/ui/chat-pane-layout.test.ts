@@ -48,6 +48,7 @@ test("mission chat reserves permission drawer space through localized drawer pos
 
   assert.match(workspaceSource, /mission-pane-chat relative/);
   assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.match(shellStylesSource, /bottom:\s*calc\(var\(--mission-permission-composer-offset, 190px\) \+ 68px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(permissionDrawerSource, /left-3/);
   assert.match(permissionDrawerSource, /right-3/);
   assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);
@@ -201,6 +202,7 @@ test("mission layout hook exposes guarded mobile pointer swipe handlers", () => 
   assert.match(missionLayoutHookSource, /textarea, input, select, a/);
   assert.doesNotMatch(missionLayoutHookSource, /select, button, a/);
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
+  assert.match(missionLayoutHookSource, /MISSION_MOBILE_SWIPE_THRESHOLD = 36/);
   assert.match(missionLayoutHookSource, /PointerEvent/);
 });
 
@@ -213,7 +215,9 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(mobilePagerSource, /面板/);
   assert.match(mobilePagerSource, /检视/);
   assert.match(mobilePagerSource, /aria-label=\{item\.label\}/);
-  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*32px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*16px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager-dot\s*{[^}]*height:\s*3px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager-item\.active \.mission-mobile-pager-dot\s*{[^}]*opacity:\s*1;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-label\s*{[^}]*display:\s*none;/s);
   assert.match(shellStylesSource, /safe-area-inset-bottom/);
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
@@ -253,6 +257,9 @@ test("mission workspace attaches mobile pointer swipe handlers and locks horizon
   assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerCancel=\{cancelMissionMobileSwipe\}/);
   assert.match(shellStylesSource, /touch-action:\s*pan-y/);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
+  assert.match(shellStylesSource, /overflow-y:\s*auto/);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
@@ -262,5 +269,7 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
-  assert.match(shellStylesSource, /bottom:\s*calc\(32px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(shellStylesSource, /bottom:\s*calc\(16px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
+  assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
 });
