@@ -36,7 +36,7 @@ const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
 const MISSION_MOBILE_WIDTH = 1081;
-const MISSION_MOBILE_SWIPE_THRESHOLD = 36;
+const MISSION_MOBILE_SWIPE_THRESHOLD = 28;
 const MISSION_MOBILE_PANES: MissionMobilePane[] = [
   "project",
   "chat",
@@ -354,7 +354,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
       return;
     }
     const startY = missionSwipeStartYRef.current ?? event.clientY;
-    const maxOffset = Math.max(24, missionViewportWidth * 0.28);
+    const maxOffset = Math.max(48, missionViewportWidth * 0.5);
     const deltaX = event.clientX - startX;
     const deltaY = event.clientY - startY;
     missionSwipeLastDeltaRef.current = { x: deltaX, y: deltaY };
