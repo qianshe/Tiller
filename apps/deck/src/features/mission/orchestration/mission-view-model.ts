@@ -61,6 +61,7 @@ const {
   imagePasteNotice,
   setImagePasteNotice,
   handlePromptPaste: handleMissionPromptPaste,
+  addPromptImageFiles,
   removePromptImage,
 } = usePromptImages({ activeSession });
 const activeSessionMessages = activeSession
@@ -305,6 +306,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     imagePasteNotice,
     setImagePasteNotice,
     handleMissionPromptPaste,
+    addPromptImageFiles,
     removePromptImage,
     activeSessionMessages,
     activeConversationUpdateKey,

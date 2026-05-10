@@ -47,15 +47,19 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
-export async function createClipboardImageContent(file: File, index: number): Promise<AgentPromptImageContent> {
-  const name = file.name || `clipboard-image-${index + 1}.png`;
+export async function createPromptImageContent(file: File, index: number): Promise<AgentPromptImageContent> {
+  const name = file.name || `prompt-image-${index + 1}.png`;
   return {
     type: "image",
     data: arrayBufferToBase64(await file.arrayBuffer()),
     mimeType: file.type || "image/png",
     name,
-    uri: `tiller:///agent/pasted-image?name=${encodeURIComponent(name)}&index=${index}`,
+    uri: `tiller:///agent/prompt-image?name=${encodeURIComponent(name)}&index=${index}`,
   };
+}
+
+export async function createClipboardImageContent(file: File, index: number): Promise<AgentPromptImageContent> {
+  return createPromptImageContent(file, index);
 }
 
 export function formatClipboardImageNotice(files: File[]) {

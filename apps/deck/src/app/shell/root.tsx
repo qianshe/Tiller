@@ -330,6 +330,7 @@ export function App() {
   function openDiffDetail(path: string) {
     panelPages.setSelectedDiffFilePath(path);
     panelPages.setSelectedPageId("diff-detail");
+    layout.setSelectedMissionMobilePane("display");
   }
   function toggleExpandedMessage(messageId: string) {
     runtimeState.setExpandedMessageIds((current: Set<string>) => {

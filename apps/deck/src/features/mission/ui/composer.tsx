@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
   type SetStateAction,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -63,6 +64,7 @@ type MissionComposerProps = {
   handleMissionPromptPaste: (
     event: ReactClipboardEvent<HTMLTextAreaElement>,
   ) => void;
+  onAddPromptImages: (files: FileList | null) => void;
   draftPromptPlaceholder: string;
   slashPopupOpen: boolean;
   filteredSlashCommands: AvailableCommand[];
@@ -138,6 +140,7 @@ export function MissionComposer({
   setPrompt,
   handleMissionPromptKeyDown,
   handleMissionPromptPaste,
+  onAddPromptImages,
   draftPromptPlaceholder,
   slashPopupOpen,
   filteredSlashCommands,
@@ -173,6 +176,7 @@ export function MissionComposer({
   canSend,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   function focusSlashCommand() {
     if (!prompt.startsWith("/")) {
@@ -269,6 +273,28 @@ export function MissionComposer({
               onClick={focusSlashCommand}
             >
               /
+            </Button>
+            <input
+              ref={imageInputRef}
+              className="mission-image-upload-input sr-only"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => {
+                onAddPromptImages(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-image-upload-trigger size-8 rounded-full bg-surface text-base"
+              aria-label="添加图片"
+              title="添加图片"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              +
             </Button>
             {toolsOpen ? (
               <div

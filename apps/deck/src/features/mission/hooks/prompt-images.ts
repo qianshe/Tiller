@@ -1,8 +1,9 @@
 import { useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import type { AgentPromptImageContent, SessionSummary } from "@tiller/shared";
 import {
-  createClipboardImageContent,
+  createPromptImageContent,
   extractClipboardImageItems,
+  formatClipboardImageNotice,
 } from "../utils/clipboard";
 
 type UsePromptImagesOptions = {
@@ -16,6 +17,29 @@ export function usePromptImages({ activeSession }: UsePromptImagesOptions) {
   );
   const [imagePasteNotice, setImagePasteNotice] = useState("");
 
+  async function addPromptImageFiles(files: File[] | FileList | null) {
+    const images = Array.from(files ?? []).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (!images.length) {
+      return;
+    }
+    if (activeSession?.imageInput === false) {
+      setImagePasteNotice("当前 Agent 不支持图片输入，无法添加图片喵~");
+      return;
+    }
+    try {
+      const startIndex = promptImages.length;
+      const nextImages = await Promise.all(
+        images.map((file, index) => createPromptImageContent(file, startIndex + index)),
+      );
+      setPromptImages((current) => [...current, ...nextImages]);
+      setImagePasteNotice(formatClipboardImageNotice(images));
+    } catch {
+      setImagePasteNotice("图片添加失败：无法读取图片内容。");
+    }
+  }
+
   async function handlePromptPaste(
     event: ReactClipboardEvent<HTMLTextAreaElement>,
   ) {
@@ -24,22 +48,7 @@ export function usePromptImages({ activeSession }: UsePromptImagesOptions) {
       return;
     }
     event.preventDefault();
-    if (activeSession?.imageInput === false) {
-      setImagePasteNotice("当前 Agent 不支持图片输入，无法粘贴图片喵~");
-      return;
-    }
-    try {
-      const startIndex = promptImages.length;
-      const nextImages = await Promise.all(
-        images.map((file, index) =>
-          createClipboardImageContent(file, startIndex + index),
-        ),
-      );
-      setPromptImages((current) => [...current, ...nextImages]);
-      setImagePasteNotice("");
-    } catch {
-      setImagePasteNotice("图片粘贴失败：无法读取剪贴板图片内容。");
-    }
+    await addPromptImageFiles(images);
   }
 
   function removePromptImage(index: number) {
@@ -52,6 +61,7 @@ export function usePromptImages({ activeSession }: UsePromptImagesOptions) {
     imagePasteNotice,
     setImagePasteNotice,
     handlePromptPaste,
+    addPromptImageFiles,
     removePromptImage,
   };
 }

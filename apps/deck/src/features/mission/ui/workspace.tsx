@@ -124,6 +124,7 @@ export function MissionWorkspace(props: any) {
     setPrompt,
     handleMissionPromptKeyDown,
     handleMissionPromptPaste,
+    onAddPromptImages,
     draftPromptPlaceholder,
     slashPopupOpen,
     filteredSlashCommands,
@@ -520,6 +521,7 @@ export function MissionWorkspace(props: any) {
               setPrompt={setPrompt}
               handleMissionPromptKeyDown={handleMissionPromptKeyDown}
               handleMissionPromptPaste={handleMissionPromptPaste}
+              onAddPromptImages={onAddPromptImages}
               draftPromptPlaceholder={draftPromptPlaceholder}
               slashPopupOpen={slashPopupOpen}
               filteredSlashCommands={filteredSlashCommands}

@@ -110,6 +110,7 @@ export function renderMissionRoute(source: any) {
     setPrompt,
     handleMissionPromptKeyDown,
     handleMissionPromptPaste,
+    addPromptImageFiles,
     draftPromptPlaceholder,
     slashPopupOpen,
     filteredSlashCommands,
@@ -268,6 +269,7 @@ export function renderMissionRoute(source: any) {
       setPrompt={setPrompt}
       handleMissionPromptKeyDown={handleMissionPromptKeyDown}
       handleMissionPromptPaste={handleMissionPromptPaste}
+      onAddPromptImages={addPromptImageFiles}
       draftPromptPlaceholder={draftPromptPlaceholder}
       slashPopupOpen={slashPopupOpen}
       filteredSlashCommands={filteredSlashCommands}

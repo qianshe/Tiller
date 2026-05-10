@@ -251,6 +251,10 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 
 const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
 const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
+const sessionOverviewCardSource = readFileSync(
+  resolve(currentDir, "session-overview-card.tsx"),
+  "utf8",
+);
 
 test("mission workspace attaches mobile pointer swipe handlers and locks horizontal regions", () => {
   assert.match(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
@@ -268,8 +272,23 @@ test("mission workspace attaches mobile pointer swipe handlers and locks horizon
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
+  assert.match(composerSource, /mission-image-upload-input/);
+  assert.match(composerSource, /accept="image\/\*"/);
+  assert.match(composerSource, /onAddPromptImages\(event\.currentTarget\.files\)/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-pane-chat\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
-  assert.match(shellStylesSource, /bottom:\s*calc\(16px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(shellStylesSource, /bottom:\s*0;/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-order-editor\s*{[^}]*padding:\s*8px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
   assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
+});
+
+test("mission display and logbook headers stay compact on mobile", () => {
+  assert.match(sessionOverviewCardSource, /mission-session-overview/);
+  assert.match(sessionOverviewCardSource, /mission-session-metrics/);
+  assert.match(sessionOverviewCardSource, /mission-session-preview/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-tree\s*{[^}]*padding:\s*4px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-content\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-overview\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
 });
