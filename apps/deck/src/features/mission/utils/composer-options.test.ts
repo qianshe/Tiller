@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SessionSummary } from "@tiller/shared";
+import { resolveSessionConfigSupport, type SessionSummary } from "@tiller/shared";
 import { formatAgentModeLabel, resolveCurrentAgentMode, resolveDraftConfigOptions } from "./composer-options";
 
 function session(id: string, agentId: string) {
@@ -69,4 +69,11 @@ test("formatAgentModeLabel converts provider values to readable labels", () => {
   assert.equal(formatAgentModeLabel("bypassPermissions"), "Bypass Permissions");
   assert.equal(formatAgentModeLabel("sisyphus-ultraworker"), "Sisyphus Ultraworker");
   assert.equal(formatAgentModeLabel("Sisyphus - Ultraworker"), "Sisyphus - Ultraworker");
+});
+
+test("resolveSessionConfigSupport does not infer support from command names without capabilities", () => {
+  assert.deepEqual(
+    resolveSessionConfigSupport({ command: "opencode" }),
+    { model: "none", reasoningEffort: "none" },
+  );
 });

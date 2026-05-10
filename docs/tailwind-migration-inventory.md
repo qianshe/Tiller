@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1031
+- Total lines: 1283
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 385
-- Top-level selectors: 67
+- Lines: 393
+- Top-level selectors: 68
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -36,6 +36,7 @@ Selectors:
 - `.stack-gap`
 - `.subtle`
 - `.top-nav`
+- `.top-nav-actions`
 - `.top-nav-brand`
 - `.top-nav-item`
 - `.top-nav-item:hover`
@@ -144,9 +145,9 @@ Hard-coded colors:
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 293
-- Top-level selectors: 35
-- Hard-coded color tokens: 8
+- Lines: 537
+- Top-level selectors: 60
+- Hard-coded color tokens: 12
 
 Selectors:
 
@@ -157,23 +158,41 @@ Selectors:
 - `.landing-hero`
 - `.landing-hero h1`
 - `.landing-hero-content`
+- `.landing-hero::after`
+- `.landing-hero::before`
 - `.landing-primary`
 - `.landing-primary span`
 - `.landing-secondary`
+- `.landing-ship-hotspot`
+- `.landing-ship-hotspot-agents`
+- `.landing-ship-hotspot-sessions`
+- `.landing-ship-hotspot-settings`
+- `.landing-ship-hotspot::after`
+- `.landing-ship-hotspot::before`
+- `.landing-ship-hotspot:focus-visible`
+- `.landing-ship-hotspot:focus-visible::after`
+- `.landing-ship-hotspot:focus-visible::before`
+- `.landing-ship-hotspot:hover::after`
+- `.landing-ship-hotspot:hover::before`
+- `.landing-ship-hotspots`
 - `.landing-telemetry`
 - `.landing-telemetry-grid`
-- `.landing-telemetry-grid span`
+- `.landing-telemetry-head`
 - `.landing-telemetry-kicker`
-- `.landing-telemetry-session > span`
-- `.landing-telemetry-session button`
-- `.landing-telemetry-session button span`
-- `.landing-telemetry-session p`
+- `.landing-telemetry-line`
+- `.landing-telemetry-stream`
+- `.landing-telemetry-stream::before`
+- `.landing-telemetry-track`
 - `.shell.view-overview`
 - `.shell.view-overview .page-content`
 - `.shell.view-overview > .top-nav`
 - `.shell.view-overview > .top-nav .admiral-avatar`
 - `.shell.view-overview > .top-nav .admiral-avatar svg`
 - `.shell.view-overview > .top-nav .admiral-avatar::after`
+- `.shell.view-overview > .top-nav .landing-cd-disc`
+- `.shell.view-overview > .top-nav .landing-cd-player`
+- `.shell.view-overview > .top-nav .landing-cd-player.is-playing .landing-cd-disc`
+- `.shell.view-overview > .top-nav .top-nav-actions`
 - `.shell.view-overview > .top-nav .top-nav-brand`
 - `.shell.view-overview > .top-nav .top-nav-brand strong`
 - `.shell.view-overview > .top-nav .top-nav-item`
@@ -183,16 +202,27 @@ Selectors:
 - `.shell.view-overview > .top-nav .top-nav-logo`
 - `.shell.view-overview > .top-nav .top-nav-logo-mark`
 - `.shell.view-overview > .top-nav::after`
+- `} @keyframes landingCdSpin`
+- `} @keyframes landingJetPulse`
+- `} @media (max-width: 1180px)`
 - `} @media (max-width: 720px)`
-- `@media (max-width: 980px)`
+- `@keyframes landingTelemetryScroll`
+- `45%`
+- `button.landing-telemetry-line`
+- `button.landing-telemetry-line:hover`
+- `to`
 
 Hard-coded colors:
 
+- `#000`
 - `#050914`
 - `#080d18`
+- `#0f172a`
 - `#111827`
-- `#647084`
+- `#4f5b6d`
+- `#94a3b8`
 - `#9bc7ff`
+- `#e2e8f0`
 - `#f8fbff`
 - `#ffffff`
 - `rgb(`

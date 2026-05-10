@@ -1,4 +1,9 @@
-import { createAcpRuntime, type AcpConnectionLifecycleEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import {
+  createAcpRuntime,
+  loadAdapterAuthoritativeHistory,
+  type AcpConnectionLifecycleEvent,
+  type SessionRuntimeEvent,
+} from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
@@ -16,7 +21,6 @@ import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
   createHelmSessionStores,
-  loadProviderAuthoritativeHistory,
   normalizeDiffPath,
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
@@ -78,7 +82,7 @@ type WarmSessionRuntime = {
 const WARM_RUNTIME_TTL_MS = 5 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
-  const openCodeHistoryRefreshes = new Map<string, number>();
+  const providerHistoryRefreshes = new Map<string, number>();
 
   function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
     const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
@@ -188,14 +192,14 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
   }
 
-  async function importAuthoritativeOpenCodeHistory(
+  async function importAuthoritativeProviderHistory(
     sessionId: string,
     agent: AcpAgentProvider,
     runtimeSessionId: string,
     cwd: string,
   ) {
     try {
-      const history = await loadProviderAuthoritativeHistory(agent, runtimeSessionId, cwd);
+      const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
       if (!history) {
         return false;
       }
@@ -204,7 +208,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
         }
         options.logInfo(
-          `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+          `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
         );
         return true;
       }
@@ -240,12 +244,12 @@ export function createSessionServices(options: SessionServicesOptions) {
         options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
       }
       options.logInfo(
-        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
       );
       return true;
     } catch (error) {
       options.logError(
-        `[tiller] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`,
+        `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
       );
       return false;
     }
@@ -292,7 +296,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   async function refreshAuthoritativeSessionHistory(sessionId: string) {
-    const lastRefresh = openCodeHistoryRefreshes.get(sessionId);
+    const lastRefresh = providerHistoryRefreshes.get(sessionId);
     if (lastRefresh && Date.now() - lastRefresh < 30_000) {
       return;
     }
@@ -314,14 +318,14 @@ export function createSessionServices(options: SessionServicesOptions) {
       return;
     }
 
-    const refreshed = await importAuthoritativeOpenCodeHistory(
+    const refreshed = await importAuthoritativeProviderHistory(
       sessionId,
       agent,
       runtimeSessionId,
       workspace.path,
     );
     if (refreshed) {
-      openCodeHistoryRefreshes.set(sessionId, Date.now());
+      providerHistoryRefreshes.set(sessionId, Date.now());
     }
   }
 
@@ -601,7 +605,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       options.sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
       options.sessionStore.upsert(restoredSummary);
       persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-      await importAuthoritativeOpenCodeHistory(
+      await importAuthoritativeProviderHistory(
         sessionId,
         agent,
         runtime.runtimeSessionId,

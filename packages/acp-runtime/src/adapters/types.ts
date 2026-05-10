@@ -35,10 +35,17 @@ export type AcpCleanupContext = {
   runtimeSessionId: string;
 };
 
+export type AcpRequestTimeoutContext = {
+  provider: AcpAgentProvider;
+  method: string;
+};
+
 export type AcpAgentAdapter = {
   id: string;
   isMatch(provider: AcpAgentProvider): boolean;
   resolveLaunch(provider: AcpAgentProvider, context: AcpLaunchContext): AcpLaunchSpec;
   resolveCapabilities(provider: AcpAgentProvider, initializeResult: unknown, detected: AgentCapabilities): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
+  resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
+  loadAuthoritativeHistory?(context: AcpHistoryContext): Promise<AcpAuthoritativeHistory | null>;
 };

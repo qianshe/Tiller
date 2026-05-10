@@ -1,15 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { applySessionLaunchOverrides } from "./config-adapters";
-import type { SessionReasoningEffort } from "@tiller/shared";
 
 export function resolveLaunchSpec(
   command: string,
   args: string[],
-  sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort },
 ) {
-  const runtimeArgs = applySessionLaunchOverrides(command, args, sessionConfig);
+  const runtimeArgs = args;
   if (process.platform !== "win32") {
     return { command, args: runtimeArgs };
   }

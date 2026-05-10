@@ -19,6 +19,7 @@ export function TopNav({
   language,
 }: TopNavProps) {
   const labels = NAV_LABELS[language];
+  const showLandingMusic = activeView === "overview";
   const musicRef = useRef<HTMLAudioElement>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const items: { id: AppView; label: string }[] = [
@@ -88,23 +89,27 @@ export function TopNav({
             />
           </svg>
         </a>
-        <button
-          className={`landing-cd-player ${isMusicPlaying ? "is-playing" : ""}`}
-          type="button"
-          onClick={toggleLandingMusic}
-          aria-label={isMusicPlaying ? "暂停首页音乐" : "播放首页音乐"}
-          title="Cornfield Chase - Hans Zimmer"
-        >
-          <span className="landing-cd-disc" aria-hidden="true" />
-        </button>
-        <audio
-          ref={musicRef}
-          src={LANDING_MUSIC_URL}
-          preload="none"
-          loop
-          onPause={() => setIsMusicPlaying(false)}
-          onPlay={() => setIsMusicPlaying(true)}
-        />
+        {showLandingMusic ? (
+          <>
+            <button
+              className={`landing-cd-player ${isMusicPlaying ? "is-playing" : ""}`}
+              type="button"
+              onClick={toggleLandingMusic}
+              aria-label={isMusicPlaying ? "暂停首页音乐" : "播放首页音乐"}
+              title="Cornfield Chase - Hans Zimmer"
+            >
+              <span className="landing-cd-disc" aria-hidden="true" />
+            </button>
+            <audio
+              ref={musicRef}
+              src={LANDING_MUSIC_URL}
+              preload="none"
+              loop
+              onPause={() => setIsMusicPlaying(false)}
+              onPlay={() => setIsMusicPlaying(true)}
+            />
+          </>
+        ) : null}
       </div>
     </header>
   );

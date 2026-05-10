@@ -1,11 +1,18 @@
 import type { AcpAgentAdapter } from "./types";
 import { isCommandNamed, resolveDefaultLaunch } from "./shared";
+import { applyCodexSessionLaunchArgs } from "./session-config";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
   return {
     id: "codex",
     isMatch: (provider) => provider.id === "codex" || isCommandNamed(provider.command, "codex-acp"),
-    resolveLaunch: resolveDefaultLaunch,
+    resolveLaunch: (provider, context) => {
+      const launch = resolveDefaultLaunch(provider, context);
+      return {
+        ...launch,
+        args: applyCodexSessionLaunchArgs(launch.args, context.sessionConfig),
+      };
+    },
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => ({
       kind: "unsupported",

@@ -11,7 +11,6 @@ export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./sess
 export {
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
-  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpRequestTimeout,
 } from "./constants";
 
@@ -70,16 +69,19 @@ export type {
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
 export { sanitizeProtocolLogPayload } from "./protocol-logging";
 
-export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
+export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {
   createClaudeAcpAdapter,
   createCodexAcpAdapter,
   createGenericAcpAdapter,
   createOpenClawAcpAdapter,
   createOpenCodeAcpAdapter,
+  loadAdapterAuthoritativeHistory,
+  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  resolveAdapterRequestTimeout,
   type AcpAgentAdapter,
   type AcpLaunchContext,
   type AcpLaunchSpec,

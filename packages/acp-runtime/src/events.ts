@@ -259,10 +259,6 @@ export function hasSessionConfigOptionValue(configOptions: AcpSessionConfigOptio
   return candidates.some((candidate) => candidate === value);
 }
 
-export function hasOpenCodePortArg(args: string[]) {
-  return args.some((value, index) => value === "--port" || value.startsWith("--port=") || args[index - 1] === "--port");
-}
-
 export function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {
   const state: AcpSessionConfigState = {};
   const agentModeValue = readSessionConfigValue(configOptions, "mode");

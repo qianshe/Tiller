@@ -29,7 +29,7 @@ export function resolveProjectById(id: string, projects: ProjectSummary[]) {
 
 function hydrateProvider(provider: AcpAgentProvider): AcpAgentProvider {
   const normalized = normalizeLegacyProvider(provider);
-  const sessionConfig = resolveSessionConfigSupport(normalized);
+  const sessionConfig = resolveLegacySessionConfigSupport(normalized);
   return {
     ...normalized,
     capabilities: {
@@ -42,6 +42,19 @@ function hydrateProvider(provider: AcpAgentProvider): AcpAgentProvider {
       },
     },
   };
+}
+
+function resolveLegacySessionConfigSupport(provider: AcpAgentProvider) {
+  if (provider.capabilities?.sessionConfig) {
+    return resolveSessionConfigSupport(provider);
+  }
+  if (provider.command === "codex-acp") {
+    return { model: "startup" as const, reasoningEffort: "startup" as const, modelFormat: "model" as const };
+  }
+  if (provider.command === "opencode") {
+    return { model: "startup" as const, reasoningEffort: "none" as const, modelFormat: "provider/model" as const };
+  }
+  return resolveSessionConfigSupport(provider);
 }
 
 function normalizeLegacyProvider(provider: AcpAgentProvider): AcpAgentProvider {
