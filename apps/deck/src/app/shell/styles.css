@@ -337,6 +337,7 @@ h3 {
     height: calc(100dvh - 64px);
     min-height: 0;
     padding: 0;
+    touch-action: pan-y;
   }
 
   .mission-responsive-mode .mission-pane-resizer {

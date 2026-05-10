@@ -196,8 +196,10 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
 test("mission layout hook exposes guarded mobile pointer swipe handlers", () => {
   assert.match(missionLayoutHookSource, /startMissionMobileSwipe/);
   assert.match(missionLayoutHookSource, /finishMissionMobileSwipe/);
+  assert.match(missionLayoutHookSource, /cancelMissionMobileSwipe/);
   assert.match(missionLayoutHookSource, /isMissionSwipeIgnoredTarget/);
-  assert.match(missionLayoutHookSource, /textarea, input, select, button, a/);
+  assert.match(missionLayoutHookSource, /textarea, input, select, a/);
+  assert.doesNotMatch(missionLayoutHookSource, /select, button, a/);
   assert.match(missionLayoutHookSource, /\[data-mission-swipe-lock="true"\]/);
   assert.match(missionLayoutHookSource, /PointerEvent/);
 });
@@ -249,6 +251,8 @@ const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8")
 test("mission workspace attaches mobile pointer swipe handlers and locks horizontal regions", () => {
   assert.match(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
   assert.match(workspaceSource, /onPointerUp=\{finishMissionMobileSwipe\}/);
+  assert.match(workspaceSource, /onPointerCancel=\{cancelMissionMobileSwipe\}/);
+  assert.match(shellStylesSource, /touch-action:\s*pan-y/);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);

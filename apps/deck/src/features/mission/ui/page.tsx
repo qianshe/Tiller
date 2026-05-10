@@ -12,6 +12,7 @@ type MissionPageProps = {
   children: ReactNode;
   onPointerDown?: PointerEventHandler<HTMLElement>;
   onPointerUp?: PointerEventHandler<HTMLElement>;
+  onPointerCancel?: PointerEventHandler<HTMLElement>;
 };
 
 /**
@@ -24,6 +25,7 @@ export function MissionPage({
   children,
   onPointerDown,
   onPointerUp,
+  onPointerCancel,
 }: MissionPageProps) {
   return (
     <section
@@ -32,6 +34,7 @@ export function MissionPage({
       style={style}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       {children}
     </section>

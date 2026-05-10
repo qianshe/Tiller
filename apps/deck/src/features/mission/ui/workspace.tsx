@@ -89,6 +89,7 @@ export function MissionWorkspace(props: any) {
     startMissionPaneResize,
     startMissionMobileSwipe,
     finishMissionMobileSwipe,
+    cancelMissionMobileSwipe,
     nudgeMissionPane,
     missionChatPaneStyle,
     chatMainRef,
@@ -405,6 +406,7 @@ export function MissionWorkspace(props: any) {
       style={missionLayoutStyle}
       onPointerDown={startMissionMobileSwipe}
       onPointerUp={finishMissionMobileSwipe}
+      onPointerCancel={cancelMissionMobileSwipe}
     >
       {" "}
       <>

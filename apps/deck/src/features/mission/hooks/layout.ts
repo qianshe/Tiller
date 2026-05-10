@@ -55,7 +55,7 @@ function isMissionSwipeIgnoredTarget(target: EventTarget | null) {
   }
   return Boolean(
     target.closest(
-      'textarea, input, select, button, a, [data-mission-swipe-lock="true"]',
+      'textarea, input, select, a, [data-mission-swipe-lock="true"]',
     ),
   );
 }
@@ -333,6 +333,10 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     );
   }
 
+  function cancelMissionMobileSwipe() {
+    missionSwipeStartXRef.current = null;
+  }
+
   return {
     missionLayoutRef,
     missionSidebarCollapsed,
@@ -346,6 +350,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     startMissionPaneResize,
     startMissionMobileSwipe,
     finishMissionMobileSwipe,
+    cancelMissionMobileSwipe,
     nudgeMissionPane,
     isMissionMobile,
     selectedMissionMobilePane,
