@@ -405,7 +405,7 @@ export function MissionWorkspace(props: any) {
       <>
         {" "}
         <MissionSidebar
-          effectiveSidebarCollapsed={effectiveSidebarCollapsed}
+          effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
           missionSidebarCollapsed={missionSidebarCollapsed}
           missionSidebarPaneStyle={missionSidebarPaneStyle}
           handleMissionTreeScroll={handleMissionTreeScroll}
@@ -605,7 +605,7 @@ export function MissionWorkspace(props: any) {
           />
         ) : null}{" "}
         <MissionInspector
-          collapsed={effectiveInspectorCollapsed}
+          collapsed={isMissionMobile ? false : effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
           activeSessionPresent={Boolean(activeSession)}
           worktreeCount={worktreeOptions.length}

@@ -218,3 +218,14 @@ test("mission workspace renders mobile pager and hides desktop resizers in mobil
   assert.match(workspaceSource, /!isMissionMobile && !effectiveDisplayCollapsed/);
   assert.match(workspaceSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
 });
+
+test("mission mobile mode marks panes with identities and shows one selected pane", () => {
+  assert.match(sidebarSource, /data-mission-mobile-pane="project"/);
+  assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
+  assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
+  assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
+  assert.match(shellStylesSource, /mission-mobile-pane-chat \[data-mission-mobile-pane="chat"\]/);
+  assert.match(shellStylesSource, /mission-mobile-pane-project \[data-mission-mobile-pane="project"\]/);
+  assert.match(shellStylesSource, /mission-mobile-pane-display \[data-mission-mobile-pane="display"\]/);
+  assert.match(shellStylesSource, /mission-mobile-pane-inspector \[data-mission-mobile-pane="inspector"\]/);
+});

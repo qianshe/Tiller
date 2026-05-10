@@ -123,6 +123,7 @@ export function MissionSidebar({
         className={sidebarClassName}
         style={missionSidebarPaneStyle}
         aria-label="任务导航：Helm、项目与任务"
+        data-mission-mobile-pane="project"
         onScroll={handleMissionTreeScroll}
       >
         {!effectiveSidebarCollapsed ? (

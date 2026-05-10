@@ -42,6 +42,7 @@ export function MissionInspector({
           className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
           style={style}
           aria-label="任务检视器"
+          data-mission-mobile-pane="inspector"
         >
           <section className="inspector-section inspector-scroll mission-project-files-section grid min-h-0 gap-3 overflow-hidden p-3">
             <div className="section-head section-head-soft mission-inspector-section-head flex items-start justify-between gap-3">
