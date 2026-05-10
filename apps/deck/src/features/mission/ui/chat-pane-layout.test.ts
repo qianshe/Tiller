@@ -239,6 +239,8 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(shellStylesSource, /mission-mobile-pane-project \[data-mission-mobile-pane="project"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-display \[data-mission-mobile-pane="display"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-inspector \[data-mission-mobile-pane="inspector"\]/);
+  assert.match(shellStylesSource, /animation:\s*mission-mobile-card-switch/);
+  assert.match(shellStylesSource, /@keyframes mission-mobile-card-switch/);
 });
 
 const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
