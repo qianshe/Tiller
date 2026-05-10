@@ -77,10 +77,10 @@ function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText
   if (incomingText.startsWith(currentText) || currentText.endsWith(incomingText)) {
     return false;
   }
-  if (isProviderDiagnosticAssistantText(currentText) && !isProviderDiagnosticAssistantText(incomingText)) {
+  if (isProviderDiagnosticAssistantText(currentText) !== isProviderDiagnosticAssistantText(incomingText)) {
     return true;
   }
-  return currentText.length > 16 && incomingText.length > 16;
+  return false;
 }
 
 function isProviderDiagnosticAssistantText(text: string) {
@@ -157,25 +157,6 @@ function writeAssistantStreamText(sessionId: string, text: string) {
   }
 }
 
-function toolDisplayName(toolCall: { title?: string; kind?: string }) {
-  return formatLogValue(toolCall.title ?? toolCall.kind ?? "tool", 120);
-}
-
-function toolDebugDetails(toolCall: {
-  id: string;
-  kind?: string;
-  title?: string;
-  commandId?: string;
-}) {
-  return [
-    `call=${formatLogValue(toolCall.id, 120)}`,
-    `kind=${formatLogValue(toolCall.kind ?? "unknown", 80)}`,
-    `title=${formatLogValue(toolCall.title ?? "", 220)}`,
-    toolCall.commandId ? `command=${formatLogValue(toolCall.commandId, 160)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
 
 export function handleRuntimeEvent(
   sessionId: string,
@@ -259,9 +240,6 @@ export function handleRuntimeEvent(
     case "tool-call":
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=直播工具调用 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} tool=${toolDisplayName(event.toolCall)} status=${event.toolCall.status ?? "unknown"} ${toolDebugDetails(event.toolCall)}`,
-      );
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
       broadcastSessionUpdate(context, sessionId, {
         kind: "tool_call",

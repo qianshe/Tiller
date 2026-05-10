@@ -18,14 +18,82 @@ test("session RPC lists paged sessions", async () => {
   });
 });
 
-test("session RPC notification cancels active runtime", async () => {
+test("session RPC notification cancels active runtime and clears stale handle", async () => {
   let cancelled = false;
+  const sessions = new Map([["s1", { runtime: { cancel: () => { cancelled = true; } } }]]);
   const handled = await handleSessionRpcNotification("session/cancel", { sessionId: "s1" }, {
-    sessions: new Map([["s1", { runtime: { cancel: () => { cancelled = true; } } }]]),
+    sessions,
   } as any);
 
   assert.equal(handled, true);
   assert.equal(cancelled, true);
+  assert.equal(sessions.has("s1"), false);
+});
+
+test("session/prompt waits for runtime prompt failures", async () => {
+  const sessionId = "s1";
+  const context = {
+    sessions: new Map([
+      [
+        sessionId,
+        {
+          runtime: {
+            sessionCapabilities: {},
+            prompt: async () => {
+              throw new Error("Session is not active: s1");
+            },
+          },
+        },
+      ],
+    ]),
+    logInfo: () => undefined,
+    persistSessionMessage: () => undefined,
+    updateSessionSummary: () => undefined,
+    broadcastNotification: () => undefined,
+  };
+
+  await assert.rejects(
+    handleSessionRpcRequest("session/prompt", { sessionId, text: "继续" }, context as any),
+    /Session is not active: s1/u,
+  );
+});
+
+test("session/rename persists and broadcasts the next title", async () => {
+  const stored = {
+    id: "s1",
+    title: "旧标题",
+    updatedAt: "2026-05-06T00:00:00.000Z",
+  };
+  let persisted: unknown;
+  let broadcasted: unknown;
+  const result = await handleSessionRpcRequest(
+    "session/rename",
+    { sessionId: "s1", title: "新标题" },
+    {
+      sessions: new Map(),
+      sessionStore: { list: () => [stored] },
+      updateSessionSummary: (_sessionId: string, mutate: (summary: typeof stored) => typeof stored) => {
+        persisted = mutate(stored);
+        return persisted;
+      },
+      broadcastNotification: (method: string, params: unknown) => {
+        broadcasted = { method, params };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(persisted, { ...stored, title: "新标题" });
+  assert.deepEqual(broadcasted, {
+    method: "session/update",
+    params: {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: { ...stored, title: "新标题" },
+      },
+    },
+  });
 });
 
 test("session/new waits for in-flight prewarmed runtime before creating a runtime", async () => {

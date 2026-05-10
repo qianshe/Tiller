@@ -129,6 +129,7 @@ export async function handleSessionRpcNotification(
     return true;
   }
   record.runtime.cancel();
+  context.sessions.delete(sessionId);
   return true;
 }
 
@@ -451,7 +452,7 @@ async function promptSession(
       session: updated,
     });
   }
-  record.runtime.prompt(params.text, params.content);
+  await record.runtime.prompt(params.text, params.content);
   return { stopReason: "end_turn" };
 }
 

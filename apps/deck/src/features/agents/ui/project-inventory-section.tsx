@@ -44,6 +44,11 @@ export function ProjectInventorySection({
   setFormOpen,
   setSaveMessage,
 }: ProjectInventorySectionProps) {
+  function cancelEdit() {
+    setDraft({ name: "", path: "" });
+    setFormOpen(false);
+  }
+
   return (
     <section className="grid content-start gap-3">
       <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -62,7 +67,7 @@ export function ProjectInventorySection({
       </div>
       {formOpen ? (
         <form
-          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto] sm:items-center"
+          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto_auto] sm:items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (!selectedHelmRpcClient || !draft.path.trim()) {
@@ -126,6 +131,9 @@ export function ProjectInventorySection({
           />
           <Button type="submit" disabled={!draft.path.trim()}>
             {draft.id ? "更新项目" : "保存项目"}
+          </Button>
+          <Button variant="outline" type="button" onClick={cancelEdit}>
+            取消
           </Button>
         </form>
       ) : null}

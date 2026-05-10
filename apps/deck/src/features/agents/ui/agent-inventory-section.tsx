@@ -29,6 +29,11 @@ export function AgentInventorySection({
   setDraft,
   setFormOpen,
 }: AgentInventorySectionProps) {
+  function cancelEdit() {
+    setDraft({ name: "", command: "", args: [""] });
+    setFormOpen(false);
+  }
+
   return (
     <section className="grid content-start gap-3">
       <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -79,7 +84,7 @@ export function AgentInventorySection({
             setFormOpen(false);
           }}
         >
-          <div className="grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_128px] items-center gap-3 max-md:grid-cols-1">
+          <div className="grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_128px_auto] items-center gap-3 max-md:grid-cols-1">
             <Input
               value={draft.name}
               onChange={(event) =>
@@ -102,6 +107,9 @@ export function AgentInventorySection({
             />
             <Button type="submit" disabled={!draft.command.trim()}>
               {draft.id ? "更新 ACP" : "保存 ACP"}
+            </Button>
+            <Button variant="outline" type="button" onClick={cancelEdit}>
+              取消
             </Button>
           </div>
           <div className="grid gap-3 rounded-md border border-border-ghost bg-surface/60 p-3">

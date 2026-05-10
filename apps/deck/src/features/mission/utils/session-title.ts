@@ -10,7 +10,10 @@ export function createFallbackSessionTitle(prompt: string) {
 }
 
 export function normalizeGeneratedSessionTitle(value: string) {
-  return value.replace(/["'""''`#：:，,。.!！?？\s]+/gu, "").slice(0, 8);
+  if (/<\/?(?:tool_call|function|parameter)(?:[\s=>/]|$)/iu.test(value)) {
+    return "";
+  }
+  return value.replace(/["'""''`#：:，,。.!！?？\s]+/gu, "").slice(0, 10);
 }
 
 export async function resolveRegeneratedSessionTitle(
@@ -52,9 +55,12 @@ export async function generateSessionTitleWithLlm(
           {
             role: "system",
             content:
-              "你是会话命名器。根据用户最近的对话内容生成一个简短、精准的中文标题。标题要求：2-5个中文字，绝对不要超过5个字，不要包含任何标点符号、空格、数字或特殊字符。只输出标题文字，不要解释。",
+              "你是会话命名器。根据用户最近的对话内容生成一个清晰、好懂的会话名称。可以使用中文、英文或数字，优先使用自然短语，不要为了极短而牺牲可读性。只回复名称；不要解释，不要使用 Markdown/JSON/XML，不要输出工具调用或标签。",
           },
-          { role: "user", content: prompt },
+          {
+            role: "user",
+            content: `请为以下内容生成会话名称，只回复名称：\n${prompt}`,
+          },
         ],
       }),
     },

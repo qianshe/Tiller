@@ -312,6 +312,46 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.equal(appendedToolCalls.length, 1);
 });
 
+test("runtime-generated delta chunks with fresh source ids stay in one stream segment", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-alpha",
+        role: "assistant",
+        text: "当前分支是 `codex/debug-st",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "session-1-msg-beta",
+        role: "assistant",
+        text: "ream-tool-logs`,看起来正在调",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.equal(capture.persisted[1]?.id, capture.persisted[0]?.id);
+  assert.deepEqual(
+    capture.persisted.map((message) => message.text),
+    ["当前分支是 `codex/debug-st", "ream-tool-logs`,看起来正在调"],
+  );
+});
+
 test("runtime-generated independent assistant messages get distinct stream segment ids", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
@@ -434,7 +474,7 @@ test("runtime running status starts a fresh assistant segment for the next promp
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
 });
 
-test("runtime tool-call events log explicit debug details and broadcast", () => {
+test("runtime tool-call events persist and broadcast without stage log", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], persisted: [] };
   const appendedToolCalls: unknown[] = [];
@@ -461,14 +501,7 @@ test("runtime tool-call events log explicit debug details and broadcast", () => 
     context,
   );
 
-  assert.equal(logs.length, 1);
-  assert.match(logs[0], /阶段=直播工具调用/);
-  assert.match(logs[0], /tool=zhi/);
-  assert.match(logs[0], /call=call-1/);
-  assert.match(logs[0], /kind=tool/);
-  assert.match(logs[0], /title=zhi/);
-  assert.doesNotMatch(logs[0], /input=git branch --show-current/);
-  assert.doesNotMatch(logs[0], /output=main/);
+  assert.deepEqual(logs, []);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, [
     {
@@ -491,36 +524,6 @@ test("runtime tool-call events log explicit debug details and broadcast", () => 
       },
     },
   ]);
-});
-
-test("runtime tool-call stage log keeps frontend tool name", () => {
-  const logs: string[] = [];
-  const context = createTestContext(logs);
-  context.logDebug = (message: string) => {
-    logs.push(message);
-  };
-
-  handleRuntimeEvent(
-    "session-1",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "call-1",
-        kind: "tool",
-        title: "zhi",
-        status: "running",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
-    context,
-  );
-
-  assert.equal(logs.length, 1);
-  assert.match(
-    logs[0],
-    /^\[tiller\] 阶段=直播工具调用 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 tool=zhi status=running call=call-1 kind=tool title=zhi$/,
-  );
 });
 
 test("runtime non-streaming event logs keep existing tiller prefix", () => {
