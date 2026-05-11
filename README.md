@@ -1,86 +1,93 @@
 # Tiller
 
-Tiller 是一个 **local-first command deck**：把运行在你电脑或服务器上的 Coding Agent，整理成一个可以在浏览器里查看、恢复、推进和审查的工作台。
+**Tiller is a local-first command deck for ACP coding agents.**
 
-它不试图做一个公网 Bot Hub，也不默认把你的内网运行时暴露给云端。Tiller 的核心思路是：
+Tiller 把运行在你电脑、工作站或服务器上的 Coding Agent 整理成一个浏览器工作台：你可以在同一个 Web UI 里查看项目、连接 Agent、恢复会话、发送 Prompt、跟踪消息、查看任务日志与文件变更。
 
-- **运行时在你这里**：Agent、工作区、日志和会话数据默认保存在本机/服务器的 `~/.tiller`。
-- **Web 与运行时同源**：启动 Tiller 后直接访问它内置的 Web UI，不需要单独部署前端。
-- **默认支持局域网**：适合放在个人电脑、家用服务器、办公室机器或私有服务器上运行。
-- **先配对再控制**：局域网可访问不等于裸奔控制，首次设备需要 pairing code。
-- **面向 ACP 生态**：Tiller 通过 ACP-compatible agent 工作，不把产品绑定到某一个模型或某一个 Agent。
+它不是公网 Bot Hub，也不会默认把你的本地运行时暴露给云端。Tiller 的目标是成为你的 **私有 AI Agent 控制台**：运行时在本地，Web UI 与运行时同源，数据默认保存在你自己的机器上。
 
-## 适合什么场景
+## Highlights
 
-- 你在一台机器上跑 Coding Agent，希望从浏览器查看任务状态。
-- 你希望在局域网里从另一台设备访问同一个 Agent 工作台。
-- 你希望保留 session、消息、命令输出、diff 摘要和运行记录。
-- 你希望后续把多个 Tiller 节点纳入一个更大的私有化控制台。
+- **Local-first runtime**：Helm 后端、Agent 进程、工作区、日志与会话数据默认运行在本机/服务器。
+- **One command, built-in Web UI**：全局安装后执行 `tiller start`，浏览器直接打开内置 Deck UI。
+- **ACP ecosystem ready**：通过 Agent Client Protocol 接入 ACP-compatible coding agents。
+- **Session-oriented workflow**：围绕项目、工作区、Agent 与 session 组织任务，适合恢复和继续推进。
+- **LAN-friendly**：可监听局域网地址，适合在办公室机器、家用服务器或开发主机上运行。
+- **Pairing by default for remote access**：局域网访问时可通过 pairing code 配对受信任设备。
+- **Private by design**：默认数据目录为 `~/.tiller`，日志避免记录 assistant 正文和命令输出正文。
 
-## 安装
+## What can you use it for?
 
-当前建议先使用 tarball 试用：
+- 在浏览器里管理本机正在跑的 Codex / Claude / OpenCode 等 ACP Agent。
+- 从另一台局域网设备查看同一台开发机上的 Agent 会话状态。
+- 为每个项目和 worktree 保留会话、消息、任务日志和 diff 摘要。
+- 在不搭建公网 SaaS 的前提下，把多 Agent 工作流放进一个本地控制台。
+
+## Install
+
+Tiller is published as an npm preview package.
 
 ```bash
-npm install -g ./qianshe-tiller-0.1.0-alpha.0.tgz
+npm install -g @qianshe/tiller@preview
 ```
 
-如果后续发布到 npm，安装方式会是：
+Requirements:
+
+- Node.js `>= 22`
+- At least one ACP-compatible agent installed and authenticated locally
+
+Check the CLI:
 
 ```bash
-npm install -g @qianshe/tiller
-# 或
-npx @qianshe/tiller start
+tiller --version
+tiller --help
 ```
 
-要求：
+## Quick start
 
-- Node.js 22+
-
-## 启动
+Start Tiller:
 
 ```bash
 tiller start
 ```
 
-默认监听：
-
-- Host: `0.0.0.0`
-- Port: `47631`
-
-打开：
+By default Tiller listens on:
 
 ```text
 http://127.0.0.1:47631
 ```
 
-如果在局域网其他设备访问，使用启动日志里打印的 LAN 地址，例如：
+The terminal will print:
 
-```text
-http://192.168.1.9:47631
-```
+- Web UI address
+- WebSocket origin
+- pairing code when pairing is enabled
+- config path
+- log path
 
-## 端口和监听地址
+Open the printed URL in your browser, add/select a project, choose an Agent, then start a session from the Deck UI.
 
-锁定本机：
+## Host and port
+
+Local-only:
 
 ```bash
 tiller start --host 127.0.0.1 --port 47631
 ```
 
-指定局域网/服务器监听：
+LAN/server access:
 
 ```bash
 tiller start --host 0.0.0.0 --port 47631
 ```
 
-也可以使用环境变量：
+Environment variables are also supported:
 
 ```bash
 TILLER_HOST=0.0.0.0 TILLER_PORT=47631 tiller start
 ```
 
-或写入 `~/.tiller/config.json`，避免每次设置环境变量：
+Or configure `~/.tiller/config.json`:
 
 ```json
 {
@@ -92,22 +99,27 @@ TILLER_HOST=0.0.0.0 TILLER_PORT=47631 tiller start
 }
 ```
 
-如果端口已被另一个 Tiller 或旧开发进程占用，Tiller 会阻止启动并提示换端口或停止旧进程。
+If the port is already used by another Tiller or old development process, Tiller will stop startup and ask you to change the port or close the existing process.
 
-## 第一次连接
+## Supported agents
 
-启动后终端会打印：
+Tiller is built around [Agent Client Protocol](https://agentclientprotocol.com/). Any agent that exposes an ACP-compatible runtime can be integrated.
 
-- Web 访问地址
-- pairing code
-- 配置路径
-- 日志路径
+The current product focus is on common CLI coding agents such as:
 
-第一次打开 Web UI 时输入 pairing code 完成设备配对。之后同一浏览器会保存受信任设备信息；过期或撤销后需要重新配对。
+- **Codex CLI** via ACP adapter
+- **Claude Agent / Claude Code** via ACP adapter
+- **OpenCode**
 
-## 数据位置
+The ACP documentation lists many agents that can be used with an ACP client, including AgentPool, Augment Code, AutoDev, Blackbox AI, Claude Agent, Cline, Codex CLI, Cursor, Docker cagent, fast-agent, Factory Droid, Gemini CLI, GitHub Copilot public preview, Goose, Junie, Kimi CLI, Kiro CLI, OpenCode, OpenHands, Qoder CLI, Qwen Code, Stakpak, stdio Bus, VT Code and more.
 
-Tiller 默认把运行期数据写入用户目录：
+See the official ACP agent list: <https://agentclientprotocol.com/get-started/agents>
+
+> Note: ACP compatibility and authentication are provided by each agent or adapter. If an agent requires its own login, API key, subscription or local CLI setup, complete that setup before connecting it from Tiller.
+
+## Runtime data
+
+Tiller stores runtime data under your user directory by default:
 
 ```text
 ~/.tiller/
@@ -117,60 +129,59 @@ Tiller 默认把运行期数据写入用户目录：
   logs/tiller.log
 ```
 
-这让它可以脱离源码仓库运行，更适合 npm 分发和服务器部署。
+Default storage is SQLite through Node.js `node:sqlite`. Node.js 22 may print an ExperimentalWarning for the built-in SQLite API; this does not prevent Tiller from running.
 
-Helm 日志默认只保留流式事件元数据，不打印 assistant message 或 command output 正文。需要排查正文时，优先查看 `sessions.sqlite`：消息在 `session_messages.payload_json`，命令输出在 `session_outputs.payload_json`。
-
-默认使用 SQLite 存储。Node.js 22 可能会打印 `node:sqlite` 的 ExperimentalWarning；这是 Node 对内置 SQLite API 的提示，不影响 Tiller 正常运行。若需要回退到 JSON 存储，可显式设置：
+If you need to fall back to JSON storage:
 
 ```bash
 TILLER_SESSION_STORE=json tiller start
 ```
 
-## 当前产品边界
+## Privacy and logs
 
-当前内置 Web 只管理 **当前这个 Tiller 进程**。
+Tiller is designed for local-first operation:
 
-后续可以扩展为两条产品线：
+- Source workspaces stay on the machine where Tiller and the agent run.
+- Session data is stored in `~/.tiller` unless you explicitly change runtime configuration.
+- Helm logs keep stream/event metadata and avoid printing assistant message bodies or command output bodies.
+- When troubleshooting message content, inspect `sessions.sqlite` directly instead of relying on logs.
 
-1. **Tiller 本地/服务器运行时**：通过 npm 分发，用户自己运行。
-2. **私有化 Web 控制台**：部署在用户自己的网络中，可管理多个 Tiller 节点。
+If you expose Tiller on a LAN or server, prefer pairing mode and trusted networks. Do not expose an unauthenticated Tiller process directly to the public internet.
 
-默认不建议让公网 SaaS 页面直接连接用户内网运行时；浏览器安全策略和私网访问限制会让这条路线复杂且不稳定。
-
-## 开发
+## Development
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-前端更新、内置 Deck 验证和 npm 打包流程见 [Frontend Development Guide](docs/FRONTEND_DEVELOPMENT.md)。
-
-常用验证：
+Common checks:
 
 ```bash
-pnpm --filter @tiller/helm test
 pnpm typecheck
+pnpm test
+pnpm --filter @tiller/deck lint
+pnpm --filter @tiller/helm pack:npm
+```
+
+Build only the packaged Helm runtime and embedded Deck UI:
+
+```bash
 pnpm --filter @tiller/helm build
 ```
 
-## 发布状态
+## Release channel
 
-当前仍是早期产品化阶段，**暂缓 npm 发布和 GitHub tag**。正式发布前必须先通过：
+Current npm channel:
 
-- [Release Checklist](docs/RELEASE_CHECKLIST.md)
-- [Productization Notes](docs/PRODUCTIZATION.md)
-- [License Strategy](docs/LICENSE_STRATEGY.md)
+```bash
+npm install -g @qianshe/tiller@preview
+```
 
-发布前至少确认：
-
-- 包名、版本号和 dist-tag
-- README 与 package metadata
-- 许可证文本与 package `license` 字段一致
-- GitHub release 与 npm publish 指向同一个 commit
-- 打包产物脱离 monorepo 后可独立运行
+`preview` is intended for early testing. Expect breaking changes before a stable `latest` release.
 
 ## License
 
-暂未开放开源授权。当前仓库使用 all-rights-reserved `LICENSE`，npm 包元数据继续使用 `UNLICENSED`，避免在产品策略未定前意外授予开源使用权。
+Copyright (c) 2026 qianshe.
+
+All rights reserved. Tiller is publicly installable for preview testing, but this repository and package are not currently released under an open source license. See [LICENSE](LICENSE) for the full license notice.

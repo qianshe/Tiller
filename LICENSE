@@ -2,9 +2,13 @@ Copyright (c) 2026 qianshe
 
 All rights reserved.
 
-This repository is currently not licensed for public use, copying,
-modification, distribution, sublicensing, or commercial exploitation.
+Tiller is publicly distributed for preview testing, but no open source
+license is granted at this time.
 
-No open source license is granted at this time. Any future open source
-license decision should replace this file and update package metadata before
-publishing packages, tags, or releases.
+Unless you have received prior written permission from the copyright holder,
+you may not copy, modify, redistribute, sublicense, sell, host as a service,
+or commercially exploit the source code or packaged software beyond ordinary
+installation and evaluation of the published preview package.
+
+Any future open source or commercial license decision must replace this file
+and update package metadata before the corresponding release.
