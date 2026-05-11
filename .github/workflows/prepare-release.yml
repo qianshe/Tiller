@@ -31,21 +31,19 @@ jobs:
 
     steps:
       - name: Checkout base branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.28.1
-
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -56,16 +54,16 @@ jobs:
         run: |
           case "${{ inputs.bump }}" in
             prerelease-alpha)
-              npm version prerelease --preid alpha --no-git-tag-version --workspace apps/helm
+              npm --prefix apps/helm version prerelease --preid alpha --no-git-tag-version
               ;;
             prerelease-beta)
-              npm version prerelease --preid beta --no-git-tag-version --workspace apps/helm
+              npm --prefix apps/helm version prerelease --preid beta --no-git-tag-version
               ;;
             prerelease-rc)
-              npm version prerelease --preid rc --no-git-tag-version --workspace apps/helm
+              npm --prefix apps/helm version prerelease --preid rc --no-git-tag-version
               ;;
             patch|minor|major)
-              npm version "${{ inputs.bump }}" --no-git-tag-version --workspace apps/helm
+              npm --prefix apps/helm version "${{ inputs.bump }}" --no-git-tag-version
               ;;
             *)
               echo "Unsupported bump type: ${{ inputs.bump }}"

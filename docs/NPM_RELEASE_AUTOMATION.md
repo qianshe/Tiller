@@ -6,21 +6,36 @@ Tiller uses GitHub Actions for three release gates:
 - Manual release preparation that bumps version, tags and creates a draft GitHub Release.
 - Manual npm publish from an explicit version tag.
 
-## Required GitHub secret
+## npm publish permission
 
-Create a repository secret:
+The default publishing path is npm Trusted Publishing through GitHub Actions OIDC. This avoids storing a long-lived npm token in GitHub.
 
-```text
-NPM_TOKEN
-```
-
-Use an npm granular access token that can publish `@qianshe/tiller`. If npm publish requires 2FA, create the token with publish 2FA bypass enabled.
-
-GitHub path:
+Configure it in npm:
 
 ```text
-Repository → Settings → Secrets and variables → Actions → New repository secret
+@qianshe/tiller → Settings → Trusted Publisher
 ```
+
+Use these values:
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization / user | `qianshe` |
+| Repository | `Tiller` |
+| Workflow filename | `publish-npm.yml` |
+
+The publish workflow must keep:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+It also runs the npm publish job on Node.js 24 so the bundled npm CLI supports Trusted Publishing.
+
+Fallback: if Trusted Publishing is not configured, create a GitHub Actions secret named `NPM_TOKEN` with an npm granular access token that can publish `@qianshe/tiller`. If npm publish requires 2FA, create the token with publish 2FA bypass enabled, then add `NODE_AUTH_TOKEN` back to the publish step.
 
 ## CI workflow
 
@@ -62,7 +77,7 @@ Runs only by manual dispatch from GitHub Actions. Inputs:
 The workflow:
 
 1. checks out the base branch;
-2. runs `npm version ... --no-git-tag-version --workspace apps/helm`;
+2. runs `npm --prefix apps/helm version ... --no-git-tag-version`;
 3. runs typecheck, tests, Deck import lint and package smoke test;
 4. commits `apps/helm/package.json`;
 5. creates and pushes the matching `vX.Y.Z...` tag;
@@ -99,7 +114,7 @@ Accepted release refs:
 
 Unsupported ref shapes fail before publishing. A prerelease ref with `latest`, or a stable ref with `preview`, also fails before publishing.
 
-The workflow checks out the requested ref, builds `apps/helm/dist-package`, verifies that the ref version matches `apps/helm/dist-package/package.json`, then publishes with the selected npm dist-tag.
+The workflow checks out the requested ref, builds `apps/helm/dist-package`, verifies that the ref version matches `apps/helm/dist-package/package.json`, then publishes with the selected npm dist-tag through npm Trusted Publishing.
 
 ## Release steps
 
