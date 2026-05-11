@@ -134,6 +134,67 @@ jobs:
           git push origin "HEAD:${{ inputs.base_branch }}"
           git push origin "${{ steps.version.outputs.tag }}"
 
+      - name: Prepare GitHub Release notes and zip
+        id: release_assets
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          TAR_PATH="apps/helm/qianshe-tiller-${VERSION}.tgz"
+          ZIP_PATH="release-assets/qianshe-tiller-${VERSION}.zip"
+          NOTES_PATH="release-assets/release-notes-${VERSION}.md"
+          mkdir -p release-assets
+
+          (cd apps/helm/dist-package && zip -qr "../../../${ZIP_PATH}" .)
+
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            RANGE="${PREVIOUS_TAG}..${TAG}"
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS_TAG}...${TAG}"
+          else
+            RANGE="$TAG"
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          fi
+
+          {
+            echo "## Tiller ${VERSION}"
+            echo
+            echo "- npm package: \`@qianshe/tiller@${VERSION}\`"
+            echo "- npm dist-tag: \`${{ inputs.dist_tag }}\`"
+            echo "- Git tag: \`${TAG}\`"
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "- Previous tag: \`${PREVIOUS_TAG}\`"
+            fi
+            echo "- Compare: ${COMPARE_URL}"
+            echo
+            echo "## Commits in this release"
+            echo
+            git log --no-merges --pretty=format:'- %s (%h)' "$RANGE" || true
+            echo
+            echo
+            echo "## Issues and pull requests"
+            echo
+          } > "$NOTES_PATH"
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$TAG" \
+              -f target_commitish="${{ inputs.base_branch }}" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq .body >> "$NOTES_PATH" || echo "GitHub generated notes were unavailable." >> "$NOTES_PATH"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$TAG" \
+              -f target_commitish="${{ inputs.base_branch }}" \
+              --jq .body >> "$NOTES_PATH" || echo "GitHub generated notes were unavailable." >> "$NOTES_PATH"
+          fi
+
+          echo "tar_path=$TAR_PATH" >> "$GITHUB_OUTPUT"
+          echo "zip_path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+          echo "notes_path=$NOTES_PATH" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Publish npm package
         working-directory: apps/helm/dist-package
         run: npm publish --tag "${{ inputs.dist_tag }}" --access public
@@ -143,9 +204,10 @@ jobs:
         shell: bash
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            "apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz" \
+            "${{ steps.release_assets.outputs.tar_path }}" \
+            "${{ steps.release_assets.outputs.zip_path }}" \
             --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
+            --notes-file "${{ steps.release_assets.outputs.notes_path }}" \
             --draft \
             --prerelease
         env:
@@ -156,9 +218,10 @@ jobs:
         shell: bash
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            "apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz" \
+            "${{ steps.release_assets.outputs.tar_path }}" \
+            "${{ steps.release_assets.outputs.zip_path }}" \
             --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
+            --notes-file "${{ steps.release_assets.outputs.notes_path }}" \
             --draft
         env:
           GH_TOKEN: ${{ github.token }}

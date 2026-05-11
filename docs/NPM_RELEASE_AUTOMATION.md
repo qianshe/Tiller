@@ -93,7 +93,10 @@ The workflow:
 4. commits `apps/helm/package.json`;
 5. creates and pushes the matching `vX.Y.Z...` tag;
 6. publishes `apps/helm/dist-package` to npm through Trusted Publishing;
-7. creates a draft GitHub Release and attaches the generated npm tarball.
+7. creates a zip copy of `apps/helm/dist-package`;
+8. creates release notes with package metadata, compare link, commit summary and GitHub-generated issue/PR notes;
+9. publishes `apps/helm/dist-package` to npm through Trusted Publishing;
+10. creates a draft GitHub Release and attaches both the generated npm tarball and zip package.
 
 Prerelease versions are created as draft GitHub prereleases. Stable versions are created as draft GitHub Releases. Publish the draft only after npm installation is verified.
 
@@ -110,7 +113,7 @@ dist_tag: preview
 base_branch: main
 ```
 
-If `apps/helm/package.json` is currently `0.1.0-alpha.2`, this creates and publishes `v0.1.0-alpha.3`.
+If `apps/helm/package.json` is currently `0.1.0-alpha.2`, this creates and publishes `v0.1.0-alpha.3`. The `prerelease-alpha`, `prerelease-beta` and `prerelease-rc` options control the prerelease suffix (`alpha`, `beta`, `rc`). `patch`, `minor` and `major` create stable tags without a prerelease suffix.
 
 3. Verify npm:
 
@@ -143,4 +146,5 @@ npm view @qianshe/tiller@latest version --registry=https://registry.npmjs.org/
 - Do not release from a dirty or unverified branch.
 - The publish workflow intentionally refuses prerelease bumps with `latest`, or stable bumps with `preview`.
 - If npm publish fails after the version tag has been pushed, fix the npm permission or registry issue before creating another version.
+- Draft GitHub Releases include `qianshe-tiller-<version>.tgz`, `qianshe-tiller-<version>.zip`, a compare link, commit summary and GitHub-generated issue/PR notes when available.
 - Keep Tiller Pro and commercial release artifacts out of this Core workflow.
