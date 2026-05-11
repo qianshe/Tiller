@@ -1,5 +1,7 @@
 Tiller
-Copyright (c) 2026 qianshe. All rights reserved.
+Copyright 2026 qianshe
+
+Licensed under the Apache License, Version 2.0.
 
 Tiller is a local-first command deck runtime for ACP coding agents.
 
@@ -9,3 +11,6 @@ static assets into the @qianshe/tiller npm package.
 
 Third-party dependencies retain their own licenses. Review package manifests
 and lockfiles before publishing a release artifact.
+
+Tiller Pro, hosted services, commercial support and enterprise control-plane
+features may be distributed separately under commercial terms.

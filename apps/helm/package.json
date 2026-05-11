@@ -1,6 +1,6 @@
 {
   "name": "@tiller/helm",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -50,7 +50,7 @@
     "command-deck",
     "local-first"
   ],
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "author": "qianshe",
   "homepage": "https://github.com/qianshe/Tiller#readme",
   "repository": {

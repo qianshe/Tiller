@@ -203,6 +203,6 @@ Especially useful feedback includes:
 
 ## License
 
-Copyright (c) 2026 qianshe.
+Tiller Core is licensed under the [Apache License 2.0](LICENSE).
 
-Tiller Core is publicly installable for preview use, feedback and issue reporting. The project is not currently released under an open source license; redistribution, hosted services and commercial use still require permission. See [LICENSE](LICENSE) for the full license notice.
+Tiller Pro, hosted services, commercial support and enterprise control-plane features may be distributed separately under commercial terms.
