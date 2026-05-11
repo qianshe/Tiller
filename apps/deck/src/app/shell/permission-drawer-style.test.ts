@@ -29,20 +29,20 @@ test("mission permission drawer uses an in-pane solid elevated review card", () 
   assert.doesNotMatch(permissionDrawerSource, /backdrop-blur/);
 });
 
-test("permission drawer path and actions can wrap within the chat pane", () => {
+test("permission drawer path and actions stay within the chat pane", () => {
   assert.match(permissionDrawerSource, /mission-permission-header[^\n]+grid-cols-\[auto_minmax\(0,1fr\)\]/);
-  assert.match(permissionDrawerSource, /mission-permission-title[^\n]+break-words/);
+  assert.match(permissionDrawerSource, /mission-permission-title[^\n]+overflow-hidden/);
+  assert.match(permissionDrawerSource, /mission-permission-title[^\n]+text-ellipsis/);
   assert.match(permissionDrawerSource, /mission-permission-workspace[^\n]+break-all/);
   assert.match(permissionDrawerSource, /mission-permission-actions[^\n]+flex-wrap/);
 });
 
 test("permission drawer detail block keeps raw approval payload readable", () => {
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+font-mono/);
-  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+whitespace-pre-wrap/);
-  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+break-words/);
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+max-h-28/);
-  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+overflow-auto/);
+  assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+overflow-hidden/);
   assert.match(permissionDrawerSource, /mission-permission-detail[^\n]+bg-surface-sunken/);
+  assert.match(permissionDrawerSource, /<pre className="[^"]*overflow-auto[^"]*whitespace-pre-wrap[^"]*break-all/);
   assert.match(permissionDrawerSource, /mission-permission-reason[^\n]+text-xs/);
   assert.match(permissionDrawerSource, /min-w-\[72px\]/);
   assert.match(permissionDrawerSource, /min-h-8/);

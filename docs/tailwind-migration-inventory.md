@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1757
+- Total lines: 1783
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 744
-- Top-level selectors: 135
+- Lines: 770
+- Top-level selectors: 138
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -92,6 +92,8 @@ Selectors:
 - `.top-nav .top-nav-github-link.top-nav-github-link-mobile-visible`
 - `.top-nav-actions`
 - `.top-nav-brand`
+- `.top-nav-brand:focus-visible`
+- `.top-nav-brand:hover`
 - `.top-nav-item`
 - `.top-nav-item:hover`
 - `.top-nav-item.active`
@@ -138,6 +140,7 @@ Selectors:
 - `*::-webkit-scrollbar-thumb`
 - `*::-webkit-scrollbar-thumb:hover`
 - `*::-webkit-scrollbar-track`
+- `#mission-prompt-input`
 - `#root`
 - `40%`
 - `50%`

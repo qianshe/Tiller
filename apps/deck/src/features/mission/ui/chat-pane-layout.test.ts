@@ -326,8 +326,12 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-pane-chat\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
   assert.match(shellStylesSource, /bottom:\s*0;/);
+  assert.match(shellStylesSource, /#mission-prompt-input\s*{[^}]*caret-color:\s*var\(--primary\);/s);
+  assert.match(shellStylesSource, /#mission-prompt-input\s*{[^}]*scroll-padding-block:\s*10px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*field-sizing:\s*content;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*min-height:\s*1\.5rem;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*padding:\s*2px 2px 10px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*caret-color:\s*var\(--primary\);/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-order-editor\s*{[^}]*padding:\s*8px;/s);
   assert.match(composerSource, /mission-order-editor[^\n]+bg-surface\s/);
   assert.doesNotMatch(composerSource, /mission-order-editor[^\n]+bg-surface-sunken/);

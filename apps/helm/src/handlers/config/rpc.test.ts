@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -184,6 +185,75 @@ test("config RPC save helm creates daemon auth config field", async () => {
     port: 47631,
     auth: "none",
   });
+});
+
+test("config RPC prunes deleted git worktree workspaces", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-prune-"));
+  const repoPath = join(tempRoot, "repo");
+  const worktreePath = join(tempRoot, "repo-feature");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "feature", worktreePath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      helms: [],
+      projects: [
+        {
+          id: "p1",
+          name: "Project",
+          helmId: "local",
+          workspaceIds: ["p1-main", "p1-worktree-feature"],
+          defaultWorkspaceId: "p1-main",
+        },
+      ],
+      workspaces: [
+        { id: "p1-main", name: "main", path: repoPath.replace(/\\/g, "/") },
+        { id: "p1-worktree-feature", name: "feature", path: worktreePath.replace(/\\/g, "/") },
+      ],
+      agents: [],
+    }),
+    "utf8",
+  );
+
+  let cachedProjects: any[] = [];
+  let cachedWorkspaces: any[] = [];
+  const readConfig = () => JSON.parse(readFileSync(configPath, "utf8"));
+  const context = {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => readConfig().projects,
+    loadAvailableWorkspaces: () => readConfig().workspaces,
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    setWorkspaces: (items: any[]) => {
+      cachedWorkspaces = items;
+    },
+    getProjects: () => cachedProjects,
+    resolveProjectById: (id: string, projects: any[]) => projects.find((project) => project.id === id),
+  } as any;
+
+  const result = await handleConfigRpcRequest(
+    "workspace/git/list_branches",
+    { projectId: "p1" },
+    context,
+  ) as { workspaces: Array<{ id: string }> };
+
+  const saved = readConfig();
+  const savedWorkspaceIds = saved.workspaces.map((workspace: any) => workspace.id);
+  assert.equal(result.workspaces.some((workspace) => workspace.id === "p1-worktree-feature"), false);
+  assert.equal(saved.projects[0].workspaceIds.includes("p1-worktree-feature"), false);
+  assert.equal(savedWorkspaceIds.includes("p1-worktree-feature"), false);
+  assert.equal(savedWorkspaceIds.includes("p1-main"), true);
+  assert.equal(cachedWorkspaces.some((workspace) => workspace.id === "p1-worktree-feature"), false);
 });
 
 test("config RPC deletes a project and its configured workspaces", async () => {

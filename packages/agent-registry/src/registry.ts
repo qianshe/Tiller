@@ -244,6 +244,26 @@ export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = 
   };
 }
 
+export function deleteWorkspacesFromConfig(workspaceIds: string[], configPath = getDefaultConfigPath()) {
+  const ids = new Set(workspaceIds);
+  const current = readTillerConfig(configPath);
+  const nextConfig: TillerConfig = {
+    helms: current.helms ?? [],
+    projects: current.projects ?? [],
+    workspaces: (current.workspaces ?? []).filter((workspace) => !ids.has(workspace.id)),
+    agents: current.agents ?? [],
+    daemon: resolveDaemonConfig(current.daemon),
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    deleted: workspaceIds.length,
+  };
+}
+
 export function deleteProjectFromConfig(projectId: string, configPath = getDefaultConfigPath()) {
   const current = readTillerConfig(configPath);
   const project = (current.projects ?? []).find((item) => item.id === projectId);

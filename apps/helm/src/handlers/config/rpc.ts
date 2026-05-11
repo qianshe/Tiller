@@ -1,6 +1,7 @@
 import {
   deleteProjectFromConfig,
   deleteProviderFromConfig,
+  deleteWorkspacesFromConfig,
   listAvailableProviders,
   saveHelmToConfig,
   saveProjectToConfig,
@@ -243,9 +244,7 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
       context.setWorkspaces(context.loadAvailableWorkspaces());
     }
-    const latestWorkspaces = context.loadAvailableWorkspaces();
     const latestProject = context.resolveProjectById(project.id, context.getProjects()) ?? project;
-    const configuredWorkspaces = projectWorkspaceItems(latestProject, latestWorkspaces);
     const gitWorktreeWorkspaces = gitRoot
       ? await listGitWorktreeWorkspaces(latestProject, gitRoot)
       : [];
@@ -258,13 +257,16 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
       context.setWorkspaces(context.loadAvailableWorkspaces());
     }
+    const refreshedWorkspaces = context.loadAvailableWorkspaces();
+    const refreshedProject = context.resolveProjectById(project.id, context.getProjects()) ?? nextProject;
+    const configuredWorkspaces = projectWorkspaceItems(refreshedProject, refreshedWorkspaces);
     return {
       ok: true,
       projectId: project.id,
       branches: gitInfo.branches,
       currentBranch: gitInfo.currentBranch,
       workspaces: mergeWorkspaceItems(configuredWorkspaces, gitWorktreeWorkspaces),
-      selectedWorkspaceId: gitInfo.currentBranch ?? project.defaultWorkspaceId,
+      selectedWorkspaceId: gitInfo.currentBranch ?? refreshedProject.defaultWorkspaceId,
       message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
     };
   } catch (error) {
@@ -292,21 +294,37 @@ function persistDiscoveredWorktrees(
   worktrees: WorkspaceSummary[],
   configPath: string,
 ) {
-  if (!worktrees.length) {
-    return project;
-  }
+  const worktreePrefix = `${project.id}-worktree-`;
+  const liveWorktreeIds = new Set(worktrees.map((workspace) => workspace.id));
+  const previousWorkspaceIds = project.workspaceIds ?? [];
+  const staleWorktreeIds = previousWorkspaceIds.filter(
+    (id) => id.startsWith(worktreePrefix) && !liveWorktreeIds.has(id),
+  );
+  const staleWorktreeIdSet = new Set(staleWorktreeIds);
+  const retainedWorkspaceIds = previousWorkspaceIds.filter((id) => !staleWorktreeIdSet.has(id));
+
   worktrees.forEach((workspace) => saveWorkspaceToConfig(workspace, configPath));
   const workspaceIds = Array.from(
-    new Set([...(project.workspaceIds ?? []), ...worktrees.map((workspace) => workspace.id)]),
+    new Set([...retainedWorkspaceIds, ...worktrees.map((workspace) => workspace.id)]),
   );
-  if (
-    workspaceIds.length === (project.workspaceIds ?? []).length &&
-    workspaceIds.every((id, index) => id === project.workspaceIds?.[index])
-  ) {
+  const defaultWorkspaceId =
+    project.defaultWorkspaceId === undefined || workspaceIds.includes(project.defaultWorkspaceId)
+      ? project.defaultWorkspaceId
+      : workspaceIds[0];
+  const changed =
+    workspaceIds.length !== previousWorkspaceIds.length ||
+    workspaceIds.some((id, index) => id !== previousWorkspaceIds[index]) ||
+    defaultWorkspaceId !== project.defaultWorkspaceId;
+
+  if (!changed && !staleWorktreeIds.length) {
     return project;
   }
-  const nextProject = { ...project, workspaceIds };
+
+  const nextProject = { ...project, workspaceIds, defaultWorkspaceId };
   saveProjectToConfig(nextProject, configPath);
+  if (staleWorktreeIds.length) {
+    deleteWorkspacesFromConfig(staleWorktreeIds, configPath);
+  }
   return nextProject;
 }
 

@@ -108,10 +108,10 @@ test("mission selection effects reads setAgentModelOptions from source context",
   assert.match(destructuredSource, /\bsetAgentModelOptions\b/);
 });
 
-test("mission selection effects connects the selected ACP runtime", () => {
+test("mission selection effects prewarms without a separate model probe", () => {
   assert.match(sourceText, /agent\/connect/);
   assert.match(sourceText, /session\/prewarm/);
-  assert.match(sourceText, /agent\/get_model_options/);
+  assert.doesNotMatch(sourceText, /agent\/get_model_options/);
   assert.match(sourceText, /正在加载模型并预热 ACP/);
 });
 

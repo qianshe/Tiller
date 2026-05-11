@@ -110,6 +110,12 @@ h3 {
   white-space: nowrap;
 }
 
+#mission-prompt-input {
+  line-height: 1.55;
+  caret-color: var(--primary);
+  scroll-padding-block: 10px;
+}
+
 .compact {
   margin-top: 4px;
 }
@@ -181,6 +187,23 @@ h3 {
 
 .top-nav-brand {
   min-width: max-content;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.top-nav-brand:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.top-nav-brand:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .top-nav-logo {
@@ -535,8 +558,11 @@ h3 {
     field-sizing: content;
     min-height: 1.5rem;
     max-height: 8rem;
+    padding: 2px 2px 10px;
     overflow-y: auto;
     line-height: 1.5;
+    caret-color: var(--primary);
+    scroll-padding-block: 10px;
   }
 
   .mission-responsive-mode .mission-permission-drawer {

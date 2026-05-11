@@ -19,7 +19,7 @@ test("session/new requires project, workspace, agent", () => {
 test("session/prewarm requires project, workspace, agent", () => {
   assert.equal(sessionPrewarm.method, "session/prewarm");
   sessionPrewarm.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
-  sessionPrewarm.ResultSchema.parse({
+  const result = sessionPrewarm.ResultSchema.parse({
     ok: true,
     warmed: true,
     providerId: "a1",
@@ -28,9 +28,11 @@ test("session/prewarm requires project, workspace, agent", () => {
     currentModelId: "gpt-5.5",
     modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
     configOptions: [],
+    availableCommands: [{ name: "init" }],
     state: { model: "gpt-5.5" },
     message: "ACP runtime prewarmed.",
   });
+  assert.deepEqual(result.availableCommands, [{ name: "init" }]);
 });
 
 test("session/list returns paginated session summaries", () => {

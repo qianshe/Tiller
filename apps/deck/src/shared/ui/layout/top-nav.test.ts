@@ -42,6 +42,15 @@ test("mobile top nav hides github and avoids large blank gutters", () => {
   );
 });
 
+test("brand mark and title navigate back to overview", () => {
+  assert.match(topNavSource, /<button\s+className="top-nav-brand"/);
+  assert.match(topNavSource, /aria-label="返回首页"/);
+  assert.match(topNavSource, /onNavigate\("overview"\)/);
+  assert.match(topNavSource, /event\.currentTarget\.blur\(\)/);
+  assert.match(shellStylesSource, /\.top-nav-brand\s*{[^}]*background:\s*transparent;/s);
+  assert.match(shellStylesSource, /\.top-nav-brand:focus-visible\s*{[^}]*outline:\s*2px solid var\(--primary\);/s);
+});
+
 test("mobile overview keeps github as the top-right action", () => {
   assert.match(topNavSource, /const showGlobalMenu = activeView !== "overview"/);
   assert.match(topNavSource, /top-nav-github-link-mobile-visible/);

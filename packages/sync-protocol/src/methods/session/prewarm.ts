@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   AcpModelOption,
+  AvailableCommand,
   SessionConfigOption,
   SessionReasoningEffort,
 } from "@tiller/shared";
@@ -25,6 +26,7 @@ export const ResultSchema = z.object({
   currentModelId: z.string().optional(),
   modelOptions: z.array(typedUnknown<AcpModelOption>()).default([]),
   configOptions: z.array(typedUnknown<SessionConfigOption>()).default([]),
+  availableCommands: z.array(typedUnknown<AvailableCommand>()).default([]),
   state: z.object({
     agentMode: z.string().optional(),
     model: z.string().optional(),

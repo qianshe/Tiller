@@ -77,7 +77,15 @@ export function TopNav({
 
   return (
     <header ref={navRef} className="top-nav">
-      <div className="top-nav-brand">
+      <button
+        className="top-nav-brand"
+        type="button"
+        aria-label="返回首页"
+        onClick={(event) => {
+          onNavigate("overview");
+          event.currentTarget.blur();
+        }}
+      >
         <span className="top-nav-logo" aria-hidden="true">
           <svg className="top-nav-logo-mark" viewBox="0 0 32 28" role="presentation">
             <path
@@ -88,7 +96,7 @@ export function TopNav({
           </svg>
         </span>
         <strong>Tiller</strong>
-      </div>
+      </button>
       <nav className="top-nav-links" aria-label="主导航">
         {items.map((item) => (
           <button

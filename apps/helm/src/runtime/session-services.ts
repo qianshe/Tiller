@@ -9,6 +9,7 @@ import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AvailableCommand,
   AgentPromptContent,
   FileDiffSummary,
   PermissionRequest,
@@ -77,6 +78,7 @@ type WarmSessionRuntime = {
   modelState?: AcpModelState;
   configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"];
   configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"];
+  availableCommands: AvailableCommand[];
 };
 
 const WARM_RUNTIME_TTL_MS = 5 * 60_000;
@@ -427,6 +429,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         currentModelId: existing.modelState?.currentModelId ?? existing.configState.model,
         modelOptions: existing.modelState?.options ?? [],
         configOptions: existing.configOptions,
+        availableCommands: existing.availableCommands,
         state: existing.configState,
         message: "ACP runtime is already prewarmed.",
       };
@@ -444,6 +447,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
         modelOptions: warm.modelState?.options ?? [],
         configOptions: warm.configOptions,
+        availableCommands: warm.availableCommands,
         state: warm.configState,
         message: "ACP runtime prewarm is already in progress.",
       };
@@ -454,6 +458,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     let modelState: AcpModelState | undefined;
     let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
+    let availableCommands: AvailableCommand[] = [];
     options.logInfo(
       `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
@@ -478,6 +483,10 @@ export function createSessionServices(options: SessionServicesOptions) {
           if (event.type === "config-options") {
             configState = event.state;
             configOptions = event.options;
+            return;
+          }
+          if (event.type === "available-commands") {
+            availableCommands = event.commands;
             return;
           }
           if (event.type === "error") {
@@ -516,6 +525,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           modelState: initialModelState,
           configState: initialConfigState,
           configOptions: initialConfigOptions,
+          availableCommands,
         } satisfies WarmSessionRuntime;
       }),
     };
@@ -539,6 +549,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
         modelOptions: warm.modelState?.options ?? [],
         configOptions: warm.configOptions,
+        availableCommands: warm.availableCommands,
         state: warm.configState,
         message: "ACP runtime prewarmed.",
       };

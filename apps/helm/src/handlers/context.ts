@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import type { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection } from "@tiller/acp-runtime";
 import type {
   AcpAgentProvider,
+  AcpModelOption,
   AcpModelState,
   AgentMessage,
   AvailableCommand,
@@ -9,6 +10,7 @@ import type {
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
+  SessionConfigOption,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
@@ -93,6 +95,15 @@ export type HelmHandlerContext = {
     providerId: string;
     workspaceId: string;
     runtimeSessionId?: string;
+    currentModelId?: string;
+    modelOptions?: AcpModelOption[];
+    configOptions?: SessionConfigOption[];
+    availableCommands?: AvailableCommand[];
+    state?: {
+      agentMode?: string;
+      model?: string;
+      reasoningEffort?: SessionReasoningEffort;
+    };
     message: string;
   }>;
   takePrewarmedRuntime: (params: {
