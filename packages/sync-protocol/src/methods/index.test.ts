@@ -43,6 +43,7 @@ const expectedRequests = [
   "device/revoke",
   "device/pair",
   "device/authenticate",
+  "daemon/shutdown",
 ];
 
 test("METHODS contains every request and notification method", () => {
