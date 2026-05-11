@@ -1,67 +1,89 @@
 # Tiller Core / Pro Boundary
 
-This document defines the current product split for Tiller so the public Core repo can stay simple while future commercial features have a clear home.
+This document defines the product split for Tiller after the first public preview.
+
+The boundary is **not** "one Helm is free, multiple Helm endpoints are paid". Core may include a useful local/manual multi-Helm deck. Pro is reserved for managed fleet, team, identity, policy, audit and hosted control-plane value.
 
 ## Product intent
 
-Tiller starts as a local-first command deck for one machine:
+Tiller Core is a local-first command deck for an individual operator:
 
-- one running Helm daemon;
-- local or LAN browser access to that daemon;
-- local projects and worktrees;
-- ACP-compatible coding agents;
-- local session history, artifacts and logs.
+- run Helm daemons on machines the user controls;
+- open local or LAN browser access to those Helm endpoints;
+- manually add or switch between Helm endpoints;
+- manage local projects, worktrees and ACP-compatible coding agents;
+- keep local session history, artifacts and logs.
 
-Future paid functionality should focus on multi-machine and team control-plane use cases. Those capabilities should not be added to the Core runtime by default.
+Tiller Pro should focus on capabilities that become valuable when multiple people, machines or compliance requirements are involved.
 
 ## Repository split
 
 | Area | Repository | License / terms | Purpose |
 | --- | --- | --- | --- |
-| Tiller Core | `qianshe/Tiller` | Source-available preview now; possible open-core license later | Single-machine local command deck |
-| Tiller Pro / Control Plane | future private `tiller-pro` | Commercial | Multi-machine, team and enterprise control plane |
+| Tiller Core | `qianshe/Tiller` | Source-available preview now; possible open-core license later | Local/manual command deck for one operator |
+| Tiller Pro / Control Plane | private `qianshe/tiller-pro` | Commercial | Managed fleet, team and enterprise control plane |
 
-Do not move code to `tiller-pro` before there is a real Pro feature or user need. The first boundary is architectural and product-level, not a physical rewrite.
+Do not move code to `tiller-pro` only because Core can show more than one Helm endpoint. Move or create code there when the feature needs managed fleet state, team identity, centralized policy, hosted services or commercial entitlements.
 
 ## Core scope
 
-Core owns features required for a useful single-machine product:
+Core should stay genuinely useful without a login or license server:
 
 - `apps/helm`: local daemon, CLI, HTTP/WebSocket transport, local config, local session store.
-- `apps/deck`: embedded single-Helm Web UI.
+- `apps/deck`: embedded Web UI for the current operator.
 - `packages/acp-runtime`: ACP process/session integration used by the local daemon.
 - `packages/agent-registry`: local agent discovery and provider metadata.
-- `packages/sync-protocol`: client/server protocol for the local Deck ↔ Helm connection.
+- `packages/sync-protocol`: client/server protocol for Deck ↔ Helm connections.
 - `packages/shared`: shared types and utilities with no Pro dependency.
 
-Core may support multiple projects, worktrees and agents on the same Helm instance. It should not become a central SaaS or fleet manager.
+Core may include:
+
+- multiple manually configured Helm endpoints;
+- local browser profiles that remember endpoints;
+- local/LAN pairing for trusted devices;
+- multiple projects, worktrees and agents;
+- local status, logs, sessions and artifacts.
+
+Core should not require account login for basic local use.
 
 ## Pro scope
 
-Pro should own capabilities that turn Tiller from a local deck into a control plane:
+Pro owns capabilities that turn Tiller from a local/manual deck into a managed control plane:
 
-- multiple Helm nodes / machine registry;
-- remote node enrollment and health checks;
-- team accounts, organizations and seats;
+- Helm node enrollment and fleet registry;
+- node identity, trust material and health monitoring;
+- shared team workspace and organization management;
 - RBAC, SSO and identity provider integration;
 - central audit log and retention policies;
-- policy management for permissions, tools and agent access;
+- central policy management for permissions, tools and agent access;
 - hosted relay / secure remote access;
 - centralized backup, sync and search across nodes;
-- license activation, metering and billing;
+- license activation, metering, billing and entitlements;
 - enterprise deployment tooling and support bundles.
 
 ## Boundary rules
 
 1. Core must run without Pro.
 2. Core must not import code from Pro.
-3. Shared protocol changes must keep single-Helm use cases first.
-4. Do not add account, billing, license-server, SSO, central audit or fleet-management code to Core.
-5. If Core needs extension points, add narrow interfaces instead of speculative plugin frameworks.
-6. Pro may depend on Core packages or published Core artifacts; Core must never depend on Pro.
-7. Multi-machine orchestration belongs to Pro even if the UI concept starts in Core discussions.
+3. Core may support manual multi-Helm convenience for one operator.
+4. Pro owns managed fleet state, team identity, central policy, audit and hosted relay.
+5. Do not add billing, SSO, central audit, license-server or Pro entitlement checks to Core's local happy path.
+6. If Core needs extension points, add narrow interfaces instead of speculative plugin frameworks.
+7. Pro may depend on Core packages or published Core artifacts; Core must never depend on Pro.
+8. License checks should protect Pro-owned features, not local Core session creation or local ACP chat.
 
-## Suggested future private repo shape
+## Monetization posture
+
+Early Core should prioritize adoption and feedback:
+
+- keep local use friction low;
+- allow manual endpoint management if it improves the product;
+- add donation / sponsor / early-access links before adding hard paywalls;
+- collect Pro waitlist signals for fleet, team and enterprise needs.
+
+Revenue should come from managed capabilities that are hard to replicate by simply editing local code: hosted relay, trusted fleet registry, team identity, audit, support, updates and enterprise confidence.
+
+## Suggested private repo shape
 
 ```text
 tiller-pro/
@@ -76,19 +98,18 @@ tiller-pro/
 │   ├── licensing/          # license activation and entitlement checks
 │   └── billing/            # commercial packaging, if needed
 └── docs/
-    └── enterprise-deployment.md
+    └── commercial-boundary.md
 ```
-
-Start this repository empty. Add code only after a concrete paid feature is designed.
 
 ## Migration triggers
 
-Create or populate `tiller-pro` when at least one of these is true:
+Create or populate Pro runtime code when at least one of these is true:
 
-- a real user asks for multiple Helm machines in one dashboard;
-- team identity, RBAC or audit logging becomes necessary;
+- users need shared team state rather than local browser state;
+- users need automatic node enrollment or health monitoring;
+- RBAC, SSO or audit logging becomes necessary;
 - hosted relay or remote access is required;
-- a commercial license check is needed;
+- commercial entitlements need enforcement;
 - Core extension points are stable enough for Pro to depend on.
 
-Until then, keep the public repo focused on making Tiller Core reliable and easy to install.
+Until then, keep Core focused on making Tiller reliable, easy to install and pleasant for individual operators.

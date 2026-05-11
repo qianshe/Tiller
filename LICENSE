@@ -2,13 +2,16 @@ Copyright (c) 2026 qianshe
 
 All rights reserved.
 
-Tiller is publicly distributed for preview testing, but no open source
-license is granted at this time.
+Tiller Core is publicly distributed as a preview package for installation,
+local use, evaluation, feedback and issue reporting.
 
-Unless you have received prior written permission from the copyright holder,
-you may not copy, modify, redistribute, sublicense, sell, host as a service,
-or commercially exploit the source code or packaged software beyond ordinary
-installation and evaluation of the published preview package.
+No open source license is granted at this time. Unless you have received prior
+written permission from the copyright holder, you may not redistribute modified
+or unmodified copies, sublicense, sell, host Tiller as a service, or use the
+source code or packaged software for commercial exploitation beyond ordinary
+local preview use.
 
-Any future open source or commercial license decision must replace this file
-and update package metadata before the corresponding release.
+Bug reports, feature requests and compatibility feedback are welcome through
+the public issue tracker. Any future open-core, open source or commercial
+license decision must replace this file and update package metadata before the
+corresponding release.

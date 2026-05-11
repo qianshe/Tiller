@@ -25,9 +25,9 @@ Tiller 把运行在你电脑、工作站或服务器上的 Coding Agent 整理�
 
 ## Product split
 
-The public repository is treated as **Tiller Core**: a single-machine, local-first command deck that can run one Helm daemon and manage local projects, worktrees and ACP agents.
+The public repository is treated as **Tiller Core**: a local-first command deck for one operator. Core can manage local projects, worktrees, ACP agents, and manually configured Helm endpoints without requiring a Tiller account or license server.
 
-Future multi-machine and team features belong in a separate commercial **Tiller Pro / Control Plane** line. Examples include multi-Helm fleet management, team accounts, RBAC, SSO, central audit logs, hosted relay, billing and license activation.
+Future managed fleet and team features belong in a separate commercial **Tiller Pro / Control Plane** line. Examples include automatic Helm node enrollment, shared team workspace, RBAC, SSO, central audit logs, hosted relay, billing and license activation.
 
 See [Core / Pro Boundary](docs/CORE_PRO_BOUNDARY.md) for the current split rules.
 
@@ -188,8 +188,21 @@ npm install -g @qianshe/tiller@preview
 
 `preview` is intended for early testing. Expect breaking changes before a stable `latest` release.
 
+## Feedback and issues
+
+Tiller is in public preview. Bug reports, feature requests and ACP agent compatibility notes are welcome through GitHub Issues:
+
+<https://github.com/qianshe/Tiller/issues>
+
+Especially useful feedback includes:
+
+- operating system, Node.js version and Tiller version;
+- which ACP agent you tried to connect;
+- whether the issue happens on local-only or LAN access;
+- relevant logs without secrets, tokens or private command output.
+
 ## License
 
 Copyright (c) 2026 qianshe.
 
-All rights reserved. Tiller is publicly installable for preview testing, but this repository and package are not currently released under an open source license. See [LICENSE](LICENSE) for the full license notice.
+Tiller Core is publicly installable for preview use, feedback and issue reporting. The project is not currently released under an open source license; redistribution, hosted services and commercial use still require permission. See [LICENSE](LICENSE) for the full license notice.
