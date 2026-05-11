@@ -61,6 +61,10 @@ git push origin v0.1.0-alpha.1
 
 npm publication is manual through the `Publish npm` GitHub Actions workflow.
 
+## Prepare release workflow
+
+`Prepare release` can bump `apps/helm/package.json`, push a version commit, create a tag and create a GitHub Release. If branch protection blocks workflow pushes to `main`, either allow GitHub Actions to bypass that rule for this workflow or keep version bumps in regular pull requests and only use the manual publish workflow after the tag exists.
+
 ## Notes for current solo-maintainer phase
 
 During solo development, direct pushes to `main` may still be practical. If direct pushes remain enabled, keep the CI workflow on `push: main` and wait for it to pass before creating release tags.
