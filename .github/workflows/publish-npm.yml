@@ -1,0 +1,95 @@
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: "Git ref to publish, usually a tag like v0.1.0-alpha.1"
+        required: true
+        type: string
+      dist_tag:
+        description: "npm dist-tag"
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - latest
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish @qianshe/tiller
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate requested ref and dist-tag
+        shell: bash
+        run: |
+          REF="${{ inputs.git_ref }}"
+          DIST_TAG="${{ inputs.dist_tag }}"
+          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+            EXPECTED_DIST_TAG="preview"
+          elif [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            EXPECTED_DIST_TAG="latest"
+          else
+            echo "Unsupported release ref: $REF"
+            echo "Use vX.Y.Z-alpha.N, vX.Y.Z-beta.N, vX.Y.Z-rc.N, or vX.Y.Z."
+            exit 1
+          fi
+          if [ "$DIST_TAG" != "$EXPECTED_DIST_TAG" ]; then
+            echo "Ref $REF must be published with npm dist-tag $EXPECTED_DIST_TAG, got $DIST_TAG."
+            exit 1
+          fi
+
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Deck import boundary lint
+        run: pnpm --filter @tiller/deck lint
+
+      - name: Build npm package
+        run: pnpm --filter @tiller/helm build
+
+      - name: Check version matches ref
+        shell: bash
+        run: |
+          REF_VERSION="${{ inputs.git_ref }}"
+          REF_VERSION="${REF_VERSION#v}"
+          PACKAGE_VERSION="$(node -p "require('./apps/helm/dist-package/package.json').version")"
+          if [ "$REF_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Ref version $REF_VERSION does not match package version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Publish npm package
+        working-directory: apps/helm/dist-package
+        run: npm publish --tag "${{ inputs.dist_tag }}" --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -48,6 +48,8 @@ pnpm-debug.log*
 !/docs/
 /docs/*
 !/docs/CORE_PRO_BOUNDARY.md
+!/docs/NPM_RELEASE_AUTOMATION.md
+!/docs/GITHUB_BRANCH_PROTECTION.md
 /apps/helm/docs/
 .worktrees
 .worktrees/
