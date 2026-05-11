@@ -10,10 +10,10 @@ import {
   createProjectId,
   defaultAgentId,
   resolveProjectDisplayId,
-  resolveProjectWorkspaceLabel,
+  resolveProjectWorktrees,
 } from "../utils/fleet-helpers";
 
-export type FleetProjectDraft = { name: string; path: string };
+export type FleetProjectDraft = { id?: string; name: string; path: string };
 
 type ProjectInventorySectionProps = {
   connected: boolean;
@@ -44,6 +44,11 @@ export function ProjectInventorySection({
   setFormOpen,
   setSaveMessage,
 }: ProjectInventorySectionProps) {
+  function cancelEdit() {
+    setDraft({ name: "", path: "" });
+    setFormOpen(false);
+  }
+
   return (
     <section className="grid content-start gap-3">
       <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -62,7 +67,7 @@ export function ProjectInventorySection({
       </div>
       {formOpen ? (
         <form
-          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto] sm:items-center"
+          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto_auto] sm:items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (!selectedHelmRpcClient || !draft.path.trim()) {
@@ -72,18 +77,30 @@ export function ProjectInventorySection({
             const fallbackProjectName =
               projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
             const projectName = draft.name.trim() || fallbackProjectName;
-            const projectId = createProjectId(selectedHelmProjects);
-            const workspaceId = `${projectId}-workspace`;
+            const existingProject = draft.id
+              ? selectedHelmProjects.find((project) => project.id === draft.id)
+              : undefined;
+            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects);
+            const workspaceId =
+              existingProject?.defaultWorkspaceId ??
+              existingProject?.workspaceIds?.[0] ??
+              `${projectId}-workspace`;
             setSaveMessage(`正在保存项目：${projectName}...`);
             void dispatch(selectedHelmRpcClient, "project/save", {
               project: {
+                ...existingProject,
                 id: projectId,
                 name: projectName,
-                helmId: selectedHelmId,
+                helmId: existingProject?.helmId ?? selectedHelmId,
                 path: projectPath,
-                workspaceIds: [workspaceId],
-                defaultWorkspaceId: workspaceId,
-                defaultAgentId: defaultAgentId(selectedHelmAgents) ?? undefined,
+                workspaceIds: existingProject?.workspaceIds?.length
+                  ? existingProject.workspaceIds
+                  : [workspaceId],
+                defaultWorkspaceId: existingProject?.defaultWorkspaceId ?? workspaceId,
+                defaultAgentId:
+                  existingProject?.defaultAgentId ??
+                  defaultAgentId(selectedHelmAgents) ??
+                  undefined,
               },
             });
             setDraft({ name: "", path: "" });
@@ -113,7 +130,10 @@ export function ProjectInventorySection({
             placeholder="项目路径，例如 D:/projects/my-app"
           />
           <Button type="submit" disabled={!draft.path.trim()}>
-            保存项目
+            {draft.id ? "更新项目" : "保存项目"}
+          </Button>
+          <Button variant="outline" type="button" onClick={cancelEdit}>
+            取消
           </Button>
         </form>
       ) : null}
@@ -148,19 +168,56 @@ export function ProjectInventorySection({
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
                   </div>
                   <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">默认分支</dt>
+                    <dt className="font-semibold text-muted-foreground">Git Branch</dt>
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {resolveProjectWorkspaceLabel(
-                        project,
-                        selectedHelmWorkspaces,
-                      )}
+                      {project.gitCurrentBranch ?? "-"}
                     </dd>
                   </div>
                   <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Default Agent</dt>
+                    <dt className="font-semibold text-muted-foreground">Worktrees</dt>
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {project.defaultAgentId ?? "-"}
+                      <ProjectWorktreeList
+                        project={project}
+                        workspaces={selectedHelmWorkspaces}
+                      />
                     </dd>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected}
+                      aria-label={`编辑项目 ${project.name}`}
+                      onClick={() => {
+                        setDraft({
+                          id: project.id,
+                          name: project.name,
+                          path: project.path ?? "",
+                        });
+                        setFormOpen(true);
+                      }}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={!connected || !selectedHelmRpcClient}
+                      aria-label={`删除项目 ${project.name}`}
+                      onClick={() => {
+                        if (!selectedHelmRpcClient) {
+                          return;
+                        }
+                        setSaveMessage(`正在删除项目：${project.name}...`);
+                        void dispatch(selectedHelmRpcClient, "project/delete", {
+                          projectId: project.id,
+                        });
+                      }}
+                    >
+                      删除
+                    </Button>
                   </div>
                 </dl>
               </details>
@@ -173,5 +230,30 @@ export function ProjectInventorySection({
         </div>
       )}
     </section>
+  );
+}
+
+function ProjectWorktreeList({
+  project,
+  workspaces,
+}: {
+  project: ProjectSummary;
+  workspaces: WorkspaceSummary[];
+}) {
+  const worktrees = resolveProjectWorktrees(project, workspaces);
+
+  if (!worktrees.length) {
+    return <span>-</span>;
+  }
+
+  return (
+    <ul className="m-0 grid list-none gap-1 p-0">
+      {worktrees.map((workspace) => (
+        <li key={workspace.id} className="grid gap-0.5">
+          <span className="font-medium text-foreground">{workspace.name}</span>
+          <span className="break-all text-xs text-muted-foreground">{workspace.path}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -1,4 +1,6 @@
 import {
+  deleteProjectFromConfig,
+  deleteProviderFromConfig,
   listAvailableProviders,
   saveHelmToConfig,
   saveProjectToConfig,
@@ -17,6 +19,7 @@ import { listProjectFiles, resolveProjectFileRoot } from "./project-files";
 import {
   createProjectWorktree,
   listGitBranches,
+  listGitWorktreeWorkspaces,
   persistProjectGitInfo,
   persistProjectGitInfoIfAvailable,
   projectWorkspaceItems,
@@ -30,6 +33,8 @@ export async function handleConfigRpcRequest(
   context: HelmHandlerContext,
 ): Promise<unknown | undefined> {
   switch (method) {
+    case "daemon/shutdown":
+      return shutdownDaemon(context);
     case "helm/list":
       return listHelms(context);
     case "helm/save":
@@ -40,6 +45,8 @@ export async function handleConfigRpcRequest(
       return listFiles(params as { projectId: string; workspaceId?: string }, context);
     case "project/save":
       return saveProject(params as { project: ProjectSummary }, context);
+    case "project/delete":
+      return deleteProject(params as { projectId: string }, context);
     case "workspace/list":
       return listWorkspaces(context);
     case "workspace/save":
@@ -52,8 +59,22 @@ export async function handleConfigRpcRequest(
       return listAgents(context);
     case "agent/save":
       return saveAgent(params as { provider: AcpAgentProvider }, context);
+    case "agent/delete":
+      return deleteAgent(params as { providerId: string }, context);
     case "agent/test":
       return testAgent(params as { providerId: string }, context);
+    case "agent/connections":
+      return listAgentConnections(context);
+    case "agent/connect":
+      return connectAgent(
+        params as { providerId: string; workspaceId?: string; projectId?: string },
+        context,
+      );
+    case "agent/reconnect":
+      return reconnectAgent(
+        params as { providerId: string; workspaceId?: string; projectId?: string },
+        context,
+      );
     case "agent/get_model_options":
       return getModelOptions(
         params as { providerId: string; workspaceId: string; projectId?: string },
@@ -62,6 +83,14 @@ export async function handleConfigRpcRequest(
     default:
       return undefined;
   }
+}
+
+function shutdownDaemon(context: HelmHandlerContext) {
+  context.requestShutdown?.("rpc");
+  return {
+    ok: true,
+    message: "Helm shutdown requested.",
+  };
 }
 
 function listHelms(context: HelmHandlerContext) {
@@ -156,6 +185,19 @@ async function saveProject(params: { project: ProjectSummary }, context: HelmHan
   };
 }
 
+async function deleteProject(params: { projectId: string }, context: HelmHandlerContext) {
+  const result = deleteProjectFromConfig(params.projectId, context.configPath);
+  context.setWorkspaces(context.loadAvailableWorkspaces());
+  context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+  return {
+    ok: result.deleted,
+    projectId: params.projectId,
+    message: result.deleted
+      ? `Deleted project from ${result.configPath}`
+      : `Project not found in ${result.configPath}`,
+  };
+}
+
 function listWorkspaces(context: HelmHandlerContext) {
   const workspaces = context.loadAvailableWorkspaces();
   context.setWorkspaces(workspaces);
@@ -202,15 +244,26 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       context.setWorkspaces(context.loadAvailableWorkspaces());
     }
     const latestWorkspaces = context.loadAvailableWorkspaces();
+    const latestProject = context.resolveProjectById(project.id, context.getProjects()) ?? project;
+    const configuredWorkspaces = projectWorkspaceItems(latestProject, latestWorkspaces);
+    const gitWorktreeWorkspaces = gitRoot
+      ? await listGitWorktreeWorkspaces(latestProject, gitRoot)
+      : [];
+    const nextProject = persistDiscoveredWorktrees(
+      latestProject,
+      gitWorktreeWorkspaces,
+      context.configPath,
+    );
+    if (nextProject !== latestProject) {
+      context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+      context.setWorkspaces(context.loadAvailableWorkspaces());
+    }
     return {
       ok: true,
       projectId: project.id,
       branches: gitInfo.branches,
       currentBranch: gitInfo.currentBranch,
-      workspaces: projectWorkspaceItems(
-        context.resolveProjectById(project.id, context.getProjects()) ?? project,
-        latestWorkspaces,
-      ),
+      workspaces: mergeWorkspaceItems(configuredWorkspaces, gitWorktreeWorkspaces),
       selectedWorkspaceId: gitInfo.currentBranch ?? project.defaultWorkspaceId,
       message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
     };
@@ -223,6 +276,38 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
       message: error instanceof Error ? error.message : "Failed to list Git worktrees",
     };
   }
+}
+
+function mergeWorkspaceItems(
+  configuredWorkspaces: WorkspaceSummary[],
+  gitWorktreeWorkspaces: WorkspaceSummary[],
+) {
+  const byId = new Map(configuredWorkspaces.map((workspace) => [workspace.id, workspace]));
+  gitWorktreeWorkspaces.forEach((workspace) => byId.set(workspace.id, workspace));
+  return Array.from(byId.values());
+}
+
+function persistDiscoveredWorktrees(
+  project: ProjectSummary,
+  worktrees: WorkspaceSummary[],
+  configPath: string,
+) {
+  if (!worktrees.length) {
+    return project;
+  }
+  worktrees.forEach((workspace) => saveWorkspaceToConfig(workspace, configPath));
+  const workspaceIds = Array.from(
+    new Set([...(project.workspaceIds ?? []), ...worktrees.map((workspace) => workspace.id)]),
+  );
+  if (
+    workspaceIds.length === (project.workspaceIds ?? []).length &&
+    workspaceIds.every((id, index) => id === project.workspaceIds?.[index])
+  ) {
+    return project;
+  }
+  const nextProject = { ...project, workspaceIds };
+  saveProjectToConfig(nextProject, configPath);
+  return nextProject;
 }
 
 async function createBranch(
@@ -309,6 +394,19 @@ async function saveAgent(params: { provider: AcpAgentProvider }, context: HelmHa
   };
 }
 
+async function deleteAgent(params: { providerId: string }, context: HelmHandlerContext) {
+  const result = deleteProviderFromConfig(params.providerId, context.configPath);
+  context.setAgents(listAvailableProviders(context.configPath));
+  context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+  return {
+    ok: result.deleted,
+    providerId: params.providerId,
+    message: result.deleted
+      ? `Deleted provider from ${result.configPath}`
+      : `Provider not found in ${result.configPath}`,
+  };
+}
+
 async function testAgent(params: { providerId: string }, context: HelmHandlerContext) {
   const agent = context.resolveProviderById(params.providerId, context.getAgents());
   if (!agent) {
@@ -325,6 +423,144 @@ async function testAgent(params: { providerId: string }, context: HelmHandlerCon
     providerId: params.providerId,
     message: result.message,
   };
+}
+
+
+function listAgentConnections(context: HelmHandlerContext) {
+  return { connections: context.listAcpConnectionInventory() };
+}
+
+
+function resolveAgentWorkspace(
+  params: { providerId: string; workspaceId?: string; projectId?: string },
+  context: HelmHandlerContext,
+) {
+  const agent = context.resolveProviderById(params.providerId, context.getAgents());
+  const workspaces = context.getWorkspaces();
+  const baseWorkspace = params.workspaceId
+    ? workspaces.find((item) => item.id === params.workspaceId)
+    : workspaces[0];
+  const project = params.projectId
+    ? context.resolveProjectById(params.projectId, context.getProjects())
+    : undefined;
+  const workspace =
+    project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
+      ? { ...baseWorkspace, path: project.path }
+      : baseWorkspace;
+  return { agent, workspace };
+}
+
+async function connectAgent(
+  params: { providerId: string; workspaceId?: string; projectId?: string },
+  context: HelmHandlerContext,
+) {
+  const { agent, workspace } = resolveAgentWorkspace(params, context);
+  if (!agent || !workspace) {
+    return {
+      ok: false,
+      providerId: params.providerId,
+      workspaceId: params.workspaceId,
+      connections: context.listAcpConnectionInventory(),
+      message: !agent ? "Provider not found" : "Workspace not found",
+    };
+  }
+
+  context.logInfo(
+    `[tiller] 阶段=ACP连接请求 provider=${agent.id} workspace=${workspace.id} cwd=${workspace.path}`,
+  );
+  try {
+    const connection = await context.connectAcpConnection({
+      sessionId: `connect-${agent.id}-${Date.now()}`,
+      agent,
+      workspace,
+      onEvent: () => undefined,
+      onConnectionLifecycleEvent: (event) => {
+        context.logInfo(
+          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} workspace=${event.workspaceId}`,
+        );
+      },
+    });
+    const inventory = connection.inventory();
+    return {
+      ok: true,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      runtimeConnectionId: inventory.runtimeConnectionId,
+      connection: inventory,
+      connections: context.listAcpConnectionInventory(),
+      message: "ACP provider connected.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to connect ACP provider";
+    context.logError(
+      `[tiller] 阶段=ACP连接失败 provider=${agent.id} workspace=${workspace.id} message=${message}`,
+    );
+    return {
+      ok: false,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      connections: context.listAcpConnectionInventory(),
+      message,
+    };
+  }
+}
+
+async function reconnectAgent(
+  params: { providerId: string; workspaceId?: string; projectId?: string },
+  context: HelmHandlerContext,
+) {
+  const { agent, workspace } = resolveAgentWorkspace(params, context);
+
+  if (!agent || !workspace) {
+    return {
+      ok: false,
+      providerId: params.providerId,
+      workspaceId: params.workspaceId,
+      message: !agent ? "Provider not found" : "Workspace not found",
+    };
+  }
+
+  context.logInfo(
+    `[tiller] 阶段=ACP重连请求 provider=${agent.id} workspace=${workspace.id} cwd=${workspace.path}`,
+  );
+  try {
+    const connection = await context.reconnectAcpConnection({
+      sessionId: `reconnect-${agent.id}-${Date.now()}`,
+      agent,
+      workspace,
+      onEvent: () => undefined,
+      onConnectionLifecycleEvent: (event) => {
+        context.logInfo(
+          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} workspace=${event.workspaceId}`,
+        );
+      },
+    });
+    const inventory = connection.inventory();
+    context.logInfo(
+      `[tiller] 阶段=ACP重连完成 provider=${agent.id} workspace=${workspace.id} connection=${inventory.runtimeConnectionId}`,
+    );
+    return {
+      ok: true,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      runtimeConnectionId: inventory.runtimeConnectionId,
+      connection: inventory,
+      connections: context.listAcpConnectionInventory(),
+      message: "ACP provider reconnected.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to reconnect ACP provider";
+    context.logError(
+      `[tiller] 阶段=ACP重连失败 provider=${agent.id} workspace=${workspace.id} message=${message}`,
+    );
+    return {
+      ok: false,
+      providerId: agent.id,
+      workspaceId: workspace.id,
+      connections: context.listAcpConnectionInventory(),
+      message,
+    };
+  }
 }
 
 async function getModelOptions(
@@ -349,6 +585,7 @@ async function getModelOptions(
       message: !agent ? "Provider not found" : "Workspace not found",
       modelOptions: [],
       configOptions: [],
+      availableCommands: [],
       state: {},
     };
   }

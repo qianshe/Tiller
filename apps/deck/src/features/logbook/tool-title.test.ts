@@ -134,6 +134,23 @@ test("groupToolCalls recognizes OpenCode skill tools from plain stdout payloads"
   assert.equal(grouped[0]?.title, "Skill: webapp-testing");
 });
 
+test("groupToolCalls recognizes OpenCode slash-prefixed skill headings", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "tool-opencode-slash-skill",
+      kind: "tool",
+      title: "skill",
+      status: "completed",
+      output:
+        "# /superpowers:dispatching-parallel-agents Command\n\n**Description:** Use when facing independent tasks.",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Skill: superpowers:dispatching-parallel-agents");
+});
+
 test("groupToolCalls recognizes OpenCode skill tools that combine heading and colon", () => {
   const grouped = groupToolCalls([
     {

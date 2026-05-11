@@ -131,6 +131,7 @@ export function HelmDetailSection({
         <HelmActions
           connectDaemonProfile={connectDaemonProfile}
           connectToDaemon={connectToDaemon}
+          dispatch={dispatch}
           helmSocketRefs={helmSocketRefs}
           isEmbeddedHelmDeck={isEmbeddedHelmDeck}
           lastFilesScopeKeyRef={lastFilesScopeKeyRef}
@@ -139,6 +140,7 @@ export function HelmDetailSection({
           selectedHelmConnection={selectedHelmConnection}
           selectedHelmIsConnected={selectedHelmIsConnected}
           selectedHelmIsCurrent={selectedHelmIsCurrent}
+          selectedHelmRpcClient={selectedHelmRpcClient}
           selectedHelmSavedProfile={selectedHelmSavedProfile}
           setConnection={setConnection}
           setHelmConnectionState={setHelmConnectionState}
@@ -152,9 +154,6 @@ export function HelmDetailSection({
         </Badge>
         <Badge variant="secondary">
           <strong>{selectedHelmAgents.length}</strong> ACP 舰员
-        </Badge>
-        <Badge variant="secondary">
-          <strong>{selectedHelmWorkspaces.length}</strong> 分支
         </Badge>
       </div>
       <CardContent className="grid gap-4 p-0 lg:grid-cols-2 lg:items-start lg:gap-x-12">

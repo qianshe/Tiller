@@ -27,7 +27,7 @@ type ActivityLogPanelProps = {
 };
 
 /**
- * Merges prompt and tool activity into the mission activity timeline.
+ * Shows user prompts and tool activity; assistant text remains in the conversation pane.
  */
 export function ActivityLogPanel({
   sessionId,
@@ -41,11 +41,7 @@ export function ActivityLogPanel({
   onShowMore,
   onLoadOlder,
 }: ActivityLogPanelProps) {
-  const timelineItems = buildActivityTimeline(
-    sessionToolCalls,
-    commandChunks,
-    sessionMessages,
-  );
+  const timelineItems = buildActivityTimeline(sessionToolCalls, commandChunks, sessionMessages);
   const visibleTimelineItems = timelineItems.slice(0, visibleCount);
   const hiddenCount = Math.max(
     0,
@@ -128,7 +124,7 @@ function buildActivityTimeline(
       : commandChunks.map(commandChunkToToolCall),
   );
   const promptItems = sessionMessages
-    .filter((message) => message.role === "user")
+    .filter((message) => message.role === "user" && !isAcpPromptWrapperEcho(message))
     .map((message) => ({
       kind: "prompt" as const,
       id: message.id,
@@ -167,7 +163,8 @@ function ToolActivityCard({
   const streamTone = item.streams.includes("stderr") ? "stderr" : "stdout";
   const icon = toolTone.icon ?? "•";
   const label = toolTone.label ?? "Tool";
-  const accent = streamTone === "stderr" ? "stderr" : (toolTone.className ?? "tool-call-default");
+  const status = resolveToolStatusLabel(item.status, streamTone);
+  const accent = status.tone === "danger" ? "stderr" : (toolTone.className ?? "tool-call-default");
 
   return (
     <ActivityDetails
@@ -175,7 +172,8 @@ function ToolActivityCard({
       icon={icon}
       kind={label}
       title={item.title}
-      stream={streamTone}
+      stream={status.label}
+      streamTone={status.tone}
     >
       {item.text.trim() ? (
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
@@ -192,6 +190,7 @@ type ActivityDetailsProps = {
   kind: string;
   title: string;
   stream: string;
+  streamTone?: "danger" | "neutral";
   children: React.ReactNode;
 };
 
@@ -201,6 +200,7 @@ function ActivityDetails({
   kind,
   title,
   stream,
+  streamTone = "neutral",
   children,
 }: ActivityDetailsProps) {
   const tone = activityToneClass(accent);
@@ -230,7 +230,7 @@ function ActivityDetails({
         <span
           className={cn(
             "text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-            stream === "stderr" && "text-destructive",
+            streamTone === "danger" && "text-destructive",
           )}
         >
           {stream}
@@ -239,6 +239,25 @@ function ActivityDetails({
       <div className="mx-3 mb-3 border-t border-border-ghost pt-2">{children}</div>
     </details>
   );
+}
+
+function resolveToolStatusLabel(
+  status: ReturnType<typeof groupToolCalls>[number]["status"],
+  streamTone: "stderr" | "stdout",
+) {
+  if (status === "failed" || streamTone === "stderr") {
+    return { label: "失败", tone: "danger" as const };
+  }
+  if (status === "completed") {
+    return { label: "完成", tone: "neutral" as const };
+  }
+  if (status === "waiting_for_permission") {
+    return { label: "待授权", tone: "neutral" as const };
+  }
+  if (status === "cancelled") {
+    return { label: "取消", tone: "neutral" as const };
+  }
+  return { label: "运行中", tone: "neutral" as const };
 }
 
 function activityToneClass(accent: string) {
@@ -269,4 +288,14 @@ function summarizeActivityText(text: string) {
   return compact.length > 72
     ? `${compact.slice(0, 72)}…`
     : compact || "发送给 ACP";
+}
+
+function isAcpPromptWrapperEcho(message: AgentMessage) {
+  const text = message.text.trim();
+  return (
+    /^\[[a-z-]+mode\]/iu.test(text) ||
+    text === "---" ||
+    text.includes("SYNTHESIZE findings before proceeding.") ||
+    text.includes("MANDATORY delegate_task params")
+  );
 }

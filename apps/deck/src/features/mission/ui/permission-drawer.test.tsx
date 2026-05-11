@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  MissionPermissionDrawer,
   resolvePermissionActionLabel,
   resolvePermissionCommandDisplay,
 } from "./permission-drawer.js";
@@ -99,4 +102,35 @@ test("permission command display promotes concrete shell commands", () => {
 
   assert.equal(display.title, "pnpm --dir apps/deck test");
   assert.equal(display.detail, null);
+});
+
+test("permission drawer summarizes long shell commands and keeps full command expandable", () => {
+  const command = "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe -Command $p = Start-Process -FilePath pnpm.cmd -ArgumentList '--filter','@tiller/deck','dev','--','--host','127.0.0.1','--port','5173' -PassThru -WindowStyle Hidden; $p.Id | Set-Content vite.pid";
+  const html = renderToStaticMarkup(
+    createElement(MissionPermissionDrawer, {
+      request: {
+        id: "permission-1",
+        command: `Run shell command :: ${command}`,
+        reason: "需要启动本地开发服务",
+        workspacePath: "D:/myProject/tools/Tiller",
+      },
+      copy: drawerCopy,
+      showWorkspace: false,
+      onRespond: () => undefined,
+    }),
+  );
+
+  assert.match(html, /PowerShell.*Start-Process/);
+  assert.match(
+    html,
+    /<strong class="mission-permission-title[^"]*[^>]*>PowerShell · Start-Process pnpm\.cmd<\/strong>/,
+  );
+  assert.match(html, /查看完整命令/);
+  assert.match(html, /mission-permission-detail[^"]*min-w-0[^"]*max-w-full[^"]*overflow-hidden/);
+  assert.match(html, /max-w-full[^"]*overflow-auto[^"]*break-all/);
+  assert.match(html, /pnpm\.cmd/);
+  assert.doesNotMatch(
+    html,
+    /<strong class="mission-permission-title[^"]*[^>]*>[\s\S]*Set-Content vite\.pid[\s\S]*<\/strong>/,
+  );
 });

@@ -57,6 +57,12 @@ export function OverviewPage({
     `任务 · ${sessions.length}`,
   ];
   const latestSession = recentSessions[0] ?? null;
+  const telemetryItems = [
+    ...overviewItems,
+    latestSession
+      ? `最新任务 · ${resolveDisplaySessionTitle(latestSession)} · ${formatRelativeTime(latestSession.updatedAt)}`
+      : "最新任务 · 等待创建",
+  ];
 
   return (
     <section className="landing-hero" aria-labelledby="landing-hero-title">
@@ -68,12 +74,11 @@ export function OverviewPage({
         <h1 id="landing-hero-title">
           Command AI.
           <br />
-          Unify Everything.
+          One Deck.
         </h1>
         <p className="landing-copy">
-          Tiller is an AI command platform that unifies ACP agents across your
-          infrastructure. As Governor, you orchestrate fleets, assign missions,
-          and achieve outcomes at scale.
+          Tiller gathers local ACP agents, sessions, worktrees, and review signals
+          into one command surface.
         </p>
         <div className="landing-actions" aria-label="首页操作">
           <button
@@ -95,33 +100,59 @@ export function OverviewPage({
       </div>
 
       <aside className="landing-telemetry" aria-label="当前总览">
-        <div>
-          <p className="landing-telemetry-kicker">Live Helm</p>
+        <div className="landing-telemetry-head">
+          <p className="landing-telemetry-kicker">Live Stream</p>
           <strong>{activeHelmLabel}</strong>
         </div>
-        <div className="landing-telemetry-grid">
-          {overviewItems.slice(1).map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-        <div className="landing-telemetry-session">
-          <p>Latest Mission</p>
-          {latestSession ? (
-            <button
-              type="button"
-              onClick={() => {
-                onOpenSession(latestSession.id);
-                onNavigate("sessions");
-              }}
-            >
-              <strong>{resolveDisplaySessionTitle(latestSession)}</strong>
-              <span>{formatRelativeTime(latestSession.updatedAt)}</span>
-            </button>
-          ) : (
-            <span>还没有任务，先进入任务页创建一个。</span>
-          )}
+        <div className="landing-telemetry-stream" aria-label="实时数据流">
+          <div className="landing-telemetry-track">
+            {[...telemetryItems, ...telemetryItems].map((item, index) => {
+              const isLatest = item.startsWith("最新任务 ·") && latestSession;
+              return isLatest ? (
+                <button
+                  key={`${item}-${index}`}
+                  type="button"
+                  className="landing-telemetry-line"
+                  onClick={() => {
+                    onOpenSession(latestSession.id);
+                    onNavigate("sessions");
+                  }}
+                >
+                  {item}
+                </button>
+              ) : (
+                <span key={`${item}-${index}`} className="landing-telemetry-line">
+                  {item}
+                </span>
+              );
+            })}
+          </div>
         </div>
       </aside>
+
+      <div className="landing-ship-hotspots" aria-label="战舰快捷导航">
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-sessions"
+          onClick={() => onNavigate("sessions")}
+          aria-label="进入任务"
+          data-tooltip="任务"
+        />
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-agents"
+          onClick={() => onNavigate("agents")}
+          aria-label="进入舰队"
+          data-tooltip="舰队"
+        />
+        <button
+          type="button"
+          className="landing-ship-hotspot landing-ship-hotspot-settings"
+          onClick={() => onNavigate("settings")}
+          aria-label="进入设置"
+          data-tooltip="设置"
+        />
+      </div>
     </section>
   );
 }

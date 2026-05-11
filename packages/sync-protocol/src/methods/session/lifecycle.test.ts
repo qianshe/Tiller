@@ -25,6 +25,10 @@ test("session/prewarm requires project, workspace, agent", () => {
     providerId: "a1",
     workspaceId: "ws1",
     runtimeSessionId: "runtime-1",
+    currentModelId: "gpt-5.5",
+    modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+    configOptions: [],
+    state: { model: "gpt-5.5" },
     message: "ACP runtime prewarmed.",
   });
 });

@@ -84,11 +84,12 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
     /(^|[\s:/_-])mcp([\s:/_-]|$)|mcp_router|mcp-router|mcp__[a-z0-9_-]+/iu.test(
       title,
     ) ||
+    isNamespacedMcpToolTitle(normalized) ||
     isKnownMcpRouterTool(normalized)
   ) {
     return "MCP";
   }
-  if (kind === "terminal") {
+  if (kind === "terminal" || isShellLikeToolTitle(kind, normalized)) {
     return "Shell";
   }
   if (kind === "edit") {
@@ -98,6 +99,21 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
     return "Built-in";
   }
   return "Tool";
+}
+
+function isNamespacedMcpToolTitle(normalizedTitle: string) {
+  return /^tool:\s*[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/u.test(
+    normalizedTitle.trim(),
+  );
+}
+
+function isShellLikeToolTitle(kind: AgentToolCall["kind"], normalizedTitle: string) {
+  if (kind !== "tool" && kind !== "unknown") {
+    return false;
+  }
+  return /^(\$|if\s*\(|for(each)?\s*\(|while\s*\(|write-output\b|get-[a-z]+\b|set-[a-z]+\b|test-path\b|new-item\b|remove-item\b|copy-item\b|move-item\b|git\b|pnpm\b|npm\b|node\b|tsx\b|python\b|powershell\b|bash\b|cmd\b|echo\b|cat\b|ls\b|dir\b)/iu.test(
+    normalizedTitle.trim(),
+  );
 }
 
 function isBuiltInTool(normalizedTitle: string) {

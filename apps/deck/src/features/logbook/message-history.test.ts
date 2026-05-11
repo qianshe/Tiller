@@ -154,6 +154,92 @@ test("mergeAgentMessages splits provider paragraph chunks at tool boundaries", (
   );
 });
 
+test("mergeAgentMessages merges adjacent assistant chunks that split an open markdown code fence", () => {
+  const merged = [
+    {
+      id: "session-1-msg-s35",
+      role: "assistant",
+      text: "使用 worktree 后：\n\n```text\nTiller/",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "session-1-msg-s36",
+      role: "assistant",
+      text: "                  # 主工作区\n.worktrees/\n```\n后续说明",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["使用 worktree 后：\n\n```text\nTiller/                  # 主工作区\n.worktrees/\n```\n后续说明"],
+  );
+});
+
+test("mergeAgentMessages merges adjacent assistant chunks when a tool boundary falls inside a markdown code fence", () => {
+  const boundary = Date.parse("2026-05-07T08:00:01.500Z");
+  const merged = [
+    {
+      id: "session-1-msg-s35",
+      role: "assistant",
+      text: "使用 worktree 后：\n\n```text\nTiller/",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "session-1-msg-s36",
+      role: "assistant",
+      text: "                  # 主工作区\n.worktrees/\n```\n后续说明",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage, [boundary]),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    [
+      "使用 worktree 后：\n\n```text\nTiller/                  # 主工作区\n.worktrees/\n```\n",
+      "后续说明",
+    ],
+  );
+});
+
+test("mergeAgentMessages delays tool-boundary splits until markdown code fences are closed", () => {
+  const boundary = Date.parse("2026-05-07T08:00:01.500Z");
+  const merged = [
+    {
+      id: "session-1-msg-a",
+      role: "assistant",
+      text: "说明\n```text\nTiller/",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "session-1-msg-b",
+      role: "assistant",
+      text: "说明\n```text\nTiller/\n.worktrees/",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+    {
+      id: "session-1-msg-c",
+      role: "assistant",
+      text: "说明\n```text\nTiller/\n.worktrees/\n```\n后续说明",
+      timestamp: "2026-05-07T08:00:03.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage, [boundary]),
+    [],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["说明\n```text\nTiller/\n.worktrees/\n```\n", "后续说明"],
+  );
+});
+
 test("mergeMessageHistory collapses accumulated assistant chunks when history returns the same stream segment", () => {
   const current: AgentMessage[] = [
     {
@@ -454,6 +540,30 @@ test("mergeAgentMessages merges stable alphanumeric runtime assistant chunks", (
   assert.equal(merged[0]?.text, "具体消息内容");
 });
 
+test("mergeAgentMessages keeps normalized runtime assistant segments separate without tool history", () => {
+  const merged = mergeAgentMessages(
+    [
+      {
+        id: "session-1-msg-s0",
+        role: "assistant",
+        text: "工具前说明",
+        timestamp: "2026-04-28T10:00:01.000Z",
+      },
+    ],
+    {
+      id: "session-1-msg-s1",
+      role: "assistant",
+      text: "工具后继续",
+      timestamp: "2026-04-28T10:00:03.000Z",
+    },
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.text),
+    ["工具前说明", "工具后继续"],
+  );
+});
+
 test("mergeAgentMessages keeps non-runtime assistant ids separate", () => {
   const merged = mergeAgentMessages(
     [
@@ -500,6 +610,37 @@ test("mergeMessageHistory preserves server order even when timestamps are out of
   assert.deepEqual(
     merged.map((message) => message.id),
     ["assistant-1", "user-1"],
+  );
+});
+
+test("mergeMessageHistory skips assistant history composites already represented by recent messages", () => {
+  const current: AgentMessage[] = [
+    {
+      id: "session-1-msg-s0",
+      role: "assistant",
+      text: "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\n\n我会使用 superpowers:using-superpowers 技能来遵守本会话的技能调用规则，喵~",
+      timestamp: "2026-05-09T09:00:00.000Z",
+    },
+    {
+      id: "session-1-msg-s1",
+      role: "assistant",
+      text: "你好主人，喵~\n\n我在 D:\\myProject\\tools\\Tiller，会按你给的 AGENTS.md / 五行协议来协助：目标先行、最小变更、验证后再交付。需要我做什么？",
+      timestamp: "2026-05-09T09:00:01.000Z",
+    },
+  ];
+
+  const merged = mergeMessageHistory(current, [
+    {
+      id: "provider-message-1",
+      role: "assistant",
+      text: "我会使用 superpowers:using-superpowers 技能来遵守本会话的技能调用规则，喵~\n\n你好主人，喵~\n\n我在 D:\\myProject\\tools\\Tiller，会按你给的 AGENTS.md / 五行协议来协助：目标先行、最小变更、验证后再交付。需要我做什么？",
+      timestamp: "2026-05-09T09:00:02.000Z",
+    },
+  ]);
+
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["session-1-msg-s0", "session-1-msg-s1"],
   );
 });
 

@@ -6,6 +6,7 @@ import type { AgentMessage } from "@tiller/shared";
 import {
   DEFAULT_VISIBLE_MESSAGE_LIMIT,
   PlainMessages,
+  resolvePlainMessageRenderItems,
   resolveVisiblePlainMessages,
 } from "./plain-messages.js";
 
@@ -17,6 +18,19 @@ function message(index: number): AgentMessage {
     timestamp: `2026-05-06T00:${String(index).padStart(2, "0")}:00.000Z`,
   };
 }
+
+test("plain message render keys stay unique for duplicate provider ids", () => {
+  const duplicateMessages: AgentMessage[] = [
+    { ...message(1), id: "session-1-msg-s0", text: "第一段" },
+    { ...message(2), id: "session-1-msg-s0", text: "第二段" },
+    { ...message(3), id: "session-1-msg-s1", text: "第三段" },
+  ];
+
+  assert.deepEqual(
+    resolvePlainMessageRenderItems(duplicateMessages).map((item) => item.renderKey),
+    ["session-1-msg-s0", "session-1-msg-s0#1", "session-1-msg-s1"],
+  );
+});
 
 test("plain message timeline initially renders the latest 20 messages", () => {
   const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
@@ -63,6 +77,69 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
   assert.deepEqual(resolveVisiblePlainMessages(chunks).map((item) => item.text), [
     "具体消息内容",
   ]);
+});
+
+test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
+  const messages: AgentMessage[] = [
+    {
+      id: "wrapper-1",
+      role: "user",
+      text: "[analyze-mode]\nANALYSIS MODE. Gather context before diving deep:",
+      timestamp: "2026-05-06T01:05:01.000Z",
+    },
+    {
+      id: "wrapper-2",
+      role: "user",
+      text: "SYNTHESIZE findings before proceeding.",
+      timestamp: "2026-05-06T01:05:02.000Z",
+    },
+    {
+      id: "wrapper-3",
+      role: "user",
+      text: "---",
+      timestamp: "2026-05-06T01:05:03.000Z",
+    },
+    {
+      id: "real-user",
+      role: "user",
+      text: "帮我分析下现在项目的分支是什么？",
+      timestamp: "2026-05-06T01:05:04.000Z",
+    },
+  ];
+
+  assert.deepEqual(resolveVisiblePlainMessages(messages).map((item) => item.text), [
+    "帮我分析下现在项目的分支是什么？",
+  ]);
+});
+
+test("plain message timeline filters whole OpenCode wrapper echo messages", () => {
+  const wrappedPrompt = [
+    "[analyze-mode]",
+    "ANALYSIS MODE. Gather context before diving deep:",
+    "SYNTHESIZE findings before proceeding.",
+    "---",
+    "MANDATORY delegate_task params: ALWAYS include load_skills=[] and run_in_background when calling delegate_task.",
+    "---",
+    "帮我分析下现在项目的分支是什么？",
+  ].join("\n");
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages([
+      {
+        id: "real-user",
+        role: "user",
+        text: "帮我分析下现在项目的分支是什么？",
+        timestamp: "2026-05-06T01:05:00.000Z",
+      },
+      {
+        id: "wrapper-whole",
+        role: "user",
+        text: wrappedPrompt,
+        timestamp: "2026-05-06T01:05:01.000Z",
+      },
+    ]).map((item) => item.text),
+    ["帮我分析下现在项目的分支是什么？"],
+  );
 });
 
 test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
@@ -127,6 +204,7 @@ test("plain message timeline renders assistant segment dots for tool-boundary sp
   );
 
   assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 3);
+  assert.equal(html.match(/plain-message-role[^>]*sr-only/g)?.length, 2);
   assert.match(html, /第一段/);
   assert.match(html, /第二段/);
   assert.match(html, /第三段/);
@@ -260,5 +338,6 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.match(html, /很长的文本/);
   assert.doesNotMatch(html, /markdown-message/);
   assert.doesNotMatch(html, /<table>/);
+  assert.doesNotMatch(html, />你<\/span>/);
   assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });

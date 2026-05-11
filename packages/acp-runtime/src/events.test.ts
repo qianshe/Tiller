@@ -3,7 +3,31 @@ import test from "node:test";
 import {
   mapSessionUpdateNotification,
   sanitizeProtocolLogPayload,
+  summarizeSessionUpdateNotification,
 } from "./runtime";
+
+test("summarizeSessionUpdateNotification reports update shape without text content", () => {
+  const summary = summarizeSessionUpdateNotification(
+    {
+      sessionId: "sess_123",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "敏感正文" },
+        messageId: "msg_1",
+      },
+    },
+    "message",
+  );
+
+  assert.deepEqual(summary, {
+    sessionId: "sess_123",
+    updateType: "agent_message_chunk",
+    updateKeys: ["content", "messageId", "sessionUpdate"],
+    contentShape: { kind: "object", type: "text", keys: ["text", "type"] },
+    mappedEventType: "message",
+  });
+  assert.doesNotMatch(JSON.stringify(summary), /敏感正文/);
+});
 
 test("mapSessionUpdateNotification maps agent text chunks into Tiller message events", () => {
   const mapped = mapSessionUpdateNotification({

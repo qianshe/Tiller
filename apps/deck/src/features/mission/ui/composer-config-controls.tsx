@@ -135,7 +135,7 @@ export function MissionConfigControls({
         >
           <span>{modelLabel}</span>
           {modelLoading ? (
-            <small className="mission-config-loading-badge rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">加载中</small>
+            <small className="mission-config-loading-badge rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">预热中</small>
           ) : null}
         </button>
         {picker === "model" ? (
@@ -146,7 +146,7 @@ export function MissionConfigControls({
           >
             {modelLoading ? (
               <button type="button" role="option" aria-selected="false" disabled>
-                正在加载模型列表...
+                正在预热 ACP...
               </button>
             ) : null}
             {modelBaseOptions.length === 0 ? (

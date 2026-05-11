@@ -1,4 +1,9 @@
-import { createAcpRuntime, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import {
+  createAcpRuntime,
+  loadAdapterAuthoritativeHistory,
+  type AcpConnectionLifecycleEvent,
+  type SessionRuntimeEvent,
+} from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
@@ -16,7 +21,6 @@ import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
   createHelmSessionStores,
-  loadProviderAuthoritativeHistory,
   normalizeDiffPath,
   readWorkspaceGitDiffs,
   type StoredSessionRuntimeDescriptor,
@@ -70,13 +74,34 @@ type WarmSessionRuntime = {
   attach: (sessionId: string) => void;
   cancel: () => void;
   expiresTimer: ReturnType<typeof setTimeout>;
+  modelState?: AcpModelState;
+  configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"];
+  configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"];
 };
 
 const WARM_RUNTIME_TTL_MS = 5 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
-  const openCodeHistoryRefreshes = new Map<string, number>();
+  const providerHistoryRefreshes = new Map<string, number>();
+
+  function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
+    const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
+      "connection-open": "ACP连接新建",
+      "connection-reuse": "ACP连接复用",
+      "connection-pending": "ACP连接等待",
+      "connection-replace": "ACP连接替换",
+      "connection-reconnect": "ACP连接重连",
+    };
+    options.logInfo(
+      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+    );
+  }
+
   const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
+  const inFlightWarmRuntimes = createWarmRuntimePool<{
+    consumed: boolean;
+    promise: Promise<WarmSessionRuntime>;
+  }>();
 
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -167,14 +192,14 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
   }
 
-  async function importAuthoritativeOpenCodeHistory(
+  async function importAuthoritativeProviderHistory(
     sessionId: string,
     agent: AcpAgentProvider,
     runtimeSessionId: string,
     cwd: string,
   ) {
     try {
-      const history = await loadProviderAuthoritativeHistory(agent, runtimeSessionId, cwd);
+      const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
       if (!history) {
         return false;
       }
@@ -183,7 +208,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
         }
         options.logInfo(
-          `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+          `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
         );
         return true;
       }
@@ -219,12 +244,12 @@ export function createSessionServices(options: SessionServicesOptions) {
         options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
       }
       options.logInfo(
-        `[tiller] opencode.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
       );
       return true;
     } catch (error) {
       options.logError(
-        `[tiller] opencode.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "OpenCode export failed."}`,
+        `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
       );
       return false;
     }
@@ -271,7 +296,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   async function refreshAuthoritativeSessionHistory(sessionId: string) {
-    const lastRefresh = openCodeHistoryRefreshes.get(sessionId);
+    const lastRefresh = providerHistoryRefreshes.get(sessionId);
     if (lastRefresh && Date.now() - lastRefresh < 30_000) {
       return;
     }
@@ -293,14 +318,14 @@ export function createSessionServices(options: SessionServicesOptions) {
       return;
     }
 
-    const refreshed = await importAuthoritativeOpenCodeHistory(
+    const refreshed = await importAuthoritativeProviderHistory(
       sessionId,
       agent,
       runtimeSessionId,
       workspace.path,
     );
     if (refreshed) {
-      openCodeHistoryRefreshes.set(sessionId, Date.now());
+      providerHistoryRefreshes.set(sessionId, Date.now());
     }
   }
 
@@ -320,6 +345,71 @@ export function createSessionServices(options: SessionServicesOptions) {
     };
   }
 
+  function warmRuntimeMatchesConfig(
+    warm: WarmSessionRuntime,
+    sessionConfig?: SessionRuntimeConfig,
+    matchOptions?: { requireKnownModel?: boolean },
+  ) {
+    const currentModel = warm.modelState?.currentModelId ?? warm.configState.model;
+    if (sessionConfig?.model && !currentModel && matchOptions?.requireKnownModel) {
+      return false;
+    }
+    if (sessionConfig?.model && currentModel && sessionConfig.model !== currentModel) {
+      return false;
+    }
+    if (
+      sessionConfig?.agentMode &&
+      warm.configState.agentMode &&
+      sessionConfig.agentMode !== warm.configState.agentMode
+    ) {
+      return false;
+    }
+    if (
+      sessionConfig?.reasoningEffort &&
+      warm.configState.reasoningEffort &&
+      sessionConfig.reasoningEffort !== warm.configState.reasoningEffort
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  async function takeWarmRuntimeByKey(
+    key: WarmRuntimeKey,
+    sessionConfig?: SessionRuntimeConfig,
+    matchOptions?: { requireKnownModel?: boolean },
+  ) {
+    const warm = warmRuntimes.take(key);
+    if (warm) {
+      if (!warmRuntimeMatchesConfig(warm, sessionConfig, matchOptions)) {
+        warmRuntimes.set(key, warm);
+        return undefined;
+      }
+      clearTimeout(warm.expiresTimer);
+      return warm;
+    }
+
+    const pending = inFlightWarmRuntimes.take(key);
+    if (!pending) {
+      return undefined;
+    }
+    pending.consumed = true;
+    try {
+      const inFlightWarm = await pending.promise;
+      if (!warmRuntimeMatchesConfig(inFlightWarm, sessionConfig, matchOptions)) {
+        warmRuntimes.set(key, inFlightWarm);
+        return undefined;
+      }
+      clearTimeout(inFlightWarm.expiresTimer);
+      return inFlightWarm;
+    } catch (error) {
+      options.logError(
+        `[tiller] 阶段=预热ACP复用失败 message=${error instanceof Error ? error.message : "Unknown prewarm error"}`,
+      );
+      return undefined;
+    }
+  }
+
   async function prewarmRuntime(params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
@@ -334,82 +424,161 @@ export function createSessionServices(options: SessionServicesOptions) {
         providerId: params.agent.id,
         workspaceId: params.workspace.id,
         runtimeSessionId: existing.runtime.runtimeSessionId,
+        currentModelId: existing.modelState?.currentModelId ?? existing.configState.model,
+        modelOptions: existing.modelState?.options ?? [],
+        configOptions: existing.configOptions,
+        state: existing.configState,
         message: "ACP runtime is already prewarmed.",
+      };
+    }
+
+    const pending = inFlightWarmRuntimes.get(key);
+    if (pending) {
+      const warm = await pending.promise;
+      return {
+        ok: true,
+        warmed: false,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: warm.runtime.runtimeSessionId,
+        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
+        modelOptions: warm.modelState?.options ?? [],
+        configOptions: warm.configOptions,
+        state: warm.configState,
+        message: "ACP runtime prewarm is already in progress.",
       };
     }
 
     const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
     let attachedSessionId: string | null = null;
+    let modelState: AcpModelState | undefined;
+    let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
+    let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     options.logInfo(
       `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
 
-    const runtime = await createAcpRuntime({
-      sessionId: warmSessionId,
-      workspace: params.workspace,
-      agent: params.agent,
-      sessionConfig: params.sessionConfig,
-      onEvent: (event) => {
-        if (attachedSessionId) {
-          handleRuntimeEvent(attachedSessionId, event);
-          return;
-        }
-        if (event.type === "error") {
-          options.logError(
-            `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+    const reservation = {
+      consumed: false,
+      promise: createAcpRuntime({
+        sessionId: warmSessionId,
+        workspace: params.workspace,
+        agent: params.agent,
+        sessionConfig: params.sessionConfig,
+        onConnectionLifecycleEvent: logConnectionLifecycle,
+        onEvent: (event) => {
+          if (attachedSessionId) {
+            handleRuntimeEvent(attachedSessionId, event);
+            return;
+          }
+          if (event.type === "model-options") {
+            modelState = event.state;
+            return;
+          }
+          if (event.type === "config-options") {
+            configState = event.state;
+            configOptions = event.options;
+            return;
+          }
+          if (event.type === "error") {
+            options.logError(
+              `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+            );
+          }
+        },
+      }).then((runtime) => {
+        const expiresTimer = setTimeout(() => {
+          const expired = warmRuntimes.take(key);
+          if (!expired) {
+            return;
+          }
+          expired.cancel();
+          options.logInfo(
+            `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
           );
-        }
-      },
-    });
+        }, WARM_RUNTIME_TTL_MS);
+        expiresTimer.unref?.();
+        const initialModelState = modelState ?? runtime.sessionModelState;
+        const initialConfigOptions = configOptions.length
+          ? configOptions
+          : runtime.sessionConfigOptions;
+        const initialConfigState = Object.keys(configState).length
+          ? configState
+          : runtime.sessionConfigState;
 
-    const expiresTimer = setTimeout(() => {
-      const expired = warmRuntimes.take(key);
-      if (!expired) {
-        return;
-      }
-      expired.cancel();
-      options.logInfo(
-        `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-      );
-    }, WARM_RUNTIME_TTL_MS);
-    expiresTimer.unref?.();
-
-    warmRuntimes.set(key, {
-      runtime,
-      attach: (sessionId) => {
-        attachedSessionId = sessionId;
-      },
-      cancel: () => runtime.cancel(),
-      expiresTimer,
-    });
-    options.logInfo(
-      `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-    );
-    return {
-      ok: true,
-      warmed: true,
-      providerId: params.agent.id,
-      workspaceId: params.workspace.id,
-      runtimeSessionId: runtime.runtimeSessionId,
-      message: "ACP runtime prewarmed.",
+        return {
+          runtime,
+          attach: (sessionId: string) => {
+            attachedSessionId = sessionId;
+          },
+          cancel: () => runtime.cancel(),
+          expiresTimer,
+          modelState: initialModelState,
+          configState: initialConfigState,
+          configOptions: initialConfigOptions,
+        } satisfies WarmSessionRuntime;
+      }),
     };
+    inFlightWarmRuntimes.set(key, reservation);
+
+    try {
+      const warm = await reservation.promise;
+      inFlightWarmRuntimes.delete(key);
+      if (!reservation.consumed) {
+        warmRuntimes.set(key, warm);
+      }
+      options.logInfo(
+        `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${warm.runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      );
+      return {
+        ok: true,
+        warmed: true,
+        providerId: params.agent.id,
+        workspaceId: params.workspace.id,
+        runtimeSessionId: warm.runtime.runtimeSessionId,
+        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
+        modelOptions: warm.modelState?.options ?? [],
+        configOptions: warm.configOptions,
+        state: warm.configState,
+        message: "ACP runtime prewarmed.",
+      };
+    } catch (error) {
+      inFlightWarmRuntimes.delete(key);
+      throw error;
+    }
   }
 
-  function takePrewarmedRuntime(params: {
+  async function takePrewarmedRuntime(params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
     sessionConfig?: SessionRuntimeConfig;
   }) {
-    const warm = warmRuntimes.take(
-      resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig),
-    );
+    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
+    const warm = await takeWarmRuntimeByKey(key, params.sessionConfig);
     if (warm) {
-      clearTimeout(warm.expiresTimer);
       options.logInfo(
         `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
       );
+      return warm;
     }
-    return warm;
+
+    if (params.sessionConfig?.model) {
+      const defaultModelKey = resolveWarmRuntimeKey(params.workspace, params.agent, {
+        ...params.sessionConfig,
+        model: undefined,
+      });
+      const defaultModelWarm = await takeWarmRuntimeByKey(defaultModelKey, params.sessionConfig, {
+        requireKnownModel: true,
+      });
+      if (defaultModelWarm) {
+        options.logInfo(
+          `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${defaultModelWarm.runtime.runtimeSessionId}`,
+        );
+        return defaultModelWarm;
+      }
+    }
+
+    return undefined;
   }
 
   async function startSessionResume(sessionId: string) {
@@ -488,6 +657,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         onRestoreReplayEvent: (event) => {
           restoreReplayBuffer.add(event);
         },
+        onConnectionLifecycleEvent: logConnectionLifecycle,
       });
       const replayCounts = restoreReplayBuffer.flush();
       options.logInfo(
@@ -505,7 +675,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       options.sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
       options.sessionStore.upsert(restoredSummary);
       persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-      await importAuthoritativeOpenCodeHistory(
+      await importAuthoritativeProviderHistory(
         sessionId,
         agent,
         runtime.runtimeSessionId,

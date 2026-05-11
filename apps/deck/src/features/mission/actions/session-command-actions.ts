@@ -21,6 +21,7 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "./session-actions";
+import { resolveSessionRestoreGate } from "../utils/session-state";
 
 type MutableRef<T> = { current: T };
 
@@ -31,6 +32,8 @@ type UseSessionCommandActionsOptions = {
   rpcClientRef: MutableRef<DeckRpcClient | null>;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
+  activeSession?: SessionSummary | null;
+  statuses: Record<string, SessionSummary["status"]>;
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
   selectedWorkspace?: WorkspaceSummary | null;
@@ -63,6 +66,15 @@ function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
   return Boolean(client && client.socket.readyState === WebSocket.OPEN);
 }
 
+function mergeWorkspaceOptions(
+  left: WorkspaceSummary[],
+  right: WorkspaceSummary[],
+): WorkspaceSummary[] {
+  const byId = new Map(left.map((workspace) => [workspace.id, workspace]));
+  right.forEach((workspace) => byId.set(workspace.id, workspace));
+  return Array.from(byId.values());
+}
+
 export function useSessionCommandActions({
   prompt,
   promptImages,
@@ -70,6 +82,8 @@ export function useSessionCommandActions({
   rpcClientRef,
   setImagePasteNotice,
   activeSessionId,
+  activeSession,
+  statuses,
   selectedProjectId,
   projects,
   selectedWorkspace,
@@ -95,13 +109,17 @@ export function useSessionCommandActions({
   function createSession(
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
+    agentIdOverride?: string,
+    workspaceOverride?: WorkspaceSummary,
   ) {
     return createSessionImpl(initialPrompt, initialContent, {
       selectedProjectId,
       projects,
-      selectedWorkspace,
-      filteredWorkspaces,
-      selectedAgentId,
+      selectedWorkspace: workspaceOverride ?? selectedWorkspace,
+      filteredWorkspaces: workspaceOverride
+        ? mergeWorkspaceOptions(filteredWorkspaces, [workspaceOverride])
+        : filteredWorkspaces,
+      selectedAgentId: agentIdOverride ?? selectedAgentId,
       filteredAgents,
       rpcClientRef,
       pendingPromptRef,
@@ -113,6 +131,10 @@ export function useSessionCommandActions({
       selectedReasoningEffort,
       navigateToView,
     });
+  }
+
+  function createDraftSessionForAgent(agentId: string, workspaceOverride?: WorkspaceSummary) {
+    return createSession(undefined, undefined, agentId, workspaceOverride);
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {
@@ -137,12 +159,23 @@ export function useSessionCommandActions({
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
+    const activeSessionStatus = activeSession
+      ? (statuses[activeSession.id] ?? activeSession.status)
+      : "idle";
+    const activeSessionRestoreGate = resolveSessionRestoreGate({
+      activeSession,
+      activeSessionStatus,
+      resumeStartPending: Boolean(
+        activeSession && resumeStartRequestsRef.current.has(activeSession.id),
+      ),
+    });
     submitPromptImpl(event, {
       prompt,
       promptImages,
       rpcClientRef,
       setImagePasteNotice,
       activeSessionId,
+      activeSessionCanChat: activeSessionRestoreGate.canChat,
       createSession,
       setPrompt,
       setPromptImages,
@@ -215,6 +248,7 @@ export function useSessionCommandActions({
   return {
     cancelSession,
     cleanupSession,
+    createDraftSessionForAgent,
     createSession,
     requestSessionResumeStart,
     respondToPermission,

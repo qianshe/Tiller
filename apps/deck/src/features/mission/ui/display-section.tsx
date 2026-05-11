@@ -7,7 +7,7 @@ import type {
 } from "@tiller/shared";
 import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
-import { MissionDisplayPanel } from "./display-panel";
+import { MissionDisplayPanel, type RuntimeOverviewItem } from "./display-panel";
 import { LogbookPanel } from "./logbook-panel";
 import type { MissionPanelPage } from "./panels";
 
@@ -22,12 +22,14 @@ type MissionDisplaySectionProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
   selectedPage: MissionPanelPage;
-  selectedDiffFilePath: string | null;
-  diffs: FileDiffSummary[];
   diffCount: number;
   logCount: number;
   overviewItems: string[];
+  runtimeOverviewItems: RuntimeOverviewItem[];
+  selectedDiffFilePath: string | null;
+  diffs: FileDiffSummary[];
   noDiffSummary: string;
+  onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   activeSession: SessionSummary | null;
   statusLabel: string;
   sessionToolCalls: AgentToolCall[];
@@ -37,18 +39,15 @@ type MissionDisplaySectionProps = {
   visibleCount: number;
   visibleLimit: number;
   copy: MissionDisplaySectionCopy;
-  collapsedDiffDirectories: ReadonlySet<string>;
   onShowMore: (sessionId: string, nextVisibleCount: number) => void;
   onLoadOlder: (sessionId: string) => void;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
   onDrop: (pageId: string) => void;
-  onOpenDiffDetail: (path: string) => void;
   onRenamePage: (pageId: string, title: string) => void;
   onMovePage: (pageId: string, direction: -1 | 1) => void;
   onDeletePage: (pageId: string) => void;
-  onToggleDiffDirectory: (path: string) => void;
 };
 
 /**
@@ -58,12 +57,14 @@ export function MissionDisplaySection({
   style,
   pages,
   selectedPage,
-  selectedDiffFilePath,
-  diffs,
   diffCount,
   logCount,
   overviewItems,
+  runtimeOverviewItems,
+  selectedDiffFilePath,
+  diffs,
   noDiffSummary,
+  onReconnectRuntime,
   activeSession,
   statusLabel,
   sessionToolCalls,
@@ -73,30 +74,27 @@ export function MissionDisplaySection({
   visibleCount,
   visibleLimit,
   copy,
-  collapsedDiffDirectories,
   onShowMore,
   onLoadOlder,
   onAddPage,
   onSelectPage,
   onDragStart,
   onDrop,
-  onOpenDiffDetail,
   onRenamePage,
   onMovePage,
   onDeletePage,
-  onToggleDiffDirectory,
 }: MissionDisplaySectionProps) {
   return (
     <MissionDisplayPanel
       style={style}
       pages={pages}
       selectedPage={selectedPage}
+      overviewItems={overviewItems}
+      runtimeOverviewItems={runtimeOverviewItems}
       selectedDiffFilePath={selectedDiffFilePath}
       diffs={diffs}
-      diffCount={diffCount}
-      logCount={logCount}
-      overviewItems={overviewItems}
       noDiffSummary={noDiffSummary}
+      onReconnectRuntime={onReconnectRuntime}
       logbookContent={
         <LogbookPanel
           activeSession={activeSession}
@@ -114,16 +112,13 @@ export function MissionDisplaySection({
           onLoadOlder={onLoadOlder}
         />
       }
-      collapsedDiffDirectories={collapsedDiffDirectories}
       onAddPage={onAddPage}
       onSelectPage={onSelectPage}
       onDragStart={onDragStart}
       onDrop={onDrop}
-      onOpenDiffDetail={onOpenDiffDetail}
       onRenamePage={onRenamePage}
       onMovePage={onMovePage}
       onDeletePage={onDeletePage}
-      onToggleDiffDirectory={onToggleDiffDirectory}
     />
   );
 }

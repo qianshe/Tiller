@@ -70,6 +70,72 @@ test("applyDeviceResult syncs device/list RPC results into the current helm", ()
   assert.equal(useDeckStore.getState().trustedDevices[0]?.deviceId, "deck-1");
 });
 
+test("applyDeviceResult completes pending Helm add when auth-disabled sync reaches device/list", () => {
+  resetStore();
+  useDeckStore.setState({ pairingState: "paired" });
+  const persistedProfiles: unknown[] = [];
+  const localStorageWrites: Record<string, string> = {};
+  const modalStates: boolean[] = [];
+  const stages: string[] = [];
+  const pendingAddHelmProfileRef = {
+    current: {
+      id: "phone-helm-192-168-1-9-47631",
+      name: "Phone Helm",
+      host: "192.168.1.9",
+      port: "47631",
+    },
+  };
+
+  const previousWindow = globalThis.window;
+  (globalThis as any).window = {
+    localStorage: {
+      setItem(key: string, value: string) {
+        localStorageWrites[key] = value;
+      },
+    },
+  };
+
+  try {
+    const handled = applyDeviceResult("device/list", { devices: [] }, "192.168.1.9:47631", {
+      primaryHelmKeyRef: { current: "192.168.1.9:47631" },
+      daemonProfileKey: (host: string, port: string) => `${host}:${port}`,
+      daemonHost: "localhost",
+      daemonPort: "47631",
+      defaultDaemonHost: "localhost",
+      defaultDaemonPort: "47631",
+      deckDeviceId: "deck-1",
+      pendingAddHelmProfileRef,
+      writeTrustedDeviceCache: () => undefined,
+      persistDaemonProfile: (profile: unknown) => persistedProfiles.push(profile),
+      daemonHostStorageKey: "tiller.daemon-host",
+      daemonPortStorageKey: "tiller.daemon-port",
+      setSelectedHelmKey: () => undefined,
+      setFleetAddHelmModalOpen: (open: boolean) => modalStates.push(open),
+      setFleetAddHelmStage: (stage: string) => stages.push(stage),
+      autoConnectAttemptRef: { current: null },
+      rpcClientRef: { current: null },
+      requestInitialSync: () => undefined,
+      readTrustedDeviceCache: () => null,
+      clearTrustedDeviceCache: () => undefined,
+    } as any);
+
+    assert.equal(handled, true);
+    assert.deepEqual(persistedProfiles, [{
+      id: "phone-helm-192-168-1-9-47631",
+      name: "Phone Helm",
+      host: "192.168.1.9",
+      port: "47631",
+    }]);
+    assert.equal(localStorageWrites["tiller.daemon-host"], "192.168.1.9");
+    assert.equal(localStorageWrites["tiller.daemon-port"], "47631");
+    assert.deepEqual(modalStates, [false]);
+    assert.deepEqual(stages, ["connect"]);
+    assert.equal(pendingAddHelmProfileRef.current, null);
+  } finally {
+    (globalThis as any).window = previousWindow;
+  }
+});
+
 test("applySessionUpdate routes agent_message notifications into activity state without changing prompt metadata", () => {
   resetStore();
   useDeckStore.setState({

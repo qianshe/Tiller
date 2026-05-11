@@ -21,6 +21,7 @@ type UseSelectionOptions = {
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
+  setSelectedModel: Dispatch<SetStateAction<string>>;
   setActiveSessionId: (sessionId: string | null) => void;
   setWorktreePickerOpen: Dispatch<SetStateAction<boolean>>;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
@@ -48,6 +49,7 @@ export function useSelection({
   setSelectedProjectId,
   setSelectedWorkspaceId,
   setSelectedAgentId,
+  setSelectedModel,
   setActiveSessionId,
   setWorktreePickerOpen,
   setAgentPickerOpen,
@@ -76,6 +78,7 @@ export function useSelection({
   }
 
   function selectDraftAgent(agentId: string) {
+    setSelectedModel("provider-default");
     setSelectedAgentId(agentId);
     setAgentPickerOpen(false);
   }
@@ -87,6 +90,10 @@ export function useSelection({
       projects.find((project) => project.helmId === helmId) ?? null;
     requestChatScrollToBottom(null);
     setSelectedProjectId(nextProject?.id ?? null);
+    setSelectedAgentId(null);
+    setSelectedModel("provider-default");
+    setAgentPickerOpen(false);
+    setWorktreePickerOpen(false);
     setActiveSessionId(null);
   }
 
@@ -105,11 +112,10 @@ export function useSelection({
           ? current
           : (project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null),
       );
-      setSelectedAgentId((current) =>
-        agents.some((agent) => agent.id === current)
-          ? current
-          : (project.defaultAgentId ?? agents[0]?.id ?? null),
-      );
+      setSelectedAgentId(null);
+      setSelectedModel("provider-default");
+      setAgentPickerOpen(false);
+      setWorktreePickerOpen(false);
     }
     setSelectedProjectId(projectId);
     requestChatScrollToBottom(null);

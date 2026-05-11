@@ -6,11 +6,6 @@ export {
   readWorkspaceGitDiffs,
 } from "./git-diff";
 export {
-  loadProviderAuthoritativeHistory,
-  loadOpenCodeExportHistory,
-  parseOpenCodeExportHistory,
-} from "./opencode-export";
-export {
   alignSessionProjectBinding,
   isProjectRootBranchWorkspace,
 } from "./project/binding";

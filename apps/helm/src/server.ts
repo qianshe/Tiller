@@ -3,6 +3,7 @@ import qrcode from "qrcode-terminal";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import {
+  ensureTillerConfigDefaults,
   getDefaultConfigPath,
   listAvailableProjects as listConfiguredProjects,
   listAvailableProviders,
@@ -16,7 +17,7 @@ import {
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
-import { createAcpRuntime, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
@@ -57,6 +58,7 @@ import { createSocketState } from "./state/socket";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
+ensureTillerConfigDefaults(configPath);
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
 const {
@@ -235,6 +237,29 @@ server.on("error", (error) => {
   logError(`[tiller] websocket error: ${error.message}`);
 });
 
+let shutdownStarted = false;
+
+async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
+  if (shutdownStarted) {
+    return;
+  }
+  shutdownStarted = true;
+  logInfo(`[tiller] shutdown reason=${reason}; closing ACP connections`);
+  server.close();
+  httpServer.close();
+  await disposeAcpConnections();
+  logInfo(`[tiller] shutdown complete reason=${reason}`);
+  process.exit(0);
+}
+
+process.once("SIGINT", (signal) => {
+  void shutdownHelm(signal);
+});
+
+process.once("SIGTERM", (signal) => {
+  void shutdownHelm(signal);
+});
+
 process.on("uncaughtException", (error) => {
   logError(`[tiller] uncaught exception: ${error.stack ?? error.message}`);
 });
@@ -270,6 +295,11 @@ function createHandlerContext(): HelmHandlerContext {
     logDebug,
     logWarn,
     logError,
+    requestShutdown: (reason) => {
+      setTimeout(() => {
+        void shutdownHelm(reason);
+      }, 0);
+    },
     getHelms: () => helms,
     setHelms: (items) => {
       helms = items;
@@ -300,6 +330,9 @@ function createHandlerContext(): HelmHandlerContext {
     sessionArtifactStore,
     sessionRuntimeStore,
     createRuntime: createAcpRuntime,
+    connectAcpConnection,
+    reconnectAcpConnection,
+    listAcpConnectionInventory,
     prewarmRuntime,
     takePrewarmedRuntime,
     testAcpConnection,
@@ -327,6 +360,7 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   let modelState: AcpModelState | undefined;
   let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
   let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
+  let availableCommands: Extract<SessionRuntimeEvent, { type: "available-commands" }>["commands"] = [];
 
   logInfo(
     `[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`,
@@ -346,6 +380,8 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
         } else if (event.type === "config-options") {
           configState = event.state;
           configOptions = event.options;
+        } else if (event.type === "available-commands") {
+          availableCommands = event.commands;
         } else if (event.type === "error") {
           logError(
             `[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
@@ -354,6 +390,14 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
       },
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    modelState = modelState ?? runtime.sessionModelState;
+    if (!configOptions.length) {
+      configOptions = runtime.sessionConfigOptions;
+    }
+    if (!Object.keys(configState).length) {
+      configState = runtime.sessionConfigState;
+    }
     runtime.cancel();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
@@ -366,24 +410,29 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
       currentModelId: undefined,
       modelOptions: [],
       configOptions: [],
+      availableCommands: [],
       state: {},
     };
   }
 
   const modelCount = modelState?.options.length ?? 0;
+  const commandCount = availableCommands.length;
   logInfo(
-    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length}`,
+    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length} commands=${commandCount}`,
   );
 
   return {
-    ok: modelCount > 0 || configOptions.length > 0,
+    ok: modelCount > 0 || configOptions.length > 0 || commandCount > 0,
     message:
       modelCount > 0 || configOptions.length > 0
         ? `Loaded ${modelCount || configOptions.length} model option(s).`
-        : "Agent did not return model options.",
+        : commandCount > 0
+          ? `Loaded ${commandCount} command(s).`
+          : "Agent did not return model options.",
     currentModelId: modelState?.currentModelId ?? configState.model,
     modelOptions: modelState?.options ?? [],
     configOptions,
+    availableCommands,
     state: configState,
   };
 }

@@ -18,6 +18,9 @@ type SidebarProjectNodeProps = {
   projectExpanded: boolean;
   sessionCountsByProject: Record<string, number>;
   agents: AcpAgentProvider[];
+  selectedAgentId: string | null;
+  agentPickerOpen: boolean;
+  selectDraftAgent: (agentId: string) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
@@ -49,6 +52,9 @@ export function SidebarProjectNode({
   projectExpanded,
   sessionCountsByProject,
   agents,
+  selectedAgentId,
+  agentPickerOpen,
+  selectDraftAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
   setSelectedWorkspaceId,
@@ -76,7 +82,7 @@ export function SidebarProjectNode({
     <div key={project.id} className="mission-tree-group grid gap-1" role="group">
       <div
         className={cn(
-          "mission-tree-project-row group/project grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-xl",
+          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-xl",
           selectedProject && "active bg-primary-soft/60",
         )}
       >
@@ -101,9 +107,8 @@ export function SidebarProjectNode({
           >
             {projectExpanded ? "📂" : "📁"}
           </span>
-          <span className="mission-tree-main grid min-w-0 gap-0.5">
+          <span className="mission-tree-main grid min-w-0">
             <strong className="truncate font-semibold">{project.name}</strong>
-            <span className="truncate text-xs text-muted-foreground">Project</span>
           </span>
           <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
             {sessionCountsByProject[project.id] ?? 0}
@@ -114,6 +119,7 @@ export function SidebarProjectNode({
           variant="ghost"
           size="icon"
           className="mission-tree-new-inline size-7 shrink-0 rounded-lg text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
+          onMouseDown={(event) => event.stopPropagation()}
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);
             setSelectedProjectId(project.id);
@@ -128,10 +134,39 @@ export function SidebarProjectNode({
             setActiveSessionId(null);
           }}
           aria-label={`在 ${project.name} 下新建任务`}
+          aria-haspopup="listbox"
+          aria-expanded={selectedProject && agentPickerOpen}
           title="新建任务"
         >
           ＋
         </Button>
+        {selectedProject && agentPickerOpen ? (
+          <div
+            className="mission-tree-agent-menu absolute right-0 top-full z-50 mt-2 grid min-w-40 gap-1 rounded-xl border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+            role="listbox"
+            aria-label="选择 ACP Agent"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            {agents.map((agent) => (
+              <button
+                key={agent.id}
+                type="button"
+                role="option"
+                aria-selected={agent.id === selectedAgentId}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary",
+                  agent.id === selectedAgentId && "active bg-primary-soft text-primary",
+                )}
+                onClick={() => {
+                  setAgentPickerOpen(false);
+                  selectDraftAgent(agent.id);
+                }}
+              >
+                {agent.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {projectExpanded ? (
         <div

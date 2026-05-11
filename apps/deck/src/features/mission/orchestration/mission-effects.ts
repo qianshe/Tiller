@@ -17,7 +17,6 @@ export function useMissionEffects(ctx: any) {
   const source = buildMissionEffectsSource(ctx);
   const {
     projects,
-    setSelectedProjectId,
     pairingState,
     rpcClientRef,
     dispatch,
@@ -58,6 +57,7 @@ export function useMissionEffects(ctx: any) {
     setWorkspaces,
     setAgents,
     setStatuses,
+    setResumeFeedback,
     trustedDevice,
     autoConnectAttemptRef,
     manualDisconnectRef,
@@ -143,6 +143,7 @@ useEffect(() => {
     sessionId: activeSessionId,
     limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
   });
+  setResumeFeedback("正在检查 ACP 会话恢复能力...");
   void dispatch(rpcClientRef.current, "session/check_resume", {
     sessionId: activeSessionId,
   });
@@ -197,7 +198,6 @@ useSnapshotCache({
   setWorkspaces,
   setAgents,
   setStatuses,
-  setSelectedProjectId,
 });
 useReconnectEffects({
   activeProfileId,

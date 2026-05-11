@@ -1,9 +1,10 @@
 import type { WebSocket } from "ws";
-import type { createAcpRuntime } from "@tiller/acp-runtime";
+import type { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection } from "@tiller/acp-runtime";
 import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AvailableCommand,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
@@ -33,6 +34,7 @@ export type ModelOptionsProbeResult = {
     import("@tiller/acp-runtime").SessionRuntimeEvent,
     { type: "config-options" }
   >["options"];
+  availableCommands: AvailableCommand[];
   state: Extract<
     import("@tiller/acp-runtime").SessionRuntimeEvent,
     { type: "config-options" }
@@ -47,6 +49,7 @@ export type HelmHandlerContext = {
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
   logError: (message: string) => void;
+  requestShutdown?: (reason: "rpc") => void;
 
   getHelms: () => HelmSummary[];
   setHelms: (items: HelmSummary[]) => void;
@@ -73,6 +76,9 @@ export type HelmHandlerContext = {
   sessionRuntimeStore: any;
 
   createRuntime: typeof createAcpRuntime;
+  connectAcpConnection: typeof connectAcpConnection;
+  reconnectAcpConnection: typeof reconnectAcpConnection;
+  listAcpConnectionInventory: typeof listAcpConnectionInventory;
   prewarmRuntime: (params: {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
@@ -97,14 +103,15 @@ export type HelmHandlerContext = {
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     };
-  }) =>
+  }) => Promise<
     | {
         runtime: SessionRecord["runtime"];
         attach: (sessionId: string) => void;
         cancel: () => void;
         expiresTimer: ReturnType<typeof setTimeout>;
       }
-    | undefined;
+    | undefined
+  >;
   testAcpConnection: (
     agent: AcpAgentProvider,
     cwd?: string,

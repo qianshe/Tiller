@@ -34,21 +34,21 @@ export function SessionOverviewCard({
       ];
 
   return (
-    <Card className="sticky top-0 z-10 grid gap-3 p-3 shadow-none">
-      <CardHeader className="p-0">
+    <Card className="mission-session-overview sticky top-0 z-10 grid gap-3 p-3 shadow-none">
+      <CardHeader className="mission-session-overview-header p-0">
         <CardTitle>{activeSession ? "会话信息" : "新任务"}</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3 p-0">
-        <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
+      <CardContent className="mission-session-overview-content grid gap-3 p-0">
+        <div className="mission-session-metrics grid grid-cols-2 gap-2 max-md:grid-cols-1">
           {cards.map((card) => (
-            <article key={card.label} className="grid gap-1 rounded-md bg-surface-sunken p-3">
+            <article key={card.label} className="mission-session-metric grid gap-1 rounded-md bg-surface-sunken p-3">
               <span className="text-xs font-semibold text-muted-foreground">{card.label}</span>
               <strong className="text-base font-semibold text-foreground">{card.value}</strong>
-              <small className="text-xs text-muted-foreground">{card.meta}</small>
+              <small className="mission-session-meta text-xs text-muted-foreground">{card.meta}</small>
             </article>
           ))}
         </div>
-        <div className="grid gap-1 rounded-md bg-surface-sunken p-3">
+        <div className="mission-session-preview grid gap-1 rounded-md bg-surface-sunken p-3">
           <span className="text-xs font-semibold text-muted-foreground">最近活动</span>
           <strong className="line-clamp-3 text-sm leading-relaxed text-foreground">
             {activeSession?.lastMessagePreview || "暂无预览"}

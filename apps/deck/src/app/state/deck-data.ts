@@ -99,6 +99,8 @@ export function useDeckData(missionVisualFixture: any) {
 
   const agentModelOptions = useDeckStore((state) => state.agentModelOptions);
   const setAgentModelOptions = useDeckStore((state) => state.setAgentModelOptions);
+  const agentConnectionInventory = useDeckStore((state) => state.agentConnectionInventory);
+  const setAgentConnectionInventory = useDeckStore((state) => state.setAgentConnectionInventory);
 
   const deckPreferences = useDeckStore((state) => state.preferences);
   const updatePreferences = useDeckStore((state) => state.updatePreferences);
@@ -173,6 +175,8 @@ export function useDeckData(missionVisualFixture: any) {
     refreshAgentAvailableCommands,
     agentModelOptions,
     setAgentModelOptions,
+    agentConnectionInventory,
+    setAgentConnectionInventory,
     deckPreferences,
     updatePreferences,
     activeSessionId,

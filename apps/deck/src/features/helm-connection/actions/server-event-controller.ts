@@ -88,7 +88,14 @@ export function createServerEventController(source: any, helpers: any) {
 
   function sourceIsCurrent(sourceHelmKey: string) {
     const currentEventHelmKey = primaryHelmKeyRef.current ?? defaultHelmKey();
-    return sourceHelmKey === currentEventHelmKey;
+    if (sourceHelmKey === currentEventHelmKey) {
+      return true;
+    }
+    const [sourceHost, sourcePort] = sourceHelmKey.split(":");
+    const [currentHost, currentPort] = currentEventHelmKey.split(":");
+    const sourceIsLoopback = sourceHost === "localhost" || sourceHost === "127.0.0.1";
+    const currentIsLoopback = currentHost === "localhost" || currentHost === "127.0.0.1";
+    return Boolean(sourcePort && sourcePort === currentPort && sourceIsLoopback && currentIsLoopback);
   }
 
   function deviceContext() {

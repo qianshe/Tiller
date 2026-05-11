@@ -5,7 +5,10 @@ import {
   resolveMissionActivityLoading,
   selectMissionPanelPage,
 } from "../utils/session-render-state";
-import { isSessionExecutionPending } from "../utils/session-state";
+import {
+  isSessionExecutionPending,
+  resolveSessionRestoreGate,
+} from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
 
 export function buildMissionWorkspaceModel(input: any) {
@@ -36,11 +39,25 @@ export function buildMissionWorkspaceModel(input: any) {
     effectiveMissionHelmId,
     activeHelm,
     missionProjects,
+    workspaces,
+    resumeStartRequestsRef,
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
   const effectiveAgentId = selectedAgentId;
+  const activeSessionStatus = activeSession
+    ? (statuses[activeSession.id] ?? activeSession.status)
+    : "idle";
+  const activeSessionRestoreGate = resolveSessionRestoreGate({
+    activeSession,
+    activeSessionStatus,
+    resumeStartPending: Boolean(
+      activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
+    ),
+  });
   const canSend = Boolean(
+    activeSessionRestoreGate.canChat &&
+    activeSessionStatus !== "starting" &&
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
     (activeSessionId ||
@@ -58,9 +75,6 @@ export function buildMissionWorkspaceModel(input: any) {
   const activeToolCalls = activeSession
     ? (toolCalls[activeSession.id] ?? [])
     : [];
-  const activeSessionStatus = activeSession
-    ? (statuses[activeSession.id] ?? activeSession.status)
-    : "idle";
   const pendingToolActivity =
     activeSession && isSessionExecutionPending(activeSessionStatus)
       ? resolvePendingToolActivity(activeToolCalls)
@@ -102,20 +116,25 @@ export function buildMissionWorkspaceModel(input: any) {
   const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
+  const overviewWorkspace = activeSession
+    ? ((workspaces ?? []).find((workspace: any) => workspace.id === activeSession.workspaceId) ??
+      selectedWorkspace)
+    : selectedWorkspace;
   const overviewWorkspaceName =
-    activeSession?.workspaceName ?? selectedWorkspace?.name ?? "未选择";
+    activeSession?.workspaceName ?? overviewWorkspace?.name ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
   const currentGitBranch =
     activeSessionProject?.gitCurrentBranch ?? draftProject?.gitCurrentBranch ?? null;
+  const overviewPath = overviewWorkspace?.path ?? overviewProject?.path;
   const projectOverviewItems = overviewProject
     ? [
         `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
         `Project · ${overviewProjectName}`,
-        `Workspace · ${overviewWorkspaceName}`,
+        `Worktree · ${overviewWorkspaceName}`,
         `ACP · ${overviewAgentName}`,
-        overviewProject.path
-          ? `路径 · ${overviewProject.path}`
+        overviewPath
+          ? `路径 · ${overviewPath}`
           : "路径 · 等待 Helm 返回",
         `摘要 · ${formatProjectSummaryForDisplay(overviewProject.summary, overviewProjectName)}`,
       ]
@@ -127,6 +146,7 @@ export function buildMissionWorkspaceModel(input: any) {
 
   return {
     canSend,
+    activeSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,

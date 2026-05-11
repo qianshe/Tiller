@@ -32,10 +32,35 @@ export function mergeAgentMessages(
       boundaryTimes,
     );
 
+    if (!hasBoundary && hasOpenMarkdownFence(last.text)) {
+      return replaceLastMessage(
+        items,
+        last,
+        incoming,
+        combineAssistantText(last, incoming),
+        incoming.timestamp,
+      );
+    }
+
     if (hasBoundary) {
+      if (hasOpenMarkdownFence(last.text)) {
+        return splitAssistantTextAtMarkdownBoundary(
+          items,
+          last,
+          incoming,
+          combineAssistantText(last, incoming),
+          last.text.length,
+        );
+      }
+
       if (incoming.text.startsWith(last.text)) {
-        const deltaText = incoming.text.slice(last.text.length);
-        return deltaText ? [...items, { ...incoming, text: deltaText }] : items;
+        return splitAssistantTextAtMarkdownBoundary(
+          items,
+          last,
+          incoming,
+          incoming.text,
+          last.text.length,
+        );
       }
       return [...items, incoming];
     }
@@ -113,6 +138,10 @@ export function mergeMessageHistory(
     const mergeIndex = index === -1 ? equivalentIndex : index;
 
     if (mergeIndex === -1) {
+      if (isDuplicateAssistantHistoryComposite(merged, message)) {
+        continue;
+      }
+
       const duplicateStreamRange = findDuplicateAssistantStreamRange(
         merged,
         message,
@@ -160,6 +189,52 @@ function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
   return Number.isFinite(delta) && delta < 10_000;
 }
 
+function combineAssistantText(current: AgentMessage, incoming: AgentMessage) {
+  return incoming.text.startsWith(current.text)
+    ? incoming.text
+    : `${current.text}${incoming.text}`;
+}
+
+function replaceLastMessage(
+  items: AgentMessage[],
+  current: AgentMessage,
+  incoming: AgentMessage,
+  text: string,
+  timestamp = current.timestamp,
+) {
+  return [
+    ...items.slice(0, -1),
+    {
+      ...current,
+      ...incoming,
+      id: current.id,
+      text,
+      timestamp,
+    },
+  ];
+}
+
+function splitAssistantTextAtMarkdownBoundary(
+  items: AgentMessage[],
+  current: AgentMessage,
+  incoming: AgentMessage,
+  combinedText: string,
+  proposedIndex: number,
+) {
+  const splitIndex = findMarkdownSafeSplitIndex(combinedText, proposedIndex);
+  if (splitIndex === null) {
+    return replaceLastMessage(items, current, incoming, combinedText);
+  }
+
+  const prefixText = combinedText.slice(0, splitIndex);
+  const deltaText = combinedText.slice(splitIndex);
+  const nextItems =
+    prefixText === current.text
+      ? items
+      : replaceLastMessage(items, current, incoming, prefixText);
+  return deltaText ? [...nextItems, { ...incoming, text: deltaText }] : nextItems;
+}
+
 function shouldMergeAssistantStreamChunk(
   current: AgentMessage,
   incoming: AgentMessage,
@@ -167,10 +242,28 @@ function shouldMergeAssistantStreamChunk(
   return (
     current.role === "assistant" &&
     incoming.role === "assistant" &&
-    ((isRuntimeGeneratedMessageId(current.id) &&
-      isRuntimeGeneratedMessageId(incoming.id)) ||
+    (shouldMergeRuntimeGeneratedMessageIds(current.id, incoming.id) ||
       isSameProviderParagraphMessage(current.id, incoming.id))
   );
+}
+
+function shouldMergeRuntimeGeneratedMessageIds(leftId: string, rightId: string) {
+  if (!isRuntimeGeneratedMessageId(leftId) || !isRuntimeGeneratedMessageId(rightId)) {
+    return false;
+  }
+
+  const leftSegment = normalizedRuntimeSegmentId(leftId);
+  const rightSegment = normalizedRuntimeSegmentId(rightId);
+  if (leftSegment || rightSegment) {
+    return Boolean(leftSegment && leftSegment === rightSegment);
+  }
+
+  return true;
+}
+
+function normalizedRuntimeSegmentId(id: string) {
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-s(?<segment>\d+)$/iu.exec(id)
+    ?.groups?.segment;
 }
 
 function isSameProviderParagraphMessage(leftId: string, rightId: string) {
@@ -238,6 +331,41 @@ function normalizeAssistantDuplicateText(text: string) {
     .trim();
 }
 
+function isDuplicateAssistantHistoryComposite(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+) {
+  if (incoming.role !== "assistant") {
+    return false;
+  }
+
+  const normalizedIncoming = normalizeAssistantDuplicateText(incoming.text);
+  if (normalizedIncoming.length < 32) {
+    return false;
+  }
+
+  let normalizedRecent = "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const current = messages[index];
+    if (!current || current.role !== "assistant") {
+      break;
+    }
+
+    normalizedRecent = `${normalizeAssistantDuplicateText(current.text)}${normalizedRecent}`;
+    if (normalizedRecent.length < 32) {
+      continue;
+    }
+    if (
+      normalizedRecent.includes(normalizedIncoming) ||
+      normalizedIncoming.includes(normalizedRecent)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function findDuplicateAssistantStreamRange(
   messages: AgentMessage[],
   incoming: AgentMessage,
@@ -282,6 +410,61 @@ function isMergeableAssistantStreamRange(messages: AgentMessage[], start: number
 
 function isRuntimeGeneratedMessageId(id: string) {
   return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-[a-z0-9]+$/iu.test(id);
+}
+
+type MarkdownFenceState = {
+  marker: "`" | "~";
+  length: number;
+};
+
+function hasOpenMarkdownFence(text: string) {
+  return Boolean(markdownFenceStateAt(text, text.length));
+}
+
+function findMarkdownSafeSplitIndex(text: string, proposedIndex: number) {
+  const openFence = markdownFenceStateAt(text, proposedIndex);
+  if (!openFence) {
+    return proposedIndex;
+  }
+
+  const tail = text.slice(proposedIndex);
+  const fenceLinePattern = /^[ \t]*(`{3,}|~{3,})[^\r\n]*(?:\r?\n|$)/gmu;
+  let match: RegExpExecArray | null;
+  while ((match = fenceLinePattern.exec(tail))) {
+    const marker = match[1];
+    if (
+      marker?.[0] === openFence.marker &&
+      marker.length >= openFence.length
+    ) {
+      return proposedIndex + match.index + match[0].length;
+    }
+  }
+
+  return null;
+}
+
+function markdownFenceStateAt(text: string, endIndex: number) {
+  const fenceLinePattern = /^[ \t]*(`{3,}|~{3,})[^\r\n]*(?:\r?\n|$)/gmu;
+  let state: MarkdownFenceState | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = fenceLinePattern.exec(text))) {
+    if (match.index >= endIndex) {
+      break;
+    }
+    const marker = match[1];
+    if (!marker) {
+      continue;
+    }
+    const markerKind = marker[0] as "`" | "~";
+    if (state && state.marker === markerKind && marker.length >= state.length) {
+      state = null;
+      continue;
+    }
+    if (!state) {
+      state = { marker: markerKind, length: marker.length };
+    }
+  }
+  return state;
 }
 
 function hasTimelineBoundaryBetween(

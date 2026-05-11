@@ -48,6 +48,16 @@ test("resolveTillerRuntimeOptions defaults to personal mode without pairing auth
   assert.equal(options.authMode, "none");
 });
 
+test("resolveTillerRuntimeOptions allows pairing auth via config", () => {
+  const options = resolveTillerRuntimeOptions({
+    argv: [],
+    env: {},
+    config: { daemon: { auth: "pairing" } },
+  });
+
+  assert.equal(options.authMode, "pairing");
+});
+
 test("resolveTillerRuntimeOptions allows pairing auth via env", () => {
   const options = resolveTillerRuntimeOptions({
     argv: [],

@@ -83,6 +83,17 @@ export function applyInventoryResult(
     dispatch,
   } = context;
   const store = useDeckStore.getState();
+  const refreshInventory = (methods: string[]) => {
+    const refreshClient = sourceIsCurrentHelm
+      ? rpcClientRef.current
+      : (helmRpcClientRefs.current.get(sourceHelmKey) ?? null);
+    if (refreshClient?.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    methods.forEach((refreshMethod) => {
+      void dispatch(refreshClient, refreshMethod, {});
+    });
+  };
 
   switch (method) {
     case "helm/list":
@@ -145,55 +156,112 @@ export function applyInventoryResult(
         store.setAgents(payload.agents);
       }
       return true;
+    case "agent/connections":
+      if (sourceIsCurrentHelm) {
+        store.setAgentConnectionInventory(payload.connections ?? []);
+      }
+      return true;
+    case "agent/connect":
+    case "agent/reconnect":
+      if (sourceIsCurrentHelm) {
+        store.setAgentConnectionInventory(payload.connections ?? []);
+        if (payload.providerId && payload.workspaceId) {
+          const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+          const currentEntries = store.agentModelOptions;
+          const loadingEntry = Object.entries(currentEntries).find(
+            ([k, entry]) => k.startsWith(baseKey) && entry.loading,
+          );
+          const loadingProjectId = loadingEntry?.[1]?.projectId;
+          const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
+          const previous = currentEntries[key] ?? loadingEntry?.[1];
+          store.setAgentModelOptions((current) => ({
+            ...current,
+            [key]: {
+              loading: false,
+              warmed: Boolean(payload.ok),
+              projectId: loadingProjectId,
+              modelOptions: previous?.modelOptions ?? [],
+              configOptions: previous?.configOptions ?? [],
+              state: previous?.state ?? {},
+              message: payload.message ?? (payload.ok ? "ACP 已连接" : "ACP 连接失败"),
+            },
+          }));
+        }
+      }
+      return true;
     case "agent/test":
       setAgentTestResult(payload.message);
       return true;
-    case "agent/get_model_options": {
-      // Reconstruct the cache key including projectId.
-      // The loading entry carries the projectId used when the probe was dispatched;
-      // find it by matching the providerId::workspaceId prefix.
+    case "agent/get_model_options":
+    case "session/prewarm": {
+      // Reconstruct the cache key including projectId. Prefer the loading entry,
+      // but model probing and prewarm may complete in either order, so fall back
+      // to an existing project-scoped entry for the same provider/workspace.
       const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
       const currentEntries = store.agentModelOptions;
-      const loadingEntry = Object.entries(currentEntries).find(
-        ([k, entry]) => k.startsWith(baseKey) && entry.loading,
+      const matchingEntries = Object.entries(currentEntries).filter(([key]) =>
+        key.startsWith(baseKey),
       );
-      const loadingProjectId = loadingEntry?.[1]?.projectId;
-      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
+      const loadingEntry = matchingEntries.find(([, entry]) => entry.loading);
+      const existingEntry = loadingEntry ?? matchingEntries.find(([, entry]) => entry.projectId);
+      const existingProjectId = existingEntry?.[1]?.projectId;
+      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, existingProjectId);
+      const previous = currentEntries[key] ?? existingEntry?.[1];
+      const payloadModelOptions = Array.isArray(payload.modelOptions) ? payload.modelOptions : [];
+      const payloadConfigOptions = Array.isArray(payload.configOptions) ? payload.configOptions : [];
+      const nextModelOptions = payloadModelOptions.length
+        ? payloadModelOptions
+        : (previous?.modelOptions ?? []);
+      const nextConfigOptions = payloadConfigOptions.length
+        ? payloadConfigOptions
+        : (previous?.configOptions ?? []);
+      const nextState = {
+        ...(previous?.state ?? {}),
+        ...(payload.state ?? {}),
+      };
       const nextEntry = {
         loading: false,
-        projectId: loadingProjectId,
-        message: payload.message,
-        modelOptions: payload.modelOptions,
-        configOptions: payload.configOptions,
-        state: payload.state,
+        warmed: Boolean(payload.ok) || Boolean(previous?.warmed),
+        projectId: existingProjectId,
+        runtimeSessionId: payload.runtimeSessionId ?? previous?.runtimeSessionId,
+        message: payload.message ?? previous?.message,
+        modelOptions: nextModelOptions,
+        configOptions: nextConfigOptions,
+        state: nextState,
       };
       store.setAgentModelOptions((current) => {
         const next = { ...current, [key]: nextEntry };
         // If the loading sentinel lived under a different key variant, clean it up.
-        if (loadingEntry && loadingEntry[0] !== key) {
-          delete next[loadingEntry[0]];
+        if (existingEntry && existingEntry[0] !== key) {
+          delete next[existingEntry[0]];
         }
         writeAgentModelOptionsCache(next);
         return next;
       });
+      if (payload.providerId && Array.isArray(payload.availableCommands)) {
+        store.setAgentAvailableCommands((current) => ({
+          ...current,
+          [payload.providerId]: payload.availableCommands,
+        }));
+      }
       if (
         sourceIsCurrentHelm &&
         payload.providerId === selectedAgentId &&
         payload.workspaceId === selectedWorkspaceId
       ) {
         const realOptions = resolveModelOptions(
-          payload.currentModelId ?? payload.state.model,
-          payload.configOptions,
-          payload.modelOptions,
+          payload.currentModelId ?? nextState.model,
+          nextConfigOptions,
+          nextModelOptions,
         );
         const allOptions = Array.from(
           new Set([
             ...realOptions,
-            ...payload.modelOptions.map((option: AcpModelOption) => option.id),
+            ...nextModelOptions.map((option: AcpModelOption) => option.id),
           ]),
         );
         const nextModel = resolvePreferredModel(
-          payload.currentModelId ?? payload.state.model,
+          payload.currentModelId ?? nextState.model,
           allOptions,
         );
         if (
@@ -204,11 +272,22 @@ export function applyInventoryResult(
         ) {
           setSelectedModel(nextModel);
         }
-        if (payload.state.agentMode) {
-          setSelectedAgentMode(payload.state.agentMode);
+        if (nextState.agentMode) {
+          setSelectedAgentMode(nextState.agentMode);
         }
-        if (payload.state.reasoningEffort) {
-          setSelectedReasoningEffort(payload.state.reasoningEffort);
+        if (nextState.reasoningEffort) {
+          setSelectedReasoningEffort(nextState.reasoningEffort);
+        }
+        const client = rpcClientRef.current;
+        if (method === "agent/get_model_options" && client && nextModel) {
+          void dispatch(client, "session/prewarm", {
+            projectId: existingProjectId ?? undefined,
+            workspaceId: payload.workspaceId,
+            agentId: payload.providerId,
+            agentMode: nextState.agentMode,
+            model: nextModel,
+            reasoningEffort: nextState.reasoningEffort,
+          });
         }
       }
       return true;
@@ -219,16 +298,21 @@ export function applyInventoryResult(
       if (sourceIsCurrentHelm) {
         setSelectedProjectId(payload.projectId);
       }
+      refreshInventory(["project/list", "workspace/list"]);
       return true;
-    case "agent/save": {
+    case "project/delete": {
       setConfigSaveMessage(payload.message);
-      const refreshClient = sourceIsCurrentHelm
-        ? rpcClientRef.current
-        : (helmRpcClientRefs.current.get(sourceHelmKey) ?? null);
-      if (refreshClient?.socket.readyState === WebSocket.OPEN) {
-        void dispatch(refreshClient, "agent/list", {});
-        void dispatch(refreshClient, "project/list", {});
+      setFleetProjectSaveMessage(payload.message);
+      if (sourceIsCurrentHelm) {
+        setSelectedProjectId(null);
       }
+      refreshInventory(["project/list", "workspace/list"]);
+      return true;
+    }
+    case "agent/save":
+    case "agent/delete": {
+      setConfigSaveMessage(payload.message);
+      refreshInventory(["agent/list", "project/list"]);
       return true;
     }
     case "helm/save":

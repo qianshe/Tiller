@@ -80,7 +80,7 @@ export function MissionChatPane({
   );
 
   return (
-    <div className={className} style={style}>
+    <div className={className} style={style} data-mission-mobile-pane="chat">
       <div
         className="chat-main min-h-0 flex-1 overflow-y-auto rounded-md bg-surface-sunken/70 p-3"
         ref={chatMainRef}

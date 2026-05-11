@@ -6,6 +6,7 @@ import {
   loadTillerConfigStub,
   readTillerConfig,
   saveProjectToConfig,
+  ensureTillerConfigDefaults,
 } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
@@ -87,7 +88,6 @@ export type HelmState = HelmSessionStores & {
   sessions: Map<string, SessionRecord>;
   permissionIndex: Map<string, PermissionEntry>;
   projectContextSummaryCache: Map<string, string>;
-  openCodeHistoryRefreshes: Map<string, number>;
 
   reloadHelms(): void;
   reloadWorkspaces(): void;
@@ -117,6 +117,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     logs: resolve(configDir, "logs"),
   };
 
+  ensureTillerConfigDefaults(configPath);
   const configStub = loadTillerConfigStub(configPath);
   const tillerConfig = readTillerConfig(configPath);
   const runtime = resolveTillerRuntimeOptions({
@@ -155,7 +156,6 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     sessions: new Map(),
     permissionIndex: new Map(),
     projectContextSummaryCache: new Map(),
-    openCodeHistoryRefreshes: new Map(),
     reloadHelms() {
       state.helms = loadAvailableHelms(state);
     },

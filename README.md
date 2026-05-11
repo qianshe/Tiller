@@ -80,6 +80,18 @@ tiller start --host 0.0.0.0 --port 47631
 TILLER_HOST=0.0.0.0 TILLER_PORT=47631 tiller start
 ```
 
+或写入 `~/.tiller/config.json`，避免每次设置环境变量：
+
+```json
+{
+  "daemon": {
+    "host": "0.0.0.0",
+    "port": 47631,
+    "auth": "pairing"
+  }
+}
+```
+
 如果端口已被另一个 Tiller 或旧开发进程占用，Tiller 会阻止启动并提示换端口或停止旧进程。
 
 ## 第一次连接

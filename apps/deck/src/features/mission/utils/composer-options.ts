@@ -82,6 +82,19 @@ export function resolveAgentModeOptions(
     .filter((item) => item.value.trim().length > 0);
 }
 
+export function formatAgentModeLabel(value: string) {
+  const trimmed = value.trim();
+  if (/\s/u.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .replace(/[._-]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
 export function resolveCurrentAgentMode(
   currentAgentMode: string | undefined,
   configOptions: SessionConfigOption[] = [],
@@ -113,7 +126,7 @@ export function resolveCurrentAgentMode(
     return candidates.find((candidate) => validModes.has(candidate));
   }
 
-  return currentValue || selectedValue || value || undefined;
+  return currentValue || selectedValue || value || candidates[0] || undefined;
 }
 
 export function resolveModelOptions(
@@ -233,7 +246,17 @@ export function resolveDraftConfigOptions(
   selectedAgentId?: string | null,
 ) {
   if (activeSession) {
-    return sessionConfigOptions[activeSession.id] ?? [];
+    const activeOptions = sessionConfigOptions[activeSession.id] ?? [];
+    if (activeOptions.length > 0) {
+      return activeOptions;
+    }
+    const cachedSession = sessions.find(
+      (session) =>
+        session.id !== activeSession.id &&
+        session.agentId === activeSession.agentId &&
+        (sessionConfigOptions[session.id]?.length ?? 0) > 0,
+    );
+    return cachedSession ? (sessionConfigOptions[cachedSession.id] ?? []) : [];
   }
 
   const cachedSession = sessions.find(

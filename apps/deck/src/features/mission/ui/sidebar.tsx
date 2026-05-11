@@ -39,6 +39,9 @@ type MissionSidebarProps = {
   sessions: SessionSummary[];
   sessionCountsByProject: Record<string, number>;
   agents: AcpAgentProvider[];
+  selectedAgentId: string | null;
+  agentPickerOpen: boolean;
+  selectDraftAgent: (agentId: string) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
@@ -83,6 +86,9 @@ export function MissionSidebar({
   sessions,
   sessionCountsByProject,
   agents,
+  selectedAgentId,
+  agentPickerOpen,
+  selectDraftAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
   setSelectedWorkspaceId,
@@ -117,6 +123,7 @@ export function MissionSidebar({
         className={sidebarClassName}
         style={missionSidebarPaneStyle}
         aria-label="任务导航：Helm、项目与任务"
+        data-mission-mobile-pane="project"
         onScroll={handleMissionTreeScroll}
       >
         {!effectiveSidebarCollapsed ? (
@@ -234,9 +241,10 @@ export function MissionSidebar({
                               projectExpanded={projectExpanded}
                               sessionCountsByProject={sessionCountsByProject}
                               agents={agents}
-                              setSelectedMissionHelmId={
-                                setSelectedMissionHelmId
-                              }
+                              selectedAgentId={selectedAgentId}
+                              agentPickerOpen={agentPickerOpen}
+                              selectDraftAgent={selectDraftAgent}
+                              setSelectedMissionHelmId={setSelectedMissionHelmId}
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedWorkspaceId={setSelectedWorkspaceId}
                               setSelectedAgentId={setSelectedAgentId}

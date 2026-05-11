@@ -30,9 +30,28 @@ export function resolveAdapterCleanupPlan(provider: AcpAgentProvider, runtimeSes
   return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
 }
 
+export function resolveAdapterRequestTimeout(provider: AcpAgentProvider, method: string) {
+  return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
+}
+
+export function loadAdapterAuthoritativeHistory(
+  provider: AcpAgentProvider,
+  runtimeSessionId: string,
+  cwd: string,
+) {
+  return (
+    resolveAcpAgentAdapter(provider).loadAuthoritativeHistory?.({
+      provider,
+      runtimeSessionId,
+      cwd,
+    }) ?? Promise.resolve(null)
+  );
+}
+
 export { createClaudeAcpAdapter } from "./claude";
 export { createCodexAcpAdapter } from "./codex";
 export { createGenericAcpAdapter } from "./generic";
 export { createOpenClawAcpAdapter } from "./openclaw";
 export { createOpenCodeAcpAdapter } from "./opencode";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, ProviderCleanupPlan } from "./types";
+export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode";
+export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderCleanupPlan } from "./types";

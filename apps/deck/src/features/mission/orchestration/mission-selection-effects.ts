@@ -1,8 +1,12 @@
 // @ts-nocheck
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
-import { normalizeModelSelection, resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
-import { resolveDraftSelectionId } from "../utils/session-derivations";
+import { resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
+import {
+  resolveDefaultMissionSessionId,
+  resolveDraftSelectionId,
+  resolveSessionProjectId,
+} from "../utils/session-derivations";
 
 export function useMissionSelectionEffects(source: any) {
   const {
@@ -14,12 +18,14 @@ export function useMissionSelectionEffects(source: any) {
     setAgentPickerOpen,
     selectedMissionHelmId,
     activeSession,
+    activeSessionId,
+    sessions,
+    statuses,
     draftProject,
     projects,
     helms,
     setSelectedMissionHelmId,
     selectedProjectId,
-    missionProjects,
     setSelectedProjectId,
     requestChatScrollToBottom,
     setActiveSessionId,
@@ -37,14 +43,14 @@ export function useMissionSelectionEffects(source: any) {
     setSelectedAgentId,
     agentModelOptions,
     setAgentModelOptions,
-    selectedAgentMode,
+    agentConnectionInventory,
     selectedModel,
     setSelectedModel,
-    selectedReasoningEffort,
     setSelectedAgentMode,
     setSelectedReasoningEffort,
+    effectiveDraftAgentMode,
+    selectedReasoningEffort,
   } = source;
-  const prewarmedDraftKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -99,16 +105,26 @@ export function useMissionSelectionEffects(source: any) {
     selectedMissionHelmId,
   ]);
   useEffect(() => {
-    if (!selectedProjectId && missionProjects.length) {
-      const nextProject = missionProjects[0];
-      if (!nextProject) {
-        return;
-      }
-      setSelectedProjectId(nextProject.id);
-      requestChatScrollToBottom(null);
-      setActiveSessionId(null);
+    if (activeSession || selectedProjectId) {
+      return;
     }
-  }, [missionProjects, selectedProjectId]);
+    const nextActiveSessionId = resolveDefaultMissionSessionId(
+      activeSessionId,
+      sessions,
+      statuses,
+    );
+    if (!nextActiveSessionId) {
+      return;
+    }
+    const nextSession = sessions.find((session) => session.id === nextActiveSessionId);
+    if (!nextSession) {
+      return;
+    }
+    const nextProjectId = resolveSessionProjectId(nextSession, projects);
+    setSelectedProjectId(nextProjectId);
+    requestChatScrollToBottom(nextActiveSessionId);
+    setActiveSessionId(nextActiveSessionId);
+  }, [activeSession, activeSessionId, projects, selectedProjectId, sessions, statuses]);
   useEffect(() => {
     if (effectiveMissionHelmId) {
       setExpandedMissionHelmIds((current) =>
@@ -176,111 +192,125 @@ export function useMissionSelectionEffects(source: any) {
     ) {
       return;
     }
-    const optionsKey = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
-    const cachedOptions = agentModelOptions[optionsKey];
-    if (!cachedOptions || cachedOptions.loading) {
-      return;
-    }
-    const prewarmModel = normalizeModelSelection(selectedModel) ?? cachedOptions.state.model;
-    const prewarmKey = JSON.stringify({
-      projectId: selectedProjectId,
-      workspaceId: selectedWorkspaceId,
-      agentId: selectedAgentId,
-      agentMode: selectedAgentMode || undefined,
-      model: prewarmModel,
-      reasoningEffort: selectedReasoningEffort,
-    });
-    if (prewarmedDraftKeyRef.current === prewarmKey) {
-      return;
-    }
-    prewarmedDraftKeyRef.current = prewarmKey;
-    void dispatch(rpcClientRef.current, "session/prewarm", {
-      projectId: selectedProjectId,
-      workspaceId: selectedWorkspaceId,
-      agentId: selectedAgentId,
-      agentMode: selectedAgentMode || undefined,
-      model: prewarmModel,
-      reasoningEffort: selectedReasoningEffort,
-    });
-  }, [
-    activeSession,
-    agentModelOptions,
-    normalizeModelSelection,
-    pairingState,
-    selectedAgentId,
-    selectedAgentMode,
-    selectedModel,
-    selectedProjectId,
-    selectedReasoningEffort,
-    selectedWorkspaceId,
-  ]);
-  useEffect(() => {
-    if (
-      activeSession ||
-      pairingState !== "paired" ||
-      !selectedAgentId ||
-      !selectedWorkspaceId ||
-      !rpcClientRef.current ||
-      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
     const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
     const cached = agentModelOptions[key];
-    if (cached && !cached.loading) {
-      const realOptions = resolveModelOptions(
-        cached.state.model,
-        cached.configOptions,
-        cached.modelOptions,
+    const hasReadyConnection = (agentConnectionInventory ?? []).some(
+      (connection) =>
+        connection.providerId === selectedAgentId &&
+        connection.workspaceId === selectedWorkspaceId &&
+        connection.initialized &&
+        connection.status !== "closed" &&
+        connection.status !== "error",
+    );
+    if (hasReadyConnection) {
+      const hasLoadedOptions = Boolean(
+        (cached?.modelOptions?.length ?? 0) > 0 || (cached?.configOptions?.length ?? 0) > 0,
       );
-      const allOptions = Array.from(
-        new Set([
-          ...realOptions,
-          ...cached.modelOptions.map((option) => option.id),
-        ]),
-      );
-      const nextModel = resolvePreferredModel(cached.state.model, allOptions);
-      if (
-        nextModel &&
-        (!selectedModel ||
-          selectedModel === "provider-default" ||
-          !allOptions.includes(selectedModel))
-      ) {
-        setSelectedModel(nextModel);
+      if (cached && !cached.loading && cached.warmed && hasLoadedOptions) {
+        const realOptions = resolveModelOptions(
+          cached.state.model,
+          cached.configOptions,
+          cached.modelOptions,
+        );
+        const allOptions = Array.from(
+          new Set([
+            ...realOptions,
+            ...cached.modelOptions.map((option) => option.id),
+          ]),
+        );
+        const nextModel = resolvePreferredModel(cached.state.model, allOptions);
+        if (
+          nextModel &&
+          (!selectedModel ||
+            selectedModel === "provider-default" ||
+            !allOptions.includes(selectedModel))
+        ) {
+          setSelectedModel(nextModel);
+        }
+        if (cached.state.agentMode) {
+          setSelectedAgentMode(cached.state.agentMode);
+        }
+        if (cached.state.reasoningEffort) {
+          setSelectedReasoningEffort(cached.state.reasoningEffort);
+        }
+        return;
       }
-      if (cached.state.agentMode) {
-        setSelectedAgentMode(cached.state.agentMode);
+      if (cached?.loading) {
+        return;
       }
-      if (cached.state.reasoningEffort) {
-        setSelectedReasoningEffort(cached.state.reasoningEffort);
+      const shouldProbeModelOptions =
+        !cached?.message ||
+        cached.message === "ACP provider connected." ||
+        cached.message === "ACP 已连接" ||
+        cached.message === "正在连接 ACP...";
+      if (!shouldProbeModelOptions) {
+        return;
       }
+      setAgentModelOptions((current) => ({
+        ...current,
+        [key]: {
+          loading: true,
+          warmed: true,
+          projectId: selectedProjectId,
+          requestedAt: Date.now(),
+          modelOptions: cached?.modelOptions ?? [],
+          configOptions: cached?.configOptions ?? [],
+          state: cached?.state ?? {},
+          message: "正在加载模型并预热 ACP...",
+        },
+      }));
+      void dispatch(rpcClientRef.current, "agent/get_model_options", {
+        projectId: selectedProjectId,
+        workspaceId: selectedWorkspaceId,
+        providerId: selectedAgentId,
+      });
+      void dispatch(rpcClientRef.current, "session/prewarm", {
+        projectId: selectedProjectId,
+        workspaceId: selectedWorkspaceId,
+        agentId: selectedAgentId,
+        agentMode: effectiveDraftAgentMode,
+        model: selectedModel === "provider-default" ? undefined : selectedModel,
+        reasoningEffort: selectedReasoningEffort,
+      });
       return;
     }
     if (cached?.loading) {
-      return;
+      const loadingStartedAt = (cached as any).requestedAt;
+      if (typeof loadingStartedAt === "number" && Date.now() - loadingStartedAt < 15_000) {
+        const retryDelayMs = Math.max(0, 15_000 - (Date.now() - loadingStartedAt) + 50);
+        const retryTimer = window.setTimeout(() => {
+          setAgentModelOptions((current) => ({ ...current }));
+        }, retryDelayMs);
+        return () => window.clearTimeout(retryTimer);
+      }
     }
     setAgentModelOptions((current) => ({
       ...current,
       [key]: {
         loading: true,
+        warmed: false,
         projectId: selectedProjectId,
+        requestedAt: Date.now(),
         modelOptions: cached?.modelOptions ?? [],
         configOptions: cached?.configOptions ?? [],
         state: cached?.state ?? {},
-        message: "正在加载模型列表...",
+        message: "正在连接 ACP...",
       },
     }));
-    void dispatch(rpcClientRef.current, "agent/get_model_options", {
-      providerId: selectedAgentId,
+    void dispatch(rpcClientRef.current, "agent/connect", {
+      projectId: selectedProjectId,
       workspaceId: selectedWorkspaceId,
-      projectId: selectedProjectId ?? undefined,
+      providerId: selectedAgentId,
     });
   }, [
     agentModelOptions,
+    agentConnectionInventory,
     pairingState,
     selectedAgentId,
     selectedModel,
     selectedProjectId,
     selectedWorkspaceId,
+    effectiveDraftAgentMode,
+    selectedReasoningEffort,
   ]);
 }

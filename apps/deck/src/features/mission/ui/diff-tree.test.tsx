@@ -30,13 +30,18 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
 
   const html = renderToStaticMarkup(renderDiffPatch(patch));
 
+  assert.match(html, /max-w-full/);
+  assert.match(html, /min-w-0/);
   assert.match(html, /overflow-x-auto/);
   assert.match(html, /diff-line-meta/);
   assert.match(html, /diff-line-hunk/);
   assert.match(html, /diff-line-deleted/);
   assert.match(html, /diff-line-added/);
-  assert.match(html, /bg-success-container\/30/);
-  assert.match(html, /bg-destructive\/10/);
+  assert.match(html, /bg-\[var\(--diff-added-bg\)\]/);
+  assert.match(html, /text-\[var\(--diff-added-text\)\]/);
+  assert.match(html, /bg-\[var\(--diff-deleted-bg\)\]/);
+  assert.match(html, /text-\[var\(--diff-deleted-text\)\]/);
+  assert.match(html, /bg-\[var\(--diff-hunk-bg\)\]/);
 });
 
 test("diff tree compacts single-directory chains", () => {

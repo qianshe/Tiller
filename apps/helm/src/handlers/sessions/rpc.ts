@@ -1,7 +1,5 @@
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
-  ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
-  ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
   type AgentPromptContent,
   type PermissionDecision,
   type ProjectSummary,
@@ -10,11 +8,15 @@ import {
   type WorkspaceSummary,
 } from "@tiller/shared";
 import {
-  applyUserPromptToSummary,
   isProjectRootBranchWorkspace,
   resolveSessionCleanupOutcome,
 } from "../../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
+import {
+  cancelSessionRuntime,
+  configureSessionRuntime,
+  sendPromptToSession,
+} from "../../runtime/session-runtime-router";
 import type { HelmHandlerContext } from "../context";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
@@ -105,6 +107,8 @@ export async function handleSessionRpcRequest(
         params as { permissionRequestId: string; decision: "allow" | "deny" },
         context,
       );
+    case "permission/list_pending":
+      return listPendingPermissions(context);
     case "session/rename":
       return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
@@ -123,13 +127,7 @@ export async function handleSessionRpcNotification(
     return false;
   }
   const { sessionId } = params as { sessionId: string };
-  const record = context.sessions.get(sessionId);
-  if (!record) {
-    broadcastErrorRaised(context, { sessionId, message: "Session not found" });
-    return true;
-  }
-  record.runtime.cancel();
-  return true;
+  return cancelSessionRuntime(sessionId, context);
 }
 
 function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
@@ -333,7 +331,7 @@ async function createSession(
       model: summary.model,
       reasoningEffort: summary.reasoningEffort,
     };
-    const prewarmed = context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
+    const prewarmed = await context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
     const runtime = prewarmed?.runtime ??
       (await context.createRuntime({
         sessionId,
@@ -341,10 +339,24 @@ async function createSession(
         agent,
         sessionConfig,
         onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+        onConnectionLifecycleEvent: (event) => {
+          const phaseMap = {
+            "connection-open": "ACP连接新建",
+            "connection-reuse": "ACP连接复用",
+            "connection-pending": "ACP连接等待",
+            "connection-replace": "ACP连接替换",
+            "connection-reconnect": "ACP连接重连",
+          } as const;
+          context.logInfo(
+            `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+          );
+        },
       }));
     prewarmed?.attach(sessionId);
     const summaryWithRuntime = context.hydrateSessionSummary({
       ...summary,
+      status: "idle",
+      updatedAt: new Date().toISOString(),
       agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
       model: runtime.sessionConfigState?.model ?? summary.model,
       modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
@@ -392,53 +404,7 @@ async function promptSession(
   },
   context: HelmHandlerContext,
 ) {
-  let record = context.sessions.get(params.sessionId);
-  if (!record) {
-    context.logInfo(
-      `[tiller] 阶段=发送前需要恢复 session=${params.sessionId} chars=${params.text.length}`,
-    );
-    const restore = await context.startSessionResume(params.sessionId);
-    context.logInfo(
-      `[tiller] 阶段=发送前恢复完成 session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
-    );
-    record = context.sessions.get(params.sessionId);
-  }
-  if (!record) {
-    context.logError(
-      `[tiller] 阶段=发送失败 session=${params.sessionId} reason=Session runtime not available`,
-    );
-    throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
-  }
-  const imageAttachments = params.content?.filter((item) => item.type === "image") ?? [];
-  if (imageAttachments.length && !record.runtime.sessionCapabilities?.imageInput) {
-    const error = new Error(ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE);
-    (error as Error & { code?: string }).code = ACP_IMAGE_INPUT_UNSUPPORTED_CODE;
-    throw error;
-  }
-
-  context.logInfo(
-    `[tiller] 阶段=发送Prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
-  );
-  const timestamp = new Date().toISOString();
-  const userMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;
-  context.persistSessionMessage(params.sessionId, {
-    id: userMessageId,
-    role: "user",
-    text: params.text,
-    timestamp,
-    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
-  });
-  const updated = context.updateSessionSummary(params.sessionId, (current) =>
-    applyUserPromptToSummary(current, params.text, timestamp),
-  );
-  if (updated) {
-    broadcastSessionUpdate(context, params.sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
-  record.runtime.prompt(params.text, params.content);
-  return { stopReason: "end_turn" };
+  return sendPromptToSession(params, context);
 }
 
 async function setConfigOption(
@@ -450,46 +416,7 @@ async function setConfigOption(
   },
   context: HelmHandlerContext,
 ) {
-  const current =
-    context.sessions.get(params.sessionId)?.summary ??
-    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
-  if (!current) {
-    throw new Error("Session not found");
-  }
-  const activeRecord = context.sessions.get(params.sessionId);
-  const runtimeResult = activeRecord
-    ? await activeRecord.runtime.configure({
-        agentMode: params.agentMode,
-        model: params.model,
-        reasoningEffort: params.reasoningEffort,
-      })
-    : null;
-  const nextAgentMode = runtimeResult?.state.agentMode ?? params.agentMode ?? current.agentMode;
-  const nextModel = runtimeResult?.state.model ?? params.model;
-  const nextReasoning = runtimeResult?.state.reasoningEffort ?? params.reasoningEffort;
-  const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-  const updatedAt = new Date().toISOString();
-  const next = context.hydrateSessionSummary({
-    ...current,
-    agentMode: nextAgentMode,
-    model: nextModel,
-    modelOptions: nextModelOptions,
-    reasoningEffort: nextReasoning,
-    updatedAt,
-  });
-  context.updateSessionSummary(params.sessionId, () => next);
-  broadcastSessionUpdate(context, params.sessionId, { kind: "session_updated", session: next });
-  return {
-    sessionId: params.sessionId,
-    ok: true,
-    state: {
-      agentMode: nextAgentMode,
-      model: nextModel,
-      reasoningEffort: nextReasoning,
-    },
-    options: [],
-    message: runtimeResult?.runtimeApplied ? "Session config updated." : "Session config saved.",
-  };
+  return configureSessionRuntime(params, context);
 }
 
 function respondPermission(
@@ -517,11 +444,36 @@ function respondPermission(
     permissionRequestId: params.permissionRequestId,
     decision: params.decision,
   });
+  const updated = context.updateSessionSummary(permission.sessionId, (current) => ({
+    ...current,
+    status: "running",
+    updatedAt: new Date().toISOString(),
+  }));
+  broadcastSessionUpdate(context, permission.sessionId, {
+    kind: "status_change",
+    status: "running",
+    message: "Permission response sent",
+  });
+  if (updated) {
+    broadcastSessionUpdate(context, permission.sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
   record.runtime.respondPermission(params.permissionRequestId, params.decision);
   return {
     ok: true,
     permissionRequestId: params.permissionRequestId,
     decision: params.decision,
+  };
+}
+
+function listPendingPermissions(context: HelmHandlerContext) {
+  return {
+    permissions: Array.from(context.permissionIndex.values()).map((permission) => ({
+      sessionId: permission.sessionId,
+      request: permission.request,
+    })),
   };
 }
 

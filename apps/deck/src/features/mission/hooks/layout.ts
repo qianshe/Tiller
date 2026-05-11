@@ -8,6 +8,8 @@ import {
 
 export type MissionPaneId = "sidebar" | "chat" | "display" | "inspector";
 
+export type MissionMobilePane = "project" | "chat" | "display" | "inspector";
+
 export type MissionPaneWidths = Record<MissionPaneId, number>;
 
 export type MissionResizeHandle = "sidebar" | "display" | "inspector";
@@ -32,6 +34,11 @@ const MISSION_OUTER_GUTTER = 24;
 const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
+const MISSION_MOBILE_WIDTH = 1081;
+type MissionLayoutOptions = {
+  activeView: unknown;
+  hasActiveSession: boolean;
+};
 
 function getMissionPaneMax(pane: MissionPaneId) {
   return MISSION_PANE_LIMITS[pane].max ?? Number.POSITIVE_INFINITY;
@@ -165,13 +172,16 @@ function createMissionPaneStyles(widths: MissionPaneWidths) {
   };
 }
 
-export function useMissionLayout(measureKey: unknown) {
+export function useMissionLayout(options: MissionLayoutOptions) {
+  const { activeView, hasActiveSession } = options;
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
     DEFAULT_MISSION_PANE_WIDTHS,
   );
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(false);
+  const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
+    useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
@@ -181,9 +191,15 @@ export function useMissionLayout(measureKey: unknown) {
 
   useEffect(() => {
     const measureMissionLayout = () => {
-      const width =
-        missionLayoutRef.current?.getBoundingClientRect().width ??
-        document.documentElement.clientWidth;
+      const documentWidth = Math.min(
+        document.documentElement.clientWidth,
+        window.innerWidth,
+      );
+      const layoutWidth =
+        missionLayoutRef.current?.getBoundingClientRect().width ?? documentWidth;
+      const width = window.matchMedia("(max-width: 1080px)").matches
+        ? Math.min(layoutWidth, documentWidth, MISSION_MOBILE_WIDTH - 1)
+        : Math.min(layoutWidth, documentWidth);
       setMissionViewportWidth(Math.max(0, Math.round(width)));
     };
     measureMissionLayout();
@@ -199,7 +215,16 @@ export function useMissionLayout(measureKey: unknown) {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureMissionLayout);
     };
-  }, [measureKey]);
+  }, [activeView]);
+
+  const isMissionMobile = missionViewportWidth < MISSION_MOBILE_WIDTH;
+
+  useEffect(() => {
+    if (!isMissionMobile) {
+      return;
+    }
+    setSelectedMissionMobilePane(hasActiveSession ? "chat" : "project");
+  }, [activeView, hasActiveSession, isMissionMobile]);
 
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||
@@ -264,5 +289,8 @@ export function useMissionLayout(measureKey: unknown) {
     paneStyles,
     startMissionPaneResize,
     nudgeMissionPane,
+    isMissionMobile,
+    selectedMissionMobilePane,
+    setSelectedMissionMobilePane,
   };
 }

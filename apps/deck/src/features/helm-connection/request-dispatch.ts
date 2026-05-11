@@ -10,6 +10,7 @@ export type DispatchToHelm = (
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
   "agent/get_model_options": 120_000,
+  "session/new": 180_000,
   "session/prewarm": 180_000,
 };
 
@@ -52,7 +53,9 @@ export async function requestInitialSync(
   await dispatch(client, "project/list", {});
   await dispatch(client, "workspace/list", {});
   await dispatch(client, "agent/list", {});
+  await dispatch(client, "agent/connections", {});
   setSessionHistoryState({ hasMore: false, loading: true });
   await dispatch(client, "session/list", { limit: sessionPageLimit });
+  await dispatch(client, "permission/list_pending", {});
   await dispatch(client, "device/list", {});
 }

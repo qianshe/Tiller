@@ -240,14 +240,6 @@ export function resolveSessionConfigSupport(provider?: Pick<AcpAgentProvider, "c
     };
   }
 
-  if (provider?.command === "codex-acp") {
-    return { model: "startup", reasoningEffort: "startup", modelFormat: "model" };
-  }
-
-  if (provider?.command === "opencode") {
-    return { model: "startup", reasoningEffort: "none", modelFormat: "provider/model" };
-  }
-
   return { model: "none", reasoningEffort: "none" };
 }
 

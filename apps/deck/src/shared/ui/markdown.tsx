@@ -3,12 +3,24 @@ import {
   isValidElement,
   memo,
   useEffect,
+  useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+
+import { Button } from "./button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "./dialog";
+import { MermaidViewportController, type MermaidViewportState } from "./mermaid-viewport-controller";
 
 const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
 const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
@@ -22,7 +34,17 @@ type MarkdownHighlight = {
   language?: string;
 };
 
+type MermaidRenderState = {
+  svg?: string;
+  error?: string;
+};
+
+const MERMAID_LANGUAGE = "mermaid";
+const OPEN_MERMAID_FENCE_LINE = /^([ \t]{0,3})(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/iu;
+const OPEN_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})(?:[ \t].*)?$/u;
+const CLOSE_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/u;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
+let mermaidRenderSequence = 0;
 
 const markdownComponents: Components = {
   a({ children, href, ...props }) {
@@ -87,6 +109,21 @@ const markdownComponents: Components = {
     );
   },
   code({ children, className, node: _node, ...props }) {
+    const isBlockCode = typeof className === "string" && className.includes("language-");
+
+    if (isBlockCode) {
+      return (
+        <code
+          {...props}
+          className={[className, "!bg-transparent text-[var(--markdown-code-fg)]"]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {children}
+        </code>
+      );
+    }
+
     return (
       <code
         {...props}
@@ -133,6 +170,10 @@ const markdownComponents: Components = {
   pre({ children }) {
     const code = extractTextFromReactNode(children).replace(/\n$/, "");
     const language = findCodeLanguage(children);
+    if (language === MERMAID_LANGUAGE) {
+      return <MarkdownMermaidBlock code={code} />;
+    }
+
     return (
       <MarkdownCodeBlock code={code} language={language}>
         {children}
@@ -198,9 +239,67 @@ export async function resolveMarkdownCodeHighlight(
 }
 
 export function normalizeMarkdownMessageText(text: string) {
-  return text
-    .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
-    .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2");
+  return deferOpenMermaidFence(
+    text
+      .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
+      .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2"),
+  );
+}
+
+function deferOpenMermaidFence(text: string) {
+  const lines = text.split("\n");
+  let openFence: { marker: "`" | "~"; length: number; mermaidLineIndex?: number } | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.replace(/\r$/, "") ?? "";
+
+    if (openFence) {
+      const closeMatch = CLOSE_MARKDOWN_FENCE_LINE.exec(line);
+      const closeMarker = closeMatch?.[1];
+      if (
+        closeMarker?.[0] === openFence.marker &&
+        closeMarker.length >= openFence.length
+      ) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    const mermaidMatch = OPEN_MERMAID_FENCE_LINE.exec(line);
+    if (mermaidMatch?.[2]) {
+      const marker = mermaidMatch[2];
+      openFence = {
+        marker: marker[0] as "`" | "~",
+        length: marker.length,
+        mermaidLineIndex: index,
+      };
+      continue;
+    }
+
+    const openMatch = OPEN_MARKDOWN_FENCE_LINE.exec(line);
+    const openMarker = openMatch?.[1];
+    if (openMarker) {
+      openFence = {
+        marker: openMarker[0] as "`" | "~",
+        length: openMarker.length,
+      };
+    }
+  }
+
+  if (openFence?.mermaidLineIndex === undefined) {
+    return text;
+  }
+
+  const mermaidFenceLine = lines[openFence.mermaidLineIndex];
+  if (mermaidFenceLine === undefined) {
+    return text;
+  }
+
+  lines[openFence.mermaidLineIndex] = mermaidFenceLine.replace(
+    /mermaid/iu,
+    "text",
+  );
+  return lines.join("\n");
 }
 
 function isThinkingParagraph(node: ReactNode) {
@@ -272,12 +371,12 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[#0d1117] text-sm shadow-sm">
-      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-sm text-[var(--markdown-code-fg)] shadow-sm">
+      <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-[var(--markdown-code-head)] px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
           type="button"
-          className="rounded px-2 py-0.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+          className="rounded px-2 py-0.5 text-muted-foreground transition hover:bg-surface hover:text-foreground disabled:opacity-50"
           onClick={copyCode}
           disabled={!code}
           aria-label="复制代码块"
@@ -290,16 +389,312 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-3 text-xs leading-6">
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">
           <code
-            className={`hljs language-${highlightedCode.language ?? language ?? "text"}`}
+            className={`hljs !bg-transparent language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-3 text-xs leading-6">{children}</pre>
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">{children}</pre>
       )}
     </div>
+  );
+}
+
+function MarkdownMermaidBlock({ code }: { code: string }) {
+  const [renderState, setRenderState] = useState<MermaidRenderState>({});
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const diagramSource = code.trim();
+
+    if (!diagramSource) {
+      setRenderState({ error: "Mermaid 图表内容为空。" });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setRenderState({});
+    const renderId = `tiller-mermaid-${++mermaidRenderSequence}`;
+
+    void import("mermaid")
+      .then(async (module) => {
+        const mermaid = module.default;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "base",
+          themeVariables: {
+            background: "transparent",
+            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+            primaryColor: "#d7dee5",
+            primaryTextColor: "#111820",
+            primaryBorderColor: "#909ba6",
+            lineColor: "#314963",
+            secondaryColor: "#e5ebf0",
+            tertiaryColor: "#c6ced6",
+          },
+        });
+        return mermaid.render(renderId, diagramSource);
+      })
+      .then(({ svg }) => {
+        if (mounted) {
+          setRenderState({ svg });
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setRenderState({ error: "Mermaid 图表渲染失败，已保留源码。" });
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [code]);
+
+  return (
+    <div className="markdown-mermaid-block overflow-hidden rounded-lg border border-border-ghost bg-surface text-sm text-foreground shadow-sm">
+      <div className="not-prose flex items-center justify-between gap-3 border-b border-border-ghost bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground">
+        <span>Mermaid</span>
+        <div className="flex items-center gap-2">
+          {renderState.error ? <span>{renderState.error}</span> : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setViewerOpen(true)}
+            disabled={!renderState.svg}
+          >
+            全屏查看
+          </Button>
+        </div>
+      </div>
+      {renderState.svg ? (
+        <div
+          className="overflow-x-auto p-3 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: renderState.svg }}
+        />
+      ) : (
+        <pre className="overflow-x-auto p-3 text-xs leading-6 text-muted-foreground">
+          <code>{code}</code>
+        </pre>
+      )}
+      {renderState.svg ? (
+        <MermaidFullscreenViewer
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+          svg={renderState.svg}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function MermaidFullscreenViewer({
+  open,
+  onOpenChange,
+  svg,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  svg: string;
+}) {
+  const controllerRef = useRef(new MermaidViewportController());
+  const viewportContentRef = useRef<HTMLDivElement | null>(null);
+  const viewportFrameRef = useRef<number | null>(null);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const [viewportState, setViewportState] = useState<MermaidViewportState>(() =>
+    controllerRef.current.getState(),
+  );
+
+  useEffect(() => {
+    if (open) {
+      controllerRef.current.reset();
+      setViewportState(controllerRef.current.getState());
+      applyViewportTransform();
+    }
+  }, [open, svg]);
+
+  useEffect(() => {
+    return () => {
+      if (viewportFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewportFrameRef.current);
+      }
+      activePointersRef.current.clear();
+    };
+  }, []);
+
+  function applyViewportTransform() {
+    const viewportContent = viewportContentRef.current;
+    if (!viewportContent) {
+      return;
+    }
+    viewportContent.style.transform = controllerRef.current.getTransformStyle();
+  }
+
+  function scheduleViewportTransform() {
+    if (viewportFrameRef.current !== null) {
+      return;
+    }
+    viewportFrameRef.current = window.requestAnimationFrame(() => {
+      viewportFrameRef.current = null;
+      applyViewportTransform();
+    });
+  }
+
+  function syncViewportState() {
+    setViewportState(controllerRef.current.getState());
+    scheduleViewportTransform();
+  }
+
+  function pointerDistance() {
+    const pointers = Array.from(activePointersRef.current.values());
+    const first = pointers[0];
+    const second = pointers[1];
+    if (!first || !second) {
+      return 0;
+    }
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }
+
+  function remainingPointer() {
+    return Array.from(activePointersRef.current.values())[0];
+  }
+
+  function zoomIn() {
+    controllerRef.current.zoomIn();
+    syncViewportState();
+  }
+
+  function zoomOut() {
+    controllerRef.current.zoomOut();
+    syncViewportState();
+  }
+
+  function resetViewport() {
+    controllerRef.current.reset();
+    syncViewportState();
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.beginPinch(pointerDistance());
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.beginDrag(event.clientX, event.clientY);
+    syncViewportState();
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activePointersRef.current.has(event.pointerId)) {
+      return;
+    }
+    activePointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.pinchTo(pointerDistance());
+      scheduleViewportTransform();
+      return;
+    }
+
+    if (!controllerRef.current.getState().dragging) {
+      return;
+    }
+    controllerRef.current.dragTo(event.clientX, event.clientY);
+    scheduleViewportTransform();
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    activePointersRef.current.delete(event.pointerId);
+
+    if (activePointersRef.current.size >= 2) {
+      controllerRef.current.beginPinch(pointerDistance());
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.endPinch();
+    const pointer = remainingPointer();
+    if (pointer) {
+      controllerRef.current.beginDrag(pointer.x, pointer.y);
+      syncViewportState();
+      return;
+    }
+
+    controllerRef.current.endDrag();
+    syncViewportState();
+  }
+
+  function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    controllerRef.current.zoomByWheel(event.deltaY);
+    syncViewportState();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[92vh] w-[94vw] max-w-none grid-rows-[auto_1fr] flex-col gap-3 overflow-hidden p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+          <div>
+            <DialogTitle>Mermaid 全屏查看</DialogTitle>
+            <DialogDescription>单指拖动平移，双指或滚轮缩放。</DialogDescription>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Button type="button" variant="secondary" size="sm" onClick={zoomOut}>
+              缩小
+            </Button>
+            <span className="min-w-12 text-center">{Math.round(viewportState.scale * 100)}%</span>
+            <Button type="button" variant="secondary" size="sm" onClick={zoomIn}>
+              放大
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={resetViewport}>
+              重置
+            </Button>
+          </div>
+        </div>
+        <div
+          className="relative min-h-0 flex-1 touch-none overflow-hidden overscroll-contain rounded-lg border border-border-ghost bg-surface-sunken"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onWheel={handleWheel}
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgb(148_163_184_/_0.2)_1px,transparent_0)] [background-size:24px_24px]" />
+          <div
+            ref={viewportContentRef}
+            className="absolute left-1/2 top-1/2 max-w-none select-none [&_svg]:h-auto [&_svg]:max-w-none"
+            style={{
+              cursor: viewportState.dragging ? "grabbing" : "grab",
+              transform: controllerRef.current.getTransformStyle(),
+              transformOrigin: "center",
+              touchAction: "none",
+              willChange: "transform",
+            }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

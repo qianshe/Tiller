@@ -50,6 +50,10 @@ export function PlainMessages({
     () => displayMessages.slice(-visibleMessageCount),
     [displayMessages, visibleMessageCount],
   );
+  const visibleRenderMessages = useMemo(
+    () => resolvePlainMessageRenderItems(visibleMessages),
+    [visibleMessages],
+  );
   const hasHiddenLoadedMessages = visibleMessages.length < displayMessages.length;
   const canLoadMoreMessages =
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
@@ -82,11 +86,12 @@ export function PlainMessages({
           {historyState?.loading ? "加载中..." : "查看更多"}
         </button>
       ) : null}
-      {visibleMessages.map((message) => {
+      {visibleRenderMessages.map(({ message, renderKey, isContinuation }) => {
         const isExpanded = expandedMessageIds.has(message.id);
         return (
           <PlainMessageItem
-            key={message.id}
+            key={renderKey}
+            isContinuation={isContinuation}
             isExpanded={isExpanded}
             message={message}
             onToggleExpandedMessage={onToggleExpandedMessage}
@@ -103,6 +108,7 @@ export function PlainMessages({
 }
 
 type PlainMessageItemProps = {
+  isContinuation: boolean;
   isExpanded: boolean;
   message: AgentMessage;
   onToggleExpandedMessage: (messageId: string) => void;
@@ -110,6 +116,7 @@ type PlainMessageItemProps = {
 };
 
 const PlainMessageItem = memo(function PlainMessageItem({
+  isContinuation,
   isExpanded,
   message,
   onToggleExpandedMessage,
@@ -138,13 +145,20 @@ const PlainMessageItem = memo(function PlainMessageItem({
           aria-hidden="true"
           className="plain-assistant-segment-marker flex min-h-6 justify-center pt-2"
         >
-          <span className="plain-assistant-segment-dot size-2 rounded-full bg-success-container ring-4 ring-surface-sunken" />
+          <span className="plain-assistant-segment-dot size-2 rounded-full bg-success ring-4 ring-surface-sunken" />
         </span>
       ) : null}
       <div className="grid min-w-0 gap-2">
-        <span className="plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {roleLabel}
-        </span>
+        {message.role === "user" ? null : (
+          <span
+            className={cn(
+              "plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+              isContinuation && "sr-only",
+            )}
+          >
+            {roleLabel}
+          </span>
+        )}
         <div
           className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`}
         >
@@ -197,7 +211,10 @@ function renderPlainMessageContent(
       {message.text}
     </div>
   ) : (
-    <div className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden">
+    <div
+      className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
+      data-mission-swipe-lock="true"
+    >
       <MarkdownMessage text={message.text} />
     </div>
   );
@@ -205,7 +222,9 @@ function renderPlainMessageContent(
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   return coalesceDisplayMessages(
-    sortAgentMessagesByTimeline(items),
+    sortAgentMessagesByTimeline(items).filter(
+      (message) => !isAcpPromptWrapperEcho(message),
+    ),
     boundaryTimestamps,
   );
 }
@@ -218,11 +237,47 @@ export function resolveVisiblePlainMessages(
   return sortDisplayMessages(items, boundaryTimestamps).slice(-visibleCount);
 }
 
+type PlainMessageRenderItem = {
+  isContinuation: boolean;
+  message: AgentMessage;
+  renderKey: string;
+};
+
+export function resolvePlainMessageRenderItems(
+  items: AgentMessage[],
+): PlainMessageRenderItem[] {
+  const seenKeys = new Map<string, number>();
+  return items.map((message, index) => {
+    const previous = items[index - 1];
+    const baseKey = message.id || `${message.role}-${message.timestamp || index}`;
+    const seenCount = seenKeys.get(baseKey) ?? 0;
+    seenKeys.set(baseKey, seenCount + 1);
+    return {
+      isContinuation: message.role === "assistant" && previous?.role === "assistant",
+      message,
+      renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
+    };
+  });
+}
+
 function shouldCollapsePlainMessage(text: string) {
   const lineCount = text.split(/\r?\n/).length;
   return (
     lineCount > COLLAPSED_MESSAGE_LINE_LIMIT ||
     text.length > COLLAPSED_MESSAGE_CHAR_LIMIT
+  );
+}
+
+function isAcpPromptWrapperEcho(message: AgentMessage) {
+  if (message.role !== "user") {
+    return false;
+  }
+  const text = message.text.trim();
+  return (
+    /^\[[a-z-]+mode\]/iu.test(text) ||
+    text === "---" ||
+    text.includes("SYNTHESIZE findings before proceeding.") ||
+    text.includes("MANDATORY delegate_task params")
   );
 }
 

@@ -143,7 +143,7 @@ function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
 
 export function renderDiffPatch(patch: string) {
   return (
-    <pre className="mission-diff-patch overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
+    <pre className="mission-diff-patch max-w-full min-w-0 overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
       {patch.split(/\r?\n/u).map((line, index) => (
         <span
           key={`${index}-${line.slice(0, 12)}`}
@@ -160,10 +160,14 @@ export function renderDiffPatch(patch: string) {
 }
 
 function resolveDiffLineStyleClass(lineClass: string) {
-  if (lineClass === "line-added") return "diff-line-added bg-success-container/30 text-foreground";
-  if (lineClass === "line-deleted") return "diff-line-deleted bg-destructive/10 text-foreground";
-  if (lineClass === "line-hunk") return "diff-line-hunk bg-primary-soft text-primary font-semibold";
-  if (lineClass === "line-meta") return "diff-line-meta bg-surface-emphasis text-muted-foreground";
+  if (lineClass === "line-added")
+    return "diff-line-added border-l-2 border-[var(--diff-added-border)] bg-[var(--diff-added-bg)] text-[var(--diff-added-text)]";
+  if (lineClass === "line-deleted")
+    return "diff-line-deleted border-l-2 border-[var(--diff-deleted-border)] bg-[var(--diff-deleted-bg)] text-[var(--diff-deleted-text)]";
+  if (lineClass === "line-hunk")
+    return "diff-line-hunk bg-[var(--diff-hunk-bg)] text-[var(--diff-hunk-text)] font-semibold";
+  if (lineClass === "line-meta")
+    return "diff-line-meta bg-[var(--diff-meta-bg)] text-[var(--diff-meta-text)]";
   return "diff-line-context text-foreground";
 }
 

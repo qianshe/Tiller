@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import type {
   AgentMessage,
   AgentToolCall,
+  PermissionRequest,
   SessionSummary,
   TrustedDeviceSummary,
 } from "@tiller/shared";
@@ -11,7 +12,7 @@ import { useDeckStore } from "../../store";
 import { applyActivityUpdate } from "./activity-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
-import { applySessionResult } from "./session-events.js";
+import { applySessionResult, applySessionUpdate } from "./session-events.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -85,6 +86,39 @@ test("activity RPC notifications append assistant messages without changing sess
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
   );
+});
+
+test("permission resolved notifications clear pending permission requests", () => {
+  resetStore();
+  useDeckStore.setState({
+    permissionRequests: {
+      s1: {
+        id: "permission-1",
+        command: "Approve MCP tool call :: {}",
+        reason: "等待审核",
+        workspacePath: "D:/repo",
+      },
+    },
+  });
+
+  const handled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "permission_resolved",
+        permissionRequestId: "permission-1",
+        decision: "allow",
+      },
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().permissionRequests.s1, null);
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {
@@ -166,6 +200,316 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
+test("agent model options result hydrates draft model options and commands", () => {
+  resetStore();
+  let cached: unknown;
+  let selectedModel = "provider-default";
+  const handled = applyInventoryResult(
+    "agent/get_model_options",
+    {
+      ok: true,
+      warmed: true,
+      providerId: "codex",
+      workspaceId: "main",
+      runtimeSessionId: "runtime-1",
+      currentModelId: "gpt-5.5",
+      modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [],
+      availableCommands: [{ name: "review" }, { name: "compact" }],
+      state: { model: "gpt-5.5" },
+      message: "ACP runtime prewarmed.",
+    },
+    "helm-1",
+    true,
+    {
+      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      setProjectFilesByScope: () => undefined,
+      setSelectedWorkspaceId: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+      setAgentTestResult: () => undefined,
+      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      writeAgentModelOptionsCache: (entries) => {
+        cached = entries;
+      },
+      selectedAgentId: "codex",
+      selectedWorkspaceId: "main",
+      resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
+      resolvePreferredModel: (_current, options) => options[0],
+      selectedModel,
+      setSelectedModel: (model) => {
+        selectedModel = model;
+      },
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+      setConfigSaveMessage: () => undefined,
+      setFleetProjectSaveMessage: () => undefined,
+      setSelectedProjectId: () => undefined,
+      rpcClientRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(selectedModel, "gpt-5.5");
+  assert.deepEqual(useDeckStore.getState().agentModelOptions["codex:main"], {
+    loading: false,
+    warmed: true,
+    projectId: undefined,
+    runtimeSessionId: "runtime-1",
+    message: "ACP runtime prewarmed.",
+    modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+    configOptions: [],
+    state: { model: "gpt-5.5" },
+  });
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.codex?.map((command) => command.name),
+    ["review", "compact"],
+  );
+  assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
+});
+
+test("session prewarm result merges with an existing project scoped model options entry", () => {
+  resetStore();
+  useDeckStore.getState().setAgentModelOptions({
+    "opencode::main::project-2": {
+      loading: false,
+      warmed: true,
+      projectId: "project-2",
+      runtimeSessionId: undefined,
+      message: "Model options loaded.",
+      modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [{ id: "model", label: "Model", type: "string" } as any],
+      state: { model: "cpa-oai/gpt-5.5" },
+    },
+  });
+
+  let cached: unknown;
+  const handled = applyInventoryResult(
+    "session/prewarm",
+    {
+      ok: true,
+      warmed: true,
+      providerId: "opencode",
+      workspaceId: "main",
+      runtimeSessionId: "runtime-warm-1",
+      currentModelId: "cpa-oai/gpt-5.5",
+      modelOptions: [],
+      configOptions: [],
+      state: {},
+      message: "ACP runtime prewarmed.",
+    },
+    "helm-1",
+    true,
+    {
+      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      setProjectFilesByScope: () => undefined,
+      setSelectedWorkspaceId: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+      setAgentTestResult: () => undefined,
+      agentModelOptionsKey: (providerId, workspaceId, projectId) =>
+        projectId ? `${providerId}::${workspaceId}::${projectId}` : `${providerId}::${workspaceId}`,
+      writeAgentModelOptionsCache: (entries) => {
+        cached = entries;
+      },
+      selectedAgentId: "opencode",
+      selectedWorkspaceId: "main",
+      resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
+      resolvePreferredModel: (_current, options) => options[0],
+      selectedModel: "cpa-oai/gpt-5.5",
+      setSelectedModel: () => undefined,
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+      setConfigSaveMessage: () => undefined,
+      setFleetProjectSaveMessage: () => undefined,
+      setSelectedProjectId: () => undefined,
+      rpcClientRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().agentModelOptions, {
+    "opencode::main::project-2": {
+      loading: false,
+      warmed: true,
+      projectId: "project-2",
+      runtimeSessionId: "runtime-warm-1",
+      message: "ACP runtime prewarmed.",
+      modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [{ id: "model", label: "Model", type: "string" }],
+      state: { model: "cpa-oai/gpt-5.5" },
+    },
+  });
+  assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
+});
+
+test("agent model options result merges with an existing prewarm entry", () => {
+  resetStore();
+  useDeckStore.getState().setAgentModelOptions({
+    "opencode::main::project-2": {
+      loading: false,
+      warmed: true,
+      projectId: "project-2",
+      runtimeSessionId: "runtime-warm-1",
+      message: "ACP runtime prewarmed.",
+      modelOptions: [],
+      configOptions: [],
+      state: {},
+    },
+  });
+
+  let cached: unknown;
+  let selectedModel = "provider-default";
+  const dispatched: Array<{ method: string; params: unknown }> = [];
+  const handled = applyInventoryResult(
+    "agent/get_model_options",
+    {
+      ok: true,
+      warmed: true,
+      providerId: "opencode",
+      workspaceId: "main",
+      currentModelId: "cpa-oai/gpt-5.5",
+      modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [{ id: "model", label: "Model", type: "string" }],
+      availableCommands: [{ name: "init" }],
+      state: { model: "cpa-oai/gpt-5.5" },
+      message: "Model options loaded.",
+    },
+    "helm-1",
+    true,
+    {
+      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      setProjectFilesByScope: () => undefined,
+      setSelectedWorkspaceId: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+      setAgentTestResult: () => undefined,
+      agentModelOptionsKey: (providerId, workspaceId, projectId) =>
+        projectId ? `${providerId}::${workspaceId}::${projectId}` : `${providerId}::${workspaceId}`,
+      writeAgentModelOptionsCache: (entries) => {
+        cached = entries;
+      },
+      selectedAgentId: "opencode",
+      selectedWorkspaceId: "main",
+      resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
+      resolvePreferredModel: (_current, options) => options[0],
+      selectedModel,
+      setSelectedModel: (model) => {
+        selectedModel = model;
+      },
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+      setConfigSaveMessage: () => undefined,
+      setFleetProjectSaveMessage: () => undefined,
+      setSelectedProjectId: () => undefined,
+      rpcClientRef: { current: {} as any },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async (_client, method, params) => {
+        dispatched.push({ method, params });
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(selectedModel, "cpa-oai/gpt-5.5");
+  assert.deepEqual(useDeckStore.getState().agentModelOptions["opencode::main::project-2"], {
+    loading: false,
+    warmed: true,
+    projectId: "project-2",
+    runtimeSessionId: "runtime-warm-1",
+    message: "Model options loaded.",
+    modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
+    configOptions: [{ id: "model", label: "Model", type: "string" }],
+    state: { model: "cpa-oai/gpt-5.5" },
+  });
+  assert.deepEqual(
+    useDeckStore.getState().agentAvailableCommands.opencode?.map((command) => command.name),
+    ["init"],
+  );
+  assert.deepEqual(dispatched, [
+    {
+      method: "session/prewarm",
+      params: {
+        projectId: "project-2",
+        workspaceId: "main",
+        agentId: "opencode",
+        agentMode: undefined,
+        model: "cpa-oai/gpt-5.5",
+        reasoningEffort: undefined,
+      },
+    },
+  ]);
+  assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
+});
+
+test("starting session update activates chat and preserves first pending prompt", () => {
+  resetStore();
+  const pendingPromptRef: MutableRefObject<string | null> = { current: "你好" };
+  const pendingPromptContentRef: MutableRefObject<any[] | undefined> = {
+    current: [{ type: "text", text: "你好" }],
+  };
+  const dispatched: Array<{ method: string; params: any }> = [];
+  const context = {
+    setSelectedProjectId: () => undefined,
+    pendingPromptRef,
+    pendingPromptContentRef,
+    rpcClientRef: { current: {} as any },
+    assignSessionTitleFromPrompt: () => undefined,
+    createClientUserMessageId: () => "unused",
+    appendUserMessage: (sessionId: string, text: string, id: string) => {
+      const current = useDeckStore.getState().messages;
+      const messages = current[sessionId] ?? [];
+      if (messages.some((message) => message.id === id)) {
+        return;
+      }
+      useDeckStore.setState({
+        messages: {
+          ...current,
+          [sessionId]: [
+            ...messages,
+            { id, role: "user", text, timestamp: "2026-05-04T00:00:00.000Z" },
+          ],
+        },
+      });
+    },
+    dispatch: async (_client: any, method: string, params: any) => {
+      dispatched.push({ method, params });
+    },
+    toolCallsRef: { current: {} },
+    mergeSessionToolCalls: () => undefined,
+    shouldAutoStartSessionResume: () => false,
+    requestSessionResumeStart: () => undefined,
+    setResumeFeedback: () => undefined,
+    resumeStartRequestsRef: { current: new Set<string>() },
+  };
+
+  const starting = { ...session("s1"), status: "starting" as const };
+  const updateHandled = applySessionUpdate(
+    { sessionId: "s1", update: { kind: "session_updated", session: starting } },
+    context,
+  );
+
+  assert.equal(updateHandled, true);
+  assert.equal(useDeckStore.getState().activeSessionId, "s1");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "你好");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.id, "s1-user-pending");
+
+  const resultHandled = applySessionResult(
+    "session/new",
+    { session: { ...starting, status: "idle" as const, runtimeSessionId: "remote-s1" } },
+    "helm-1",
+    true,
+    context,
+  );
+
+  assert.equal(resultHandled, true);
+  assert.equal(useDeckStore.getState().messages.s1?.length, 1);
+  assert.equal(pendingPromptRef.current, null);
+  assert.equal(dispatched[0]?.method, "session/prompt");
+  assert.equal(dispatched[0]?.params.clientMessageId, "s1-user-pending");
+});
+
 test("session RPC results apply session list results and prune scoped maps", () => {
   resetStore();
   useDeckStore.setState({
@@ -208,4 +552,133 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.equal(useDeckStore.getState().sessions[0]?.id, "s1");
   assert.equal(useDeckStore.getState().messages.stale, undefined);
   assert.deepEqual(dispatched, []);
+});
+
+test("successful session resume clears the pending restore request", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: string[] = [];
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "same-process",
+        restoreMethod: "client-reconnect",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method) => {
+        dispatched.push(method);
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("permission list results hydrate pending permission requests", () => {
+  resetStore();
+  const request: PermissionRequest = {
+    id: "permission-1",
+    command: "Approve MCP tool call :: {}",
+    reason: "需要审核工具调用",
+    workspacePath: "D:/repo",
+  };
+
+  const handled = applySessionResult(
+    "permission/list_pending",
+    { permissions: [{ sessionId: "s1", request }] },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().permissionRequests, {
+    s1: request,
+  });
+});
+
+test("empty permission list clears stale pending permission requests", () => {
+  resetStore();
+  useDeckStore.setState({
+    permissionRequests: {
+      s1: {
+        id: "permission-1",
+        command: "Approve MCP tool call :: {}",
+        reason: "已过期的审核请求",
+        workspacePath: "D:/repo",
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "permission/list_pending",
+    { permissions: [] },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().permissionRequests, {});
 });

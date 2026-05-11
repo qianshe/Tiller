@@ -159,6 +159,14 @@ function extractOpenCodeSkillNameFromToolOutput(output: string | undefined) {
     return skillName;
   }
 
+  const slashCommandHeading = decoded.match(
+    /^#+\s*\/([A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?)\s+Command\b/imu,
+  );
+  const slashCommandSkillName = slashCommandHeading?.[1]?.trim();
+  if (slashCommandSkillName) {
+    return slashCommandSkillName;
+  }
+
   // Codex `Get-Content -Raw '...\SKILL.md'` returns the file body whose YAML
   // frontmatter starts with `name: <skill>`. Recognise that pattern as a
   // last-ditch hint when the tool name itself does not carry a path.

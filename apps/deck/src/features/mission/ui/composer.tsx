@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
   type SetStateAction,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -28,7 +29,6 @@ import {
   type MissionConfigPicker,
 } from "./composer-config-controls";
 import { ComposerAttachments } from "./composer-attachments";
-import { ComposerDraftSelectors } from "./composer-draft-selectors";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
@@ -63,6 +63,7 @@ type MissionComposerProps = {
   handleMissionPromptPaste: (
     event: ReactClipboardEvent<HTMLTextAreaElement>,
   ) => void;
+  onAddPromptImages: (files: FileList | null) => void;
   draftPromptPlaceholder: string;
   slashPopupOpen: boolean;
   filteredSlashCommands: AvailableCommand[];
@@ -105,7 +106,7 @@ type MissionComposerProps = {
   deckPreferences: DeckPreferences;
   enhancePromptDraft: () => void;
   promptEnhancerBusy: boolean;
-  sessionExecutionPending: boolean;
+  sessionCanCancel: boolean;
   cancelSession: (sessionId: string) => void;
   canSend: boolean;
 };
@@ -138,6 +139,7 @@ export function MissionComposer({
   setPrompt,
   handleMissionPromptKeyDown,
   handleMissionPromptPaste,
+  onAddPromptImages,
   draftPromptPlaceholder,
   slashPopupOpen,
   filteredSlashCommands,
@@ -168,11 +170,15 @@ export function MissionComposer({
   deckPreferences,
   enhancePromptDraft,
   promptEnhancerBusy,
-  sessionExecutionPending,
+  sessionCanCancel,
   cancelSession,
   canSend,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const modelSettingsLoading =
+    draftModelLoading ||
+    (!activeSession && selectedDraftAgent?.id === "opencode" && draftConfigOptions.length === 0);
 
   function focusSlashCommand() {
     if (!prompt.startsWith("/")) {
@@ -182,45 +188,29 @@ export function MissionComposer({
   }
 
   return (
-    <div className="chat-input-area draft-toolbar border-t border-border-ghost bg-surface p-3">
-      {!activeSession ? (
-        <ComposerDraftSelectors
-          worktreePickerRef={worktreePickerRef}
-          worktreePickerOpen={worktreePickerOpen}
-          setWorktreePickerOpen={setWorktreePickerOpen}
-          agentPickerRef={agentPickerRef}
-          agentPickerOpen={agentPickerOpen}
-          setAgentPickerOpen={setAgentPickerOpen}
-          selectedWorkspaceName={selectedWorkspaceName}
-          draftWorkspaceOptions={draftWorkspaceOptions}
-          selectedWorkspaceId={selectedWorkspaceId}
-          selectDraftWorkspace={selectDraftWorkspace}
-          currentGitBranch={currentGitBranch}
-          copy={copy}
-          agentLocked={agentLocked}
-          selectedDraftAgent={selectedDraftAgent}
-          filteredAgents={filteredAgents}
-          selectedAgentId={selectedAgentId}
-          selectDraftAgent={selectDraftAgent}
-        />
-      ) : null}
+    <div
+      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost bg-surface p-3"
+      data-mission-swipe-lock="true"
+    >
       <form
-        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface-sunken p-3"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface p-3"
         onSubmit={submitPrompt}
       >
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
-            imagePasteNotice={imagePasteNotice}
           />
           <Textarea
+            id="mission-prompt-input"
+            name="missionPrompt"
             ref={missionPromptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
+            rows={1}
             className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (
@@ -250,10 +240,21 @@ export function MissionComposer({
               aria-expanded={toolsOpen}
               aria-label="打开任务设置"
               title="打开任务设置"
-              onClick={() => setToolsOpen((current) => !current)}
+              disabled={modelSettingsLoading}
+              onClick={() => {
+                if (modelSettingsLoading) {
+                  return;
+                }
+                setToolsOpen((current) => !current);
+              }}
             >
-              ＋
+              ⋯
             </Button>
+            {modelSettingsLoading ? (
+              <span className="truncate px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                models loading...
+              </span>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -265,7 +266,29 @@ export function MissionComposer({
             >
               /
             </Button>
-            {toolsOpen ? (
+            <input
+              ref={imageInputRef}
+              className="mission-image-upload-input sr-only"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => {
+                onAddPromptImages(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mission-image-upload-trigger size-8 rounded-full bg-surface text-base"
+              aria-label="添加图片"
+              title="添加图片"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              +
+            </Button>
+            {toolsOpen && !modelSettingsLoading ? (
               <div
                 className="mission-tools-menu absolute bottom-full left-0 z-50 mb-2 grid w-56 max-w-[calc(100vw-3rem)] gap-3 overflow-visible rounded-lg border border-border-ghost bg-popover-glass p-3 shadow-ambient backdrop-blur-2xl"
                 role="menu"
@@ -286,12 +309,7 @@ export function MissionComposer({
                     modelPlaceholder={draftModelPlaceholder}
                     modelDisabled={draftModelPickerDisabled}
                     modelLabel={draftModelPickerLabel}
-                    modelLoading={
-                      draftModelLoading ||
-                      (!activeSession &&
-                        selectedDraftAgent?.id === "opencode" &&
-                        draftConfigOptions.length === 0)
-                    }
+                    modelLoading={modelSettingsLoading}
                     modelBaseOptions={draftModelBaseOptions}
                     resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
                     allModelOptions={draftAllModelOptions}
@@ -322,7 +340,7 @@ export function MissionComposer({
                 ✦
               </Button>
             ) : null}
-            {activeSession && sessionExecutionPending ? (
+            {activeSession && sessionCanCancel ? (
               <Button
                 variant="destructive"
                 size="icon"

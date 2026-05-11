@@ -5,14 +5,19 @@ import * as helmSave from "./helm/save";
 import * as projectList from "./project/list";
 import * as projectListFiles from "./project/list-files";
 import * as projectSave from "./project/save";
+import * as projectDelete from "./project/delete";
 import * as workspaceList from "./workspace/list";
 import * as workspaceSave from "./workspace/save";
 import * as workspaceGitListBranches from "./workspace/git/list-branches";
 import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
 import * as agentList from "./agent/list";
 import * as agentTest from "./agent/test";
+import * as agentConnections from "./agent/connections";
+import * as agentConnect from "./agent/connect";
+import * as agentReconnect from "./agent/reconnect";
 import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
+import * as agentDelete from "./agent/delete";
 import * as sessionNew from "./session/new";
 import * as sessionPrewarm from "./session/prewarm";
 import * as sessionList from "./session/list";
@@ -23,11 +28,13 @@ import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
+import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as deviceList from "./device/list";
 import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
+import * as daemonShutdown from "./daemon/shutdown";
 import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
@@ -43,14 +50,19 @@ const METHOD_DESCRIPTORS = {
   [projectList.method]: projectList.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
   [projectSave.method]: projectSave.descriptor,
+  [projectDelete.method]: projectDelete.descriptor,
   [workspaceList.method]: workspaceList.descriptor,
   [workspaceSave.method]: workspaceSave.descriptor,
   [workspaceGitListBranches.method]: workspaceGitListBranches.descriptor,
   [workspaceGitCreateBranch.method]: workspaceGitCreateBranch.descriptor,
   [agentList.method]: agentList.descriptor,
   [agentTest.method]: agentTest.descriptor,
+  [agentConnections.method]: agentConnections.descriptor,
+  [agentConnect.method]: agentConnect.descriptor,
+  [agentReconnect.method]: agentReconnect.descriptor,
   [agentGetModelOptions.method]: agentGetModelOptions.descriptor,
   [agentSave.method]: agentSave.descriptor,
+  [agentDelete.method]: agentDelete.descriptor,
   [sessionNew.method]: sessionNew.descriptor,
   [sessionPrewarm.method]: sessionPrewarm.descriptor,
   [sessionList.method]: sessionList.descriptor,
@@ -62,11 +74,13 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
+  [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [deviceList.method]: deviceList.descriptor,
   [deviceRevoke.method]: deviceRevoke.descriptor,
   [devicePair.method]: devicePair.descriptor,
   [deviceAuthenticate.method]: deviceAuthenticate.descriptor,
+  [daemonShutdown.method]: daemonShutdown.descriptor,
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
@@ -83,14 +97,19 @@ export const CLIENT_REQUEST_METHODS = [
   projectList.method,
   projectListFiles.method,
   projectSave.method,
+  projectDelete.method,
   workspaceList.method,
   workspaceSave.method,
   workspaceGitListBranches.method,
   workspaceGitCreateBranch.method,
   agentList.method,
   agentTest.method,
+  agentConnections.method,
+  agentConnect.method,
+  agentReconnect.method,
   agentGetModelOptions.method,
   agentSave.method,
+  agentDelete.method,
   sessionNew.method,
   sessionPrewarm.method,
   sessionList.method,
@@ -102,11 +121,13 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
+  permissionListPending.method,
   permissionRespond.method,
   deviceList.method,
   deviceRevoke.method,
   devicePair.method,
   deviceAuthenticate.method,
+  daemonShutdown.method,
 ] as const;
 
 export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;

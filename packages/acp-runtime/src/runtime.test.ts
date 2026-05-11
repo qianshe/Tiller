@@ -4,9 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  applySessionLaunchOverrides,
   buildOpenCodeConfigOverride,
-  resolveSessionEnvOverrides,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
@@ -16,10 +14,12 @@ import {
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  resolveAdapterRequestTimeout,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
 } from "./runtime";
+import { resolveLaunchSpec } from "./process";
 
 test("default ACP request timeout allows slow session/new responses", () => {
   assert.equal(DEFAULT_ACP_REQUEST_TIMEOUT_MS, 30_000);
@@ -27,6 +27,46 @@ test("default ACP request timeout allows slow session/new responses", () => {
 
 test("default ACP prompt timeout allows long-running agent turns", () => {
   assert.equal(DEFAULT_ACP_PROMPT_TIMEOUT_MS, 30 * 60_000);
+  assert.equal(
+    resolveAcpRequestTimeout(
+      { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
+      "session/prompt",
+    ),
+    DEFAULT_ACP_PROMPT_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveAcpRequestTimeout(
+      {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+        initializeTimeoutMs: 5_000,
+        promptTimeoutMs: 45_000,
+      },
+      "session/prompt",
+    ),
+    45_000,
+  );
+});
+
+test("adapter request timeout resolver keeps OpenCode session requests behind provider adapter", () => {
+  assert.equal(OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS, 120_000);
+  assert.equal(
+    resolveAdapterRequestTimeout(
+      { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"], transport: "stdio", protocol: "acp" },
+      "session/new",
+    ),
+    OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveAdapterRequestTimeout(
+      { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
+      "session/new",
+    ),
+    undefined,
+  );
 });
 
 test("OpenCode ACP session creation uses a longer request timeout", () => {
@@ -191,33 +231,38 @@ test("resolveRuntimeSessionId prefers ACP native ids before fallback", () => {
   assert.equal(resolveRuntimeSessionId({}, "tiller-session"), "tiller-session");
 });
 
-test("applySessionLaunchOverrides appends codex model and reasoning config flags", () => {
-  assert.deepEqual(
-    applySessionLaunchOverrides("codex-acp", ["-c", 'model="gpt-5.4"'], { model: "gpt-5.4-mini", reasoningEffort: "high" }),
-    ["-c", 'model="gpt-5.4"', "-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"'],
+test("resolveLaunchSpec does not apply session config a second time", () => {
+  const launch = resolveLaunchSpec("codex-acp", ["-c", 'model="gpt-5.4-mini"']);
+
+  assert.equal(launch.args.filter((arg) => arg.includes("model=")).length, 1);
+  assert.equal(launch.args.some((arg) => arg.includes("model_reasoning_effort")), false);
+});
+
+test("Codex adapter appends model and reasoning config flags", () => {
+  const launch = resolveAcpLaunchConfig(
+    { id: "codex", name: "Codex", command: "codex-acp", args: ["-c", 'model="gpt-5.4"'], transport: "stdio", protocol: "acp" },
+    { fallbackCwd: process.cwd(), sessionConfig: { model: "gpt-5.4-mini", reasoningEffort: "high" } },
   );
+
+  assert.deepEqual(launch.args, ["-c", 'model="gpt-5.4"', "-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"']);
 });
 
-test("applySessionLaunchOverrides leaves OpenCode ACP args unchanged because model config is passed through env", () => {
-  assert.deepEqual(
-    applySessionLaunchOverrides("opencode", ["acp", "--pure"], { model: "openai/gpt-5.4", reasoningEffort: "high" }),
-    ["acp", "--pure", "--port", "0"],
+test("OpenCode adapter strips stale model flags and injects ACP port through launch config", () => {
+  const launch = resolveAcpLaunchConfig(
+    { id: "opencode", name: "OpenCode", command: "opencode", args: ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], transport: "stdio", protocol: "acp" },
+    { fallbackCwd: process.cwd(), sessionConfig: { model: "openai/gpt-5.4-mini" } },
   );
+
+  assert.deepEqual(launch.args, ["acp", "--pure", "--port", "0"]);
 });
 
-test("applySessionLaunchOverrides strips stale OpenCode model flags from ACP args", () => {
-  assert.deepEqual(
-    applySessionLaunchOverrides("opencode", ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], { model: "openai/gpt-5.4-mini" }),
-    ["acp", "--pure", "--port", "0"],
+test("OpenCode adapter preserves explicit ACP port args", () => {
+  const launch = resolveAcpLaunchConfig(
+    { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--port", "4097"], transport: "stdio", protocol: "acp" },
+    { fallbackCwd: process.cwd(), sessionConfig: { model: "openai/gpt-5.4" } },
   );
-});
 
-test("applySessionLaunchOverrides preserves explicit OpenCode ACP port args", () => {
-  assert.deepEqual(applySessionLaunchOverrides("opencode", ["acp", "--port", "4097"], { model: "openai/gpt-5.4" }), ["acp", "--port", "4097"]);
-});
-
-test("applySessionLaunchOverrides leaves unsupported providers unchanged", () => {
-  assert.deepEqual(applySessionLaunchOverrides("custom-agent", ["serve"], { model: "gpt-5.4", reasoningEffort: "high" }), ["serve"]);
+  assert.deepEqual(launch.args, ["acp", "--port", "4097"]);
 });
 
 test("buildOpenCodeConfigOverride emits inline config content for model and reasoning", () => {
@@ -237,9 +282,13 @@ test("buildOpenCodeConfigOverride emits inline config content for model and reas
   });
 });
 
-test("resolveSessionEnvOverrides emits OPENCODE_CONFIG_CONTENT for OpenCode sessions", () => {
-  assert.deepEqual(resolveSessionEnvOverrides("opencode", { model: "openai/gpt-5.4", reasoningEffort: "high" }), {
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+test("OpenCode adapter emits OPENCODE_CONFIG_CONTENT for OpenCode sessions", () => {
+  const launch = resolveAcpLaunchConfig(
+    { id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"], transport: "stdio", protocol: "acp" },
+    { fallbackCwd: process.cwd(), sessionConfig: { model: "openai/gpt-5.4", reasoningEffort: "high" } },
+  );
+
+  assert.deepEqual(JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT as string), {
       model: "openai/gpt-5.4",
       provider: {
         openai: {
@@ -252,7 +301,6 @@ test("resolveSessionEnvOverrides emits OPENCODE_CONFIG_CONTENT for OpenCode sess
           },
         },
       },
-    }),
   });
 });
 

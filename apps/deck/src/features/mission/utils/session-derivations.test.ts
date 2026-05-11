@@ -7,6 +7,7 @@ import type {
 } from "@tiller/shared";
 import {
   resolveActiveSessionId,
+  resolveDefaultMissionSessionId,
   resolveDraftSelectionId,
   resolveMissionHelms,
   resolveProjectFilesScope,
@@ -41,6 +42,50 @@ test("resolveActiveSessionId preserves only an explicitly open live session", ()
   assert.equal(resolveActiveSessionId(live.id, [live]), live.id);
   assert.equal(resolveActiveSessionId(null, [live]), null);
   assert.equal(resolveActiveSessionId("missing", [live]), null);
+});
+
+test("resolveDefaultMissionSessionId prefers a running session waiting for review", () => {
+  const firstRunning = {
+    ...buildSession("session-running", "2026-04-27T11:00:00.000Z"),
+    status: "running" as const,
+  };
+  const pendingReview = {
+    ...buildSession("session-review", "2026-04-27T10:00:00.000Z"),
+    status: "waiting_for_permission" as const,
+  };
+
+  assert.equal(
+    resolveDefaultMissionSessionId(null, [firstRunning, pendingReview]),
+    "session-review",
+  );
+});
+
+test("resolveDefaultMissionSessionId selects the first running session when no review is pending", () => {
+  const idle = buildSession("session-idle", "2026-04-27T09:00:00.000Z");
+  const firstRunning = {
+    ...buildSession("session-running-1", "2026-04-27T10:00:00.000Z"),
+    status: "running" as const,
+  };
+  const secondRunning = {
+    ...buildSession("session-running-2", "2026-04-27T11:00:00.000Z"),
+    status: "starting" as const,
+  };
+
+  assert.equal(
+    resolveDefaultMissionSessionId(null, [idle, firstRunning, secondRunning]),
+    "session-running-1",
+  );
+});
+
+test("resolveDefaultMissionSessionId keeps a live explicit session and ignores idle-only lists", () => {
+  const idle = buildSession("session-idle", "2026-04-27T09:00:00.000Z");
+  const running = {
+    ...buildSession("session-running", "2026-04-27T10:00:00.000Z"),
+    status: "running" as const,
+  };
+
+  assert.equal(resolveDefaultMissionSessionId(idle.id, [idle, running]), idle.id);
+  assert.equal(resolveDefaultMissionSessionId(null, [idle]), null);
 });
 
 test("resolveSessionProjectId keeps the session project binding authoritative", () => {
@@ -251,13 +296,13 @@ test("resolveMissionSelectedProjectId prefers the active session project over st
   );
 });
 
-test("resolveMissionSelectedProjectId does not highlight a draft project before a session starts", () => {
+test("resolveMissionSelectedProjectId highlights the draft project before a session starts", () => {
   assert.equal(
     resolveMissionSelectedProjectId({
       activeSessionProjectId: null,
       selectedProjectId: "draft-project",
     }),
-    null,
+    "draft-project",
   );
 });
 

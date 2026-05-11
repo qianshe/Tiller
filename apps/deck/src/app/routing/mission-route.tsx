@@ -7,6 +7,8 @@ export function renderMissionRoute(source: any) {
   const {
     prompt,
     promptImages,
+    rpcClientRef,
+    dispatch,
     socketRef,
     activeSessionId,
     selectedProjectId,
@@ -25,12 +27,16 @@ export function renderMissionRoute(source: any) {
     activeSessionProject,
     draftProject,
     selectedWorkspace,
+    workspaces,
     selectedDraftAgent,
     projectFileFilter,
     collapsedProjectFileDirectories,
     effectiveSidebarCollapsed,
     effectiveDisplayCollapsed,
     effectiveInspectorCollapsed,
+    isMissionMobile,
+    selectedMissionMobilePane,
+    setSelectedMissionMobilePane,
     missionLayoutRef,
     missionLayoutStyle,
     missionSidebarCollapsed,
@@ -52,6 +58,7 @@ export function renderMissionRoute(source: any) {
     sessions,
     sessionCountsByProject,
     agents,
+    agentConnectionInventory,
     setSelectedMissionHelmId,
     setSelectedProjectId,
     setSelectedWorkspaceId,
@@ -93,6 +100,7 @@ export function renderMissionRoute(source: any) {
     agentLocked,
     filteredAgents,
     selectDraftAgent,
+    createDraftSessionForAgent,
     submitPrompt,
     slashWrapperRef,
     removePromptImage,
@@ -101,6 +109,7 @@ export function renderMissionRoute(source: any) {
     setPrompt,
     handleMissionPromptKeyDown,
     handleMissionPromptPaste,
+    addPromptImageFiles,
     draftPromptPlaceholder,
     slashPopupOpen,
     filteredSlashCommands,
@@ -156,6 +165,8 @@ export function renderMissionRoute(source: any) {
     <MissionWorkspace
       prompt={prompt}
       promptImages={promptImages}
+      rpcClientRef={rpcClientRef}
+      dispatch={dispatch}
       socketRef={socketRef}
       activeSessionId={activeSessionId}
       selectedProjectId={selectedProjectId}
@@ -174,12 +185,16 @@ export function renderMissionRoute(source: any) {
       activeSessionProject={activeSessionProject}
       draftProject={draftProject}
       selectedWorkspace={selectedWorkspace}
+      workspaces={workspaces}
       selectedDraftAgent={selectedDraftAgent}
       projectFileFilter={projectFileFilter}
       collapsedProjectFileDirectories={collapsedProjectFileDirectories}
       effectiveSidebarCollapsed={effectiveSidebarCollapsed}
       effectiveDisplayCollapsed={effectiveDisplayCollapsed}
       effectiveInspectorCollapsed={effectiveInspectorCollapsed}
+      isMissionMobile={isMissionMobile}
+      selectedMissionMobilePane={selectedMissionMobilePane}
+      setSelectedMissionMobilePane={setSelectedMissionMobilePane}
       missionLayoutRef={missionLayoutRef}
       missionLayoutStyle={missionLayoutStyle}
       missionSidebarCollapsed={missionSidebarCollapsed}
@@ -201,6 +216,7 @@ export function renderMissionRoute(source: any) {
       sessions={sessions}
       sessionCountsByProject={sessionCountsByProject}
       agents={agents}
+      agentConnectionInventory={agentConnectionInventory}
       setSelectedMissionHelmId={setSelectedMissionHelmId}
       setSelectedProjectId={setSelectedProjectId}
       setSelectedWorkspaceId={setSelectedWorkspaceId}
@@ -242,6 +258,7 @@ export function renderMissionRoute(source: any) {
       agentLocked={agentLocked}
       filteredAgents={filteredAgents}
       selectDraftAgent={selectDraftAgent}
+      createDraftSessionForAgent={createDraftSessionForAgent}
       submitPrompt={submitPrompt}
       slashWrapperRef={slashWrapperRef}
       removePromptImage={removePromptImage}
@@ -250,6 +267,7 @@ export function renderMissionRoute(source: any) {
       setPrompt={setPrompt}
       handleMissionPromptKeyDown={handleMissionPromptKeyDown}
       handleMissionPromptPaste={handleMissionPromptPaste}
+      onAddPromptImages={addPromptImageFiles}
       draftPromptPlaceholder={draftPromptPlaceholder}
       slashPopupOpen={slashPopupOpen}
       filteredSlashCommands={filteredSlashCommands}

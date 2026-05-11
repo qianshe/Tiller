@@ -15,6 +15,22 @@ export type TillerConfig = {
   };
 };
 
+const DEFAULT_DAEMON_CONFIG: NonNullable<TillerConfig["daemon"]> = {
+  host: "127.0.0.1",
+  port: 47631,
+  auth: "none",
+};
+
+function resolveDaemonConfig(daemon: TillerConfig["daemon"]) {
+  if (!daemon) {
+    return DEFAULT_DAEMON_CONFIG;
+  }
+  if (daemon.auth) {
+    return daemon;
+  }
+  return { ...daemon, auth: "none" as const };
+}
+
 export function resolveProviderById(id: string, providers: AcpAgentProvider[]) {
   return providers.find((provider) => provider.id === id);
 }
@@ -28,19 +44,39 @@ export function resolveProjectById(id: string, projects: ProjectSummary[]) {
 }
 
 function hydrateProvider(provider: AcpAgentProvider): AcpAgentProvider {
-  const sessionConfig = resolveSessionConfigSupport(provider);
+  const normalized = normalizeLegacyProvider(provider);
+  const sessionConfig = resolveLegacySessionConfigSupport(normalized);
   return {
-    ...provider,
+    ...normalized,
     capabilities: {
-      ...provider.capabilities,
+      ...normalized.capabilities,
       sessionConfig: {
         model: sessionConfig.model,
         reasoningEffort: sessionConfig.reasoningEffort,
         modelFormat: sessionConfig.modelFormat,
-        ...provider.capabilities?.sessionConfig,
+        ...normalized.capabilities?.sessionConfig,
       },
     },
   };
+}
+
+function resolveLegacySessionConfigSupport(provider: AcpAgentProvider) {
+  if (provider.capabilities?.sessionConfig) {
+    return resolveSessionConfigSupport(provider);
+  }
+  if (provider.command === "codex-acp") {
+    return { model: "startup" as const, reasoningEffort: "startup" as const, modelFormat: "model" as const };
+  }
+  if (provider.command === "opencode") {
+    return { model: "startup" as const, reasoningEffort: "none" as const, modelFormat: "provider/model" as const };
+  }
+  return resolveSessionConfigSupport(provider);
+}
+
+function normalizeLegacyProvider(provider: AcpAgentProvider): AcpAgentProvider {
+  const name = provider.name === "CloudeCode" ? "ClaudeCode" : provider.name;
+  const id = provider.id === "cloudecode" ? "claudecode" : provider.id;
+  return name === provider.name && id === provider.id ? provider : { ...provider, id, name };
 }
 
 export function getDefaultConfigPath() {
@@ -70,6 +106,17 @@ export function readTillerConfig(configPath = getDefaultConfigPath()): TillerCon
   }
 
   return parseTillerConfig(stub.raw, configPath);
+}
+
+export function ensureTillerConfigDefaults(configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextDaemon = resolveDaemonConfig(current.daemon);
+  const updated = current.daemon !== nextDaemon;
+  if (updated) {
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({ ...current, daemon: nextDaemon }, null, 2), "utf8");
+  }
+  return { configPath, updated };
 }
 
 export function parseTillerConfig(raw: string, configPath = "<memory>"): TillerConfig {
@@ -115,10 +162,7 @@ export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfi
     projects: current.projects ?? [],
     workspaces: current.workspaces ?? [],
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -133,17 +177,19 @@ export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfi
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {
   const current = readTillerConfig(configPath);
   const normalizedProvider = hydrateProvider(provider);
-  const nextAgents = [...(current.agents ?? []).filter((item) => item.id !== normalizedProvider.id), normalizedProvider];
+  const nextAgents = [
+    ...(current.agents ?? []).filter(
+      (item) => normalizeLegacyProvider(item).id !== normalizedProvider.id,
+    ),
+    normalizedProvider,
+  ];
 
   const nextConfig: TillerConfig = {
     helms: current.helms ?? [],
     projects: current.projects ?? [],
     workspaces: current.workspaces ?? [],
     agents: nextAgents,
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -165,10 +211,7 @@ export function saveProjectToConfig(project: ProjectSummary, configPath = getDef
     projects: nextProjects,
     workspaces: current.workspaces ?? [],
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -189,10 +232,7 @@ export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = 
     projects: current.projects ?? [],
     workspaces: nextWorkspaces,
     agents: current.agents ?? [],
-    daemon: current.daemon ?? {
-      host: "127.0.0.1",
-      port: 47631,
-    },
+    daemon: resolveDaemonConfig(current.daemon),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -201,5 +241,59 @@ export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = 
   return {
     configPath,
     workspace,
+  };
+}
+
+export function deleteProjectFromConfig(projectId: string, configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const project = (current.projects ?? []).find((item) => item.id === projectId);
+  const workspaceIds = new Set(project?.workspaceIds ?? []);
+  const nextConfig: TillerConfig = {
+    helms: current.helms ?? [],
+    projects: (current.projects ?? []).filter((item) => item.id !== projectId),
+    workspaces: workspaceIds.size
+      ? (current.workspaces ?? []).filter((item) => !workspaceIds.has(item.id))
+      : (current.workspaces ?? []),
+    agents: current.agents ?? [],
+    daemon: resolveDaemonConfig(current.daemon),
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    projectId,
+    deleted: Boolean(project),
+  };
+}
+
+export function deleteProviderFromConfig(providerId: string, configPath = getDefaultConfigPath()) {
+  const current = readTillerConfig(configPath);
+  const nextAgents = (current.agents ?? []).filter(
+    (item) => normalizeLegacyProvider(item).id !== providerId,
+  );
+  const nextProjects = (current.projects ?? []).map((project) => {
+    if (project.defaultAgentId !== providerId) {
+      return project;
+    }
+    const { defaultAgentId: _defaultAgentId, ...rest } = project;
+    return rest;
+  });
+  const nextConfig: TillerConfig = {
+    helms: current.helms ?? [],
+    projects: nextProjects,
+    workspaces: current.workspaces ?? [],
+    agents: nextAgents,
+    daemon: resolveDaemonConfig(current.daemon),
+  };
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+  return {
+    configPath,
+    providerId,
+    deleted: nextAgents.length !== (current.agents ?? []).length,
   };
 }

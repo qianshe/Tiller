@@ -1,12 +1,16 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
-export { createAcpRuntime } from "./runtime-session";
+export { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection } from "./runtime-session";
+export { AcpConnection } from "./connection/acp-connection";
+export { createAcpConnectionManager } from "./connection/connection-manager";
+export type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
+export { resolveAcpConnectionKey } from "./connection/connection-key";
+export type { AcpConnectionInventoryItem } from "./connection/connection-types";
 export { testAcpConnection } from "./connection-test";
 export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./session-list";
 export {
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
-  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpRequestTimeout,
 } from "./constants";
 
@@ -49,9 +53,6 @@ function normalizePreferredAgentId(agent: string | undefined) {
   return aliasMap[canonical] ?? canonical;
 }
 
-// TODO(real-acp): introduce createAcpRuntime(provider, workspace) using stdio JSON-RPC notifications beyond initialize.
-// TODO(real-acp): normalize ACP raw notifications into SessionRuntimeEvent here instead of leaking protocol details upward.
-
 export { resolveRuntimeSessionId } from "./requests";
 export { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "./capabilities";
 export type {
@@ -65,19 +66,22 @@ export type {
   SessionRuntimeEvent,
 } from "./runtime-types";
 
-export { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "./events";
+export { mapSessionUpdateNotification, normalizeProviderCleanupResult, summarizeSessionUpdateNotification } from "./events";
 export { sanitizeProtocolLogPayload } from "./protocol-logging";
 
-export { applySessionLaunchOverrides, buildOpenCodeConfigOverride, resolveSessionEnvOverrides } from "./config-adapters";
+export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {
   createClaudeAcpAdapter,
   createCodexAcpAdapter,
   createGenericAcpAdapter,
   createOpenClawAcpAdapter,
   createOpenCodeAcpAdapter,
+  loadAdapterAuthoritativeHistory,
+  OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  resolveAdapterRequestTimeout,
   type AcpAgentAdapter,
   type AcpLaunchContext,
   type AcpLaunchSpec,

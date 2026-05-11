@@ -1,15 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { applySessionLaunchOverrides } from "./config-adapters";
-import type { SessionReasoningEffort } from "@tiller/shared";
+import { Transform } from "node:stream";
 
 export function resolveLaunchSpec(
   command: string,
   args: string[],
-  sessionConfig?: { model?: string; reasoningEffort?: SessionReasoningEffort },
 ) {
-  const runtimeArgs = applySessionLaunchOverrides(command, args, sessionConfig);
+  const runtimeArgs = args;
   if (process.platform !== "win32") {
     return { command, args: runtimeArgs };
   }
@@ -64,6 +62,48 @@ export function terminateChildProcess(pid: number | undefined) {
     process.kill(pid, "SIGTERM");
   } catch {
     // ignore: process already exited
+  }
+}
+
+export function createProtocolStdoutStream(
+  source: NodeJS.ReadableStream,
+  onDiscardLine?: (line: string) => void,
+): Transform {
+  let pending = "";
+  const filter = new Transform({
+    transform(chunk, _encoding, callback) {
+      pending += String(chunk);
+      let newlineIndex = pending.indexOf("\n");
+      while (newlineIndex >= 0) {
+        const line = pending.slice(0, newlineIndex + 1);
+        pending = pending.slice(newlineIndex + 1);
+        pushProtocolLine(this, line, onDiscardLine);
+        newlineIndex = pending.indexOf("\n");
+      }
+      callback();
+    },
+    flush(callback) {
+      if (pending) {
+        pushProtocolLine(this, pending, onDiscardLine);
+      }
+      callback();
+    },
+  });
+  return source.pipe(filter);
+}
+
+function pushProtocolLine(
+  stream: Transform,
+  line: string,
+  onDiscardLine?: (line: string) => void,
+) {
+  if (line.trimStart().startsWith("{")) {
+    stream.push(line);
+    return;
+  }
+  const trimmed = line.trim();
+  if (trimmed) {
+    onDiscardLine?.(trimmed);
   }
 }
 

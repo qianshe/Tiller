@@ -9,6 +9,7 @@ import { usePromptImages } from "../hooks/prompt-images";
 import {
   MODEL_OPTIONS,
   defaultAgentId,
+  formatAgentModeLabel,
   resolveAgentModeOptions,
   resolveBaseModelOptions,
   resolveCurrentAgentMode,
@@ -60,6 +61,7 @@ const {
   imagePasteNotice,
   setImagePasteNotice,
   handlePromptPaste: handleMissionPromptPaste,
+  addPromptImageFiles,
   removePromptImage,
 } = usePromptImages({ activeSession });
 const activeSessionMessages = activeSession
@@ -107,14 +109,17 @@ const missionProjects = useMemo(
   [effectiveMissionHelmId, projects],
 );
 const filteredWorkspaces = useMemo(() => {
-  const workspaceIds = draftProject?.workspaceIds;
+  if (!draftProject) {
+    return [];
+  }
+  const workspaceIds = draftProject.workspaceIds;
   if (!workspaceIds?.length) {
     return workspaces;
   }
   return workspaces.filter((workspace) =>
     workspaceIds.includes(workspace.id),
   );
-}, [draftProject?.workspaceIds, workspaces]);
+}, [draftProject, workspaces]);
 const selectedWorkspace =
   filteredWorkspaces.find(
     (workspace) => workspace.id === selectedWorkspaceId,
@@ -239,9 +244,14 @@ const effectiveDraftAgentMode = resolveCurrentAgentMode(
   draftConfigOptions,
   draftAgentModelOptions?.state.agentMode,
 );
-const showDraftAgentModeSelect = draftAgentModeOptions.length > 0;
+const visibleDraftAgentModeOptions = draftAgentModeOptions.length
+  ? draftAgentModeOptions
+  : effectiveDraftAgentMode
+    ? [{ value: effectiveDraftAgentMode, label: formatAgentModeLabel(effectiveDraftAgentMode) }]
+    : [];
+const showDraftAgentModeSelect = visibleDraftAgentModeOptions.length > 0;
 const draftAgentModePickerLabel = showDraftAgentModeSelect
-  ? (draftAgentModeOptions.find(
+  ? (visibleDraftAgentModeOptions.find(
       (option) => option.value === effectiveDraftAgentMode,
     )?.label ??
     effectiveDraftAgentMode ??
@@ -273,6 +283,7 @@ const draftHasLoadedModelOptions =
 const awaitingDraftAgentModelOptions =
   !activeSession &&
   Boolean(selectedAgentId && selectedWorkspaceId) &&
+  !draftAgentModelOptions &&
   !draftHasLoadedModelOptions;
 const draftModelPickerLabel = draftModelBaseOptions.length
   ? effectiveDraftModelBase
@@ -299,6 +310,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     imagePasteNotice,
     setImagePasteNotice,
     handleMissionPromptPaste,
+    addPromptImageFiles,
     removePromptImage,
     activeSessionMessages,
     activeConversationUpdateKey,
@@ -335,7 +347,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     draftConfigOptions,
     cachedModelSession,
     draftNativeModelOptions,
-    draftAgentModeOptions,
+    draftAgentModeOptions: visibleDraftAgentModeOptions,
     effectiveDraftAgentMode,
     showDraftAgentModeSelect,
     draftAgentModePickerLabel,

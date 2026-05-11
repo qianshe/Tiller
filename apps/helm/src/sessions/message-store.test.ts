@@ -288,6 +288,37 @@ test("session message store collapses repeated replayed assistant text without l
   }
 });
 
+test("session message store keeps normalized assistant stream segments separate", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-segments-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "session-1-msg-s0",
+      role: "assistant",
+      text: "工具前说明",
+      timestamp: "2026-04-27T08:00:00.000Z",
+    });
+    store.append("session-1", {
+      id: "session-1-msg-s1",
+      role: "assistant",
+      text: "工具后继续",
+      timestamp: "2026-04-27T08:00:02.000Z",
+    });
+
+    assert.deepEqual(
+      store.list("session-1").map((message) => [message.id, message.text]),
+      [
+        ["session-1-msg-s0", "工具前说明"],
+        ["session-1-msg-s1", "工具后继续"],
+      ],
+    );
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session message store refreshes duplicate replay timestamps without duplicating text", async () => {
   const mod = await import("./message-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-replay-"));

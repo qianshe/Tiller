@@ -35,6 +35,30 @@ export function resolveActiveSessionId(current: string | null, sessions: Session
   return null;
 }
 
+export function resolveDefaultMissionSessionId(
+  current: string | null,
+  sessions: SessionSummary[],
+  statuses: Record<string, SessionStatus> = {},
+): string | null {
+  const liveCurrent = resolveActiveSessionId(current, sessions);
+  if (liveCurrent) {
+    return liveCurrent;
+  }
+
+  const statusOf = (session: SessionSummary) => statuses[session.id] ?? session.status;
+  const pendingReview = sessions.find(
+    (session) => statusOf(session) === "waiting_for_permission",
+  );
+  if (pendingReview) {
+    return pendingReview.id;
+  }
+
+  return sessions.find((session) => {
+    const status = statusOf(session);
+    return status === "running" || status === "starting";
+  })?.id ?? null;
+}
+
 export function applySessionListSnapshot(
   snapshot: { activeSessionId: string | null; maps: SessionScopedMaps },
   sessions: SessionSummary[],
@@ -127,7 +151,7 @@ export function resolveMissionSelectedProjectId(input: {
   activeSessionProjectId: string | null | undefined;
   selectedProjectId: string | null | undefined;
 }) {
-  return input.activeSessionProjectId ?? null;
+  return input.activeSessionProjectId ?? input.selectedProjectId ?? null;
 }
 
 export function resolveModelOptionsFromConfig(

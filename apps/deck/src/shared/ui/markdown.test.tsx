@@ -21,8 +21,11 @@ test("markdown tables render inside a responsive scroll wrapper", () => {
   assert.match(html, /overflow-y-hidden/);
   assert.match(html, /max-w-full/);
   assert.match(html, /<table/);
+  assert.match(html, /min-w-max/);
   assert.match(html, /markdown-table-head/);
   assert.match(html, /markdown-table-cell/);
+  assert.doesNotMatch(html, /whitespace-normal/);
+  assert.doesNotMatch(html, /break-words/);
 });
 
 test("markdown renders only source tables as tables", () => {
@@ -85,6 +88,36 @@ test("thinking paragraphs receive a dedicated markdown class hook", () => {
 
   assert.match(html, /markdown-paragraph[^\"]*markdown-paragraph-thinking/);
   assert.match(html, /<p class="markdown-paragraph[^\"]*">普通段落内容。<\/p>/);
+});
+
+test("markdown code block uses theme-aware code surface tokens", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["```ts", "const value = 1;", "```"].join("\n")} />,
+  );
+
+  assert.match(html, /bg-\[var\(--markdown-code-bg\)\]/);
+  assert.match(html, /text-\[var\(--markdown-code-fg\)\]/);
+  assert.match(html, /!bg-transparent/);
+});
+
+test("markdown renders Mermaid fences with a diagram shell", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["```mermaid", "flowchart TD", "  A --> B", "```"].join("\n")} />,
+  );
+
+  assert.match(html, /markdown-mermaid-block/);
+  assert.match(html, /Mermaid/);
+  assert.match(html, /全屏查看/);
+  assert.doesNotMatch(html, /markdown-code-block/);
+});
+
+test("markdown waits for a closing Mermaid fence before rendering a diagram shell", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["```mermaid", "flowchart TD", "  A -->"].join("\n")} />,
+  );
+
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.match(html, /markdown-code-block/);
 });
 
 test("markdown code highlighting reuses cached results for identical code", async () => {

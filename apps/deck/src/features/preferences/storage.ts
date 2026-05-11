@@ -11,7 +11,7 @@ export { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE };
 
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
-export type DeckTheme = "system" | "light" | "dark";
+export type DeckTheme = "system" | "light" | "dark" | "tiller";
 
 export type TechnicalPanelPreferences = {
   logbookDefaultOpen: boolean;
@@ -242,7 +242,9 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isDeckTheme(value: unknown): value is DeckTheme {
-  return value === "system" || value === "light" || value === "dark";
+  return (
+    value === "system" || value === "light" || value === "dark" || value === "tiller"
+  );
 }
 
 export function readPreferenceText(value: unknown, fallback: string) {

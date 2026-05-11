@@ -1,35 +1,23 @@
-import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { AcpAgentProvider, AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AcpAuthoritativeHistory } from "./types";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
 const OPENCODE_EXPORT_MAX_BUFFER = 16 * 1024 * 1024;
 
-type OpenCodeExportHistory = {
-  messages: AgentMessage[];
-  toolCalls: AgentToolCall[];
-};
-
 export async function loadOpenCodeExportHistory(
   agent: AcpAgentProvider,
   runtimeSessionId: string,
   cwd: string,
-): Promise<OpenCodeExportHistory | null> {
+): Promise<AcpAuthoritativeHistory | null> {
   if (!isOpenCodeCommand(agent.command)) {
     return null;
   }
 
   const stdout = await runOpenCodeExport(agent, runtimeSessionId, cwd);
   return parseOpenCodeExportHistory(stdout);
-}
-
-export async function loadProviderAuthoritativeHistory(
-  agent: AcpAgentProvider,
-  runtimeSessionId: string,
-  cwd: string,
-): Promise<OpenCodeExportHistory | null> {
-  return loadOpenCodeExportHistory(agent, runtimeSessionId, cwd);
 }
 
 async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
@@ -67,7 +55,7 @@ function quotePowerShellArg(value: string) {
   return `'${value.replace(/'/gu, "''")}'`;
 }
 
-export function parseOpenCodeExportHistory(raw: string): OpenCodeExportHistory {
+export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory {
   const parsed = JSON.parse(raw);
   const messages: AgentMessage[] = [];
   const toolCalls: AgentToolCall[] = [];

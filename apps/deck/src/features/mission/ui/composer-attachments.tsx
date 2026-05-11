@@ -3,16 +3,14 @@ import type { AgentPromptImageContent } from "@tiller/shared";
 type ComposerAttachmentsProps = {
   promptImages: AgentPromptImageContent[];
   removePromptImage: (index: number) => void;
-  imagePasteNotice: string;
 };
 
 /**
- * Shows pasted image chips and paste feedback above the prompt textbox.
+ * Shows selected image chips above the prompt textbox.
  */
 export function ComposerAttachments({
   promptImages,
   removePromptImage,
-  imagePasteNotice,
 }: ComposerAttachmentsProps) {
   return (
     <>
@@ -39,11 +37,6 @@ export function ComposerAttachments({
             </span>
           ))}
         </div>
-      ) : null}
-      {imagePasteNotice ? (
-        <p className="subtle compact mission-composer-notice">
-          {imagePasteNotice}
-        </p>
       ) : null}
     </>
   );

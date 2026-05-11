@@ -14,6 +14,10 @@ export function MissionToolLoading({
   activity,
   pendingToolPresent,
 }: MissionToolLoadingProps) {
+  const detail = pendingToolPresent
+    ? `等待 ${activity.title.replace(/^Tool:\s*/u, "")} 返回结果…`
+    : "等待下一次状态更新…";
+
   return (
     <div
       className="mission-tool-loading my-3 mr-auto grid max-w-[min(640px,100%)] grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-border-ghost bg-surface-elevated px-3 py-2.5 text-foreground shadow-ambient"
@@ -26,10 +30,10 @@ export function MissionToolLoading({
       />
       <div className="grid min-w-0 gap-0.5">
         <strong className="text-sm font-semibold">
-          {pendingToolPresent ? "正在执行工具" : "Agent 正在处理"}
+          {pendingToolPresent ? "正在执行工具" : activity.title}
         </strong>
         <p className="truncate text-xs text-muted-foreground">
-          等待 {activity.title.replace(/^Tool:\s*/u, "")} 返回结果…
+          {detail}
         </p>
       </div>
     </div>
