@@ -44,14 +44,72 @@ export function resolvePortProbeHosts(host: string) {
 
 let cachedLanAddresses: string[] | null = null;
 
+type NetworkInterfaceAddressLike = {
+  address: string;
+  family: string | number;
+  internal: boolean;
+};
+
+type NetworkInterfaceMapLike = Record<string, NetworkInterfaceAddressLike[] | undefined>;
+
 export function resolveLanAddresses() {
   if (!cachedLanAddresses) {
-    cachedLanAddresses = Object.values(networkInterfaces())
-      .flatMap((items) => items ?? [])
-      .filter((item) => item.family === "IPv4" && !item.internal)
-      .map((item) => item.address);
+    cachedLanAddresses = resolveLanAddressesFromInterfaces(networkInterfaces());
   }
   return cachedLanAddresses;
+}
+
+export function resolveLanAddressesFromInterfaces(interfaces: NetworkInterfaceMapLike) {
+  let order = 0;
+  return unique(
+    Object.entries(interfaces)
+      .flatMap(([name, items]) =>
+        (items ?? []).map((item) => ({
+          address: item.address,
+          family: item.family,
+          internal: item.internal,
+          name,
+          order: order++,
+        })),
+      )
+      .filter((item) => item.family === "IPv4" && !item.internal)
+      .filter((item) => isDisplayLanAddress(item.address))
+      .sort((left, right) => compareDisplayAddress(left, right))
+      .map((item) => item.address),
+  );
+}
+
+function compareDisplayAddress(
+  left: { name: string; order: number },
+  right: { name: string; order: number },
+) {
+  return adapterScore(left.name) - adapterScore(right.name) || left.order - right.order;
+}
+
+function adapterScore(name: string) {
+  return /virtual|vethernet|vmware|virtualbox|hyper-v|wsl/iu.test(name) ? 10 : 0;
+}
+
+function isDisplayLanAddress(address: string) {
+  const octets = parseIpv4Octets(address);
+  if (!octets) {
+    return false;
+  }
+  if (octets[0] === 169 && octets[1] === 254) {
+    return false;
+  }
+  if (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) {
+    return false;
+  }
+  return true;
+}
+
+function parseIpv4Octets(address: string) {
+  const parts = address.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return null;
+  }
+  return parts;
 }
 
 function canConnect(host: string, port: number, timeoutMs: number) {

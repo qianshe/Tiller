@@ -175,9 +175,10 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
   });
 
   socket.addEventListener("close", () => {
-    if (helmSocketRefs.current.get(helmKey) === socket) {
-      helmSocketRefs.current.delete(helmKey);
+    if (helmSocketRefs.current.get(helmKey) !== socket) {
+      return;
     }
+    helmSocketRefs.current.delete(helmKey);
     if (helmRpcClientRefs.current.get(helmKey) === client) {
       helmRpcClientRefs.current.delete(helmKey);
     }
@@ -185,6 +186,9 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
   });
 
   socket.addEventListener("error", () => {
+    if (helmSocketRefs.current.get(helmKey) !== socket) {
+      return;
+    }
     setHelmConnectionState(helmKey, "disconnected");
     setDaemonProfileMessage(`${profile.name} 连接失败`);
   });
@@ -315,11 +319,12 @@ export function connectToDaemon(
   });
 
   socket.addEventListener("close", () => {
+    if (socketRef.current !== socket) {
+      return;
+    }
     setHelmConnectionState(helmKey, "disconnected");
     setConnection("disconnected");
-    if (socketRef.current === socket) {
-      socketRef.current = null;
-    }
+    socketRef.current = null;
     if (rpcClientRef.current === client) {
       rpcClientRef.current = null;
     }
@@ -331,6 +336,9 @@ export function connectToDaemon(
   });
 
   socket.addEventListener("error", () => {
+    if (socketRef.current !== socket) {
+      return;
+    }
     setConnection("disconnected");
     setConnectFeedback(`连接 ${wsUrl} 失败`);
     if (!options?.auto) {

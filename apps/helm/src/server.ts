@@ -52,6 +52,7 @@ import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
 import { createSessionServices, type SessionRecord } from "./runtime/session-services";
 import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
+import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
 import { createPairingState } from "./state/pairing";
 import { createSocketState } from "./state/socket";
@@ -202,6 +203,7 @@ try {
 
 const httpServer = createServer(handleHttpRequest);
 const server = new WebSocketServer({ server: httpServer });
+const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 
 server.on("connection", (socket) => {
   logInfo("[tiller] client connected");
@@ -245,6 +247,7 @@ async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
   }
   shutdownStarted = true;
   logInfo(`[tiller] shutdown reason=${reason}; closing ACP connections`);
+  stopWebSocketHeartbeat();
   server.close();
   httpServer.close();
   await disposeAcpConnections();
