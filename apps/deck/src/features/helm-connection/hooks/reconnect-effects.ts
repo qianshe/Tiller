@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject } from "react";
 import type { ConnectionState } from "../../../store/facade";
+import { requestReconnectAttempt } from "../reconnect-attempt";
 import type { ConnectToDaemonOptions } from "../sockets";
 import {
   shouldAttemptSilentReconnect,
@@ -59,11 +60,13 @@ export function useReconnectEffects({
       return;
     }
     const attemptKey = `silent:${activeProfileId}`;
-    if (autoConnectAttemptRef.current === attemptKey) {
-      return;
-    }
-    autoConnectAttemptRef.current = attemptKey;
-    connectToDaemon(undefined, { preserveState: true, auto: true });
+    return requestReconnectAttempt({
+      activeProfileId,
+      attemptKey,
+      autoConnectAttemptRef,
+      manualDisconnectRef,
+      connectToDaemon,
+    });
   }, [
     activeProfileId,
     connection,
@@ -93,11 +96,13 @@ export function useReconnectEffects({
       return;
     }
     const attemptKey = `live:${activeView}:${activeProfileId}`;
-    if (autoConnectAttemptRef.current === attemptKey) {
-      return;
-    }
-    autoConnectAttemptRef.current = attemptKey;
-    connectToDaemon(undefined, { preserveState: true, auto: true });
+    return requestReconnectAttempt({
+      activeProfileId,
+      attemptKey,
+      autoConnectAttemptRef,
+      manualDisconnectRef,
+      connectToDaemon,
+    });
   }, [
     activeProfileId,
     activeView,
