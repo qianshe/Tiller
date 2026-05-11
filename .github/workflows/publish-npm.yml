@@ -3,10 +3,18 @@ name: Publish npm
 on:
   workflow_dispatch:
     inputs:
-      git_ref:
-        description: "Git ref to publish, usually a tag like v0.1.0-alpha.1"
+      bump:
+        description: "Version bump type"
         required: true
-        type: string
+        default: prerelease-alpha
+        type: choice
+        options:
+          - prerelease-alpha
+          - prerelease-beta
+          - prerelease-rc
+          - patch
+          - minor
+          - major
       dist_tag:
         description: "npm dist-tag"
         required: true
@@ -15,40 +23,49 @@ on:
         options:
           - preview
           - latest
+      base_branch:
+        description: "Branch to release from"
+        required: true
+        default: main
+        type: string
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
   publish:
-    name: Publish @qianshe/tiller
+    name: Bump, release and publish @qianshe/tiller
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate requested ref and dist-tag
+      - name: Validate bump and dist-tag
         shell: bash
         run: |
-          REF="${{ inputs.git_ref }}"
+          BUMP="${{ inputs.bump }}"
           DIST_TAG="${{ inputs.dist_tag }}"
-          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
-            EXPECTED_DIST_TAG="preview"
-          elif [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            EXPECTED_DIST_TAG="latest"
-          else
-            echo "Unsupported release ref: $REF"
-            echo "Use vX.Y.Z-alpha.N, vX.Y.Z-beta.N, vX.Y.Z-rc.N, or vX.Y.Z."
-            exit 1
-          fi
+          case "$BUMP" in
+            prerelease-alpha|prerelease-beta|prerelease-rc)
+              EXPECTED_DIST_TAG="preview"
+              ;;
+            patch|minor|major)
+              EXPECTED_DIST_TAG="latest"
+              ;;
+            *)
+              echo "Unsupported bump type: $BUMP"
+              exit 1
+              ;;
+          esac
           if [ "$DIST_TAG" != "$EXPECTED_DIST_TAG" ]; then
-            echo "Ref $REF must be published with npm dist-tag $EXPECTED_DIST_TAG, got $DIST_TAG."
+            echo "Bump $BUMP must be published with npm dist-tag $EXPECTED_DIST_TAG, got $DIST_TAG."
             exit 1
           fi
 
-      - name: Checkout requested ref
+      - name: Checkout base branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.git_ref }}
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -62,6 +79,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Bump package version
+        id: version
+        shell: bash
+        run: |
+          case "${{ inputs.bump }}" in
+            prerelease-alpha)
+              npm --prefix apps/helm version prerelease --preid alpha --no-git-tag-version
+              ;;
+            prerelease-beta)
+              npm --prefix apps/helm version prerelease --preid beta --no-git-tag-version
+              ;;
+            prerelease-rc)
+              npm --prefix apps/helm version prerelease --preid rc --no-git-tag-version
+              ;;
+            patch|minor|major)
+              npm --prefix apps/helm version "${{ inputs.bump }}" --no-git-tag-version
+              ;;
+          esac
+          VERSION="$(node -p "require('./apps/helm/package.json').version")"
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -71,20 +120,45 @@ jobs:
       - name: Deck import boundary lint
         run: pnpm --filter @tiller/deck lint
 
-      - name: Build npm package
-        run: pnpm --filter @tiller/helm build
+      - name: Package smoke test
+        run: pnpm --filter @tiller/helm pack:npm
 
-      - name: Check version matches ref
+      - name: Commit version bump and create tag
         shell: bash
         run: |
-          REF_VERSION="${{ inputs.git_ref }}"
-          REF_VERSION="${REF_VERSION#v}"
-          PACKAGE_VERSION="$(node -p "require('./apps/helm/dist-package/package.json').version")"
-          if [ "$REF_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "Ref version $REF_VERSION does not match package version $PACKAGE_VERSION"
-            exit 1
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/helm/package.json
+          git commit -m "chore: release ${{ steps.version.outputs.version }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "HEAD:${{ inputs.base_branch }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Publish npm package
         working-directory: apps/helm/dist-package
         run: npm publish --tag "${{ inputs.dist_tag }}" --access public
+
+      - name: Create GitHub prerelease draft
+        if: steps.version.outputs.prerelease == 'true'
+        shell: bash
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            --draft \
+            --prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create GitHub release draft
+        if: steps.version.outputs.prerelease == 'false'
+        shell: bash
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            --draft
+        env:
+          GH_TOKEN: ${{ github.token }}
