@@ -43,7 +43,11 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 .serena/
-docs/
+/docs/
+!/docs/
+/docs/*
+!/docs/CORE_PRO_BOUNDARY.md
+/apps/helm/docs/
 .worktrees
 .worktrees/
 .ace-tool/

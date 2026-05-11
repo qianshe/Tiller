@@ -23,6 +23,14 @@ Tiller 把运行在你电脑、工作站或服务器上的 Coding Agent 整理�
 - 为每个项目和 worktree 保留会话、消息、任务日志和 diff 摘要。
 - 在不搭建公网 SaaS 的前提下，把多 Agent 工作流放进一个本地控制台。
 
+## Product split
+
+The public repository is treated as **Tiller Core**: a single-machine, local-first command deck that can run one Helm daemon and manage local projects, worktrees and ACP agents.
+
+Future multi-machine and team features belong in a separate commercial **Tiller Pro / Control Plane** line. Examples include multi-Helm fleet management, team accounts, RBAC, SSO, central audit logs, hosted relay, billing and license activation.
+
+See [Core / Pro Boundary](docs/CORE_PRO_BOUNDARY.md) for the current split rules.
+
 ## Install
 
 Tiller is published as an npm preview package.
