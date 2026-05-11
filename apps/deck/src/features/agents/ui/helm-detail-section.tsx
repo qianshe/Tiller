@@ -131,6 +131,7 @@ export function HelmDetailSection({
         <HelmActions
           connectDaemonProfile={connectDaemonProfile}
           connectToDaemon={connectToDaemon}
+          dispatch={dispatch}
           helmSocketRefs={helmSocketRefs}
           isEmbeddedHelmDeck={isEmbeddedHelmDeck}
           lastFilesScopeKeyRef={lastFilesScopeKeyRef}
@@ -139,6 +140,7 @@ export function HelmDetailSection({
           selectedHelmConnection={selectedHelmConnection}
           selectedHelmIsConnected={selectedHelmIsConnected}
           selectedHelmIsCurrent={selectedHelmIsCurrent}
+          selectedHelmRpcClient={selectedHelmRpcClient}
           selectedHelmSavedProfile={selectedHelmSavedProfile}
           setConnection={setConnection}
           setHelmConnectionState={setHelmConnectionState}

@@ -34,6 +34,7 @@ import * as deviceList from "./device/list";
 import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
+import * as daemonShutdown from "./daemon/shutdown";
 import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
@@ -79,6 +80,7 @@ const METHOD_DESCRIPTORS = {
   [deviceRevoke.method]: deviceRevoke.descriptor,
   [devicePair.method]: devicePair.descriptor,
   [deviceAuthenticate.method]: deviceAuthenticate.descriptor,
+  [daemonShutdown.method]: daemonShutdown.descriptor,
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
@@ -125,6 +127,7 @@ export const CLIENT_REQUEST_METHODS = [
   deviceRevoke.method,
   devicePair.method,
   deviceAuthenticate.method,
+  daemonShutdown.method,
 ] as const;
 
 export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;

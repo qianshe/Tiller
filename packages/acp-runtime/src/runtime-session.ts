@@ -29,6 +29,10 @@ export function listAcpConnectionInventory() {
   return defaultAcpConnectionManager.listInventory();
 }
 
+export async function disposeAcpConnections() {
+  await defaultAcpConnectionManager.disposeAll();
+}
+
 export async function createAcpRuntime(options: AcpRuntimeOptions) {
   const restoreReplaySink = createRestoreReplayEventSink(
     options.onEvent,

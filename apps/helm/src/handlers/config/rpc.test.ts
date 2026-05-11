@@ -281,3 +281,19 @@ test("config RPC deletes an agent and clears project defaults", async () => {
   assert.deepEqual(cachedAgents.map((agent: any) => agent.id), ["keep"]);
   assert.deepEqual(cachedProjects, [{ id: "p1", name: "Project", helmId: "local" }]);
 });
+
+test("config RPC schedules explicit daemon shutdown", async () => {
+  const shutdownReasons: string[] = [];
+
+  const result = await handleConfigRpcRequest("daemon/shutdown", {}, {
+    requestShutdown: (reason: string) => {
+      shutdownReasons.push(reason);
+    },
+  } as any);
+
+  assert.deepEqual(result, {
+    ok: true,
+    message: "Helm shutdown requested.",
+  });
+  assert.deepEqual(shutdownReasons, ["rpc"]);
+});

@@ -33,6 +33,8 @@ export async function handleConfigRpcRequest(
   context: HelmHandlerContext,
 ): Promise<unknown | undefined> {
   switch (method) {
+    case "daemon/shutdown":
+      return shutdownDaemon(context);
     case "helm/list":
       return listHelms(context);
     case "helm/save":
@@ -81,6 +83,14 @@ export async function handleConfigRpcRequest(
     default:
       return undefined;
   }
+}
+
+function shutdownDaemon(context: HelmHandlerContext) {
+  context.requestShutdown?.("rpc");
+  return {
+    ok: true,
+    message: "Helm shutdown requested.",
+  };
 }
 
 function listHelms(context: HelmHandlerContext) {

@@ -49,6 +49,7 @@ export type HelmHandlerContext = {
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
   logError: (message: string) => void;
+  requestShutdown?: (reason: "rpc") => void;
 
   getHelms: () => HelmSummary[];
   setHelms: (items: HelmSummary[]) => void;

@@ -146,10 +146,31 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
     return Array.from(connections.values()).map((connection) => connection.inventory());
   }
 
+  async function disposeAll() {
+    const cached = Array.from(connections.values());
+    const pending = Array.from(pendingConnections.entries());
+    connections.clear();
+    pendingConnections.clear();
+
+    await Promise.allSettled([
+      ...cached.map((connection) => connection.dispose()),
+      ...pending.map(async ([key, connectionPromise]) => {
+        try {
+          const connection = await connectionPromise;
+          await connection.dispose();
+          connections.delete(key);
+        } catch {
+          // Ignore failed pending opens; shutdown is best-effort cleanup.
+        }
+      }),
+    ]);
+  }
+
   return {
     openConnection: openManagedConnection,
     reconnect,
     openSession,
     listInventory,
+    disposeAll,
   };
 }

@@ -17,7 +17,7 @@ import {
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
-import { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
@@ -237,6 +237,29 @@ server.on("error", (error) => {
   logError(`[tiller] websocket error: ${error.message}`);
 });
 
+let shutdownStarted = false;
+
+async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
+  if (shutdownStarted) {
+    return;
+  }
+  shutdownStarted = true;
+  logInfo(`[tiller] shutdown reason=${reason}; closing ACP connections`);
+  server.close();
+  httpServer.close();
+  await disposeAcpConnections();
+  logInfo(`[tiller] shutdown complete reason=${reason}`);
+  process.exit(0);
+}
+
+process.once("SIGINT", (signal) => {
+  void shutdownHelm(signal);
+});
+
+process.once("SIGTERM", (signal) => {
+  void shutdownHelm(signal);
+});
+
 process.on("uncaughtException", (error) => {
   logError(`[tiller] uncaught exception: ${error.stack ?? error.message}`);
 });
@@ -272,6 +295,11 @@ function createHandlerContext(): HelmHandlerContext {
     logDebug,
     logWarn,
     logError,
+    requestShutdown: (reason) => {
+      setTimeout(() => {
+        void shutdownHelm(reason);
+      }, 0);
+    },
     getHelms: () => helms,
     setHelms: (items) => {
       helms = items;

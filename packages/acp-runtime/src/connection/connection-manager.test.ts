@@ -251,3 +251,76 @@ test("connection manager reconnect disposes cached connection before opening a n
   assert.deepEqual(lifecycleEvents, ["connection-reconnect", "connection-open"]);
   assert.equal(manager.listInventory()[0]?.runtimeConnectionId, "conn-2");
 });
+
+test("connection manager disposeAll closes cached and pending connections", async () => {
+  let openCount = 0;
+  let disposeCount = 0;
+  let resolvePending: ((connection: Awaited<ReturnType<typeof manager.openConnection>>) => void) | undefined;
+  const manager = createAcpConnectionManager({
+    openConnection: async () => {
+      openCount += 1;
+      if (openCount === 2) {
+        return await new Promise((resolve) => {
+          resolvePending = resolve;
+        });
+      }
+      return {
+        inventory: () => ({
+          key: resolveAcpConnectionKey({ provider, workspace }),
+          providerId: provider.id,
+          workspaceId: workspace.id,
+          workspacePath: workspace.path,
+          launchCwd: workspace.path,
+          status: "ready" as const,
+          runtimeConnectionId: `conn-${openCount}`,
+          initialized: true,
+          activeSessionCount: 0,
+          pendingSessionCount: 0,
+          sessions: [],
+          capabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
+        }),
+        dispose: async () => {
+          disposeCount += 1;
+        },
+        openOrCreateSession: async () => {
+          throw new Error("disposeAll should not create sessions");
+        },
+      };
+    },
+  });
+
+  await manager.openConnection({ provider, workspace });
+  const pending = manager.openConnection({
+    provider: { ...provider, id: "claudecode", name: "ClaudeCode", command: "claude-agent-acp", args: [] },
+    workspace,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const disposePromise = manager.disposeAll();
+  resolvePending?.({
+    inventory: () => ({
+      key: "acp:claudecode:pending",
+      providerId: "claudecode",
+      workspaceId: workspace.id,
+      workspacePath: workspace.path,
+      launchCwd: workspace.path,
+      status: "ready" as const,
+      runtimeConnectionId: "conn-pending",
+      initialized: true,
+      activeSessionCount: 0,
+      pendingSessionCount: 0,
+      sessions: [],
+      capabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
+    }),
+    dispose: async () => {
+      disposeCount += 1;
+    },
+    openOrCreateSession: async () => {
+      throw new Error("disposeAll should not create sessions");
+    },
+  });
+  await Promise.all([pending.catch(() => undefined), disposePromise]);
+
+  assert.equal(disposeCount, 2);
+  assert.deepEqual(manager.listInventory(), []);
+});
