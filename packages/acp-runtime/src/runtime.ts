@@ -82,8 +82,10 @@ export {
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
   resolveAdapterRequestTimeout,
+  resolveAdapterPluginManifest,
   type AcpAgentAdapter,
   type AcpLaunchContext,
   type AcpLaunchSpec,
+  type ProviderAdapterPluginManifest,
   type ProviderCleanupPlan,
 } from "./adapters";

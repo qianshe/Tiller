@@ -30,35 +30,6 @@ test("dispatchWithTrace sends JSON-RPC requests and applies result callbacks", a
   assert.equal(trace.lastRequestType, "helm/list");
 });
 
-test("dispatchWithTrace gives model option probes a longer timeout", async () => {
-  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
-  const client = {
-    request: async (method: string, params: unknown, options?: unknown) => {
-      requested.push({ method, params, options });
-      return { ok: true };
-    },
-    notify: () => undefined,
-  };
-  let trace = { requestsSent: 0, lastRequestType: "" } as any;
-
-  await dispatchWithTrace(
-    client as any,
-    "agent/get_model_options",
-    { providerId: "opencode", workspaceId: "main" },
-    (updater) => {
-      trace = updater(trace);
-    },
-  );
-
-  assert.deepEqual(requested, [
-    {
-      method: "agent/get_model_options",
-      params: { providerId: "opencode", workspaceId: "main" },
-      options: { timeoutMs: 120_000 },
-    },
-  ]);
-  assert.equal(trace.lastRequestType, "agent/get_model_options");
-});
 
 test("dispatchWithTrace gives session creation a longer timeout", async () => {
   const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
@@ -90,7 +61,7 @@ test("dispatchWithTrace gives session creation a longer timeout", async () => {
   assert.equal(trace.lastRequestType, "session/new");
 });
 
-test("dispatchWithTrace gives session prewarm a longer timeout", async () => {
+test("dispatchWithTrace gives session draft creation a longer timeout", async () => {
   const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
   const client = {
     request: async (method: string, params: unknown, options?: unknown) => {
@@ -103,8 +74,8 @@ test("dispatchWithTrace gives session prewarm a longer timeout", async () => {
 
   await dispatchWithTrace(
     client as any,
-    "session/prewarm",
-    { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    "session/draft",
+    { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
     (updater) => {
       trace = updater(trace);
     },
@@ -112,12 +83,12 @@ test("dispatchWithTrace gives session prewarm a longer timeout", async () => {
 
   assert.deepEqual(requested, [
     {
-      method: "session/prewarm",
-      params: { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      method: "session/draft",
+      params: { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
       options: { timeoutMs: 180_000 },
     },
   ]);
-  assert.equal(trace.lastRequestType, "session/prewarm");
+  assert.equal(trace.lastRequestType, "session/draft");
 });
 
 test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {

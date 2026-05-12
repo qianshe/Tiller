@@ -27,20 +27,26 @@ export type SessionRecord = {
 
 export type PermissionRecord = { sessionId: string; request: PermissionRequest };
 
-export type ModelOptionsProbeResult = {
-  ok: boolean;
-  message: string;
-  currentModelId?: string;
-  modelOptions: AcpModelState["options"];
-  configOptions: Extract<
-    import("@tiller/acp-runtime").SessionRuntimeEvent,
-    { type: "config-options" }
-  >["options"];
-  availableCommands: AvailableCommand[];
-  state: Extract<
+export type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
+
+export type RuntimeDraftRecord = {
+  draftId: string;
+  deckClientId: string;
+  scopeKey: string;
+  logicalScopeKey: string;
+  project: ProjectSummary;
+  helm: HelmSummary;
+  workspace: WorkspaceSummary;
+  agent: AcpAgentProvider;
+  runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
+  attach: (sessionId: string) => void;
+  modelState?: AcpModelState;
+  configState: Extract<
     import("@tiller/acp-runtime").SessionRuntimeEvent,
     { type: "config-options" }
   >["state"];
+  configOptions: SessionConfigOption[];
+  availableCommands: AvailableCommand[];
 };
 
 export type HelmHandlerContext = {
@@ -81,7 +87,10 @@ export type HelmHandlerContext = {
   connectAcpConnection: typeof connectAcpConnection;
   reconnectAcpConnection: typeof reconnectAcpConnection;
   listAcpConnectionInventory: typeof listAcpConnectionInventory;
-  prewarmRuntime: (params: {
+  createRuntimeDraft: (params: {
+    deckClientId: string;
+    project: ProjectSummary;
+    helm: HelmSummary;
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
     sessionConfig?: {
@@ -91,38 +100,58 @@ export type HelmHandlerContext = {
     };
   }) => Promise<{
     ok: boolean;
-    warmed: boolean;
-    providerId: string;
-    workspaceId: string;
+    draftId?: string;
+    deckClientId: string;
+    scopeKey: string;
+    logicalScopeKey: string;
     runtimeSessionId?: string;
-    currentModelId?: string;
-    modelOptions?: AcpModelOption[];
-    configOptions?: SessionConfigOption[];
-    availableCommands?: AvailableCommand[];
     state?: {
       agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     };
+    modelOptions?: AcpModelOption[];
+    configOptions?: SessionConfigOption[];
+    availableCommands?: AvailableCommand[];
+    createdAt?: string;
+    expiresAt?: string;
+    reused?: boolean;
     message: string;
   }>;
-  takePrewarmedRuntime: (params: {
-    workspace: WorkspaceSummary;
-    agent: AcpAgentProvider;
-    sessionConfig?: {
+  discardRuntimeDraft: (params: {
+    deckClientId: string;
+    draftId?: string;
+    scopeKey?: string;
+    reason: RuntimeDraftReason;
+  }) => Promise<{
+    ok: boolean;
+    discarded: boolean;
+    draftId?: string;
+    cleanup?: unknown;
+    message: string;
+  }>;
+  discardRuntimeDraftsForDeckClient: (
+    deckClientId: string,
+    reason: RuntimeDraftReason,
+  ) => Promise<void>;
+  scheduleDeckClientDraftDiscard: (deckClientId: string, delayMs?: number) => void;
+  takeRuntimeDraft: (draftId: string) => RuntimeDraftRecord | undefined;
+  configureRuntimeDraft: (params: {
+    draftId: string;
+    agentMode?: string;
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+  }) => Promise<{
+    draftId: string;
+    ok: boolean;
+    state: {
       agentMode?: string;
       model?: string;
       reasoningEffort?: SessionReasoningEffort;
     };
-  }) => Promise<
-    | {
-        runtime: SessionRecord["runtime"];
-        attach: (sessionId: string) => void;
-        cancel: () => void;
-        expiresTimer: ReturnType<typeof setTimeout>;
-      }
-    | undefined
-  >;
+    options: SessionConfigOption[];
+    message: string;
+  }>;
   testAcpConnection: (
     agent: AcpAgentProvider,
     cwd?: string,
@@ -131,10 +160,6 @@ export type HelmHandlerContext = {
   resolveProjectById: (id: string, projects: ProjectSummary[]) => ProjectSummary | undefined;
   resolveProviderById: (id: string, agents: AcpAgentProvider[]) => AcpAgentProvider | undefined;
 
-  probeAgentModelOptions: (
-    agent: AcpAgentProvider,
-    workspace: WorkspaceSummary,
-  ) => Promise<ModelOptionsProbeResult>;
   startSessionResume: (sessionId: string) => Promise<{
     ok: boolean;
     resume: SessionSummary["resume"] extends infer R ? NonNullable<R> : never;

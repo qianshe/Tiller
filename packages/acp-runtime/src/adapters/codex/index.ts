@@ -1,6 +1,6 @@
-import type { AcpAgentAdapter } from "./types";
-import { isCommandNamed, resolveDefaultLaunch } from "./shared";
-import { applyCodexSessionLaunchArgs } from "./session-config";
+import type { AcpAgentAdapter } from "../types";
+import { isCommandNamed, resolveDefaultLaunch } from "../shared";
+import { applyCodexSessionLaunchArgs } from "../session-config";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
   return {

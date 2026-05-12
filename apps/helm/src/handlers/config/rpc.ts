@@ -76,11 +76,6 @@ export async function handleConfigRpcRequest(
         params as { providerId: string; workspaceId?: string; projectId?: string },
         context,
       );
-    case "agent/get_model_options":
-      return getModelOptions(
-        params as { providerId: string; workspaceId: string; projectId?: string },
-        context,
-      );
     default:
       return undefined;
   }
@@ -581,36 +576,3 @@ async function reconnectAgent(
   }
 }
 
-async function getModelOptions(
-  params: { providerId: string; workspaceId: string; projectId?: string },
-  context: HelmHandlerContext,
-) {
-  const agent = context.resolveProviderById(params.providerId, context.getAgents());
-  const workspaces = context.getWorkspaces();
-  const baseWorkspace = workspaces.find((item) => item.id === params.workspaceId);
-  const project = params.projectId
-    ? context.resolveProjectById(params.projectId, context.getProjects())
-    : undefined;
-  const workspace =
-    project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
-      ? { ...baseWorkspace, path: project.path }
-      : baseWorkspace;
-  if (!agent || !workspace) {
-    return {
-      ok: false,
-      providerId: params.providerId,
-      workspaceId: params.workspaceId,
-      message: !agent ? "Provider not found" : "Workspace not found",
-      modelOptions: [],
-      configOptions: [],
-      availableCommands: [],
-      state: {},
-    };
-  }
-  const result = await context.probeAgentModelOptions(agent, workspace);
-  return {
-    providerId: agent.id,
-    workspaceId: workspace.id,
-    ...result,
-  };
-}

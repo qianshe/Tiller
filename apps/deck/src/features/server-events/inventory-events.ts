@@ -192,11 +192,9 @@ export function applyInventoryResult(
     case "agent/test":
       setAgentTestResult(payload.message);
       return true;
-    case "agent/get_model_options":
-    case "session/prewarm": {
+    case "session/draft": {
       // Reconstruct the cache key including projectId. Prefer the loading entry,
-      // but model probing and prewarm may complete in either order, so fall back
-      // to an existing project-scoped entry for the same provider/workspace.
+      // because draft creation is tied to the currently selected agent scope.
       const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
       const currentEntries = store.agentModelOptions;
       const matchingEntries = Object.entries(currentEntries).filter(([key]) =>
@@ -222,7 +220,11 @@ export function applyInventoryResult(
       const nextEntry = {
         loading: false,
         warmed: Boolean(payload.ok) || Boolean(previous?.warmed),
-        projectId: existingProjectId,
+        projectId: existingProjectId ?? payload.projectId,
+        draftId: payload.draftId ?? previous?.draftId,
+        deckClientId: payload.deckClientId ?? previous?.deckClientId,
+        scopeKey: payload.scopeKey ?? previous?.scopeKey,
+        logicalScopeKey: payload.logicalScopeKey ?? previous?.logicalScopeKey,
         runtimeSessionId: payload.runtimeSessionId ?? previous?.runtimeSessionId,
         message: payload.message ?? previous?.message,
         modelOptions: nextModelOptions,
@@ -277,17 +279,6 @@ export function applyInventoryResult(
         }
         if (nextState.reasoningEffort) {
           setSelectedReasoningEffort(nextState.reasoningEffort);
-        }
-        const client = rpcClientRef.current;
-        if (method === "agent/get_model_options" && client && nextModel) {
-          void dispatch(client, "session/prewarm", {
-            projectId: existingProjectId ?? undefined,
-            workspaceId: payload.workspaceId,
-            agentId: payload.providerId,
-            agentMode: nextState.agentMode,
-            model: nextModel,
-            reasoningEffort: nextState.reasoningEffort,
-          });
         }
       }
       return true;

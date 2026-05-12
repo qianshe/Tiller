@@ -29,8 +29,6 @@ The public repository is treated as **Tiller Core**: a local-first command deck 
 
 Future managed fleet and team features belong in a separate commercial **Tiller Pro / Control Plane** line. Examples include automatic Helm node enrollment, shared team workspace, RBAC, SSO, central audit logs, hosted relay, billing and license activation.
 
-See [Core / Pro Boundary](docs/CORE_PRO_BOUNDARY.md) for the current split rules.
-
 ## Install
 
 Tiller is published as an npm preview package.

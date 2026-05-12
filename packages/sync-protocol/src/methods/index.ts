@@ -15,17 +15,18 @@ import * as agentTest from "./agent/test";
 import * as agentConnections from "./agent/connections";
 import * as agentConnect from "./agent/connect";
 import * as agentReconnect from "./agent/reconnect";
-import * as agentGetModelOptions from "./agent/get-model-options";
 import * as agentSave from "./agent/save";
 import * as agentDelete from "./agent/delete";
 import * as sessionNew from "./session/new";
-import * as sessionPrewarm from "./session/prewarm";
+import * as sessionDraft from "./session/draft";
+import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
 import * as sessionListMessages from "./session/list-messages";
 import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
+import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
 import * as permissionListPending from "./permission/list-pending";
@@ -60,17 +61,18 @@ const METHOD_DESCRIPTORS = {
   [agentConnections.method]: agentConnections.descriptor,
   [agentConnect.method]: agentConnect.descriptor,
   [agentReconnect.method]: agentReconnect.descriptor,
-  [agentGetModelOptions.method]: agentGetModelOptions.descriptor,
   [agentSave.method]: agentSave.descriptor,
   [agentDelete.method]: agentDelete.descriptor,
   [sessionNew.method]: sessionNew.descriptor,
-  [sessionPrewarm.method]: sessionPrewarm.descriptor,
+  [sessionDraft.method]: sessionDraft.descriptor,
+  [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
   [sessionListMessages.method]: sessionListMessages.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
+  [sessionConfigure.method]: sessionConfigure.descriptor,
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
@@ -107,17 +109,18 @@ export const CLIENT_REQUEST_METHODS = [
   agentConnections.method,
   agentConnect.method,
   agentReconnect.method,
-  agentGetModelOptions.method,
   agentSave.method,
   agentDelete.method,
   sessionNew.method,
-  sessionPrewarm.method,
+  sessionDraft.method,
+  sessionDiscardDraft.method,
   sessionList.method,
   sessionListMessages.method,
   sessionGetArtifacts.method,
   sessionCheckResume.method,
   sessionResume.method,
   sessionPrompt.method,
+  sessionConfigure.method,
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,

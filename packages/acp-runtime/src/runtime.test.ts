@@ -15,6 +15,7 @@ import {
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
   resolveAdapterRequestTimeout,
+  resolveAdapterPluginManifest,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
@@ -131,6 +132,14 @@ test("resolveAcpAgentAdapter chooses provider-specific adapters before generic f
   assert.equal(resolveAcpAgentAdapter({ id: "claude-acp", name: "Claude Agent", command: "claude-acp", transport: "stdio", protocol: "acp" }).id, "claude");
   assert.equal(resolveAcpAgentAdapter({ id: "openclaw", name: "OpenClaw", command: "openclaw", transport: "stdio", protocol: "acp" }).id, "openclaw");
   assert.equal(resolveAcpAgentAdapter({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }).id, "generic");
+});
+
+test("resolveAdapterPluginManifest exposes a disabled placeholder without loading plugins", () => {
+  const manifest = resolveAdapterPluginManifest();
+
+  assert.equal(manifest.enabled, false);
+  assert.equal(manifest.kind, "provider-adapter-plugin-placeholder");
+  assert.deepEqual(manifest.adapters, []);
 });
 
 test("resolveAcpLaunchConfig keeps provider-specific command and env handling behind adapters", () => {

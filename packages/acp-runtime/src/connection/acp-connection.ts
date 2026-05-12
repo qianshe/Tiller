@@ -343,7 +343,28 @@ export class AcpConnection {
       return true;
     };
 
-    await applyOption("mode", nextConfig.agentMode);
+    let modeAppliedAsSdk = false;
+    if (nextConfig.agentMode) {
+      try {
+        await withConnectionRequest(
+          "session/set_mode",
+          this.state.agent.setSessionMode({ sessionId: session.runtimeSessionId, modeId: nextConfig.agentMode }),
+          this.state.child,
+          "",
+          this.state.logFile,
+          this.state.provider,
+        );
+        session.configOptions = updateSessionConfigOptionValue(session.configOptions, "mode", nextConfig.agentMode);
+        session.onEvent({ type: "config-options", state: resolveSessionConfigState(session.configOptions), options: session.configOptions });
+        runtimeApplied = true;
+        modeAppliedAsSdk = true;
+      } catch {
+        modeAppliedAsSdk = false;
+      }
+    }
+    if (!modeAppliedAsSdk) {
+      await applyOption("mode", nextConfig.agentMode);
+    }
     const modelAppliedAsConfig = await applyOption("model", nextConfig.model);
     if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
       await withConnectionRequest(
@@ -753,6 +774,24 @@ export class AcpConnection {
 function resolveRequestedRuntimeSessionId(request: OpenAcpSessionRequest) {
   return request.kind === "load" ? request.runtimeSessionId : request.tillerSessionId;
 }
+
+function updateSessionConfigOptionValue(
+  options: AcpSessionConfigOption[],
+  category: string,
+  value: string,
+) {
+  return options.map((option) =>
+    option.category?.toLowerCase() === category
+      ? {
+          ...option,
+          currentValue: value,
+          selectedValue: value,
+          value,
+        }
+      : option,
+  );
+}
+
 function createConnectionClientMethods(options: {
   onSessionUpdate: (params: unknown) => void;
   onRequestPermission: (params: acp.RequestPermissionRequest) => Promise<acp.RequestPermissionResponse>;

@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as sessionDraft from "./draft";
+import * as sessionDiscardDraft from "./discard-draft";
 import * as sessionNew from "./new";
-import * as sessionPrewarm from "./prewarm";
 import * as sessionList from "./list";
 import * as sessionListMessages from "./list-messages";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
+import * as sessionPrompt from "./prompt";
+import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
@@ -16,23 +19,46 @@ test("session/new requires project, workspace, agent", () => {
   sessionNew.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
 });
 
-test("session/prewarm requires project, workspace, agent", () => {
-  assert.equal(sessionPrewarm.method, "session/prewarm");
-  sessionPrewarm.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
-  const result = sessionPrewarm.ResultSchema.parse({
-    ok: true,
-    warmed: true,
-    providerId: "a1",
+test("session/draft returns runtime draft metadata", () => {
+  assert.equal(sessionDraft.method, "session/draft");
+  sessionDraft.ParamsSchema.parse({
+    deckClientId: "deck-1",
+    projectId: "p1",
     workspaceId: "ws1",
+    agentId: "a1",
+  });
+  const result = sessionDraft.ResultSchema.parse({
+    ok: true,
+    draftId: "draft-1",
+    deckClientId: "deck-1",
+    scopeKey: "deck-1:p1:ws1:a1",
+    logicalScopeKey: "p1:ws1:a1",
     runtimeSessionId: "runtime-1",
-    currentModelId: "gpt-5.5",
+    state: { model: "gpt-5.5" },
     modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
     configOptions: [],
     availableCommands: [{ name: "init" }],
-    state: { model: "gpt-5.5" },
-    message: "ACP runtime prewarmed.",
+    createdAt: "2026-05-12T00:00:00.000Z",
+    expiresAt: "2026-05-12T00:10:00.000Z",
+    reused: false,
+    message: "ACP runtime draft ready.",
   });
   assert.deepEqual(result.availableCommands, [{ name: "init" }]);
+});
+
+test("session/discard_draft supports draft cleanup reasons", () => {
+  assert.equal(sessionDiscardDraft.method, "session/discard_draft");
+  sessionDiscardDraft.ParamsSchema.parse({
+    deckClientId: "deck-1",
+    draftId: "draft-1",
+    reason: "scope-change",
+  });
+  sessionDiscardDraft.ResultSchema.parse({
+    ok: true,
+    discarded: true,
+    draftId: "draft-1",
+    message: "Draft discarded.",
+  });
 });
 
 test("session/list returns paginated session summaries", () => {
@@ -60,9 +86,31 @@ test("session/check_resume and session/resume share sessionId param", () => {
   assert.equal(sessionResume.method, "session/resume");
 });
 
-test("session/set_config_option allows partial config", () => {
+test("session/prompt accepts either sessionId or draftId", () => {
+  assert.equal(sessionPrompt.method, "session/prompt");
+  sessionPrompt.ParamsSchema.parse({ sessionId: "s1", text: "hello" });
+  sessionPrompt.ParamsSchema.parse({ draftId: "d1", text: "hello" });
+  assert.throws(() => sessionPrompt.ParamsSchema.parse({ text: "hello" }));
+  assert.throws(() =>
+    sessionPrompt.ParamsSchema.parse({ sessionId: "s1", draftId: "d1", text: "hello" }),
+  );
+  sessionPrompt.ResultSchema.parse({ stopReason: "end_turn", session: { id: "s1" } });
+});
+
+test("session/configure allows partial active or draft config", () => {
+  assert.equal(sessionConfigure.method, "session/configure");
+  sessionConfigure.ParamsSchema.parse({ sessionId: "s1" });
+  sessionConfigure.ParamsSchema.parse({ draftId: "d1", model: "gpt-5.5" });
+  assert.throws(() => sessionConfigure.ParamsSchema.parse({}));
+  assert.throws(() =>
+    sessionConfigure.ParamsSchema.parse({ sessionId: "s1", draftId: "d1" }),
+  );
+});
+
+test("session/set_config_option remains a compatibility alias", () => {
   assert.equal(sessionSetConfigOption.method, "session/set_config_option");
-  sessionSetConfigOption.ParamsSchema.parse({ sessionId: "s1" });
+  assert.equal(sessionSetConfigOption.ParamsSchema, sessionConfigure.ParamsSchema);
+  assert.equal(sessionSetConfigOption.ResultSchema, sessionConfigure.ResultSchema);
 });
 
 test("session/rename requires session id and title", () => {

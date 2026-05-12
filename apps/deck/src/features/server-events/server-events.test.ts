@@ -200,14 +200,18 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
-test("agent model options result hydrates draft model options and commands", () => {
+test("session draft result hydrates draft model options and commands", () => {
   resetStore();
   let cached: unknown;
   let selectedModel = "provider-default";
   const handled = applyInventoryResult(
-    "agent/get_model_options",
+    "session/draft",
     {
       ok: true,
+      draftId: "draft-1",
+      deckClientId: "deck-1",
+      scopeKey: "deck-1:main:codex",
+      logicalScopeKey: "main:codex",
       warmed: true,
       providerId: "codex",
       workspaceId: "main",
@@ -256,6 +260,10 @@ test("agent model options result hydrates draft model options and commands", () 
     loading: false,
     warmed: true,
     projectId: undefined,
+    draftId: "draft-1",
+    deckClientId: "deck-1",
+    scopeKey: "deck-1:main:codex",
+    logicalScopeKey: "main:codex",
     runtimeSessionId: "runtime-1",
     message: "ACP runtime prewarmed.",
     modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
@@ -269,7 +277,7 @@ test("agent model options result hydrates draft model options and commands", () 
   assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
 });
 
-test("session prewarm result merges with an existing project scoped model options entry", () => {
+test("session draft result merges with an existing project scoped model options entry", () => {
   resetStore();
   useDeckStore.getState().setAgentModelOptions({
     "opencode::main::project-2": {
@@ -286,9 +294,13 @@ test("session prewarm result merges with an existing project scoped model option
 
   let cached: unknown;
   const handled = applyInventoryResult(
-    "session/prewarm",
+    "session/draft",
     {
       ok: true,
+      draftId: "draft-1",
+      deckClientId: "deck-1",
+      scopeKey: "deck-1:main:opencode",
+      logicalScopeKey: "main:opencode",
       warmed: true,
       providerId: "opencode",
       workspaceId: "main",
@@ -335,6 +347,10 @@ test("session prewarm result merges with an existing project scoped model option
       loading: false,
       warmed: true,
       projectId: "project-2",
+      draftId: "draft-1",
+      deckClientId: "deck-1",
+      scopeKey: "deck-1:main:opencode",
+      logicalScopeKey: "main:opencode",
       runtimeSessionId: "runtime-warm-1",
       message: "ACP runtime prewarmed.",
       modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
@@ -345,103 +361,6 @@ test("session prewarm result merges with an existing project scoped model option
   assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
 });
 
-test("agent model options result merges with an existing prewarm entry", () => {
-  resetStore();
-  useDeckStore.getState().setAgentModelOptions({
-    "opencode::main::project-2": {
-      loading: false,
-      warmed: true,
-      projectId: "project-2",
-      runtimeSessionId: "runtime-warm-1",
-      message: "ACP runtime prewarmed.",
-      modelOptions: [],
-      configOptions: [],
-      state: {},
-    },
-  });
-
-  let cached: unknown;
-  let selectedModel = "provider-default";
-  const dispatched: Array<{ method: string; params: unknown }> = [];
-  const handled = applyInventoryResult(
-    "agent/get_model_options",
-    {
-      ok: true,
-      warmed: true,
-      providerId: "opencode",
-      workspaceId: "main",
-      currentModelId: "cpa-oai/gpt-5.5",
-      modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
-      configOptions: [{ id: "model", label: "Model", type: "string" }],
-      availableCommands: [{ name: "init" }],
-      state: { model: "cpa-oai/gpt-5.5" },
-      message: "Model options loaded.",
-    },
-    "helm-1",
-    true,
-    {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
-      setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
-      setWorktreePickerOpen: () => undefined,
-      setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId, projectId) =>
-        projectId ? `${providerId}::${workspaceId}::${projectId}` : `${providerId}::${workspaceId}`,
-      writeAgentModelOptionsCache: (entries) => {
-        cached = entries;
-      },
-      selectedAgentId: "opencode",
-      selectedWorkspaceId: "main",
-      resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
-      resolvePreferredModel: (_current, options) => options[0],
-      selectedModel,
-      setSelectedModel: (model) => {
-        selectedModel = model;
-      },
-      setSelectedAgentMode: () => undefined,
-      setSelectedReasoningEffort: () => undefined,
-      setConfigSaveMessage: () => undefined,
-      setFleetProjectSaveMessage: () => undefined,
-      setSelectedProjectId: () => undefined,
-      rpcClientRef: { current: {} as any },
-      helmRpcClientRefs: { current: new Map() },
-      dispatch: async (_client, method, params) => {
-        dispatched.push({ method, params });
-      },
-    },
-  );
-
-  assert.equal(handled, true);
-  assert.equal(selectedModel, "cpa-oai/gpt-5.5");
-  assert.deepEqual(useDeckStore.getState().agentModelOptions["opencode::main::project-2"], {
-    loading: false,
-    warmed: true,
-    projectId: "project-2",
-    runtimeSessionId: "runtime-warm-1",
-    message: "Model options loaded.",
-    modelOptions: [{ id: "cpa-oai/gpt-5.5", name: "GPT 5.5" }],
-    configOptions: [{ id: "model", label: "Model", type: "string" }],
-    state: { model: "cpa-oai/gpt-5.5" },
-  });
-  assert.deepEqual(
-    useDeckStore.getState().agentAvailableCommands.opencode?.map((command) => command.name),
-    ["init"],
-  );
-  assert.deepEqual(dispatched, [
-    {
-      method: "session/prewarm",
-      params: {
-        projectId: "project-2",
-        workspaceId: "main",
-        agentId: "opencode",
-        agentMode: undefined,
-        model: "cpa-oai/gpt-5.5",
-        reasoningEffort: undefined,
-      },
-    },
-  ]);
-  assert.deepEqual(cached, useDeckStore.getState().agentModelOptions);
-});
 
 test("starting session update activates chat and preserves first pending prompt", () => {
   resetStore();

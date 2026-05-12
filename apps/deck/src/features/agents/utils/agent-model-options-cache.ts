@@ -13,6 +13,10 @@ export type AgentModelOptionsEntry = {
   message?: string;
   /** projectId used when probing, echoed back for cache-key reconstruction. */
   projectId?: string | null;
+  draftId?: string;
+  deckClientId?: string;
+  scopeKey?: string;
+  logicalScopeKey?: string;
   runtimeSessionId?: string;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];
@@ -79,7 +83,14 @@ export function writeAgentModelOptionsCache(
               (entry.configOptions?.length ?? 0) > 0),
         )
         .map(([key, entry]) => {
-          const { runtimeSessionId: _runtimeSessionId, ...cacheableEntry } = entry;
+          const {
+            draftId: _draftId,
+            deckClientId: _deckClientId,
+            scopeKey: _scopeKey,
+            logicalScopeKey: _logicalScopeKey,
+            runtimeSessionId: _runtimeSessionId,
+            ...cacheableEntry
+          } = entry;
           return [key, { ...cacheableEntry, cachedAt: now }];
         }),
     );

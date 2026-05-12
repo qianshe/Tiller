@@ -48,7 +48,7 @@ test("mission draft agent selection resets model before creating an ACP session"
   assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "agent\/connect"/);
-  assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/prewarm"/);
+  assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/draft"/);
 });
 
 test("mission project plus owns the ACP picker and selected agent connects before showing composer", () => {
@@ -108,11 +108,11 @@ test("mission selection effects reads setAgentModelOptions from source context",
   assert.match(destructuredSource, /\bsetAgentModelOptions\b/);
 });
 
-test("mission selection effects prewarms without a separate model probe", () => {
+test("mission selection effects creates a draft session without a separate model probe", () => {
   assert.match(sourceText, /agent\/connect/);
-  assert.match(sourceText, /session\/prewarm/);
+  assert.match(sourceText, /session\/draft/);
   assert.doesNotMatch(sourceText, /agent\/get_model_options/);
-  assert.match(sourceText, /正在加载模型并预热 ACP/);
+  assert.match(sourceText, /正在创建 ACP 草稿会话并加载模型/);
 });
 
 test("mission selection effects preserves available model options while probing", () => {

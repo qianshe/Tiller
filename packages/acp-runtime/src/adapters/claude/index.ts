@@ -1,5 +1,5 @@
-import type { AcpAgentAdapter } from "./types";
-import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "./shared";
+import type { AcpAgentAdapter } from "../types";
+import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
 
 const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
 

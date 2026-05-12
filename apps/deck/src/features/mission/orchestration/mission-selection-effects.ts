@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
+import { getDeckClientId } from "../utils/deck-client-id";
 import {
   resolveDefaultMissionSessionId,
   resolveDraftSelectionId,
@@ -135,6 +136,19 @@ export function useMissionSelectionEffects(source: any) {
     }
   }, [effectiveMissionHelmId]);
   useEffect(() => {
+    const discardDrafts = () => {
+      const client = rpcClientRef.current;
+      if (client?.socket.readyState === WebSocket.OPEN) {
+        void dispatch(client, "session/discard_draft", {
+          deckClientId: getDeckClientId(),
+          reason: "tab-disconnect",
+        });
+      }
+    };
+    window.addEventListener("pagehide", discardDrafts);
+    return () => window.removeEventListener("pagehide", discardDrafts);
+  }, []);
+  useEffect(() => {
     if (!draftProject) {
       return;
     }
@@ -252,14 +266,16 @@ export function useMissionSelectionEffects(source: any) {
           loading: true,
           warmed: true,
           projectId: selectedProjectId,
+          deckClientId: getDeckClientId(),
           requestedAt: Date.now(),
           modelOptions: cached?.modelOptions ?? [],
           configOptions: cached?.configOptions ?? [],
           state: cached?.state ?? {},
-          message: "正在加载模型并预热 ACP...",
+          message: "正在创建 ACP 草稿会话并加载模型...",
         },
       }));
-      void dispatch(rpcClientRef.current, "session/prewarm", {
+      void dispatch(rpcClientRef.current, "session/draft", {
+        deckClientId: getDeckClientId(),
         projectId: selectedProjectId,
         workspaceId: selectedWorkspaceId,
         agentId: selectedAgentId,

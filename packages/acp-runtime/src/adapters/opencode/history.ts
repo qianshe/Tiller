@@ -1,7 +1,11 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { AcpAgentProvider, AgentMessage, AgentToolCall } from "@tiller/shared";
-import type { AcpAuthoritativeHistory } from "./types";
+import type { AcpAuthoritativeHistory } from "../types";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
@@ -16,8 +20,16 @@ export async function loadOpenCodeExportHistory(
     return null;
   }
 
-  const stdout = await runOpenCodeExport(agent, runtimeSessionId, cwd);
-  return parseOpenCodeExportHistory(stdout);
+  try {
+    const stdout = await runOpenCodeExport(agent, runtimeSessionId, cwd);
+    return parseOpenCodeExportHistory(stdout);
+  } catch (error) {
+    const sqliteHistory = loadOpenCodeSqliteHistory(runtimeSessionId);
+    if (sqliteHistory) {
+      return sqliteHistory;
+    }
+    throw error;
+  }
 }
 
 async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
@@ -53,6 +65,100 @@ function isNoEntryError(error: unknown) {
 
 function quotePowerShellArg(value: string) {
   return `'${value.replace(/'/gu, "''")}'`;
+}
+
+function loadOpenCodeSqliteHistory(runtimeSessionId: string): AcpAuthoritativeHistory | null {
+  const dbPath = process.env.OPENCODE_DB_PATH || join(homedir(), ".local", "share", "opencode", "opencode.db");
+  if (!existsSync(dbPath)) {
+    return null;
+  }
+
+  const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const session = db.prepare("SELECT id FROM session WHERE id = ?").get(runtimeSessionId);
+    if (!session) {
+      return null;
+    }
+    const messages = db
+      .prepare("SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created ASC")
+      .all(runtimeSessionId) as OpenCodeSqliteMessageRow[];
+    const parts = db
+      .prepare("SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? ORDER BY time_created ASC")
+      .all(runtimeSessionId) as OpenCodeSqlitePartRow[];
+    return parseOpenCodeSqliteHistory(messages, parts);
+  } finally {
+    db.close();
+  }
+}
+
+export type OpenCodeSqliteMessageRow = {
+  id: string;
+  time_created: number;
+  data: string;
+};
+
+export type OpenCodeSqlitePartRow = {
+  id: string;
+  message_id: string;
+  time_created: number;
+  time_updated?: number;
+  data: string;
+};
+
+export function parseOpenCodeSqliteHistory(
+  messageRows: OpenCodeSqliteMessageRow[],
+  partRows: OpenCodeSqlitePartRow[],
+): AcpAuthoritativeHistory {
+  const messages: AgentMessage[] = [];
+  const toolCalls: AgentToolCall[] = [];
+  const partsByMessageId = groupPartsByMessageId(partRows);
+
+  for (const row of messageRows) {
+    const messageData = parseJson(row.data);
+    const parts = partsByMessageId.get(row.id) ?? [];
+    const role = normalizeMessageRole(messageData?.role);
+    const timestamp = timestampFromMillis(messageData?.time?.created ?? row.time_created);
+    const text = collectTextParts(parts);
+    if (role && timestamp && text) {
+      messages.push({ id: row.id, role, text, timestamp });
+    }
+
+    for (const toolCall of collectToolCalls({ id: row.id, parts })) {
+      toolCalls.push(toolCall);
+    }
+  }
+
+  return {
+    messages: sortByTimestamp(messages),
+    toolCalls: sortByTimestamp(toolCalls),
+  };
+}
+
+function groupPartsByMessageId(partRows: OpenCodeSqlitePartRow[]) {
+  const grouped = new Map<string, any[]>();
+  for (const row of partRows) {
+    const part = parseJson(row.data);
+    if (!part) {
+      continue;
+    }
+    const parts = grouped.get(row.message_id) ?? [];
+    parts.push({
+      id: row.id,
+      time: { created: row.time_created, updated: row.time_updated },
+      ...part,
+    });
+    grouped.set(row.message_id, parts);
+  }
+  return grouped;
+}
+
+function parseJson(raw: string): any | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory {

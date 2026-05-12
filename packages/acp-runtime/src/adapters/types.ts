@@ -40,6 +40,12 @@ export type AcpRequestTimeoutContext = {
   method: string;
 };
 
+export type ProviderAdapterPluginManifest = {
+  kind: "provider-adapter-plugin-placeholder";
+  enabled: false;
+  adapters: [];
+};
+
 export type AcpAgentAdapter = {
   id: string;
   isMatch(provider: AcpAgentProvider): boolean;
