@@ -1,7 +1,6 @@
 import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
-  AgentMessage,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -59,8 +58,6 @@ export function useDeckData(missionVisualFixture: any) {
   const statuses = (missionVisualFixture?.statuses ?? storedStatuses) as Record<string, SessionStatus>;
   const setStatuses = useDeckStore((state) => state.setStatuses);
 
-  const storedMessages = useDeckStore((state) => state.messages);
-  const messages = (missionVisualFixture?.messages ?? storedMessages) as Record<string, AgentMessage[]>;
   const setMessages = useDeckStore((state) => state.setMessages);
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
@@ -148,7 +145,6 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionHistoryState,
     statuses,
     setStatuses,
-    messages,
     setMessages,
     messageHistoryState,
     setMessageHistoryState,

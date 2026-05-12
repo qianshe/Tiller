@@ -23,7 +23,11 @@ const ConfigStateSchema = z.object({
 });
 
 export const SessionUpdateSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("agent_message"), message: typedUnknown<AgentMessage>() }),
+  z.object({
+    kind: z.literal("agent_message"),
+    message: typedUnknown<AgentMessage>(),
+    streaming: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal("tool_call"), toolCall: typedUnknown<AgentToolCall>() }),
   z.object({ kind: z.literal("command_output"), commandId: z.string(), chunk: typedUnknown<CommandChunk>() }),
   z.object({ kind: z.literal("diff_update"), files: z.array(typedUnknown<FileDiffSummary>()) }),

@@ -18,6 +18,34 @@ test("session RPC lists paged sessions", async () => {
   });
 });
 
+test("session/subscribe records a session topic subscription", async () => {
+  const calls: string[] = [];
+
+  const result = await handleSessionRpcRequest("session/subscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    subscribeSessionTopic: (socketId: string, sessionId: string) => {
+      calls.push(`${socketId}:${sessionId}`);
+    },
+  } as any);
+
+  assert.deepEqual(calls, ["socket-1:s1"]);
+  assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
+});
+
+test("session/unsubscribe records a session topic removal", async () => {
+  const calls: string[] = [];
+
+  const result = await handleSessionRpcRequest("session/unsubscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    unsubscribeSessionTopic: (socketId: string, sessionId: string) => {
+      calls.push(`${socketId}:${sessionId}`);
+    },
+  } as any);
+
+  assert.deepEqual(calls, ["socket-1:s1"]);
+  assert.deepEqual(result, { ok: true, message: "Unsubscribed from session s1." });
+});
+
 test("permission/list_pending returns active permission requests", async () => {
   const request = {
     id: "permission-1",

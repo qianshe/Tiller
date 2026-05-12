@@ -39,3 +39,16 @@ test("opening an old session requests only the latest message and activity pages
     /dispatch\(rpcClientRef\.current,\s*"session\/get_artifacts",\s*\{\s*sessionId:\s*activeSessionId,\s*limit:\s*DEFAULT_ACTIVITY_PAGE_LIMIT,\s*\}\)/s,
   );
 });
+
+test("mission effects subscribes only to the active session topic and cleans up the previous topic", () => {
+  assert.match(missionEffectsSourceText, /subscribeToSessionTopic/);
+  assert.match(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
+  assert.match(
+    missionEffectsSourceText,
+    /subscribeToSessionTopic\(rpcClientRef\.current,\s*activeSessionId,\s*dispatch\)/s,
+  );
+  assert.match(
+    missionEffectsSourceText,
+    /return \(\) => \{[\s\S]*unsubscribeFromSessionTopic\(client,\s*activeSessionId,\s*dispatch\)/s,
+  );
+});

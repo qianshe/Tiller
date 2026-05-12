@@ -58,3 +58,19 @@ export async function requestInitialSync(
   await dispatch(client, "permission/list_pending", {});
   await dispatch(client, "device/list", {});
 }
+
+export async function subscribeToSessionTopic(
+  client: DeckRpcClient,
+  sessionId: string,
+  dispatch: DispatchToHelm,
+) {
+  await dispatch(client, "session/subscribe", { sessionId });
+}
+
+export async function unsubscribeFromSessionTopic(
+  client: DeckRpcClient,
+  sessionId: string,
+  dispatch: DispatchToHelm,
+) {
+  await dispatch(client, "session/unsubscribe", { sessionId });
+}

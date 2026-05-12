@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dispatchWithTrace, requestInitialSync } from "./request-dispatch.js";
+import {
+  dispatchWithTrace,
+  requestInitialSync,
+  subscribeToSessionTopic,
+  unsubscribeFromSessionTopic,
+} from "./request-dispatch.js";
 
 test("dispatchWithTrace sends JSON-RPC requests and applies result callbacks", async () => {
   const requested: Array<{ method: string; params: unknown }> = [];
@@ -139,4 +144,28 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
+});
+
+test("subscribeToSessionTopic dispatches session/subscribe", async () => {
+  const methods: Array<{ method: string; params: unknown }> = [];
+
+  await subscribeToSessionTopic({} as any, "s1", async (_client, method, params) => {
+    methods.push({ method, params });
+  });
+
+  assert.deepEqual(methods, [
+    { method: "session/subscribe", params: { sessionId: "s1" } },
+  ]);
+});
+
+test("unsubscribeFromSessionTopic dispatches session/unsubscribe", async () => {
+  const methods: Array<{ method: string; params: unknown }> = [];
+
+  await unsubscribeFromSessionTopic({} as any, "s1", async (_client, method, params) => {
+    methods.push({ method, params });
+  });
+
+  assert.deepEqual(methods, [
+    { method: "session/unsubscribe", params: { sessionId: "s1" } },
+  ]);
 });

@@ -142,7 +142,6 @@ export function renderMissionRoute(source: any) {
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
-    messages,
     activityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
@@ -300,7 +299,6 @@ export function renderMissionRoute(source: any) {
       cancelSession={cancelSession}
       missionDisplayPaneStyle={missionDisplayPaneStyle}
       selectedMissionDiffFilePath={selectedMissionDiffFilePath}
-      messages={messages}
       activityHistoryState={activityHistoryState}
       activityVisibleCounts={activityVisibleCounts}
       setActivityVisibleCounts={setActivityVisibleCounts}

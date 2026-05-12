@@ -87,6 +87,72 @@ test("activity RPC notifications append assistant messages without changing sess
   );
 });
 
+test("activity RPC notifications preserve and clear assistant streaming state", () => {
+  resetStore();
+  const streamingMessage: AgentMessage = {
+    id: "m1",
+    role: "assistant",
+    text: "hel",
+    timestamp: "2026-05-04T01:00:00.000Z",
+  };
+  const finalMessage: AgentMessage = {
+    ...streamingMessage,
+    text: "hello",
+    timestamp: "2026-05-04T01:00:01.000Z",
+  };
+
+  applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message: streamingMessage, streaming: true } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+  applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message: finalMessage, streaming: false } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "hello");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.streaming, false);
+});
+
+test("streaming assistant chunks do not update session summary state", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "agent_message",
+        message: {
+          id: "m1",
+          role: "assistant",
+          text: "hel",
+          timestamp: "2026-05-04T01:00:00.000Z",
+        } satisfies AgentMessage,
+        streaming: true,
+      },
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.updatedAt,
+    "2026-05-04T00:00:00.000Z",
+  );
+});
+
 test("device RPC results sync trusted device inventory for the current helm", () => {
   resetStore();
   const device: TrustedDeviceSummary = {

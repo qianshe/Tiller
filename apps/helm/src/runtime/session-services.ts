@@ -34,8 +34,14 @@ import {
 } from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
+import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
+import {
+  resolveProviderHistorySnapshot,
+  type ProviderHistorySnapshot,
+  type ProviderHistorySnapshotContent,
+} from "./provider-history-source";
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
@@ -219,53 +225,16 @@ export function createSessionServices(options: SessionServicesOptions) {
     cwd: string,
   ) {
     try {
-      const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
-      if (!history) {
+      const historySnapshot = await resolveProviderHistorySnapshot([
+        {
+          source: "adapter-authoritative-history",
+          load: () => loadAdapterHistoryContent(agent, runtimeSessionId, cwd),
+        },
+      ]);
+      if (!historySnapshot) {
         return false;
       }
-      if (!history.messages.length) {
-        if (history.toolCalls.length) {
-          options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
-        }
-        options.logInfo(
-          `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
-        );
-        return true;
-      }
-
-      const descriptor = options.sessionRuntimeStore.get(sessionId);
-      const syncDecision = planProviderHistorySync({
-        currentState: descriptor?.providerHistory,
-        providerMessages: history.messages,
-      });
-
-      let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
-      let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
-      if (syncDecision.action === "replace") {
-        if (syncDecision.messages.length) {
-          options.sessionMessageStore.replace(sessionId, syncDecision.messages);
-        }
-      } else if (syncDecision.action === "append") {
-        for (const message of syncDecision.messages) {
-          options.sessionMessageStore.append(sessionId, message);
-        }
-      } else {
-        const localMessages = options.sessionMessageStore.list(sessionId);
-        if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
-          const repairedMessages = toParagraphMessages(history.messages);
-          options.sessionMessageStore.replace(sessionId, repairedMessages);
-          localMessageCount = repairedMessages.length;
-          logAction = "repair";
-        }
-      }
-
-      persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
-      if (history.toolCalls.length) {
-        options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
-      }
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
-      );
+      applyAuthoritativeProviderHistory(sessionId, agent, runtimeSessionId, historySnapshot);
       return true;
     } catch (error) {
       options.logError(
@@ -273,6 +242,91 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       return false;
     }
+  }
+
+  async function loadAdapterHistoryContent(
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    cwd: string,
+  ): Promise<ProviderHistorySnapshotContent | null> {
+    const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
+    if (!history) {
+      return null;
+    }
+    return {
+      messages: history.messages,
+      toolCalls: history.toolCalls,
+      outputs: [],
+      diffs: [],
+    };
+  }
+
+  function applyAuthoritativeProviderHistory(
+    sessionId: string,
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    history: ProviderHistorySnapshot,
+  ) {
+    if (!history.messages.length) {
+      if (history.toolCalls.length) {
+        options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+      }
+      options.logInfo(
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+      );
+      return;
+    }
+
+    const descriptor = options.sessionRuntimeStore.get(sessionId);
+    const syncDecision = planProviderHistorySync({
+      currentState: descriptor?.providerHistory,
+      providerMessages: history.messages,
+      syncedAt: history.syncedAt,
+    });
+
+    let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
+    let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
+    if (syncDecision.action === "replace") {
+      if (syncDecision.messages.length) {
+        options.sessionMessageStore.replace(sessionId, syncDecision.messages);
+      }
+    } else if (syncDecision.action === "append") {
+      for (const message of syncDecision.messages) {
+        options.sessionMessageStore.append(sessionId, message);
+      }
+    } else {
+      const localMessages = options.sessionMessageStore.list(sessionId);
+      if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
+        const repairedMessages = toParagraphMessages(history.messages);
+        options.sessionMessageStore.replace(sessionId, repairedMessages);
+        localMessageCount = repairedMessages.length;
+        logAction = "repair";
+      }
+    }
+
+    persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
+    if (history.toolCalls.length) {
+      options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+    }
+    options.logInfo(
+      `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
+    );
+  }
+
+  function hasHistoryContent(history: ProviderHistorySnapshotContent) {
+    return Boolean(
+      history.messages.length || history.toolCalls.length || history.outputs.length || history.diffs.length,
+    );
+  }
+
+  function readLocalProviderHistory(sessionId: string): ProviderHistorySnapshotContent {
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    return {
+      messages: options.sessionMessageStore.list(sessionId),
+      toolCalls: artifacts.toolCalls,
+      outputs: artifacts.outputs,
+      diffs: artifacts.diffs,
+    };
   }
 
   function persistProviderHistoryState(
@@ -720,10 +774,41 @@ export function createSessionServices(options: SessionServicesOptions) {
         },
         onConnectionLifecycleEvent: logConnectionLifecycle,
       });
+      const replaySnapshot = restoreReplayBuffer.snapshot();
       const replayCounts = restoreReplayBuffer.flush();
       options.logInfo(
         `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
       );
+      const historySnapshot = await resolveProviderHistorySnapshot([
+        {
+          source: "acp-session-load",
+          load: async () => (hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
+        },
+        {
+          source: "adapter-authoritative-history",
+          load: async () => {
+            try {
+              return await loadAdapterHistoryContent(agent, resume.runtimeSessionId!, workspace.path);
+            } catch (error) {
+              options.logError(
+                `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
+              );
+              return null;
+            }
+          },
+        },
+        {
+          source: "local-cache",
+          load: async () => readLocalProviderHistory(sessionId),
+        },
+      ]);
+      if (historySnapshot?.source === "acp-session-load") {
+        options.logInfo(
+          `[tiller] history.cache source=acp-session-load session=${sessionId} messages=${historySnapshot.messages.length} toolCalls=${historySnapshot.toolCalls.length} outputs=${historySnapshot.outputs.length} diffs=${historySnapshot.diffs.length}`,
+        );
+      } else if (historySnapshot?.source === "adapter-authoritative-history") {
+        applyAuthoritativeProviderHistory(sessionId, agent, resume.runtimeSessionId, historySnapshot);
+      }
       const restoredSummary = hydrateSessionSummary({
         ...summary,
         model: runtime.sessionConfigState?.model ?? summary.model,
@@ -736,12 +821,6 @@ export function createSessionServices(options: SessionServicesOptions) {
       options.sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
       options.sessionStore.upsert(restoredSummary);
       persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-      await importAuthoritativeProviderHistory(
-        sessionId,
-        agent,
-        runtime.runtimeSessionId,
-        workspace.path,
-      );
       options.logInfo(
         `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
       );
@@ -804,7 +883,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
-    const diffs = await hydrateDiffsFromWorkspaceGit(sessionId, files);
+    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorkspaceGit(sessionId, files));
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
     broadcastSessionUpdate(options.createHandlerContext(), sessionId, {
       kind: "diff_update",

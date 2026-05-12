@@ -20,7 +20,7 @@ type UsePromptEnhanceActionOptions = {
   selectedWorkspaceId: string | null;
   activeSession: SessionSummary | null;
   draftProject: ProjectSummary | null;
-  messages: Record<string, AgentMessage[]>;
+  activeSessionMessages: AgentMessage[];
 };
 
 export function usePromptEnhanceAction({
@@ -33,7 +33,7 @@ export function usePromptEnhanceAction({
   selectedWorkspaceId,
   activeSession,
   draftProject,
-  messages,
+  activeSessionMessages,
 }: UsePromptEnhanceActionOptions) {
   return async function enhancePromptDraft() {
     const rawPrompt = prompt.trim();
@@ -56,7 +56,7 @@ export function usePromptEnhanceAction({
         sessionStatus: activeSession?.status,
         sessionSummary: summarizeSessionContext(
           activeSession,
-          activeSession ? (messages[activeSession.id] ?? []) : [],
+          activeSession ? activeSessionMessages : [],
         ),
       });
 

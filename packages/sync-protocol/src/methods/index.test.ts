@@ -34,6 +34,8 @@ const expectedRequests = [
   "session/check_resume",
   "session/resume",
   "session/prompt",
+  "session/subscribe",
+  "session/unsubscribe",
   "session/configure",
   "session/set_config_option",
   "session/rename",

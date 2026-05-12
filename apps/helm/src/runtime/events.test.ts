@@ -4,15 +4,17 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, AgentToolCall, CommandChunk, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimeEvent } from "./events.js";
+import { createLiveMessageBuffer } from "./live-message-buffer.js";
 
 type TestContextCapture = {
   broadcasts: unknown[];
+  detailBroadcasts: unknown[];
   persisted: AgentMessage[];
 };
 
 function createTestContext(
   logs: string[],
-  capture: TestContextCapture = { broadcasts: [], persisted: [] },
+  capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
 ): HelmHandlerContext {
   const summary: SessionSummary = {
     id: "session-1",
@@ -54,7 +56,11 @@ function createTestContext(
     broadcastNotification: (method: string, params: unknown) => {
       capture.broadcasts.push({ method, params });
     },
+    broadcastSessionTopic: (sessionId: string, method: string, params: unknown) => {
+      capture.detailBroadcasts.push({ sessionId, method, params });
+    },
     permissionIndex: new Map(),
+    liveMessageBuffer: createLiveMessageBuffer(),
     sessionArtifactStore: {
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
@@ -66,7 +72,7 @@ function createTestContext(
 
 test("runtime session.message persists and broadcasts streaming chunks with debug text", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
   const writes: string[] = [];
   const originalWrite = process.stdout.write;
@@ -122,12 +128,13 @@ test("runtime session.message persists and broadcasts streaming chunks with debu
   assert.match(logs[1], /阶段=运行状态流/);
   assert.doesNotMatch(logs[0], /preview=|text=|chars=/);
   assert.deepEqual(writes, ["你", "好\n主人", "\n"]);
-  assert.equal(capture.persisted.length, 2);
+  assert.equal(capture.persisted.length, 1);
   assert.deepEqual(
     capture.persisted.map((message) => message.text),
-    ["你", "好\n主人"],
+    ["你好\n主人"],
   );
-  assert.equal(capture.broadcasts.length, 3);
+  assert.equal(capture.broadcasts.length, 1);
+  assert.equal(capture.detailBroadcasts.length, 3);
 });
 
 test("runtime assistant stream closes before the next stage log", () => {
@@ -175,7 +182,7 @@ test("runtime assistant stream closes before the next stage log", () => {
 
 test("runtime user echo messages are ignored because prompts are already persisted before sending", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture);
   context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
@@ -217,7 +224,7 @@ test("runtime user echo messages are ignored because prompts are already persist
 
 test("fatal ACP connection errors mark the active runtime stale", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
@@ -238,7 +245,7 @@ test("fatal ACP connection errors mark the active runtime stale", () => {
 
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
   context.sessionMessageStore = {
     list: () => [
@@ -274,7 +281,7 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
 
 test("runtime assistant chunks stay split when tool activity occurs between text streams", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture);
   context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
@@ -322,6 +329,14 @@ test("runtime assistant chunks stay split when tool activity occurs between text
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
   assert.deepEqual(
     capture.persisted.map((message) => [message.id, message.text]),
@@ -335,7 +350,7 @@ test("runtime assistant chunks stay split when tool activity occurs between text
 
 test("runtime-generated delta chunks with fresh source ids stay in one stream segment", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
@@ -364,18 +379,25 @@ test("runtime-generated delta chunks with fresh source ids stay in one stream se
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
   assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
-  assert.equal(capture.persisted[1]?.id, capture.persisted[0]?.id);
   assert.deepEqual(
     capture.persisted.map((message) => message.text),
-    ["当前分支是 `codex/debug-st", "ream-tool-logs`,看起来正在调"],
+    ["当前分支是 `codex/debug-stream-tool-logs`,看起来正在调"],
   );
 });
 
 test("runtime-generated independent assistant messages get distinct stream segment ids", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
@@ -404,6 +426,14 @@ test("runtime-generated independent assistant messages get distinct stream segme
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
   assert.equal(capture.persisted[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
   assert.equal(capture.persisted[1]?.text, "你好主人，我会按你的项目规则继续处理。");
@@ -414,7 +444,7 @@ test("runtime-generated independent assistant messages get distinct stream segme
 
 test("runtime-generated short assistant replies split after provider diagnostics", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
@@ -443,6 +473,14 @@ test("runtime-generated short assistant replies split after provider diagnostics
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
   assert.equal(capture.persisted[0]?.text.startsWith("Model metadata for"), true);
   assert.equal(capture.persisted[1]?.text, "OK");
@@ -451,7 +489,7 @@ test("runtime-generated short assistant replies split after provider diagnostics
 
 test("runtime running status starts a fresh assistant segment for the next prompt", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
@@ -489,6 +527,14 @@ test("runtime running status starts a fresh assistant segment for the next promp
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
   assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
   assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-s\d+$/u);
@@ -497,7 +543,7 @@ test("runtime running status starts a fresh assistant segment for the next promp
 
 test("runtime tool-call events persist and broadcast without stage log", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: unknown[] = [];
   const context = createTestContext(logs, capture);
   context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
@@ -524,8 +570,10 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
 
   assert.deepEqual(logs, []);
   assert.equal(appendedToolCalls.length, 1);
-  assert.deepEqual(capture.broadcasts, [
+  assert.deepEqual(capture.broadcasts, []);
+  assert.deepEqual(capture.detailBroadcasts, [
     {
+      sessionId: "session-1",
       method: "session/update",
       params: {
         sessionId: "session-1",
@@ -570,7 +618,7 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
 
 test("runtime command-output logs debug stream text", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedOutputs: unknown[] = [];
   const context = createTestContext(logs, capture);
   context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
@@ -600,12 +648,13 @@ test("runtime command-output logs debug stream text", () => {
   assert.match(logs[0], /text=SECRET_STREAM_TEXT with details/);
   assert.doesNotMatch(logs[0], /preview=/);
   assert.equal(appendedOutputs.length, 1);
-  assert.equal(capture.broadcasts.length, 1);
+  assert.equal(capture.broadcasts.length, 0);
+  assert.equal(capture.detailBroadcasts.length, 1);
 });
 
 test("runtime available-commands events persist commands on the session summary", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], persisted: [] };
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
   const updatedSummaries: SessionSummary[] = [];
   context.updateSessionSummary = (

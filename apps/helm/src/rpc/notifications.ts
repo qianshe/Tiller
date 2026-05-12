@@ -5,7 +5,12 @@ export function broadcastSessionUpdate(
   sessionId: string,
   update: unknown,
 ): void {
-  context.broadcastNotification("session/update", { sessionId, update });
+  const params = { sessionId, update };
+  if (isSessionDetailUpdate(update)) {
+    context.broadcastSessionTopic(sessionId, "session/update", params);
+    return;
+  }
+  context.broadcastNotification("session/update", params);
 }
 
 export function broadcastErrorRaised(
@@ -13,4 +18,17 @@ export function broadcastErrorRaised(
   input: { sessionId?: string; code?: string; message: string; data?: unknown },
 ): void {
   context.broadcastNotification("error/raised", input);
+}
+
+function isSessionDetailUpdate(update: unknown): boolean {
+  if (!update || typeof update !== "object" || !("kind" in update)) {
+    return false;
+  }
+  const kind = (update as { kind?: unknown }).kind;
+  return kind === "agent_message"
+    || kind === "tool_call"
+    || kind === "command_output"
+    || kind === "diff_update"
+    || kind === "permission_request"
+    || kind === "permission_resolved";
 }

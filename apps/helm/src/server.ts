@@ -56,7 +56,9 @@ import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
+import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createSessionServices, type SessionRecord } from "./runtime/session-services";
+import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
@@ -123,6 +125,8 @@ const {
 } = projectCatalog;
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
+const sessionTopics = createSessionTopicRegistry();
+const liveMessageBuffer = createLiveMessageBuffer();
 let helms = loadAvailableHelms();
 let workspaces = loadAvailableWorkspaces();
 let agents = listAvailableProviders(configPath);
@@ -244,8 +248,10 @@ server.on("connection", (socket) => {
   logInfo("[tiller] client connected");
 
   socket.on("close", () => {
+    const socketId = getSocketId(socket);
     logInfo("[tiller] client disconnected");
-    authenticatedSockets.remove(getSocketId(socket));
+    sessionTopics.removeSocket(socketId);
+    authenticatedSockets.remove(socketId);
   });
 
   beginAuthenticationFlow(socket);
@@ -316,9 +322,10 @@ function attachRpcConnection(socket: WebSocket) {
     );
   });
   const connection = new JsonRpcConnection(stream, {
-    onRequest: (method, params) => handleHelmRpcRequest(method, params, createHandlerContext()),
+    onRequest: (method, params) =>
+      handleHelmRpcRequest(method, params, createHandlerContext(getSocketId(socket))),
     onNotification: (method, params) =>
-      handleHelmRpcNotification(method, params, createHandlerContext()),
+      handleHelmRpcNotification(method, params, createHandlerContext(getSocketId(socket))),
     onError: (error) => {
       logError(
         `[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -330,11 +337,16 @@ function attachRpcConnection(socket: WebSocket) {
   });
 }
 
-function createHandlerContext(): HelmHandlerContext {
+function createHandlerContext(socketId?: string): HelmHandlerContext {
   return {
     configPath,
+    socketId,
     notify,
     broadcastNotification,
+    broadcastSessionTopic,
+    subscribeSessionTopic: sessionTopics.subscribe,
+    unsubscribeSessionTopic: sessionTopics.unsubscribe,
+    removeSocketSessionTopics: sessionTopics.removeSocket,
     logInfo,
     logDebug,
     logWarn,
@@ -373,6 +385,7 @@ function createHandlerContext(): HelmHandlerContext {
     sessionMessageStore,
     sessionArtifactStore,
     sessionRuntimeStore,
+    liveMessageBuffer,
     createRuntime: createAcpRuntime,
     connectAcpConnection,
     reconnectAcpConnection,
@@ -425,6 +438,18 @@ function toTrustedDeviceSummary(
 function broadcastNotification(method: string, params: unknown) {
   for (const record of authenticatedSockets.listAll()) {
     notify(record.socket, method, params);
+  }
+}
+
+function broadcastSessionTopic(sessionId: string, method: string, params: unknown) {
+  const subscriberIds = new Set(sessionTopics.listSubscribers(sessionId));
+  if (!subscriberIds.size) {
+    return;
+  }
+  for (const record of authenticatedSockets.listAll()) {
+    if (subscriberIds.has(record.socketId)) {
+      notify(record.socket, method, params);
+    }
   }
 }
 

@@ -62,6 +62,10 @@ import {
 } from "../composition/bindings";
 import { AppRoutes } from "../routing/route-content";
 import { useRouteView } from "../routing/route-view";
+import {
+  getDeckSessionMessages,
+  useActiveSessionMessages,
+} from "../state/active-session-messages";
 import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
@@ -116,6 +120,10 @@ export function App() {
   });
   const copy = UI_COPY[locale];
   const deckData = useDeckData(missionVisualFixture);
+  const activeSessionMessages = useActiveSessionMessages(
+    deckData.activeSessionId,
+    missionVisualFixture?.messages,
+  );
 
   function dispatch(
     client: DeckRpcClient,
@@ -156,7 +164,8 @@ export function App() {
   const lastFilesScopeKeyRef = useRef<string | null>(null);
   const titleActions = useSessionTitles({
     client: runtimeState.rpcClientRef.current,
-    messages: deckData.messages,
+    getSessionMessages: (sessionId) =>
+      missionVisualFixture?.messages?.[sessionId] ?? getDeckSessionMessages(sessionId),
     sessionTitles: deckData.sessionTitles,
     setSessionTitles: deckData.setSessionTitles,
     promptEnhancerLlm: deckData.deckPreferences.promptEnhancer.llm,
@@ -210,6 +219,7 @@ export function App() {
   const missionView = useMissionViewModel({
     runtimeState,
     deckData,
+    activeSessionMessages,
     helmConnection,
     copy,
     locale,
@@ -316,7 +326,7 @@ export function App() {
     selectedWorkspaceId: runtimeState.selectedWorkspaceId,
     activeSession: missionView.activeSession,
     draftProject: missionView.draftProject,
-    messages: deckData.messages,
+    activeSessionMessages: missionView.activeSessionMessages,
   });
   useMissionEffects({
     runtimeState,

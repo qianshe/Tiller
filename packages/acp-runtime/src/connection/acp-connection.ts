@@ -439,9 +439,8 @@ export class AcpConnection {
     if (this.sessions.size || this.pendingSessions.size) {
       return;
     }
-    if (this.state.child.pid) {
-      terminateChildProcess(this.state.child.pid);
-    }
+    // ACP connections are intentionally persistent: idle children stay alive
+    // until manual reconnect/close, provider crash, or Helm shutdown.
   }
 
   private async closeRemoteSession(runtimeSessionId: string): Promise<void> {

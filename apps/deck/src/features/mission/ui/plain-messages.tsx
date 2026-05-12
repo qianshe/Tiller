@@ -123,6 +123,7 @@ const PlainMessageItem = memo(function PlainMessageItem({
   roleLabel,
 }: PlainMessageItemProps) {
   const isAssistant = message.role === "assistant";
+  const isStreaming = isAssistant && message.streaming;
   const isCollapsible =
     message.role === "user" && shouldCollapsePlainMessage(message.text);
   const messageBodyClassName =
@@ -135,17 +136,22 @@ const PlainMessageItem = memo(function PlainMessageItem({
       className={cn(
         "plain-message min-w-0 text-foreground",
         `plain-${message.role}`,
+        isStreaming && "plain-message-streaming",
         isAssistant
           ? "mr-auto grid max-w-[min(820px,100%)] grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3"
           : "ml-auto grid max-w-[min(720px,88%)] gap-2 rounded-2xl border border-border-ghost bg-surface-elevated p-3 shadow-ambient",
       )}
+      data-streaming={isStreaming ? "true" : undefined}
     >
       {isAssistant ? (
         <span
           aria-hidden="true"
           className="plain-assistant-segment-marker flex min-h-6 justify-center pt-2"
         >
-          <span className="plain-assistant-segment-dot size-2 rounded-full bg-success ring-4 ring-surface-sunken" />
+          <span className={cn(
+            "plain-assistant-segment-dot size-2 rounded-full ring-4 ring-surface-sunken",
+            isStreaming ? "animate-pulse bg-accent" : "bg-success",
+          )} />
         </span>
       ) : null}
       <div className="grid min-w-0 gap-2">
@@ -162,7 +168,7 @@ const PlainMessageItem = memo(function PlainMessageItem({
         <div
           className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`}
         >
-          {renderPlainMessageContent(message, isCollapsible && !isExpanded)}
+          {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
         </div>
         {isCollapsible ? (
           <Button
@@ -201,8 +207,9 @@ const PlainMessageItem = memo(function PlainMessageItem({
 function renderPlainMessageContent(
   message: AgentMessage,
   collapsed: boolean,
+  streaming = false,
 ) {
-  return message.role === "user" ? (
+  return message.role === "user" || streaming ? (
     <div
       className={
         collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"

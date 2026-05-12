@@ -31,7 +31,10 @@ export function applyActivityUpdate(
 
   switch (update.kind) {
     case "agent_message": {
-      const message = update.message as Parameters<typeof mergeAgentMessages>[1];
+      const message = withStreamingState(
+        update.message as AgentMessage,
+        update.streaming,
+      );
       const toolBoundaryTimes = (toolCallsRef.current[sessionId] ?? [])
         .map((call) => Date.parse(call.timestamp))
         .filter(Number.isFinite);
@@ -43,13 +46,15 @@ export function applyActivityUpdate(
           toolBoundaryTimes,
         ),
       }));
-      store.setSessions((current) =>
-        current.map((session) =>
-          session.id === sessionId
-            ? applyMessageToSessionSummary(session, message)
-            : session,
-        ),
-      );
+      if (shouldApplyMessageToSessionSummary(message)) {
+        store.setSessions((current) =>
+          current.map((session) =>
+            session.id === sessionId
+              ? applyMessageToSessionSummary(session, message)
+              : session,
+          ),
+        );
+      }
       return true;
     }
     case "permission_request":
@@ -88,6 +93,17 @@ export function applyActivityUpdate(
     default:
       return false;
   }
+}
+
+function withStreamingState(
+  message: AgentMessage,
+  streaming: unknown,
+): AgentMessage {
+  return typeof streaming === "boolean" ? { ...message, streaming } : message;
+}
+
+function shouldApplyMessageToSessionSummary(message: AgentMessage): boolean {
+  return message.role === "user" || message.streaming === false;
 }
 
 function applyMessageToSessionSummary(

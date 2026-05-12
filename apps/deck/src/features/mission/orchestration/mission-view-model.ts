@@ -28,7 +28,7 @@ export function useMissionViewModel(ctx: any) {
   const {
     sessions,
     activeSessionId,
-    messages,
+    activeSessionMessages,
     projects,
     selectedProjectId,
     selectedMissionHelmId,
@@ -64,9 +64,6 @@ const {
   addPromptImageFiles,
   removePromptImage,
 } = usePromptImages({ activeSession });
-const activeSessionMessages = activeSession
-  ? (messages[activeSession.id] ?? [])
-  : [];
 const activeConversationUpdateKey = useActiveConversationUpdateKey(
   activeSessionId,
   activeSessionMessages,

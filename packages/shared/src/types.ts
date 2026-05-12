@@ -277,6 +277,7 @@ export type AgentMessage = {
   text: string;
   timestamp: string;
   attachments?: AgentPromptImageContent[];
+  streaming?: boolean;
 };
 
 export type AgentPromptTextContent = {

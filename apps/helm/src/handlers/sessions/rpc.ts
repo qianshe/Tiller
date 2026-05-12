@@ -44,6 +44,10 @@ export async function handleSessionRpcRequest(
   switch (method) {
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
+    case "session/subscribe":
+      return subscribeSession(params as { sessionId: string }, context);
+    case "session/unsubscribe":
+      return unsubscribeSession(params as { sessionId: string }, context);
     case "session/list_messages":
       return listMessages(
         params as { sessionId: string; limit?: number; before?: string },
@@ -168,6 +172,28 @@ function listSessions(params: { limit?: number; before?: string }, context: Helm
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
     before: params.before,
+  };
+}
+
+function subscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
+  if (!context.socketId) {
+    throw new Error("Session topic subscription requires an authenticated socket");
+  }
+  context.subscribeSessionTopic(context.socketId, params.sessionId);
+  return {
+    ok: true,
+    message: `Subscribed to session ${params.sessionId}.`,
+  };
+}
+
+function unsubscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
+  if (!context.socketId) {
+    throw new Error("Session topic unsubscription requires an authenticated socket");
+  }
+  context.unsubscribeSessionTopic(context.socketId, params.sessionId);
+  return {
+    ok: true,
+    message: `Unsubscribed from session ${params.sessionId}.`,
   };
 }
 

@@ -159,7 +159,6 @@ export function MissionWorkspace(props: any) {
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
-    messages,
     activityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
@@ -659,9 +658,7 @@ export function MissionWorkspace(props: any) {
             statusLabel={missionStatusLabel}
             sessionToolCalls={activeToolCalls}
             commandChunks={activeOutputs}
-            sessionMessages={
-              activeSession ? (messages[activeSession.id] ?? []) : []
-            }
+            sessionMessages={activeSessionMessages}
             historyState={
               activeSession ? activityHistoryState[activeSession.id] : undefined
             }

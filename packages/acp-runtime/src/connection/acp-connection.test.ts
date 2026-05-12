@@ -22,6 +22,7 @@ function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: numb
   const resumeSessionCountPath = join(tempDir, "resume-session-count.txt");
   const resumeSessionCwdPath = join(tempDir, "resume-session-cwd.txt");
   const launchArgsPath = join(tempDir, "launch-args.json");
+  const pidPath = join(tempDir, "agent-pid.txt");
   const agentPath = join(tempDir, "fake-initialize-agent.mjs");
   writeFileSync(agentPath, `
 import { Readable, Writable } from "node:stream";
@@ -38,10 +39,12 @@ const loadSessionCwdPath = ${JSON.stringify(loadSessionCwdPath)};
 const resumeSessionCountPath = ${JSON.stringify(resumeSessionCountPath)};
 const resumeSessionCwdPath = ${JSON.stringify(resumeSessionCwdPath)};
 const launchArgsPath = ${JSON.stringify(launchArgsPath)};
+const pidPath = ${JSON.stringify(pidPath)};
 const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
 const exitOnPrompt = ${JSON.stringify(options.exitOnPrompt ?? false)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
+writeFileSync(pidPath, String(process.pid), "utf8");
 const incrementCount = (path) => {
   const current = existsSync(path) ? Number(readFileSync(path, "utf8")) : 0;
   writeFileSync(path, String(current + 1), "utf8");
@@ -119,7 +122,7 @@ if (typeof exitAfterMs === "number") {
   setTimeout(() => process.exit(2), exitAfterMs);
 }
 `, "utf8");
-  return { agentPath, initializeCountPath, newSessionCountPath, newSessionCwdPath, closeSessionCountPath, closeSessionIdPath, loadSessionCountPath, loadSessionCwdPath, resumeSessionCountPath, resumeSessionCwdPath, launchArgsPath };
+  return { agentPath, initializeCountPath, newSessionCountPath, newSessionCwdPath, closeSessionCountPath, closeSessionIdPath, loadSessionCountPath, loadSessionCwdPath, resumeSessionCountPath, resumeSessionCwdPath, launchArgsPath, pidPath };
 }
 
 function writeSilentAgent(tempDir: string) {
@@ -339,6 +342,38 @@ test("closeSession only closes ACP session after the last handle is released", a
     await connection.closeSession("session-1");
     assert.equal(readFileSync(closeSessionCountPath, "utf8"), "1");
     assert.equal(connection.inventory().activeSessionCount, 0);
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("closing the last session keeps the ACP child process alive", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-persistent-idle-"));
+  try {
+    const { agentPath, pidPath } = writeInitializeOnlyAgent(tempDir);
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      workspace: { ...workspace, path: tempDir },
+    });
+
+    await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      workspace: { ...workspace, path: tempDir },
+      kind: "new",
+      onEvent: () => undefined,
+    });
+    const childPid = Number(readFileSync(pidPath, "utf8"));
+
+    await connection.closeSession("session-1");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    assert.equal(connection.inventory().activeSessionCount, 0);
+    assert.equal(connection.inventory().status, "ready");
+    assert.equal(isProcessRunning(childPid), true);
 
     await connection.dispose();
   } finally {

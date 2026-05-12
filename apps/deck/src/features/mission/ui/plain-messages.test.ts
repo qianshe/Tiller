@@ -302,6 +302,35 @@ test("assistant non-structured messages keep markdown fallback", () => {
   assert.doesNotMatch(html, /structured-assistant-message/);
 });
 
+test("streaming assistant messages render as lightweight plain text", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: "| A | B |\n| - | - |\n| 1 | 2 |",
+          timestamp: "2026-05-12T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /plain-message-streaming/);
+  assert.match(html, /plain-message-text/);
+  assert.match(html, /\| A \| B \|/);
+  assert.doesNotMatch(html, /markdown-message/);
+  assert.doesNotMatch(html, /<table/);
+});
+
 test("user messages render as plain text and keep the collapse affordance", () => {
   const longUserMessage = [
     "# 标题",

@@ -17,6 +17,7 @@ import type {
   WorkspaceSummary,
 } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -51,8 +52,13 @@ export type RuntimeDraftRecord = {
 
 export type HelmHandlerContext = {
   configPath: string;
+  socketId?: string;
   notify: (socket: WebSocket, method: string, params: unknown) => void;
   broadcastNotification: (method: string, params: unknown) => void;
+  broadcastSessionTopic: (sessionId: string, method: string, params: unknown) => void;
+  subscribeSessionTopic: (socketId: string, sessionId: string) => void;
+  unsubscribeSessionTopic: (socketId: string, sessionId: string) => void;
+  removeSocketSessionTopics: (socketId: string) => void;
   logInfo: (message: string) => void;
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
@@ -82,6 +88,7 @@ export type HelmHandlerContext = {
   sessionMessageStore: any;
   sessionArtifactStore: any;
   sessionRuntimeStore: any;
+  liveMessageBuffer: LiveMessageBuffer;
 
   createRuntime: typeof createAcpRuntime;
   connectAcpConnection: typeof connectAcpConnection;

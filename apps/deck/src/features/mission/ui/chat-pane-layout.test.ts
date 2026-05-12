@@ -87,6 +87,11 @@ test("assistant markdown uses readable prose styling without paragraph marker bu
   assert.match(markdownSource, /className="not-prose flex items-center justify-between/);
 });
 
+test("assistant streaming messages expose streaming state for lightweight rendering", () => {
+  assert.match(plainMessagesSource, /message\.streaming/);
+  assert.match(plainMessagesSource, /plain-message-streaming/);
+});
+
 test("slash command suppression resets after leaving slash mode", () => {
   assert.match(
     slashCommandsHookSource,

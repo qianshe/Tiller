@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as sessionPrompt from "./session/prompt";
 import * as sessionCancel from "./session/cancel";
+import * as sessionSubscribe from "./session/subscribe";
+import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
 import * as devicePair from "./device/pair";
@@ -18,6 +20,21 @@ test("session/prompt result has stopReason", () => {
 test("session/cancel is a notification", () => {
   assert.equal(sessionCancel.method, "session/cancel");
   assert.equal(sessionCancel.descriptor.kind, "notification");
+});
+
+test("session topic subscription methods validate session ids", () => {
+  assert.equal(sessionSubscribe.method, "session/subscribe");
+  assert.equal(sessionUnsubscribe.method, "session/unsubscribe");
+  assert.deepEqual(sessionSubscribe.ParamsSchema.parse({ sessionId: "session-1" }), {
+    sessionId: "session-1",
+  });
+  assert.deepEqual(sessionUnsubscribe.ParamsSchema.parse({ sessionId: "session-1" }), {
+    sessionId: "session-1",
+  });
+  assert.deepEqual(sessionSubscribe.ResultSchema.parse({ ok: true, message: "Subscribed to session session-1." }), {
+    ok: true,
+    message: "Subscribed to session session-1.",
+  });
 });
 
 test("session/update accepts every kind", () => {
@@ -60,6 +77,18 @@ test("session/update accepts every kind", () => {
                           : { kind, status: "running" },
     });
   }
+});
+
+test("session/update agent_message preserves streaming state", () => {
+  const parsed = sessionUpdate.ParamsSchema.parse({
+    sessionId: "s1",
+    update: { kind: "agent_message", message: {}, streaming: true },
+  });
+
+  assert.equal(
+    (parsed.update as Extract<typeof parsed.update, { kind: "agent_message" }>).streaming,
+    true,
+  );
 });
 
 test("error/raised is a notification with at least a message", () => {
