@@ -15,14 +15,6 @@ on:
           - patch
           - minor
           - major
-      dist_tag:
-        description: "npm dist-tag"
-        required: true
-        default: preview
-        type: choice
-        options:
-          - preview
-          - latest
       base_branch:
         description: "Branch to release from"
         required: true
@@ -30,37 +22,48 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  publish:
-    name: Bump, release and publish @qianshe/tiller
+  release_plan:
+    name: Resolve release plan
     runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.plan.outputs.bump }}
+      dist_tag: ${{ steps.plan.outputs.dist_tag }}
+      npm_version_args: ${{ steps.plan.outputs.npm_version_args }}
 
     steps:
-      - name: Validate bump and dist-tag
-        shell: bash
-        run: |
-          BUMP="${{ inputs.bump }}"
-          DIST_TAG="${{ inputs.dist_tag }}"
-          case "$BUMP" in
-            prerelease-alpha|prerelease-beta|prerelease-rc)
-              EXPECTED_DIST_TAG="preview"
-              ;;
-            patch|minor|major)
-              EXPECTED_DIST_TAG="latest"
-              ;;
-            *)
-              echo "Unsupported bump type: $BUMP"
-              exit 1
-              ;;
-          esac
-          if [ "$DIST_TAG" != "$EXPECTED_DIST_TAG" ]; then
-            echo "Bump $BUMP must be published with npm dist-tag $EXPECTED_DIST_TAG, got $DIST_TAG."
-            exit 1
-          fi
+      - name: Checkout workflow scripts
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.base_branch }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Resolve npm dist-tag and version args
+        id: plan
+        run: node apps/helm/scripts/release-plan.mjs "${{ inputs.bump }}" >> "$GITHUB_OUTPUT"
+
+      - name: Show release plan
+        run: |
+          echo "bump=${{ steps.plan.outputs.bump }}"
+          echo "dist_tag=${{ steps.plan.outputs.dist_tag }}"
+          echo "npm_version_args=${{ steps.plan.outputs.npm_version_args }}"
+
+  verify_package:
+    name: Verify and package
+    runs-on: ubuntu-latest
+    needs: release_plan
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+
+    steps:
       - name: Checkout base branch
         uses: actions/checkout@v6
         with:
@@ -71,7 +74,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       - name: Enable corepack
         run: corepack enable
@@ -83,20 +85,8 @@ jobs:
         id: version
         shell: bash
         run: |
-          case "${{ inputs.bump }}" in
-            prerelease-alpha)
-              npm --prefix apps/helm version prerelease --preid alpha --no-git-tag-version
-              ;;
-            prerelease-beta)
-              npm --prefix apps/helm version prerelease --preid beta --no-git-tag-version
-              ;;
-            prerelease-rc)
-              npm --prefix apps/helm version prerelease --preid rc --no-git-tag-version
-              ;;
-            patch|minor|major)
-              npm --prefix apps/helm version "${{ inputs.bump }}" --no-git-tag-version
-              ;;
-          esac
+          read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
+          npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
           VERSION="$(node -p "require('./apps/helm/package.json').version")"
           TAG="v${VERSION}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -123,27 +113,118 @@ jobs:
       - name: Package smoke test
         run: pnpm --filter @tiller/helm pack:npm
 
+      - name: Upload dist package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-package-${{ steps.version.outputs.version }}
+          path: apps/helm/dist-package
+          if-no-files-found: error
+
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball-${{ steps.version.outputs.version }}
+          path: apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz
+          if-no-files-found: error
+
+  publish_npm:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+    needs:
+      - release_plan
+      - verify_package
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Apply verified version bump
+        shell: bash
+        run: |
+          read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
+          npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
+          VERSION="$(node -p "require('./apps/helm/package.json').version")"
+          if [ "$VERSION" != "${{ needs.verify_package.outputs.version }}" ]; then
+            echo "Expected version ${{ needs.verify_package.outputs.version }}, got $VERSION."
+            exit 1
+          fi
+
       - name: Commit version bump and create tag
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/helm/package.json
-          git commit -m "chore: release ${{ steps.version.outputs.version }}"
-          git tag "${{ steps.version.outputs.tag }}"
+          git commit -m "chore: release ${{ needs.verify_package.outputs.version }}"
+          git tag "${{ needs.verify_package.outputs.tag }}"
           git push origin "HEAD:${{ inputs.base_branch }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git push origin "${{ needs.verify_package.outputs.tag }}"
+
+      - name: Download verified dist package
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-package-${{ needs.verify_package.outputs.version }}
+          path: apps/helm/dist-package
+
+      - name: Publish npm package
+        working-directory: apps/helm/dist-package
+        run: npm publish --tag "${{ needs.release_plan.outputs.dist_tag }}" --access public
+
+  draft_github_release:
+    name: Create GitHub Release draft
+    runs-on: ubuntu-latest
+    needs:
+      - release_plan
+      - verify_package
+      - publish_npm
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged release
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Download verified dist package
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-package-${{ needs.verify_package.outputs.version }}
+          path: apps/helm/dist-package
+
+      - name: Download npm tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-tarball-${{ needs.verify_package.outputs.version }}
+          path: release-assets
 
       - name: Prepare GitHub Release notes and zip
         id: release_assets
         shell: bash
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          TAR_PATH="apps/helm/qianshe-tiller-${VERSION}.tgz"
+          VERSION="${{ needs.verify_package.outputs.version }}"
+          TAG="${{ needs.verify_package.outputs.tag }}"
+          DIST_TAG="${{ needs.release_plan.outputs.dist_tag }}"
+          TAR_PATH="release-assets/qianshe-tiller-${VERSION}.tgz"
           ZIP_PATH="release-assets/qianshe-tiller-${VERSION}.zip"
           NOTES_PATH="release-assets/release-notes-${VERSION}.md"
           mkdir -p release-assets
+
+          git fetch origin "${{ inputs.base_branch }}" --tags
+          git checkout "$TAG"
 
           (cd apps/helm/dist-package && zip -qr "../../../${ZIP_PATH}" .)
 
@@ -160,7 +241,7 @@ jobs:
             echo "## Tiller ${VERSION}"
             echo
             echo "- npm package: \`@qianshe/tiller@${VERSION}\`"
-            echo "- npm dist-tag: \`${{ inputs.dist_tag }}\`"
+            echo "- npm dist-tag: \`${DIST_TAG}\`"
             echo "- Git tag: \`${TAG}\`"
             if [ -n "$PREVIOUS_TAG" ]; then
               echo "- Previous tag: \`${PREVIOUS_TAG}\`"
@@ -195,33 +276,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Publish npm package
-        working-directory: apps/helm/dist-package
-        run: npm publish --tag "${{ inputs.dist_tag }}" --access public
-
-      - name: Create GitHub prerelease draft
-        if: steps.version.outputs.prerelease == 'true'
+      - name: Create GitHub Release draft
         shell: bash
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
+          RELEASE_FLAGS=(--draft)
+          if [ "${{ needs.verify_package.outputs.prerelease }}" = "true" ]; then
+            RELEASE_FLAGS+=(--prerelease)
+          fi
+          gh release create "${{ needs.verify_package.outputs.tag }}" \
             "${{ steps.release_assets.outputs.tar_path }}" \
             "${{ steps.release_assets.outputs.zip_path }}" \
-            --title "${{ steps.version.outputs.tag }}" \
+            --title "${{ needs.verify_package.outputs.tag }}" \
             --notes-file "${{ steps.release_assets.outputs.notes_path }}" \
-            --draft \
-            --prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Create GitHub release draft
-        if: steps.version.outputs.prerelease == 'false'
-        shell: bash
-        run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            "${{ steps.release_assets.outputs.tar_path }}" \
-            "${{ steps.release_assets.outputs.zip_path }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --notes-file "${{ steps.release_assets.outputs.notes_path }}" \
-            --draft
+            "${RELEASE_FLAGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
