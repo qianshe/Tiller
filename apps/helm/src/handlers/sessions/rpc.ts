@@ -58,15 +58,26 @@ export async function handleSessionRpcRequest(
       return checkResume(params as { sessionId: string }, context);
     case "session/resume":
       return resumeSession(params as { sessionId: string }, context);
-    case "session/prewarm":
-      return prewarmSession(
+    case "session/draft":
+      return createSessionDraft(
         params as {
+          deckClientId: string;
           projectId: string;
           workspaceId: string;
           agentId: string;
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
+        },
+        context,
+      );
+    case "session/discard_draft":
+      return discardSessionDraft(
+        params as {
+          deckClientId: string;
+          draftId?: string;
+          scopeKey?: string;
+          reason: "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user";
         },
         context,
       );
@@ -85,7 +96,8 @@ export async function handleSessionRpcRequest(
     case "session/prompt":
       return promptSession(
         params as {
-          sessionId: string;
+          sessionId?: string;
+          draftId?: string;
           text: string;
           content?: AgentPromptContent[];
           clientMessageId?: string;
@@ -95,7 +107,8 @@ export async function handleSessionRpcRequest(
     case "session/set_config_option":
       return setConfigOption(
         params as {
-          sessionId: string;
+          sessionId?: string;
+          draftId?: string;
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
@@ -219,8 +232,9 @@ async function resumeSession(params: { sessionId: string }, context: HelmHandler
   };
 }
 
-async function prewarmSession(
+async function createSessionDraft(
   params: {
+    deckClientId: string;
     projectId: string;
     workspaceId: string;
     agentId: string;
@@ -253,7 +267,10 @@ async function prewarmSession(
     throw new Error("Workspace does not belong to the selected project");
   }
 
-  return context.prewarmRuntime({
+  return context.createRuntimeDraft({
+    deckClientId: params.deckClientId,
+    project,
+    helm,
     workspace,
     agent,
     sessionConfig: {
@@ -262,6 +279,18 @@ async function prewarmSession(
       reasoningEffort: params.reasoningEffort,
     },
   });
+}
+
+async function discardSessionDraft(
+  params: {
+    deckClientId: string;
+    draftId?: string;
+    scopeKey?: string;
+    reason: "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user";
+  },
+  context: HelmHandlerContext,
+) {
+  return context.discardRuntimeDraft(params);
 }
 
 async function createSession(
@@ -331,28 +360,25 @@ async function createSession(
       model: summary.model,
       reasoningEffort: summary.reasoningEffort,
     };
-    const prewarmed = await context.takePrewarmedRuntime({ workspace, agent, sessionConfig });
-    const runtime = prewarmed?.runtime ??
-      (await context.createRuntime({
-        sessionId,
-        workspace,
-        agent,
-        sessionConfig,
-        onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
-        onConnectionLifecycleEvent: (event) => {
-          const phaseMap = {
-            "connection-open": "ACP连接新建",
-            "connection-reuse": "ACP连接复用",
-            "connection-pending": "ACP连接等待",
-            "connection-replace": "ACP连接替换",
-            "connection-reconnect": "ACP连接重连",
-          } as const;
-          context.logInfo(
-            `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
-          );
-        },
-      }));
-    prewarmed?.attach(sessionId);
+    const runtime = await context.createRuntime({
+      sessionId,
+      workspace,
+      agent,
+      sessionConfig,
+      onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+      onConnectionLifecycleEvent: (event) => {
+        const phaseMap = {
+          "connection-open": "ACP连接新建",
+          "connection-reuse": "ACP连接复用",
+          "connection-pending": "ACP连接等待",
+          "connection-replace": "ACP连接替换",
+          "connection-reconnect": "ACP连接重连",
+        } as const;
+        context.logInfo(
+          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+        );
+      },
+    });
     const summaryWithRuntime = context.hydrateSessionSummary({
       ...summary,
       status: "idle",
@@ -397,26 +423,124 @@ async function createSession(
 
 async function promptSession(
   params: {
-    sessionId: string;
+    sessionId?: string;
+    draftId?: string;
     text: string;
     content?: AgentPromptContent[];
     clientMessageId?: string;
   },
   context: HelmHandlerContext,
 ) {
-  return sendPromptToSession(params, context);
+  if (params.sessionId) {
+    return sendPromptToSession(
+      {
+        sessionId: params.sessionId,
+        text: params.text,
+        content: params.content,
+        clientMessageId: params.clientMessageId,
+      },
+      context,
+    );
+  }
+  if (!params.draftId) {
+    throw new Error("sessionId or draftId is required");
+  }
+  return promptRuntimeDraft(params as { draftId: string; text: string; content?: AgentPromptContent[]; clientMessageId?: string }, context);
+}
+
+async function promptRuntimeDraft(
+  params: { draftId: string; text: string; content?: AgentPromptContent[]; clientMessageId?: string },
+  context: HelmHandlerContext,
+) {
+  const draft = context.takeRuntimeDraft(params.draftId);
+  if (!draft) {
+    throw new Error("Runtime draft is not available. Create a new session and retry.");
+  }
+
+  const sessionId = `session-${Date.now()}`;
+  draft.attach(sessionId);
+  const createdAt = new Date().toISOString();
+  const summaryBase: SessionSummary = {
+    id: sessionId,
+    projectId: draft.project.id,
+    projectName: draft.project.name,
+    helmId: draft.helm.id,
+    workspaceId: draft.workspace.id,
+    workspaceName: draft.workspace.name,
+    agentId: draft.agent.id,
+    agentName: draft.agent.name,
+    agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
+    model: draft.runtime.sessionConfigState?.model ?? draft.configState.model,
+    modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
+    reasoningEffort:
+      draft.runtime.sessionConfigState?.reasoningEffort ?? draft.configState.reasoningEffort,
+    runtimeSessionId: draft.runtime.runtimeSessionId,
+    status: "idle",
+    createdAt,
+    updatedAt: createdAt,
+    messageCount: 0,
+  };
+  const summary = context.hydrateSessionSummary({
+    ...summaryBase,
+    resume: context.buildResumeInfo(summaryBase, draft.agent),
+  });
+  context.sessions.set(sessionId, {
+    summary,
+    agent: draft.agent,
+    workspace: draft.workspace,
+    runtime: draft.runtime,
+  });
+  context.sessionStore.upsert(summary);
+  context.persistRuntimeDescriptor(summary, draft.agent, draft.runtime.sessionCapabilities);
+  broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
+  context.logInfo(
+    `[tiller] draft.activate draft=${params.draftId} session=${sessionId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id}`,
+  );
+
+  try {
+    const result = await sendPromptToSession({ ...params, sessionId }, context);
+    return { ...result, session: context.sessions.get(sessionId)?.summary ?? summary };
+  } catch (error) {
+    context.updateSessionSummary(sessionId, (current) => ({
+      ...current,
+      status: "error",
+      updatedAt: new Date().toISOString(),
+      lastMessagePreview: "Prompt failed",
+    }));
+    throw error;
+  }
 }
 
 async function setConfigOption(
   params: {
-    sessionId: string;
+    sessionId?: string;
+    draftId?: string;
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
   },
   context: HelmHandlerContext,
 ) {
-  return configureSessionRuntime(params, context);
+  if (params.draftId) {
+    return context.configureRuntimeDraft({
+      draftId: params.draftId,
+      agentMode: params.agentMode,
+      model: params.model,
+      reasoningEffort: params.reasoningEffort,
+    });
+  }
+  if (!params.sessionId) {
+    throw new Error("sessionId or draftId is required");
+  }
+  return configureSessionRuntime(
+    {
+      sessionId: params.sessionId,
+      agentMode: params.agentMode,
+      model: params.model,
+      reasoningEffort: params.reasoningEffort,
+    },
+    context,
+  );
 }
 
 function respondPermission(

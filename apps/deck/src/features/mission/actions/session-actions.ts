@@ -7,6 +7,7 @@ import type {
   SessionReasoningEffort,
   WorkspaceSummary,
 } from "@tiller/shared";
+import { agentModelOptionsKey, type AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { resolveNewSessionIdentity } from "../utils/session-identity";
 
@@ -19,6 +20,7 @@ type CreateSessionContext = {
   filteredWorkspaces: WorkspaceSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
+  agentModelOptions?: Record<string, AgentModelOptionsEntry>;
   rpcClientRef: RpcClientRef;
   pendingPromptRef: MutableRefObject<string | null>;
   pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
@@ -90,6 +92,7 @@ export function createSession(
     filteredWorkspaces,
     selectedAgentId,
     filteredAgents,
+    agentModelOptions,
     rpcClientRef,
     pendingPromptRef,
     pendingPromptContentRef,
@@ -112,6 +115,20 @@ export function createSession(
   const client = rpcClientRef.current;
   if (!identity || !isClientOpen(client)) {
     return false;
+  }
+
+  const cacheKey = agentModelOptionsKey(identity.agentId, identity.workspaceId, identity.projectId);
+  const draft = agentModelOptions?.[cacheKey];
+  if (initialPrompt && draft?.draftId) {
+    pendingPromptRef.current = null;
+    pendingPromptContentRef.current = undefined;
+    void dispatch(client, "session/prompt", {
+      draftId: draft.draftId,
+      text: initialPrompt,
+      content: initialContent,
+    });
+    navigateToView("sessions");
+    return true;
   }
 
   pendingPromptRef.current = initialPrompt ?? null;

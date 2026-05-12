@@ -33,6 +33,10 @@ export type AgentModelOptionsEntry = {
   message?: string;
   /** projectId used when probing, echoed back for cache-key reconstruction. */
   projectId?: string | null;
+  draftId?: string;
+  deckClientId?: string;
+  scopeKey?: string;
+  logicalScopeKey?: string;
   runtimeSessionId?: string;
   modelOptions: AcpModelOption[];
   configOptions: SessionConfigOption[];

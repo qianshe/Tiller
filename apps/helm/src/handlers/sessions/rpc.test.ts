@@ -114,80 +114,72 @@ test("session/rename persists and broadcasts the next title", async () => {
   });
 });
 
-test("session/new waits for in-flight prewarmed runtime before creating a runtime", async () => {
+test("session/prompt activates a runtime draft before sending first prompt", async () => {
   const project = {
     id: "project-1",
     name: "Tiller",
     helmId: "local-helm",
     workspaceIds: ["workspace-1"],
   };
-  const workspace = {
-    id: "workspace-1",
-    name: "main",
-    path: "D:/repo",
-  };
-  const agent = {
-    id: "codex",
-    name: "Codex",
-  };
-  const helm = {
-    id: "local-helm",
-    name: "Local Helm",
-  };
-  let createRuntimeCalled = false;
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const workspace = { id: "workspace-1", name: "main", path: "D:/repo" };
+  const agent = { id: "codex", name: "Codex" };
   let attachedSessionId: string | undefined;
+  let prompted = "";
   const runtime = {
-    runtimeSessionId: "runtime-prewarmed",
+    runtimeSessionId: "runtime-draft",
     sessionConfigState: { model: "gpt-5.5" },
     sessionModelState: { options: [{ id: "gpt-5.5", name: "GPT-5.5" }] },
     sessionCapabilities: { sessionLoad: true },
+    prompt: async (text: string) => { prompted = text; },
   };
-  const storedSessions: unknown[] = [];
+  const storedSessions: any[] = [];
+  const sessions = new Map();
 
-  const result = await handleSessionRpcRequest("session/new", {
-    projectId: project.id,
-    workspaceId: workspace.id,
-    agentId: agent.id,
-    model: "gpt-5.5",
+  const result = await handleSessionRpcRequest("session/prompt", {
+    draftId: "draft-1",
+    text: "你好",
   }, {
-    loadAvailableHelms: () => [helm],
-    loadAvailableWorkspaces: () => [workspace],
-    loadAvailableAgents: () => [agent],
-    loadAvailableProjectsWithSemanticSummaries: async () => [project],
-    setHelms: () => undefined,
-    setWorkspaces: () => undefined,
-    setAgents: () => undefined,
-    setProjects: () => undefined,
-    resolveProjectById: (id: string, projects: typeof project[]) => projects.find((item) => item.id === id),
-    resolveProviderById: (id: string, agents: typeof agent[]) => agents.find((item) => item.id === id),
-    resolveHelmById: (id: string, helms: typeof helm[]) => helms.find((item) => item.id === id),
+    takeRuntimeDraft: () => ({
+      draftId: "draft-1",
+      deckClientId: "deck-1",
+      scopeKey: "deck-1:workspace-1:codex",
+      logicalScopeKey: "workspace-1:codex",
+      project,
+      helm,
+      workspace,
+      agent,
+      runtime,
+      attach: (sessionId: string) => { attachedSessionId = sessionId; },
+      modelState: runtime.sessionModelState,
+      configState: runtime.sessionConfigState,
+      configOptions: [],
+      availableCommands: [],
+    }),
     buildResumeInfo: () => ({ supported: false }),
+    hydrateSessionSummary: (summary: any) => summary,
     sessionStore: {
-      upsert: (summary: unknown) => { storedSessions.push(summary); },
+      upsert: (summary: any) => { storedSessions.push(summary); },
       list: () => storedSessions,
     },
     persistRuntimeDescriptor: () => undefined,
-    broadcastNotification: () => undefined,
+    sessions,
     logInfo: () => undefined,
     logError: () => undefined,
-    takePrewarmedRuntime: async () => ({
-      runtime,
-      attach: (sessionId: string) => { attachedSessionId = sessionId; },
-      cancel: () => undefined,
-      expiresTimer: setTimeout(() => undefined, 1_000),
-    }),
-    createRuntime: async () => {
-      createRuntimeCalled = true;
-      throw new Error("session/new should reuse the in-flight prewarmed runtime");
+    broadcastNotification: () => undefined,
+    persistSessionMessage: () => undefined,
+    updateSessionSummary: (sessionId: string, mutate: (summary: any) => any) => {
+      const record = sessions.get(sessionId);
+      if (!record) return undefined;
+      const next = mutate(record.summary);
+      record.summary = next;
+      return next;
     },
-    hydrateSessionSummary: (summary: unknown) => summary,
-    updateSessionSummary: () => undefined,
-    sessions: new Map(),
-  } as any) as { session: { id: string; runtimeSessionId: string; model?: string; status: string } };
+  } as any) as { session: { id: string; runtimeSessionId: string; model?: string }; stopReason: string };
 
-  assert.equal(createRuntimeCalled, false);
-  assert.equal(result.session.runtimeSessionId, "runtime-prewarmed");
+  assert.equal(result.stopReason, "end_turn");
+  assert.equal(result.session.runtimeSessionId, "runtime-draft");
   assert.equal(result.session.model, "gpt-5.5");
-  assert.equal(result.session.status, "idle");
   assert.equal(attachedSessionId, result.session.id);
+  assert.equal(prompted, "你好");
 });

@@ -24,13 +24,11 @@ import {
   listAcpConnectionInventory,
   reconnectAcpConnection,
   testAcpConnection,
-  type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
   type AcpAgentProvider,
-  type AcpModelState,
   type AgentMessage,
   type AgentPromptContent,
   type FileDiffSummary,
@@ -156,13 +154,17 @@ const {
   hydrateDiffsFromWorkspaceGit,
   hydrateSessionSummary,
   migrateStoredSessionSummary,
+  configureRuntimeDraft,
+  createRuntimeDraft,
+  discardRuntimeDraft,
+  discardRuntimeDraftsForDeckClient,
   persistRuntimeDescriptor,
   persistSessionMessage,
-  prewarmRuntime,
   publishDiffUpdate,
   refreshAuthoritativeSessionHistory,
+  scheduleDeckClientDraftDiscard,
   startSessionResume,
-  takePrewarmedRuntime,
+  takeRuntimeDraft,
   updateSessionSummary,
 } = sessionServices;
 
@@ -375,13 +377,16 @@ function createHandlerContext(): HelmHandlerContext {
     connectAcpConnection,
     reconnectAcpConnection,
     listAcpConnectionInventory,
-    prewarmRuntime,
-    takePrewarmedRuntime,
+    createRuntimeDraft,
+    discardRuntimeDraft,
+    discardRuntimeDraftsForDeckClient,
+    scheduleDeckClientDraftDiscard,
+    takeRuntimeDraft,
+    configureRuntimeDraft,
     testAcpConnection,
     resolveHelmById,
     resolveProjectById,
     resolveProviderById,
-    probeAgentModelOptions,
     startSessionResume,
     handleRuntimeEvent,
     hydrateSessionSummary,
@@ -397,89 +402,6 @@ function createHandlerContext(): HelmHandlerContext {
     deleteLocalSessionData,
   };
 }
-async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: WorkspaceSummary) {
-  const probeSessionId = `probe-${agent.id}-${Date.now()}`;
-  let modelState: AcpModelState | undefined;
-  let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
-  let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
-  let availableCommands: Extract<SessionRuntimeEvent, { type: "available-commands" }>["commands"] =
-    [];
-
-  logInfo(
-    `[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`,
-  );
-
-  try {
-    const runtime = await createAcpRuntime({
-      sessionId: probeSessionId,
-      workspace,
-      agent: {
-        ...agent,
-        initializeTimeoutMs: Math.max(agent.initializeTimeoutMs ?? 0, 180_000),
-      },
-      onEvent: (event) => {
-        if (event.type === "model-options") {
-          modelState = event.state;
-        } else if (event.type === "config-options") {
-          configState = event.state;
-          configOptions = event.options;
-        } else if (event.type === "available-commands") {
-          availableCommands = event.commands;
-        } else if (event.type === "error") {
-          logError(
-            `[tiller] agent.model.options.probe.error provider=${agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
-          );
-        }
-      },
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    modelState = modelState ?? runtime.sessionModelState;
-    if (!configOptions.length) {
-      configOptions = runtime.sessionConfigOptions;
-    }
-    if (!Object.keys(configState).length) {
-      configState = runtime.sessionConfigState;
-    }
-    runtime.cancel();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to probe agent model options.";
-    logError(
-      `[tiller] agent.model.options.probe.failed provider=${agent.id} workspace=${workspace.id} message=${message}`,
-    );
-    return {
-      ok: false,
-      message,
-      currentModelId: undefined,
-      modelOptions: [],
-      configOptions: [],
-      availableCommands: [],
-      state: {},
-    };
-  }
-
-  const modelCount = modelState?.options.length ?? 0;
-  const commandCount = availableCommands.length;
-  logInfo(
-    `[tiller] agent.model.options.probe.result provider=${agent.id} workspace=${workspace.id} currentModel=${modelState?.currentModelId ?? configState.model ?? "<none>"} modelOptions=${modelCount} configOptions=${configOptions.length} commands=${commandCount}`,
-  );
-
-  return {
-    ok: modelCount > 0 || configOptions.length > 0 || commandCount > 0,
-    message:
-      modelCount > 0 || configOptions.length > 0
-        ? `Loaded ${modelCount || configOptions.length} model option(s).`
-        : commandCount > 0
-          ? `Loaded ${commandCount} command(s).`
-          : "Agent did not return model options.",
-    currentModelId: modelState?.currentModelId ?? configState.model,
-    modelOptions: modelState?.options ?? [],
-    configOptions,
-    availableCommands,
-    state: configState,
-  };
-}
-
 function notify(socket: WebSocket, method: string, params: unknown) {
   if (socket.readyState !== 1) {
     return;

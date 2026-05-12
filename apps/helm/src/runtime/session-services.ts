@@ -2,6 +2,7 @@ import {
   createAcpRuntime,
   loadAdapterAuthoritativeHistory,
   type AcpConnectionLifecycleEvent,
+  type ProviderCleanupResult,
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
@@ -12,6 +13,7 @@ import type {
   AvailableCommand,
   AgentPromptContent,
   FileDiffSummary,
+  HelmSummary,
   PermissionRequest,
   SessionReasoningEffort,
   SessionResumeInfo,
@@ -34,7 +36,6 @@ import {
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
-import { createWarmRuntimePool, type WarmRuntimeKey } from "./warm-runtime-pool";
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
@@ -70,18 +71,36 @@ type SessionServicesOptions = {
 
 type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
-type WarmSessionRuntime = {
+type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
+
+type RuntimeDraft = {
+  draftId: string;
+  deckClientId: string;
+  scopeKey: string;
+  logicalScopeKey: string;
+  project: ProjectSummary;
+  helm: HelmSummary;
+  workspace: WorkspaceSummary;
+  agent: AcpAgentProvider;
   runtime: SessionRecord["runtime"];
   attach: (sessionId: string) => void;
-  cancel: () => void;
   expiresTimer: ReturnType<typeof setTimeout>;
+  createdAt: string;
+  expiresAt: string;
   modelState?: AcpModelState;
   configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"];
   configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"];
   availableCommands: AvailableCommand[];
 };
 
-const WARM_RUNTIME_TTL_MS = 5 * 60_000;
+type PendingRuntimeDraft = {
+  deckClientId: string;
+  scopeKey: string;
+  obsolete: boolean;
+  promise: Promise<RuntimeDraft>;
+};
+
+const RUNTIME_DRAFT_TTL_MS = 10 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
@@ -99,11 +118,10 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
   }
 
-  const warmRuntimes = createWarmRuntimePool<WarmSessionRuntime>();
-  const inFlightWarmRuntimes = createWarmRuntimePool<{
-    consumed: boolean;
-    promise: Promise<WarmSessionRuntime>;
-  }>();
+  const runtimeDrafts = new Map<string, RuntimeDraft>();
+  const runtimeDraftsById = new Map<string, RuntimeDraft>();
+  const pendingRuntimeDrafts = new Map<string, PendingRuntimeDraft>();
+  const deckDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -331,142 +349,139 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
   }
 
-  function resolveWarmRuntimeKey(
-    workspace: WorkspaceSummary,
-    agent: AcpAgentProvider,
-    sessionConfig?: SessionRuntimeConfig,
-  ): WarmRuntimeKey {
+  function resolveRuntimeDraftKeys(params: {
+    deckClientId: string;
+    workspace: WorkspaceSummary;
+    agent: AcpAgentProvider;
+  }) {
+    const logicalScopeKey = `${params.workspace.id}:${params.agent.id}`;
     return {
-      workspaceId: workspace.id,
-      agentId: agent.id,
-      configKey: JSON.stringify({
-        agentMode: sessionConfig?.agentMode ?? "",
-        model: sessionConfig?.model ?? "",
-        reasoningEffort: sessionConfig?.reasoningEffort ?? "",
-      }),
+      logicalScopeKey,
+      scopeKey: `${params.deckClientId}:${logicalScopeKey}`,
     };
   }
 
-  function warmRuntimeMatchesConfig(
-    warm: WarmSessionRuntime,
-    sessionConfig?: SessionRuntimeConfig,
-    matchOptions?: { requireKnownModel?: boolean },
-  ) {
-    const currentModel = warm.modelState?.currentModelId ?? warm.configState.model;
-    if (sessionConfig?.model && !currentModel && matchOptions?.requireKnownModel) {
-      return false;
-    }
-    if (sessionConfig?.model && currentModel && sessionConfig.model !== currentModel) {
-      return false;
-    }
-    if (
-      sessionConfig?.agentMode &&
-      warm.configState.agentMode &&
-      sessionConfig.agentMode !== warm.configState.agentMode
-    ) {
-      return false;
-    }
-    if (
-      sessionConfig?.reasoningEffort &&
-      warm.configState.reasoningEffort &&
-      sessionConfig.reasoningEffort !== warm.configState.reasoningEffort
-    ) {
-      return false;
-    }
-    return true;
+  function runtimeDraftPayload(draft: RuntimeDraft, reused: boolean, message: string) {
+    return {
+      ok: true,
+      draftId: draft.draftId,
+      deckClientId: draft.deckClientId,
+      projectId: draft.project.id,
+      workspaceId: draft.workspace.id,
+      providerId: draft.agent.id,
+      scopeKey: draft.scopeKey,
+      logicalScopeKey: draft.logicalScopeKey,
+      runtimeSessionId: draft.runtime.runtimeSessionId,
+      state: draft.configState,
+      modelOptions: draft.modelState?.options ?? [],
+      configOptions: draft.configOptions,
+      availableCommands: draft.availableCommands,
+      createdAt: draft.createdAt,
+      expiresAt: draft.expiresAt,
+      reused,
+      message,
+    };
   }
 
-  async function takeWarmRuntimeByKey(
-    key: WarmRuntimeKey,
-    sessionConfig?: SessionRuntimeConfig,
-    matchOptions?: { requireKnownModel?: boolean },
-  ) {
-    const warm = warmRuntimes.take(key);
-    if (warm) {
-      if (!warmRuntimeMatchesConfig(warm, sessionConfig, matchOptions)) {
-        warmRuntimes.set(key, warm);
-        return undefined;
+  async function cleanupDraftRuntime(draft: RuntimeDraft, reason: RuntimeDraftReason) {
+    clearTimeout(draft.expiresTimer);
+    runtimeDrafts.delete(draft.scopeKey);
+    runtimeDraftsById.delete(draft.draftId);
+    let cleanup: ProviderCleanupResult;
+    if (draft.runtime.sessionCapabilities?.sessionDelete && draft.runtime.deleteSession) {
+      try {
+        cleanup = await draft.runtime.deleteSession();
+      } catch (error) {
+        draft.runtime.cancel();
+        cleanup = {
+          kind: "remote-delete-failed",
+          providerId: draft.agent.id,
+          message: error instanceof Error ? error.message : "Failed to delete unused ACP draft.",
+        };
       }
-      clearTimeout(warm.expiresTimer);
-      return warm;
+    } else if (draft.runtime.sessionCapabilities?.sessionClose && draft.runtime.close) {
+      try {
+        cleanup = await draft.runtime.close();
+      } catch (error) {
+        draft.runtime.cancel();
+        cleanup = {
+          kind: "remote-close-failed",
+          providerId: draft.agent.id,
+          message: error instanceof Error ? error.message : "Failed to close unused ACP draft.",
+        };
+      }
+    } else {
+      draft.runtime.cancel();
+      cleanup = {
+        kind: "unsupported",
+        providerId: draft.agent.id,
+        message: "ACP agent did not advertise draft cleanup support; local draft runtime was terminated only.",
+      };
     }
+    options.logInfo(
+      `[tiller] draft.discard draft=${draft.draftId} deck=${draft.deckClientId} reason=${reason} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} cleanup=${cleanup.kind} activeDrafts=${runtimeDraftsById.size}`,
+    );
+    return cleanup;
+  }
 
-    const pending = inFlightWarmRuntimes.take(key);
-    if (!pending) {
-      return undefined;
-    }
-    pending.consumed = true;
-    try {
-      const inFlightWarm = await pending.promise;
-      if (!warmRuntimeMatchesConfig(inFlightWarm, sessionConfig, matchOptions)) {
-        warmRuntimes.set(key, inFlightWarm);
-        return undefined;
+  async function discardExistingDraftsForDeck(deckClientId: string, keepScopeKey?: string) {
+    const staleDrafts = Array.from(runtimeDrafts.values()).filter(
+      (draft) => draft.deckClientId === deckClientId && draft.scopeKey !== keepScopeKey,
+    );
+    await Promise.all(staleDrafts.map((draft) => cleanupDraftRuntime(draft, "scope-change")));
+    for (const pending of pendingRuntimeDrafts.values()) {
+      if (pending.deckClientId === deckClientId && pending.scopeKey !== keepScopeKey) {
+        pending.obsolete = true;
       }
-      clearTimeout(inFlightWarm.expiresTimer);
-      return inFlightWarm;
-    } catch (error) {
-      options.logError(
-        `[tiller] 阶段=预热ACP复用失败 message=${error instanceof Error ? error.message : "Unknown prewarm error"}`,
-      );
-      return undefined;
     }
   }
 
-  async function prewarmRuntime(params: {
+  async function createRuntimeDraft(params: {
+    deckClientId: string;
+    project: ProjectSummary;
+    helm: HelmSummary;
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
     sessionConfig?: SessionRuntimeConfig;
   }) {
-    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
-    const existing = warmRuntimes.get(key);
+    const { scopeKey, logicalScopeKey } = resolveRuntimeDraftKeys(params);
+    const reconnectTimer = deckDisconnectTimers.get(params.deckClientId);
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      deckDisconnectTimers.delete(params.deckClientId);
+    }
+    await discardExistingDraftsForDeck(params.deckClientId, scopeKey);
+
+    const existing = runtimeDrafts.get(scopeKey);
     if (existing) {
-      return {
-        ok: true,
-        warmed: false,
-        providerId: params.agent.id,
-        workspaceId: params.workspace.id,
-        runtimeSessionId: existing.runtime.runtimeSessionId,
-        currentModelId: existing.modelState?.currentModelId ?? existing.configState.model,
-        modelOptions: existing.modelState?.options ?? [],
-        configOptions: existing.configOptions,
-        availableCommands: existing.availableCommands,
-        state: existing.configState,
-        message: "ACP runtime is already prewarmed.",
-      };
+      options.logInfo(
+        `[tiller] draft.reuse draft=${existing.draftId} deck=${params.deckClientId} scope=${scopeKey} runtime=${existing.runtime.runtimeSessionId} activeDrafts=${runtimeDraftsById.size}`,
+      );
+      return runtimeDraftPayload(existing, true, "ACP runtime draft is already ready.");
     }
 
-    const pending = inFlightWarmRuntimes.get(key);
+    const pending = pendingRuntimeDrafts.get(scopeKey);
     if (pending) {
-      const warm = await pending.promise;
-      return {
-        ok: true,
-        warmed: false,
-        providerId: params.agent.id,
-        workspaceId: params.workspace.id,
-        runtimeSessionId: warm.runtime.runtimeSessionId,
-        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
-        modelOptions: warm.modelState?.options ?? [],
-        configOptions: warm.configOptions,
-        availableCommands: warm.availableCommands,
-        state: warm.configState,
-        message: "ACP runtime prewarm is already in progress.",
-      };
+      const draft = await pending.promise;
+      return runtimeDraftPayload(draft, true, "ACP runtime draft creation is already in progress.");
     }
 
-    const warmSessionId = `warm-${params.agent.id}-${Date.now()}`;
+    const draftId = `draft-${params.agent.id}-${Date.now()}`;
     let attachedSessionId: string | null = null;
     let modelState: AcpModelState | undefined;
     let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
     options.logInfo(
-      `[tiller] 阶段=预热ACP开始 warm=${warmSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} workspace=${params.workspace.id}`,
     );
 
-    const reservation = {
-      consumed: false,
+    const pendingDraft: PendingRuntimeDraft = {
+      deckClientId: params.deckClientId,
+      scopeKey,
+      obsolete: false,
       promise: createAcpRuntime({
-        sessionId: warmSessionId,
+        sessionId: draftId,
         workspace: params.workspace,
         agent: params.agent,
         sessionConfig: params.sessionConfig,
@@ -491,105 +506,170 @@ export function createSessionServices(options: SessionServicesOptions) {
           }
           if (event.type === "error") {
             options.logError(
-              `[tiller] 阶段=预热ACP错误 warm=${warmSessionId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
+              `[tiller] draft.error draft=${draftId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
             );
           }
         },
-      }).then((runtime) => {
+      }).then(async (runtime) => {
+        const createdAt = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + RUNTIME_DRAFT_TTL_MS).toISOString();
         const expiresTimer = setTimeout(() => {
-          const expired = warmRuntimes.take(key);
-          if (!expired) {
-            return;
+          const expired = runtimeDraftsById.get(draftId);
+          if (expired) {
+            void cleanupDraftRuntime(expired, "ttl");
           }
-          expired.cancel();
-          options.logInfo(
-            `[tiller] 阶段=预热ACP过期 runtime=${runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-          );
-        }, WARM_RUNTIME_TTL_MS);
+        }, RUNTIME_DRAFT_TTL_MS);
         expiresTimer.unref?.();
-        const initialModelState = modelState ?? runtime.sessionModelState;
-        const initialConfigOptions = configOptions.length
-          ? configOptions
-          : runtime.sessionConfigOptions;
-        const initialConfigState = Object.keys(configState).length
-          ? configState
-          : runtime.sessionConfigState;
-
-        return {
+        const draft: RuntimeDraft = {
+          draftId,
+          deckClientId: params.deckClientId,
+          scopeKey,
+          logicalScopeKey,
+          project: params.project,
+          helm: params.helm,
+          workspace: params.workspace,
+          agent: params.agent,
           runtime,
           attach: (sessionId: string) => {
             attachedSessionId = sessionId;
           },
-          cancel: () => runtime.cancel(),
           expiresTimer,
-          modelState: initialModelState,
-          configState: initialConfigState,
-          configOptions: initialConfigOptions,
+          createdAt,
+          expiresAt,
+          modelState: modelState ?? runtime.sessionModelState,
+          configState: Object.keys(configState).length ? configState : runtime.sessionConfigState,
+          configOptions: configOptions.length ? configOptions : runtime.sessionConfigOptions,
           availableCommands,
-        } satisfies WarmSessionRuntime;
+        };
+        if (pendingDraft.obsolete) {
+          await cleanupDraftRuntime(draft, "obsolete");
+          throw new Error("Draft became obsolete before creation completed.");
+        }
+        runtimeDrafts.set(scopeKey, draft);
+        runtimeDraftsById.set(draftId, draft);
+        options.logInfo(
+          `[tiller] draft.create.done draft=${draftId} deck=${params.deckClientId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} activeDrafts=${runtimeDraftsById.size}`,
+        );
+        return draft;
       }),
     };
-    inFlightWarmRuntimes.set(key, reservation);
+    pendingRuntimeDrafts.set(scopeKey, pendingDraft);
 
     try {
-      const warm = await reservation.promise;
-      inFlightWarmRuntimes.delete(key);
-      if (!reservation.consumed) {
-        warmRuntimes.set(key, warm);
-      }
-      options.logInfo(
-        `[tiller] 阶段=预热ACP完成 warm=${warmSessionId} runtime=${warm.runtime.runtimeSessionId} provider=${params.agent.id} workspace=${params.workspace.id}`,
-      );
-      return {
-        ok: true,
-        warmed: true,
-        providerId: params.agent.id,
-        workspaceId: params.workspace.id,
-        runtimeSessionId: warm.runtime.runtimeSessionId,
-        currentModelId: warm.modelState?.currentModelId ?? warm.configState.model,
-        modelOptions: warm.modelState?.options ?? [],
-        configOptions: warm.configOptions,
-        availableCommands: warm.availableCommands,
-        state: warm.configState,
-        message: "ACP runtime prewarmed.",
-      };
+      const draft = await pendingDraft.promise;
+      return runtimeDraftPayload(draft, false, "ACP runtime draft ready.");
     } catch (error) {
-      inFlightWarmRuntimes.delete(key);
+      options.logError(
+        `[tiller] draft.create.failed draft=${draftId} deck=${params.deckClientId} provider=${params.agent.id} message=${error instanceof Error ? error.message : "Failed to create ACP draft."}`,
+      );
       throw error;
+    } finally {
+      pendingRuntimeDrafts.delete(scopeKey);
     }
   }
 
-  async function takePrewarmedRuntime(params: {
-    workspace: WorkspaceSummary;
-    agent: AcpAgentProvider;
-    sessionConfig?: SessionRuntimeConfig;
+  async function discardRuntimeDraft(params: {
+    deckClientId: string;
+    draftId?: string;
+    scopeKey?: string;
+    reason: RuntimeDraftReason;
   }) {
-    const key = resolveWarmRuntimeKey(params.workspace, params.agent, params.sessionConfig);
-    const warm = await takeWarmRuntimeByKey(key, params.sessionConfig);
-    if (warm) {
-      options.logInfo(
-        `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${warm.runtime.runtimeSessionId}`,
-      );
-      return warm;
+    const draft = params.draftId
+      ? runtimeDraftsById.get(params.draftId)
+      : params.scopeKey
+        ? runtimeDrafts.get(params.scopeKey)
+        : undefined;
+    if (!params.draftId && !params.scopeKey) {
+      await discardRuntimeDraftsForDeckClient(params.deckClientId, params.reason);
+      return {
+        ok: true,
+        discarded: true,
+        message: "Runtime drafts for deck client discarded.",
+      };
     }
+    if (!draft || draft.deckClientId !== params.deckClientId) {
+      return {
+        ok: true,
+        discarded: false,
+        draftId: params.draftId,
+        message: "Runtime draft was not found or was already discarded.",
+      };
+    }
+    const cleanup = await cleanupDraftRuntime(draft, params.reason);
+    return {
+      ok: true,
+      discarded: true,
+      draftId: draft.draftId,
+      cleanup,
+      message: "Runtime draft discarded.",
+    };
+  }
 
-    if (params.sessionConfig?.model) {
-      const defaultModelKey = resolveWarmRuntimeKey(params.workspace, params.agent, {
-        ...params.sessionConfig,
-        model: undefined,
-      });
-      const defaultModelWarm = await takeWarmRuntimeByKey(defaultModelKey, params.sessionConfig, {
-        requireKnownModel: true,
-      });
-      if (defaultModelWarm) {
-        options.logInfo(
-          `[tiller] 阶段=预热ACP复用 provider=${params.agent.id} workspace=${params.workspace.id} runtime=${defaultModelWarm.runtime.runtimeSessionId}`,
-        );
-        return defaultModelWarm;
+  async function discardRuntimeDraftsForDeckClient(deckClientId: string, reason: RuntimeDraftReason) {
+    const drafts = Array.from(runtimeDrafts.values()).filter((draft) => draft.deckClientId === deckClientId);
+    await Promise.all(drafts.map((draft) => cleanupDraftRuntime(draft, reason)));
+    for (const pending of pendingRuntimeDrafts.values()) {
+      if (pending.deckClientId === deckClientId) {
+        pending.obsolete = true;
       }
     }
+  }
 
-    return undefined;
+  function scheduleDeckClientDraftDiscard(deckClientId: string, delayMs = 30_000) {
+    const existing = deckDisconnectTimers.get(deckClientId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      void discardRuntimeDraftsForDeckClient(deckClientId, "tab-disconnect");
+      deckDisconnectTimers.delete(deckClientId);
+    }, delayMs);
+    timer.unref?.();
+    deckDisconnectTimers.set(deckClientId, timer);
+  }
+
+  function takeRuntimeDraft(draftId: string) {
+    const draft = runtimeDraftsById.get(draftId);
+    if (!draft) {
+      return undefined;
+    }
+    clearTimeout(draft.expiresTimer);
+    runtimeDrafts.delete(draft.scopeKey);
+    runtimeDraftsById.delete(draft.draftId);
+    options.logInfo(
+      `[tiller] draft.take draft=${draft.draftId} deck=${draft.deckClientId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} activeDrafts=${runtimeDraftsById.size}`,
+    );
+    return draft;
+  }
+
+  async function configureRuntimeDraft(params: {
+    draftId: string;
+    agentMode?: string;
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+  }) {
+    const draft = runtimeDraftsById.get(params.draftId);
+    if (!draft) {
+      throw new Error("Runtime draft not found");
+    }
+    const result = await draft.runtime.configure({
+      agentMode: params.agentMode,
+      model: params.model,
+      reasoningEffort: params.reasoningEffort,
+    });
+    draft.configState = result.state;
+    draft.modelState = result.modelState ?? draft.modelState;
+    draft.configOptions = draft.runtime.sessionConfigOptions ?? draft.configOptions;
+    options.logInfo(
+      `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
+    );
+    return {
+      draftId: draft.draftId,
+      ok: true,
+      state: result.state,
+      options: draft.configOptions,
+      message: result.runtimeApplied ? "Runtime draft config updated." : "Runtime draft config saved.",
+    };
   }
 
   async function startSessionResume(sessionId: string) {
@@ -811,13 +891,17 @@ export function createSessionServices(options: SessionServicesOptions) {
     hydrateDiffsFromWorkspaceGit,
     hydrateSessionSummary,
     migrateStoredSessionSummary,
+    configureRuntimeDraft,
+    createRuntimeDraft,
+    discardRuntimeDraft,
+    discardRuntimeDraftsForDeckClient,
     persistRuntimeDescriptor,
     persistSessionMessage,
-    prewarmRuntime,
     publishDiffUpdate,
     refreshAuthoritativeSessionHistory,
+    scheduleDeckClientDraftDiscard,
     startSessionResume,
-    takePrewarmedRuntime,
+    takeRuntimeDraft,
     updateSessionSummary,
   };
 }

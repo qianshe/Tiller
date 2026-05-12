@@ -13,6 +13,7 @@ import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import type { AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { toast } from "../../toast";
 import {
@@ -40,6 +41,7 @@ type UseSessionCommandActionsOptions = {
   filteredWorkspaces: WorkspaceSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
+  agentModelOptions?: Record<string, AgentModelOptionsEntry>;
   pendingPromptRef: MutableRef<string | null>;
   pendingPromptContentRef: MutableRef<AgentPromptContent[] | undefined>;
   dispatch: DispatchToHelm;
@@ -90,6 +92,7 @@ export function useSessionCommandActions({
   filteredWorkspaces,
   selectedAgentId,
   filteredAgents,
+  agentModelOptions,
   pendingPromptRef,
   pendingPromptContentRef,
   dispatch,
@@ -121,6 +124,7 @@ export function useSessionCommandActions({
         : filteredWorkspaces,
       selectedAgentId: agentIdOverride ?? selectedAgentId,
       filteredAgents,
+      agentModelOptions,
       rpcClientRef,
       pendingPromptRef,
       pendingPromptContentRef,

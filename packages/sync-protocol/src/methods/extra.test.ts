@@ -3,7 +3,7 @@ import test from "node:test";
 import * as projectListFiles from "./project/list-files";
 import * as workspaceGitListBranches from "./workspace/git/list-branches";
 import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
-import * as agentGetModelOptions from "./agent/get-model-options";
+import * as sessionDraft from "./session/draft";
 import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
 import * as agentDelete from "./agent/delete";
@@ -41,14 +41,16 @@ test("workspace/git/create_branch shares the list_branches result schema", () =>
   });
 });
 
-test("agent/get_model_options enforces id triple", () => {
-  assert.equal(agentGetModelOptions.method, "agent/get_model_options");
+test("session/draft enforces deck and selected agent scope", () => {
+  assert.equal(sessionDraft.method, "session/draft");
   assert.deepEqual(
-    agentGetModelOptions.ParamsSchema.parse({
-      providerId: "claude",
+    sessionDraft.ParamsSchema.parse({
+      deckClientId: "deck-1",
+      projectId: "p1",
       workspaceId: "ws1",
+      agentId: "a1",
     }),
-    { providerId: "claude", workspaceId: "ws1" },
+    { deckClientId: "deck-1", projectId: "p1", workspaceId: "ws1", agentId: "a1" },
   );
 });
 

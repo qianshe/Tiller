@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
 import type { AgentToolCall } from "@tiller/shared";
 import {
+  agentModelOptionsKey,
   readAgentModelOptionsCache,
   useAppActions,
 } from "../../features/agents";
@@ -239,6 +240,23 @@ export function App() {
           runtimeState.selectedReasoningEffort,
       });
       return;
+    }
+    const draftKey =
+      runtimeState.selectedAgentId && runtimeState.selectedWorkspaceId
+        ? agentModelOptionsKey(
+            runtimeState.selectedAgentId,
+            runtimeState.selectedWorkspaceId,
+            runtimeState.selectedProjectId,
+          )
+        : null;
+    const draftEntry = draftKey ? deckData.agentModelOptions[draftKey] : undefined;
+    if (draftEntry?.draftId && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "session/set_config_option", {
+        draftId: draftEntry.draftId,
+        agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
+        model: normalizeModelSelection(next.model ?? missionView.draftModel),
+        reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
+      });
     }
     if (typeof next.agentMode === "string")
       runtimeState.setSelectedAgentMode(next.agentMode);

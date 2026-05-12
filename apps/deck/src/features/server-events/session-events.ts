@@ -145,6 +145,11 @@ export function applySessionResult(
   switch (method) {
     case "session/new":
       return applySessionCreated(payload as { session: SessionSummary }, context);
+    case "session/prompt":
+      if (payload.session) {
+        return applySessionCreated(payload as { session: SessionSummary }, context);
+      }
+      return true;
     case "session/list": {
       const nextSessions = payload.before
         ? mergeSessionSummaries(currentSessions, payload.sessions)
