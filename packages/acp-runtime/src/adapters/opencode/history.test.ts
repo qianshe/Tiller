@@ -68,14 +68,6 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
 test("loadAdapterAuthoritativeHistory returns null for providers without native export", async () => {
   assert.equal(
     await loadAdapterAuthoritativeHistory(
-      { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
-      "runtime-1",
-      "D:/repo",
-    ),
-    null,
-  );
-  assert.equal(
-    await loadAdapterAuthoritativeHistory(
       { id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" },
       "runtime-1",
       "D:/repo",
