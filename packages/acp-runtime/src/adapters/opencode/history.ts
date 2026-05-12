@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AcpAgentProvider, AgentMessage, AgentToolCall } from "@tiller/shared";
-import type { AcpAuthoritativeHistory } from "./types";
+import type { AcpAuthoritativeHistory } from "../types";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;

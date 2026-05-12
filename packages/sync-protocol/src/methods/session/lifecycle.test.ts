@@ -9,6 +9,7 @@ import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
 import * as sessionPrompt from "./prompt";
+import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
@@ -96,14 +97,20 @@ test("session/prompt accepts either sessionId or draftId", () => {
   sessionPrompt.ResultSchema.parse({ stopReason: "end_turn", session: { id: "s1" } });
 });
 
-test("session/set_config_option allows partial config", () => {
-  assert.equal(sessionSetConfigOption.method, "session/set_config_option");
-  sessionSetConfigOption.ParamsSchema.parse({ sessionId: "s1" });
-  sessionSetConfigOption.ParamsSchema.parse({ draftId: "d1", model: "gpt-5.5" });
-  assert.throws(() => sessionSetConfigOption.ParamsSchema.parse({}));
+test("session/configure allows partial active or draft config", () => {
+  assert.equal(sessionConfigure.method, "session/configure");
+  sessionConfigure.ParamsSchema.parse({ sessionId: "s1" });
+  sessionConfigure.ParamsSchema.parse({ draftId: "d1", model: "gpt-5.5" });
+  assert.throws(() => sessionConfigure.ParamsSchema.parse({}));
   assert.throws(() =>
-    sessionSetConfigOption.ParamsSchema.parse({ sessionId: "s1", draftId: "d1" }),
+    sessionConfigure.ParamsSchema.parse({ sessionId: "s1", draftId: "d1" }),
   );
+});
+
+test("session/set_config_option remains a compatibility alias", () => {
+  assert.equal(sessionSetConfigOption.method, "session/set_config_option");
+  assert.equal(sessionSetConfigOption.ParamsSchema, sessionConfigure.ParamsSchema);
+  assert.equal(sessionSetConfigOption.ResultSchema, sessionConfigure.ResultSchema);
 });
 
 test("session/rename requires session id and title", () => {

@@ -1,10 +1,10 @@
-import type { AcpAgentAdapter } from "./types";
-import { isCommandNamed, resolveDefaultLaunch } from "./shared";
+import type { AcpAgentAdapter } from "../types";
+import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import {
   applyOpenCodeSessionLaunchArgs,
   resolveOpenCodeSessionEnv,
-} from "./session-config";
-import { loadOpenCodeExportHistory } from "./opencode-history";
+} from "../session-config";
+import { loadOpenCodeExportHistory } from "./history";
 
 export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
 

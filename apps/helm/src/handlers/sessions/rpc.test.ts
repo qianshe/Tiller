@@ -183,3 +183,104 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   assert.equal(attachedSessionId, result.session.id);
   assert.equal(prompted, "你好");
 });
+
+test("session/configure routes draft config without requiring a visible session", async () => {
+  let configured: unknown;
+  const result = await handleSessionRpcRequest(
+    "session/configure",
+    { draftId: "draft-1", model: "gpt-5.5", reasoningEffort: "high" },
+    {
+      configureRuntimeDraft: (params: unknown) => {
+        configured = params;
+        return {
+          ok: true,
+          draftId: "draft-1",
+          state: { model: "gpt-5.5", reasoningEffort: "high" },
+          options: [],
+          message: "Runtime draft config updated.",
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(configured, {
+    draftId: "draft-1",
+    agentMode: undefined,
+    model: "gpt-5.5",
+    reasoningEffort: "high",
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    draftId: "draft-1",
+    state: { model: "gpt-5.5", reasoningEffort: "high" },
+    options: [],
+    message: "Runtime draft config updated.",
+  });
+});
+
+test("session/set_config_option remains a compatibility alias for draft config", async () => {
+  let configured: unknown;
+  const result = await handleSessionRpcRequest(
+    "session/set_config_option",
+    { draftId: "draft-1", agentMode: "plan" },
+    {
+      configureRuntimeDraft: (params: unknown) => {
+        configured = params;
+        return {
+          ok: true,
+          draftId: "draft-1",
+          state: { agentMode: "plan" },
+          options: [],
+          message: "Runtime draft config updated.",
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(configured, {
+    draftId: "draft-1",
+    agentMode: "plan",
+    model: undefined,
+    reasoningEffort: undefined,
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    draftId: "draft-1",
+    state: { agentMode: "plan" },
+    options: [],
+    message: "Runtime draft config updated.",
+  });
+});
+
+test("session/discard_draft delegates cleanup to the runtime draft registry", async () => {
+  let discarded: unknown;
+  const result = await handleSessionRpcRequest(
+    "session/discard_draft",
+    { deckClientId: "deck-1", draftId: "draft-1", reason: "scope-change" },
+    {
+      discardRuntimeDraft: (params: unknown) => {
+        discarded = params;
+        return {
+          ok: true,
+          discarded: true,
+          draftId: "draft-1",
+          cleanup: { kind: "remote-deleted", providerId: "opencode", message: "deleted" },
+          message: "Runtime draft discarded.",
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(discarded, {
+    deckClientId: "deck-1",
+    draftId: "draft-1",
+    reason: "scope-change",
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    discarded: true,
+    draftId: "draft-1",
+    cleanup: { kind: "remote-deleted", providerId: "opencode", message: "deleted" },
+    message: "Runtime draft discarded.",
+  });
+});

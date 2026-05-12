@@ -104,8 +104,19 @@ export async function handleSessionRpcRequest(
         },
         context,
       );
+    case "session/configure":
+      return configureSessionOrDraft(
+        params as {
+          sessionId?: string;
+          draftId?: string;
+          agentMode?: string;
+          model?: string;
+          reasoningEffort?: SessionReasoningEffort;
+        },
+        context,
+      );
     case "session/set_config_option":
-      return setConfigOption(
+      return configureSessionOrDraft(
         params as {
           sessionId?: string;
           draftId?: string;
@@ -511,7 +522,7 @@ async function promptRuntimeDraft(
   }
 }
 
-async function setConfigOption(
+async function configureSessionOrDraft(
   params: {
     sessionId?: string;
     draftId?: string;

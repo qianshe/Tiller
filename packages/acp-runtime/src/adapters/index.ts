@@ -1,9 +1,9 @@
 import type { AcpAgentProvider, AgentCapabilities } from "@tiller/shared";
-import { createClaudeAcpAdapter } from "./claude";
-import { createCodexAcpAdapter } from "./codex";
-import { createGenericAcpAdapter } from "./generic";
-import { createOpenClawAcpAdapter } from "./openclaw";
-import { createOpenCodeAcpAdapter } from "./opencode";
+import { createClaudeAcpAdapter } from "./claude/index";
+import { createCodexAcpAdapter } from "./codex/index";
+import { createGenericAcpAdapter } from "./generic/index";
+import { createOpenClawAcpAdapter } from "./openclaw/index";
+import { createOpenCodeAcpAdapter } from "./opencode/index";
 import type { AcpAgentAdapter, AcpLaunchContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
@@ -48,10 +48,10 @@ export function loadAdapterAuthoritativeHistory(
   );
 }
 
-export { createClaudeAcpAdapter } from "./claude";
-export { createCodexAcpAdapter } from "./codex";
-export { createGenericAcpAdapter } from "./generic";
-export { createOpenClawAcpAdapter } from "./openclaw";
-export { createOpenCodeAcpAdapter } from "./opencode";
-export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode";
+export { createClaudeAcpAdapter } from "./claude/index";
+export { createCodexAcpAdapter } from "./codex/index";
+export { createGenericAcpAdapter } from "./generic/index";
+export { createOpenClawAcpAdapter } from "./openclaw/index";
+export { createOpenCodeAcpAdapter } from "./opencode/index";
+export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderCleanupPlan } from "./types";

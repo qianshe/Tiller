@@ -26,6 +26,7 @@ import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
+import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
 import * as permissionListPending from "./permission/list-pending";
@@ -71,6 +72,7 @@ const METHOD_DESCRIPTORS = {
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
+  [sessionConfigure.method]: sessionConfigure.descriptor,
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
@@ -118,6 +120,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionCheckResume.method,
   sessionResume.method,
   sessionPrompt.method,
+  sessionConfigure.method,
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,

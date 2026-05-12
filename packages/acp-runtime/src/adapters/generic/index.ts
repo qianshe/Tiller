@@ -1,5 +1,5 @@
-import type { AcpAgentAdapter } from "./types";
-import { resolveDefaultLaunch, resolveUnsupportedCleanup } from "./shared";
+import type { AcpAgentAdapter } from "../types";
+import { resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
 
 export function createGenericAcpAdapter(): AcpAgentAdapter {
   return {

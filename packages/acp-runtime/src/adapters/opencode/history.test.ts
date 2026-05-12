@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadAdapterAuthoritativeHistory } from "./index.js";
-import { parseOpenCodeExportHistory } from "./opencode-history.js";
+import { loadAdapterAuthoritativeHistory } from "../index.js";
+import { parseOpenCodeExportHistory } from "./history.js";
 
 test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode export", () => {
   const history = parseOpenCodeExportHistory(

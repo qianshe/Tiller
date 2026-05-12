@@ -225,7 +225,7 @@ export function App() {
     const activeSession = missionView.activeSession;
     const client = runtimeState.rpcClientRef.current;
     if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
-      void dispatch(client, "session/set_config_option", {
+      void dispatch(client, "session/configure", {
         sessionId: activeSession.id,
         agentMode:
           next.agentMode ??
@@ -251,7 +251,7 @@ export function App() {
         : null;
     const draftEntry = draftKey ? deckData.agentModelOptions[draftKey] : undefined;
     if (draftEntry?.draftId && client?.socket.readyState === WebSocket.OPEN) {
-      void dispatch(client, "session/set_config_option", {
+      void dispatch(client, "session/configure", {
         draftId: draftEntry.draftId,
         agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
         model: normalizeModelSelection(next.model ?? missionView.draftModel),

@@ -2,7 +2,6 @@ import {
   createAcpRuntime,
   loadAdapterAuthoritativeHistory,
   type AcpConnectionLifecycleEvent,
-  type ProviderCleanupResult,
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
@@ -34,6 +33,7 @@ import {
   toParagraphMessages,
 } from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
+import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
@@ -387,37 +387,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     clearTimeout(draft.expiresTimer);
     runtimeDrafts.delete(draft.scopeKey);
     runtimeDraftsById.delete(draft.draftId);
-    let cleanup: ProviderCleanupResult;
-    if (draft.runtime.sessionCapabilities?.sessionDelete && draft.runtime.deleteSession) {
-      try {
-        cleanup = await draft.runtime.deleteSession();
-      } catch (error) {
-        draft.runtime.cancel();
-        cleanup = {
-          kind: "remote-delete-failed",
-          providerId: draft.agent.id,
-          message: error instanceof Error ? error.message : "Failed to delete unused ACP draft.",
-        };
-      }
-    } else if (draft.runtime.sessionCapabilities?.sessionClose && draft.runtime.close) {
-      try {
-        cleanup = await draft.runtime.close();
-      } catch (error) {
-        draft.runtime.cancel();
-        cleanup = {
-          kind: "remote-close-failed",
-          providerId: draft.agent.id,
-          message: error instanceof Error ? error.message : "Failed to close unused ACP draft.",
-        };
-      }
-    } else {
-      draft.runtime.cancel();
-      cleanup = {
-        kind: "unsupported",
-        providerId: draft.agent.id,
-        message: "ACP agent did not advertise draft cleanup support; local draft runtime was terminated only.",
-      };
-    }
+    const cleanup = await cleanupDraftProviderRuntime(draft.runtime, draft.agent);
     options.logInfo(
       `[tiller] draft.discard draft=${draft.draftId} deck=${draft.deckClientId} reason=${reason} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} cleanup=${cleanup.kind} activeDrafts=${runtimeDraftsById.size}`,
     );
