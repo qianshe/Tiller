@@ -188,6 +188,34 @@ npm install -g @qianshe/tiller@preview
 
 `preview` is intended for early testing. Expect breaking changes before a stable `latest` release.
 
+## Updating Tiller
+
+Tiller checks npm `latest` on startup and prints an update notice when a newer stable version is available. Startup checks never install packages automatically.
+
+To update Tiller explicitly:
+
+```bash
+tiller update
+```
+
+This runs:
+
+```bash
+npm install -g @qianshe/tiller@latest
+```
+
+Preview releases are opt-in only. When a newer preview exists, Tiller may print:
+
+```bash
+npm install -g @qianshe/tiller@preview
+```
+
+Disable startup update checks:
+
+```bash
+TILLER_UPDATE_CHECK=0 tiller start
+```
+
 ## Feedback and issues
 
 Tiller is in public preview. Bug reports, feature requests and ACP agent compatibility notes are welcome through GitHub Issues:
