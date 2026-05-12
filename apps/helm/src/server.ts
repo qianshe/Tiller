@@ -17,7 +17,15 @@ import {
   saveProviderToConfig,
   saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
-import { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection, testAcpConnection, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import {
+  connectAcpConnection,
+  createAcpRuntime,
+  disposeAcpConnections,
+  listAcpConnectionInventory,
+  reconnectAcpConnection,
+  testAcpConnection,
+  type SessionRuntimeEvent,
+} from "@tiller/acp-runtime";
 import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
@@ -56,6 +64,13 @@ import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
 import { createPairingState } from "./state/pairing";
 import { createSocketState } from "./state/socket";
+import { TILLER_VERSION } from "./cli";
+import {
+  buildUpdateNotice,
+  formatStartupUpdateNotice,
+  loadUpdateVersions,
+  resolveUpdateOptions,
+} from "./updates/check.js";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
@@ -194,6 +209,24 @@ function normalizeProjectAgentDefaultsOnStartup() {
   }
 }
 
+async function checkForTillerUpdatesOnStart() {
+  const options = resolveUpdateOptions({ env: process.env, config: tillerConfig });
+  if (!options.checkOnStart) {
+    return;
+  }
+
+  try {
+    const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION), options);
+    for (const line of formatStartupUpdateNotice(notice)) {
+      logWarn(line);
+    }
+  } catch (error) {
+    logWarn(
+      `[tiller] update check skipped: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 try {
   await assertHelmPortAvailable({ host: HOST, port: PORT });
 } catch (error) {
@@ -229,6 +262,7 @@ httpServer.on("listening", () => {
     `[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`,
   );
   logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
+  void checkForTillerUpdatesOnStart();
 });
 
 httpServer.on("error", (error) => {
@@ -275,13 +309,18 @@ process.on("unhandledRejection", (reason) => {
 
 function attachRpcConnection(socket: WebSocket) {
   const stream = createWebSocketJsonRpcStream(socket, (error) => {
-    logError(`[tiller] json-rpc decode failed: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `[tiller] json-rpc decode failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   });
   const connection = new JsonRpcConnection(stream, {
     onRequest: (method, params) => handleHelmRpcRequest(method, params, createHandlerContext()),
-    onNotification: (method, params) => handleHelmRpcNotification(method, params, createHandlerContext()),
+    onNotification: (method, params) =>
+      handleHelmRpcNotification(method, params, createHandlerContext()),
     onError: (error) => {
-      logError(`[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`);
+      logError(
+        `[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
   socket.once("close", () => {
@@ -363,7 +402,8 @@ async function probeAgentModelOptions(agent: AcpAgentProvider, workspace: Worksp
   let modelState: AcpModelState | undefined;
   let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
   let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
-  let availableCommands: Extract<SessionRuntimeEvent, { type: "available-commands" }>["commands"] = [];
+  let availableCommands: Extract<SessionRuntimeEvent, { type: "available-commands" }>["commands"] =
+    [];
 
   logInfo(
     `[tiller] agent.model.options.probe.start provider=${agent.id} workspace=${workspace.id}`,
@@ -459,7 +499,6 @@ function toTrustedDeviceSummary(
     expiresAt: record.expiresAt,
   };
 }
-
 
 function broadcastNotification(method: string, params: unknown) {
   for (const record of authenticatedSockets.listAll()) {

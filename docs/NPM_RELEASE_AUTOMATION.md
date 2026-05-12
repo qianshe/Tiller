@@ -141,6 +141,14 @@ Verify:
 npm view @qianshe/tiller@latest version --registry=https://registry.npmjs.org/
 ```
 
+After publishing a stable `latest`, verify explicit update behavior from an older global installation:
+
+```bash
+tiller update
+```
+
+The command should run `npm install -g @qianshe/tiller@latest`. Startup checks should only print `tiller update` guidance and must not install packages.
+
 ## Notes
 
 - Do not release from a dirty or unverified branch.

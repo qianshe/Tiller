@@ -18,6 +18,15 @@ test("resolveTillerCliAction returns version for version flags", () => {
   assert.equal(resolveTillerCliAction(["-v"]).kind, "version");
 });
 
+test("resolveTillerCliAction returns update for update command", () => {
+  assert.deepEqual(resolveTillerCliAction(["update"]), { kind: "update" });
+});
+
+test("resolveTillerCliAction gives help and version flags priority over update", () => {
+  assert.equal(resolveTillerCliAction(["update", "--help"]).kind, "help");
+  assert.equal(resolveTillerCliAction(["update", "--version"]).kind, "version");
+});
+
 test("resolveTillerCliAction rejects unknown commands", () => {
   const action = resolveTillerCliAction(["serve"]);
 

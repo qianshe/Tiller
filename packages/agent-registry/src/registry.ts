@@ -13,6 +13,10 @@ export type TillerConfig = {
     port?: number;
     auth?: "none" | "pairing";
   };
+  updates?: {
+    checkOnStart?: boolean;
+    previewHint?: boolean;
+  };
 };
 
 const DEFAULT_DAEMON_CONFIG: NonNullable<TillerConfig["daemon"]> = {
