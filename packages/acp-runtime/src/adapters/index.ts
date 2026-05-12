@@ -54,4 +54,5 @@ export { createGenericAcpAdapter } from "./generic/index";
 export { createOpenClawAcpAdapter } from "./openclaw/index";
 export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderCleanupPlan } from "./types";
+export { resolveAdapterPluginManifest } from "./plugin-loader";
+export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
