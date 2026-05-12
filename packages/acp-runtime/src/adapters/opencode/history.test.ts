@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadAdapterAuthoritativeHistory } from "../index.js";
-import { parseOpenCodeExportHistory } from "./history.js";
+import { parseOpenCodeExportHistory, parseOpenCodeSqliteHistory } from "./history.js";
 
 test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode export", () => {
   const history = parseOpenCodeExportHistory(
@@ -63,6 +63,57 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
       updatedAt: "2026-04-30T09:59:10.482Z",
     },
   ]);
+});
+
+test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlite rows", () => {
+  const history = parseOpenCodeSqliteHistory(
+    [
+      {
+        id: "msg-user",
+        time_created: 1777543137952,
+        data: JSON.stringify({ role: "user", time: { created: 1777543137952 } }),
+      },
+      {
+        id: "msg-assistant",
+        time_created: 1777543137977,
+        data: JSON.stringify({ role: "assistant", time: { created: 1777543137977 } }),
+      },
+    ],
+    [
+      {
+        id: "prt-user",
+        message_id: "msg-user",
+        time_created: 1777543137952,
+        time_updated: 1777543137952,
+        data: JSON.stringify({ type: "text", text: "你好" }),
+      },
+      {
+        id: "prt-assistant",
+        message_id: "msg-assistant",
+        time_created: 1777543137977,
+        time_updated: 1777543137977,
+        data: JSON.stringify({ type: "text", text: "你好，主人喵~" }),
+      },
+    ],
+  );
+
+  assert.deepEqual(history, {
+    messages: [
+      {
+        id: "msg-user",
+        role: "user",
+        text: "你好",
+        timestamp: "2026-04-30T09:58:57.952Z",
+      },
+      {
+        id: "msg-assistant",
+        role: "assistant",
+        text: "你好，主人喵~",
+        timestamp: "2026-04-30T09:58:57.977Z",
+      },
+    ],
+    toolCalls: [],
+  });
 });
 
 test("loadAdapterAuthoritativeHistory returns null for providers without native export", async () => {
