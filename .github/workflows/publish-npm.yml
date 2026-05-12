@@ -182,8 +182,8 @@ jobs:
         working-directory: apps/helm/dist-package
         run: npm publish --tag "${{ needs.release_plan.outputs.dist_tag }}" --access public
 
-  draft_github_release:
-    name: Create GitHub Release draft
+  create_github_release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs:
       - release_plan
@@ -276,10 +276,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Create GitHub Release draft
+      - name: Create GitHub Release
         shell: bash
         run: |
-          RELEASE_FLAGS=(--draft)
+          RELEASE_FLAGS=()
           if [ "${{ needs.verify_package.outputs.prerelease }}" = "true" ]; then
             RELEASE_FLAGS+=(--prerelease)
           fi
