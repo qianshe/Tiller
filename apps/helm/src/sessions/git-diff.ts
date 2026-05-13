@@ -7,13 +7,13 @@ import type { FileDiffSummary } from "@tiller/shared";
 const execFileAsync = promisify(execFile);
 const GIT_DIFF_MAX_BUFFER = 5 * 1024 * 1024;
 
-export async function readWorkspaceGitDiffs(workspacePath: string): Promise<FileDiffSummary[]> {
+export async function readWorktreeGitDiffs(cwd: string): Promise<FileDiffSummary[]> {
   try {
     const [nameStatusResult, numstatResult] = await Promise.all([
-      execFileAsync("git", ["-C", workspacePath, "diff", "--name-status", "HEAD", "--"], {
+      execFileAsync("git", ["-C", cwd, "diff", "--name-status", "HEAD", "--"], {
         maxBuffer: GIT_DIFF_MAX_BUFFER,
       }),
-      execFileAsync("git", ["-C", workspacePath, "diff", "--numstat", "HEAD", "--"], {
+      execFileAsync("git", ["-C", cwd, "diff", "--numstat", "HEAD", "--"], {
         maxBuffer: GIT_DIFF_MAX_BUFFER,
       }),
     ]);
@@ -22,7 +22,7 @@ export async function readWorkspaceGitDiffs(workspacePath: string): Promise<File
     const trackedDiffs = await Promise.all(
       files.map(async (file) => {
         const stats = statsByPath.get(normalizeDiffPath(file.path));
-        const patch = await readWorkspaceGitPatch(workspacePath, file.path);
+        const patch = await readWorktreeGitPatch(cwd, file.path);
         return {
           ...file,
           additions: stats?.additions ?? countPatchLines(patch, "+"),
@@ -31,18 +31,18 @@ export async function readWorkspaceGitDiffs(workspacePath: string): Promise<File
         };
       }),
     );
-    const untrackedDiffs = await readWorkspaceUntrackedDiffs(workspacePath);
+    const untrackedDiffs = await readWorktreeUntrackedDiffs(cwd);
     return [...trackedDiffs, ...untrackedDiffs];
   } catch {
     return [];
   }
 }
 
-async function readWorkspaceGitPatch(workspacePath: string, filePath: string) {
+async function readWorktreeGitPatch(cwd: string, filePath: string) {
   try {
     const result = await execFileAsync(
       "git",
-      ["-C", workspacePath, "diff", "--no-ext-diff", "HEAD", "--", filePath],
+      ["-C", cwd, "diff", "--no-ext-diff", "HEAD", "--", filePath],
       { maxBuffer: GIT_DIFF_MAX_BUFFER },
     );
     const patch = result.stdout.trimEnd();
@@ -52,30 +52,30 @@ async function readWorkspaceGitPatch(workspacePath: string, filePath: string) {
   }
 }
 
-async function readWorkspaceUntrackedDiffs(workspacePath: string): Promise<FileDiffSummary[]> {
+async function readWorktreeUntrackedDiffs(cwd: string): Promise<FileDiffSummary[]> {
   try {
     const result = await execFileAsync(
       "git",
-      ["-C", workspacePath, "ls-files", "--others", "--exclude-standard", "-z"],
+      ["-C", cwd, "ls-files", "--others", "--exclude-standard", "-z"],
       { maxBuffer: GIT_DIFF_MAX_BUFFER },
     );
     const files = result.stdout.split("\0").filter(Boolean);
-    return Promise.all(files.map((filePath) => buildUntrackedFileDiff(workspacePath, filePath)));
+    return Promise.all(files.map((filePath) => buildUntrackedFileDiff(cwd, filePath)));
   } catch {
     return [];
   }
 }
 
 async function buildUntrackedFileDiff(
-  workspacePath: string,
+  cwd: string,
   filePath: string,
 ): Promise<FileDiffSummary> {
   try {
-    const absoluteWorkspace = resolve(workspacePath);
-    const absoluteFile = resolve(absoluteWorkspace, filePath);
+    const absoluteWorktree = resolve(cwd);
+    const absoluteFile = resolve(absoluteWorktree, filePath);
     if (
-      absoluteFile !== absoluteWorkspace &&
-      !absoluteFile.startsWith(`${absoluteWorkspace}${sep}`)
+      absoluteFile !== absoluteWorktree &&
+      !absoluteFile.startsWith(`${absoluteWorktree}${sep}`)
     ) {
       return { path: filePath, status: "added", additions: 0, deletions: 0 };
     }

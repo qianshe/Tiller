@@ -24,7 +24,7 @@ export function openSessionDatabase(dbPath: string) {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       helm_id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
+      worktree_id TEXT NOT NULL,
       agent_id TEXT NOT NULL,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,

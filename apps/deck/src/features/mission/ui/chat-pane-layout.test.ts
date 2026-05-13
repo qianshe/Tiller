@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const workspaceSource = readFileSync(resolve(currentDir, "workspace.tsx"), "utf8");
+const worktreeSource = readFileSync(resolve(currentDir, "workspace.tsx"), "utf8");
 const shellStylesSource = readFileSync(
   resolve(currentDir, "../../../app/shell/styles.css"),
   "utf8",
@@ -17,7 +17,7 @@ const sidebarProjectNodeSource = readFileSync(
 );
 const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
-const workspaceModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
+const worktreeModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
 const missionSelectionEffectsSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-selection-effects.ts"),
   "utf8",
@@ -49,7 +49,7 @@ const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/mark
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
 
-  assert.match(workspaceSource, /mission-pane-chat relative/);
+  assert.match(worktreeSource, /mission-pane-chat relative/);
   assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
   assert.match(shellStylesSource, /bottom:\s*calc\(var\(--mission-permission-composer-offset, 190px\) \+ 68px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(permissionDrawerSource, /left-3/);
@@ -107,19 +107,19 @@ test("mission composer falls back to active session available commands", () => {
 
 test("ACP runtime overview refreshes after restore and does not stay connected during reconnect", () => {
   assert.match(sessionEventsSource, /"agent\/connections"/);
-  assert.match(workspaceSource, /pendingAcpReconnects/);
-  assert.match(workspaceSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
-  assert.match(workspaceSource, /canReconnect: !reconnectPending/);
-  assert.match(workspaceSource, /canConnect: reconnectPending/);
-  assert.match(workspaceSource, /agentOrder/);
-  assert.match(workspaceSource, /return items\.sort/);
+  assert.match(worktreeSource, /pendingAcpReconnects/);
+  assert.match(worktreeSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
+  assert.match(worktreeSource, /canReconnect: !reconnectPending/);
+  assert.match(worktreeSource, /canConnect: reconnectPending/);
+  assert.match(worktreeSource, /agentOrder/);
+  assert.match(worktreeSource, /return items\.sort/);
 });
 
-test("mission workspace uses Tailwind pane layout instead of feature css", () => {
-  assert.match(workspaceSource, /grid-cols-\[var\(--mission-sidebar-width\)_var\(--mission-sidebar-resizer-width\)_minmax\(0,var\(--mission-chat-width\)\)_var\(--mission-display-resizer-width\)_var\(--mission-display-width\)_var\(--mission-inspector-resizer-width\)_var\(--mission-inspector-width\)\]/);
-  assert.doesNotMatch(workspaceSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
-  assert.match(workspaceSource, /mission-sidebar-collapsed/);
-  assert.match(workspaceSource, /mission-inspector-collapsed/);
+test("mission worktree uses Tailwind pane layout instead of feature css", () => {
+  assert.match(worktreeSource, /grid-cols-\[var\(--mission-sidebar-width\)_var\(--mission-sidebar-resizer-width\)_minmax\(0,var\(--mission-chat-width\)\)_var\(--mission-display-resizer-width\)_var\(--mission-display-width\)_var\(--mission-inspector-resizer-width\)_var\(--mission-inspector-width\)\]/);
+  assert.doesNotMatch(worktreeSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
+  assert.match(worktreeSource, /mission-sidebar-collapsed/);
+  assert.match(worktreeSource, /mission-inspector-collapsed/);
 });
 
 test("mission shell fills the viewport so the project pane stays visible on desktop", () => {
@@ -176,8 +176,8 @@ test("mission project overview renders structured cards instead of raw info text
 
 test("mission avoids fetching or rendering every project file by default", () => {
   assert.doesNotMatch(missionSelectionEffectsSource, /project\/list_files/);
-  assert.match(workspaceModelSource, /const projectFiles = \[\]/);
-  assert.match(workspaceModelSource, /const visibleProjectFiles = \[\]/);
+  assert.match(worktreeModelSource, /const projectFiles = \[\]/);
+  assert.match(worktreeModelSource, /const visibleProjectFiles = \[\]/);
   assert.match(projectFileListSource, /暂不加载全量 Git 文件/);
   assert.match(inspectorSource, /Git Diff/);
   assert.match(inspectorSource, /Worktrees/);
@@ -200,13 +200,13 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /--mission-display-resizer-width/);
   assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);
   assert.match(missionLayoutHookSource, /effectiveDisplayCollapsed/);
-  assert.match(workspaceSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
-  assert.match(workspaceSource, /<MissionDisplaySection/);
-  assert.doesNotMatch(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
-  assert.match(workspaceSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
-  assert.match(workspaceSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
-  assert.doesNotMatch(workspaceSource, /max-\[860px\]:h-auto/);
-  assert.doesNotMatch(workspaceSource, /max-\[860px\]:flex-col/);
+  assert.match(worktreeSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
+  assert.match(worktreeSource, /<MissionDisplaySection/);
+  assert.doesNotMatch(worktreeSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
+  assert.match(worktreeSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
+  assert.match(worktreeSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
+  assert.doesNotMatch(worktreeSource, /max-\[860px\]:h-auto/);
+  assert.doesNotMatch(worktreeSource, /max-\[860px\]:flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);
   assert.match(displayPanelSource, /mission-pane-display col-start-5 col-end-6/);
   assert.match(inspectorSource, /mission-pane-inspector col-start-7 col-end-8/);
@@ -227,15 +227,15 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
 });
 
 test("mission mobile uses explicit edge paging zones instead of draggable cards", () => {
-  assert.match(workspaceSource, /mission-mobile-edge-pager/);
-  assert.match(workspaceSource, /selectAdjacentMissionMobilePane/);
-  assert.doesNotMatch(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
-  assert.doesNotMatch(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
-  assert.doesNotMatch(workspaceSource, /--mission-mobile-swipe-offset/);
-  assert.match(workspaceSource, /aria-label="上一页"\s*\/?>/);
-  assert.match(workspaceSource, /aria-label="下一页"\s*\/?>/);
-  assert.doesNotMatch(workspaceSource, />\s*上一页\s*<\/button>/);
-  assert.doesNotMatch(workspaceSource, />\s*下一页\s*<\/button>/);
+  assert.match(worktreeSource, /mission-mobile-edge-pager/);
+  assert.match(worktreeSource, /selectAdjacentMissionMobilePane/);
+  assert.doesNotMatch(worktreeSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.doesNotMatch(worktreeSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
+  assert.doesNotMatch(worktreeSource, /--mission-mobile-swipe-offset/);
+  assert.match(worktreeSource, /aria-label="上一页"\s*\/?>/);
+  assert.match(worktreeSource, /aria-label="下一页"\s*\/?>/);
+  assert.doesNotMatch(worktreeSource, />\s*上一页\s*<\/button>/);
+  assert.doesNotMatch(worktreeSource, />\s*下一页\s*<\/button>/);
   assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*z-index:\s*6;/s);
   assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*grid-template-columns:\s*14px minmax\(0, 1fr\) 14px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-edge-pager\s*{[^}]*align-items:\s*start;/s);
@@ -267,13 +267,13 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
 });
 
-test("mission workspace renders mobile pager and hides desktop resizers in mobile mode", () => {
-  assert.match(workspaceSource, /MissionMobilePager/);
-  assert.match(workspaceSource, /isMissionMobile/);
-  assert.match(workspaceSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
-  assert.match(workspaceSource, /<MissionDisplaySection/);
-  assert.doesNotMatch(workspaceSource, /isMissionMobile \|\| !effectiveDisplayCollapsed \? \(/);
-  assert.match(workspaceSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
+test("mission worktree renders mobile pager and hides desktop resizers in mobile mode", () => {
+  assert.match(worktreeSource, /MissionMobilePager/);
+  assert.match(worktreeSource, /isMissionMobile/);
+  assert.match(worktreeSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
+  assert.match(worktreeSource, /<MissionDisplaySection/);
+  assert.doesNotMatch(worktreeSource, /isMissionMobile \|\| !effectiveDisplayCollapsed \? \(/);
+  assert.match(worktreeSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
 });
 
 test("mission mobile mode marks panes with identities and shows one selected pane", () => {
@@ -281,10 +281,10 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
   assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
   assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
-  assert.match(workspaceSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(activeSession \? "chat" : "project"\)/);
-  assert.match(workspaceSource, /mission-responsive-mode/);
-  assert.match(workspaceSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
-  assert.match(workspaceSource, /selectedPane=\{resolvedMissionMobilePane\}/);
+  assert.match(worktreeSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(activeSession \? "chat" : "project"\)/);
+  assert.match(worktreeSource, /mission-responsive-mode/);
+  assert.match(worktreeSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
+  assert.match(worktreeSource, /selectedPane=\{resolvedMissionMobilePane\}/);
   assert.match(shellStylesSource, /mission-mobile-pane-chat \[data-mission-mobile-pane="chat"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-project \[data-mission-mobile-pane="project"\]/);
   assert.match(shellStylesSource, /mission-mobile-pane-display \[data-mission-mobile-pane="display"\]/);
@@ -304,10 +304,10 @@ const sessionOverviewCardSource = readFileSync(
   "utf8",
 );
 
-test("mission workspace locks outer scroll while edge zones handle mobile paging", () => {
-  assert.match(workspaceSource, /mission-mobile-edge-pager/);
-  assert.doesNotMatch(workspaceSource, /onPointerDown=\{startMissionMobileSwipe\}/);
-  assert.doesNotMatch(workspaceSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
+test("mission worktree locks outer scroll while edge zones handle mobile paging", () => {
+  assert.match(worktreeSource, /mission-mobile-edge-pager/);
+  assert.doesNotMatch(worktreeSource, /onPointerDown=\{startMissionMobileSwipe\}/);
+  assert.doesNotMatch(worktreeSource, /onPointerMove=\{trackMissionMobileSwipe\}/);
   assert.match(shellStylesSource, /body\s*{[^}]*overscroll-behavior-x:\s*contain;/s);
   assert.match(shellStylesSource, /overscroll-behavior-x:\s*contain/);
   assert.match(shellStylesSource, /touch-action:\s*pan-y/);

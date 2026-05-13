@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AcpAgentProvider, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpConnectionKey } from "./connection-key";
 import { createAcpConnectionManager } from "./connection-manager";
 
@@ -15,52 +15,50 @@ const provider: AcpAgentProvider = {
   protocol: "acp",
 };
 
-const workspace: WorkspaceSummary = {
-  id: "workspace-1",
+const worktree: WorktreeSummary = {
   name: "Tiller",
   path: "D:/myProject/tools/Tiller",
 };
 
-test("connection key ignores workspace and session config but includes launch identity", () => {
+test("connection key includes cwd but ignores session config", () => {
   const first = resolveAcpConnectionKey({
     provider,
-    workspace,
+    worktree,
     sessionConfig: { model: "gpt-5.5", reasoningEffort: "high" },
   });
   const second = resolveAcpConnectionKey({
     provider,
-    workspace: { ...workspace, id: "workspace-2", path: "D:/other" },
+    worktree: { ...worktree, path: "D:/other" },
     sessionConfig: { model: "gpt-5.4", reasoningEffort: "low" },
   });
 
-  assert.equal(first, second);
+  assert.notEqual(first, second);
 });
 
 test("connection key changes when provider launch identity changes", () => {
-  const base = resolveAcpConnectionKey({ provider, workspace });
+  const base = resolveAcpConnectionKey({ provider, worktree });
   const differentCommand = resolveAcpConnectionKey({
     provider: { ...provider, command: "opencode", args: ["acp"] },
-    workspace,
+    worktree,
   });
   const differentEnv = resolveAcpConnectionKey({
     provider: { ...provider, env: { SAFE_PUBLIC_FLAG: "2" } },
-    workspace,
+    worktree,
   });
 
   assert.notEqual(base, differentCommand);
   assert.notEqual(base, differentEnv);
 });
 
-test("connection lifecycle events expose cwd without workspace id", async () => {
+test("connection lifecycle events expose cwd without worktree id", async () => {
   const events: unknown[] = [];
   const manager = createAcpConnectionManager({
     openConnection: async () => ({
       inventory: () => ({
-        key: resolveAcpConnectionKey({ provider, workspace }),
+        key: resolveAcpConnectionKey({ provider, worktree }),
         providerId: provider.id,
-        workspaceId: workspace.id,
-        workspacePath: workspace.path,
-        launchCwd: workspace.path,
+        cwd: worktree.path,
+        launchCwd: worktree.path,
         status: "ready" as const,
         runtimeConnectionId: "conn-1",
         initialized: true,
@@ -78,18 +76,18 @@ test("connection lifecycle events expose cwd without workspace id", async () => 
 
   await manager.openConnection({
     provider,
-    workspace,
+    worktree,
     onLifecycleEvent: (event) => events.push(event),
   });
 
   assert.deepEqual(events, [{
     type: "connection-open",
-    key: resolveAcpConnectionKey({ provider, workspace }),
+    key: resolveAcpConnectionKey({ provider, worktree }),
     providerId: provider.id,
-    workspacePath: workspace.path,
+    cwd: worktree.path,
     sessionId: undefined,
   }]);
-  assert.equal(Object.hasOwn(events[0] as object, "workspaceId"), false);
+  assert.equal(Object.hasOwn(events[0] as object, "worktreeId"), false);
 });
 
 test("connection manager reuses an in-flight connection open", async () => {
@@ -100,11 +98,10 @@ test("connection manager reuses an in-flight connection open", async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       return {
         inventory: () => ({
-          key: resolveAcpConnectionKey({ provider, workspace }),
+          key: resolveAcpConnectionKey({ provider, worktree }),
           providerId: provider.id,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          launchCwd: workspace.path,
+            cwd: worktree.path,
+          launchCwd: worktree.path,
           status: "ready" as const,
           runtimeConnectionId: "conn-1",
           initialized: true,
@@ -133,8 +130,8 @@ test("connection manager reuses an in-flight connection open", async () => {
   });
 
   const [first, second] = await Promise.all([
-    manager.openConnection({ provider, workspace }),
-    manager.openConnection({ provider, workspace }),
+    manager.openConnection({ provider, worktree }),
+    manager.openConnection({ provider, worktree }),
   ]);
 
   assert.equal(openCount, 1);
@@ -142,19 +139,18 @@ test("connection manager reuses an in-flight connection open", async () => {
   assert.equal(manager.listInventory().length, 1);
 });
 
-test("connection manager reuses one provider connection across session workspaces", async () => {
+test("connection manager reuses one provider connection across session worktrees", async () => {
   let openCount = 0;
-  const receivedWorkspaces: string[] = [];
+  const receivedWorktrees: string[] = [];
   const manager = createAcpConnectionManager({
     openConnection: async () => {
       openCount += 1;
       return {
         inventory: () => ({
-          key: resolveAcpConnectionKey({ provider, workspace }),
+          key: resolveAcpConnectionKey({ provider, worktree }),
           providerId: provider.id,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          launchCwd: provider.cwd ?? workspace.path,
+            cwd: worktree.path,
+          launchCwd: provider.cwd ?? worktree.path,
           status: "ready" as const,
           runtimeConnectionId: "conn-1",
           initialized: true,
@@ -165,7 +161,7 @@ test("connection manager reuses one provider connection across session workspace
         }),
         dispose: async () => undefined,
         openOrCreateSession: async (request) => {
-          receivedWorkspaces.push(request.workspace.path);
+          receivedWorktrees.push(request.worktree.path);
           return {
             runtimeSessionId: "runtime-session-1",
             sessionCapabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
@@ -185,16 +181,16 @@ test("connection manager reuses one provider connection across session workspace
     },
   });
 
-  await manager.openSession({ provider, workspace, sessionId: "session-1", onEvent: () => undefined });
+  await manager.openSession({ provider, worktree, sessionId: "session-1", onEvent: () => undefined });
   await manager.openSession({
     provider,
-    workspace: { ...workspace, id: "workspace-2", path: "D:/other" },
+    worktree: { ...worktree, path: "D:/other" },
     sessionId: "session-2",
     onEvent: () => undefined,
   });
 
   assert.equal(openCount, 1);
-  assert.deepEqual(receivedWorkspaces, [workspace.path, "D:/other"]);
+  assert.deepEqual(receivedWorktrees, [worktree.path, "D:/other"]);
 });
 
 test("connection manager replaces a closed cached connection", async () => {
@@ -206,11 +202,10 @@ test("connection manager replaces a closed cached connection", async () => {
       status = "ready";
       return {
         inventory: () => ({
-          key: resolveAcpConnectionKey({ provider, workspace }),
+          key: resolveAcpConnectionKey({ provider, worktree }),
           providerId: provider.id,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          launchCwd: workspace.path,
+            cwd: worktree.path,
+          launchCwd: worktree.path,
           status,
           runtimeConnectionId: `conn-${openCount}`,
           initialized: true,
@@ -238,9 +233,9 @@ test("connection manager replaces a closed cached connection", async () => {
     },
   });
 
-  const first = await manager.openConnection({ provider, workspace });
+  const first = await manager.openConnection({ provider, worktree });
   await first.dispose();
-  const second = await manager.openConnection({ provider, workspace });
+  const second = await manager.openConnection({ provider, worktree });
 
   assert.equal(openCount, 2);
   assert.notEqual(first, second);
@@ -256,11 +251,10 @@ test("connection manager reconnect disposes cached connection before opening a n
       const runtimeConnectionId = `conn-${openCount}`;
       return {
         inventory: () => ({
-          key: resolveAcpConnectionKey({ provider, workspace }),
+          key: resolveAcpConnectionKey({ provider, worktree }),
           providerId: provider.id,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          launchCwd: workspace.path,
+            cwd: worktree.path,
+          launchCwd: worktree.path,
           status: "ready" as const,
           runtimeConnectionId,
           initialized: true,
@@ -279,10 +273,10 @@ test("connection manager reconnect disposes cached connection before opening a n
     },
   });
 
-  const first = await manager.openConnection({ provider, workspace });
+  const first = await manager.openConnection({ provider, worktree });
   const second = await manager.reconnect({
     provider,
-    workspace,
+    worktree,
     onLifecycleEvent: (event) => lifecycleEvents.push(event.type),
   });
 
@@ -307,11 +301,10 @@ test("connection manager disposeAll closes cached and pending connections", asyn
       }
       return {
         inventory: () => ({
-          key: resolveAcpConnectionKey({ provider, workspace }),
+          key: resolveAcpConnectionKey({ provider, worktree }),
           providerId: provider.id,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          launchCwd: workspace.path,
+            cwd: worktree.path,
+          launchCwd: worktree.path,
           status: "ready" as const,
           runtimeConnectionId: `conn-${openCount}`,
           initialized: true,
@@ -330,10 +323,10 @@ test("connection manager disposeAll closes cached and pending connections", asyn
     },
   });
 
-  await manager.openConnection({ provider, workspace });
+  await manager.openConnection({ provider, worktree });
   const pending = manager.openConnection({
     provider: { ...provider, id: "claudecode", name: "ClaudeCode", command: "claude-agent-acp", args: [] },
-    workspace,
+    worktree,
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -342,9 +335,8 @@ test("connection manager disposeAll closes cached and pending connections", asyn
     inventory: () => ({
       key: "acp:claudecode:pending",
       providerId: "claudecode",
-      workspaceId: workspace.id,
-      workspacePath: workspace.path,
-      launchCwd: workspace.path,
+      cwd: worktree.path,
+      launchCwd: worktree.path,
       status: "ready" as const,
       runtimeConnectionId: "conn-pending",
       initialized: true,

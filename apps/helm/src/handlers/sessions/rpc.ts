@@ -7,10 +7,10 @@ import {
   type SessionConfigOptionValue,
   type SessionReasoningEffort,
   type SessionSummary,
-  type WorkspaceSummary,
+  type WorktreeSummary,
 } from "@tiller/shared";
 import {
-  isProjectRootBranchWorkspace,
+  isProjectRootBranchWorktree,
   resolveSessionCleanupOutcome,
 } from "../../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
@@ -23,25 +23,24 @@ import type { HelmHandlerContext } from "../context";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
 
-export function resolveProjectSessionWorkspace(
+export function resolveProjectSessionWorktree(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
   params: { cwd: string },
 ) {
   const requestedCwd = params.cwd.trim();
-  const normalizedCwd = normalizeWorkspacePath(requestedCwd);
-  const workspace = workspaces.find(
-    (item) => normalizeWorkspacePath(item.path) === normalizedCwd,
+  const normalizedCwd = normalizeWorktreePath(requestedCwd);
+  const worktree = worktrees.find(
+    (item) => normalizeWorktreePath(item.path) === normalizedCwd,
   );
   return {
-    id: workspace?.id ?? `${project.id}-cwd`,
-    name: workspace?.name ?? basename(normalizedCwd) ?? project.name,
+    name: worktree?.name ?? basename(normalizedCwd) ?? project.name,
     path: requestedCwd,
-    summary: workspace?.summary,
-  } satisfies WorkspaceSummary;
+    summary: worktree?.summary,
+  } satisfies WorktreeSummary;
 }
 
-function normalizeWorkspacePath(path: string) {
+function normalizeWorktreePath(path: string) {
   return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
@@ -240,7 +239,7 @@ async function getArtifacts(
     limit: params.limit,
     before: params.before,
   });
-  const diffs = await context.hydrateDiffsFromWorkspaceGit(params.sessionId, artifacts.diffs);
+  const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
   return {
     sessionId: params.sessionId,
     outputs: artifacts.outputs,
@@ -296,30 +295,30 @@ async function createSessionDraft(
   context: HelmHandlerContext,
 ) {
   const helms = context.loadAvailableHelms();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   const agents = context.loadAvailableAgents();
   context.setHelms(helms);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   context.setAgents(agents);
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
   context.setProjects(projects);
 
   const project = context.resolveProjectById(params.projectId, projects);
-  const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params)
+  const worktree = project
+    ? resolveProjectSessionWorktree(project, worktrees, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
-  if (!project || !workspace || !agent || !helm) {
-    throw new Error("Project, helm, workspace, or agent not found");
+  if (!project || !worktree || !agent || !helm) {
+    throw new Error("Project, helm, worktree, or agent not found");
   }
 
   return context.createRuntimeDraft({
     deckClientId: params.deckClientId,
     project,
     helm,
-    workspace,
+    worktree,
     agent,
     sessionConfig: {
       agentMode: params.agentMode,
@@ -353,38 +352,37 @@ async function createSession(
   context: HelmHandlerContext,
 ) {
   const helms = context.loadAvailableHelms();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   const agents = context.loadAvailableAgents();
   context.setHelms(helms);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   context.setAgents(agents);
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
   context.setProjects(projects);
 
   const project = context.resolveProjectById(params.projectId, projects);
-  const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params)
+  const worktree = project
+    ? resolveProjectSessionWorktree(project, worktrees, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
-  if (!project || !workspace || !agent || !helm) {
-    throw new Error("Project, helm, workspace, or agent not found");
+  if (!project || !worktree || !agent || !helm) {
+    throw new Error("Project, helm, worktree, or agent not found");
   }
 
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   context.logInfo(
-    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${workspace.path} agent=${agent.id}`,
+    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${worktree.path} agent=${agent.id}`,
   );
   const summaryBase: SessionSummary = {
     id: sessionId,
     projectId: project.id,
     projectName: project.name,
     helmId: helm.id,
-    workspaceId: workspace.id,
-    workspaceName: workspace.name,
-    workspacePath: workspace.path,
+    cwd: worktree.path,
+    worktreeName: worktree.name,
     agentId: agent.id,
     agentName: agent.name,
     agentMode: params.agentMode,
@@ -408,7 +406,7 @@ async function createSession(
     };
     const runtime = await context.createRuntime({
       sessionId,
-      workspace,
+      worktree,
       agent,
       sessionConfig,
       onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
@@ -421,7 +419,7 @@ async function createSession(
           "connection-reconnect": "ACP连接重连",
         } as const;
         context.logInfo(
-          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.workspacePath}`,
+          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
         );
       },
     });
@@ -438,7 +436,7 @@ async function createSession(
     context.logInfo(
       `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
-    context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, workspace, runtime });
+    context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
     context.sessionStore.upsert(summaryWithRuntime);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
     broadcastSessionUpdate(context, sessionId, {
@@ -450,7 +448,7 @@ async function createSession(
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
     context.logError(
-      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${workspace.path} message=${message}`,
+      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${worktree.path} message=${message}`,
     );
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,
@@ -511,9 +509,8 @@ async function promptRuntimeDraft(
     projectId: draft.project.id,
     projectName: draft.project.name,
     helmId: draft.helm.id,
-    workspaceId: draft.workspace.id,
-    workspaceName: draft.workspace.name,
-    workspacePath: draft.workspace.path,
+    cwd: draft.worktree.path,
+    worktreeName: draft.worktree.name,
     agentId: draft.agent.id,
     agentName: draft.agent.name,
     agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
@@ -535,7 +532,7 @@ async function promptRuntimeDraft(
   context.sessions.set(sessionId, {
     summary,
     agent: draft.agent,
-    workspace: draft.workspace,
+    worktree: draft.worktree,
     runtime: draft.runtime,
   });
   context.sessionStore.upsert(summary);

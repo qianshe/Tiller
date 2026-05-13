@@ -7,7 +7,7 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type DaemonProfilesState<TProfile> = {
@@ -36,9 +36,9 @@ export function useDeckData(missionVisualFixture: any) {
   const setHelmConnection = useDeckStore((state) => state.setHelmConnection);
   const removeHelm = useDeckStore((state) => state.removeHelm);
 
-  const storedWorkspaces = useDeckStore((state) => state.workspaces);
-  const workspaces = (missionVisualFixture?.workspaces ?? storedWorkspaces) as WorkspaceSummary[];
-  const setWorkspaces = useDeckStore((state) => state.setWorkspaces);
+  const storedWorktrees = useDeckStore((state) => state.worktrees);
+  const worktrees = (missionVisualFixture?.worktrees ?? storedWorktrees) as WorktreeSummary[];
+  const setWorktrees = useDeckStore((state) => state.setWorktrees);
 
   const storedProjects = useDeckStore((state) => state.projects);
   const projects = (missionVisualFixture?.projects ?? storedProjects) as ProjectSummary[];
@@ -133,8 +133,8 @@ export function useDeckData(missionVisualFixture: any) {
     applyHelmInventory,
     setHelmConnection,
     removeHelm,
-    workspaces,
-    setWorkspaces,
+    worktrees,
+    setWorktrees,
     projects,
     setProjects,
     agents,

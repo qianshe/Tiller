@@ -7,7 +7,7 @@ import type {
   ProjectSummary,
   SessionReasoningEffort,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type {
   FormEvent,
@@ -37,8 +37,8 @@ type UseSessionCommandActionsOptions = {
   statuses: Record<string, SessionSummary["status"]>;
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
-  selectedWorkspace?: WorkspaceSummary | null;
-  filteredWorkspaces: WorkspaceSummary[];
+  selectedWorktree?: WorktreeSummary | null;
+  filteredWorktrees: WorktreeSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
   agentModelOptions?: Record<string, AgentModelOptionsEntry>;
@@ -68,12 +68,12 @@ function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
   return Boolean(client && client.socket.readyState === WebSocket.OPEN);
 }
 
-function mergeWorkspaceOptions(
-  left: WorkspaceSummary[],
-  right: WorkspaceSummary[],
-): WorkspaceSummary[] {
-  const byId = new Map(left.map((workspace) => [workspace.id, workspace]));
-  right.forEach((workspace) => byId.set(workspace.id, workspace));
+function mergeWorktreeOptions(
+  left: WorktreeSummary[],
+  right: WorktreeSummary[],
+): WorktreeSummary[] {
+  const byId = new Map(left.map((worktree) => [worktree.path, worktree]));
+  right.forEach((worktree) => byId.set(worktree.path, worktree));
   return Array.from(byId.values());
 }
 
@@ -88,8 +88,8 @@ export function useSessionCommandActions({
   statuses,
   selectedProjectId,
   projects,
-  selectedWorkspace,
-  filteredWorkspaces,
+  selectedWorktree,
+  filteredWorktrees,
   selectedAgentId,
   filteredAgents,
   agentModelOptions,
@@ -113,15 +113,15 @@ export function useSessionCommandActions({
     initialPrompt?: string,
     initialContent?: AgentPromptContent[],
     agentIdOverride?: string,
-    workspaceOverride?: WorkspaceSummary,
+    worktreeOverride?: WorktreeSummary,
   ) {
     return createSessionImpl(initialPrompt, initialContent, {
       selectedProjectId,
       projects,
-      selectedWorkspace: workspaceOverride ?? selectedWorkspace,
-      filteredWorkspaces: workspaceOverride
-        ? mergeWorkspaceOptions(filteredWorkspaces, [workspaceOverride])
-        : filteredWorkspaces,
+      selectedWorktree: worktreeOverride ?? selectedWorktree,
+      filteredWorktrees: worktreeOverride
+        ? mergeWorktreeOptions(filteredWorktrees, [worktreeOverride])
+        : filteredWorktrees,
       selectedAgentId: agentIdOverride ?? selectedAgentId,
       filteredAgents,
       agentModelOptions,
@@ -137,8 +137,8 @@ export function useSessionCommandActions({
     });
   }
 
-  function createDraftSessionForAgent(agentId: string, workspaceOverride?: WorkspaceSummary) {
-    return createSession(undefined, undefined, agentId, workspaceOverride);
+  function createDraftSessionForAgent(agentId: string, worktreeOverride?: WorktreeSummary) {
+    return createSession(undefined, undefined, agentId, worktreeOverride);
   }
 
   function requestSessionResumeStart(sessionId: string, reason: string) {

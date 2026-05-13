@@ -11,7 +11,7 @@ import type {
   PermissionRequest,
   SessionReasoningEffort,
   SessionStatus,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
 
@@ -72,7 +72,7 @@ export type AcpSessionRestoreStrategy = "load" | "resume";
 
 export type AcpRuntimeOptions = {
   sessionId: string;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   agent: AcpAgentProvider;
   sessionConfig?: {
     agentMode?: string;

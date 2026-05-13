@@ -32,9 +32,9 @@ export function useMissionSelectionEffects(source: any) {
     setActiveSessionId,
     effectiveMissionHelmId,
     setExpandedMissionHelmIds,
-    selectedWorkspaceId,
-    filteredWorkspaces,
-    setSelectedWorkspaceId,
+    selectedCwd,
+    filteredWorktrees,
+    setSelectedCwd,
     pairingState,
     rpcClientRef,
     setWorktreeGitByProject,
@@ -152,16 +152,16 @@ export function useMissionSelectionEffects(source: any) {
     if (!draftProject) {
       return;
     }
-    const defaultWorkspaceId = draftProject.defaultWorkspaceId;
-    const nextWorkspaceId = resolveDraftSelectionId(
-      selectedWorkspaceId,
-      filteredWorkspaces,
-      defaultWorkspaceId,
+    const defaultCwd = draftProject.path ?? draftProject.worktrees?.[0]?.path;
+    const nextWorktreeId = resolveDraftSelectionId(
+      selectedCwd,
+      filteredWorktrees,
+      defaultCwd,
     );
-    if (nextWorkspaceId && nextWorkspaceId !== selectedWorkspaceId) {
-      setSelectedWorkspaceId(nextWorkspaceId);
+    if (nextWorktreeId && nextWorktreeId !== selectedCwd) {
+      setSelectedCwd(nextWorktreeId);
     }
-  }, [draftProject, filteredWorkspaces, selectedWorkspaceId]);
+  }, [draftProject, filteredWorktrees, selectedCwd]);
   useEffect(() => {
     if (
       !selectedProjectId ||
@@ -179,7 +179,7 @@ export function useMissionSelectionEffects(source: any) {
         message: "正在加载 worktree...",
       },
     }));
-    void dispatch(rpcClientRef.current, "workspace/git/list_branches", {
+    void dispatch(rpcClientRef.current, "project/git/list_branches", {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
@@ -195,11 +195,11 @@ export function useMissionSelectionEffects(source: any) {
     }
   }, [draftProject, filteredAgents, selectedAgentId]);
   useEffect(() => {
-    const selectedWorkspace = filteredWorkspaces.find(
-      (workspace: any) => workspace.id === selectedWorkspaceId,
+    const selectedWorktree = filteredWorktrees.find(
+      (worktree: any) => worktree.id === selectedCwd,
     );
     const selectedProject = projects.find((project: any) => project.id === selectedProjectId);
-    const selectedCwd = selectedWorkspace?.path ?? selectedProject?.path;
+    const selectedCwd = selectedWorktree?.path ?? selectedProject?.path;
     if (
       activeSession ||
       pairingState !== "paired" ||
@@ -216,7 +216,7 @@ export function useMissionSelectionEffects(source: any) {
     const hasReadyConnection = (agentConnectionInventory ?? []).some(
       (connection: any) =>
         connection.providerId === selectedAgentId &&
-        connection.workspacePath === selectedCwd &&
+        connection.cwd === selectedCwd &&
         connection.initialized &&
         connection.status !== "closed" &&
         connection.status !== "error",
@@ -325,7 +325,7 @@ export function useMissionSelectionEffects(source: any) {
     selectedAgentId,
     selectedModel,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   ]);

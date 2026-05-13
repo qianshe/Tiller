@@ -1,20 +1,20 @@
 import { z } from "zod";
+import type { WorktreeSummary } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
-export const method = "agent/connect" as const;
+export const method = "project/git/create_worktree" as const;
 export const ParamsSchema = z.object({
-  providerId: z.string(),
-  projectId: z.string().optional(),
-  cwd: z.string().optional(),
+  projectId: z.string(),
+  branchName: z.string(),
 });
 export const ResultSchema = z.object({
   ok: z.boolean(),
-  providerId: z.string(),
-  cwd: z.string().optional(),
-  runtimeConnectionId: z.string().optional(),
-  connection: typedUnknown().optional(),
-  connections: z.array(typedUnknown()).default([]),
+  projectId: z.string(),
+  branches: z.array(z.string()),
+  currentBranch: z.string().optional(),
+  worktrees: z.array(typedUnknown<WorktreeSummary>()).default([]),
+  selectedCwd: z.string().optional(),
   message: z.string(),
 });
 export type Params = z.infer<typeof ParamsSchema>;
@@ -24,5 +24,5 @@ export const descriptor = requestDescriptor({
   method,
   paramsSchema: ParamsSchema,
   resultSchema: ResultSchema,
-  description: "Open or reuse an ACP provider connection without creating a session.",
+  description: "Create a Git worktree for a project branch.",
 });

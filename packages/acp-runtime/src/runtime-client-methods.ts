@@ -11,7 +11,7 @@ import {
   formatTerminalCommand,
   mergeTerminalEnv,
   requireTerminal,
-  resolveContainedWorkspacePath,
+  resolveContainedWorktreePath,
   sliceTextFileContent,
   type ManagedSdkTerminal,
 } from "./terminal-client";
@@ -76,7 +76,7 @@ export function createRuntimeClientMethods({
         id,
         command,
         reason,
-        workspacePath: options.workspace.path,
+        cwd: options.worktree.path,
       },
     });
     return await new Promise<boolean>((resolve) => {
@@ -84,7 +84,7 @@ export function createRuntimeClientMethods({
     });
   };
 
-  const resolveWorkspacePath = (requestPath: string) => resolveContainedWorkspacePath(options.workspace.path, requestPath);
+  const resolveWorktreePath = (requestPath: string) => resolveContainedWorktreePath(options.worktree.path, requestPath);
 
   return {
     async sessionUpdate(params: any) {
@@ -122,17 +122,17 @@ export function createRuntimeClientMethods({
     },
     async readTextFile(params: any) {
       ensureActiveSessionRequest(params.sessionId);
-      const filePath = resolveWorkspacePath(params.path);
+      const filePath = resolveWorktreePath(params.path);
       const content = await readFile(filePath, "utf8");
       return { content: sliceTextFileContent(content, params.line, params.limit) };
     },
     async writeTextFile(params: any) {
       ensureActiveSessionRequest(params.sessionId);
-      const filePath = resolveWorkspacePath(params.path);
-      const relativePath = relative(options.workspace.path, filePath) || params.path;
+      const filePath = resolveWorktreePath(params.path);
+      const relativePath = relative(options.worktree.path, filePath) || params.path;
       const allowed = await requestClientPermission(
         `Write file: ${relativePath}`,
-        "ACP agent requested workspace file write access.",
+        "ACP agent requested worktree file write access.",
       );
       if (!allowed) {
         throw new Error(`Denied ACP file write: ${relativePath}`);
@@ -157,7 +157,7 @@ export function createRuntimeClientMethods({
     },
     async createTerminal(params: any) {
       ensureActiveSessionRequest(params.sessionId);
-      const cwd = params.cwd ? resolveWorkspacePath(params.cwd) : launchCwd;
+      const cwd = params.cwd ? resolveWorktreePath(params.cwd) : launchCwd;
       const commandLine = formatTerminalCommand(params.command, params.args ?? []);
       const allowed = await requestClientPermission(
         commandLine,

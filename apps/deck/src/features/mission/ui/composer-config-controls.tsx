@@ -1,6 +1,10 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { SessionConfigOption, SessionConfigOptionValue, SessionReasoningEffort } from "@tiller/shared";
+import type { SessionConfigOption, SessionReasoningEffort } from "@tiller/shared";
 import type { SessionConfigPreferencePatch } from "../types";
+import {
+  resolveRenderableSessionConfigOptions,
+  toSessionConfigPreferencePatch,
+} from "../utils/composer-options";
 import { cn } from "../../../shared/utils/cn";
 
 export type MissionConfigPicker = "agentMode" | "model" | "reasoning" | `config:${string}` | null;
@@ -61,18 +65,12 @@ export function MissionConfigControls({
   resolveReasoningLabel,
   reasoningOptions,
 }: MissionConfigControlsProps) {
-  const acpConfigOptions = configOptions.filter((option) =>
-    (option.options?.length ?? 0) > 0 || typeof readConfigOptionValue(option) === "boolean",
-  );
+  const acpConfigOptions = resolveRenderableSessionConfigOptions(configOptions);
 
   if (acpConfigOptions.length > 0) {
     return (
       <div className="mission-composer-config grid min-w-0 gap-2" aria-label="当前任务模型配置">
-        {acpConfigOptions.map((option) => {
-          const pickerId = `config:${option.id}` as const;
-          const values = resolveConfigOptionValues(option);
-          const currentValue = readConfigOptionValue(option);
-          const currentLabel = resolveConfigOptionLabel(option, currentValue);
+        {acpConfigOptions.map(({ option, pickerId, values, currentValue, currentLabel }) => {
           return (
             <div
               key={option.id}
@@ -113,7 +111,7 @@ export function MissionConfigControls({
                         className={cn("rounded-sm px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary", selected && "active bg-primary-soft text-primary")}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
-                          updatePreferences(toConfigPreferencePatch(option, candidate.value));
+                          updatePreferences(toSessionConfigPreferencePatch(option, candidate.value));
                           setPicker(null);
                         }}
                       >
@@ -318,49 +316,4 @@ export function MissionConfigControls({
       ) : null}
     </div>
   );
-}
-
-function readConfigOptionValue(option: SessionConfigOption) {
-  return option.currentValue ?? option.selectedValue ?? option.value;
-}
-
-function resolveConfigOptionValues(option: SessionConfigOption) {
-  if (option.options?.length) {
-    return option.options.map((candidate) => ({
-      value: candidate.value,
-      label: candidate.label ?? candidate.name ?? String(candidate.value),
-    }));
-  }
-  const currentValue = readConfigOptionValue(option);
-  if (typeof currentValue === "boolean") {
-    return [
-      { value: true, label: "True" },
-      { value: false, label: "False" },
-    ];
-  }
-  return [];
-}
-
-function resolveConfigOptionLabel(
-  option: SessionConfigOption,
-  value: SessionConfigOptionValue | undefined,
-) {
-  const selected = option.options?.find((candidate) => candidate.value === value);
-  return selected?.label ?? selected?.name ?? String(value ?? option.name ?? option.id);
-}
-
-function toConfigPreferencePatch(
-  option: SessionConfigOption,
-  value: SessionConfigOptionValue,
-) {
-  const category = option.category?.toLowerCase();
-  return {
-    configId: option.id,
-    value,
-    ...(category === "mode" && typeof value === "string" ? { agentMode: value } : {}),
-    ...(category === "model" && typeof value === "string" ? { model: value } : {}),
-    ...(category === "thought_level" && typeof value === "string"
-      ? { reasoningEffort: value as SessionReasoningEffort }
-      : {}),
-  };
 }

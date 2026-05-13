@@ -166,7 +166,6 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
   assert.deepEqual(methods, [
     { method: "helm/list", params: {} },
     { method: "project/list", params: {} },
-    { method: "workspace/list", params: {} },
     { method: "agent/list", params: {} },
     { method: "agent/connections", params: {} },
     { method: "session/list", params: { limit: 25 } },

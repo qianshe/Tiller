@@ -41,7 +41,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     daemonHost,
     daemonPort,
     projects,
-    workspaces,
+    worktrees,
     agents,
     sessions,
     navigateToView,
@@ -131,7 +131,7 @@ function renderOverview() {
       defaultDaemonHost={DEFAULT_DAEMON_HOST}
       defaultDaemonPort={DEFAULT_DAEMON_PORT}
       projects={projects}
-      workspaces={workspaces}
+      worktrees={worktrees}
       agents={agents}
       sessions={sessions}
       onNavigate={navigateToView}
@@ -158,7 +158,7 @@ function renderAgents() {
       trustedDevices={trustedDevices}
       projects={projects}
       agents={agents}
-      workspaces={workspaces}
+      worktrees={worktrees}
       socketRef={socketRef}
       rpcClientRef={rpcClientRef}
       helmSocketRefs={helmSocketRefs}

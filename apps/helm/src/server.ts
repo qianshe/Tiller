@@ -5,7 +5,6 @@ import { dirname, resolve } from "node:path";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
-  listAvailableProjects as listConfiguredProjects,
   listAvailableProviders,
   loadTillerConfigStub,
   readTillerConfig,
@@ -13,9 +12,8 @@ import {
   resolveProjectById,
   resolveProviderById,
   saveHelmToConfig,
-  saveProjectToConfig,
   saveProviderToConfig,
-  saveWorkspaceToConfig,
+  saveWorktreeToConfig,
 } from "@tiller/agent-registry";
 import {
   connectAcpConnection,
@@ -39,7 +37,7 @@ import {
   type SessionResumeInfo,
   type SessionSummary,
   type TrustedDeviceSummary,
-  type WorkspaceSummary,
+  type WorktreeSummary,
 } from "@tiller/shared";
 import {
   applyAgentMessageToSummary,
@@ -114,25 +112,22 @@ const projectCatalog = createProjectCatalog({
   configPath,
   host: HOST,
   port: PORT,
-  defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+  defaultWorktreeRoot: DEFAULT_WORKSPACE_ROOT,
 });
 const {
   loadAvailableHelms,
   loadAvailableProjects,
   loadAvailableProjectsWithSemanticSummaries,
-  loadAvailableWorkspaces,
-  resolveDefaultProjectAgentId,
+  loadAvailableWorktrees,
 } = projectCatalog;
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
 const liveMessageBuffer = createLiveMessageBuffer();
 let helms = loadAvailableHelms();
-let workspaces = loadAvailableWorkspaces();
+let worktrees = loadAvailableWorktrees();
 let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
-normalizeProjectAgentDefaultsOnStartup();
-projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const sessionServices = createSessionServices({
@@ -144,7 +139,7 @@ const sessionServices = createSessionServices({
   sessionRuntimeStore,
   getAgents: () => agents,
   getProjects: () => projects,
-  getWorkspaces: () => workspaces,
+  getWorktrees: () => worktrees,
   createHandlerContext,
   broadcastNotification,
   logInfo,
@@ -155,7 +150,7 @@ const {
   clearPermissionRequestsForSession,
   deleteLocalSessionData,
   handleRuntimeEvent,
-  hydrateDiffsFromWorkspaceGit,
+  hydrateDiffsFromWorktreeGit,
   hydrateSessionSummary,
   migrateStoredSessionSummary,
   configureRuntimeDraft,
@@ -197,23 +192,6 @@ const beginAuthenticationFlow = createSocketAuthenticator({
   logError,
 });
 
-function normalizeProjectAgentDefaultsOnStartup() {
-  const availableAgents = listAvailableProviders(configPath);
-  let updated = 0;
-  for (const project of listConfiguredProjects(configPath)) {
-    const nextDefaultAgentId = resolveDefaultProjectAgentId(
-      availableAgents,
-      project.defaultAgentId,
-    );
-    if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
-      saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
-      updated += 1;
-    }
-  }
-  if (updated) {
-    logInfo(`[tiller] project.agent.default updated=${updated} default=codex`);
-  }
-}
 
 async function checkForTillerUpdatesOnStart() {
   const options = resolveUpdateOptions({ env: process.env, config: tillerConfig });
@@ -361,11 +339,11 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
       helms = items;
     },
     loadAvailableHelms,
-    getWorkspaces: () => workspaces,
-    setWorkspaces: (items) => {
-      workspaces = items;
+    getWorktrees: () => worktrees,
+    setWorktrees: (items) => {
+      worktrees = items;
     },
-    loadAvailableWorkspaces,
+    loadAvailableWorktrees,
     getAgents: () => agents,
     setAgents: (items) => {
       agents = items;
@@ -410,7 +388,7 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     updateSessionSummary,
     persistSessionMessage,
     publishDiffUpdate,
-    hydrateDiffsFromWorkspaceGit,
+    hydrateDiffsFromWorktreeGit,
     clearPermissionRequestsForSession,
     deleteLocalSessionData,
   };

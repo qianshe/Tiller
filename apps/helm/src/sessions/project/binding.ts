@@ -1,14 +1,11 @@
-import type { ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
 
-/** True when `workspace` represents the project's root branch — its path should fall back to `project.path`. */
-export function isProjectRootBranchWorkspace<P extends ProjectSummary>(
+/** True when `worktree` represents the project's root cwd. */
+export function isProjectRootBranchWorktree<P extends ProjectSummary>(
   project: P,
-  workspace: Pick<WorkspaceSummary, "id">,
+  worktree: Pick<WorktreeSummary, "path">,
 ): project is P & { path: string } {
-  return Boolean(
-    project.path &&
-    (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch),
-  );
+  return Boolean(project.path && normalizeWorktreePath(worktree.path) === normalizeWorktreePath(project.path));
 }
 
 export function alignSessionProjectBinding(
@@ -26,7 +23,7 @@ export function alignSessionProjectBinding(
 
   const matchedProject =
     projects.find((project) => project.name === summary.projectName) ??
-    projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+    projects.find((project) => project.worktrees?.some((worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(summary.cwd)));
   if (!matchedProject) {
     return summary;
   }
@@ -39,29 +36,26 @@ export function alignSessionProjectBinding(
   };
 }
 
-export function alignSessionWorkspaceBinding(
+export function alignSessionWorktreeBinding(
   summary: SessionSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
 ): SessionSummary {
-  const normalizedSummaryPath = normalizeWorkspacePath(summary.workspacePath);
-  const matchedWorkspace = normalizedSummaryPath
-    ? workspaces.find(
-        (workspace) => normalizeWorkspacePath(workspace.path) === normalizedSummaryPath,
-      )
+  const normalizedSummaryPath = normalizeWorktreePath(summary.cwd);
+  const matchedWorktree = normalizedSummaryPath
+    ? worktrees.find((worktree) => normalizeWorktreePath(worktree.path) === normalizedSummaryPath)
     : undefined;
 
-  if (!matchedWorkspace) {
+  if (!matchedWorktree) {
     return summary;
   }
 
   return {
     ...summary,
-    workspaceId: matchedWorkspace.id,
-    workspaceName: matchedWorkspace.name,
-    workspacePath: summary.workspacePath ?? matchedWorkspace.path,
+    cwd: summary.cwd || matchedWorktree.path,
+    worktreeName: matchedWorktree.name,
   };
 }
 
-function normalizeWorkspacePath(path: string | undefined) {
+function normalizeWorktreePath(path: string | undefined) {
   return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

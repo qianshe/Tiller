@@ -80,7 +80,7 @@ export function SettingsPage({
   const settingsCopy = resolveSettingsCopy(deckPreferences.language);
 
   return (
-    <section className="workspace-single">
+    <section className="worktree-single">
       <Card className="grid gap-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -173,10 +173,10 @@ export function SettingsPage({
                 }
               />
               <TechnicalSwitch
-                checked={technicalPanels.showPermissionWorkspace}
-                label={settingsCopy.permissionWorkspace}
+                checked={technicalPanels.showPermissionWorktree}
+                label={settingsCopy.permissionWorktree}
                 onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("showPermissionWorkspace", checked)
+                  updateTechnicalPanelPreference("showPermissionWorktree", checked)
                 }
               />
               <TechnicalSwitch

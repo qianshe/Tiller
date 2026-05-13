@@ -1,29 +1,27 @@
 import {
   deleteProjectFromConfig,
   deleteProviderFromConfig,
-  deleteWorkspacesFromConfig,
   listAvailableProviders,
   saveHelmToConfig,
   saveProjectToConfig,
   saveProviderToConfig,
-  saveWorkspaceToConfig,
 } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
   HelmSummary,
   ProjectSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
-import { isProjectRootBranchWorkspace } from "../../sessions/facade";
+import { isProjectRootBranchWorktree } from "../../sessions/facade";
 import type { HelmHandlerContext } from "../context";
 import { listProjectFiles, resolveProjectFileRoot } from "./project-files";
 import {
   createProjectWorktree,
   listGitBranches,
-  listGitWorktreeWorkspaces,
+  listGitWorktreeWorktrees,
   persistProjectGitInfo,
   persistProjectGitInfoIfAvailable,
-  projectWorkspaceItems,
+  projectWorktreeItems,
   refreshProjectGitBranches,
   resolveGitRoot,
   resolveProjectRoot,
@@ -44,18 +42,16 @@ export async function handleConfigRpcRequest(
     case "project/list":
       return listProjects(context);
     case "project/list_files":
-      return listFiles(params as { projectId: string; workspaceId?: string }, context);
+      return listFiles(params as { projectId: string; cwd?: string }, context);
     case "project/save":
       return saveProject(params as { project: ProjectSummary }, context);
     case "project/delete":
       return deleteProject(params as { projectId: string }, context);
-    case "workspace/list":
-      return listWorkspaces(context);
-    case "workspace/save":
-      return saveWorkspace(params as { workspace: WorkspaceSummary }, context);
-    case "workspace/git/list_branches":
+    case "project/list_worktrees":
+      return listProjectWorktrees(params as { projectId: string }, context);
+    case "project/git/list_branches":
       return listBranches(params as { projectId: string }, context);
-    case "workspace/git/create_branch":
+    case "project/git/create_worktree":
       return createBranch(params as { projectId: string; branchName: string }, context);
     case "agent/list":
       return listAgents(context);
@@ -109,12 +105,12 @@ async function saveHelm(params: { helm: HelmSummary }, context: HelmHandlerConte
 
 async function listProjects(context: HelmHandlerContext) {
   let projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   try {
-    const refresh = await refreshProjectGitBranches(projects, workspaces, context.configPath);
+    const refresh = await refreshProjectGitBranches(projects, worktrees, context.configPath);
     if (refresh.updated > 0) {
       projects = await context.loadAvailableProjectsWithSemanticSummaries();
-      context.setWorkspaces(context.loadAvailableWorkspaces());
+      context.setWorktrees(context.loadAvailableWorktrees());
     }
     if (refresh.failures.length > 0) {
       context.logError(
@@ -130,31 +126,31 @@ async function listProjects(context: HelmHandlerContext) {
 }
 
 async function listFiles(
-  params: { projectId: string; workspaceId?: string },
+  params: { projectId: string; cwd?: string },
   context: HelmHandlerContext,
 ) {
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   context.setProjects(projects);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   const project = context.resolveProjectById(params.projectId, projects);
   if (!project) {
     return {
       ok: false,
       projectId: params.projectId,
-      workspaceId: params.workspaceId,
+      cwd: params.cwd,
       files: [],
       message: "Project not found",
     };
   }
-  const projectRoot = resolveProjectFileRoot(project, workspaces, params.workspaceId);
+  const projectRoot = resolveProjectFileRoot(project, worktrees, params.cwd);
   if (!projectRoot) {
     return {
       ok: false,
       projectId: project.id,
-      workspaceId: params.workspaceId,
+      cwd: params.cwd,
       files: [],
-      message: "Project has no path or workspace path",
+      message: "Project has no path or worktree path",
     };
   }
   try {
@@ -162,7 +158,7 @@ async function listFiles(
     return {
       ok: true,
       projectId: project.id,
-      workspaceId: params.workspaceId,
+      cwd: params.cwd,
       files: result.files,
       message: result.message,
     };
@@ -170,7 +166,7 @@ async function listFiles(
     return {
       ok: false,
       projectId: project.id,
-      workspaceId: params.workspaceId,
+      cwd: params.cwd,
       files: [],
       message: error instanceof Error ? error.message : "Failed to list project files",
     };
@@ -179,9 +175,9 @@ async function listFiles(
 
 async function saveProject(params: { project: ProjectSummary }, context: HelmHandlerContext) {
   const result = saveProjectToConfig(params.project, context.configPath);
-  const savedWorkspaces = context.loadAvailableWorkspaces();
+  const savedWorktrees = context.loadAvailableWorktrees();
   try {
-    await persistProjectGitInfoIfAvailable(params.project, savedWorkspaces, context.configPath);
+    await persistProjectGitInfoIfAvailable(params.project, savedWorktrees, context.configPath);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to refresh project Git branches";
@@ -189,7 +185,7 @@ async function saveProject(params: { project: ProjectSummary }, context: HelmHan
       `[tiller] project.save.git.refresh.failed project=${params.project.id} message=${message}`,
     );
   }
-  context.setWorkspaces(context.loadAvailableWorkspaces());
+  context.setWorktrees(context.loadAvailableWorktrees());
   context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
   return {
     ok: true,
@@ -200,7 +196,7 @@ async function saveProject(params: { project: ProjectSummary }, context: HelmHan
 
 async function deleteProject(params: { projectId: string }, context: HelmHandlerContext) {
   const result = deleteProjectFromConfig(params.projectId, context.configPath);
-  context.setWorkspaces(context.loadAvailableWorkspaces());
+  context.setWorktrees(context.loadAvailableWorktrees());
   context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
   return {
     ok: result.deleted,
@@ -211,41 +207,47 @@ async function deleteProject(params: { projectId: string }, context: HelmHandler
   };
 }
 
-function listWorkspaces(context: HelmHandlerContext) {
-  const workspaces = context.loadAvailableWorkspaces();
-  context.setWorkspaces(workspaces);
-  return { workspaces };
-}
-
-async function saveWorkspace(params: { workspace: WorkspaceSummary }, context: HelmHandlerContext) {
-  const result = saveWorkspaceToConfig(params.workspace, context.configPath);
-  const workspaces = context.loadAvailableWorkspaces();
+async function listProjectWorktrees(
+  params: { projectId: string },
+  context: HelmHandlerContext,
+) {
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  context.setWorkspaces(workspaces);
+  const worktrees = context.loadAvailableWorktrees();
   context.setProjects(projects);
+  context.setWorktrees(worktrees);
+  const project = context.resolveProjectById(params.projectId, projects);
+  if (!project) {
+    return {
+      ok: false,
+      projectId: params.projectId,
+      worktrees: [],
+      message: "Project not found",
+    };
+  }
   return {
     ok: true,
-    workspaceId: params.workspace.id,
-    message: `Saved workspace to ${result.configPath}`,
+    projectId: project.id,
+    worktrees: projectWorktreeItems(project, worktrees),
+    message: "Project worktrees loaded",
   };
 }
 
 async function listBranches(params: { projectId: string }, context: HelmHandlerContext) {
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   context.setProjects(projects);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   const project = context.resolveProjectById(params.projectId, projects);
   if (!project) {
     return {
       ok: false,
       projectId: params.projectId,
       branches: [],
-      workspaces: [],
+      worktrees: [],
       message: "Project not found",
     };
   }
-  const projectRoot = resolveProjectRoot(project, workspaces);
+  const projectRoot = resolveProjectRoot(project, worktrees);
   try {
     const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
     const gitInfo = gitRoot
@@ -254,90 +256,68 @@ async function listBranches(params: { projectId: string }, context: HelmHandlerC
     if (gitInfo.branches.length && projectRoot) {
       persistProjectGitInfo(project, gitInfo, projectRoot, context.configPath);
       context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
-      context.setWorkspaces(context.loadAvailableWorkspaces());
+      context.setWorktrees(context.loadAvailableWorktrees());
     }
     const latestProject = context.resolveProjectById(project.id, context.getProjects()) ?? project;
-    const gitWorktreeWorkspaces = gitRoot
-      ? await listGitWorktreeWorkspaces(latestProject, gitRoot)
+    const gitWorktreeWorktrees = gitRoot
+      ? await listGitWorktreeWorktrees(latestProject, gitRoot)
       : [];
     const nextProject = persistDiscoveredWorktrees(
       latestProject,
-      gitWorktreeWorkspaces,
+      gitWorktreeWorktrees,
       context.configPath,
     );
     if (nextProject !== latestProject) {
       context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
-      context.setWorkspaces(context.loadAvailableWorkspaces());
+      context.setWorktrees(context.loadAvailableWorktrees());
     }
-    const refreshedWorkspaces = context.loadAvailableWorkspaces();
+    const refreshedWorktrees = context.loadAvailableWorktrees();
     const refreshedProject = context.resolveProjectById(project.id, context.getProjects()) ?? nextProject;
-    const configuredWorkspaces = projectWorkspaceItems(refreshedProject, refreshedWorkspaces);
+    const configuredWorktrees = projectWorktreeItems(refreshedProject, refreshedWorktrees);
     return {
       ok: true,
       projectId: project.id,
       branches: gitInfo.branches,
       currentBranch: gitInfo.currentBranch,
-      workspaces: mergeWorkspaceItems(configuredWorkspaces, gitWorktreeWorkspaces),
-      selectedWorkspaceId: gitInfo.currentBranch ?? refreshedProject.defaultWorkspaceId,
-      message: gitRoot ? "Git worktrees loaded" : "Project has no workspace path",
+      worktrees: mergeWorktreeItems(configuredWorktrees, gitWorktreeWorktrees),
+      selectedCwd: refreshedProject.path ?? configuredWorktrees[0]?.path,
+      message: gitRoot ? "Git worktrees loaded" : "Project has no worktree path",
     };
   } catch (error) {
     return {
       ok: false,
       projectId: project.id,
       branches: [],
-      workspaces: projectWorkspaceItems(project, workspaces),
+      worktrees: projectWorktreeItems(project, worktrees),
       message: error instanceof Error ? error.message : "Failed to list Git worktrees",
     };
   }
 }
 
-function mergeWorkspaceItems(
-  configuredWorkspaces: WorkspaceSummary[],
-  gitWorktreeWorkspaces: WorkspaceSummary[],
+function mergeWorktreeItems(
+  configuredWorktrees: WorktreeSummary[],
+  gitWorktreeWorktrees: WorktreeSummary[],
 ) {
-  const byId = new Map(configuredWorkspaces.map((workspace) => [workspace.id, workspace]));
-  gitWorktreeWorkspaces.forEach((workspace) => byId.set(workspace.id, workspace));
+  const byId = new Map(configuredWorktrees.map((worktree) => [worktree.path, worktree]));
+  gitWorktreeWorktrees.forEach((worktree) => byId.set(worktree.path, worktree));
   return Array.from(byId.values());
 }
 
 function persistDiscoveredWorktrees(
   project: ProjectSummary,
-  worktrees: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
   configPath: string,
 ) {
-  const worktreePrefix = `${project.id}-worktree-`;
-  const liveWorktreeIds = new Set(worktrees.map((workspace) => workspace.id));
-  const previousWorkspaceIds = project.workspaceIds ?? [];
-  const staleWorktreeIds = previousWorkspaceIds.filter(
-    (id) => id.startsWith(worktreePrefix) && !liveWorktreeIds.has(id),
-  );
-  const staleWorktreeIdSet = new Set(staleWorktreeIds);
-  const retainedWorkspaceIds = previousWorkspaceIds.filter((id) => !staleWorktreeIdSet.has(id));
-
-  worktrees.forEach((workspace) => saveWorkspaceToConfig(workspace, configPath));
-  const workspaceIds = Array.from(
-    new Set([...retainedWorkspaceIds, ...worktrees.map((workspace) => workspace.id)]),
-  );
-  const defaultWorkspaceId =
-    project.defaultWorkspaceId === undefined || workspaceIds.includes(project.defaultWorkspaceId)
-      ? project.defaultWorkspaceId
-      : workspaceIds[0];
-  const changed =
-    workspaceIds.length !== previousWorkspaceIds.length ||
-    workspaceIds.some((id, index) => id !== previousWorkspaceIds[index]) ||
-    defaultWorkspaceId !== project.defaultWorkspaceId;
-
-  if (!changed && !staleWorktreeIds.length) {
-    return project;
+  const preserved = (project.worktrees ?? []).filter((worktree) => worktree.kind !== "git-worktree");
+  const nextWorktrees = mergeWorktreeItems(preserved, worktrees);
+  const currentKeys = (project.worktrees ?? []).map((worktree) => worktree.path).join("\0");
+  const nextKeys = nextWorktrees.map((worktree) => worktree.path).join("\0");
+  if (currentKeys !== nextKeys) {
+    const nextProject = { ...project, worktrees: nextWorktrees };
+    saveProjectToConfig(nextProject, configPath);
+    return nextProject;
   }
-
-  const nextProject = { ...project, workspaceIds, defaultWorkspaceId };
-  saveProjectToConfig(nextProject, configPath);
-  if (staleWorktreeIds.length) {
-    deleteWorkspacesFromConfig(staleWorktreeIds, configPath);
-  }
-  return nextProject;
+  return project;
 }
 
 async function createBranch(
@@ -345,41 +325,41 @@ async function createBranch(
   context: HelmHandlerContext,
 ) {
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   const project = context.resolveProjectById(params.projectId, projects);
   if (!project) {
     return {
       ok: false,
       projectId: params.projectId,
       branches: [],
-      workspaces: [],
+      worktrees: [],
       message: "Project not found",
     };
   }
   try {
-    const workspace = await createProjectWorktree(
+    const worktree = await createProjectWorktree(
       project,
-      workspaces,
+      worktrees,
       params.branchName,
       context.configPath,
     );
     const nextProjects = await context.loadAvailableProjectsWithSemanticSummaries();
-    const nextWorkspaces = context.loadAvailableWorkspaces();
+    const nextWorktrees = context.loadAvailableWorktrees();
     context.setProjects(nextProjects);
-    context.setWorkspaces(nextWorkspaces);
-    const gitRoot = await resolveGitRoot(workspace.path);
+    context.setWorktrees(nextWorktrees);
+    const gitRoot = await resolveGitRoot(worktree.path);
     const gitInfo = await listGitBranches(gitRoot);
     const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
     if (gitInfo.branches.length) {
-      persistProjectGitInfo(nextProject, gitInfo, workspace.path, context.configPath);
+      persistProjectGitInfo(nextProject, gitInfo, worktree.path, context.configPath);
     }
     return {
       ok: true,
       projectId: project.id,
       branches: gitInfo.branches,
       currentBranch: params.branchName,
-      workspaces: projectWorkspaceItems(nextProject, nextWorkspaces),
-      selectedWorkspaceId: workspace.id,
+      worktrees: projectWorktreeItems(nextProject, nextWorktrees),
+      selectedCwd: worktree.path,
       message: `Created worktree ${params.branchName}`,
     };
   } catch (error) {
@@ -387,7 +367,7 @@ async function createBranch(
       ok: false,
       projectId: project.id,
       branches: [],
-      workspaces: projectWorkspaceItems(project, workspaces),
+      worktrees: projectWorktreeItems(project, worktrees),
       message: error instanceof Error ? error.message : "Failed to create Git worktree",
     };
   }
@@ -446,8 +426,8 @@ async function testAgent(params: { providerId: string }, context: HelmHandlerCon
       message: "Provider not found",
     };
   }
-  const workspace = context.getWorkspaces()[0];
-  const result = await context.testAcpConnection(agent, workspace?.path);
+  const worktree = context.getWorktrees()[0];
+  const result = await context.testAcpConnection(agent, worktree?.path);
   return {
     ok: result.ok,
     providerId: params.providerId,
@@ -461,33 +441,32 @@ function listAgentConnections(context: HelmHandlerContext) {
 }
 
 
-function resolveAgentWorkspace(
+function resolveAgentWorktree(
   params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
   const agent = context.resolveProviderById(params.providerId, context.getAgents());
-  const workspaces = context.getWorkspaces();
+  const worktrees = context.getWorktrees();
   const requestedCwd = params.cwd?.trim();
-  const baseWorkspace = requestedCwd
-    ? (workspaces.find((item) => normalizeWorkspacePath(item.path) === normalizeWorkspacePath(requestedCwd)) ?? {
-        id: `${params.projectId ?? "project"}-cwd`,
+  const baseWorktree = requestedCwd
+    ? (worktrees.find((item) => normalizeWorktreePath(item.path) === normalizeWorktreePath(requestedCwd)) ?? {
         name: requestedCwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? "cwd",
         path: requestedCwd,
       })
-    : workspaces[0];
+    : worktrees[0];
   const project = params.projectId
     ? context.resolveProjectById(params.projectId, context.getProjects())
     : undefined;
-  const workspace =
+  const worktree =
     requestedCwd
-      ? baseWorkspace
-      : project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
-        ? { ...baseWorkspace, path: project.path }
-        : baseWorkspace;
-  return { agent, workspace };
+      ? baseWorktree
+      : project && baseWorktree && project.path && isProjectRootBranchWorktree(project, baseWorktree)
+        ? { ...baseWorktree, path: project.path }
+        : baseWorktree;
+  return { agent, worktree };
 }
 
-function normalizeWorkspacePath(path: string) {
+function normalizeWorktreePath(path: string) {
   return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
@@ -495,29 +474,29 @@ async function connectAgent(
   params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
-  const { agent, workspace } = resolveAgentWorkspace(params, context);
-  if (!agent || !workspace) {
+  const { agent, worktree } = resolveAgentWorktree(params, context);
+  if (!agent || !worktree) {
     return {
       ok: false,
       providerId: params.providerId,
-      workspacePath: params.cwd,
+      cwd: params.cwd,
       connections: context.listAcpConnectionInventory(),
-      message: !agent ? "Provider not found" : "Workspace not found",
+      message: !agent ? "Provider not found" : "Worktree not found",
     };
   }
 
   context.logInfo(
-    `[tiller] 阶段=ACP连接请求 provider=${agent.id} cwd=${workspace.path}`,
+    `[tiller] 阶段=ACP连接请求 provider=${agent.id} cwd=${worktree.path}`,
   );
   try {
     const connection = await context.connectAcpConnection({
       sessionId: `connect-${agent.id}-${Date.now()}`,
       agent,
-      workspace,
+      worktree,
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
         context.logInfo(
-          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} cwd=${event.workspacePath}`,
+          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} cwd=${event.cwd}`,
         );
       },
     });
@@ -525,7 +504,7 @@ async function connectAgent(
     return {
       ok: true,
       providerId: agent.id,
-      workspacePath: workspace.path,
+      cwd: worktree.path,
       runtimeConnectionId: inventory.runtimeConnectionId,
       connection: inventory,
       connections: context.listAcpConnectionInventory(),
@@ -534,12 +513,12 @@ async function connectAgent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect ACP provider";
     context.logError(
-      `[tiller] 阶段=ACP连接失败 provider=${agent.id} cwd=${workspace.path} message=${message}`,
+      `[tiller] 阶段=ACP连接失败 provider=${agent.id} cwd=${worktree.path} message=${message}`,
     );
     return {
       ok: false,
       providerId: agent.id,
-      workspacePath: workspace.path,
+      cwd: worktree.path,
       connections: context.listAcpConnectionInventory(),
       message,
     };
@@ -550,40 +529,40 @@ async function reconnectAgent(
   params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
-  const { agent, workspace } = resolveAgentWorkspace(params, context);
+  const { agent, worktree } = resolveAgentWorktree(params, context);
 
-  if (!agent || !workspace) {
+  if (!agent || !worktree) {
     return {
       ok: false,
       providerId: params.providerId,
-      workspacePath: params.cwd,
-      message: !agent ? "Provider not found" : "Workspace not found",
+      cwd: params.cwd,
+      message: !agent ? "Provider not found" : "Worktree not found",
     };
   }
 
   context.logInfo(
-    `[tiller] 阶段=ACP重连请求 provider=${agent.id} cwd=${workspace.path}`,
+    `[tiller] 阶段=ACP重连请求 provider=${agent.id} cwd=${worktree.path}`,
   );
   try {
     const connection = await context.reconnectAcpConnection({
       sessionId: `reconnect-${agent.id}-${Date.now()}`,
       agent,
-      workspace,
+      worktree,
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
         context.logInfo(
-          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} cwd=${event.workspacePath}`,
+          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} cwd=${event.cwd}`,
         );
       },
     });
     const inventory = connection.inventory();
     context.logInfo(
-      `[tiller] 阶段=ACP重连完成 provider=${agent.id} cwd=${workspace.path} connection=${inventory.runtimeConnectionId}`,
+      `[tiller] 阶段=ACP重连完成 provider=${agent.id} cwd=${worktree.path} connection=${inventory.runtimeConnectionId}`,
     );
     return {
       ok: true,
       providerId: agent.id,
-      workspacePath: workspace.path,
+      cwd: worktree.path,
       runtimeConnectionId: inventory.runtimeConnectionId,
       connection: inventory,
       connections: context.listAcpConnectionInventory(),
@@ -592,12 +571,12 @@ async function reconnectAgent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reconnect ACP provider";
     context.logError(
-      `[tiller] 阶段=ACP重连失败 provider=${agent.id} cwd=${workspace.path} message=${message}`,
+      `[tiller] 阶段=ACP重连失败 provider=${agent.id} cwd=${worktree.path} message=${message}`,
     );
     return {
       ok: false,
       providerId: agent.id,
-      workspacePath: workspace.path,
+      cwd: worktree.path,
       connections: context.listAcpConnectionInventory(),
       message,
     };

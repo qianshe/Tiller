@@ -5,7 +5,7 @@ import type {
   AgentPromptImageContent,
   ProjectSummary,
   SessionReasoningEffort,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { agentModelOptionsKey, type AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -16,8 +16,8 @@ type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
 type CreateSessionContext = {
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
-  selectedWorkspace?: WorkspaceSummary | null;
-  filteredWorkspaces: WorkspaceSummary[];
+  selectedWorktree?: WorktreeSummary | null;
+  filteredWorktrees: WorktreeSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
   agentModelOptions?: Record<string, AgentModelOptionsEntry>;
@@ -88,8 +88,8 @@ export function createSession(
   const {
     selectedProjectId,
     projects,
-    selectedWorkspace,
-    filteredWorkspaces,
+    selectedWorktree,
+    filteredWorktrees,
     selectedAgentId,
     filteredAgents,
     agentModelOptions,
@@ -107,8 +107,8 @@ export function createSession(
   const identity = resolveNewSessionIdentity({
     selectedProjectId,
     projects,
-    selectedWorkspace,
-    workspaces: filteredWorkspaces,
+    selectedWorktree,
+    worktrees: filteredWorktrees,
     selectedAgentId,
     agents: filteredAgents,
   });

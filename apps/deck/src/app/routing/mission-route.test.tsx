@@ -9,7 +9,7 @@ const routePath = resolve(
   "mission-route.tsx",
 );
 
-test("renderMissionRoute forwards diff directory collapse state to the mission workspace", () => {
+test("renderMissionRoute forwards diff directory collapse state to the mission worktree", () => {
   const source = readFileSync(routePath, "utf8");
 
   assert.match(source, /collapsedMissionDiffDirectories,[\s\S]*?missionInspectorPaneStyle,/);
@@ -19,11 +19,11 @@ test("renderMissionRoute forwards diff directory collapse state to the mission w
   );
 });
 
-test("renderMissionRoute forwards all workspaces for scanned worktrees", () => {
+test("renderMissionRoute forwards all worktrees for scanned worktrees", () => {
   const source = readFileSync(routePath, "utf8");
 
-  assert.match(source, /workspaces,/);
-  assert.match(source, /workspaces=\{workspaces\}/);
+  assert.match(source, /worktrees,/);
+  assert.match(source, /worktrees=\{worktrees\}/);
 });
 
 test("renderMissionRoute forwards mobile pane state", () => {

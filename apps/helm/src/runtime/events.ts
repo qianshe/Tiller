@@ -16,7 +16,7 @@ const activeAssistantRuntimeMessageBySession = new Map<
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
-  return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.workspace.path ?? "<stored>"}`;
+  return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.worktree.path ?? "<stored>"}`;
 }
 
 function nextLiveEventSequence(sessionId: string) {

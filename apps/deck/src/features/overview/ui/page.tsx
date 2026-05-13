@@ -3,7 +3,7 @@ import type {
   HelmSummary,
   ProjectSummary,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import type { AppView } from "../../../shared/utils/routes";
@@ -18,7 +18,7 @@ type OverviewPageProps = {
   defaultDaemonHost: string;
   defaultDaemonPort: string;
   projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
   sessions: SessionSummary[];
   onNavigate: (view: AppView) => void;
@@ -36,7 +36,7 @@ export function OverviewPage({
   defaultDaemonHost,
   defaultDaemonPort,
   projects,
-  workspaces,
+  worktrees,
   agents,
   sessions,
   onNavigate,
@@ -52,7 +52,7 @@ export function OverviewPage({
     `Helm · ${activeHelmLabel}`,
     `连接 · ${copy.connection[connection]}`,
     `项目 · ${projects.length}`,
-    `工作区 · ${workspaces.length}`,
+    `工作区 · ${worktrees.length}`,
     `ACP 舰员 · ${agents.length}`,
     `任务 · ${sessions.length}`,
   ];

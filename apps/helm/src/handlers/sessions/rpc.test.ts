@@ -51,7 +51,7 @@ test("permission/list_pending returns active permission requests", async () => {
     id: "permission-1",
     command: "Approve MCP tool call :: {}",
     reason: "需要审核工具调用",
-    workspacePath: "D:/repo",
+    cwd: "D:/repo",
   };
   const result = await handleSessionRpcRequest("permission/list_pending", {}, {
     permissionIndex: new Map([
@@ -147,10 +147,10 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
     id: "project-1",
     name: "Tiller",
     helmId: "local-helm",
-    workspaceIds: ["workspace-1"],
+    cwds: ["worktree-1"],
   };
   const helm = { id: "local-helm", name: "Local Helm" };
-  const workspace = { id: "workspace-1", name: "main", path: "D:/repo" };
+  const worktree = { id: "worktree-1", name: "main", path: "D:/repo" };
   const agent = { id: "codex", name: "Codex" };
   let attachedSessionId: string | undefined;
   let prompted = "";
@@ -171,11 +171,11 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
     takeRuntimeDraft: () => ({
       draftId: "draft-1",
       deckClientId: "deck-1",
-      scopeKey: "deck-1:workspace-1:codex",
-      logicalScopeKey: "workspace-1:codex",
+      scopeKey: "deck-1:worktree-1:codex",
+      logicalScopeKey: "worktree-1:codex",
       project,
       helm,
-      workspace,
+      worktree,
       agent,
       runtime,
       attach: (sessionId: string) => { attachedSessionId = sessionId; },
@@ -346,17 +346,17 @@ test("session/discard_draft delegates cleanup to the runtime draft registry", as
   });
 });
 
-test("session/new uses cwd without requiring workspaceId", async () => {
+test("session/new uses cwd without requiring cwd", async () => {
   const project = {
     id: "project-1",
     name: "Tiller",
     helmId: "local-helm",
     path: "D:/repo",
-    workspaceIds: ["old-workspace"],
+    cwds: ["old-worktree"],
   };
   const helm = { id: "local-helm", name: "Local Helm" };
   const agent = { id: "codex", name: "Codex" };
-  let runtimeWorkspace: unknown;
+  let runtimeWorktree: unknown;
   let storedSummary: any;
   const sessions = new Map();
 
@@ -365,11 +365,11 @@ test("session/new uses cwd without requiring workspaceId", async () => {
     { projectId: "project-1", cwd: "D:/repo", agentId: "codex" },
     {
       loadAvailableHelms: () => [helm],
-      loadAvailableWorkspaces: () => [],
+      loadAvailableWorktrees: () => [],
       loadAvailableAgents: () => [agent],
       loadAvailableProjectsWithSemanticSummaries: () => [project],
       setHelms: () => undefined,
-      setWorkspaces: () => undefined,
+      setWorktrees: () => undefined,
       setAgents: () => undefined,
       setProjects: () => undefined,
       resolveProjectById: (id: string) => (id === project.id ? project : undefined),
@@ -387,8 +387,8 @@ test("session/new uses cwd without requiring workspaceId", async () => {
       handleRuntimeEvent: () => undefined,
       updateSessionSummary: () => undefined,
       sessions,
-      createRuntime: async ({ workspace }: any) => {
-        runtimeWorkspace = workspace;
+      createRuntime: async ({ worktree }: any) => {
+        runtimeWorktree = worktree;
         return {
           runtimeSessionId: "runtime-1",
           sessionCapabilities: { sessionLoad: true },
@@ -397,15 +397,14 @@ test("session/new uses cwd without requiring workspaceId", async () => {
         };
       },
     } as any,
-  ) as { session: { workspacePath?: string; runtimeSessionId?: string } };
+  ) as { session: { cwd?: string; runtimeSessionId?: string } };
 
-  assert.deepEqual(runtimeWorkspace, {
-    id: "project-1-cwd",
+  assert.deepEqual(runtimeWorktree, {
     name: "repo",
     path: "D:/repo",
     summary: undefined,
   });
-  assert.equal(storedSummary.workspacePath, "D:/repo");
-  assert.equal(result.session.workspacePath, "D:/repo");
+  assert.equal(storedSummary.cwd, "D:/repo");
+  assert.equal(result.session.cwd, "D:/repo");
   assert.equal(result.session.runtimeSessionId, "runtime-1");
 });

@@ -16,7 +16,7 @@ import type {
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
@@ -24,7 +24,7 @@ import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
@@ -39,7 +39,7 @@ export type RuntimeDraftRecord = {
   logicalScopeKey: string;
   project: ProjectSummary;
   helm: HelmSummary;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   agent: AcpAgentProvider;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
   attach: (sessionId: string) => void;
@@ -70,9 +70,9 @@ export type HelmHandlerContext = {
   getHelms: () => HelmSummary[];
   setHelms: (items: HelmSummary[]) => void;
   loadAvailableHelms: () => HelmSummary[];
-  getWorkspaces: () => WorkspaceSummary[];
-  setWorkspaces: (items: WorkspaceSummary[]) => void;
-  loadAvailableWorkspaces: () => WorkspaceSummary[];
+  getWorktrees: () => WorktreeSummary[];
+  setWorktrees: (items: WorktreeSummary[]) => void;
+  loadAvailableWorktrees: () => WorktreeSummary[];
   getAgents: () => AcpAgentProvider[];
   setAgents: (items: AcpAgentProvider[]) => void;
   loadAvailableAgents: () => AcpAgentProvider[];
@@ -100,7 +100,7 @@ export type HelmHandlerContext = {
     deckClientId: string;
     project: ProjectSummary;
     helm: HelmSummary;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
     sessionConfig?: {
       agentMode?: string;
@@ -198,7 +198,7 @@ export type HelmHandlerContext = {
   ) => SessionSummary | undefined;
   persistSessionMessage: (sessionId: string, message: AgentMessage) => void;
   publishDiffUpdate: (sessionId: string, files: FileDiffSummary[]) => Promise<void>;
-  hydrateDiffsFromWorkspaceGit: (
+  hydrateDiffsFromWorktreeGit: (
     sessionId: string,
     files: FileDiffSummary[],
   ) => Promise<FileDiffSummary[]>;

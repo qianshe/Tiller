@@ -148,15 +148,15 @@ function resolveSessionWorktreeLabel(session: SessionSummary) {
   if (!isWorktreeSession(session)) {
     return null;
   }
-  return session.workspaceName || session.workspaceId || null;
+  return session.worktreeName || session.cwd || null;
 }
 
 function isWorktreeSession(session: SessionSummary) {
-  const normalizedWorkspace = `${session.workspaceId} ${session.workspaceName}`.toLowerCase();
+  const normalizedWorktree = `${session.cwd} ${session.worktreeName ?? ""}`.toLowerCase();
   return (
-    normalizedWorkspace.includes("-worktree-") ||
-    normalizedWorkspace.includes("/.worktrees/") ||
-    normalizedWorkspace.includes(".worktrees")
+    normalizedWorktree.includes("-worktree-") ||
+    normalizedWorktree.includes("/.worktrees/") ||
+    normalizedWorktree.includes(".worktrees")
   );
 }
 

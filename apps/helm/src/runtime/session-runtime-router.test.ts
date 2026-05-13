@@ -10,8 +10,8 @@ function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary 
     projectId: "project-1",
     projectName: "Project One",
     helmId: "helm-1",
-    workspaceId: "workspace-1",
-    workspaceName: "Workspace One",
+    cwd: "worktree-1",
+    worktreeName: "Worktree One",
     agentId: "codex",
     agentName: "Codex",
     status: "idle",
@@ -43,7 +43,7 @@ function createContext(options: {
     sessions.set("session-1", {
       summary,
       agent: { id: "codex" },
-      workspace: { id: "workspace-1", path: "D:/repo" },
+      worktree: { id: "worktree-1", path: "D:/repo" },
       runtime: options.activeRuntime,
     });
   }
@@ -70,7 +70,7 @@ function createContext(options: {
       sessions.set("session-1", {
         summary,
         agent: { id: "codex" },
-        workspace: { id: "workspace-1", path: "D:/repo" },
+        worktree: { id: "worktree-1", path: "D:/repo" },
         runtime: options.restoreRuntime,
       });
       return {

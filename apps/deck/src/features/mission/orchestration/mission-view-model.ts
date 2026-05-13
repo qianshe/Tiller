@@ -8,7 +8,6 @@ import { formatResumeLabel } from "../utils/session-state";
 import { usePromptImages } from "../hooks/prompt-images";
 import {
   MODEL_OPTIONS,
-  defaultAgentId,
   resolveAgentModeOptions,
   resolveBaseModelOptions,
   resolveCurrentAgentMode,
@@ -35,8 +34,8 @@ export function useMissionViewModel(ctx: any) {
     daemonPort,
     daemonProfiles,
     helms,
-    workspaces,
-    selectedWorkspaceId,
+    worktrees,
+    selectedCwd,
     agents,
     statuses,
     copy,
@@ -104,26 +103,31 @@ const missionProjects = useMemo(
     ),
   [effectiveMissionHelmId, projects],
 );
-const filteredWorkspaces = useMemo(() => {
+const filteredWorktrees = useMemo(() => {
   if (!draftProject) {
     return [];
   }
-  const workspaceIds = draftProject.workspaceIds;
-  if (!workspaceIds?.length) {
-    return workspaces;
+  const projectWorktrees = draftProject.worktrees ?? [];
+  if (projectWorktrees.length) {
+    return projectWorktrees;
   }
-  return workspaces.filter((workspace) =>
-    workspaceIds.includes(workspace.id),
+  return worktrees.filter((worktree) =>
+    normalizeWorktreePath(worktree.path) === normalizeWorktreePath(draftProject.path) ||
+    Boolean(draftProject.path && normalizeWorktreePath(worktree.path)?.startsWith(`${normalizeWorktreePath(draftProject.path)}/`)),
   );
-}, [draftProject, workspaces]);
-const selectedWorkspace =
-  filteredWorkspaces.find(
-    (workspace) => workspace.id === selectedWorkspaceId,
+}, [draftProject, worktrees]);
+const selectedWorktree =
+  filteredWorktrees.find(
+    (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
   ) ??
-  filteredWorkspaces[0] ??
+  filteredWorktrees[0] ??
   null;
-const draftWorkspaceOptions = filteredWorkspaces;
-const selectedWorkspaceName = selectedWorkspace?.name ?? "";
+const draftWorktreeOptions = filteredWorktrees;
+const selectedWorktreeName = selectedWorktree?.name ?? "";
+
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
+}
 const filteredAgents = agents;
 const projectSessions = useMemo(
   () =>
@@ -188,12 +192,12 @@ const draftModelPlaceholder = resolveModelInputPlaceholder(
   activeSession?.agentId ?? selectedAgentId,
 );
 const draftAgentModelOptionsKey =
-  !activeSession && selectedAgentId && selectedWorkspaceId
-    ? agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId)
+  !activeSession && selectedAgentId && selectedCwd
+    ? agentModelOptionsKey(selectedAgentId, selectedCwd, selectedProjectId)
     : null;
 const draftAgentModelOptionsPrefix =
-  selectedAgentId && selectedWorkspaceId
-    ? `${selectedAgentId}::${selectedWorkspaceId}`
+  selectedAgentId && selectedCwd
+    ? `${selectedAgentId}::${selectedCwd}`
     : null;
 const draftLoadingAgentModelOptions = draftAgentModelOptionsPrefix
   ? Object.entries(agentModelOptions).find(
@@ -274,7 +278,7 @@ const draftHasLoadedModelOptions =
   (draftAgentModelOptions?.configOptions.length ?? 0) > 0;
 const awaitingDraftAgentModelOptions =
   !activeSession &&
-  Boolean(selectedAgentId && selectedWorkspaceId) &&
+  Boolean(selectedAgentId && selectedCwd) &&
   !draftAgentModelOptions &&
   !draftHasLoadedModelOptions;
 const draftModelPickerLabel = draftModelBaseOptions.length
@@ -312,10 +316,10 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     effectiveMissionHelmId,
     missionHelms,
     missionProjects,
-    filteredWorkspaces,
-    selectedWorkspace,
-    draftWorkspaceOptions,
-    selectedWorkspaceName,
+    filteredWorktrees,
+    selectedWorktree,
+    draftWorktreeOptions,
+    selectedWorktreeName,
     filteredAgents,
     projectSessions,
     sessionCountsByProject,

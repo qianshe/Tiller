@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import type { AcpAgentProvider, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 
 export type AcpConnectionKey = string;
 
 export type AcpConnectionKeyInput = {
   provider: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   sessionConfig?: {
     agentMode?: string;
     model?: string;
@@ -13,12 +13,13 @@ export type AcpConnectionKeyInput = {
   };
 };
 
-export function resolveAcpConnectionKey({ provider }: AcpConnectionKeyInput): AcpConnectionKey {
+export function resolveAcpConnectionKey({ provider, worktree }: AcpConnectionKeyInput): AcpConnectionKey {
   const payload = stableStringify({
     providerId: provider.id,
+    cwd: worktree.path,
     command: provider.command,
     args: provider.args ?? [],
-    cwd: provider.cwd ?? null,
+    providerCwd: provider.cwd ?? null,
     env: provider.env ?? {},
     mcpServers: provider.mcpServers ?? [],
   });

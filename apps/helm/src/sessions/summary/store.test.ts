@@ -32,8 +32,8 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
       projectId: "project-alpha",
       projectName: "Project Alpha",
       helmId: "helm-local",
-      workspaceId: "workspace-a",
-      workspaceName: "Workspace A",
+      cwd: "worktree-a",
+      worktreeName: "Worktree A",
       agentId: "agent-opencode",
       agentName: "OpenCode",
       status: "running",
@@ -55,8 +55,8 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
       projectId: "project-beta",
       projectName: "Project Beta",
       helmId: "helm-local",
-      workspaceId: "workspace-b",
-      workspaceName: "Workspace B",
+      cwd: "worktree-b",
+      worktreeName: "Worktree B",
       agentId: "agent-codex",
       agentName: "Codex",
       status: "idle",
@@ -124,8 +124,8 @@ test("session store normalizes legacy summaries without project or helm fields",
       JSON.stringify([
         {
           id: "session-legacy",
-          workspaceId: "workspace-legacy",
-          workspaceName: "Legacy Workspace",
+          cwd: "worktree-legacy",
+          worktreeName: "Legacy Worktree",
           agentId: "agent-legacy",
           agentName: "Legacy Agent",
           status: "idle",
@@ -142,7 +142,7 @@ test("session store normalizes legacy summaries without project or helm fields",
 
     assert.equal(summaries.length, 1);
     assert.equal(summaries[0]?.projectId, "legacy-project");
-    assert.equal(summaries[0]?.projectName, "Legacy Workspace");
+    assert.equal(summaries[0]?.projectName, "Legacy Worktree");
     assert.equal(summaries[0]?.helmId, "legacy-helm");
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
@@ -161,8 +161,8 @@ test("session store removes only the targeted session summary", async () => {
       projectId: "project-a",
       projectName: "Project A",
       helmId: "helm-local",
-      workspaceId: "workspace-a",
-      workspaceName: "Workspace A",
+      cwd: "worktree-a",
+      worktreeName: "Worktree A",
       agentId: "agent-a",
       agentName: "Agent A",
       status: "idle",
@@ -175,8 +175,8 @@ test("session store removes only the targeted session summary", async () => {
       projectId: "project-b",
       projectName: "Project B",
       helmId: "helm-local",
-      workspaceId: "workspace-b",
-      workspaceName: "Workspace B",
+      cwd: "worktree-b",
+      worktreeName: "Worktree B",
       agentId: "agent-b",
       agentName: "Agent B",
       status: "idle",

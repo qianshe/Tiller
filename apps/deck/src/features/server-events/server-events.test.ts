@@ -20,8 +20,8 @@ function session(id: string): SessionSummary {
     projectId: "p1",
     projectName: "Project",
     helmId: "h1",
-    workspaceId: "w1",
-    workspaceName: "Workspace",
+    cwd: "D:/repo",
+    worktreeName: "Worktree",
     agentId: "a1",
     agentName: "Agent",
     status: "running",
@@ -38,7 +38,7 @@ function resetStore() {
     helms: [],
     helmInventories: {},
     projects: [],
-    workspaces: [],
+    worktrees: [],
     sessions: [],
     statuses: {},
     messages: {},
@@ -96,7 +96,7 @@ test("permission resolved notifications clear pending permission requests", () =
         id: "permission-1",
         command: "Approve MCP tool call :: {}",
         reason: "等待审核",
-        workspacePath: "D:/repo",
+        cwd: "D:/repo",
       },
     },
   });
@@ -172,15 +172,15 @@ test("inventory RPC results hydrate projects for the current helm", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
       writeAgentModelOptionsCache: () => undefined,
       selectedAgentId: null,
-      selectedWorkspaceId: null,
+      selectedCwd: null,
       resolveModelOptions: () => [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel: "provider-default",
@@ -214,7 +214,7 @@ test("session draft result hydrates draft model options and commands", () => {
       logicalScopeKey: "main:codex",
       warmed: true,
       providerId: "codex",
-      workspacePath: "main",
+      cwd: "main",
       runtimeSessionId: "runtime-1",
       currentModelId: "gpt-5.5",
       modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
@@ -226,17 +226,17 @@ test("session draft result hydrates draft model options and commands", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
       writeAgentModelOptionsCache: (entries) => {
         cached = entries;
       },
       selectedAgentId: "codex",
-      selectedWorkspaceId: "main",
+      selectedCwd: "main",
       resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel,
@@ -303,7 +303,7 @@ test("session draft result merges with an existing project scoped model options 
       logicalScopeKey: "main:opencode",
       warmed: true,
       providerId: "opencode",
-      workspacePath: "main",
+      cwd: "main",
       runtimeSessionId: "runtime-warm-1",
       currentModelId: "cpa-oai/gpt-5.5",
       modelOptions: [],
@@ -314,18 +314,18 @@ test("session draft result merges with an existing project scoped model options 
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId, projectId) =>
-        projectId ? `${providerId}::${workspaceId}::${projectId}` : `${providerId}::${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId, projectId) =>
+        projectId ? `${providerId}::${worktreeId}::${projectId}` : `${providerId}::${worktreeId}`,
       writeAgentModelOptionsCache: (entries) => {
         cached = entries;
       },
       selectedAgentId: "opencode",
-      selectedWorkspaceId: "main",
+      selectedCwd: "main",
       resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel: "cpa-oai/gpt-5.5",
@@ -626,7 +626,7 @@ test("failed session resume marks stale available metadata as unavailable", () =
     {
       sessionId: "s1",
       ok: false,
-      message: "Workspace workspace-1 is not configured.",
+      message: "Worktree worktree-1 is not configured.",
       resume: {
         state: "resume-available",
         mode: "reconnect",
@@ -659,11 +659,11 @@ test("failed session resume marks stale available metadata as unavailable", () =
 
   assert.equal(handled, true);
   assert.equal(pendingRequests.has("s1"), false);
-  assert.equal(feedback, "Workspace workspace-1 is not configured.");
+  assert.equal(feedback, "Worktree worktree-1 is not configured.");
   assert.equal(useDeckStore.getState().sessions[0]?.resume?.state, "resume-unavailable");
   assert.equal(
     useDeckStore.getState().sessions[0]?.resume?.reason,
-    "Workspace workspace-1 is not configured.",
+    "Worktree worktree-1 is not configured.",
   );
 });
 
@@ -673,7 +673,7 @@ test("permission list results hydrate pending permission requests", () => {
     id: "permission-1",
     command: "Approve MCP tool call :: {}",
     reason: "需要审核工具调用",
-    workspacePath: "D:/repo",
+    cwd: "D:/repo",
   };
 
   const handled = applySessionResult(
@@ -713,7 +713,7 @@ test("empty permission list clears stale pending permission requests", () => {
         id: "permission-1",
         command: "Approve MCP tool call :: {}",
         reason: "已过期的审核请求",
-        workspacePath: "D:/repo",
+        cwd: "D:/repo",
       },
     },
   });

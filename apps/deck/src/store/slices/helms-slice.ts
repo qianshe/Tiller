@@ -5,7 +5,7 @@ import type {
   SessionStatus,
   SessionSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { StateCreator } from "zustand";
 import type { ConnectionState } from "./connection-slice";
@@ -13,7 +13,7 @@ import type { ConnectionState } from "./connection-slice";
 export type HelmInventoryBucket = {
   helms?: HelmSummary[];
   projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
   sessions: SessionSummary[];
   statuses: Record<string, SessionStatus>;
@@ -39,7 +39,7 @@ export type HelmsSlice = {
 
 const emptyInventoryBucket: HelmInventoryBucket = {
   projects: [],
-  workspaces: [],
+  worktrees: [],
   agents: [],
   sessions: [],
   statuses: {},

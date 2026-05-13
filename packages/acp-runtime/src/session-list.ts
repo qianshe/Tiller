@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpAgentProvider, AcpAgentSessionInfo, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AcpAgentSessionInfo, WorktreeSummary } from "@tiller/shared";
 import { resolveSessionCapabilities } from "./capabilities";
 import { resolveAcpLaunchConfig } from "./adapters";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
@@ -41,10 +41,10 @@ export function normalizeAcpAgentSessionListResult(result: any): AcpAgentSession
 
 export async function listAcpAgentSessions(
   provider: AcpAgentProvider,
-  workspace: WorkspaceSummary,
+  worktree: WorktreeSummary,
   cursor?: string,
 ): Promise<AcpAgentSessionListResult> {
-  const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: workspace.path });
+  const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: worktree.path });
   const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
   const launchCwd = launchConfig.cwd;
   const childEnv = { ...process.env, ...launchConfig.env };

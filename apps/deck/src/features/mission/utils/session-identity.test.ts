@@ -4,13 +4,13 @@ import { resolveNewSessionIdentity } from "./session-identity.js";
 
 test("new ACP session identity requires project cwd and agent", () => {
   assert.equal(
-    resolveNewSessionIdentity({ projects: [], workspaces: [], agents: [] }),
+    resolveNewSessionIdentity({ projects: [], worktrees: [], agents: [] }),
     null,
   );
   assert.equal(
     resolveNewSessionIdentity({
       projects: [{ id: "project-1" }],
-      workspaces: [{ id: "workspace-1", path: "D:/repo" }],
+      worktrees: [{ path: "D:/repo" }],
       agents: [{ id: "codex" }],
     }),
     null,
@@ -18,7 +18,7 @@ test("new ACP session identity requires project cwd and agent", () => {
   assert.deepEqual(
     resolveNewSessionIdentity({
       projects: [{ id: "project-1", path: "D:/repo" }],
-      workspaces: [],
+      worktrees: [],
       selectedAgentId: "codex",
       agents: [{ id: "codex" }],
     }),
@@ -31,8 +31,8 @@ test("new ACP session identity prefers explicit draft selections", () => {
     resolveNewSessionIdentity({
       selectedProjectId: "project-selected",
       projects: [{ id: "project-selected", path: "D:/project" }],
-      selectedWorkspace: { id: "workspace-selected", path: "D:/worktree" },
-      workspaces: [{ id: "workspace-1", path: "D:/repo" }],
+      selectedWorktree: { path: "D:/worktree" },
+      worktrees: [{ path: "D:/repo" }],
       selectedAgentId: "opencode",
       agents: [{ id: "codex" }],
     }),

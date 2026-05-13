@@ -21,7 +21,7 @@ function helm(id: string): HelmSummary {
 }
 
 function project(id: string): ProjectSummary {
-  return { id, name: `Project ${id}`, helmId: "helm-1", workspaceIds: [] };
+  return { id, name: `Project ${id}`, helmId: "helm-1", worktrees: [] };
 }
 
 test("setHelms replaces and updates the helm list", () => {

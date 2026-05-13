@@ -60,7 +60,7 @@ test("ProjectInventorySection shows cancel action while editing", () => {
       selectedHelmId="helm-1"
       selectedHelmProjects={[project]}
       selectedHelmRpcClient={null}
-      selectedHelmWorkspaces={[]}
+      selectedHelmWorktrees={[]}
       setDraft={() => undefined}
       setFormOpen={() => undefined}
       setSaveMessage={() => undefined}
@@ -82,7 +82,7 @@ test("ProjectInventorySection cancel closes form and discards edited draft", () 
     selectedHelmId: "helm-1",
     selectedHelmProjects: [project],
     selectedHelmRpcClient: null,
-    selectedHelmWorkspaces: [],
+    selectedHelmWorktrees: [],
     setDraft: (value) => {
       nextDraft = typeof value === "function" ? value({ name: "", path: "" }) : value;
     },

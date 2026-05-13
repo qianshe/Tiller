@@ -22,9 +22,9 @@ test("snapshot cache restores the last known project/session view", () => {
   writeDeckSnapshot(storage, {
     profileId: "local-helm",
     cachedAt: "2026-04-27T10:00:00.000Z",
-    projects: [{ id: "project-1", name: "Tiller", helmId: "helm-1", workspaceIds: [] }],
+    projects: [{ id: "project-1", name: "Tiller", helmId: "helm-1", worktrees: [] }],
     sessions: [],
-    workspaces: [],
+    worktrees: [],
     agents: [],
   });
   assert.equal(readDeckSnapshot(storage, "local-helm")?.projects[0]?.name, "Tiller");

@@ -14,10 +14,10 @@ test("markSessionResumeUnavailable converts reconnect metadata into a terminal f
       restoreMethod: "session/load",
       lastSeenAt: "2026-05-13T00:00:00.000Z",
     },
-    "Workspace workspace-1 is not configured.",
+    "Worktree worktree-1 is not configured.",
   );
 
   assert.equal(resume.state, "resume-unavailable");
-  assert.equal(resume.reason, "Workspace workspace-1 is not configured.");
+  assert.equal(resume.reason, "Worktree worktree-1 is not configured.");
   assert.equal(resume.restoreMethod, "session/load");
 });

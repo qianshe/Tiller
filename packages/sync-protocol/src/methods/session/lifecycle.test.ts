@@ -31,7 +31,7 @@ test("session/draft returns runtime draft metadata", () => {
     ok: true,
     draftId: "draft-1",
     deckClientId: "deck-1",
-    workspacePath: "D:/repo",
+    cwd: "D:/repo",
     scopeKey: "deck-1:p1:ws1:a1",
     logicalScopeKey: "p1:ws1:a1",
     runtimeSessionId: "runtime-1",

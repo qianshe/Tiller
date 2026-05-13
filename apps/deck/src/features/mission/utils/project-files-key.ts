@@ -1,6 +1,6 @@
 export function projectFilesKey(
   projectId: string | null | undefined,
-  workspaceId: string | null | undefined,
+  worktreeId: string | null | undefined,
 ) {
-  return `${projectId ?? "none"}::${workspaceId ?? "none"}`;
+  return `${projectId ?? "none"}::${worktreeId ?? "none"}`;
 }

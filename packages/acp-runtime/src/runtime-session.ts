@@ -8,7 +8,7 @@ const defaultAcpConnectionManager = createAcpConnectionManager();
 export async function connectAcpConnection(options: AcpRuntimeOptions) {
   return defaultAcpConnectionManager.openConnection({
     sessionId: options.sessionId,
-    workspace: options.workspace,
+    worktree: options.worktree,
     provider: options.agent,
     sessionConfig: options.sessionConfig,
     onLifecycleEvent: options.onConnectionLifecycleEvent,
@@ -18,7 +18,7 @@ export async function connectAcpConnection(options: AcpRuntimeOptions) {
 export async function reconnectAcpConnection(options: AcpRuntimeOptions) {
   return defaultAcpConnectionManager.reconnect({
     sessionId: options.sessionId,
-    workspace: options.workspace,
+    worktree: options.worktree,
     provider: options.agent,
     sessionConfig: options.sessionConfig,
     onLifecycleEvent: options.onConnectionLifecycleEvent,
@@ -46,7 +46,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
   try {
     const runtime = await defaultAcpConnectionManager.openSession({
       sessionId: options.sessionId,
-      workspace: options.workspace,
+      worktree: options.worktree,
       provider: options.agent,
       sessionConfig: options.sessionConfig,
       restore: options.restore,

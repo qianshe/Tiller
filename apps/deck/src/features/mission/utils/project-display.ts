@@ -1,4 +1,4 @@
-import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
 export function formatProjectSummaryForDisplay(
   summary: string | undefined,
@@ -21,15 +21,21 @@ export function formatProjectSummaryForDisplay(
   return compact.length > 360 ? `${compact.slice(0, 360)}…` : compact;
 }
 
-export function resolveProjectWorkspaceLabel(
+export function resolveProjectWorktreeLabel(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
 ) {
-  const workspaceId = project.defaultWorkspaceId ?? project.workspaceIds?.[0];
-  const workspace = workspaceId
-    ? workspaces.find((item) => item.id === workspaceId)
+  const projectWorktree = project.worktrees?.[0];
+  const worktree = projectWorktree
+    ? worktrees.find(
+        (item) => normalizePath(item.path) === normalizePath(projectWorktree.path),
+      )
     : undefined;
-  return workspace?.name ?? project.gitCurrentBranch ?? workspaceId ?? "-";
+  return worktree?.name ?? projectWorktree?.name ?? project.gitCurrentBranch ?? "-";
+}
+
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
 export function resolveProjectDisplayId(

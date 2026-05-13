@@ -9,12 +9,12 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type MissionVisualFixture = {
   helms: HelmSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   projects: ProjectSummary[];
   agents: AcpAgentProvider[];
   sessions: SessionSummary[];
@@ -26,7 +26,7 @@ type MissionVisualFixture = {
   permissionRequests: Record<string, PermissionRequest>;
   activeSessionId: string;
   selectedProjectId: string;
-  selectedWorkspaceId: string;
+  selectedCwd: string;
   selectedAgentId: string;
 };
 
@@ -47,7 +47,7 @@ export function createMissionVisualFixture({
   const now = new Date().toISOString();
   const helmId = "visual-helm";
   const projectId = "visual-project";
-  const workspaceId = "visual-workspace";
+  const cwd = "D:/myProject/tools/Tiller";
   const agentId = "visual-codex";
   const sessionId = "visual-session";
   const session: SessionSummary = {
@@ -55,8 +55,8 @@ export function createMissionVisualFixture({
     projectId,
     projectName: "Tiller",
     helmId,
-    workspaceId,
-    workspaceName: "Tiller",
+    cwd,
+    worktreeName: "Tiller",
     agentId,
     agentName: "Codex",
     model: "gpt-5.5",
@@ -78,17 +78,14 @@ export function createMissionVisualFixture({
         port: Number(defaultDaemonPort),
       },
     ],
-    workspaces: [
-      { id: workspaceId, name: "Tiller", path: "D:/myProject/tools/Tiller" },
-    ],
+    worktrees: [{ name: "Tiller", path: cwd }],
     projects: [
       {
         id: projectId,
         name: "Tiller",
         helmId,
-        workspaceIds: [workspaceId],
-        defaultWorkspaceId: workspaceId,
-        defaultAgentId: agentId,
+        path: cwd,
+        worktrees: [{ name: "Tiller", path: cwd }],
       },
     ],
     agents: [
@@ -105,7 +102,7 @@ export function createMissionVisualFixture({
     statuses: { [sessionId]: "running" },
     activeSessionId: sessionId,
     selectedProjectId: projectId,
-    selectedWorkspaceId: workspaceId,
+    selectedCwd: cwd,
     selectedAgentId: agentId,
     messages: {
       [sessionId]: [
@@ -213,7 +210,7 @@ export function createMissionVisualFixture({
         id: "visual-permission-1",
         command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
         reason: "需要读取代码上下文以完成 UI 复核。",
-        workspacePath: "D:/myProject/tools/Tiller",
+        cwd: "D:/myProject/tools/Tiller",
         options: [
           { decision: "allow", label: "同意" },
           { decision: "deny", label: "取消" },

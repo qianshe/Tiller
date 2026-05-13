@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import type { AcpAgentProvider, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import { AcpConnection } from "./acp-connection";
 
 const require = createRequire(import.meta.url);
@@ -168,10 +168,9 @@ function createProvider(command: string, args: string[]): AcpAgentProvider {
   };
 }
 
-const workspace: WorkspaceSummary = {
-  id: "workspace-1",
-  name: "Workspace",
-  path: "D:/tmp/workspace",
+const worktree: WorktreeSummary = {
+  name: "Worktree",
+  path: "D:/tmp/worktree",
 };
 
 test("AcpConnection.open initializes exactly once", async () => {
@@ -180,7 +179,7 @@ test("AcpConnection.open initializes exactly once", async () => {
     const { agentPath, initializeCountPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     assert.equal(readFileSync(initializeCountPath, "utf8"), "1");
@@ -203,7 +202,7 @@ test("AcpConnection.open terminates the child process when initialize times out"
     await assert.rejects(
       AcpConnection.open({
         provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 100 },
-        workspace: { ...workspace, path: tempDir },
+        worktree: { ...worktree, path: tempDir },
       }),
       /Timed out waiting for ACP response: initialize/u,
     );
@@ -223,7 +222,7 @@ test("AcpConnection.open ignores per-session config when launching shared connec
     const { agentPath, launchArgsPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: { ...createProvider("node", [agentPath]), id: "codex" },
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       sessionConfig: { model: "gpt-5.5", reasoningEffort: "high" },
     });
 
@@ -246,12 +245,12 @@ test("openOrCreateSession reuses the same pending new-session request", async ()
     const { agentPath, newSessionCountPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     const [first, second] = await Promise.all([
-      connection.openOrCreateSession({ tillerSessionId: "session-1", workspace: { ...workspace, path: tempDir }, kind: "new", onEvent: () => undefined }),
-      connection.openOrCreateSession({ tillerSessionId: "session-1", workspace: { ...workspace, path: tempDir }, kind: "new", onEvent: () => undefined }),
+      connection.openOrCreateSession({ tillerSessionId: "session-1", worktree: { ...worktree, path: tempDir }, kind: "new", onEvent: () => undefined }),
+      connection.openOrCreateSession({ tillerSessionId: "session-1", worktree: { ...worktree, path: tempDir }, kind: "new", onEvent: () => undefined }),
     ]);
 
     assert.equal(readFileSync(newSessionCountPath, "utf8"), "1");
@@ -273,13 +272,13 @@ test("session requests time out and clear pending state", async () => {
     const { agentPath } = writeInitializeOnlyAgent(tempDir, { newSessionDelayMs: 2_000 });
     const connection = await AcpConnection.open({
       provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 1_500 },
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     await assert.rejects(
       connection.openOrCreateSession({
         tillerSessionId: "session-timeout",
-        workspace: { ...workspace, path: tempDir },
+        worktree: { ...worktree, path: tempDir },
         kind: "new",
         onEvent: () => undefined,
       }),
@@ -296,7 +295,7 @@ test("session requests time out and clear pending state", async () => {
   }
 });
 
-test("session requests use the requested workspace cwd instead of launch cwd", async () => {
+test("session requests use the requested worktree cwd instead of launch cwd", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-cwd-"));
   const sessionDir = join(tempDir, "session-project");
   mkdirSync(sessionDir, { recursive: true });
@@ -304,12 +303,12 @@ test("session requests use the requested workspace cwd instead of launch cwd", a
     const { agentPath, newSessionCwdPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: { ...createProvider("node", [agentPath]), cwd: tempDir },
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: sessionDir },
+      worktree: { ...worktree, path: sessionDir },
       kind: "new",
       onEvent: () => undefined,
     });
@@ -329,11 +328,11 @@ test("closeSession only closes ACP session after the last handle is released", a
     const { agentPath, closeSessionCountPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
-    await connection.openOrCreateSession({ tillerSessionId: "session-1", workspace: { ...workspace, path: tempDir }, kind: "new", onEvent: () => undefined });
-    await connection.openOrCreateSession({ tillerSessionId: "session-1", workspace: { ...workspace, path: tempDir }, kind: "new", onEvent: () => undefined });
+    await connection.openOrCreateSession({ tillerSessionId: "session-1", worktree: { ...worktree, path: tempDir }, kind: "new", onEvent: () => undefined });
+    await connection.openOrCreateSession({ tillerSessionId: "session-1", worktree: { ...worktree, path: tempDir }, kind: "new", onEvent: () => undefined });
 
     await connection.closeSession("session-1");
     assert.equal(existsSync(closeSessionCountPath), false);
@@ -357,12 +356,12 @@ test("closing the last session keeps the ACP child process alive", async () => {
     const { agentPath, pidPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "new",
       onEvent: () => undefined,
     });
@@ -389,12 +388,12 @@ test("closeSession during in-flight load removes pending session and sends close
     const { agentPath, closeSessionCountPath, closeSessionIdPath, loadSessionCountPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     const load = connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "load",
       runtimeSessionId: "remote-session-1",
       onEvent: () => undefined,
@@ -424,13 +423,13 @@ test("session updates are routed to the matching loaded session", async () => {
     const { agentPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
     const events: Array<{ type: string; message?: { text: string } }> = [];
 
     await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "load",
       runtimeSessionId: "remote-session-1",
       onEvent: (event) => events.push(event as { type: string; message?: { text: string } }),
@@ -458,21 +457,21 @@ test("client file callbacks resolve paths from the matching session cwd", async 
     const { agentPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
     const firstEvents: Array<{ type: string; message?: { text: string } }> = [];
     const secondEvents: Array<{ type: string; message?: { text: string } }> = [];
 
     const first = await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: firstDir },
+      worktree: { ...worktree, path: firstDir },
       kind: "load",
       runtimeSessionId: "remote-session-1",
       onEvent: (event) => firstEvents.push(event as { type: string; message?: { text: string } }),
     });
     const second = await connection.openOrCreateSession({
       tillerSessionId: "session-2",
-      workspace: { ...workspace, id: "workspace-2", path: secondDir },
+      worktree: { ...worktree, path: secondDir },
       kind: "load",
       runtimeSessionId: "remote-session-2",
       onEvent: (event) => secondEvents.push(event as { type: string; message?: { text: string } }),
@@ -498,12 +497,12 @@ test("openOrCreateSession supports resume with the requested runtime session id"
     const { agentPath, resumeSessionCountPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
 
     const handle = await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "resume",
       runtimeSessionId: "remote-session-1",
       onEvent: () => undefined,
@@ -526,12 +525,12 @@ test("prompt transport close marks the connection as errored", async () => {
     const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitOnPrompt: true });
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
     const events: Array<{ type: string; message?: string }> = [];
     const handle = await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "new",
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });
@@ -559,13 +558,13 @@ test("child exit broadcasts an error to active sessions", async () => {
     const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitAfterMs: 80 });
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
     const events: Array<{ type: string; message?: string }> = [];
 
     await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "new",
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });
@@ -588,13 +587,13 @@ test("intentional connection dispose does not broadcast an exit error", async ()
     const { agentPath } = writeInitializeOnlyAgent(tempDir);
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
     });
     const events: Array<{ type: string; message?: string }> = [];
 
     await connection.openOrCreateSession({
       tillerSessionId: "session-1",
-      workspace: { ...workspace, path: tempDir },
+      worktree: { ...worktree, path: tempDir },
       kind: "new",
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });

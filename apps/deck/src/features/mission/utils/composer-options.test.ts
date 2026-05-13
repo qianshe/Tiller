@@ -6,6 +6,8 @@ import {
   resolveAgentModeOptions,
   resolveCurrentAgentMode,
   resolveDraftConfigOptions,
+  resolveRenderableSessionConfigOptions,
+  toSessionConfigPreferencePatch,
 } from "./composer-options";
 
 function session(id: string, agentId: string) {
@@ -15,8 +17,8 @@ function session(id: string, agentId: string) {
     projectId: "project-1",
     projectName: "Project",
     helmId: "helm-1",
-    workspaceId: "workspace-1",
-    workspaceName: "Workspace",
+    cwd: "D:/workspace/project-1",
+    worktreeName: "Worktree",
     agentName: agentId,
     status: "idle",
     createdAt: "2026-05-09T00:00:00.000Z",
@@ -94,6 +96,83 @@ test("resolveAgentModeOptions preserves ACP-provided permission mode choices", (
       { value: "default", label: "Default" },
       { value: "bypassPermissions", label: "Bypass Permissions" },
     ],
+  );
+});
+
+test("resolveRenderableSessionConfigOptions keeps ACP config choices as UI-ready controls", () => {
+  const controls = resolveRenderableSessionConfigOptions([
+    {
+      id: "permission-mode",
+      name: "Permission Mode",
+      category: "mode",
+      currentValue: "bypassPermissions",
+      options: [
+        { value: "default", label: "Default" },
+        { value: "bypassPermissions", label: "Bypass Permissions" },
+      ],
+    },
+    {
+      id: "web-search",
+      name: "Web Search",
+      category: "toggle",
+      currentValue: true,
+    },
+    {
+      id: "empty",
+      name: "Empty",
+      category: "other",
+    },
+  ]);
+
+  assert.deepEqual(
+    controls.map((control) => ({
+      pickerId: control.pickerId,
+      currentLabel: control.currentLabel,
+      values: control.values,
+    })),
+    [
+      {
+        pickerId: "config:permission-mode",
+        currentLabel: "Bypass Permissions",
+        values: [
+          { value: "default", label: "Default" },
+          { value: "bypassPermissions", label: "Bypass Permissions" },
+        ],
+      },
+      {
+        pickerId: "config:web-search",
+        currentLabel: "true",
+        values: [
+          { value: true, label: "True" },
+          { value: false, label: "False" },
+        ],
+      },
+    ],
+  );
+});
+
+test("toSessionConfigPreferencePatch uses direct config id and derives legacy state only for local UI", () => {
+  assert.deepEqual(
+    toSessionConfigPreferencePatch(
+      { id: "permission-mode", category: "mode" },
+      "bypassPermissions",
+    ),
+    {
+      configId: "permission-mode",
+      value: "bypassPermissions",
+      agentMode: "bypassPermissions",
+    },
+  );
+  assert.deepEqual(
+    toSessionConfigPreferencePatch({ id: "web-search" }, true),
+    { configId: "web-search", value: true },
+  );
+  assert.deepEqual(
+    toSessionConfigPreferencePatch(
+      { id: "effort", category: "reasoning_effort" },
+      "high",
+    ),
+    { configId: "effort", value: "high", reasoningEffort: "high" },
   );
 });
 

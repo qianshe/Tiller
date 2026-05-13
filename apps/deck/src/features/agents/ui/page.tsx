@@ -10,7 +10,7 @@ import type {
   HelmSummary,
   ProjectSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { DaemonProfile, DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
@@ -41,7 +41,7 @@ type AgentsPageProps = {
   trustedDevices: TrustedDeviceSummary[];
   projects: ProjectSummary[];
   agents: AcpAgentProvider[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   socketRef: MutableRefObject<WebSocket | null>;
   rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   helmSocketRefs: MutableRefObject<Map<string, WebSocket>>;
@@ -112,7 +112,7 @@ export function AgentsPage({
   trustedDevices,
   projects,
   agents,
-  workspaces,
+  worktrees,
   socketRef,
   rpcClientRef,
   helmSocketRefs,
@@ -176,7 +176,7 @@ export function AgentsPage({
     trustedDevices,
     projects,
     agents,
-    workspaces,
+    worktrees,
     configuredHelms,
     socket: socketRef.current,
     helmSockets: helmSocketRefs.current,
@@ -200,10 +200,10 @@ export function AgentsPage({
     selectedHelmSocket,
     selectedHelmRpcClient,
     selectedHelmTrustedDevices,
-    selectedHelmWorkspaces,
+    selectedHelmWorktrees,
   } = helmSelection;
   return (
-    <section className="workspace-single">
+    <section className="worktree-single">
       {fleetAddHelmModalOpen ? (
         <FleetAddHelmDialog
           stage={fleetAddHelmStage}
@@ -263,7 +263,7 @@ export function AgentsPage({
           selectedHelmSavedProfile={selectedHelmSavedProfile}
           selectedHelmProjects={selectedHelmProjects}
           selectedHelmAgents={selectedHelmAgents}
-          selectedHelmWorkspaces={selectedHelmWorkspaces}
+          selectedHelmWorktrees={selectedHelmWorktrees}
           selectedHelmSocket={selectedHelmSocket}
           selectedHelmRpcClient={selectedHelmRpcClient}
           selectedHelmId={selectedHelmId}

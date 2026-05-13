@@ -17,16 +17,16 @@ import type {
   SessionReasoningEffort,
   SessionResumeInfo,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
   SessionConfigOptionValue,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
-  alignSessionWorkspaceBinding,
+  alignSessionWorktreeBinding,
   createHelmSessionStores,
   normalizeDiffPath,
-  readWorkspaceGitDiffs,
+  readWorktreeGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
 import {
@@ -60,28 +60,28 @@ type SessionRuntimeConfig = {
 
 type ResumePreconditionInput = {
   agent: AcpAgentProvider | undefined;
-  workspace: WorkspaceSummary | undefined;
+  worktree: WorktreeSummary | undefined;
   runtimeSessionId?: string;
   restoreMethod?: SessionResumeInfo["restoreMethod"];
   agentId: string;
-  workspacePath?: string;
+  cwd?: string;
 };
 
 function resolveResumeUnavailableReason({
   agent,
-  workspace,
+  worktree,
   runtimeSessionId,
   restoreMethod,
   agentId,
-  workspacePath,
+  cwd,
 }: ResumePreconditionInput): string | null {
   if (!agent) {
     return `Agent provider ${agentId} is not configured.`;
   }
-  if (!workspace) {
-    return workspacePath
-      ? `Workspace path ${workspacePath} is not configured or does not exist.`
-      : "Workspace cwd is not configured.";
+  if (!worktree) {
+    return cwd
+      ? `Worktree path ${cwd} is not configured or does not exist.`
+      : "Worktree cwd is not configured.";
   }
   if (!runtimeSessionId) {
     return "ACP runtime session id is missing.";
@@ -95,7 +95,7 @@ function resolveResumeUnavailableReason({
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
@@ -108,7 +108,7 @@ type SessionServicesOptions = {
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
   getAgents: () => AcpAgentProvider[];
   getProjects: () => ProjectSummary[];
-  getWorkspaces: () => WorkspaceSummary[];
+  getWorktrees: () => WorktreeSummary[];
   createHandlerContext: () => HelmHandlerContext;
   broadcastNotification: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
@@ -126,7 +126,7 @@ type RuntimeDraft = {
   logicalScopeKey: string;
   project: ProjectSummary;
   helm: HelmSummary;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   agent: AcpAgentProvider;
   runtime: SessionRecord["runtime"];
   attach: (sessionId: string) => void;
@@ -151,34 +151,28 @@ const RUNTIME_DRAFT_TTL_MS = 10 * 60_000;
 export function createSessionServices(options: SessionServicesOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
 
-  function resolveStoredSessionWorkspace(summary: SessionSummary) {
-    const workspaces = options.getWorkspaces();
-    const normalizedSummaryPath = normalizeWorkspacePath(summary.workspacePath);
-    const pathWorkspace = normalizedSummaryPath
-      ? workspaces.find((item) => normalizeWorkspacePath(item.path) === normalizedSummaryPath)
+  function resolveStoredSessionWorktree(summary: SessionSummary) {
+    const worktrees = options.getWorktrees();
+    const normalizedSummaryPath = normalizeWorktreePath(summary.cwd);
+    const pathWorktree = normalizedSummaryPath
+      ? worktrees.find((item) => normalizeWorktreePath(item.path) === normalizedSummaryPath)
       : undefined;
-    if (pathWorkspace) {
-      return { ...pathWorkspace, path: summary.workspacePath ?? pathWorkspace.path };
+    if (pathWorktree) {
+      return { ...pathWorktree, path: summary.cwd ?? pathWorktree.path };
     }
 
     const project = options.getProjects().find((item) => item.id === summary.projectId);
     if (project?.path) {
       return {
-        id: project.defaultWorkspaceId ?? `${project.id}-workspace`,
-        name: summary.workspaceName || project.name,
-        path: project.path,
-      } satisfies WorkspaceSummary;
-    }
-
-    const idWorkspace = workspaces.find((item) => item.id === summary.workspaceId);
-    if (idWorkspace) {
-      return idWorkspace;
+        name: summary.worktreeName || project.name,
+        path: summary.cwd || project.path,
+      } satisfies WorktreeSummary;
     }
 
     return undefined;
   }
 
-  function normalizeWorkspacePath(path: string | undefined) {
+  function normalizeWorktreePath(path: string | undefined) {
     return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
   }
 
@@ -191,7 +185,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       "connection-reconnect": "ACP连接重连",
     };
     options.logInfo(
-      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.workspacePath}`,
+      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
     );
   }
 
@@ -249,9 +243,9 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-    const aligned = alignSessionWorkspaceBinding(
+    const aligned = alignSessionWorktreeBinding(
       alignSessionProjectBinding(summary, options.getProjects()),
-      options.getWorkspaces(),
+      options.getWorktrees(),
     );
     const record = options.sessions.get(summary.id);
     const agent = record?.agent ?? resolveProviderById(aligned.agentId, options.getAgents());
@@ -275,9 +269,9 @@ export function createSessionServices(options: SessionServicesOptions) {
       hydrated.projectId !== summary.projectId ||
       hydrated.projectName !== summary.projectName ||
       hydrated.helmId !== summary.helmId ||
-      hydrated.workspaceId !== summary.workspaceId ||
-      hydrated.workspaceName !== summary.workspaceName ||
-      hydrated.workspacePath !== summary.workspacePath
+      hydrated.cwd !== summary.cwd ||
+      hydrated.worktreeName !== summary.worktreeName ||
+      hydrated.cwd !== summary.cwd
     ) {
       options.sessionStore.upsert(hydrated);
     }
@@ -460,13 +454,13 @@ export function createSessionServices(options: SessionServicesOptions) {
       return;
     }
     const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
-    const workspace =
-      activeRecord?.workspace ?? options.getWorkspaces().find((item) => item.id === summary.workspaceId);
+    const worktree =
+      activeRecord?.worktree ?? options.getWorktrees().find((item) => normalizeWorktreePath(item.path) === normalizeWorktreePath(summary.cwd));
     const runtimeSessionId =
       activeRecord?.runtime.runtimeSessionId ??
       summary.runtimeSessionId ??
       options.sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
-    if (!agent || !workspace || !runtimeSessionId) {
+    if (!agent || !worktree || !runtimeSessionId) {
       return;
     }
 
@@ -474,7 +468,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       sessionId,
       agent,
       runtimeSessionId,
-      workspace.path,
+      worktree.path,
     );
     if (refreshed) {
       providerHistoryRefreshes.set(sessionId, Date.now());
@@ -483,10 +477,10 @@ export function createSessionServices(options: SessionServicesOptions) {
 
   function resolveRuntimeDraftKeys(params: {
     deckClientId: string;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
   }) {
-    const logicalScopeKey = `${params.workspace.path}:${params.agent.id}`;
+    const logicalScopeKey = `${params.worktree.path}:${params.agent.id}`;
     return {
       logicalScopeKey,
       scopeKey: `${params.deckClientId}:${logicalScopeKey}`,
@@ -499,8 +493,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       draftId: draft.draftId,
       deckClientId: draft.deckClientId,
       projectId: draft.project.id,
-      workspaceId: draft.workspace.id,
-      workspacePath: draft.workspace.path,
+      cwd: draft.worktree.path,
       providerId: draft.agent.id,
       scopeKey: draft.scopeKey,
       logicalScopeKey: draft.logicalScopeKey,
@@ -543,7 +536,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     deckClientId: string;
     project: ProjectSummary;
     helm: HelmSummary;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
     sessionConfig?: SessionRuntimeConfig;
   }) {
@@ -576,7 +569,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
     options.logInfo(
-      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.workspace.path}`,
+      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.worktree.path}`,
     );
 
     const pendingDraft: PendingRuntimeDraft = {
@@ -585,7 +578,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       obsolete: false,
       promise: createAcpRuntime({
         sessionId: draftId,
-        workspace: params.workspace,
+        worktree: params.worktree,
         agent: params.agent,
         sessionConfig: params.sessionConfig,
         onConnectionLifecycleEvent: logConnectionLifecycle,
@@ -630,7 +623,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           logicalScopeKey,
           project: params.project,
           helm: params.helm,
-          workspace: params.workspace,
+          worktree: params.worktree,
           agent: params.agent,
           runtime,
           attach: (sessionId: string) => {
@@ -810,15 +803,15 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
 
     const agent = resolveProviderById(summary.agentId, options.getAgents());
-    const workspace = resolveStoredSessionWorkspace(summary);
+    const worktree = resolveStoredSessionWorktree(summary);
     const resume = buildResumeInfo(summary, agent);
     const unavailableReason = resolveResumeUnavailableReason({
       agent,
-      workspace,
+      worktree,
       runtimeSessionId: resume.runtimeSessionId,
       restoreMethod: resume.restoreMethod,
       agentId: summary.agentId,
-      workspacePath: summary.workspacePath ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
+      cwd: summary.cwd ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
     });
     if (unavailableReason) {
       return {
@@ -828,7 +821,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       };
     }
     const restoreAgent = agent as AcpAgentProvider;
-    const restoreWorkspace = workspace as WorkspaceSummary;
+    const restoreWorktree = worktree as WorktreeSummary;
     const restoreRuntimeSessionId = resume.runtimeSessionId as string;
     const restoreMethod = resume.restoreMethod as "session/load" | "session/resume";
 
@@ -847,7 +840,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       const runtime = await createAcpRuntime({
         sessionId,
-        workspace: restoreWorkspace,
+        worktree: restoreWorktree,
         agent: restoreAgent,
         sessionConfig: {
           model: summary.model,
@@ -878,7 +871,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           source: "adapter-authoritative-history",
           load: async () => {
             try {
-              return await loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorkspace.path);
+              return await loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorktree.path);
             } catch (error) {
               options.logError(
                 `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
@@ -909,7 +902,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         status: "idle",
         updatedAt: new Date().toISOString(),
       });
-      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, workspace: restoreWorkspace, runtime });
+      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
       options.sessionStore.upsert(restoredSummary);
       persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
       options.logInfo(
@@ -974,7 +967,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
-    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorkspaceGit(sessionId, files));
+    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorktreeGit(sessionId, files));
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
     broadcastSessionUpdate(options.createHandlerContext(), sessionId, {
       kind: "diff_update",
@@ -982,13 +975,13 @@ export function createSessionServices(options: SessionServicesOptions) {
     });
   }
 
-  async function hydrateDiffsFromWorkspaceGit(sessionId: string, files: FileDiffSummary[]) {
-    const workspace = resolveSessionWorkspace(sessionId);
-    if (!workspace) {
+  async function hydrateDiffsFromWorktreeGit(sessionId: string, files: FileDiffSummary[]) {
+    const worktree = resolveSessionWorktree(sessionId);
+    if (!worktree) {
       return files;
     }
 
-    const gitDiffs = await readWorkspaceGitDiffs(workspace.path);
+    const gitDiffs = await readWorktreeGitDiffs(worktree.path);
     if (!gitDiffs.length) {
       return files;
     }
@@ -1011,15 +1004,15 @@ export function createSessionServices(options: SessionServicesOptions) {
     });
   }
 
-  function resolveSessionWorkspace(sessionId: string) {
-    const liveWorkspace = options.sessions.get(sessionId)?.workspace;
-    if (liveWorkspace) {
-      return liveWorkspace;
+  function resolveSessionWorktree(sessionId: string) {
+    const liveWorktree = options.sessions.get(sessionId)?.worktree;
+    if (liveWorktree) {
+      return liveWorktree;
     }
 
     const summary = options.sessionStore.list().find((item) => item.id === sessionId);
     return summary
-      ? (options.getWorkspaces().find((workspace) => workspace.id === summary.workspaceId) ?? null)
+      ? (options.getWorktrees().find((worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(summary.cwd)) ?? null)
       : null;
   }
 
@@ -1028,7 +1021,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     clearPermissionRequestsForSession,
     deleteLocalSessionData,
     handleRuntimeEvent,
-    hydrateDiffsFromWorkspaceGit,
+    hydrateDiffsFromWorktreeGit,
     hydrateSessionSummary,
     migrateStoredSessionSummary,
     configureRuntimeDraft,

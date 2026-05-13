@@ -13,12 +13,12 @@ export type ManagedSdkTerminal = {
   exitPromise: Promise<{ exitCode: number | null; signal: string | null }>;
 };
 
-export function resolveContainedWorkspacePath(workspaceRoot: string, requestPath: string) {
-  const root = resolve(workspaceRoot);
+export function resolveContainedWorktreePath(worktreeRoot: string, requestPath: string) {
+  const root = resolve(worktreeRoot);
   const candidate = resolve(root, requestPath);
   const relativePath = relative(root, candidate);
   if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error(`ACP client file path escapes workspace: ${requestPath}`);
+    throw new Error(`ACP client file path escapes worktree: ${requestPath}`);
   }
   return candidate;
 }

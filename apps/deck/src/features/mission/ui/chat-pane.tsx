@@ -44,7 +44,7 @@ type MissionChatPaneProps = {
   pendingToolPresent: boolean;
   pendingPermission: PermissionRequest | null;
   pendingToolTitle: string | null;
-  showPermissionWorkspace: boolean;
+  showPermissionWorktree: boolean;
   onRespondToPermission: (decision: PermissionDecision) => void;
   children: ReactNode;
 };
@@ -70,7 +70,7 @@ export function MissionChatPane({
   pendingToolPresent,
   pendingPermission,
   pendingToolTitle,
-  showPermissionWorkspace,
+  showPermissionWorktree,
   onRespondToPermission,
   children,
 }: MissionChatPaneProps) {
@@ -120,7 +120,7 @@ export function MissionChatPane({
         <MissionPermissionDrawer
           request={pendingPermission}
           copy={copy}
-          showWorkspace={showPermissionWorkspace}
+          showWorktree={showPermissionWorktree}
           fallbackToolTitle={pendingToolTitle}
           onRespond={onRespondToPermission}
         />

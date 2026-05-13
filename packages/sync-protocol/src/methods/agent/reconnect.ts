@@ -11,7 +11,7 @@ export const ParamsSchema = z.object({
 export const ResultSchema = z.object({
   ok: z.boolean(),
   providerId: z.string(),
-  workspacePath: z.string().optional(),
+  cwd: z.string().optional(),
   runtimeConnectionId: z.string().optional(),
   connection: typedUnknown().optional(),
   connections: z.array(typedUnknown()).default([]),

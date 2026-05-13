@@ -208,7 +208,7 @@ export function App() {
     setExpandedMissionHelmIds: runtimeState.setExpandedMissionHelmIds,
     setExpandedMissionProjectIds: runtimeState.setExpandedMissionProjectIds,
     setSelectedProjectId: runtimeState.setSelectedProjectId,
-    setSelectedWorkspaceId: runtimeState.setSelectedWorkspaceId,
+    setSelectedCwd: runtimeState.setSelectedCwd,
     setSelectedAgentId: runtimeState.setSelectedAgentId,
     setSelectedModel: runtimeState.setSelectedModel,
     setActiveSessionId: deckData.setActiveSessionId,
@@ -257,10 +257,10 @@ export function App() {
       return;
     }
     const draftKey =
-      runtimeState.selectedAgentId && runtimeState.selectedWorkspaceId
+      runtimeState.selectedAgentId && runtimeState.selectedCwd
         ? agentModelOptionsKey(
             runtimeState.selectedAgentId,
-            runtimeState.selectedWorkspaceId,
+            runtimeState.selectedCwd,
             runtimeState.selectedProjectId,
           )
         : null;
@@ -329,8 +329,8 @@ export function App() {
     promptEnhancer: deckData.deckPreferences.promptEnhancer,
     setPromptEnhancerBusy: promptEnhancerSettings.setBusy,
     setPromptEnhancerStatus: promptEnhancerSettings.setStatus,
-    filteredWorkspaces: missionView.filteredWorkspaces,
-    selectedWorkspaceId: runtimeState.selectedWorkspaceId,
+    filteredWorktrees: missionView.filteredWorktrees,
+    selectedCwd: runtimeState.selectedCwd,
     activeSession: missionView.activeSession,
     draftProject: missionView.draftProject,
     activeSessionMessages: missionView.activeSessionMessages,

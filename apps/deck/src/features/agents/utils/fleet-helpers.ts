@@ -1,7 +1,7 @@
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -45,10 +45,6 @@ export function createProjectId(projects: ProjectSummary[]) {
   return candidate;
 }
 
-export function defaultAgentId(agents: AcpAgentProvider[]) {
-  return agents.find((agent) => agent.id)?.id ?? null;
-}
-
 export function slugify(value: string) {
   return (
     value
@@ -70,22 +66,30 @@ export function resolveProjectDisplayId(
 
 export function resolveProjectWorktrees(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
 ) {
-  const workspaceIds = new Set(project.workspaceIds ?? []);
-  return workspaces.filter(
-    (workspace) =>
-      (workspaceIds.has(workspace.id) ||
-        workspace.id.startsWith(`${project.id}-worktree-`)) &&
-      isManagedWorktreeWorkspace(workspace),
+  const projectWorktrees = project.worktrees ?? [];
+  if (projectWorktrees.length) {
+    return projectWorktrees.filter(isManagedWorktreeWorktree);
+  }
+  const projectPath = normalizePath(project.path);
+  return worktrees.filter((worktree) => {
+    const worktreePath = normalizePath(worktree.path);
+    return (
+      Boolean(projectPath && worktreePath?.startsWith(`${projectPath}/`)) &&
+      isManagedWorktreeWorktree(worktree)
+    );
+  });
+}
+
+function isManagedWorktreeWorktree(worktree: Pick<WorktreeSummary, "path">) {
+  const normalizedPath = worktree.path.replace(/\\/g, "/");
+  return Boolean(
+    normalizedPath.includes("/.worktrees/") ||
+      normalizedPath.includes("/.tiller/worktrees/"),
   );
 }
 
-function isManagedWorktreeWorkspace(workspace: Pick<WorkspaceSummary, "id" | "path">) {
-  const normalizedPath = workspace.path.replace(/\\/g, "/");
-  return Boolean(
-    workspace.id.includes("-worktree-") ||
-      normalizedPath.includes("/.worktrees/") ||
-      normalizedPath.includes("/.tiller/worktrees/"),
-  );
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "");
 }

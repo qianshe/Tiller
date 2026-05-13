@@ -87,8 +87,8 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.projectId === "string" &&
     typeof candidate.projectName === "string" &&
     typeof candidate.helmId === "string" &&
-    typeof candidate.workspaceId === "string" &&
-    typeof candidate.workspaceName === "string" &&
+    typeof candidate.cwd === "string" &&
+    typeof candidate.worktreeName === "string" &&
     typeof candidate.agentId === "string" &&
     typeof candidate.agentName === "string" &&
     typeof candidate.status === "string" &&
@@ -115,8 +115,8 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
   const candidate = value as Record<string, unknown>;
   const hasLegacyCoreFields =
     typeof candidate.id === "string" &&
-    typeof candidate.workspaceId === "string" &&
-    typeof candidate.workspaceName === "string" &&
+    typeof candidate.cwd === "string" &&
+    typeof candidate.worktreeName === "string" &&
     typeof candidate.agentId === "string" &&
     typeof candidate.agentName === "string" &&
     typeof candidate.status === "string" &&
@@ -134,11 +134,10 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
     projectName:
       typeof candidate.projectName === "string"
         ? candidate.projectName
-        : String(candidate.workspaceName),
+        : String(candidate.worktreeName ?? "Project"),
     helmId: typeof candidate.helmId === "string" ? candidate.helmId : "legacy-helm",
-    workspaceId: candidate.workspaceId as string,
-    workspaceName: candidate.workspaceName as string,
-    workspacePath: typeof candidate.workspacePath === "string" ? candidate.workspacePath : undefined,
+    cwd: typeof candidate.cwd === "string" ? candidate.cwd : "",
+    worktreeName: typeof candidate.worktreeName === "string" ? candidate.worktreeName : undefined,
     agentId: candidate.agentId as string,
     agentName: candidate.agentName as string,
     agentMode:

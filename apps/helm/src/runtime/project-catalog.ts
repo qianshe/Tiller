@@ -3,16 +3,15 @@ import { basename, resolve } from "node:path";
 import {
   listAvailableHelms as listConfiguredHelms,
   listAvailableProjects as listConfiguredProjects,
-  listAvailableProviders,
   readTillerConfig,
 } from "@tiller/agent-registry";
-import type { AcpAgentProvider, HelmSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { HelmSummary, ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
 type ProjectCatalogOptions = {
   configPath: string;
   host: string;
   port: number;
-  defaultWorkspaceRoot: string;
+  defaultWorktreeRoot: string;
 };
 
 export function createProjectCatalog(options: ProjectCatalogOptions) {
@@ -34,35 +33,30 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
     ] satisfies HelmSummary[];
   }
 
-  function loadAvailableWorkspaces() {
-    const configuredWorkspaces = dedupeWorkspaces(
-      readTillerConfig(options.configPath).workspaces ?? [],
+  function loadAvailableWorktrees() {
+    const configuredWorktrees = dedupeWorktrees(
+      readTillerConfig(options.configPath).worktrees ?? [],
     );
-    if (configuredWorkspaces.length) {
-      return configuredWorkspaces;
+    if (configuredWorktrees.length) {
+      return configuredWorktrees;
     }
 
     return [
       {
-        id: "current-workspace",
-        name: basename(options.defaultWorkspaceRoot),
-        path: options.defaultWorkspaceRoot.replace(/\\/g, "/"),
+        name: basename(options.defaultWorktreeRoot),
+        path: options.defaultWorktreeRoot.replace(/\\/g, "/"),
       },
     ];
   }
 
   function loadAvailableProjects(): ProjectSummary[] {
     const configuredProjects = listConfiguredProjects(options.configPath);
-    const availableAgents = listAvailableProviders(options.configPath);
     if (configuredProjects.length) {
-      return configuredProjects.map((project) => ({
-        ...project,
-        defaultAgentId: resolveDefaultProjectAgentId(availableAgents, project.defaultAgentId),
-      }));
+      return configuredProjects;
     }
 
     const helms = loadAvailableHelms();
-    const workspaces = loadAvailableWorkspaces();
+    const worktrees = loadAvailableWorktrees();
     const fallbackHelm = helms[0] ?? {
       id: "local-helm",
       name: "Local Helm",
@@ -72,11 +66,10 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
     return [
       {
         id: "current-project",
-        name: basename(options.defaultWorkspaceRoot),
+        name: basename(options.defaultWorktreeRoot),
         helmId: fallbackHelm.id,
-        workspaceIds: workspaces.map((workspace) => workspace.id),
-        defaultWorkspaceId: workspaces[0]?.id,
-        defaultAgentId: resolveDefaultProjectAgentId(availableAgents, undefined),
+        path: options.defaultWorktreeRoot,
+        worktrees,
       },
     ] satisfies ProjectSummary[];
   }
@@ -87,12 +80,12 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
   }
 
   async function enrichProjectSummary(project: ProjectSummary): Promise<ProjectSummary> {
-    const projectWorkspaces = resolveProjectWorkspaces(project, loadAvailableWorkspaces());
+    const projectWorktrees = resolveProjectWorktrees(project, loadAvailableWorktrees());
     const cacheKey = [
       project.id,
       project.summary ?? "",
-      projectWorkspaces
-        .map((workspace) => `${workspace.id}:${workspace.path}:${workspace.summary ?? ""}`)
+      projectWorktrees
+        .map((worktree) => `${worktree.path}:${worktree.summary ?? ""}`)
         .join("|"),
     ].join("::");
     const cached = projectContextSummaryCache.get(cacheKey);
@@ -100,7 +93,7 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
       return { ...project, summary: cached };
     }
 
-    const source = await collectProjectSummarySource(project, projectWorkspaces);
+    const source = await collectProjectSummarySource(project, projectWorktrees);
     const summary = compactProjectContextSource(source) || project.summary;
     if (!summary) {
       return project;
@@ -113,39 +106,31 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
     loadAvailableHelms,
     loadAvailableProjects,
     loadAvailableProjectsWithSemanticSummaries,
-    loadAvailableWorkspaces,
-    resolveDefaultProjectAgentId,
+    loadAvailableWorktrees,
   };
 }
 
-function dedupeWorkspaces(items: WorkspaceSummary[]) {
+function dedupeWorktrees(items: WorktreeSummary[]) {
   const seen = new Set<string>();
-  const next: WorkspaceSummary[] = [];
+  const next: WorktreeSummary[] = [];
   for (const item of items) {
-    if (seen.has(item.id)) {
+    if (seen.has(item.path)) {
       continue;
     }
-    seen.add(item.id);
+    seen.add(item.path);
     next.push(item);
   }
   return next;
 }
 
-function resolveDefaultProjectAgentId(
-  agents: AcpAgentProvider[],
-  existingDefaultAgentId: string | undefined,
-) {
-  const codex = agents.find((agent) => agent.id === "codex");
-  return codex?.id ?? existingDefaultAgentId ?? agents[0]?.id;
-}
 
-function resolveProjectWorkspaces(
+function resolveProjectWorktrees(
   project: ProjectSummary,
-  availableWorkspaces: WorkspaceSummary[],
+  availableWorktrees: WorktreeSummary[],
 ) {
-  return project.workspaceIds?.length
-    ? availableWorkspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id))
-    : availableWorkspaces;
+  return project.worktrees?.length
+    ? project.worktrees
+    : availableWorktrees;
 }
 
 function sanitizeConfiguredProjectSummary(projectName: string, summary: string | undefined) {
@@ -166,19 +151,19 @@ function sanitizeConfiguredProjectSummary(projectName: string, summary: string |
 
 async function collectProjectSummarySource(
   project: ProjectSummary,
-  projectWorkspaces: WorkspaceSummary[],
+  projectWorktrees: WorktreeSummary[],
 ) {
   const configuredSummary = sanitizeConfiguredProjectSummary(project.name, project.summary);
   const snippets = await Promise.all(
-    projectWorkspaces.slice(0, 3).map(async (workspace) => {
-      const agents = await readOptionalSnippet(resolve(workspace.path, "AGENTS.md"), 2800);
-      const claude = await readOptionalSnippet(resolve(workspace.path, "CLAUDE.md"), 2200);
-      const readme = await readOptionalSnippet(resolve(workspace.path, "README.md"), 1600);
-      const packageJson = await readOptionalSnippet(resolve(workspace.path, "package.json"), 1000);
+    projectWorktrees.slice(0, 3).map(async (worktree) => {
+      const agents = await readOptionalSnippet(resolve(worktree.path, "AGENTS.md"), 2800);
+      const claude = await readOptionalSnippet(resolve(worktree.path, "CLAUDE.md"), 2200);
+      const readme = await readOptionalSnippet(resolve(worktree.path, "README.md"), 1600);
+      const packageJson = await readOptionalSnippet(resolve(worktree.path, "package.json"), 1000);
       return [
-        `Workspace: ${workspace.name}`,
-        `Path: ${workspace.path}`,
-        workspace.summary ? `Workspace summary: ${workspace.summary}` : "",
+        `Worktree: ${worktree.name}`,
+        `Path: ${worktree.path}`,
+        worktree.summary ? `Worktree summary: ${worktree.summary}` : "",
         agents ? `AGENTS.md:\n${agents}` : "",
         claude ? `CLAUDE.md:\n${claude}` : "",
         readme ? `README.md:\n${readme}` : "",

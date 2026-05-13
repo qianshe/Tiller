@@ -51,7 +51,6 @@ export async function requestInitialSync(
   const { dispatch, setSessionHistoryState, sessionPageLimit } = context;
   await dispatch(client, "helm/list", {});
   await dispatch(client, "project/list", {});
-  await dispatch(client, "workspace/list", {});
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
   setSessionHistoryState({ hasMore: false, loading: true });

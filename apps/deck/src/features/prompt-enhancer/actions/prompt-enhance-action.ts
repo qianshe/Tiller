@@ -2,7 +2,7 @@ import type {
   AgentMessage,
   ProjectSummary,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { summarizeSessionContext } from "../../mission/facade";
 import {
@@ -16,8 +16,8 @@ type UsePromptEnhanceActionOptions = {
   promptEnhancer: PromptEnhancerPreferences;
   setPromptEnhancerBusy: (value: boolean) => void;
   setPromptEnhancerStatus: (value: string) => void;
-  filteredWorkspaces: WorkspaceSummary[];
-  selectedWorkspaceId: string | null;
+  filteredWorktrees: WorktreeSummary[];
+  selectedCwd: string | null;
   activeSession: SessionSummary | null;
   draftProject: ProjectSummary | null;
   activeSessionMessages: AgentMessage[];
@@ -29,8 +29,8 @@ export function usePromptEnhanceAction({
   promptEnhancer,
   setPromptEnhancerBusy,
   setPromptEnhancerStatus,
-  filteredWorkspaces,
-  selectedWorkspaceId,
+  filteredWorktrees,
+  selectedCwd,
   activeSession,
   draftProject,
   activeSessionMessages,
@@ -44,16 +44,16 @@ export function usePromptEnhanceAction({
     setPromptEnhancerBusy(true);
     setPromptEnhancerStatus("正在增强提示词...");
     try {
-      const workspace = filteredWorkspaces.find(
+      const worktree = filteredWorktrees.find(
         (item) =>
-          item.id === (activeSession?.workspaceId ?? selectedWorkspaceId) ||
-          normalizeWorkspacePath(item.path) === normalizeWorkspacePath(activeSession?.workspacePath),
+          normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession?.cwd ?? selectedCwd ?? undefined) ||
+          normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession?.cwd),
       );
       const enhanced = await enhancePromptWithLlm(rawPrompt, promptEnhancer, {
         projectName: draftProject?.name ?? activeSession?.projectName,
-        workspaceName: workspace?.name ?? activeSession?.workspaceName,
+        worktreeName: worktree?.name ?? activeSession?.worktreeName,
         projectSummary: draftProject?.summary,
-        workspaceSummary: workspace?.summary,
+        worktreeSummary: worktree?.summary,
         sessionStatus: activeSession?.status,
         sessionSummary: summarizeSessionContext(
           activeSession,
@@ -73,6 +73,6 @@ export function usePromptEnhanceAction({
   };
 }
 
-function normalizeWorkspacePath(path: string | undefined) {
+function normalizeWorktreePath(path: string | undefined) {
   return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

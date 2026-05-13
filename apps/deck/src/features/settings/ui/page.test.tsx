@@ -10,7 +10,7 @@ const technicalPanels: TechnicalPanelPreferences = {
   logbookDefaultOpen: false,
   diffDefaultOpen: true,
   showSessionRuntimeMeta: true,
-  showPermissionWorkspace: true,
+  showPermissionWorktree: true,
   showConnectionDebug: false,
 };
 

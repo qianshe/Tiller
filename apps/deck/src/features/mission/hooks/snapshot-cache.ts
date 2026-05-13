@@ -4,7 +4,7 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { readDeckSnapshot, writeDeckSnapshot } from "../../../store/facade";
 import { createSessionStatusMap } from "../utils/session-derivations";
@@ -17,11 +17,11 @@ type UseSnapshotCacheOptions = {
   pairingState: string;
   projects: ProjectSummary[];
   sessions: SessionSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
   setProjects: (projects: ProjectSummary[]) => void;
   setSessions: (sessions: SessionSummary[]) => void;
-  setWorkspaces: (workspaces: WorkspaceSummary[]) => void;
+  setWorktrees: (worktrees: WorktreeSummary[]) => void;
   setAgents: (agents: AcpAgentProvider[]) => void;
   setStatuses: (statuses: StatusMap) => void;
 };
@@ -35,11 +35,11 @@ export function useSnapshotCache({
   pairingState,
   projects,
   sessions,
-  workspaces,
+  worktrees,
   agents,
   setProjects,
   setSessions,
-  setWorkspaces,
+  setWorktrees,
   setAgents,
   setStatuses,
 }: UseSnapshotCacheOptions) {
@@ -53,7 +53,7 @@ export function useSnapshotCache({
     }
     setProjects(snapshot.projects);
     setSessions(snapshot.sessions);
-    setWorkspaces(snapshot.workspaces);
+    setWorktrees(snapshot.worktrees);
     setAgents(snapshot.agents);
     setStatuses(createSessionStatusMap(snapshot.sessions));
   }, [activeProfileId, missionVisualMode]);
@@ -67,8 +67,8 @@ export function useSnapshotCache({
       cachedAt: new Date().toISOString(),
       projects,
       sessions,
-      workspaces,
+      worktrees,
       agents,
     });
-  }, [activeProfileId, agents, pairingState, projects, sessions, workspaces]);
+  }, [activeProfileId, agents, pairingState, projects, sessions, worktrees]);
 }

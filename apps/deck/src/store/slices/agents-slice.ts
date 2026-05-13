@@ -9,8 +9,8 @@ import type { StateCreator } from "zustand";
 
 export type AgentConnectionInventoryItem = {
   providerId: string;
-  workspaceId: string;
-  workspacePath: string;
+  worktreeId: string;
+  cwd: string;
   launchCwd: string;
   runtimeConnectionId: string;
   initialized: boolean;

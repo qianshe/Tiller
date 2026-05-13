@@ -29,7 +29,7 @@ export const ResultSchema = z.object({
   draftId: z.string().optional(),
   deckClientId: z.string(),
   projectId: z.string().optional(),
-  workspacePath: z.string().optional(),
+  cwd: z.string().optional(),
   providerId: z.string().optional(),
   scopeKey: z.string(),
   logicalScopeKey: z.string(),

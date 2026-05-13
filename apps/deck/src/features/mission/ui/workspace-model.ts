@@ -11,14 +11,14 @@ import {
 } from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
 
-export function buildMissionWorkspaceModel(input: any) {
+export function buildMissionWorktreeModel(input: any) {
   const {
     prompt,
     promptImages,
     socketRef,
     activeSessionId,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     selectedAgentId,
     activeSession,
     diffs,
@@ -31,7 +31,7 @@ export function buildMissionWorkspaceModel(input: any) {
     activeSessionProjectId,
     activeSessionProject,
     draftProject,
-    selectedWorkspace,
+    selectedWorktree,
     selectedDraftAgent,
     activeSessionMessages,
     pendingPermission,
@@ -39,11 +39,11 @@ export function buildMissionWorkspaceModel(input: any) {
     effectiveMissionHelmId,
     activeHelm,
     missionProjects,
-    workspaces,
+    worktrees,
     resumeStartRequestsRef,
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
-  const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
+  const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
   const effectiveAgentId = selectedAgentId;
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
@@ -61,7 +61,7 @@ export function buildMissionWorkspaceModel(input: any) {
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
     (activeSessionId ||
-      (effectiveProjectId && effectiveWorkspaceId && effectiveAgentId)) &&
+      (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
     (!promptImages.length ||
       !activeSession ||
       activeSession.imageInput !== false),
@@ -103,7 +103,7 @@ export function buildMissionWorkspaceModel(input: any) {
   );
   const projectFilesScope = {
     projectId: activeSessionProjectId ?? null,
-    workspaceId: activeSession?.workspaceId ?? null,
+    cwd: activeSession?.cwd ?? null,
   };
   const projectFilesEntry = activeSession
     ? {
@@ -116,25 +116,24 @@ export function buildMissionWorkspaceModel(input: any) {
   const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
-  const overviewWorkspace = activeSession
-    ? ((workspaces ?? []).find((workspace: any) => workspace.id === activeSession.workspaceId) ??
-      (workspaces ?? []).find(
-        (workspace: any) => normalizeWorkspacePath(workspace.path) === normalizeWorkspacePath(activeSession.workspacePath),
+  const overviewWorktree = activeSession
+    ? ((worktrees ?? []).find(
+        (worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSession.cwd),
       ) ??
-      selectedWorkspace)
-    : selectedWorkspace;
-  const overviewWorkspaceName =
-    overviewWorkspace?.name ?? activeSession?.workspaceName ?? "未选择";
+      selectedWorktree)
+    : selectedWorktree;
+  const overviewWorktreeName =
+    overviewWorktree?.name ?? activeSession?.worktreeName ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
   const currentGitBranch =
     activeSessionProject?.gitCurrentBranch ?? draftProject?.gitCurrentBranch ?? null;
-  const overviewPath = overviewWorkspace?.path ?? overviewProject?.path;
+  const overviewPath = overviewWorktree?.path ?? overviewProject?.path;
   const projectOverviewItems = overviewProject
     ? [
         `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
         `Project · ${overviewProjectName}`,
-        `Worktree · ${overviewWorkspaceName}`,
+        `Worktree · ${overviewWorktreeName}`,
         `ACP · ${overviewAgentName}`,
         overviewPath
           ? `路径 · ${overviewPath}`
@@ -167,7 +166,7 @@ export function buildMissionWorkspaceModel(input: any) {
     projectFiles,
     overviewProject,
     overviewProjectName,
-    overviewWorkspaceName,
+    overviewWorktreeName,
     overviewAgentName,
     currentGitBranch,
     projectOverviewItems,
@@ -176,6 +175,6 @@ export function buildMissionWorkspaceModel(input: any) {
   };
 }
 
-function normalizeWorkspacePath(path: string | undefined) {
+function normalizeWorktreePath(path: string | undefined) {
   return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

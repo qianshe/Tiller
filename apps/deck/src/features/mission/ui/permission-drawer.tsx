@@ -21,7 +21,7 @@ export type MissionPermissionDrawerCopy = {
 type MissionPermissionDrawerProps = {
   request: PermissionRequest;
   copy: MissionPermissionDrawerCopy;
-  showWorkspace: boolean;
+  showWorktree: boolean;
   fallbackToolTitle?: string | null;
   onRespond: (decision: PermissionDecision) => void;
 };
@@ -204,7 +204,7 @@ function isAllowDecision(decision: PermissionDecision): boolean {
 export function MissionPermissionDrawer({
   request,
   copy,
-  showWorkspace,
+  showWorktree,
   fallbackToolTitle,
   onRespond,
 }: MissionPermissionDrawerProps) {
@@ -243,9 +243,9 @@ export function MissionPermissionDrawer({
         </div>
       </div>
       <div className="mission-permission-copy grid min-h-0 min-w-0 gap-2 text-sm text-muted-foreground">
-        {showWorkspace ? (
-          <p className="mission-permission-workspace break-all text-xs">
-            {request.workspacePath}
+        {showWorktree ? (
+          <p className="mission-permission-worktree break-all text-xs">
+            {request.cwd}
           </p>
         ) : (
           <p className="mission-permission-reason text-xs">

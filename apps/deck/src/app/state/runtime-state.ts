@@ -47,7 +47,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(missionVisualFixture?.selectedProjectId ?? null);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
+  const [selectedCwd, setSelectedCwd] = useState<string | null>(missionVisualFixture?.selectedCwd ?? null);
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
@@ -97,7 +97,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
     expandedMessageIds, setExpandedMessageIds, sessionOpenScrollTick, setSessionOpenScrollTick,
     projectFilesByScope, setProjectFilesByScope, projectFileFilter, setProjectFileFilter,
     collapsedProjectFileDirectories, setCollapsedProjectFileDirectories, prompt, setPrompt,
-    selectedProjectId, setSelectedProjectId, selectedWorkspaceId, setSelectedWorkspaceId,
+    selectedProjectId, setSelectedProjectId, selectedCwd, setSelectedCwd,
     worktreePickerOpen, setWorktreePickerOpen, agentPickerOpen, setAgentPickerOpen,
     selectedAgentId, setSelectedAgentId, selectedAgentMode, setSelectedAgentMode,
     selectedModel, setSelectedModel, selectedReasoningEffort, setSelectedReasoningEffort,

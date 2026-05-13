@@ -19,7 +19,7 @@ import type {
   SessionConfigOption,
   SessionReasoningEffort,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { SessionConfigPreferencePatch } from "../types";
 import type { DeckPreferences } from "../../preferences";
@@ -39,10 +39,10 @@ type MissionComposerProps = {
   agentPickerRef: MutableRefObject<HTMLDivElement | null>;
   agentPickerOpen: boolean;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
-  selectedWorkspaceName: string;
-  draftWorkspaceOptions: WorkspaceSummary[];
-  selectedWorkspaceId: string | null;
-  selectDraftWorkspace: (workspaceId: string) => void;
+  selectedWorktreeName: string;
+  draftWorktreeOptions: WorktreeSummary[];
+  selectedCwd: string | null;
+  selectDraftWorktree: (worktreeId: string) => void;
   currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
@@ -115,10 +115,10 @@ export function MissionComposer({
   agentPickerRef,
   agentPickerOpen,
   setAgentPickerOpen,
-  selectedWorkspaceName,
-  draftWorkspaceOptions,
-  selectedWorkspaceId,
-  selectDraftWorkspace,
+  selectedWorktreeName,
+  draftWorktreeOptions,
+  selectedCwd,
+  selectDraftWorktree,
   currentGitBranch,
   copy,
   agentLocked,

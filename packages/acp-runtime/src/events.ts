@@ -419,11 +419,11 @@ function extractPermissionRequest(sessionId: string, updateType: string | undefi
         : typeof update.permission?.reason === "string"
           ? update.permission.reason
           : "Agent requested permission.",
-    workspacePath:
+    cwd:
       typeof update.cwd === "string"
         ? update.cwd
-        : typeof update.workspacePath === "string"
-          ? update.workspacePath
+        : typeof update.cwd === "string"
+          ? update.cwd
           : typeof update.permission?.cwd === "string"
             ? update.permission.cwd
             : process.cwd(),

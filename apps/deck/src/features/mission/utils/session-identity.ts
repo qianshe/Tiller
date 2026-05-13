@@ -1,10 +1,10 @@
-import type { AcpAgentProvider, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
 export type NewSessionIdentityInput = {
   selectedProjectId?: string | null;
   projects: Pick<ProjectSummary, "id" | "path">[];
-  selectedWorkspace?: Pick<WorkspaceSummary, "id" | "path"> | null;
-  workspaces: Pick<WorkspaceSummary, "id" | "path">[];
+  selectedWorktree?: Pick<WorktreeSummary, "path"> | null;
+  worktrees: Pick<WorktreeSummary, "path">[];
   selectedAgentId?: string | null;
   agents?: Pick<AcpAgentProvider, "id">[];
 };
@@ -18,14 +18,14 @@ export type NewSessionIdentity = {
 export function resolveNewSessionIdentity({
   selectedProjectId,
   projects,
-  selectedWorkspace,
-  workspaces,
+  selectedWorktree,
+  worktrees,
   selectedAgentId,
 }: NewSessionIdentityInput): NewSessionIdentity | null {
   const projectId = selectedProjectId || projects[0]?.id;
   const project = projects.find((item) => item.id === projectId) ?? projects[0];
-  const workspace = selectedWorkspace ?? workspaces[0];
-  const cwd = workspace?.path ?? project?.path;
+  const worktree = selectedWorktree ?? worktrees[0];
+  const cwd = worktree?.path ?? project?.path;
   const agentId = selectedAgentId;
 
   if (!projectId || !cwd || !agentId) {
