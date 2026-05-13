@@ -134,6 +134,9 @@ export function createSession(
     navigateToView("sessions");
     return true;
   }
+  if (initialPrompt) {
+    return false;
+  }
 
   pendingPromptRef.current = initialPrompt ?? null;
   pendingPromptContentRef.current = initialContent;

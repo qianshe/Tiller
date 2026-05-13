@@ -230,9 +230,6 @@ export function handleRuntimeEvent(
       ensureAssistantStreamLogStarted(sessionId, message, context);
       writeAssistantStreamText(sessionId, message.text);
       const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
-      context.updateSessionSummary(sessionId, (current) =>
-        applyAgentMessageToSummary(current, bufferedMessage),
-      );
       broadcastSessionUpdate(context, sessionId, {
         kind: "agent_message",
         message: bufferedMessage,

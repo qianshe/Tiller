@@ -93,6 +93,38 @@ test("worktree model blocks new-session sends while draft runtime is still prewa
   assert.equal(model.canSend, false);
 });
 
+test("worktree model blocks new-session sends until draft runtime is ready", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: false,
+    agentModelOptions: {},
+  }));
+
+  assert.equal(model.canSend, false);
+});
+
+test("worktree model allows new-session sends once draft runtime is ready", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: false,
+    agentModelOptions: {
+      "codex::D:/repo::project-1": {
+        loading: false,
+        warmed: true,
+        draftId: "draft-codex-1",
+        runtimeSessionId: "runtime-1",
+        modelOptions: [],
+        configOptions: [],
+        state: {},
+      },
+    },
+  }));
+
+  assert.equal(model.canSend, true);
+});
+
 test("worktree model prefers matching cwd worktree over stale session worktree name", () => {
   const model = buildMissionWorktreeModel(baseInput({
     activeSession: {

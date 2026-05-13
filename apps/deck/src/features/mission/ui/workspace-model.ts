@@ -10,6 +10,7 @@ import {
   resolveSessionRestoreGate,
 } from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
+import { agentModelOptionsKey } from "../../agents/facade";
 
 export function buildMissionWorktreeModel(input: any) {
   const {
@@ -42,10 +43,27 @@ export function buildMissionWorktreeModel(input: any) {
     worktrees,
     resumeStartRequestsRef,
     draftModelLoading,
+    agentModelOptions = {},
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
   const effectiveAgentId = selectedAgentId;
+  const draftModelOptionsKey =
+    !activeSessionId && effectiveAgentId && effectiveWorktreeId
+      ? agentModelOptionsKey(effectiveAgentId, effectiveWorktreeId, effectiveProjectId)
+      : null;
+  const draftModelOptionsPrefix =
+    !activeSessionId && effectiveAgentId && effectiveWorktreeId
+      ? `${effectiveAgentId}::${effectiveWorktreeId}`
+      : null;
+  const draftRuntimeEntry = draftModelOptionsKey
+    ? (agentModelOptions[draftModelOptionsKey] ??
+      Object.entries(agentModelOptions).find(
+        ([key, entry]: [string, any]) =>
+          key.startsWith(`${draftModelOptionsPrefix}::`) && Boolean(entry?.draftId),
+      )?.[1])
+    : null;
+  const draftRuntimeReady = Boolean(activeSessionId || draftRuntimeEntry?.draftId);
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
     : "idle";
@@ -63,7 +81,7 @@ export function buildMissionWorktreeModel(input: any) {
     socketRef.current &&
     (activeSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
-    (activeSessionId || !draftModelLoading) &&
+    (activeSessionId || (!draftModelLoading && draftRuntimeReady)) &&
     (!promptImages.length ||
       !activeSession ||
       activeSession.imageInput !== false),

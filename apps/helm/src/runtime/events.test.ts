@@ -10,6 +10,7 @@ type TestContextCapture = {
   broadcasts: unknown[];
   detailBroadcasts: unknown[];
   persisted: AgentMessage[];
+  summaryUpdates?: SessionSummary[];
 };
 
 function createTestContext(
@@ -52,7 +53,11 @@ function createTestContext(
     updateSessionSummary: (
       _sessionId: string,
       mutate: (current: SessionSummary) => SessionSummary,
-    ) => mutate(summary),
+    ) => {
+      const next = mutate(summary);
+      capture.summaryUpdates?.push(next);
+      return next;
+    },
     broadcastNotification: (method: string, params: unknown) => {
       capture.broadcasts.push({ method, params });
     },
@@ -135,6 +140,59 @@ test("runtime session.message persists and broadcasts streaming chunks with debu
   );
   assert.equal(capture.broadcasts.length, 1);
   assert.equal(capture.detailBroadcasts.length, 3);
+});
+
+test("runtime streaming chunks defer summary persistence until flush", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "你",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "好",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.length, 0);
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.length, 2);
+  assert.equal(capture.persisted.length, 1);
+  assert.equal(capture.persisted[0]?.text, "你好");
 });
 
 test("runtime assistant stream closes before the next stage log", () => {

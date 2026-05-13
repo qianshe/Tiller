@@ -137,7 +137,7 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.doesNotMatch(composerSourceText, /正在加载模型列表/);
   assert.match(sourceText, /正在连接 ACP/);
   assert.match(composerShellSourceText, /modelLoading=\{/);
-  assert.match(composerShellSourceText, /selectedDraftAgent\?\.id === "opencode"/);
+  assert.match(composerShellSourceText, /selectedDraftAgent\?\.protocol === "acp"/);
   assert.match(composerShellSourceText, /draftConfigOptions\.length === 0/);
   assert.match(viewModelSourceText, /draftLoadingAgentModelOptions/);
   assert.match(viewModelSourceText, /key\.startsWith\(`\$\{draftAgentModelOptionsPrefix\}::`\)/);
