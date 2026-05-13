@@ -1,0 +1,13 @@
+<svg width="960" height="260" viewBox="0 0 960 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Tiller</title>
+  <desc id="desc">Tiller is a local-first command deck for ACP coding agents.</desc>
+  <rect width="960" height="260" rx="28" fill="#0B1118"/>
+  <rect x="1" y="1" width="958" height="258" rx="27" stroke="#1F2937" stroke-width="2"/>
+  <circle cx="296" cy="116" r="57" fill="#0B1118" stroke="#F59E0B" stroke-width="10"/>
+  <path d="M273 82V151" stroke="white" stroke-width="15" stroke-linecap="round"/>
+  <path d="M273 84C289 115 303 130 319 151" stroke="white" stroke-width="15" stroke-linecap="round"/>
+  <path d="M337 82V151" stroke="white" stroke-width="15" stroke-linecap="round"/>
+  <text x="384" y="123" fill="white" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="64" font-weight="800" letter-spacing="-2">Tiller</text>
+  <text x="386" y="158" fill="#CBD5E1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18">Your local-first command deck for ACP coding agents</text>
+  <text x="480" y="214" text-anchor="middle" fill="#F8FAFC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="700">Run local AI agents from one private browser workspace.</text>
+</svg>
