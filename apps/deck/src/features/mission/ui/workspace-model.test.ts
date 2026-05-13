@@ -82,3 +82,23 @@ test("workspace model allows sending once restored to same-process runtime", () 
   assert.equal(model.canSend, true);
   assert.equal(model.activeSessionRestoreGate.canChat, true);
 });
+
+test("workspace model prefers matching cwd workspace over stale session worktree name", () => {
+  const model = buildMissionWorkspaceModel(baseInput({
+    activeSession: {
+      ...baseInput().activeSession,
+      workspaceId: "main",
+      workspaceName: "main",
+      workspacePath: "D:/repo",
+    },
+    workspaces: [
+      {
+        id: "codex/acp-session-performance-optimization",
+        name: "codex/acp-session-performance-optimization",
+        path: "D:/repo",
+      },
+    ],
+  }));
+
+  assert.equal(model.overviewWorkspaceName, "codex/acp-session-performance-optimization");
+});

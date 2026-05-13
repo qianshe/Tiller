@@ -38,3 +38,30 @@ export function alignSessionProjectBinding(
     helmId: matchedProject.helmId,
   };
 }
+
+export function alignSessionWorkspaceBinding(
+  summary: SessionSummary,
+  workspaces: WorkspaceSummary[],
+): SessionSummary {
+  const normalizedSummaryPath = normalizeWorkspacePath(summary.workspacePath);
+  const matchedWorkspace = normalizedSummaryPath
+    ? workspaces.find(
+        (workspace) => normalizeWorkspacePath(workspace.path) === normalizedSummaryPath,
+      )
+    : undefined;
+
+  if (!matchedWorkspace) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    workspaceId: matchedWorkspace.id,
+    workspaceName: matchedWorkspace.name,
+    workspacePath: summary.workspacePath ?? matchedWorkspace.path,
+  };
+}
+
+function normalizeWorkspacePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+}

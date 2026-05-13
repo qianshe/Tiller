@@ -370,7 +370,7 @@ async function createSession(
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   context.logInfo(
-    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
+    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${workspace.path} agent=${agent.id}`,
   );
   const summaryBase: SessionSummary = {
     id: sessionId,
@@ -416,7 +416,7 @@ async function createSession(
           "connection-reconnect": "ACP连接重连",
         } as const;
         context.logInfo(
-          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.workspacePath}`,
         );
       },
     });
@@ -445,7 +445,7 @@ async function createSession(
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
     context.logError(
-      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} message=${message}`,
+      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${workspace.path} message=${message}`,
     );
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,

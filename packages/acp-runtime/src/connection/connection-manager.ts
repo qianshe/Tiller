@@ -12,7 +12,6 @@ export type AcpConnectionLifecycleEvent = {
     | "connection-reconnect";
   key: AcpConnectionKey;
   providerId: string;
-  workspaceId: string;
   workspacePath: string;
   sessionId?: string;
 };
@@ -58,7 +57,6 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
         type,
         key,
         providerId: params.provider.id,
-        workspaceId: params.workspace.id,
         workspacePath: params.workspace.path,
         sessionId: params.sessionId,
       });
@@ -101,7 +99,6 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
       type: "connection-reconnect",
       key,
       providerId: params.provider.id,
-      workspaceId: params.workspace.id,
       workspacePath: params.workspace.path,
       sessionId: params.sessionId,
     });

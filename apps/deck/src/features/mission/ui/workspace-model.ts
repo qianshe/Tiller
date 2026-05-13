@@ -118,10 +118,13 @@ export function buildMissionWorkspaceModel(input: any) {
   const overviewProjectName = overviewProject?.name ?? "未选项目";
   const overviewWorkspace = activeSession
     ? ((workspaces ?? []).find((workspace: any) => workspace.id === activeSession.workspaceId) ??
+      (workspaces ?? []).find(
+        (workspace: any) => normalizeWorkspacePath(workspace.path) === normalizeWorkspacePath(activeSession.workspacePath),
+      ) ??
       selectedWorkspace)
     : selectedWorkspace;
   const overviewWorkspaceName =
-    activeSession?.workspaceName ?? overviewWorkspace?.name ?? "未选择";
+    overviewWorkspace?.name ?? activeSession?.workspaceName ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
   const currentGitBranch =
@@ -171,4 +174,8 @@ export function buildMissionWorkspaceModel(input: any) {
     visibleProjectFiles,
     sessionExecutionPending,
   };
+}
+
+function normalizeWorkspacePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

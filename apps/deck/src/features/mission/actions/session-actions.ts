@@ -168,7 +168,10 @@ export function requestSessionResumeStart(
 
   resumeStartRequestsRef.current.add(sessionId);
   setResumeFeedback(reason);
-  void dispatch(client, "session/resume", { sessionId });
+  void dispatch(client, "session/resume", { sessionId }).catch((error: unknown) => {
+    resumeStartRequestsRef.current.delete(sessionId);
+    setResumeFeedback(error instanceof Error ? error.message : "ACP 会话恢复请求失败，请重试。");
+  });
 }
 
 export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitPromptContext) {

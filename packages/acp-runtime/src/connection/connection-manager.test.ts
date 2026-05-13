@@ -51,6 +51,47 @@ test("connection key changes when provider launch identity changes", () => {
   assert.notEqual(base, differentEnv);
 });
 
+test("connection lifecycle events expose cwd without workspace id", async () => {
+  const events: unknown[] = [];
+  const manager = createAcpConnectionManager({
+    openConnection: async () => ({
+      inventory: () => ({
+        key: resolveAcpConnectionKey({ provider, workspace }),
+        providerId: provider.id,
+        workspaceId: workspace.id,
+        workspacePath: workspace.path,
+        launchCwd: workspace.path,
+        status: "ready" as const,
+        runtimeConnectionId: "conn-1",
+        initialized: true,
+        activeSessionCount: 0,
+        pendingSessionCount: 0,
+        sessions: [],
+        capabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
+      }),
+      dispose: async () => undefined,
+      openOrCreateSession: async () => {
+        throw new Error("not used");
+      },
+    }),
+  });
+
+  await manager.openConnection({
+    provider,
+    workspace,
+    onLifecycleEvent: (event) => events.push(event),
+  });
+
+  assert.deepEqual(events, [{
+    type: "connection-open",
+    key: resolveAcpConnectionKey({ provider, workspace }),
+    providerId: provider.id,
+    workspacePath: workspace.path,
+    sessionId: undefined,
+  }]);
+  assert.equal(Object.hasOwn(events[0] as object, "workspaceId"), false);
+});
+
 test("connection manager reuses an in-flight connection open", async () => {
   let openCount = 0;
   const manager = createAcpConnectionManager({

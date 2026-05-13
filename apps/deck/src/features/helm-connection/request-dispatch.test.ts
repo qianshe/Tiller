@@ -96,6 +96,36 @@ test("dispatchWithTrace gives session draft creation a longer timeout", async ()
   assert.equal(trace.lastRequestType, "session/draft");
 });
 
+test("dispatchWithTrace gives session resume a longer timeout", async () => {
+  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown, options?: unknown) => {
+      requested.push({ method, params, options });
+      return { ok: true };
+    },
+    notify: () => undefined,
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await dispatchWithTrace(
+    client as any,
+    "session/resume",
+    { sessionId: "s1" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [
+    {
+      method: "session/resume",
+      params: { sessionId: "s1" },
+      options: { timeoutMs: 180_000 },
+    },
+  ]);
+  assert.equal(trace.lastRequestType, "session/resume");
+});
+
 test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {
   const notified: Array<{ method: string; params: unknown }> = [];
   const client = {

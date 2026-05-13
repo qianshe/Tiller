@@ -28,13 +28,69 @@ test("config RPC lists projects and updates context cache", async () => {
 
   const result = await handleConfigRpcRequest("project/list", {}, {
     loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorkspaces: () => [],
+    configPath: join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json"),
     setProjects: (items: unknown[]) => {
       cached = items;
     },
+    logError: () => undefined,
   } as any);
 
   assert.deepEqual(result, { projects });
   assert.equal(cached, projects);
+});
+
+test("config RPC list projects refreshes the root worktree branch", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-list-git-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "checkout", "-b", "feature"], { stdio: "ignore" });
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      helms: [],
+      projects: [
+        {
+          id: "p1",
+          name: "Project",
+          helmId: "local",
+          path: repoPath.replace(/\\/g, "/"),
+          workspaceIds: ["main"],
+          defaultWorkspaceId: "main",
+          gitBranches: ["main"],
+          gitCurrentBranch: "main",
+        },
+      ],
+      workspaces: [{ id: "main", name: "main", path: repoPath.replace(/\\/g, "/") }],
+      agents: [],
+    }),
+    "utf8",
+  );
+
+  let cachedProjects: any[] = [];
+  const readConfig = () => JSON.parse(readFileSync(configPath, "utf8"));
+  const result = await handleConfigRpcRequest("project/list", {}, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => readConfig().projects,
+    loadAvailableWorkspaces: () => readConfig().workspaces,
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    logError: () => undefined,
+  } as any) as { projects: Array<{ gitCurrentBranch?: string; defaultWorkspaceId?: string }> };
+
+  assert.equal(result.projects[0]?.gitCurrentBranch, "feature");
+  assert.equal(result.projects[0]?.defaultWorkspaceId, "feature");
+  assert.equal(cachedProjects[0]?.gitCurrentBranch, "feature");
+  assert.equal(readConfig().workspaces.some((workspace: any) => workspace.name === "feature"), true);
 });
 
 test("config RPC lists ACP connection inventory", async () => {

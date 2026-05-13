@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveSessionConfigSupport, type SessionSummary } from "@tiller/shared";
-import { formatAgentModeLabel, resolveCurrentAgentMode, resolveDraftConfigOptions } from "./composer-options";
+import {
+  formatAgentModeLabel,
+  resolveAgentModeOptions,
+  resolveCurrentAgentMode,
+  resolveDraftConfigOptions,
+} from "./composer-options";
 
 function session(id: string, agentId: string) {
   return {
@@ -69,6 +74,24 @@ test("formatAgentModeLabel converts provider values to readable labels", () => {
   assert.equal(formatAgentModeLabel("bypassPermissions"), "Bypass Permissions");
   assert.equal(formatAgentModeLabel("sisyphus-ultraworker"), "Sisyphus Ultraworker");
   assert.equal(formatAgentModeLabel("Sisyphus - Ultraworker"), "Sisyphus - Ultraworker");
+});
+
+test("resolveAgentModeOptions hides permission mode selectors from model settings", () => {
+  assert.deepEqual(
+    resolveAgentModeOptions([
+      {
+        id: "permission-mode",
+        name: "Permission Mode",
+        category: "mode",
+        currentValue: "bypassPermissions",
+        options: [
+          { value: "default", label: "Default" },
+          { value: "bypassPermissions", label: "Bypass Permissions" },
+        ],
+      },
+    ]),
+    [],
+  );
 });
 
 test("resolveSessionConfigSupport does not infer support from command names without capabilities", () => {

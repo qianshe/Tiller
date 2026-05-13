@@ -473,6 +473,52 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("session check resume auto starts provider restore", () => {
+  resetStore();
+  let requested: { sessionId: string; reason: string } | null = null;
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/check_resume",
+    {
+      sessionId: "s1",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+        reason: "ACP agent advertises session/load; Helm can try agent-side restore and history replay.",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: (session: any) => session.resume?.state === "resume-available",
+      requestSessionResumeStart: (sessionId: string, reason: string) => {
+        requested = { sessionId, reason };
+      },
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set<string>() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(requested, {
+    sessionId: "s1",
+    reason: "检测到历史任务可恢复，正在自动重连 ACP 会话...",
+  });
+});
+
 test("successful session resume clears the pending restore request", () => {
   resetStore();
   const pendingRequests = new Set<string>(["s1"]);

@@ -612,7 +612,7 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
   assert.equal(logs.length, 1);
   assert.match(
     logs[0],
-    /^\[tiller\] 阶段=运行状态流 seq=\d+ session=session-1 agent=opencode workspace=workspace-1 status=running message=still working$/,
+    /^\[tiller\] 阶段=运行状态流 seq=\d+ session=session-1 agent=opencode cwd=<stored> status=running message=still working$/,
   );
 });
 

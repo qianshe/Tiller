@@ -24,6 +24,7 @@ import {
   persistProjectGitInfo,
   persistProjectGitInfoIfAvailable,
   projectWorkspaceItems,
+  refreshProjectGitBranches,
   resolveGitRoot,
   resolveProjectRoot,
 } from "./project-git";
@@ -107,7 +108,23 @@ async function saveHelm(params: { helm: HelmSummary }, context: HelmHandlerConte
 }
 
 async function listProjects(context: HelmHandlerContext) {
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  let projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  const workspaces = context.loadAvailableWorkspaces();
+  try {
+    const refresh = await refreshProjectGitBranches(projects, workspaces, context.configPath);
+    if (refresh.updated > 0) {
+      projects = await context.loadAvailableProjectsWithSemanticSummaries();
+      context.setWorkspaces(context.loadAvailableWorkspaces());
+    }
+    if (refresh.failures.length > 0) {
+      context.logError(
+        `[tiller] project.git.refresh failures=${refresh.failures.length}`,
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to refresh project Git branches";
+    context.logError(`[tiller] project.git.refresh failed message=${message}`);
+  }
   context.setProjects(projects);
   return { projects };
 }
@@ -490,7 +507,7 @@ async function connectAgent(
   }
 
   context.logInfo(
-    `[tiller] 阶段=ACP连接请求 provider=${agent.id} workspace=${workspace.id} cwd=${workspace.path}`,
+    `[tiller] 阶段=ACP连接请求 provider=${agent.id} cwd=${workspace.path}`,
   );
   try {
     const connection = await context.connectAcpConnection({
@@ -500,7 +517,7 @@ async function connectAgent(
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
         context.logInfo(
-          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} workspace=${event.workspaceId}`,
+          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} cwd=${event.workspacePath}`,
         );
       },
     });
@@ -517,7 +534,7 @@ async function connectAgent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect ACP provider";
     context.logError(
-      `[tiller] 阶段=ACP连接失败 provider=${agent.id} workspace=${workspace.id} message=${message}`,
+      `[tiller] 阶段=ACP连接失败 provider=${agent.id} cwd=${workspace.path} message=${message}`,
     );
     return {
       ok: false,
@@ -545,7 +562,7 @@ async function reconnectAgent(
   }
 
   context.logInfo(
-    `[tiller] 阶段=ACP重连请求 provider=${agent.id} workspace=${workspace.id} cwd=${workspace.path}`,
+    `[tiller] 阶段=ACP重连请求 provider=${agent.id} cwd=${workspace.path}`,
   );
   try {
     const connection = await context.reconnectAcpConnection({
@@ -555,13 +572,13 @@ async function reconnectAgent(
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
         context.logInfo(
-          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} workspace=${event.workspaceId}`,
+          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} cwd=${event.workspacePath}`,
         );
       },
     });
     const inventory = connection.inventory();
     context.logInfo(
-      `[tiller] 阶段=ACP重连完成 provider=${agent.id} workspace=${workspace.id} connection=${inventory.runtimeConnectionId}`,
+      `[tiller] 阶段=ACP重连完成 provider=${agent.id} cwd=${workspace.path} connection=${inventory.runtimeConnectionId}`,
     );
     return {
       ok: true,
@@ -575,7 +592,7 @@ async function reconnectAgent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reconnect ACP provider";
     context.logError(
-      `[tiller] 阶段=ACP重连失败 provider=${agent.id} workspace=${workspace.id} message=${message}`,
+      `[tiller] 阶段=ACP重连失败 provider=${agent.id} cwd=${workspace.path} message=${message}`,
     );
     return {
       ok: false,

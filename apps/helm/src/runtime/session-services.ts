@@ -22,6 +22,7 @@ import type {
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
+  alignSessionWorkspaceBinding,
   createHelmSessionStores,
   normalizeDiffPath,
   readWorkspaceGitDiffs,
@@ -189,7 +190,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       "connection-reconnect": "ACP连接重连",
     };
     options.logInfo(
-      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.workspacePath}`,
     );
   }
 
@@ -247,7 +248,10 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-    const aligned = alignSessionProjectBinding(summary, options.getProjects());
+    const aligned = alignSessionWorkspaceBinding(
+      alignSessionProjectBinding(summary, options.getProjects()),
+      options.getWorkspaces(),
+    );
     const record = options.sessions.get(summary.id);
     const agent = record?.agent ?? resolveProviderById(aligned.agentId, options.getAgents());
     const descriptor = options.sessionRuntimeStore.get(summary.id);
@@ -268,7 +272,10 @@ export function createSessionServices(options: SessionServicesOptions) {
     if (
       hydrated.projectId !== summary.projectId ||
       hydrated.projectName !== summary.projectName ||
-      hydrated.helmId !== summary.helmId
+      hydrated.helmId !== summary.helmId ||
+      hydrated.workspaceId !== summary.workspaceId ||
+      hydrated.workspaceName !== summary.workspaceName ||
+      hydrated.workspacePath !== summary.workspacePath
     ) {
       options.sessionStore.upsert(hydrated);
     }
@@ -567,7 +574,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
     options.logInfo(
-      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.workspace.path}`,
     );
 
     const pendingDraft: PendingRuntimeDraft = {

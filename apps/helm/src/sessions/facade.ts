@@ -7,6 +7,7 @@ export {
 } from "./git-diff";
 export {
   alignSessionProjectBinding,
+  alignSessionWorkspaceBinding,
   isProjectRootBranchWorkspace,
 } from "./project/binding";
 export {
