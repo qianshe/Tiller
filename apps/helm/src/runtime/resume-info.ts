@@ -71,6 +71,18 @@ export function buildSessionResumeInfo(
   };
 }
 
+export function markSessionResumeUnavailable(
+  resume: SessionResumeInfo,
+  reason: string,
+): SessionResumeInfo {
+  return {
+    ...resume,
+    state: "resume-unavailable",
+    reason,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 export function resolveSessionRestoreCapabilities(
   agent: AcpAgentProvider | undefined,
   descriptor?: StoredSessionRuntimeDescriptor | null,

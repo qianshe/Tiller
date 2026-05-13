@@ -524,6 +524,58 @@ test("successful session resume clears the pending restore request", () => {
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("failed session resume marks stale available metadata as unavailable", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: false,
+      message: "Workspace not found for this session.",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+        reason: "ACP agent advertises session/load; Helm can try agent-side restore and history replay.",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "Workspace not found for this session.");
+  assert.equal(useDeckStore.getState().sessions[0]?.resume?.state, "resume-unavailable");
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.resume?.reason,
+    "Workspace not found for this session.",
+  );
+});
+
 test("permission list results hydrate pending permission requests", () => {
   resetStore();
   const request: PermissionRequest = {

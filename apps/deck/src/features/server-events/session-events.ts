@@ -279,17 +279,24 @@ export function applySessionResult(
         );
       }
       return true;
-    case "session/resume":
+    case "session/resume": {
       setResumeFeedback(payload.message);
       resumeStartRequestsRef.current.delete(payload.sessionId);
+      const resume = payload.ok
+        ? payload.resume
+        : {
+            ...payload.resume,
+            state: "resume-unavailable",
+            reason: payload.message,
+          };
       store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
                 ...session,
-                resume: payload.resume,
+                resume,
                 runtimeSessionId:
-                  payload.resume.runtimeSessionId ?? session.runtimeSessionId,
+                  resume.runtimeSessionId ?? session.runtimeSessionId,
               }
             : session,
         ),
@@ -298,6 +305,7 @@ export function applySessionResult(
         void dispatch(rpcClientRef.current, "agent/connections", {});
       }
       return true;
+    }
     case "session/cleanup":
       if (payload.result.remoteDeleted) {
         toast.success("会话已删除");
