@@ -250,6 +250,8 @@ export type SessionSummary = {
   helmId: string;
   workspaceId: string;
   workspaceName: string;
+  /** Absolute cwd used by the ACP session. Prefer this over workspaceId for restore. */
+  workspacePath?: string;
   agentId: string;
   agentName: string;
   /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */

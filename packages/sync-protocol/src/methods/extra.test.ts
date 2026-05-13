@@ -47,10 +47,10 @@ test("session/draft enforces deck and selected agent scope", () => {
     sessionDraft.ParamsSchema.parse({
       deckClientId: "deck-1",
       projectId: "p1",
-      workspaceId: "ws1",
+      cwd: "D:/repo",
       agentId: "a1",
     }),
-    { deckClientId: "deck-1", projectId: "p1", workspaceId: "ws1", agentId: "a1" },
+    { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "a1" },
   );
 });
 

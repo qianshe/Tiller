@@ -62,7 +62,7 @@ type ResumePreconditionInput = {
   runtimeSessionId?: string;
   restoreMethod?: SessionResumeInfo["restoreMethod"];
   agentId: string;
-  workspaceId: string;
+  workspacePath?: string;
 };
 
 function resolveResumeUnavailableReason({
@@ -71,13 +71,15 @@ function resolveResumeUnavailableReason({
   runtimeSessionId,
   restoreMethod,
   agentId,
-  workspaceId,
+  workspacePath,
 }: ResumePreconditionInput): string | null {
   if (!agent) {
     return `Agent provider ${agentId} is not configured.`;
   }
   if (!workspace) {
-    return `Workspace ${workspaceId} is not configured.`;
+    return workspacePath
+      ? `Workspace path ${workspacePath} is not configured or does not exist.`
+      : "Workspace cwd is not configured.";
   }
   if (!runtimeSessionId) {
     return "ACP runtime session id is missing.";
@@ -146,6 +148,37 @@ const RUNTIME_DRAFT_TTL_MS = 10 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
+
+  function resolveStoredSessionWorkspace(summary: SessionSummary) {
+    const workspaces = options.getWorkspaces();
+    const normalizedSummaryPath = normalizeWorkspacePath(summary.workspacePath);
+    const pathWorkspace = normalizedSummaryPath
+      ? workspaces.find((item) => normalizeWorkspacePath(item.path) === normalizedSummaryPath)
+      : undefined;
+    if (pathWorkspace) {
+      return { ...pathWorkspace, path: summary.workspacePath ?? pathWorkspace.path };
+    }
+
+    const project = options.getProjects().find((item) => item.id === summary.projectId);
+    if (project?.path) {
+      return {
+        id: project.defaultWorkspaceId ?? `${project.id}-workspace`,
+        name: summary.workspaceName || project.name,
+        path: project.path,
+      } satisfies WorkspaceSummary;
+    }
+
+    const idWorkspace = workspaces.find((item) => item.id === summary.workspaceId);
+    if (idWorkspace) {
+      return idWorkspace;
+    }
+
+    return undefined;
+  }
+
+  function normalizeWorkspacePath(path: string | undefined) {
+    return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+  }
 
   function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
     const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
@@ -444,7 +477,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     workspace: WorkspaceSummary;
     agent: AcpAgentProvider;
   }) {
-    const logicalScopeKey = `${params.workspace.id}:${params.agent.id}`;
+    const logicalScopeKey = `${params.workspace.path}:${params.agent.id}`;
     return {
       logicalScopeKey,
       scopeKey: `${params.deckClientId}:${logicalScopeKey}`,
@@ -458,6 +491,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       deckClientId: draft.deckClientId,
       projectId: draft.project.id,
       workspaceId: draft.workspace.id,
+      workspacePath: draft.workspace.path,
       providerId: draft.agent.id,
       scopeKey: draft.scopeKey,
       logicalScopeKey: draft.logicalScopeKey,
@@ -763,7 +797,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
 
     const agent = resolveProviderById(summary.agentId, options.getAgents());
-    const workspace = options.getWorkspaces().find((item) => item.id === summary.workspaceId);
+    const workspace = resolveStoredSessionWorkspace(summary);
     const resume = buildResumeInfo(summary, agent);
     const unavailableReason = resolveResumeUnavailableReason({
       agent,
@@ -771,7 +805,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       runtimeSessionId: resume.runtimeSessionId,
       restoreMethod: resume.restoreMethod,
       agentId: summary.agentId,
-      workspaceId: summary.workspaceId,
+      workspacePath: summary.workspacePath ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
     });
     if (unavailableReason) {
       return {

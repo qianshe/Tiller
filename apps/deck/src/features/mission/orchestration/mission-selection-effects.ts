@@ -195,23 +195,28 @@ export function useMissionSelectionEffects(source: any) {
     }
   }, [draftProject, filteredAgents, selectedAgentId]);
   useEffect(() => {
+    const selectedWorkspace = filteredWorkspaces.find(
+      (workspace: any) => workspace.id === selectedWorkspaceId,
+    );
+    const selectedProject = projects.find((project: any) => project.id === selectedProjectId);
+    const selectedCwd = selectedWorkspace?.path ?? selectedProject?.path;
     if (
       activeSession ||
       pairingState !== "paired" ||
       !selectedProjectId ||
       !selectedAgentId ||
-      !selectedWorkspaceId ||
+      !selectedCwd ||
       !rpcClientRef.current ||
       rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
-    const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
+    const key = agentModelOptionsKey(selectedAgentId, selectedCwd, selectedProjectId);
     const cached = agentModelOptions[key];
     const hasReadyConnection = (agentConnectionInventory ?? []).some(
-      (connection) =>
+      (connection: any) =>
         connection.providerId === selectedAgentId &&
-        connection.workspaceId === selectedWorkspaceId &&
+        connection.workspacePath === selectedCwd &&
         connection.initialized &&
         connection.status !== "closed" &&
         connection.status !== "error",
@@ -277,7 +282,7 @@ export function useMissionSelectionEffects(source: any) {
       void dispatch(rpcClientRef.current, "session/draft", {
         deckClientId: getDeckClientId(),
         projectId: selectedProjectId,
-        workspaceId: selectedWorkspaceId,
+        cwd: selectedCwd,
         agentId: selectedAgentId,
         agentMode: effectiveDraftAgentMode,
         model: selectedModel === "provider-default" ? undefined : selectedModel,
@@ -310,7 +315,7 @@ export function useMissionSelectionEffects(source: any) {
     }));
     void dispatch(rpcClientRef.current, "agent/connect", {
       projectId: selectedProjectId,
-      workspaceId: selectedWorkspaceId,
+      cwd: selectedCwd,
       providerId: selectedAgentId,
     });
   }, [

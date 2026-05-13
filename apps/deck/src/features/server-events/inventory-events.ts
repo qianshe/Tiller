@@ -195,7 +195,8 @@ export function applyInventoryResult(
     case "session/draft": {
       // Reconstruct the cache key including projectId. Prefer the loading entry,
       // because draft creation is tied to the currently selected agent scope.
-      const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+      const workspaceScope = payload.workspacePath;
+      const baseKey = agentModelOptionsKey(payload.providerId, workspaceScope);
       const currentEntries = store.agentModelOptions;
       const matchingEntries = Object.entries(currentEntries).filter(([key]) =>
         key.startsWith(baseKey),
@@ -203,7 +204,7 @@ export function applyInventoryResult(
       const loadingEntry = matchingEntries.find(([, entry]) => entry.loading);
       const existingEntry = loadingEntry ?? matchingEntries.find(([, entry]) => entry.projectId);
       const existingProjectId = existingEntry?.[1]?.projectId;
-      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, existingProjectId);
+      const key = agentModelOptionsKey(payload.providerId, workspaceScope, existingProjectId);
       const previous = currentEntries[key] ?? existingEntry?.[1];
       const payloadModelOptions = Array.isArray(payload.modelOptions) ? payload.modelOptions : [];
       const payloadConfigOptions = Array.isArray(payload.configOptions) ? payload.configOptions : [];
@@ -246,10 +247,13 @@ export function applyInventoryResult(
           [payload.providerId]: payload.availableCommands,
         }));
       }
+      const selectedWorkspacePath =
+        store.workspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.path ??
+        selectedWorkspaceId;
       if (
         sourceIsCurrentHelm &&
         payload.providerId === selectedAgentId &&
-        payload.workspaceId === selectedWorkspaceId
+        payload.workspacePath === selectedWorkspacePath
       ) {
         const realOptions = resolveModelOptions(
           payload.currentModelId ?? nextState.model,

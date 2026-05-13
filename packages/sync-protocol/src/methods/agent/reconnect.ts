@@ -6,12 +6,12 @@ export const method = "agent/reconnect" as const;
 export const ParamsSchema = z.object({
   providerId: z.string(),
   projectId: z.string().optional(),
-  workspaceId: z.string().optional(),
+  cwd: z.string().optional(),
 });
 export const ResultSchema = z.object({
   ok: z.boolean(),
   providerId: z.string(),
-  workspaceId: z.string().optional(),
+  workspacePath: z.string().optional(),
   runtimeConnectionId: z.string().optional(),
   connection: typedUnknown().optional(),
   connections: z.array(typedUnknown()).default([]),

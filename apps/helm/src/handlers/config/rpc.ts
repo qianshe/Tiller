@@ -68,12 +68,12 @@ export async function handleConfigRpcRequest(
       return listAgentConnections(context);
     case "agent/connect":
       return connectAgent(
-        params as { providerId: string; workspaceId?: string; projectId?: string },
+        params as { providerId: string; cwd?: string; projectId?: string },
         context,
       );
     case "agent/reconnect":
       return reconnectAgent(
-        params as { providerId: string; workspaceId?: string; projectId?: string },
+        params as { providerId: string; cwd?: string; projectId?: string },
         context,
       );
     default:
@@ -445,26 +445,37 @@ function listAgentConnections(context: HelmHandlerContext) {
 
 
 function resolveAgentWorkspace(
-  params: { providerId: string; workspaceId?: string; projectId?: string },
+  params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
   const agent = context.resolveProviderById(params.providerId, context.getAgents());
   const workspaces = context.getWorkspaces();
-  const baseWorkspace = params.workspaceId
-    ? workspaces.find((item) => item.id === params.workspaceId)
+  const requestedCwd = params.cwd?.trim();
+  const baseWorkspace = requestedCwd
+    ? (workspaces.find((item) => normalizeWorkspacePath(item.path) === normalizeWorkspacePath(requestedCwd)) ?? {
+        id: `${params.projectId ?? "project"}-cwd`,
+        name: requestedCwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? "cwd",
+        path: requestedCwd,
+      })
     : workspaces[0];
   const project = params.projectId
     ? context.resolveProjectById(params.projectId, context.getProjects())
     : undefined;
   const workspace =
-    project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
-      ? { ...baseWorkspace, path: project.path }
-      : baseWorkspace;
+    requestedCwd
+      ? baseWorkspace
+      : project && baseWorkspace && project.path && isProjectRootBranchWorkspace(project, baseWorkspace)
+        ? { ...baseWorkspace, path: project.path }
+        : baseWorkspace;
   return { agent, workspace };
 }
 
+function normalizeWorkspacePath(path: string) {
+  return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 async function connectAgent(
-  params: { providerId: string; workspaceId?: string; projectId?: string },
+  params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
   const { agent, workspace } = resolveAgentWorkspace(params, context);
@@ -472,7 +483,7 @@ async function connectAgent(
     return {
       ok: false,
       providerId: params.providerId,
-      workspaceId: params.workspaceId,
+      workspacePath: params.cwd,
       connections: context.listAcpConnectionInventory(),
       message: !agent ? "Provider not found" : "Workspace not found",
     };
@@ -497,7 +508,7 @@ async function connectAgent(
     return {
       ok: true,
       providerId: agent.id,
-      workspaceId: workspace.id,
+      workspacePath: workspace.path,
       runtimeConnectionId: inventory.runtimeConnectionId,
       connection: inventory,
       connections: context.listAcpConnectionInventory(),
@@ -511,7 +522,7 @@ async function connectAgent(
     return {
       ok: false,
       providerId: agent.id,
-      workspaceId: workspace.id,
+      workspacePath: workspace.path,
       connections: context.listAcpConnectionInventory(),
       message,
     };
@@ -519,7 +530,7 @@ async function connectAgent(
 }
 
 async function reconnectAgent(
-  params: { providerId: string; workspaceId?: string; projectId?: string },
+  params: { providerId: string; cwd?: string; projectId?: string },
   context: HelmHandlerContext,
 ) {
   const { agent, workspace } = resolveAgentWorkspace(params, context);
@@ -528,7 +539,7 @@ async function reconnectAgent(
     return {
       ok: false,
       providerId: params.providerId,
-      workspaceId: params.workspaceId,
+      workspacePath: params.cwd,
       message: !agent ? "Provider not found" : "Workspace not found",
     };
   }
@@ -555,7 +566,7 @@ async function reconnectAgent(
     return {
       ok: true,
       providerId: agent.id,
-      workspaceId: workspace.id,
+      workspacePath: workspace.path,
       runtimeConnectionId: inventory.runtimeConnectionId,
       connection: inventory,
       connections: context.listAcpConnectionInventory(),
@@ -569,7 +580,7 @@ async function reconnectAgent(
     return {
       ok: false,
       providerId: agent.id,
-      workspaceId: workspace.id,
+      workspacePath: workspace.path,
       connections: context.listAcpConnectionInventory(),
       message,
     };

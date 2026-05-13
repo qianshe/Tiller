@@ -138,6 +138,7 @@ function normalizeSessionSummary(value: unknown): SessionSummary | null {
     helmId: typeof candidate.helmId === "string" ? candidate.helmId : "legacy-helm",
     workspaceId: candidate.workspaceId as string,
     workspaceName: candidate.workspaceName as string,
+    workspacePath: typeof candidate.workspacePath === "string" ? candidate.workspacePath : undefined,
     agentId: candidate.agentId as string,
     agentName: candidate.agentName as string,
     agentMode:

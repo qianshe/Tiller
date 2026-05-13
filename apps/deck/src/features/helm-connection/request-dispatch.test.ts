@@ -50,7 +50,7 @@ test("dispatchWithTrace gives session creation a longer timeout", async () => {
   await dispatchWithTrace(
     client as any,
     "session/new",
-    { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    { projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
     (updater) => {
       trace = updater(trace);
     },
@@ -59,7 +59,7 @@ test("dispatchWithTrace gives session creation a longer timeout", async () => {
   assert.deepEqual(requested, [
     {
       method: "session/new",
-      params: { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      params: { projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
       options: { timeoutMs: 180_000 },
     },
   ]);
@@ -80,7 +80,7 @@ test("dispatchWithTrace gives session draft creation a longer timeout", async ()
   await dispatchWithTrace(
     client as any,
     "session/draft",
-    { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
     (updater) => {
       trace = updater(trace);
     },
@@ -89,7 +89,7 @@ test("dispatchWithTrace gives session draft creation a longer timeout", async ()
   assert.deepEqual(requested, [
     {
       method: "session/draft",
-      params: { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      params: { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
       options: { timeoutMs: 180_000 },
     },
   ]);

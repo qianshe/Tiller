@@ -56,7 +56,7 @@ test("config RPC connects an agent provider without creating a session", async (
 
   const result = await handleConfigRpcRequest(
     "agent/connect",
-    { providerId: "codex", workspaceId: "main" },
+    { providerId: "codex", cwd: "D:/repo" },
     {
       getAgents: () => [provider],
       getWorkspaces: () => [workspace],
@@ -78,7 +78,7 @@ test("config RPC connects an agent provider without creating a session", async (
   assert.deepEqual(result, {
     ok: true,
     providerId: "codex",
-    workspaceId: "main",
+    workspacePath: "D:/repo",
     runtimeConnectionId: "conn-connect",
     connection: { runtimeConnectionId: "conn-connect" },
     connections: [{ runtimeConnectionId: "conn-connect" }],
@@ -93,7 +93,7 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
   const workspace = { id: "main", name: "main", path: "D:/repo" };
   const result = await handleConfigRpcRequest(
     "agent/reconnect",
-    { providerId: "codex", workspaceId: "main" },
+    { providerId: "codex", cwd: "D:/repo" },
     {
       getAgents: () => [provider],
       getWorkspaces: () => [workspace],
@@ -115,7 +115,7 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
   assert.deepEqual(result, {
     ok: true,
     providerId: "codex",
-    workspaceId: "main",
+    workspacePath: "D:/repo",
     runtimeConnectionId: "conn-1",
     connection: { runtimeConnectionId: "conn-1" },
     connections: [{ runtimeConnectionId: "conn-1" }],

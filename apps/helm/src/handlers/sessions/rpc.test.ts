@@ -312,3 +312,67 @@ test("session/discard_draft delegates cleanup to the runtime draft registry", as
     message: "Runtime draft discarded.",
   });
 });
+
+test("session/new uses cwd without requiring workspaceId", async () => {
+  const project = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local-helm",
+    path: "D:/repo",
+    workspaceIds: ["old-workspace"],
+  };
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const agent = { id: "codex", name: "Codex" };
+  let runtimeWorkspace: unknown;
+  let storedSummary: any;
+  const sessions = new Map();
+
+  const result = await handleSessionRpcRequest(
+    "session/new",
+    { projectId: "project-1", cwd: "D:/repo", agentId: "codex" },
+    {
+      loadAvailableHelms: () => [helm],
+      loadAvailableWorkspaces: () => [],
+      loadAvailableAgents: () => [agent],
+      loadAvailableProjectsWithSemanticSummaries: () => [project],
+      setHelms: () => undefined,
+      setWorkspaces: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: (id: string) => (id === project.id ? project : undefined),
+      resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
+      resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
+      buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "test", checkedAt: "2026-05-13T00:00:00.000Z" }),
+      hydrateSessionSummary: (summary: any) => summary,
+      sessionStore: {
+        upsert: (summary: any) => { storedSummary = summary; },
+      },
+      persistRuntimeDescriptor: () => undefined,
+      broadcastNotification: () => undefined,
+      logInfo: () => undefined,
+      logError: () => undefined,
+      handleRuntimeEvent: () => undefined,
+      updateSessionSummary: () => undefined,
+      sessions,
+      createRuntime: async ({ workspace }: any) => {
+        runtimeWorkspace = workspace;
+        return {
+          runtimeSessionId: "runtime-1",
+          sessionCapabilities: { sessionLoad: true },
+          sessionConfigState: {},
+          sessionModelState: {},
+        };
+      },
+    } as any,
+  ) as { session: { workspacePath?: string; runtimeSessionId?: string } };
+
+  assert.deepEqual(runtimeWorkspace, {
+    id: "project-1-cwd",
+    name: "repo",
+    path: "D:/repo",
+    summary: undefined,
+  });
+  assert.equal(storedSummary.workspacePath, "D:/repo");
+  assert.equal(result.session.workspacePath, "D:/repo");
+  assert.equal(result.session.runtimeSessionId, "runtime-1");
+});

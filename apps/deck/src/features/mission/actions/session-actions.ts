@@ -117,7 +117,11 @@ export function createSession(
     return false;
   }
 
-  const cacheKey = agentModelOptionsKey(identity.agentId, identity.workspaceId, identity.projectId);
+  const cacheKey = agentModelOptionsKey(
+    identity.agentId,
+    identity.cwd,
+    identity.projectId,
+  );
   const draft = agentModelOptions?.[cacheKey];
   if (initialPrompt && draft?.draftId) {
     pendingPromptRef.current = null;
@@ -135,7 +139,7 @@ export function createSession(
   pendingPromptContentRef.current = initialContent;
   void dispatch(client, "session/new", {
     projectId: identity.projectId,
-    workspaceId: identity.workspaceId,
+    cwd: identity.cwd,
     agentId: identity.agentId,
     agentMode: effectiveDraftAgentMode,
     model: normalizeModelSelection(selectedModel),

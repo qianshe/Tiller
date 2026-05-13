@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   type AgentPromptContent,
@@ -24,17 +25,25 @@ import { pageSessionSummaries } from "./session-list-page";
 export function resolveProjectSessionWorkspace(
   project: ProjectSummary,
   workspaces: WorkspaceSummary[],
-  workspaceId: string,
+  params: { cwd: string },
 ) {
-  const workspace = workspaces.find((item) => item.id === workspaceId);
-  if (!workspace) {
-    return undefined;
-  }
-  if (isProjectRootBranchWorkspace(project, workspace)) {
-    return { ...workspace, path: project.path };
-  }
-  return workspace;
+  const requestedCwd = params.cwd.trim();
+  const normalizedCwd = normalizeWorkspacePath(requestedCwd);
+  const workspace = workspaces.find(
+    (item) => normalizeWorkspacePath(item.path) === normalizedCwd,
+  );
+  return {
+    id: workspace?.id ?? `${project.id}-cwd`,
+    name: workspace?.name ?? basename(normalizedCwd) ?? project.name,
+    path: requestedCwd,
+    summary: workspace?.summary,
+  } satisfies WorkspaceSummary;
 }
+
+function normalizeWorkspacePath(path: string) {
+  return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 
 export async function handleSessionRpcRequest(
   method: string,
@@ -67,7 +76,7 @@ export async function handleSessionRpcRequest(
         params as {
           deckClientId: string;
           projectId: string;
-          workspaceId: string;
+          cwd: string;
           agentId: string;
           agentMode?: string;
           model?: string;
@@ -89,7 +98,7 @@ export async function handleSessionRpcRequest(
       return createSession(
         params as {
           projectId: string;
-          workspaceId: string;
+          cwd: string;
           agentId: string;
           agentMode?: string;
           model?: string;
@@ -273,7 +282,7 @@ async function createSessionDraft(
   params: {
     deckClientId: string;
     projectId: string;
-    workspaceId: string;
+    cwd: string;
     agentId: string;
     agentMode?: string;
     model?: string;
@@ -292,16 +301,13 @@ async function createSessionDraft(
 
   const project = context.resolveProjectById(params.projectId, projects);
   const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+    ? resolveProjectSessionWorkspace(project, workspaces, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
   if (!project || !workspace || !agent || !helm) {
     throw new Error("Project, helm, workspace, or agent not found");
-  }
-  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
-    throw new Error("Workspace does not belong to the selected project");
   }
 
   return context.createRuntimeDraft({
@@ -333,7 +339,7 @@ async function discardSessionDraft(
 async function createSession(
   params: {
     projectId: string;
-    workspaceId: string;
+    cwd: string;
     agentId: string;
     agentMode?: string;
     model?: string;
@@ -352,16 +358,13 @@ async function createSession(
 
   const project = context.resolveProjectById(params.projectId, projects);
   const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+    ? resolveProjectSessionWorkspace(project, workspaces, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
   if (!project || !workspace || !agent || !helm) {
     throw new Error("Project, helm, workspace, or agent not found");
-  }
-  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
-    throw new Error("Workspace does not belong to the selected project");
   }
 
   const sessionId = `session-${Date.now()}`;
@@ -376,6 +379,7 @@ async function createSession(
     helmId: helm.id,
     workspaceId: workspace.id,
     workspaceName: workspace.name,
+    workspacePath: workspace.path,
     agentId: agent.id,
     agentName: agent.name,
     agentMode: params.agentMode,
@@ -504,6 +508,7 @@ async function promptRuntimeDraft(
     helmId: draft.helm.id,
     workspaceId: draft.workspace.id,
     workspaceName: draft.workspace.name,
+    workspacePath: draft.workspace.path,
     agentId: draft.agent.id,
     agentName: draft.agent.name,
     agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
