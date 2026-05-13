@@ -780,10 +780,14 @@ export function createSessionServices(options: SessionServicesOptions) {
         message: unavailableReason,
       };
     }
+    const restoreAgent = agent as AcpAgentProvider;
+    const restoreWorkspace = workspace as WorkspaceSummary;
+    const restoreRuntimeSessionId = resume.runtimeSessionId as string;
+    const restoreMethod = resume.restoreMethod as "session/load" | "session/resume";
 
     try {
       options.logInfo(
-        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${restoreRuntimeSessionId} method=${restoreMethod}`,
       );
       // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
       // Restore replay is cache repair only; live events still use handleRuntimeEvent.
@@ -796,15 +800,15 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       const runtime = await createAcpRuntime({
         sessionId,
-        workspace,
-        agent,
+        workspace: restoreWorkspace,
+        agent: restoreAgent,
         sessionConfig: {
           model: summary.model,
           reasoningEffort: summary.reasoningEffort,
         },
         restore: {
-          runtimeSessionId: resume.runtimeSessionId,
-          strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
+          runtimeSessionId: restoreRuntimeSessionId,
+          strategy: restoreMethod === "session/load" ? "load" : "resume",
           replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
         onEvent: (event) => handleRuntimeEvent(sessionId, event),
@@ -827,7 +831,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           source: "adapter-authoritative-history",
           load: async () => {
             try {
-              return await loadAdapterHistoryContent(agent, resume.runtimeSessionId!, workspace.path);
+              return await loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorkspace.path);
             } catch (error) {
               options.logError(
                 `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
@@ -846,7 +850,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           `[tiller] history.cache source=acp-session-load session=${sessionId} messages=${historySnapshot.messages.length} toolCalls=${historySnapshot.toolCalls.length} outputs=${historySnapshot.outputs.length} diffs=${historySnapshot.diffs.length}`,
         );
       } else if (historySnapshot?.source === "adapter-authoritative-history") {
-        applyAuthoritativeProviderHistory(sessionId, agent, resume.runtimeSessionId, historySnapshot);
+        applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
       }
       const restoredSummary = hydrateSessionSummary({
         ...summary,
@@ -857,16 +861,16 @@ export function createSessionServices(options: SessionServicesOptions) {
         status: "idle",
         updatedAt: new Date().toISOString(),
       });
-      options.sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
+      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, workspace: restoreWorkspace, runtime });
       options.sessionStore.upsert(restoredSummary);
-      persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
+      persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
       options.logInfo(
-        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${restoreMethod}`,
       );
       return {
         ok: true,
-        resume: buildResumeInfo(restoredSummary, agent),
-        message: `ACP ${resume.restoreMethod} completed for this session.`,
+        resume: buildResumeInfo(restoredSummary, restoreAgent),
+        message: `ACP ${restoreMethod} completed for this session.`,
       };
     } catch (error) {
       options.logError(
