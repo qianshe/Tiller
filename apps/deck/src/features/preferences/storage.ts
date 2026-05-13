@@ -17,7 +17,7 @@ export type TechnicalPanelPreferences = {
   logbookDefaultOpen: boolean;
   diffDefaultOpen: boolean;
   showSessionRuntimeMeta: boolean;
-  showPermissionWorkspace: boolean;
+  showPermissionWorktree: boolean;
   showConnectionDebug: boolean;
 };
 
@@ -117,7 +117,7 @@ export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
     logbookDefaultOpen: false,
     diffDefaultOpen: false,
     showSessionRuntimeMeta: true,
-    showPermissionWorkspace: true,
+    showPermissionWorktree: true,
     showConnectionDebug: false,
   },
   promptEnhancer: {
@@ -169,10 +169,10 @@ export function readDeckPreferences(): DeckPreferences {
           typeof technicalPanels.showSessionRuntimeMeta === "boolean"
             ? technicalPanels.showSessionRuntimeMeta
             : DEFAULT_DECK_PREFERENCES.technicalPanels.showSessionRuntimeMeta,
-        showPermissionWorkspace:
-          typeof technicalPanels.showPermissionWorkspace === "boolean"
-            ? technicalPanels.showPermissionWorkspace
-            : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorkspace,
+        showPermissionWorktree:
+          typeof technicalPanels.showPermissionWorktree === "boolean"
+            ? technicalPanels.showPermissionWorktree
+            : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorktree,
         showConnectionDebug:
           typeof technicalPanels.showConnectionDebug === "boolean"
             ? technicalPanels.showConnectionDebug

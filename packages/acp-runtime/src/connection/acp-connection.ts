@@ -3,11 +3,11 @@ import { Readable, Writable } from "node:stream";
 import { dirname, relative, resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { resolveAcpRequestTimeout } from "../constants";
-import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
+import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
@@ -15,11 +15,11 @@ import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
 import { resolveAcpConnectionKey } from "./connection-key";
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./connection-types";
-import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorkspacePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
+import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
 
 export type AcpConnectionOptions = {
   provider: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   sessionConfig?: {
     agentMode?: string;
     model?: string;
@@ -29,7 +29,7 @@ export type AcpConnectionOptions = {
 
 type AcpConnectionState = {
   provider: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   launchCwd: string;
   child: ChildProcess;
   agent: acp.ClientSideConnection;
@@ -40,7 +40,7 @@ type AcpConnectionState = {
 
 export type OpenAcpSessionRequest = {
   tillerSessionId: string;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   onEvent: (event: SessionRuntimeEvent) => void;
 } & (
   | { kind: "new" }
@@ -55,10 +55,11 @@ export type AcpSessionRuntimeHandle = {
   sessionConfigOptions: AcpSessionConfigOption[];
   sessionModelState: ReturnType<typeof extractAcpModelState>;
   prompt: (text: string, content?: AgentPromptContent[]) => Promise<void>;
-  configure: (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
+  configure: (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort; configId?: string; value?: SessionConfigOptionValue }) => Promise<{
     runtimeApplied: boolean;
     state: ReturnType<typeof resolveCombinedSessionConfigState>;
     modelState: ReturnType<typeof extractAcpModelState>;
+    options: AcpSessionConfigOption[];
   }>;
   respondPermission: (requestId: string, decision: PermissionDecision) => void;
   deleteSession: () => Promise<ProviderCleanupResult>;
@@ -69,7 +70,7 @@ export type AcpSessionRuntimeHandle = {
 
 type AcpSessionEntry = {
   runtimeSessionId: string;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   onEvent: (event: SessionRuntimeEvent) => void;
   refCount: number;
   configOptions: AcpSessionConfigOption[];
@@ -173,7 +174,7 @@ export class AcpConnection {
 
     connection = new AcpConnection({
       provider: options.provider,
-      workspace: options.workspace,
+      worktree: options.worktree,
       launchCwd: launchConfig.cwd,
       child,
       agent,
@@ -194,14 +195,14 @@ export class AcpConnection {
     const existing = this.sessions.get(request.tillerSessionId);
     if (existing) {
       existing.refCount += 1;
-      existing.workspace = request.workspace;
+      existing.worktree = request.worktree;
       existing.onEvent = request.onEvent;
       return this.createRuntimeHandle(request.tillerSessionId, existing);
     }
 
     this.sessions.set(request.tillerSessionId, {
       runtimeSessionId: resolveRequestedRuntimeSessionId(request),
-      workspace: request.workspace,
+      worktree: request.worktree,
       onEvent: request.onEvent,
       refCount: 1,
       configOptions: [],
@@ -311,24 +312,24 @@ export class AcpConnection {
 
   private async configureSession(
     tillerSessionId: string,
-    nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort },
-  ): Promise<{ runtimeApplied: boolean; state: ReturnType<typeof resolveCombinedSessionConfigState>; modelState: ReturnType<typeof extractAcpModelState> }> {
+    nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort; configId?: string; value?: SessionConfigOptionValue },
+  ): Promise<{ runtimeApplied: boolean; state: ReturnType<typeof resolveCombinedSessionConfigState>; modelState: ReturnType<typeof extractAcpModelState>; options: AcpSessionConfigOption[] }> {
     const session = this.sessions.get(tillerSessionId);
     if (!session) {
-      return { runtimeApplied: false, state: {}, modelState: undefined };
+      return { runtimeApplied: false, state: {}, modelState: undefined, options: [] };
     }
     let runtimeApplied = false;
-    const applyOption = async (category: "mode" | "model" | "thought_level", value: string | undefined) => {
-      if (!value || !hasSessionConfigOptionValue(session.configOptions, category, value)) {
+    const applyConfigOption = async (configId: string | undefined, value: SessionConfigOptionValue | undefined) => {
+      if (!configId || typeof value === "undefined" || !hasSessionConfigOptionIdValue(session.configOptions, configId, value)) {
         return false;
       }
-      const optionId = findSessionConfigOptionId(session.configOptions, category);
-      if (!optionId) {
-        return false;
-      }
+      const setConfigOptionRequest =
+        typeof value === "boolean"
+          ? { sessionId: session.runtimeSessionId, configId, type: "boolean" as const, value }
+          : { sessionId: session.runtimeSessionId, configId, value };
       const result = await withConnectionRequest(
         "session/set_config_option",
-        this.state.agent.setSessionConfigOption({ sessionId: session.runtimeSessionId, configId: optionId, value }),
+        this.state.agent.setSessionConfigOption(setConfigOptionRequest as any),
         this.state.child,
         "",
         this.state.logFile,
@@ -337,14 +338,28 @@ export class AcpConnection {
       const nextOptions = extractSessionConfigOptions(result);
       if (nextOptions.length) {
         session.configOptions = nextOptions;
+      } else {
+        session.configOptions = updateSessionConfigOptionValueById(session.configOptions, configId, value);
       }
       session.onEvent({ type: "config-options", state: resolveSessionConfigState(session.configOptions), options: session.configOptions });
       runtimeApplied = true;
       return true;
     };
+    const applyOption = async (category: "mode" | "model" | "thought_level", value: string | undefined) => {
+      if (!value || !hasSessionConfigOptionValue(session.configOptions, category, value)) {
+        return false;
+      }
+      const optionId = findSessionConfigOptionId(session.configOptions, category);
+      if (!optionId) {
+        return false;
+      }
+      return applyConfigOption(optionId, value);
+    };
+
+    const directConfigApplied = await applyConfigOption(nextConfig.configId, nextConfig.value);
 
     let modeAppliedAsSdk = false;
-    if (nextConfig.agentMode) {
+    if (!directConfigApplied && nextConfig.agentMode) {
       try {
         await withConnectionRequest(
           "session/set_mode",
@@ -363,9 +378,9 @@ export class AcpConnection {
       }
     }
     if (!modeAppliedAsSdk) {
-      await applyOption("mode", nextConfig.agentMode);
+      await applyOption("mode", directConfigApplied ? undefined : nextConfig.agentMode);
     }
-    const modelAppliedAsConfig = await applyOption("model", nextConfig.model);
+    const modelAppliedAsConfig = directConfigApplied ? false : await applyOption("model", nextConfig.model);
     if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
       await withConnectionRequest(
         "session/set_model",
@@ -379,12 +394,13 @@ export class AcpConnection {
       session.onEvent({ type: "model-options", state: session.modelState });
       runtimeApplied = true;
     }
-    await applyOption("thought_level", nextConfig.reasoningEffort);
+    await applyOption("thought_level", directConfigApplied ? undefined : nextConfig.reasoningEffort);
 
     return {
       runtimeApplied,
       state: resolveCombinedSessionConfigState(session.configOptions, session.modelState),
       modelState: session.modelState,
+      options: session.configOptions,
     };
   }
 
@@ -439,9 +455,8 @@ export class AcpConnection {
     if (this.sessions.size || this.pendingSessions.size) {
       return;
     }
-    if (this.state.child.pid) {
-      terminateChildProcess(this.state.child.pid);
-    }
+    // ACP connections are intentionally persistent: idle children stay alive
+    // until manual reconnect/close, provider crash, or Helm shutdown.
   }
 
   private async closeRemoteSession(runtimeSessionId: string): Promise<void> {
@@ -461,7 +476,7 @@ export class AcpConnection {
         "session/load",
         this.state.agent.loadSession({
           sessionId: request.runtimeSessionId,
-          cwd: request.workspace.path,
+          cwd: request.worktree.path,
           mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
         }),
         this.state.child,
@@ -481,7 +496,7 @@ export class AcpConnection {
         "session/resume",
         this.state.agent.resumeSession({
           sessionId: request.runtimeSessionId,
-          cwd: request.workspace.path,
+          cwd: request.worktree.path,
           mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
         }),
         this.state.child,
@@ -499,7 +514,7 @@ export class AcpConnection {
     const result = await withConnectionRequest(
       "session/new",
       this.state.agent.newSession({
-        cwd: request.workspace.path,
+        cwd: request.worktree.path,
         mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
       }),
       this.state.child,
@@ -534,7 +549,7 @@ export class AcpConnection {
 
   private async handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
     const session = this.findSessionByRuntimeId(params.sessionId);
-    const mapped = mapSdkPermissionRequest(params, this.nextPermissionRequestId("sdk-permission"), session?.workspace.path ?? this.state.launchCwd);
+    const mapped = mapSdkPermissionRequest(params, this.nextPermissionRequestId("sdk-permission"), session?.worktree.path ?? this.state.launchCwd);
     session?.onEvent({ type: "status", status: "waiting_for_permission", message: "ACP agent requested permission" });
     session?.onEvent({ type: "permission-request", request: mapped.request });
     return await new Promise<acp.RequestPermissionResponse>((resolve) => {
@@ -556,13 +571,13 @@ export class AcpConnection {
 
   private async writeTextFile(params: any): Promise<Record<string, never>> {
     const session = this.findSessionByRuntimeId(params.sessionId);
-    const workspacePath = this.requireSessionByRuntimeId(params.sessionId).workspace.path;
-    const filePath = resolveContainedWorkspacePath(workspacePath, params.path);
-    const relativePath = relative(workspacePath, filePath) || params.path;
+    const cwd = this.requireSessionByRuntimeId(params.sessionId).worktree.path;
+    const filePath = resolveContainedWorktreePath(cwd, params.path);
+    const relativePath = relative(cwd, filePath) || params.path;
     const allowed = await this.requestClientPermission(
       params.sessionId,
       `Write file: ${relativePath}`,
-      "ACP agent requested workspace file write access.",
+      "ACP agent requested worktree file write access.",
     );
     if (!allowed) {
       throw new Error(`Denied ACP file write: ${relativePath}`);
@@ -588,8 +603,8 @@ export class AcpConnection {
 
   private async createTerminal(params: any): Promise<{ terminalId: string }> {
     const session = this.findSessionByRuntimeId(params.sessionId);
-    const workspacePath = this.requireSessionByRuntimeId(params.sessionId).workspace.path;
-    const cwd = params.cwd ? resolveContainedWorkspacePath(workspacePath, params.cwd) : workspacePath;
+    const sessionCwd = this.requireSessionByRuntimeId(params.sessionId).worktree.path;
+    const cwd = params.cwd ? resolveContainedWorktreePath(sessionCwd, params.cwd) : sessionCwd;
     const commandLine = formatTerminalCommand(params.command, params.args ?? []);
     const allowed = await this.requestClientPermission(params.sessionId, commandLine, "ACP agent requested terminal execution.");
     if (!allowed) {
@@ -681,7 +696,7 @@ export class AcpConnection {
     session?.onEvent({ type: "status", status: "waiting_for_permission", message: reason });
     session?.onEvent({
       type: "permission-request",
-      request: { id, command, reason, workspacePath: session?.workspace.path ?? this.state.launchCwd },
+      request: { id, command, reason, cwd: session?.worktree.path ?? this.state.launchCwd },
     });
     return await new Promise<boolean>((resolve) => {
       this.pendingPermissionReplies.set(id, { kind: "client", resolve });
@@ -706,7 +721,7 @@ export class AcpConnection {
   }
 
   private resolveSessionPath(runtimeSessionId: string, path: string): string {
-    return resolveContainedWorkspacePath(this.requireSessionByRuntimeId(runtimeSessionId).workspace.path, path);
+    return resolveContainedWorktreePath(this.requireSessionByRuntimeId(runtimeSessionId).worktree.path, path);
   }
 
   private broadcastExitError(message: string): void {
@@ -738,11 +753,11 @@ export class AcpConnection {
     return {
       key: resolveAcpConnectionKey({
         provider: this.state.provider,
-        workspace: this.state.workspace,
+        worktree: this.state.worktree,
       }),
       providerId: this.state.provider.id,
-      workspaceId: this.state.workspace.id,
-      workspacePath: this.state.workspace.path,
+      cwd: this.state.worktree.path,
+      worktreeName: this.state.worktree.name,
       launchCwd: this.state.launchCwd,
       status: this.status,
       runtimeConnectionId: this.state.runtimeConnectionId,
@@ -752,9 +767,8 @@ export class AcpConnection {
       sessions: Array.from(this.sessions.entries()).map(([tillerSessionId, session]) => ({
         tillerSessionId,
         runtimeSessionId: session.runtimeSessionId,
-        workspaceId: session.workspace.id,
-        workspaceName: session.workspace.name,
-        workspacePath: session.workspace.path,
+        worktreeName: session.worktree.name,
+        cwd: session.worktree.path,
       })),
       capabilities: this.state.capabilities,
       pid: this.state.child.pid,
@@ -773,6 +787,23 @@ export class AcpConnection {
 
 function resolveRequestedRuntimeSessionId(request: OpenAcpSessionRequest) {
   return request.kind === "load" ? request.runtimeSessionId : request.tillerSessionId;
+}
+
+function updateSessionConfigOptionValueById(
+  options: AcpSessionConfigOption[],
+  configId: string,
+  value: SessionConfigOptionValue,
+) {
+  return options.map((option) =>
+    option.id === configId
+      ? {
+          ...option,
+          currentValue: value,
+          selectedValue: value,
+          value,
+        }
+      : option,
+  );
 }
 
 function updateSessionConfigOptionValue(

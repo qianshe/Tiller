@@ -1,14 +1,13 @@
 import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
-  AgentMessage,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
   ProjectSummary,
   SessionStatus,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type DaemonProfilesState<TProfile> = {
@@ -37,9 +36,9 @@ export function useDeckData(missionVisualFixture: any) {
   const setHelmConnection = useDeckStore((state) => state.setHelmConnection);
   const removeHelm = useDeckStore((state) => state.removeHelm);
 
-  const storedWorkspaces = useDeckStore((state) => state.workspaces);
-  const workspaces = (missionVisualFixture?.workspaces ?? storedWorkspaces) as WorkspaceSummary[];
-  const setWorkspaces = useDeckStore((state) => state.setWorkspaces);
+  const storedWorktrees = useDeckStore((state) => state.worktrees);
+  const worktrees = (missionVisualFixture?.worktrees ?? storedWorktrees) as WorktreeSummary[];
+  const setWorktrees = useDeckStore((state) => state.setWorktrees);
 
   const storedProjects = useDeckStore((state) => state.projects);
   const projects = (missionVisualFixture?.projects ?? storedProjects) as ProjectSummary[];
@@ -59,8 +58,6 @@ export function useDeckData(missionVisualFixture: any) {
   const statuses = (missionVisualFixture?.statuses ?? storedStatuses) as Record<string, SessionStatus>;
   const setStatuses = useDeckStore((state) => state.setStatuses);
 
-  const storedMessages = useDeckStore((state) => state.messages);
-  const messages = (missionVisualFixture?.messages ?? storedMessages) as Record<string, AgentMessage[]>;
   const setMessages = useDeckStore((state) => state.setMessages);
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
@@ -136,8 +133,8 @@ export function useDeckData(missionVisualFixture: any) {
     applyHelmInventory,
     setHelmConnection,
     removeHelm,
-    workspaces,
-    setWorkspaces,
+    worktrees,
+    setWorktrees,
     projects,
     setProjects,
     agents,
@@ -148,7 +145,6 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionHistoryState,
     statuses,
     setStatuses,
-    messages,
     setMessages,
     messageHistoryState,
     setMessageHistoryState,

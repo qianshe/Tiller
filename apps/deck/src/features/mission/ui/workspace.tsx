@@ -8,7 +8,7 @@ import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
-import { buildMissionWorkspaceModel } from "./workspace-model";
+import { buildMissionWorktreeModel } from "./workspace-model";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +19,7 @@ import { joinClassNames } from "../utils/session-render-state";
 
 const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "display", "inspector"] as const;
 
-export function MissionWorkspace(props: any) {
+export function MissionWorktree(props: any) {
   const {
     prompt,
     promptImages,
@@ -28,7 +28,7 @@ export function MissionWorkspace(props: any) {
     socketRef,
     activeSessionId,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     selectedAgentId,
     activeSession,
     diffs,
@@ -42,8 +42,8 @@ export function MissionWorkspace(props: any) {
     projectFilesByScope,
     activeSessionProject,
     draftProject,
-    selectedWorkspace,
-    workspaces,
+    selectedWorktree,
+    worktrees,
     selectedDraftAgent,
     projectFileFilter,
     collapsedProjectFileDirectories,
@@ -77,7 +77,7 @@ export function MissionWorkspace(props: any) {
     agentConnectionInventory = [],
     setSelectedMissionHelmId,
     setSelectedProjectId,
-    setSelectedWorkspaceId,
+    setSelectedCwd,
     setSelectedAgentId,
     setExpandedMissionProjectIds,
     setActiveSessionId,
@@ -110,9 +110,9 @@ export function MissionWorkspace(props: any) {
     agentPickerRef,
     agentPickerOpen,
     setAgentPickerOpen,
-    selectedWorkspaceName,
-    draftWorkspaceOptions,
-    selectDraftWorkspace,
+    selectedWorktreeName,
+    draftWorktreeOptions,
+    selectDraftWorktree,
     agentLocked,
     filteredAgents,
     selectDraftAgent,
@@ -132,6 +132,7 @@ export function MissionWorkspace(props: any) {
     slashSelectedIndex,
     applySlashCommand,
     setSlashSelectedIndex,
+    openSlashCommands,
     showDraftAgentModeSelect,
     missionConfigPicker,
     setMissionConfigPicker,
@@ -159,7 +160,6 @@ export function MissionWorkspace(props: any) {
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
-    messages,
     activityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
@@ -201,43 +201,43 @@ export function MissionWorkspace(props: any) {
     projectFiles,
     overviewProject,
     overviewProjectName,
-    overviewWorkspaceName,
+    overviewWorktreeName,
     overviewAgentName,
     currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
-  } = buildMissionWorkspaceModel(props);
+  } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
-  const workspaceOptions = hasWorktreeScope
-    ? draftWorkspaceOptions.length
-      ? draftWorkspaceOptions
-      : selectedWorkspace
-        ? [selectedWorkspace]
+  const rawWorktreeOptions = hasWorktreeScope
+    ? draftWorktreeOptions.length
+      ? draftWorktreeOptions
+      : selectedWorktree
+        ? [selectedWorktree]
         : []
     : [];
-  const worktreeOptions = workspaceOptions.filter(isManagedWorktreeWorkspace);
+  const worktreeOptions = rawWorktreeOptions.filter(isManagedWorktreeWorktree);
   const renderWorktreeList = () => (
     <div className="mission-worktree-list grid gap-2">
       {worktreeOptions.length ? (
-        worktreeOptions.map((workspace: any) => {
-          const selected = workspace.id === (activeSession?.workspaceId ?? selectedWorkspaceId);
+        worktreeOptions.map((worktree: any) => {
+          const selected = normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSession?.cwd ?? selectedCwd);
           return (
             <div
-              key={workspace.id}
+              key={worktree.path}
               className={joinClassNames([
                 "rounded-lg border border-border-ghost bg-surface-sunken p-3 text-sm",
                 selected ? "border-primary/50 bg-primary-soft/30" : "",
               ])}
             >
               <div className="flex items-center justify-between gap-3">
-                <strong className="min-w-0 truncate text-foreground">{workspace.name}</strong>
+                <strong className="min-w-0 truncate text-foreground">{worktree.name}</strong>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
                       className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
-                      aria-label={`${workspace.name} 的 Worktree 操作`}
+                      aria-label={`${worktree.name} 的 Worktree 操作`}
                       title="Worktree 操作"
                     >
                       ⋯
@@ -247,10 +247,10 @@ export function MissionWorkspace(props: any) {
                     {filteredAgents.length ? (
                       filteredAgents.map((agent: any) => (
                         <DropdownMenuItem
-                          key={`${workspace.id}:${agent.id}`}
+                          key={`${worktree.path}:${agent.id}`}
                           onSelect={() => {
                             setActiveSessionId(null);
-                            selectDraftWorkspace(workspace.id);
+                            selectDraftWorktree(worktree.path);
                             selectDraftAgent(agent.id);
                           }}
                         >
@@ -263,7 +263,7 @@ export function MissionWorkspace(props: any) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <p className="mt-1 break-all text-xs text-muted-foreground">{workspace.path}</p>
+              <p className="mt-1 break-all text-xs text-muted-foreground">{worktree.path}</p>
             </div>
           );
         })
@@ -310,7 +310,7 @@ export function MissionWorkspace(props: any) {
       let changed = false;
       const next = { ...current };
       for (const connection of agentConnectionInventory as any[]) {
-        const key = acpReconnectKey(connection.providerId, connection.workspaceId);
+        const key = acpReconnectKey(connection.providerId, connection.cwd);
         if (
           key in next &&
           connection.status === "ready" &&
@@ -327,7 +327,9 @@ export function MissionWorkspace(props: any) {
     const sessionById = new Map((sessions as any[]).map((session) => [session.id, session]));
     const items: any[] = (agentConnectionInventory as any[]).map((connection) => {
       const agent = (agents as any[]).find((item) => item.id === connection.providerId);
-      const workspace = (workspaces ?? []).find((item: any) => item.id === connection.workspaceId);
+      const worktree = (worktrees ?? []).find(
+        (item: any) => normalizeWorktreePath(item.path) === normalizeWorktreePath(connection.cwd),
+      );
       const children = (connection.sessions ?? []).map((runtimeSession: any) => {
         const session = sessionById.get(runtimeSession.tillerSessionId) as any;
         const status = session ? (statuses[session.id] ?? session.status) : runtimeSession.status;
@@ -339,20 +341,20 @@ export function MissionWorkspace(props: any) {
         return {
           id: runtimeSession.tillerSessionId,
           projectName,
-          branchName: session?.workspaceName ?? workspace?.name ?? connection.workspaceId,
+          branchName: worktree?.name ?? session?.worktreeName ?? connection.worktreeName ?? connection.cwd,
           status: statusLabel,
           model: session?.model ?? runtimeSession.model,
         };
       });
-      const reconnectKey = acpReconnectKey(connection.providerId, connection.workspaceId);
+      const reconnectKey = acpReconnectKey(connection.providerId, connection.cwd);
       const reconnectPending = reconnectKey in pendingAcpReconnects;
       return {
-        id: `acp:${connection.providerId}:${connection.workspaceId}`,
+        id: `acp:${connection.providerId}:${connection.cwd}`,
         agentId: connection.providerId,
         projectId: selectedProjectId ?? undefined,
-        workspaceId: connection.workspaceId,
+        cwd: connection.cwd,
         label: agent?.name ?? connection.providerId ?? "ACP",
-        meta: reconnectPending ? "等待重新连接成功" : connection.lastError ?? workspace?.name ?? connection.workspacePath ?? "Workspace",
+        meta: reconnectPending ? "等待重新连接成功" : connection.lastError ?? worktree?.name ?? connection.cwd ?? "Worktree",
         status: reconnectPending ? "未连接" : formatAcpConnectionStatus(connection.status),
         runtimeSessionId: formatRuntimeSessionCount(
           connection.activeSessionCount ?? children.length,
@@ -366,23 +368,23 @@ export function MissionWorkspace(props: any) {
     });
 
     for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
-      const [agentId, workspaceId] = key.split("::");
-      if (!entry?.runtimeSessionId || items.some((item) => item.agentId === agentId && item.workspaceId === workspaceId)) {
+      const [agentId, cwd] = key.split("::");
+      if (!entry?.runtimeSessionId || items.some((item) => item.agentId === agentId && item.cwd === cwd)) {
         continue;
       }
       const agentName = agents.find((agent: any) => agent.id === agentId)?.name ?? agentId ?? "ACP";
-      const workspaceName =
-        draftWorkspaceOptions.find((workspace: any) => workspace.id === workspaceId)?.name ??
-        workspaceId ??
-        "Workspace";
+      const worktreeName =
+        draftWorktreeOptions.find((worktree: any) => worktree.path === cwd)?.name ??
+        cwd ??
+        "Worktree";
       items.push({
-        id: `acp:${agentId}:${workspaceId}:prewarm`,
+        id: `acp:${agentId}:${cwd}:prewarm`,
         agentId,
-        workspaceId,
+        cwd,
         label: agentName,
-        meta: workspaceName,
+        meta: worktreeName,
         status: entry.loading ? "预热中" : "已预热",
-        runtimeSessionId: `${workspaceName} · 预热连接`,
+        runtimeSessionId: `${worktreeName} · 预热连接`,
         model: entry.state?.model,
         canReconnect: true,
       });
@@ -397,12 +399,12 @@ export function MissionWorkspace(props: any) {
         id: `acp:${agent.id ?? agent.name ?? "acp"}`,
         agentId: agent.id,
         projectId: selectedProjectId ?? undefined,
-        workspaceId: selectedWorkspaceId ?? undefined,
+        cwd: selectedCwd ?? undefined,
         label: agent.name ?? agent.id ?? "ACP",
         meta: "暂无连接",
         status: "未连接",
         runtimeSessionId: "暂无连接",
-        canConnect: Boolean(agent.id && selectedWorkspaceId),
+        canConnect: Boolean(agent.id && selectedCwd),
         canReconnect: false,
       });
     }
@@ -420,7 +422,7 @@ export function MissionWorkspace(props: any) {
   const reconnectAcpRuntime = (runtime: {
     agentId?: string;
     projectId?: string;
-    workspaceId?: string;
+    cwd?: string;
     canConnect?: boolean;
     canReconnect?: boolean;
   }) => {
@@ -428,11 +430,11 @@ export function MissionWorkspace(props: any) {
     if (!runtime.agentId || !client || client.socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    const reconnectKey = acpReconnectKey(runtime.agentId, runtime.workspaceId);
+    const reconnectKey = acpReconnectKey(runtime.agentId, runtime.cwd);
     const currentConnection = (agentConnectionInventory as any[]).find(
       (connection) =>
         connection.providerId === runtime.agentId &&
-        connection.workspaceId === runtime.workspaceId,
+        normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(runtime.cwd),
     );
     setPendingAcpReconnects((current) => ({
       ...current,
@@ -441,23 +443,23 @@ export function MissionWorkspace(props: any) {
     void dispatch?.(client, runtime.canReconnect ? "agent/reconnect" : "agent/connect", {
       providerId: runtime.agentId,
       projectId: runtime.projectId ?? selectedProjectId ?? undefined,
-      workspaceId: runtime.workspaceId ?? selectedWorkspaceId ?? undefined,
+      cwd: runtime.cwd ?? selectedCwd ?? undefined,
     });
   };
-  const selectedDraftConnection = !activeSession && selectedAgentId && selectedWorkspaceId
+  const selectedDraftConnection = !activeSession && selectedAgentId && selectedCwd
     ? (agentConnectionInventory as any[]).find(
         (connection) =>
           connection.providerId === selectedAgentId &&
-          connection.workspaceId === selectedWorkspaceId &&
+          normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(selectedCwd) &&
           connection.initialized &&
           connection.status !== "closed" &&
           connection.status !== "error",
       )
     : null;
-  const draftConnectionEntry = !activeSession && selectedAgentId && selectedWorkspaceId
-    ? (agentModelOptions as Record<string, any>)[`${selectedAgentId}::${selectedWorkspaceId}::${selectedProjectId ?? "global"}`] ??
+  const draftConnectionEntry = !activeSession && selectedAgentId && selectedCwd
+    ? (agentModelOptions as Record<string, any>)[`${selectedAgentId}::${selectedCwd}::${selectedProjectId ?? "global"}`] ??
       Object.entries(agentModelOptions as Record<string, any>).find(
-        ([key, entry]) => key.startsWith(`${selectedAgentId}::${selectedWorkspaceId}`) && entry?.loading,
+        ([key, entry]) => key.startsWith(`${selectedAgentId}::${selectedCwd}`) && entry?.loading,
       )?.[1]
     : null;
   const shouldShowComposer = Boolean(activeSession || selectedDraftConnection);
@@ -501,7 +503,7 @@ export function MissionWorkspace(props: any) {
           selectDraftAgent={selectDraftAgent}
           setSelectedMissionHelmId={setSelectedMissionHelmId}
           setSelectedProjectId={setSelectedProjectId}
-          setSelectedWorkspaceId={setSelectedWorkspaceId}
+          setSelectedCwd={setSelectedCwd}
           setSelectedAgentId={setSelectedAgentId}
           setAgentPickerOpen={setAgentPickerOpen}
           setExpandedMissionProjectIds={setExpandedMissionProjectIds}
@@ -547,7 +549,7 @@ export function MissionWorkspace(props: any) {
           pendingToolPresent={Boolean(pendingToolActivity)}
           pendingPermission={pendingPermission}
           pendingToolTitle={pendingToolActivity?.title ?? null}
-          showPermissionWorkspace={technicalPanels.showPermissionWorkspace}
+          showPermissionWorktree={technicalPanels.showPermissionWorktree}
           onRespondToPermission={respondToPermission}
         >
           {shouldShowDraftPreparing ? (
@@ -577,10 +579,10 @@ export function MissionWorkspace(props: any) {
               agentPickerRef={agentPickerRef}
               agentPickerOpen={agentPickerOpen}
               setAgentPickerOpen={setAgentPickerOpen}
-              selectedWorkspaceName={selectedWorkspaceName}
-              draftWorkspaceOptions={draftWorkspaceOptions}
-              selectedWorkspaceId={selectedWorkspaceId}
-              selectDraftWorkspace={selectDraftWorkspace}
+              selectedWorktreeName={selectedWorktreeName}
+              draftWorktreeOptions={draftWorktreeOptions}
+              selectedCwd={selectedCwd}
+              selectDraftWorktree={selectDraftWorktree}
               currentGitBranch={currentGitBranch}
               copy={copy}
               agentLocked={agentLocked}
@@ -605,6 +607,7 @@ export function MissionWorkspace(props: any) {
               slashSelectedIndex={slashSelectedIndex}
               applySlashCommand={applySlashCommand}
               setSlashSelectedIndex={setSlashSelectedIndex}
+              openSlashCommands={openSlashCommands}
               showDraftAgentModeSelect={showDraftAgentModeSelect}
               missionConfigPicker={missionConfigPicker}
               setMissionConfigPicker={setMissionConfigPicker}
@@ -659,9 +662,7 @@ export function MissionWorkspace(props: any) {
             statusLabel={missionStatusLabel}
             sessionToolCalls={activeToolCalls}
             commandChunks={activeOutputs}
-            sessionMessages={
-              activeSession ? (messages[activeSession.id] ?? []) : []
-            }
+            sessionMessages={activeSessionMessages}
             historyState={
               activeSession ? activityHistoryState[activeSession.id] : undefined
             }
@@ -735,17 +736,20 @@ export function MissionWorkspace(props: any) {
   );
 }
 
-function isManagedWorktreeWorkspace(workspace: { id?: string; path?: string }) {
-  const normalizedPath = workspace.path?.replace(/\\/g, "/") ?? "";
+function isManagedWorktreeWorktree(worktree: { path?: string }) {
+  const normalizedPath = worktree.path?.replace(/\\/g, "/") ?? "";
   return Boolean(
-    workspace.id?.includes("-worktree-") ||
-      normalizedPath.includes("/.worktrees/") ||
+    normalizedPath.includes("/.worktrees/") ||
       normalizedPath.includes("/.tiller/worktrees/"),
   );
 }
 
-function acpReconnectKey(agentId?: string, workspaceId?: string) {
-  return `${agentId ?? "unknown"}::${workspaceId ?? "global"}`;
+function acpReconnectKey(agentId?: string, cwd?: string) {
+  return `${agentId ?? "unknown"}::${cwd ?? "global"}`;
+}
+
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
 function formatRuntimeSessionCount(sessionCount: number, activeSessionCount?: number) {

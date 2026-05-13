@@ -3,12 +3,11 @@ import { Button, Input, Label } from "@/shared/ui";
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import {
   createProjectId,
-  defaultAgentId,
   resolveProjectDisplayId,
   resolveProjectWorktrees,
 } from "../utils/fleet-helpers";
@@ -24,7 +23,7 @@ type ProjectInventorySectionProps = {
   selectedHelmId: string;
   selectedHelmProjects: ProjectSummary[];
   selectedHelmRpcClient: DeckRpcClient | null;
-  selectedHelmWorkspaces: WorkspaceSummary[];
+  selectedHelmWorktrees: WorktreeSummary[];
   setDraft: Dispatch<SetStateAction<FleetProjectDraft>>;
   setFormOpen: Dispatch<SetStateAction<boolean>>;
   setSaveMessage: Dispatch<SetStateAction<string>>;
@@ -39,7 +38,7 @@ export function ProjectInventorySection({
   selectedHelmId,
   selectedHelmProjects,
   selectedHelmRpcClient,
-  selectedHelmWorkspaces,
+  selectedHelmWorktrees,
   setDraft,
   setFormOpen,
   setSaveMessage,
@@ -80,11 +79,18 @@ export function ProjectInventorySection({
             const existingProject = draft.id
               ? selectedHelmProjects.find((project) => project.id === draft.id)
               : undefined;
-            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects);
-            const workspaceId =
-              existingProject?.defaultWorkspaceId ??
-              existingProject?.workspaceIds?.[0] ??
-              `${projectId}-workspace`;
+            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects, projectName);
+            const existingWorktrees = existingProject?.worktrees ?? [];
+            const worktrees = existingWorktrees.length
+              ? existingWorktrees
+              : [
+                  {
+                    name: projectName,
+                    path: projectPath,
+                    branch: existingProject?.gitCurrentBranch,
+                    kind: "root" as const,
+                  },
+                ];
             setSaveMessage(`正在保存项目：${projectName}...`);
             void dispatch(selectedHelmRpcClient, "project/save", {
               project: {
@@ -93,14 +99,7 @@ export function ProjectInventorySection({
                 name: projectName,
                 helmId: existingProject?.helmId ?? selectedHelmId,
                 path: projectPath,
-                workspaceIds: existingProject?.workspaceIds?.length
-                  ? existingProject.workspaceIds
-                  : [workspaceId],
-                defaultWorkspaceId: existingProject?.defaultWorkspaceId ?? workspaceId,
-                defaultAgentId:
-                  existingProject?.defaultAgentId ??
-                  defaultAgentId(selectedHelmAgents) ??
-                  undefined,
+                worktrees,
               },
             });
             setDraft({ name: "", path: "" });
@@ -178,7 +177,7 @@ export function ProjectInventorySection({
                     <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
                       <ProjectWorktreeList
                         project={project}
-                        workspaces={selectedHelmWorkspaces}
+                        worktrees={selectedHelmWorktrees}
                       />
                     </dd>
                   </div>
@@ -235,23 +234,23 @@ export function ProjectInventorySection({
 
 function ProjectWorktreeList({
   project,
-  workspaces,
+  worktrees,
 }: {
   project: ProjectSummary;
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
 }) {
-  const worktrees = resolveProjectWorktrees(project, workspaces);
+  const resolvedWorktrees = resolveProjectWorktrees(project, worktrees);
 
-  if (!worktrees.length) {
+  if (!resolvedWorktrees.length) {
     return <span>-</span>;
   }
 
   return (
     <ul className="m-0 grid list-none gap-1 p-0">
-      {worktrees.map((workspace) => (
-        <li key={workspace.id} className="grid gap-0.5">
-          <span className="font-medium text-foreground">{workspace.name}</span>
-          <span className="break-all text-xs text-muted-foreground">{workspace.path}</span>
+      {resolvedWorktrees.map((worktree) => (
+        <li key={worktree.path} className="grid gap-0.5">
+          <span className="font-medium text-foreground">{worktree.name}</span>
+          <span className="break-all text-xs text-muted-foreground">{worktree.path}</span>
         </li>
       ))}
     </ul>

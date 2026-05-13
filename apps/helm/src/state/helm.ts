@@ -17,7 +17,7 @@ import type {
   ProjectSummary,
   SessionReasoningEffort,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { resolveTillerRuntimeOptions, type TillerRuntimeOptions } from "../runtime/options";
 import {
@@ -35,7 +35,7 @@ type TrustedDeviceStore = ReturnType<typeof createTrustedDeviceStore>;
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   runtime: {
     runtimeSessionId: string;
     sessionCapabilities?: StoredSessionRuntimeDescriptor["capabilities"];
@@ -74,14 +74,14 @@ export type HelmState = HelmSessionStores & {
   configPath: string;
   configStub: TillerConfigStub;
   tillerConfig: ReturnType<typeof readTillerConfig>;
-  defaultWorkspaceRoot: string;
+  defaultWorktreeRoot: string;
   paths: HelmStatePaths;
   runtime: HelmRuntimeOptions;
 
   trustedDeviceStore: TrustedDeviceStore;
 
   helms: HelmSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
   projects: ProjectSummary[];
 
@@ -90,21 +90,21 @@ export type HelmState = HelmSessionStores & {
   projectContextSummaryCache: Map<string, string>;
 
   reloadHelms(): void;
-  reloadWorkspaces(): void;
+  reloadWorktrees(): void;
   reloadAgents(): void;
   reloadProjects(): void;
 };
 
 export type CreateHelmStateOptions = {
   configPath: string;
-  defaultWorkspaceRoot: string;
+  defaultWorktreeRoot: string;
   logger: Pick<TillerLogger, "logInfo" | "logError">;
   argv?: string[];
   env?: NodeJS.ProcessEnv;
 };
 
 export function createHelmState(options: CreateHelmStateOptions): HelmState {
-  const { configPath, defaultWorkspaceRoot, logger } = options;
+  const { configPath, defaultWorktreeRoot, logger } = options;
 
   const configDir = dirname(configPath);
   const paths: HelmStatePaths = {
@@ -144,13 +144,13 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     configPath,
     configStub,
     tillerConfig,
-    defaultWorkspaceRoot,
+    defaultWorktreeRoot,
     paths,
     runtime,
     ...sessionStores,
     trustedDeviceStore,
     helms: [],
-    workspaces: [],
+    worktrees: [],
     agents: [],
     projects: [],
     sessions: new Map(),
@@ -159,8 +159,8 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     reloadHelms() {
       state.helms = loadAvailableHelms(state);
     },
-    reloadWorkspaces() {
-      state.workspaces = loadAvailableWorkspaces(state);
+    reloadWorktrees() {
+      state.worktrees = loadAvailableWorktrees(state);
     },
     reloadAgents() {
       state.agents = listAvailableProviders(state.configPath);
@@ -171,7 +171,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
   };
 
   state.reloadHelms();
-  state.reloadWorkspaces();
+  state.reloadWorktrees();
   state.reloadAgents();
   state.reloadProjects();
   normalizeProjectAgentDefaultsOnStartup(state, logger);
@@ -195,28 +195,23 @@ export function loadAvailableHelms(state: HelmState): HelmSummary[] {
   ];
 }
 
-export function loadAvailableWorkspaces(state: HelmState): WorkspaceSummary[] {
-  const configured = dedupeWorkspaces(readTillerConfig(state.configPath).workspaces ?? []);
+export function loadAvailableWorktrees(state: HelmState): WorktreeSummary[] {
+  const configured = dedupeWorktrees(readTillerConfig(state.configPath).worktrees ?? []);
   if (configured.length) {
     return configured;
   }
   return [
     {
-      id: "current-workspace",
-      name: basename(state.defaultWorkspaceRoot),
-      path: state.defaultWorkspaceRoot.replace(/\\/g, "/"),
+      name: basename(state.defaultWorktreeRoot),
+      path: state.defaultWorktreeRoot.replace(/\\/g, "/"),
     },
   ];
 }
 
 export function loadAvailableProjects(state: HelmState): ProjectSummary[] {
   const configured = listConfiguredProjects(state.configPath);
-  const available = listAvailableProviders(state.configPath);
   if (configured.length) {
-    return configured.map((project) => ({
-      ...project,
-      defaultAgentId: resolveDefaultProjectAgentId(available, project.defaultAgentId),
-    }));
+    return configured;
   }
 
   const fallbackHelm = state.helms[0] ?? {
@@ -225,43 +220,34 @@ export function loadAvailableProjects(state: HelmState): ProjectSummary[] {
     host: state.runtime.host,
     port: state.runtime.port,
   };
-  const fallbackWorkspaces = state.workspaces.length
-    ? state.workspaces
+  const fallbackWorktrees = state.worktrees.length
+    ? state.worktrees
     : [
         {
-          id: "current-workspace",
-          name: basename(state.defaultWorkspaceRoot),
-          path: state.defaultWorkspaceRoot.replace(/\\/g, "/"),
+          name: basename(state.defaultWorktreeRoot),
+          path: state.defaultWorktreeRoot.replace(/\\/g, "/"),
         },
       ];
   return [
     {
       id: "current-project",
-      name: basename(state.defaultWorkspaceRoot),
+      name: basename(state.defaultWorktreeRoot),
       helmId: fallbackHelm.id,
-      workspaceIds: fallbackWorkspaces.map((workspace) => workspace.id),
-      defaultWorkspaceId: fallbackWorkspaces[0]?.id,
-      defaultAgentId: resolveDefaultProjectAgentId(available, undefined),
+      path: state.defaultWorktreeRoot.replace(/\\/g, "/"),
+      worktrees: fallbackWorktrees,
     },
   ];
 }
 
-export function resolveDefaultProjectAgentId(
-  agents: AcpAgentProvider[],
-  existingDefaultAgentId: string | undefined,
-): string | undefined {
-  const codex = agents.find((agent) => agent.id === "codex");
-  return codex?.id ?? existingDefaultAgentId ?? agents[0]?.id;
-}
 
-function dedupeWorkspaces(items: WorkspaceSummary[]): WorkspaceSummary[] {
+function dedupeWorktrees(items: WorktreeSummary[]): WorktreeSummary[] {
   const seen = new Set<string>();
-  const next: WorkspaceSummary[] = [];
+  const next: WorktreeSummary[] = [];
   for (const item of items) {
-    if (seen.has(item.id)) {
+    if (seen.has(item.path)) {
       continue;
     }
-    seen.add(item.id);
+    seen.add(item.path);
     next.push(item);
   }
   return next;
@@ -271,16 +257,6 @@ function normalizeProjectAgentDefaultsOnStartup(
   state: HelmState,
   logger: Pick<TillerLogger, "logInfo">,
 ) {
-  const available = listAvailableProviders(state.configPath);
-  let updated = 0;
-  for (const project of listConfiguredProjects(state.configPath)) {
-    const next = resolveDefaultProjectAgentId(available, project.defaultAgentId);
-    if (next && project.defaultAgentId !== next) {
-      saveProjectToConfig({ ...project, defaultAgentId: next }, state.configPath);
-      updated += 1;
-    }
-  }
-  if (updated) {
-    logger.logInfo(`[tiller] project.agent.default updated=${updated} default=codex`);
-  }
+  void state;
+  void logger;
 }

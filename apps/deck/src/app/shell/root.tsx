@@ -26,7 +26,7 @@ import {
   shouldUseMissionVisualFixture,
   MissionAgentIcon,
   SessionCleanupConfirmDialog,
-  type SessionDraftPreferencePatch,
+  type SessionConfigPreferencePatch,
   useHistoryPagination,
   useMissionEffects,
   useMissionLayout,
@@ -62,6 +62,10 @@ import {
 } from "../composition/bindings";
 import { AppRoutes } from "../routing/route-content";
 import { useRouteView } from "../routing/route-view";
+import {
+  getDeckSessionMessages,
+  useActiveSessionMessages,
+} from "../state/active-session-messages";
 import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
@@ -116,6 +120,10 @@ export function App() {
   });
   const copy = UI_COPY[locale];
   const deckData = useDeckData(missionVisualFixture);
+  const activeSessionMessages = useActiveSessionMessages(
+    deckData.activeSessionId,
+    missionVisualFixture?.messages,
+  );
 
   function dispatch(
     client: DeckRpcClient,
@@ -156,7 +164,8 @@ export function App() {
   const lastFilesScopeKeyRef = useRef<string | null>(null);
   const titleActions = useSessionTitles({
     client: runtimeState.rpcClientRef.current,
-    messages: deckData.messages,
+    getSessionMessages: (sessionId) =>
+      missionVisualFixture?.messages?.[sessionId] ?? getDeckSessionMessages(sessionId),
     sessionTitles: deckData.sessionTitles,
     setSessionTitles: deckData.setSessionTitles,
     promptEnhancerLlm: deckData.deckPreferences.promptEnhancer.llm,
@@ -199,7 +208,7 @@ export function App() {
     setExpandedMissionHelmIds: runtimeState.setExpandedMissionHelmIds,
     setExpandedMissionProjectIds: runtimeState.setExpandedMissionProjectIds,
     setSelectedProjectId: runtimeState.setSelectedProjectId,
-    setSelectedWorkspaceId: runtimeState.setSelectedWorkspaceId,
+    setSelectedCwd: runtimeState.setSelectedCwd,
     setSelectedAgentId: runtimeState.setSelectedAgentId,
     setSelectedModel: runtimeState.setSelectedModel,
     setActiveSessionId: deckData.setActiveSessionId,
@@ -210,6 +219,7 @@ export function App() {
   const missionView = useMissionViewModel({
     runtimeState,
     deckData,
+    activeSessionMessages,
     helmConnection,
     copy,
     locale,
@@ -221,31 +231,36 @@ export function App() {
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
 
-  function updateSessionDraftPreferences(next: SessionDraftPreferencePatch) {
+  function updateSessionDraftPreferences(next: SessionConfigPreferencePatch) {
     const activeSession = missionView.activeSession;
     const client = runtimeState.rpcClientRef.current;
+    const directConfigPatch = typeof next.configId === "string"
+      ? { configId: next.configId, value: next.value }
+      : null;
     if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
       void dispatch(client, "session/configure", {
         sessionId: activeSession.id,
-        agentMode:
-          next.agentMode ??
-          activeSession.agentMode ??
-          missionView.effectiveDraftAgentMode,
-        model: normalizeModelSelection(
-          next.model ?? activeSession.model ?? missionView.draftModel,
-        ),
-        reasoningEffort:
-          next.reasoningEffort ??
-          activeSession.reasoningEffort ??
-          runtimeState.selectedReasoningEffort,
+        ...(directConfigPatch ?? {
+          agentMode:
+            next.agentMode ??
+            activeSession.agentMode ??
+            missionView.effectiveDraftAgentMode,
+          model: normalizeModelSelection(
+            next.model ?? activeSession.model ?? missionView.draftModel,
+          ),
+          reasoningEffort:
+            next.reasoningEffort ??
+            activeSession.reasoningEffort ??
+            runtimeState.selectedReasoningEffort,
+        }),
       });
       return;
     }
     const draftKey =
-      runtimeState.selectedAgentId && runtimeState.selectedWorkspaceId
+      runtimeState.selectedAgentId && runtimeState.selectedCwd
         ? agentModelOptionsKey(
             runtimeState.selectedAgentId,
-            runtimeState.selectedWorkspaceId,
+            runtimeState.selectedCwd,
             runtimeState.selectedProjectId,
           )
         : null;
@@ -253,9 +268,11 @@ export function App() {
     if (draftEntry?.draftId && client?.socket.readyState === WebSocket.OPEN) {
       void dispatch(client, "session/configure", {
         draftId: draftEntry.draftId,
-        agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
-        model: normalizeModelSelection(next.model ?? missionView.draftModel),
-        reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
+        ...(directConfigPatch ?? {
+          agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
+          model: normalizeModelSelection(next.model ?? missionView.draftModel),
+          reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
+        }),
       });
     }
     if (typeof next.agentMode === "string")
@@ -312,11 +329,11 @@ export function App() {
     promptEnhancer: deckData.deckPreferences.promptEnhancer,
     setPromptEnhancerBusy: promptEnhancerSettings.setBusy,
     setPromptEnhancerStatus: promptEnhancerSettings.setStatus,
-    filteredWorkspaces: missionView.filteredWorkspaces,
-    selectedWorkspaceId: runtimeState.selectedWorkspaceId,
+    filteredWorktrees: missionView.filteredWorktrees,
+    selectedCwd: runtimeState.selectedCwd,
     activeSession: missionView.activeSession,
     draftProject: missionView.draftProject,
-    messages: deckData.messages,
+    activeSessionMessages: missionView.activeSessionMessages,
   });
   useMissionEffects({
     runtimeState,

@@ -18,7 +18,7 @@ export const method = "session/draft" as const;
 export const ParamsSchema = z.object({
   deckClientId: z.string(),
   projectId: z.string(),
-  workspaceId: z.string(),
+  cwd: z.string(),
   agentId: z.string(),
   agentMode: z.string().optional(),
   model: z.string().optional(),
@@ -29,7 +29,7 @@ export const ResultSchema = z.object({
   draftId: z.string().optional(),
   deckClientId: z.string(),
   projectId: z.string().optional(),
-  workspaceId: z.string().optional(),
+  cwd: z.string().optional(),
   providerId: z.string().optional(),
   scopeKey: z.string(),
   logicalScopeKey: z.string(),

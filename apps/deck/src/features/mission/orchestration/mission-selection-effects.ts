@@ -9,6 +9,10 @@ import {
   resolveSessionProjectId,
 } from "../utils/session-derivations";
 
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 export function useMissionSelectionEffects(source: any) {
   const {
     worktreePickerOpen,
@@ -32,9 +36,9 @@ export function useMissionSelectionEffects(source: any) {
     setActiveSessionId,
     effectiveMissionHelmId,
     setExpandedMissionHelmIds,
-    selectedWorkspaceId,
-    filteredWorkspaces,
-    setSelectedWorkspaceId,
+    selectedCwd,
+    filteredWorktrees,
+    setSelectedCwd,
     pairingState,
     rpcClientRef,
     setWorktreeGitByProject,
@@ -152,16 +156,16 @@ export function useMissionSelectionEffects(source: any) {
     if (!draftProject) {
       return;
     }
-    const defaultWorkspaceId = draftProject.defaultWorkspaceId;
-    const nextWorkspaceId = resolveDraftSelectionId(
-      selectedWorkspaceId,
-      filteredWorkspaces,
-      defaultWorkspaceId,
+    const defaultCwd = draftProject.path ?? draftProject.worktrees?.[0]?.path;
+    const nextWorktreeId = resolveDraftSelectionId(
+      selectedCwd,
+      filteredWorktrees,
+      defaultCwd,
     );
-    if (nextWorkspaceId && nextWorkspaceId !== selectedWorkspaceId) {
-      setSelectedWorkspaceId(nextWorkspaceId);
+    if (nextWorktreeId && nextWorktreeId !== selectedCwd) {
+      setSelectedCwd(nextWorktreeId);
     }
-  }, [draftProject, filteredWorkspaces, selectedWorkspaceId]);
+  }, [draftProject, filteredWorktrees, selectedCwd]);
   useEffect(() => {
     if (
       !selectedProjectId ||
@@ -179,7 +183,7 @@ export function useMissionSelectionEffects(source: any) {
         message: "正在加载 worktree...",
       },
     }));
-    void dispatch(rpcClientRef.current, "workspace/git/list_branches", {
+    void dispatch(rpcClientRef.current, "project/git/list_branches", {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
@@ -195,23 +199,28 @@ export function useMissionSelectionEffects(source: any) {
     }
   }, [draftProject, filteredAgents, selectedAgentId]);
   useEffect(() => {
+    const selectedWorktree = filteredWorktrees.find(
+      (worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
+    );
+    const selectedProject = projects.find((project: any) => project.id === selectedProjectId);
+    const selectedDraftCwd = selectedWorktree?.path ?? selectedCwd ?? selectedProject?.path;
     if (
       activeSession ||
       pairingState !== "paired" ||
       !selectedProjectId ||
       !selectedAgentId ||
-      !selectedWorkspaceId ||
+      !selectedDraftCwd ||
       !rpcClientRef.current ||
       rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
-    const key = agentModelOptionsKey(selectedAgentId, selectedWorkspaceId, selectedProjectId);
+    const key = agentModelOptionsKey(selectedAgentId, selectedDraftCwd, selectedProjectId);
     const cached = agentModelOptions[key];
     const hasReadyConnection = (agentConnectionInventory ?? []).some(
-      (connection) =>
+      (connection: any) =>
         connection.providerId === selectedAgentId &&
-        connection.workspaceId === selectedWorkspaceId &&
+        connection.cwd === selectedDraftCwd &&
         connection.initialized &&
         connection.status !== "closed" &&
         connection.status !== "error",
@@ -277,7 +286,7 @@ export function useMissionSelectionEffects(source: any) {
       void dispatch(rpcClientRef.current, "session/draft", {
         deckClientId: getDeckClientId(),
         projectId: selectedProjectId,
-        workspaceId: selectedWorkspaceId,
+        cwd: selectedDraftCwd,
         agentId: selectedAgentId,
         agentMode: effectiveDraftAgentMode,
         model: selectedModel === "provider-default" ? undefined : selectedModel,
@@ -310,7 +319,7 @@ export function useMissionSelectionEffects(source: any) {
     }));
     void dispatch(rpcClientRef.current, "agent/connect", {
       projectId: selectedProjectId,
-      workspaceId: selectedWorkspaceId,
+      cwd: selectedDraftCwd,
       providerId: selectedAgentId,
     });
   }, [
@@ -320,7 +329,7 @@ export function useMissionSelectionEffects(source: any) {
     selectedAgentId,
     selectedModel,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   ]);

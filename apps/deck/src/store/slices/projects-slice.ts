@@ -1,4 +1,4 @@
-import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 import type { StateCreator } from "zustand";
 
 export type WorktreeGitState = {
@@ -12,9 +12,9 @@ export type ProjectsUpdater =
   | ProjectSummary[]
   | ((current: ProjectSummary[]) => ProjectSummary[]);
 
-export type WorkspacesUpdater =
-  | WorkspaceSummary[]
-  | ((current: WorkspaceSummary[]) => WorkspaceSummary[]);
+export type WorktreesUpdater =
+  | WorktreeSummary[]
+  | ((current: WorktreeSummary[]) => WorktreeSummary[]);
 
 export type WorktreeGitUpdater =
   | Record<string, WorktreeGitState>
@@ -22,25 +22,25 @@ export type WorktreeGitUpdater =
 
 export type ProjectsSlice = {
   projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   worktreeGitByProject: Record<string, WorktreeGitState>;
   setProjects: (updater: ProjectsUpdater) => void;
-  setWorkspaces: (updater: WorkspacesUpdater) => void;
+  setWorktrees: (updater: WorktreesUpdater) => void;
   setWorktreeGitByProject: (updater: WorktreeGitUpdater) => void;
 };
 
 export const createProjectsSlice: StateCreator<ProjectsSlice> = (set) => ({
   projects: [],
-  workspaces: [],
+  worktrees: [],
   worktreeGitByProject: {},
   setProjects: (updater) =>
     set((state) => ({
       projects: typeof updater === "function" ? updater(state.projects) : updater,
     })),
-  setWorkspaces: (updater) =>
+  setWorktrees: (updater) =>
     set((state) => ({
-      workspaces:
-        typeof updater === "function" ? updater(state.workspaces) : updater,
+      worktrees:
+        typeof updater === "function" ? updater(state.worktrees) : updater,
     })),
   setWorktreeGitByProject: (updater) =>
     set((state) => ({

@@ -25,8 +25,8 @@ function buildSession(id: string, updatedAt: string): SessionSummary {
     projectId: "project-1",
     projectName: "Tiller",
     helmId: "helm-1",
-    workspaceId: "workspace-1",
-    workspaceName: "Tiller Workspace",
+    cwd: "D:/repo",
+    worktreeName: "Tiller Worktree",
     agentId: "agent-1",
     agentName: "OpenCode",
     status: "idle",
@@ -93,20 +93,20 @@ test("resolveSessionProjectId keeps the session project binding authoritative", 
     ...buildSession("session-authoritative", "2026-04-27T10:00:00.000Z"),
     projectId: "project-alpha",
     projectName: "Alpha",
-    workspaceId: "workspace-shared",
+    cwd: "D:/shared",
   };
   const projects: ProjectSummary[] = [
     {
       id: "project-alpha",
       name: "Alpha",
       helmId: "helm-1",
-      workspaceIds: ["workspace-alpha"],
+      worktrees: [{ name: "alpha", path: "D:/alpha" }],
     },
     {
       id: "project-beta",
       name: "Beta",
       helmId: "helm-1",
-      workspaceIds: ["workspace-shared"],
+      worktrees: [{ name: "shared", path: "D:/shared" }],
     },
   ];
 
@@ -118,20 +118,20 @@ test("resolveSessionProjectId falls back for legacy sessions with unknown projec
     ...buildSession("session-legacy", "2026-04-27T10:00:00.000Z"),
     projectId: "legacy-project",
     projectName: "Beta",
-    workspaceId: "workspace-beta",
+    cwd: "D:/beta",
   };
   const projects: ProjectSummary[] = [
     {
       id: "project-alpha",
       name: "Alpha",
       helmId: "helm-1",
-      workspaceIds: ["workspace-alpha"],
+      worktrees: [{ name: "alpha", path: "D:/alpha" }],
     },
     {
       id: "project-beta",
       name: "Beta",
       helmId: "helm-1",
-      workspaceIds: ["workspace-beta"],
+      worktrees: [{ name: "beta", path: "D:/beta" }],
     },
   ];
 
@@ -180,17 +180,17 @@ test("resolveSessionTitle falls back to project task name when preview has no re
 });
 
 test("resolveDraftSelectionId preserves a valid manual selection instead of forcing the project default", () => {
-  const available = [{ id: "opencode" }, { id: "codex" }];
+  const available = [{ path: "D:/opencode" }, { path: "D:/codex" }];
 
   assert.equal(
-    resolveDraftSelectionId("codex", available, "opencode"),
-    "codex",
+    resolveDraftSelectionId("D:/codex", available, "D:/opencode"),
+    "D:/codex",
   );
   assert.equal(
-    resolveDraftSelectionId("missing", available, "opencode"),
-    "opencode",
+    resolveDraftSelectionId("missing", available, "D:/opencode"),
+    "D:/opencode",
   );
-  assert.equal(resolveDraftSelectionId(null, available, "missing"), "opencode");
+  assert.equal(resolveDraftSelectionId(null, available, "missing"), "D:/opencode");
 });
 
 test("resolveModelOptionsFromConfig reads concrete ACP model choices from config options", () => {
@@ -258,7 +258,7 @@ test("resolveProjectFilesScope uses active session scope when a session is open"
   const activeSession = {
     ...buildSession("session-1", "2026-04-27T10:00:00.000Z"),
     projectId: "session-project",
-    workspaceId: "session-workspace",
+    cwd: "D:/session-worktree",
   };
 
   assert.deepEqual(
@@ -268,7 +268,7 @@ test("resolveProjectFilesScope uses active session scope when a session is open"
     }),
     {
       projectId: "resolved-session-project",
-      workspaceId: "session-workspace",
+      cwd: "D:/session-worktree",
     },
   );
 });
@@ -281,7 +281,7 @@ test("resolveProjectFilesScope ignores draft project before a session starts", (
     }),
     {
       projectId: null,
-      workspaceId: null,
+      cwd: null,
     },
   );
 });

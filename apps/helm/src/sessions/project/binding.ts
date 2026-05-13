@@ -1,14 +1,11 @@
-import type { ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
 
-/** True when `workspace` represents the project's root branch — its path should fall back to `project.path`. */
-export function isProjectRootBranchWorkspace<P extends ProjectSummary>(
+/** True when `worktree` represents the project's root cwd. */
+export function isProjectRootBranchWorktree<P extends ProjectSummary>(
   project: P,
-  workspace: Pick<WorkspaceSummary, "id">,
+  worktree: Pick<WorktreeSummary, "path">,
 ): project is P & { path: string } {
-  return Boolean(
-    project.path &&
-    (workspace.id === project.defaultWorkspaceId || workspace.id === project.gitCurrentBranch),
-  );
+  return Boolean(project.path && normalizeWorktreePath(worktree.path) === normalizeWorktreePath(project.path));
 }
 
 export function alignSessionProjectBinding(
@@ -21,12 +18,13 @@ export function alignSessionProjectBinding(
       ...summary,
       projectName: exactProject.name,
       helmId: exactProject.helmId,
+      cwd: summary.cwd || resolveProjectCwd(exactProject),
     };
   }
 
   const matchedProject =
     projects.find((project) => project.name === summary.projectName) ??
-    projects.find((project) => project.workspaceIds?.includes(summary.workspaceId));
+    projects.find((project) => project.worktrees?.some((worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(summary.cwd)));
   if (!matchedProject) {
     return summary;
   }
@@ -36,5 +34,34 @@ export function alignSessionProjectBinding(
     projectId: matchedProject.id,
     projectName: matchedProject.name,
     helmId: matchedProject.helmId,
+    cwd: summary.cwd || resolveProjectCwd(matchedProject),
   };
+}
+
+export function alignSessionWorktreeBinding(
+  summary: SessionSummary,
+  worktrees: WorktreeSummary[],
+): SessionSummary {
+  const normalizedSummaryPath = normalizeWorktreePath(summary.cwd);
+  const matchedWorktree = normalizedSummaryPath
+    ? worktrees.find((worktree) => normalizeWorktreePath(worktree.path) === normalizedSummaryPath)
+    : undefined;
+
+  if (!matchedWorktree) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    cwd: summary.cwd || matchedWorktree.path,
+    worktreeName: matchedWorktree.name,
+  };
+}
+
+function resolveProjectCwd(project: ProjectSummary) {
+  return project.path || project.worktrees?.[0]?.path || "";
+}
+
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

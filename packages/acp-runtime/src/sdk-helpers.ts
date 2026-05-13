@@ -58,7 +58,7 @@ export function mapPromptContentToSdkBlocks(content: AgentPromptContent[]): acp.
       });
 }
 
-export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id: string, workspacePath: string): SdkMappedPermissionRequest {
+export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id: string, cwd: string): SdkMappedPermissionRequest {
   const optionIds: Partial<Record<PermissionDecision, string>> = {};
   const options: PermissionRequestOption[] = [];
 
@@ -87,7 +87,7 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
       id,
       command,
       reason,
-      workspacePath,
+      cwd,
       ...(options.length ? { options } : {}),
     },
   };

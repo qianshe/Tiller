@@ -76,7 +76,7 @@ function sortSessionSummaries(summaries: SessionSummary[]) {
   });
 }
 
-function isSessionSummary(value: unknown): value is SessionSummary {
+export function isSessionSummary(value: unknown): value is SessionSummary {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -87,8 +87,8 @@ function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.projectId === "string" &&
     typeof candidate.projectName === "string" &&
     typeof candidate.helmId === "string" &&
-    typeof candidate.workspaceId === "string" &&
-    typeof candidate.workspaceName === "string" &&
+    typeof candidate.cwd === "string" &&
+    (typeof candidate.worktreeName === "string" || typeof candidate.worktreeName === "undefined") &&
     typeof candidate.agentId === "string" &&
     typeof candidate.agentName === "string" &&
     typeof candidate.status === "string" &&
@@ -104,67 +104,8 @@ function isSessionSummary(value: unknown): value is SessionSummary {
   );
 }
 
-function normalizeSessionSummary(value: unknown): SessionSummary | null {
-  if (isSessionSummary(value)) {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const hasLegacyCoreFields =
-    typeof candidate.id === "string" &&
-    typeof candidate.workspaceId === "string" &&
-    typeof candidate.workspaceName === "string" &&
-    typeof candidate.agentId === "string" &&
-    typeof candidate.agentName === "string" &&
-    typeof candidate.status === "string" &&
-    typeof candidate.createdAt === "string" &&
-    typeof candidate.updatedAt === "string" &&
-    typeof candidate.messageCount === "number";
-
-  if (!hasLegacyCoreFields) {
-    return null;
-  }
-
-  return {
-    id: candidate.id as string,
-    projectId: typeof candidate.projectId === "string" ? candidate.projectId : "legacy-project",
-    projectName:
-      typeof candidate.projectName === "string"
-        ? candidate.projectName
-        : String(candidate.workspaceName),
-    helmId: typeof candidate.helmId === "string" ? candidate.helmId : "legacy-helm",
-    workspaceId: candidate.workspaceId as string,
-    workspaceName: candidate.workspaceName as string,
-    agentId: candidate.agentId as string,
-    agentName: candidate.agentName as string,
-    agentMode:
-      typeof candidate.agentMode === "string" && candidate.agentMode.trim()
-        ? candidate.agentMode
-        : undefined,
-    model:
-      typeof candidate.model === "string" && candidate.model.trim() ? candidate.model : undefined,
-    reasoningEffort:
-      candidate.reasoningEffort === "minimal" ||
-      candidate.reasoningEffort === "low" ||
-      candidate.reasoningEffort === "medium" ||
-      candidate.reasoningEffort === "high" ||
-      candidate.reasoningEffort === "xhigh"
-        ? candidate.reasoningEffort
-        : undefined,
-    status: candidate.status as SessionSummary["status"],
-    createdAt: candidate.createdAt as string,
-    updatedAt: candidate.updatedAt as string,
-    messageCount: candidate.messageCount as number,
-    runtimeSessionId:
-      typeof candidate.runtimeSessionId === "string" ? candidate.runtimeSessionId : undefined,
-    title: typeof candidate.title === "string" ? candidate.title : undefined,
-    lastMessagePreview:
-      typeof candidate.lastMessagePreview === "string" ? candidate.lastMessagePreview : undefined,
-    resume: normalizeResumeInfo(candidate.resume),
-  };
+export function normalizeSessionSummary(value: unknown): SessionSummary | null {
+  return isSessionSummary(value) ? value : null;
 }
 
 function isSessionResumeInfo(value: unknown): value is SessionResumeInfo {

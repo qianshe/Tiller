@@ -37,9 +37,9 @@ function withStoredPreferences(raw: string, callback: () => void) {
   }
 }
 
-test("default technical panel preferences keep approval workspace visible", () => {
+test("default technical panel preferences keep approval worktree visible", () => {
   assert.equal(
-    DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorkspace,
+    DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorktree,
     true,
   );
 });
@@ -51,7 +51,7 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
         logbookDefaultOpen: true,
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
-        showPermissionWorkspace: false,
+        showPermissionWorktree: false,
         showConnectionDebug: true,
       },
     }),
@@ -62,7 +62,7 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
         logbookDefaultOpen: true,
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
-        showPermissionWorkspace: false,
+        showPermissionWorktree: false,
         showConnectionDebug: true,
       });
     },

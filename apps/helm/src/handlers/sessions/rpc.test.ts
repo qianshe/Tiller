@@ -18,12 +18,40 @@ test("session RPC lists paged sessions", async () => {
   });
 });
 
+test("session/subscribe records a session topic subscription", async () => {
+  const calls: string[] = [];
+
+  const result = await handleSessionRpcRequest("session/subscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    subscribeSessionTopic: (socketId: string, sessionId: string) => {
+      calls.push(`${socketId}:${sessionId}`);
+    },
+  } as any);
+
+  assert.deepEqual(calls, ["socket-1:s1"]);
+  assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
+});
+
+test("session/unsubscribe records a session topic removal", async () => {
+  const calls: string[] = [];
+
+  const result = await handleSessionRpcRequest("session/unsubscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    unsubscribeSessionTopic: (socketId: string, sessionId: string) => {
+      calls.push(`${socketId}:${sessionId}`);
+    },
+  } as any);
+
+  assert.deepEqual(calls, ["socket-1:s1"]);
+  assert.deepEqual(result, { ok: true, message: "Unsubscribed from session s1." });
+});
+
 test("permission/list_pending returns active permission requests", async () => {
   const request = {
     id: "permission-1",
     command: "Approve MCP tool call :: {}",
     reason: "需要审核工具调用",
-    workspacePath: "D:/repo",
+    cwd: "D:/repo",
   };
   const result = await handleSessionRpcRequest("permission/list_pending", {}, {
     permissionIndex: new Map([
@@ -119,10 +147,10 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
     id: "project-1",
     name: "Tiller",
     helmId: "local-helm",
-    workspaceIds: ["workspace-1"],
+    cwds: ["worktree-1"],
   };
   const helm = { id: "local-helm", name: "Local Helm" };
-  const workspace = { id: "workspace-1", name: "main", path: "D:/repo" };
+  const worktree = { id: "worktree-1", name: "main", path: "D:/repo" };
   const agent = { id: "codex", name: "Codex" };
   let attachedSessionId: string | undefined;
   let prompted = "";
@@ -143,11 +171,11 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
     takeRuntimeDraft: () => ({
       draftId: "draft-1",
       deckClientId: "deck-1",
-      scopeKey: "deck-1:workspace-1:codex",
-      logicalScopeKey: "workspace-1:codex",
+      scopeKey: "deck-1:worktree-1:codex",
+      logicalScopeKey: "worktree-1:codex",
       project,
       helm,
-      workspace,
+      worktree,
       agent,
       runtime,
       attach: (sessionId: string) => { attachedSessionId = sessionId; },
@@ -208,6 +236,8 @@ test("session/configure routes draft config without requiring a visible session"
     agentMode: undefined,
     model: "gpt-5.5",
     reasoningEffort: "high",
+    configId: undefined,
+    value: undefined,
   });
   assert.deepEqual(result, {
     ok: true,
@@ -242,6 +272,8 @@ test("session/set_config_option remains a compatibility alias for draft config",
     agentMode: "plan",
     model: undefined,
     reasoningEffort: undefined,
+    configId: undefined,
+    value: undefined,
   });
   assert.deepEqual(result, {
     ok: true,
@@ -249,6 +281,35 @@ test("session/set_config_option remains a compatibility alias for draft config",
     state: { agentMode: "plan" },
     options: [],
     message: "Runtime draft config updated.",
+  });
+});
+
+test("session/configure forwards arbitrary config option values", async () => {
+  let configured: unknown;
+  await handleSessionRpcRequest(
+    "session/configure",
+    { draftId: "draft-1", configId: "notify", value: true },
+    {
+      configureRuntimeDraft: (params: unknown) => {
+        configured = params;
+        return {
+          ok: true,
+          draftId: "draft-1",
+          state: {},
+          options: [{ id: "notify", currentValue: true }],
+          message: "Runtime draft config updated.",
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(configured, {
+    draftId: "draft-1",
+    agentMode: undefined,
+    model: undefined,
+    reasoningEffort: undefined,
+    configId: "notify",
+    value: true,
   });
 });
 
@@ -283,4 +344,67 @@ test("session/discard_draft delegates cleanup to the runtime draft registry", as
     cleanup: { kind: "remote-deleted", providerId: "opencode", message: "deleted" },
     message: "Runtime draft discarded.",
   });
+});
+
+test("session/new uses cwd without requiring cwd", async () => {
+  const project = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local-helm",
+    path: "D:/repo",
+    cwds: ["old-worktree"],
+  };
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const agent = { id: "codex", name: "Codex" };
+  let runtimeWorktree: unknown;
+  let storedSummary: any;
+  const sessions = new Map();
+
+  const result = await handleSessionRpcRequest(
+    "session/new",
+    { projectId: "project-1", cwd: "D:/repo", agentId: "codex" },
+    {
+      loadAvailableHelms: () => [helm],
+      loadAvailableWorktrees: () => [],
+      loadAvailableAgents: () => [agent],
+      loadAvailableProjectsWithSemanticSummaries: () => [project],
+      setHelms: () => undefined,
+      setWorktrees: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: (id: string) => (id === project.id ? project : undefined),
+      resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
+      resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
+      buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "test", checkedAt: "2026-05-13T00:00:00.000Z" }),
+      hydrateSessionSummary: (summary: any) => summary,
+      sessionStore: {
+        upsert: (summary: any) => { storedSummary = summary; },
+      },
+      persistRuntimeDescriptor: () => undefined,
+      broadcastNotification: () => undefined,
+      logInfo: () => undefined,
+      logError: () => undefined,
+      handleRuntimeEvent: () => undefined,
+      updateSessionSummary: () => undefined,
+      sessions,
+      createRuntime: async ({ worktree }: any) => {
+        runtimeWorktree = worktree;
+        return {
+          runtimeSessionId: "runtime-1",
+          sessionCapabilities: { sessionLoad: true },
+          sessionConfigState: {},
+          sessionModelState: {},
+        };
+      },
+    } as any,
+  ) as { session: { cwd?: string; runtimeSessionId?: string } };
+
+  assert.deepEqual(runtimeWorktree, {
+    name: "repo",
+    path: "D:/repo",
+    summary: undefined,
+  });
+  assert.equal(storedSummary.cwd, "D:/repo");
+  assert.equal(result.session.cwd, "D:/repo");
+  assert.equal(result.session.runtimeSessionId, "runtime-1");
 });

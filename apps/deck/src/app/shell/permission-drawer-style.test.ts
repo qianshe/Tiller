@@ -33,7 +33,7 @@ test("permission drawer path and actions stay within the chat pane", () => {
   assert.match(permissionDrawerSource, /mission-permission-header[^\n]+grid-cols-\[auto_minmax\(0,1fr\)\]/);
   assert.match(permissionDrawerSource, /mission-permission-title[^\n]+overflow-hidden/);
   assert.match(permissionDrawerSource, /mission-permission-title[^\n]+text-ellipsis/);
-  assert.match(permissionDrawerSource, /mission-permission-workspace[^\n]+break-all/);
+  assert.match(permissionDrawerSource, /mission-permission-worktree[^\n]+break-all/);
   assert.match(permissionDrawerSource, /mission-permission-actions[^\n]+flex-wrap/);
 });
 

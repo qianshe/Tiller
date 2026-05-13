@@ -4,7 +4,7 @@ import type {
   ProjectFileSummary,
   SessionConfigOption,
   SessionReasoningEffort,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { AgentModelOptionsEntry } from "../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
@@ -19,17 +19,17 @@ type ProjectFilesEntry = {
 };
 
 export type InventoryServerEventContext = {
-  projectFilesKey: (projectId: string, workspaceId?: string) => string;
+  projectFilesKey: (projectId: string, worktreeId?: string) => string;
   setProjectFilesByScope: StoreSetter<Record<string, ProjectFilesEntry>>;
-  setSelectedWorkspaceId: (workspaceId: string | null) => void;
+  setSelectedCwd: (worktreeId: string | null) => void;
   setWorktreePickerOpen: (open: boolean) => void;
   setAgentTestResult: (message: string) => void;
-  agentModelOptionsKey: (providerId: string, workspaceId: string, projectId?: string | null) => string;
+  agentModelOptionsKey: (providerId: string, worktreeId: string, projectId?: string | null) => string;
   writeAgentModelOptionsCache: (
     entries: Record<string, AgentModelOptionsEntry>,
   ) => void;
   selectedAgentId: string | null;
-  selectedWorkspaceId: string | null;
+  selectedCwd: string | null;
   resolveModelOptions: (
     currentModel?: string,
     configOptions?: SessionConfigOption[],
@@ -62,13 +62,13 @@ export function applyInventoryResult(
   const {
     projectFilesKey,
     setProjectFilesByScope,
-    setSelectedWorkspaceId,
+    setSelectedCwd,
     setWorktreePickerOpen,
     setAgentTestResult,
     agentModelOptionsKey,
     writeAgentModelOptionsCache,
     selectedAgentId,
-    selectedWorkspaceId,
+    selectedCwd,
     resolveModelOptions,
     resolvePreferredModel,
     selectedModel,
@@ -106,7 +106,7 @@ export function applyInventoryResult(
       }
       return true;
     case "project/list_files": {
-      const key = projectFilesKey(payload.projectId, payload.workspaceId);
+      const key = projectFilesKey(payload.projectId, payload.cwd);
       setProjectFilesByScope((current) => ({
         ...current,
         [key]: {
@@ -117,14 +117,13 @@ export function applyInventoryResult(
       }));
       return true;
     }
-    case "workspace/list":
-      store.applyHelmInventory(sourceHelmKey, { workspaces: payload.workspaces });
+    case "project/list_worktrees":
       if (sourceIsCurrentHelm) {
-        store.setWorkspaces(payload.workspaces);
+        store.setWorktrees(payload.worktrees);
       }
       return true;
-    case "workspace/git/list_branches":
-    case "workspace/git/create_branch":
+    case "project/git/list_branches":
+    case "project/git/create_worktree":
       store.setWorktreeGitByProject((current) => ({
         ...current,
         [payload.projectId]: {
@@ -134,19 +133,19 @@ export function applyInventoryResult(
           loading: false,
         },
       }));
-      if (sourceIsCurrentHelm && payload.workspaces.length) {
-        store.setWorkspaces((current) => {
+      if (sourceIsCurrentHelm && payload.worktrees.length) {
+        store.setWorktrees((current) => {
           const nextById = new Map(
-            current.map((workspace) => [workspace.id, workspace]),
+            current.map((worktree) => [worktree.path, worktree]),
           );
-          payload.workspaces.forEach((workspace: WorkspaceSummary) =>
-            nextById.set(workspace.id, workspace),
+          payload.worktrees.forEach((worktree: WorktreeSummary) =>
+            nextById.set(worktree.path, worktree),
           );
           return Array.from(nextById.values());
         });
       }
-      if (payload.selectedWorkspaceId) {
-        setSelectedWorkspaceId(payload.selectedWorkspaceId);
+      if (payload.selectedCwd) {
+        setSelectedCwd(payload.selectedCwd);
         setWorktreePickerOpen(false);
       }
       return true;
@@ -165,14 +164,14 @@ export function applyInventoryResult(
     case "agent/reconnect":
       if (sourceIsCurrentHelm) {
         store.setAgentConnectionInventory(payload.connections ?? []);
-        if (payload.providerId && payload.workspaceId) {
-          const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+        if (payload.providerId && payload.cwd) {
+          const baseKey = agentModelOptionsKey(payload.providerId, payload.cwd);
           const currentEntries = store.agentModelOptions;
           const loadingEntry = Object.entries(currentEntries).find(
             ([k, entry]) => k.startsWith(baseKey) && entry.loading,
           );
           const loadingProjectId = loadingEntry?.[1]?.projectId;
-          const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, loadingProjectId);
+          const key = agentModelOptionsKey(payload.providerId, payload.cwd, loadingProjectId);
           const previous = currentEntries[key] ?? loadingEntry?.[1];
           store.setAgentModelOptions((current) => ({
             ...current,
@@ -195,7 +194,8 @@ export function applyInventoryResult(
     case "session/draft": {
       // Reconstruct the cache key including projectId. Prefer the loading entry,
       // because draft creation is tied to the currently selected agent scope.
-      const baseKey = agentModelOptionsKey(payload.providerId, payload.workspaceId);
+      const worktreeScope = payload.cwd;
+      const baseKey = agentModelOptionsKey(payload.providerId, worktreeScope);
       const currentEntries = store.agentModelOptions;
       const matchingEntries = Object.entries(currentEntries).filter(([key]) =>
         key.startsWith(baseKey),
@@ -203,7 +203,7 @@ export function applyInventoryResult(
       const loadingEntry = matchingEntries.find(([, entry]) => entry.loading);
       const existingEntry = loadingEntry ?? matchingEntries.find(([, entry]) => entry.projectId);
       const existingProjectId = existingEntry?.[1]?.projectId;
-      const key = agentModelOptionsKey(payload.providerId, payload.workspaceId, existingProjectId);
+      const key = agentModelOptionsKey(payload.providerId, worktreeScope, existingProjectId);
       const previous = currentEntries[key] ?? existingEntry?.[1];
       const payloadModelOptions = Array.isArray(payload.modelOptions) ? payload.modelOptions : [];
       const payloadConfigOptions = Array.isArray(payload.configOptions) ? payload.configOptions : [];
@@ -246,10 +246,11 @@ export function applyInventoryResult(
           [payload.providerId]: payload.availableCommands,
         }));
       }
+      const selectedWorktreePath = selectedCwd;
       if (
         sourceIsCurrentHelm &&
         payload.providerId === selectedAgentId &&
-        payload.workspaceId === selectedWorkspaceId
+        payload.cwd === selectedWorktreePath
       ) {
         const realOptions = resolveModelOptions(
           payload.currentModelId ?? nextState.model,
@@ -283,13 +284,56 @@ export function applyInventoryResult(
       }
       return true;
     }
+    case "session/configure": {
+      if (!payload.draftId) {
+        return false;
+      }
+      let nextState = payload.state;
+      store.setAgentModelOptions((current) => {
+        const entry = Object.entries(current).find(
+          ([, value]) => value.draftId === payload.draftId,
+        );
+        if (!entry) {
+          return current;
+        }
+        const [key, previous] = entry;
+        nextState = {
+          ...previous.state,
+          ...(payload.state ?? {}),
+        };
+        const next = {
+          ...current,
+          [key]: {
+            ...previous,
+            configOptions: Array.isArray(payload.options)
+              ? payload.options
+              : previous.configOptions,
+            state: nextState,
+          },
+        };
+        writeAgentModelOptionsCache(next);
+        return next;
+      });
+      if (sourceIsCurrentHelm && nextState && typeof nextState === "object") {
+        if (nextState.model) {
+          setSelectedModel(nextState.model);
+        }
+        if (nextState.agentMode) {
+          setSelectedAgentMode(nextState.agentMode);
+        }
+        if (nextState.reasoningEffort) {
+          setSelectedReasoningEffort(nextState.reasoningEffort);
+        }
+      }
+      return true;
+    }
     case "project/save":
       setConfigSaveMessage(payload.message);
       setFleetProjectSaveMessage(payload.message);
       if (sourceIsCurrentHelm) {
         setSelectedProjectId(payload.projectId);
       }
-      refreshInventory(["project/list", "workspace/list"]);
+      refreshInventory(["project/list"]);
       return true;
     case "project/delete": {
       setConfigSaveMessage(payload.message);
@@ -297,7 +341,7 @@ export function applyInventoryResult(
       if (sourceIsCurrentHelm) {
         setSelectedProjectId(null);
       }
-      refreshInventory(["project/list", "workspace/list"]);
+      refreshInventory(["project/list"]);
       return true;
     }
     case "agent/save":
@@ -307,7 +351,6 @@ export function applyInventoryResult(
       return true;
     }
     case "helm/save":
-    case "workspace/save":
       setConfigSaveMessage(payload.message);
       return true;
     default:

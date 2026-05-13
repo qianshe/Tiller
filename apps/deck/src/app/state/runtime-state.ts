@@ -9,6 +9,7 @@ import type { DaemonProfile, DeckRpcClient } from "../../features/helm-connectio
 import {
   DEFAULT_PROMPT,
   MODEL_OPTIONS,
+  type MissionConfigPicker,
   type ProjectFilesEntry,
 } from "../../features/mission";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from "../../shared/config/deck-runtime";
@@ -46,7 +47,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const [collapsedProjectFileDirectories, setCollapsedProjectFileDirectories] = useState<Set<string>>(() => new Set());
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(missionVisualFixture?.selectedProjectId ?? null);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(missionVisualFixture?.selectedWorkspaceId ?? null);
+  const [selectedCwd, setSelectedCwd] = useState<string | null>(missionVisualFixture?.selectedCwd ?? null);
   const [worktreePickerOpen, setWorktreePickerOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(missionVisualFixture?.selectedAgentId ?? null);
@@ -58,7 +59,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const [selectedMissionHelmId, setSelectedMissionHelmId] = useState<string | null>(missionVisualFixture?.sessions[0]?.helmId ?? null);
   const [expandedMissionHelmIds, setExpandedMissionHelmIds] = useState<Set<string>>(() => new Set());
   const [expandedMissionProjectIds, setExpandedMissionProjectIds] = useState<Set<string>>(() => new Set());
-  const [missionConfigPicker, setMissionConfigPicker] = useState<"agentMode" | "model" | "reasoning" | null>(null);
+  const [missionConfigPicker, setMissionConfigPicker] = useState<MissionConfigPicker>(null);
   const [agentDraft, setAgentDraft] = useState<AgentDraft>({ name: "OpenCode", command: "opencode", args: "acp --pure" });
   const [draftSaveMessage, setDraftSaveMessage] = useState<string>("草稿未保存");
   const [configSaveMessage, setConfigSaveMessage] = useState<string>("尚未写入 Helm 配置");
@@ -96,7 +97,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
     expandedMessageIds, setExpandedMessageIds, sessionOpenScrollTick, setSessionOpenScrollTick,
     projectFilesByScope, setProjectFilesByScope, projectFileFilter, setProjectFileFilter,
     collapsedProjectFileDirectories, setCollapsedProjectFileDirectories, prompt, setPrompt,
-    selectedProjectId, setSelectedProjectId, selectedWorkspaceId, setSelectedWorkspaceId,
+    selectedProjectId, setSelectedProjectId, selectedCwd, setSelectedCwd,
     worktreePickerOpen, setWorktreePickerOpen, agentPickerOpen, setAgentPickerOpen,
     selectedAgentId, setSelectedAgentId, selectedAgentMode, setSelectedAgentMode,
     selectedModel, setSelectedModel, selectedReasoningEffort, setSelectedReasoningEffort,

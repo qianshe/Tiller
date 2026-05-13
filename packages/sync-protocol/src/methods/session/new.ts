@@ -6,7 +6,7 @@ import { requestDescriptor } from "../descriptor";
 export const method = "session/new" as const;
 export const ParamsSchema = z.object({
   projectId: z.string(),
-  workspaceId: z.string(),
+  cwd: z.string(),
   agentId: z.string(),
   agentMode: z.string().optional(),
   model: z.string().optional(),

@@ -21,7 +21,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "${sdkImportUrl}";
 
 let client;
-const workspaceFilePath = ${JSON.stringify(join(tempDir, "sdk-write.txt"))};
+const worktreeFilePath = ${JSON.stringify(join(tempDir, "sdk-write.txt"))};
 const terminalCwd = ${JSON.stringify(tempDir)};
 const nodePath = ${JSON.stringify(process.execPath)};
 
@@ -79,8 +79,8 @@ const agent = {
   async prompt(params) {
     const text = promptText(params);
     if (text.includes("fs-client")) {
-      await client.writeTextFile({ sessionId: params.sessionId, path: workspaceFilePath, content: "from sdk fs" });
-      const file = await client.readTextFile({ sessionId: params.sessionId, path: workspaceFilePath });
+      await client.writeTextFile({ sessionId: params.sessionId, path: worktreeFilePath, content: "from sdk fs" });
+      const file = await client.readTextFile({ sessionId: params.sessionId, path: worktreeFilePath });
       await client.sessionUpdate({
         sessionId: params.sessionId,
         update: {
@@ -185,7 +185,7 @@ test("production ACP runtime forwards cancel through the SDK connection", async 
   const events: any[] = [];
   const runtime = await createAcpRuntime({
     sessionId: "local-session-cancel",
-    workspace: { id: "workspace", name: "Workspace", path: tempDir },
+    worktree: { name: "Worktree", path: tempDir },
     agent: createProvider(process.execPath, [fakeAgentPath]),
     onEvent: (event) => events.push(event),
   });
@@ -201,13 +201,13 @@ test("production ACP runtime forwards cancel through the SDK connection", async 
   }
 });
 
-test("production ACP runtime serves workspace fs requests through the SDK client", async () => {
+test("production ACP runtime serves worktree fs requests through the SDK client", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-sdk-fs-"));
   const fakeAgentPath = createFakeSdkAgentFixture(tempDir);
   const events: any[] = [];
   const runtime = await createAcpRuntime({
     sessionId: "local-session-fs",
-    workspace: { id: "workspace", name: "Workspace", path: tempDir },
+    worktree: { name: "Worktree", path: tempDir },
     agent: createProvider(process.execPath, [fakeAgentPath]),
     onEvent: (event) => events.push(event),
   });
@@ -233,7 +233,7 @@ test("production ACP runtime executes SDK terminal requests after Deck permissio
   const events: any[] = [];
   const runtime = await createAcpRuntime({
     sessionId: "local-session-terminal",
-    workspace: { id: "workspace", name: "Workspace", path: tempDir },
+    worktree: { name: "Worktree", path: tempDir },
     agent: createProvider(process.execPath, [fakeAgentPath]),
     onEvent: (event) => events.push(event),
   });
@@ -286,7 +286,7 @@ test("SDK-backed session listing uses the generic client connection", async () =
   try {
     const result = await listAcpAgentSessions(
       createProvider(process.execPath, [fakeAgentPath]),
-      { id: "workspace", name: "Workspace", path: tempDir },
+      { name: "Worktree", path: tempDir },
       "page-1",
     );
 
@@ -303,7 +303,7 @@ test("production ACP runtime uses the SDK connection path with fake SDK agents",
   const events: any[] = [];
   const runtime = await createAcpRuntime({
     sessionId: "local-session-1",
-    workspace: { id: "workspace", name: "Workspace", path: tempDir },
+    worktree: { name: "Worktree", path: tempDir },
     agent: createProvider(process.execPath, [fakeAgentPath]),
     onEvent: (event) => events.push(event),
   });

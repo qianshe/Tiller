@@ -16,7 +16,7 @@ const activeAssistantRuntimeMessageBySession = new Map<
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
-  return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} workspace=${record?.workspace.id ?? "<stored>"}`;
+  return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.worktree.path ?? "<stored>"}`;
 }
 
 function nextLiveEventSequence(sessionId: string) {
@@ -157,6 +157,20 @@ function writeAssistantStreamText(sessionId: string, text: string) {
   }
 }
 
+function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
+  const message = context.liveMessageBuffer.finalize(sessionId);
+  if (!message) {
+    return;
+  }
+  context.persistSessionMessage(sessionId, message);
+  context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, message));
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "agent_message",
+    message,
+    streaming: false,
+  });
+}
+
 
 export function handleRuntimeEvent(
   sessionId: string,
@@ -178,6 +192,7 @@ export function handleRuntimeEvent(
 
   switch (event.type) {
     case "status":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
@@ -209,18 +224,20 @@ export function handleRuntimeEvent(
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
       };
+      if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
+        flushLiveAssistantMessage(sessionId, context);
+      }
       ensureAssistantStreamLogStarted(sessionId, message, context);
       writeAssistantStreamText(sessionId, message.text);
-      context.persistSessionMessage(sessionId, message);
-      context.updateSessionSummary(sessionId, (current) =>
-        applyAgentMessageToSummary(current, message),
-      );
+      const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
       broadcastSessionUpdate(context, sessionId, {
         kind: "agent_message",
-        message,
+        message: bufferedMessage,
+        streaming: true,
       });
       return;
     case "permission-request":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logInfo(
         `[tiller] 阶段=权限请求 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
@@ -238,6 +255,7 @@ export function handleRuntimeEvent(
       });
       return;
     case "tool-call":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
       context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
@@ -247,6 +265,7 @@ export function handleRuntimeEvent(
       });
       return;
     case "command-output":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
       context.logInfo(
@@ -267,6 +286,7 @@ export function handleRuntimeEvent(
       }
       return;
     case "diff-update":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logInfo(
         `[tiller] 阶段=Diff更新 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`,
@@ -274,6 +294,7 @@ export function handleRuntimeEvent(
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logInfo(
         `[tiller] 阶段=配置选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
@@ -299,6 +320,7 @@ export function handleRuntimeEvent(
       return;
     }
     case "model-options": {
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logInfo(
         `[tiller] 阶段=模型选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
@@ -323,6 +345,7 @@ export function handleRuntimeEvent(
       return;
     }
     case "available-commands": {
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logInfo(
         `[tiller] 阶段=可用命令 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} commands=${event.commands.length}`,
@@ -345,6 +368,7 @@ export function handleRuntimeEvent(
       return;
     }
     case "error":
+      flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       context.logError(
         `[tiller] 阶段=运行错误 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`,

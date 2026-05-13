@@ -12,6 +12,32 @@ test("device RPC lists trusted devices", async () => {
   assert.deepEqual(result, { devices: [device] });
 });
 
+test("device RPC accepts authentication after socket auth is already established", async () => {
+  const result = await handleDeviceRpcRequest("device/authenticate", {
+    deviceId: "deck-1",
+    token: "cached-token",
+  }, {} as any);
+
+  assert.deepEqual(result, {
+    ok: true,
+    message: "Device already authenticated.",
+  });
+});
+
+test("device RPC rejects pairing after socket auth is already established", async () => {
+  const result = await handleDeviceRpcRequest("device/pair", {
+    pairingCode: "123456",
+    deviceId: "deck-1",
+    deviceName: "Deck",
+    clientKind: "deck",
+  }, {} as any);
+
+  assert.deepEqual(result, {
+    ok: false,
+    message: "Pairing is only available before socket authentication.",
+  });
+});
+
 test("device RPC revokes trusted devices and closes active sockets", async () => {
   const closed: string[] = [];
   const removed: string[] = [];

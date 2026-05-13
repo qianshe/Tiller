@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 import { createStore } from "zustand/vanilla";
 import { createProjectsSlice, type ProjectsSlice } from "./projects-slice.js";
 
@@ -14,25 +14,24 @@ const project = (id: string): ProjectSummary => ({
   id,
   name: `Project ${id}`,
   helmId: "helm-1",
-  workspaceIds: [],
+  worktrees: [],
 });
 
-const workspace = (id: string): WorkspaceSummary => ({
-  id,
-  name: `Workspace ${id}`,
+const worktree = (id: string): WorktreeSummary => ({
+  name: `Worktree ${id}`,
   path: `D:/work/${id}`,
 });
 
-test("setProjects and setWorkspaces support value and updater forms", () => {
+test("setProjects and setWorktrees support value and updater forms", () => {
   const store = createTestStore();
 
   store.getState().setProjects([project("p1")]);
   store.getState().setProjects((current) => [...current, project("p2")]);
-  store.getState().setWorkspaces([workspace("w1")]);
-  store.getState().setWorkspaces((current) => [...current, workspace("w2")]);
+  store.getState().setWorktrees([worktree("w1")]);
+  store.getState().setWorktrees((current) => [...current, worktree("w2")]);
 
   assert.deepEqual(store.getState().projects.map((item) => item.id), ["p1", "p2"]);
-  assert.deepEqual(store.getState().workspaces.map((item) => item.id), ["w1", "w2"]);
+  assert.deepEqual(store.getState().worktrees.map((item) => item.path), ["D:/work/w1", "D:/work/w2"]);
 });
 
 test("setWorktreeGitByProject merges updater results", () => {

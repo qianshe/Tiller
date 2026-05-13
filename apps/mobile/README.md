@@ -15,5 +15,5 @@ This directory is reserved for the future native/mobile Command Deck.
 
 ## Current status
 - Placeholder only, no runtime yet.
-- A workspace-level `package.json` is present so the app can evolve independently later.
+- A worktree-level `package.json` is present so the app can evolve independently later.
 - `assets/.gitkeep` reserves the static asset folder for future icons, splash, and illustration files.

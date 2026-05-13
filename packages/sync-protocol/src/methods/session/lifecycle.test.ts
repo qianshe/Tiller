@@ -14,9 +14,9 @@ import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
 
-test("session/new requires project, workspace, agent", () => {
+test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
-  sessionNew.ParamsSchema.parse({ projectId: "p1", workspaceId: "ws1", agentId: "a1" });
+  sessionNew.ParamsSchema.parse({ projectId: "p1", cwd: "D:/repo", agentId: "a1" });
 });
 
 test("session/draft returns runtime draft metadata", () => {
@@ -24,13 +24,14 @@ test("session/draft returns runtime draft metadata", () => {
   sessionDraft.ParamsSchema.parse({
     deckClientId: "deck-1",
     projectId: "p1",
-    workspaceId: "ws1",
+    cwd: "D:/repo",
     agentId: "a1",
   });
   const result = sessionDraft.ResultSchema.parse({
     ok: true,
     draftId: "draft-1",
     deckClientId: "deck-1",
+    cwd: "D:/repo",
     scopeKey: "deck-1:p1:ws1:a1",
     logicalScopeKey: "p1:ws1:a1",
     runtimeSessionId: "runtime-1",

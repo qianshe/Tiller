@@ -10,15 +10,16 @@ import {
   resolveSessionRestoreGate,
 } from "../utils/session-state";
 import { resolvePendingToolActivity } from "../../logbook";
+import { agentModelOptionsKey } from "../../agents/facade";
 
-export function buildMissionWorkspaceModel(input: any) {
+export function buildMissionWorktreeModel(input: any) {
   const {
     prompt,
     promptImages,
     socketRef,
     activeSessionId,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     selectedAgentId,
     activeSession,
     diffs,
@@ -31,7 +32,7 @@ export function buildMissionWorkspaceModel(input: any) {
     activeSessionProjectId,
     activeSessionProject,
     draftProject,
-    selectedWorkspace,
+    selectedWorktree,
     selectedDraftAgent,
     activeSessionMessages,
     pendingPermission,
@@ -39,12 +40,30 @@ export function buildMissionWorkspaceModel(input: any) {
     effectiveMissionHelmId,
     activeHelm,
     missionProjects,
-    workspaces,
+    worktrees,
     resumeStartRequestsRef,
+    draftModelLoading,
+    agentModelOptions = {},
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
-  const effectiveWorkspaceId = selectedWorkspaceId || selectedWorkspace?.id;
+  const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
   const effectiveAgentId = selectedAgentId;
+  const draftModelOptionsKey =
+    !activeSessionId && effectiveAgentId && effectiveWorktreeId
+      ? agentModelOptionsKey(effectiveAgentId, effectiveWorktreeId, effectiveProjectId)
+      : null;
+  const draftModelOptionsPrefix =
+    !activeSessionId && effectiveAgentId && effectiveWorktreeId
+      ? `${effectiveAgentId}::${effectiveWorktreeId}`
+      : null;
+  const draftRuntimeEntry = draftModelOptionsKey
+    ? (agentModelOptions[draftModelOptionsKey] ??
+      Object.entries(agentModelOptions).find(
+        ([key, entry]: [string, any]) =>
+          key.startsWith(`${draftModelOptionsPrefix}::`) && Boolean(entry?.draftId),
+      )?.[1])
+    : null;
+  const draftRuntimeReady = Boolean(activeSessionId || draftRuntimeEntry?.draftId);
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
     : "idle";
@@ -61,7 +80,8 @@ export function buildMissionWorkspaceModel(input: any) {
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
     (activeSessionId ||
-      (effectiveProjectId && effectiveWorkspaceId && effectiveAgentId)) &&
+      (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
+    (activeSessionId || (!draftModelLoading && draftRuntimeReady)) &&
     (!promptImages.length ||
       !activeSession ||
       activeSession.imageInput !== false),
@@ -103,7 +123,7 @@ export function buildMissionWorkspaceModel(input: any) {
   );
   const projectFilesScope = {
     projectId: activeSessionProjectId ?? null,
-    workspaceId: activeSession?.workspaceId ?? null,
+    cwd: activeSession?.cwd ?? null,
   };
   const projectFilesEntry = activeSession
     ? {
@@ -116,22 +136,24 @@ export function buildMissionWorkspaceModel(input: any) {
   const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
-  const overviewWorkspace = activeSession
-    ? ((workspaces ?? []).find((workspace: any) => workspace.id === activeSession.workspaceId) ??
-      selectedWorkspace)
-    : selectedWorkspace;
-  const overviewWorkspaceName =
-    activeSession?.workspaceName ?? overviewWorkspace?.name ?? "未选择";
+  const overviewWorktree = activeSession
+    ? ((worktrees ?? []).find(
+        (worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSession.cwd),
+      ) ??
+      selectedWorktree)
+    : selectedWorktree;
+  const overviewWorktreeName =
+    overviewWorktree?.name ?? activeSession?.worktreeName ?? "未选择";
   const overviewAgentName =
     activeSession?.agentName ?? selectedDraftAgent?.name ?? "未选舰员";
   const currentGitBranch =
     activeSessionProject?.gitCurrentBranch ?? draftProject?.gitCurrentBranch ?? null;
-  const overviewPath = overviewWorkspace?.path ?? overviewProject?.path;
+  const overviewPath = overviewWorktree?.path ?? overviewProject?.path;
   const projectOverviewItems = overviewProject
     ? [
         `Helm · ${activeMissionHelm?.name ?? overviewProject.helmId ?? "未选择"}`,
         `Project · ${overviewProjectName}`,
-        `Worktree · ${overviewWorkspaceName}`,
+        `Worktree · ${overviewWorktreeName}`,
         `ACP · ${overviewAgentName}`,
         overviewPath
           ? `路径 · ${overviewPath}`
@@ -164,11 +186,15 @@ export function buildMissionWorkspaceModel(input: any) {
     projectFiles,
     overviewProject,
     overviewProjectName,
-    overviewWorkspaceName,
+    overviewWorktreeName,
     overviewAgentName,
     currentGitBranch,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
   };
+}
+
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

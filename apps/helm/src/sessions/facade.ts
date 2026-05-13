@@ -3,11 +3,12 @@ export {
 } from "./cleanup";
 export {
   normalizeDiffPath,
-  readWorkspaceGitDiffs,
+  readWorktreeGitDiffs,
 } from "./git-diff";
 export {
   alignSessionProjectBinding,
-  isProjectRootBranchWorkspace,
+  alignSessionWorktreeBinding,
+  isProjectRootBranchWorktree,
 } from "./project/binding";
 export {
   decodeCursor,

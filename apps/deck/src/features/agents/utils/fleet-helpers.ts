@@ -1,7 +1,7 @@
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -34,10 +34,15 @@ export function resolveHelmConnectionState(
   return helmConnectionStates[helm.key] ?? "disconnected";
 }
 
-export function createProjectId(projects: ProjectSummary[]) {
+export function createProjectId(projects: ProjectSummary[], projectName?: string) {
+  const ids = new Set(projects.map((project) => project.id));
+  const namedProjectId = sanitizeProjectId(projectName ?? "");
+  if (namedProjectId) {
+    return createUniqueProjectId(namedProjectId, ids);
+  }
+
   let index = projects.length + 1;
   let candidate = `project-${index}`;
-  const ids = new Set(projects.map((project) => project.id));
   while (ids.has(candidate)) {
     index += 1;
     candidate = `project-${index}`;
@@ -45,8 +50,22 @@ export function createProjectId(projects: ProjectSummary[]) {
   return candidate;
 }
 
-export function defaultAgentId(agents: AcpAgentProvider[]) {
-  return agents.find((agent) => agent.id)?.id ?? null;
+function createUniqueProjectId(baseId: string, ids: Set<string>) {
+  if (!ids.has(baseId)) {
+    return baseId;
+  }
+
+  let index = 2;
+  let candidate = `${baseId}-${index}`;
+  while (ids.has(candidate)) {
+    index += 1;
+    candidate = `${baseId}-${index}`;
+  }
+  return candidate;
+}
+
+function sanitizeProjectId(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export function slugify(value: string) {
@@ -70,22 +89,30 @@ export function resolveProjectDisplayId(
 
 export function resolveProjectWorktrees(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
 ) {
-  const workspaceIds = new Set(project.workspaceIds ?? []);
-  return workspaces.filter(
-    (workspace) =>
-      (workspaceIds.has(workspace.id) ||
-        workspace.id.startsWith(`${project.id}-worktree-`)) &&
-      isManagedWorktreeWorkspace(workspace),
+  const projectWorktrees = project.worktrees ?? [];
+  if (projectWorktrees.length) {
+    return projectWorktrees.filter(isManagedWorktreeWorktree);
+  }
+  const projectPath = normalizePath(project.path);
+  return worktrees.filter((worktree) => {
+    const worktreePath = normalizePath(worktree.path);
+    return (
+      Boolean(projectPath && worktreePath?.startsWith(`${projectPath}/`)) &&
+      isManagedWorktreeWorktree(worktree)
+    );
+  });
+}
+
+function isManagedWorktreeWorktree(worktree: Pick<WorktreeSummary, "path">) {
+  const normalizedPath = worktree.path.replace(/\\/g, "/");
+  return Boolean(
+    normalizedPath.includes("/.worktrees/") ||
+      normalizedPath.includes("/.tiller/worktrees/"),
   );
 }
 
-function isManagedWorktreeWorkspace(workspace: Pick<WorkspaceSummary, "id" | "path">) {
-  const normalizedPath = workspace.path.replace(/\\/g, "/");
-  return Boolean(
-    workspace.id.includes("-worktree-") ||
-      normalizedPath.includes("/.worktrees/") ||
-      normalizedPath.includes("/.tiller/worktrees/"),
-  );
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "");
 }

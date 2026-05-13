@@ -5,7 +5,7 @@ import type {
   AgentPromptImageContent,
   ProjectSummary,
   SessionReasoningEffort,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { agentModelOptionsKey, type AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -16,8 +16,8 @@ type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
 type CreateSessionContext = {
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
-  selectedWorkspace?: WorkspaceSummary | null;
-  filteredWorkspaces: WorkspaceSummary[];
+  selectedWorktree?: WorktreeSummary | null;
+  filteredWorktrees: WorktreeSummary[];
   selectedAgentId?: string | null;
   filteredAgents: AcpAgentProvider[];
   agentModelOptions?: Record<string, AgentModelOptionsEntry>;
@@ -88,8 +88,8 @@ export function createSession(
   const {
     selectedProjectId,
     projects,
-    selectedWorkspace,
-    filteredWorkspaces,
+    selectedWorktree,
+    filteredWorktrees,
     selectedAgentId,
     filteredAgents,
     agentModelOptions,
@@ -107,8 +107,8 @@ export function createSession(
   const identity = resolveNewSessionIdentity({
     selectedProjectId,
     projects,
-    selectedWorkspace,
-    workspaces: filteredWorkspaces,
+    selectedWorktree,
+    worktrees: filteredWorktrees,
     selectedAgentId,
     agents: filteredAgents,
   });
@@ -117,7 +117,11 @@ export function createSession(
     return false;
   }
 
-  const cacheKey = agentModelOptionsKey(identity.agentId, identity.workspaceId, identity.projectId);
+  const cacheKey = agentModelOptionsKey(
+    identity.agentId,
+    identity.cwd,
+    identity.projectId,
+  );
   const draft = agentModelOptions?.[cacheKey];
   if (initialPrompt && draft?.draftId) {
     pendingPromptRef.current = null;
@@ -130,12 +134,15 @@ export function createSession(
     navigateToView("sessions");
     return true;
   }
+  if (initialPrompt) {
+    return false;
+  }
 
   pendingPromptRef.current = initialPrompt ?? null;
   pendingPromptContentRef.current = initialContent;
   void dispatch(client, "session/new", {
     projectId: identity.projectId,
-    workspaceId: identity.workspaceId,
+    cwd: identity.cwd,
     agentId: identity.agentId,
     agentMode: effectiveDraftAgentMode,
     model: normalizeModelSelection(selectedModel),
@@ -164,7 +171,10 @@ export function requestSessionResumeStart(
 
   resumeStartRequestsRef.current.add(sessionId);
   setResumeFeedback(reason);
-  void dispatch(client, "session/resume", { sessionId });
+  void dispatch(client, "session/resume", { sessionId }).catch((error: unknown) => {
+    resumeStartRequestsRef.current.delete(sessionId);
+    setResumeFeedback(error instanceof Error ? error.message : "ACP 会话恢复请求失败，请重试。");
+  });
 }
 
 export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitPromptContext) {

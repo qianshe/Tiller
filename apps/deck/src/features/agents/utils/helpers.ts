@@ -1,7 +1,7 @@
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -45,10 +45,6 @@ export function createProjectId(projects: ProjectSummary[]) {
   return candidate;
 }
 
-export function defaultAgentId(agents: AcpAgentProvider[]) {
-  return agents.find((agent) => agent.id)?.id ?? null;
-}
-
 export function slugify(value: string) {
   return (
     value
@@ -70,17 +66,19 @@ export function resolveProjectDisplayId(
   return sameNameProjects.length > 1 ? project.id : project.name;
 }
 
-export function resolveProjectWorkspaceLabel(
+export function resolveProjectWorktreeLabel(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
 ) {
-  const workspace = workspaces.find(
-    (item) => item.id === project.defaultWorkspaceId,
-  );
+  const projectWorktree = project.worktrees?.[0];
+  const worktree = projectWorktree
+    ? worktrees.find((item) => normalizePath(item.path) === normalizePath(projectWorktree.path))
+    : undefined;
   return (
-    workspace?.name ??
-    project.defaultWorkspaceId ??
-    project.workspaceIds?.[0] ??
-    "-"
+    worktree?.name ?? projectWorktree?.name ?? project.gitCurrentBranch ?? "-"
   );
+}
+
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }

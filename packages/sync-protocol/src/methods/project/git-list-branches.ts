@@ -1,15 +1,19 @@
 import { z } from "zod";
-import type { WorkspaceSummary } from "@tiller/shared";
+import type { WorktreeSummary } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
-export const method = "workspace/save" as const;
+export const method = "project/git/list_branches" as const;
 export const ParamsSchema = z.object({
-  workspace: typedUnknown<WorkspaceSummary>(),
+  projectId: z.string(),
 });
 export const ResultSchema = z.object({
   ok: z.boolean(),
-  workspaceId: z.string(),
+  projectId: z.string(),
+  branches: z.array(z.string()),
+  currentBranch: z.string().optional(),
+  worktrees: z.array(typedUnknown<WorktreeSummary>()).default([]),
+  selectedCwd: z.string().optional(),
   message: z.string(),
 });
 export type Params = z.infer<typeof ParamsSchema>;
@@ -19,5 +23,5 @@ export const descriptor = requestDescriptor({
   method,
   paramsSchema: ParamsSchema,
   resultSchema: ResultSchema,
-  description: "Persist a workspace configuration.",
+  description: "List Git branches and worktrees for a project.",
 });

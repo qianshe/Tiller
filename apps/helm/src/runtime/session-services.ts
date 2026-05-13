@@ -17,14 +17,16 @@ import type {
   SessionReasoningEffort,
   SessionResumeInfo,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
+  SessionConfigOptionValue,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   alignSessionProjectBinding,
+  alignSessionWorktreeBinding,
   createHelmSessionStores,
   normalizeDiffPath,
-  readWorkspaceGitDiffs,
+  readWorktreeGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
 import {
@@ -34,8 +36,18 @@ import {
 } from "../sessions/provider-history-sync.js";
 import { broadcastSessionUpdate } from "../rpc/notifications";
 import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
+import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
-import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
+import {
+  buildSessionResumeInfo,
+  markSessionResumeUnavailable,
+  resolveSessionRestoreCapabilities,
+} from "./resume-info";
+import {
+  resolveProviderHistorySnapshot,
+  type ProviderHistorySnapshot,
+  type ProviderHistorySnapshotContent,
+} from "./provider-history-source";
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
@@ -46,10 +58,44 @@ type SessionRuntimeConfig = {
   reasoningEffort?: SessionReasoningEffort;
 };
 
+type ResumePreconditionInput = {
+  agent: AcpAgentProvider | undefined;
+  worktree: WorktreeSummary | undefined;
+  runtimeSessionId?: string;
+  restoreMethod?: SessionResumeInfo["restoreMethod"];
+  agentId: string;
+  cwd?: string;
+};
+
+function resolveResumeUnavailableReason({
+  agent,
+  worktree,
+  runtimeSessionId,
+  restoreMethod,
+  agentId,
+  cwd,
+}: ResumePreconditionInput): string | null {
+  if (!agent) {
+    return `Agent provider ${agentId} is not configured.`;
+  }
+  if (!worktree) {
+    return cwd
+      ? `Worktree path ${cwd} is not configured or does not exist.`
+      : "Worktree cwd is not configured.";
+  }
+  if (!runtimeSessionId) {
+    return "ACP runtime session id is missing.";
+  }
+  if (restoreMethod !== "session/load" && restoreMethod !== "session/resume") {
+    return `ACP restore method ${restoreMethod ?? "none"} is unsupported.`;
+  }
+  return null;
+}
+
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
@@ -62,7 +108,7 @@ type SessionServicesOptions = {
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
   getAgents: () => AcpAgentProvider[];
   getProjects: () => ProjectSummary[];
-  getWorkspaces: () => WorkspaceSummary[];
+  getWorktrees: () => WorktreeSummary[];
   createHandlerContext: () => HelmHandlerContext;
   broadcastNotification: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
@@ -80,7 +126,7 @@ type RuntimeDraft = {
   logicalScopeKey: string;
   project: ProjectSummary;
   helm: HelmSummary;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   agent: AcpAgentProvider;
   runtime: SessionRecord["runtime"];
   attach: (sessionId: string) => void;
@@ -105,6 +151,31 @@ const RUNTIME_DRAFT_TTL_MS = 10 * 60_000;
 export function createSessionServices(options: SessionServicesOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
 
+  function resolveStoredSessionWorktree(summary: SessionSummary) {
+    const worktrees = options.getWorktrees();
+    const normalizedSummaryPath = normalizeWorktreePath(summary.cwd);
+    const pathWorktree = normalizedSummaryPath
+      ? worktrees.find((item) => normalizeWorktreePath(item.path) === normalizedSummaryPath)
+      : undefined;
+    if (pathWorktree) {
+      return { ...pathWorktree, path: summary.cwd ?? pathWorktree.path };
+    }
+
+    const project = options.getProjects().find((item) => item.id === summary.projectId);
+    if (project?.path) {
+      return {
+        name: summary.worktreeName || project.name,
+        path: summary.cwd || project.path,
+      } satisfies WorktreeSummary;
+    }
+
+    return undefined;
+  }
+
+  function normalizeWorktreePath(path: string | undefined) {
+    return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+  }
+
   function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
     const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
       "connection-open": "ACP连接新建",
@@ -114,7 +185,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       "connection-reconnect": "ACP连接重连",
     };
     options.logInfo(
-      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
     );
   }
 
@@ -172,7 +243,10 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-    const aligned = alignSessionProjectBinding(summary, options.getProjects());
+    const aligned = alignSessionWorktreeBinding(
+      alignSessionProjectBinding(summary, options.getProjects()),
+      options.getWorktrees(),
+    );
     const record = options.sessions.get(summary.id);
     const agent = record?.agent ?? resolveProviderById(aligned.agentId, options.getAgents());
     const descriptor = options.sessionRuntimeStore.get(summary.id);
@@ -183,6 +257,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
     return {
       ...aligned,
+      configOptions: record?.runtime.sessionConfigOptions ?? aligned.configOptions,
       imageInput: capabilities.imageInput,
       resume: buildResumeInfo(aligned, agent),
     };
@@ -193,7 +268,10 @@ export function createSessionServices(options: SessionServicesOptions) {
     if (
       hydrated.projectId !== summary.projectId ||
       hydrated.projectName !== summary.projectName ||
-      hydrated.helmId !== summary.helmId
+      hydrated.helmId !== summary.helmId ||
+      hydrated.cwd !== summary.cwd ||
+      hydrated.worktreeName !== summary.worktreeName ||
+      hydrated.cwd !== summary.cwd
     ) {
       options.sessionStore.upsert(hydrated);
     }
@@ -219,53 +297,16 @@ export function createSessionServices(options: SessionServicesOptions) {
     cwd: string,
   ) {
     try {
-      const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
-      if (!history) {
+      const historySnapshot = await resolveProviderHistorySnapshot([
+        {
+          source: "adapter-authoritative-history",
+          load: () => loadAdapterHistoryContent(agent, runtimeSessionId, cwd),
+        },
+      ]);
+      if (!historySnapshot) {
         return false;
       }
-      if (!history.messages.length) {
-        if (history.toolCalls.length) {
-          options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
-        }
-        options.logInfo(
-          `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
-        );
-        return true;
-      }
-
-      const descriptor = options.sessionRuntimeStore.get(sessionId);
-      const syncDecision = planProviderHistorySync({
-        currentState: descriptor?.providerHistory,
-        providerMessages: history.messages,
-      });
-
-      let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
-      let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
-      if (syncDecision.action === "replace") {
-        if (syncDecision.messages.length) {
-          options.sessionMessageStore.replace(sessionId, syncDecision.messages);
-        }
-      } else if (syncDecision.action === "append") {
-        for (const message of syncDecision.messages) {
-          options.sessionMessageStore.append(sessionId, message);
-        }
-      } else {
-        const localMessages = options.sessionMessageStore.list(sessionId);
-        if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
-          const repairedMessages = toParagraphMessages(history.messages);
-          options.sessionMessageStore.replace(sessionId, repairedMessages);
-          localMessageCount = repairedMessages.length;
-          logAction = "repair";
-        }
-      }
-
-      persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
-      if (history.toolCalls.length) {
-        options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
-      }
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
-      );
+      applyAuthoritativeProviderHistory(sessionId, agent, runtimeSessionId, historySnapshot);
       return true;
     } catch (error) {
       options.logError(
@@ -273,6 +314,91 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       return false;
     }
+  }
+
+  async function loadAdapterHistoryContent(
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    cwd: string,
+  ): Promise<ProviderHistorySnapshotContent | null> {
+    const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
+    if (!history) {
+      return null;
+    }
+    return {
+      messages: history.messages,
+      toolCalls: history.toolCalls,
+      outputs: [],
+      diffs: [],
+    };
+  }
+
+  function applyAuthoritativeProviderHistory(
+    sessionId: string,
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    history: ProviderHistorySnapshot,
+  ) {
+    if (!history.messages.length) {
+      if (history.toolCalls.length) {
+        options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+      }
+      options.logInfo(
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
+      );
+      return;
+    }
+
+    const descriptor = options.sessionRuntimeStore.get(sessionId);
+    const syncDecision = planProviderHistorySync({
+      currentState: descriptor?.providerHistory,
+      providerMessages: history.messages,
+      syncedAt: history.syncedAt,
+    });
+
+    let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
+    let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
+    if (syncDecision.action === "replace") {
+      if (syncDecision.messages.length) {
+        options.sessionMessageStore.replace(sessionId, syncDecision.messages);
+      }
+    } else if (syncDecision.action === "append") {
+      for (const message of syncDecision.messages) {
+        options.sessionMessageStore.append(sessionId, message);
+      }
+    } else {
+      const localMessages = options.sessionMessageStore.list(sessionId);
+      if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
+        const repairedMessages = toParagraphMessages(history.messages);
+        options.sessionMessageStore.replace(sessionId, repairedMessages);
+        localMessageCount = repairedMessages.length;
+        logAction = "repair";
+      }
+    }
+
+    persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
+    if (history.toolCalls.length) {
+      options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+    }
+    options.logInfo(
+      `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
+    );
+  }
+
+  function hasHistoryContent(history: ProviderHistorySnapshotContent) {
+    return Boolean(
+      history.messages.length || history.toolCalls.length || history.outputs.length || history.diffs.length,
+    );
+  }
+
+  function readLocalProviderHistory(sessionId: string): ProviderHistorySnapshotContent {
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    return {
+      messages: options.sessionMessageStore.list(sessionId),
+      toolCalls: artifacts.toolCalls,
+      outputs: artifacts.outputs,
+      diffs: artifacts.diffs,
+    };
   }
 
   function persistProviderHistoryState(
@@ -328,13 +454,13 @@ export function createSessionServices(options: SessionServicesOptions) {
       return;
     }
     const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
-    const workspace =
-      activeRecord?.workspace ?? options.getWorkspaces().find((item) => item.id === summary.workspaceId);
+    const worktree =
+      activeRecord?.worktree ?? options.getWorktrees().find((item) => normalizeWorktreePath(item.path) === normalizeWorktreePath(summary.cwd));
     const runtimeSessionId =
       activeRecord?.runtime.runtimeSessionId ??
       summary.runtimeSessionId ??
       options.sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
-    if (!agent || !workspace || !runtimeSessionId) {
+    if (!agent || !worktree || !runtimeSessionId) {
       return;
     }
 
@@ -342,7 +468,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       sessionId,
       agent,
       runtimeSessionId,
-      workspace.path,
+      worktree.path,
     );
     if (refreshed) {
       providerHistoryRefreshes.set(sessionId, Date.now());
@@ -351,10 +477,10 @@ export function createSessionServices(options: SessionServicesOptions) {
 
   function resolveRuntimeDraftKeys(params: {
     deckClientId: string;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
   }) {
-    const logicalScopeKey = `${params.workspace.id}:${params.agent.id}`;
+    const logicalScopeKey = `${params.worktree.path}:${params.agent.id}`;
     return {
       logicalScopeKey,
       scopeKey: `${params.deckClientId}:${logicalScopeKey}`,
@@ -367,7 +493,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       draftId: draft.draftId,
       deckClientId: draft.deckClientId,
       projectId: draft.project.id,
-      workspaceId: draft.workspace.id,
+      cwd: draft.worktree.path,
       providerId: draft.agent.id,
       scopeKey: draft.scopeKey,
       logicalScopeKey: draft.logicalScopeKey,
@@ -410,7 +536,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     deckClientId: string;
     project: ProjectSummary;
     helm: HelmSummary;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
     sessionConfig?: SessionRuntimeConfig;
   }) {
@@ -443,7 +569,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
     options.logInfo(
-      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} workspace=${params.workspace.id}`,
+      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.worktree.path}`,
     );
 
     const pendingDraft: PendingRuntimeDraft = {
@@ -452,7 +578,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       obsolete: false,
       promise: createAcpRuntime({
         sessionId: draftId,
-        workspace: params.workspace,
+        worktree: params.worktree,
         agent: params.agent,
         sessionConfig: params.sessionConfig,
         onConnectionLifecycleEvent: logConnectionLifecycle,
@@ -497,7 +623,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           logicalScopeKey,
           project: params.project,
           helm: params.helm,
-          workspace: params.workspace,
+          worktree: params.worktree,
           agent: params.agent,
           runtime,
           attach: (sessionId: string) => {
@@ -617,6 +743,8 @@ export function createSessionServices(options: SessionServicesOptions) {
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   }) {
     const draft = runtimeDraftsById.get(params.draftId);
     if (!draft) {
@@ -626,10 +754,12 @@ export function createSessionServices(options: SessionServicesOptions) {
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     });
     draft.configState = result.state;
     draft.modelState = result.modelState ?? draft.modelState;
-    draft.configOptions = draft.runtime.sessionConfigOptions ?? draft.configOptions;
+    draft.configOptions = result.options ?? draft.runtime.sessionConfigOptions ?? draft.configOptions;
     options.logInfo(
       `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
     );
@@ -673,24 +803,31 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
 
     const agent = resolveProviderById(summary.agentId, options.getAgents());
-    const workspace = options.getWorkspaces().find((item) => item.id === summary.workspaceId);
+    const worktree = resolveStoredSessionWorktree(summary);
     const resume = buildResumeInfo(summary, agent);
-    if (
-      !agent ||
-      !workspace ||
-      !resume.runtimeSessionId ||
-      (resume.restoreMethod !== "session/load" && resume.restoreMethod !== "session/resume")
-    ) {
+    const unavailableReason = resolveResumeUnavailableReason({
+      agent,
+      worktree,
+      runtimeSessionId: resume.runtimeSessionId,
+      restoreMethod: resume.restoreMethod,
+      agentId: summary.agentId,
+      cwd: summary.cwd ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
+    });
+    if (unavailableReason) {
       return {
         ok: false,
-        resume,
-        message: resume.reason,
+        resume: markSessionResumeUnavailable(resume, unavailableReason),
+        message: unavailableReason,
       };
     }
+    const restoreAgent = agent as AcpAgentProvider;
+    const restoreWorktree = worktree as WorktreeSummary;
+    const restoreRuntimeSessionId = resume.runtimeSessionId as string;
+    const restoreMethod = resume.restoreMethod as "session/load" | "session/resume";
 
     try {
       options.logInfo(
-        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${resume.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${restoreRuntimeSessionId} method=${restoreMethod}`,
       );
       // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
       // Restore replay is cache repair only; live events still use handleRuntimeEvent.
@@ -703,15 +840,15 @@ export function createSessionServices(options: SessionServicesOptions) {
       );
       const runtime = await createAcpRuntime({
         sessionId,
-        workspace,
-        agent,
+        worktree: restoreWorktree,
+        agent: restoreAgent,
         sessionConfig: {
           model: summary.model,
           reasoningEffort: summary.reasoningEffort,
         },
         restore: {
-          runtimeSessionId: resume.runtimeSessionId,
-          strategy: resume.restoreMethod === "session/load" ? "load" : "resume",
+          runtimeSessionId: restoreRuntimeSessionId,
+          strategy: restoreMethod === "session/load" ? "load" : "resume",
           replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
         onEvent: (event) => handleRuntimeEvent(sessionId, event),
@@ -720,35 +857,61 @@ export function createSessionServices(options: SessionServicesOptions) {
         },
         onConnectionLifecycleEvent: logConnectionLifecycle,
       });
+      const replaySnapshot = restoreReplayBuffer.snapshot();
       const replayCounts = restoreReplayBuffer.flush();
       options.logInfo(
         `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
       );
+      const historySnapshot = await resolveProviderHistorySnapshot([
+        {
+          source: "acp-session-load",
+          load: async () => (hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
+        },
+        {
+          source: "adapter-authoritative-history",
+          load: async () => {
+            try {
+              return await loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorktree.path);
+            } catch (error) {
+              options.logError(
+                `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
+              );
+              return null;
+            }
+          },
+        },
+        {
+          source: "local-cache",
+          load: async () => readLocalProviderHistory(sessionId),
+        },
+      ]);
+      if (historySnapshot?.source === "acp-session-load") {
+        options.logInfo(
+          `[tiller] history.cache source=acp-session-load session=${sessionId} messages=${historySnapshot.messages.length} toolCalls=${historySnapshot.toolCalls.length} outputs=${historySnapshot.outputs.length} diffs=${historySnapshot.diffs.length}`,
+        );
+      } else if (historySnapshot?.source === "adapter-authoritative-history") {
+        applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
+      }
       const restoredSummary = hydrateSessionSummary({
         ...summary,
         model: runtime.sessionConfigState?.model ?? summary.model,
         modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
+        configOptions: runtime.sessionConfigOptions ?? summary.configOptions,
         reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
         runtimeSessionId: runtime.runtimeSessionId,
         status: "idle",
         updatedAt: new Date().toISOString(),
       });
-      options.sessions.set(sessionId, { summary: restoredSummary, agent, workspace, runtime });
+      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
       options.sessionStore.upsert(restoredSummary);
-      persistRuntimeDescriptor(restoredSummary, agent, runtime.sessionCapabilities);
-      await importAuthoritativeProviderHistory(
-        sessionId,
-        agent,
-        runtime.runtimeSessionId,
-        workspace.path,
-      );
+      persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
       options.logInfo(
-        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${resume.restoreMethod}`,
+        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${restoreMethod}`,
       );
       return {
         ok: true,
-        resume: buildResumeInfo(restoredSummary, agent),
-        message: `ACP ${resume.restoreMethod} completed for this session.`,
+        resume: buildResumeInfo(restoredSummary, restoreAgent),
+        message: `ACP ${restoreMethod} completed for this session.`,
       };
     } catch (error) {
       options.logError(
@@ -804,7 +967,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
-    const diffs = await hydrateDiffsFromWorkspaceGit(sessionId, files);
+    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorktreeGit(sessionId, files));
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
     broadcastSessionUpdate(options.createHandlerContext(), sessionId, {
       kind: "diff_update",
@@ -812,13 +975,13 @@ export function createSessionServices(options: SessionServicesOptions) {
     });
   }
 
-  async function hydrateDiffsFromWorkspaceGit(sessionId: string, files: FileDiffSummary[]) {
-    const workspace = resolveSessionWorkspace(sessionId);
-    if (!workspace) {
+  async function hydrateDiffsFromWorktreeGit(sessionId: string, files: FileDiffSummary[]) {
+    const worktree = resolveSessionWorktree(sessionId);
+    if (!worktree) {
       return files;
     }
 
-    const gitDiffs = await readWorkspaceGitDiffs(workspace.path);
+    const gitDiffs = await readWorktreeGitDiffs(worktree.path);
     if (!gitDiffs.length) {
       return files;
     }
@@ -841,15 +1004,15 @@ export function createSessionServices(options: SessionServicesOptions) {
     });
   }
 
-  function resolveSessionWorkspace(sessionId: string) {
-    const liveWorkspace = options.sessions.get(sessionId)?.workspace;
-    if (liveWorkspace) {
-      return liveWorkspace;
+  function resolveSessionWorktree(sessionId: string) {
+    const liveWorktree = options.sessions.get(sessionId)?.worktree;
+    if (liveWorktree) {
+      return liveWorktree;
     }
 
     const summary = options.sessionStore.list().find((item) => item.id === sessionId);
     return summary
-      ? (options.getWorkspaces().find((workspace) => workspace.id === summary.workspaceId) ?? null)
+      ? (options.getWorktrees().find((worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(summary.cwd)) ?? null)
       : null;
   }
 
@@ -858,7 +1021,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     clearPermissionRequestsForSession,
     deleteLocalSessionData,
     handleRuntimeEvent,
-    hydrateDiffsFromWorkspaceGit,
+    hydrateDiffsFromWorktreeGit,
     hydrateSessionSummary,
     migrateStoredSessionSummary,
     configureRuntimeDraft,

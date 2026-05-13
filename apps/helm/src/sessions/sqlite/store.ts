@@ -32,7 +32,7 @@ import {
   sortCommandChunks,
   sortToolCalls,
 } from "./merge.js";
-import { createSessionStore } from "../summary/store.js";
+import { createSessionStore, normalizeSessionSummary } from "../summary/store.js";
 
 
 type SessionArtifacts = {
@@ -222,21 +222,23 @@ function listSessionSummaries(db: DatabaseSync) {
   `,
     )
     .all() as Array<{ payload_json: string }>;
-  return rows.map((row) => parseJson<SessionSummary>(row.payload_json)).filter(isNotNull);
+  return rows
+    .map((row) => normalizeSessionSummary(parseJson<SessionSummary>(row.payload_json)))
+    .filter(isNotNull);
 }
 
 function upsertSessionSummary(db: DatabaseSync, summary: SessionSummary) {
   db.prepare(
     `
     INSERT OR REPLACE INTO session_summaries(
-      id, project_id, helm_id, workspace_id, agent_id, status, created_at, updated_at, payload_json
+      id, project_id, helm_id, worktree_id, agent_id, status, created_at, updated_at, payload_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     summary.id,
     summary.projectId,
     summary.helmId,
-    summary.workspaceId,
+    summary.cwd ?? "",
     summary.agentId,
     summary.status,
     summary.createdAt,

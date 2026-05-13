@@ -1,10 +1,9 @@
 import { execFile } from "node:child_process";
 import { readdir } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { sortProjectFileSummaries } from "@tiller/shared";
-import type { ProjectFileSummary, ProjectSummary, WorkspaceSummary } from "@tiller/shared";
-import { isProjectRootBranchWorkspace } from "../../sessions/facade";
+import type { ProjectFileSummary, ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
@@ -22,16 +21,13 @@ const IGNORED_PROJECT_FILE_DIRECTORIES = new Set([
 
 export function resolveProjectFileRoot(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
-  workspaceId?: string,
+  worktrees: WorktreeSummary[],
+  cwd?: string,
 ) {
-  const workspace = workspaceId ? workspaces.find((item) => item.id === workspaceId) : undefined;
-  if (!workspace || isProjectRootBranchWorkspace(project, workspace)) {
-    if (project.path) {
-      return project.path;
-    }
+  if (cwd?.trim()) {
+    return cwd.trim();
   }
-  return workspace?.path ?? resolveProjectRoot(project, workspaces);
+  return project.path ?? worktrees[0]?.path;
 }
 
 export async function listProjectFiles(rootPath: string) {
@@ -70,16 +66,6 @@ async function runGitForProjectFiles(cwd: string) {
   );
 }
 
-function resolveProjectRoot(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
-  if (project.path) {
-    return project.path;
-  }
-  const workspace =
-    workspaces.find((item) => item.id === project.defaultWorkspaceId) ??
-    workspaces.find((item) => project.workspaceIds?.includes(item.id));
-  return workspace?.path;
-}
-
 function buildProjectFileSummaries(filePaths: string[]) {
   const directories = new Set<string>();
   const files = new Set<string>();
@@ -113,18 +99,19 @@ async function listProjectFilesFromDirectory(rootPath: string) {
       if (files.length >= PROJECT_FILE_FALLBACK_LIMIT) {
         return;
       }
-      const absolutePath = resolve(directory, entry.name);
-      if (!isPathInsideRoot(root, absolutePath)) {
+      if (IGNORED_PROJECT_FILE_DIRECTORIES.has(entry.name)) {
         continue;
       }
-      const projectPath = normalizeProjectFilePath(relative(root, absolutePath));
+      const absolute = resolve(directory, entry.name);
+      const relativePath = normalizeProjectFilePath(absolute.slice(root.length + 1));
+      if (!relativePath) {
+        continue;
+      }
       if (entry.isDirectory()) {
-        if (!IGNORED_PROJECT_FILE_DIRECTORIES.has(entry.name)) {
-          files.push({ path: projectPath, kind: "directory" });
-          await walk(absolutePath);
-        }
+        files.push({ path: relativePath, kind: "directory" });
+        await walk(absolute);
       } else if (entry.isFile()) {
-        files.push({ path: projectPath, kind: "file" });
+        files.push({ path: relativePath, kind: "file" });
       }
     }
   }
@@ -133,30 +120,18 @@ async function listProjectFilesFromDirectory(rootPath: string) {
   return files.sort(sortProjectFileSummaries);
 }
 
-async function resolveGitRoot(path: string) {
-  const result = await execFileAsync("git", ["-C", path, "rev-parse", "--show-toplevel"], {
+export async function resolveGitRoot(cwd: string) {
+  const result = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
     timeout: GIT_COMMAND_TIMEOUT_MS,
     windowsHide: true,
-    maxBuffer: 1024 * 1024,
   });
-  return result.stdout.trim() || path;
+  return result.stdout.trim().replace(/\\/g, "/");
 }
 
 function normalizeProjectFilePath(path: string) {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function isPathInsideRoot(root: string, candidate: string) {
-  const relativePath = relative(root, candidate);
-  return (
-    relativePath === "" ||
-    (Boolean(relativePath) &&
-      !relativePath.startsWith("..") &&
-      !resolve(relativePath).startsWith(".."))
-  );
+  return path.replace(/\\/g, "/").replace(/^\/+/, "");
 }
 
 function isNonGitRepositoryError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not a git repository|not a git repo|outside repository/i.test(message);
+  return error instanceof Error && /not a git repository|not a git repo|fatal:/iu.test(error.message);
 }

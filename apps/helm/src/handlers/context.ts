@@ -5,23 +5,26 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  AgentPromptContent,
   AvailableCommand,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
   SessionConfigOption,
+  SessionConfigOptionValue,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 
 export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
 };
 
@@ -36,7 +39,7 @@ export type RuntimeDraftRecord = {
   logicalScopeKey: string;
   project: ProjectSummary;
   helm: HelmSummary;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   agent: AcpAgentProvider;
   runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
   attach: (sessionId: string) => void;
@@ -51,8 +54,13 @@ export type RuntimeDraftRecord = {
 
 export type HelmHandlerContext = {
   configPath: string;
+  socketId?: string;
   notify: (socket: WebSocket, method: string, params: unknown) => void;
   broadcastNotification: (method: string, params: unknown) => void;
+  broadcastSessionTopic: (sessionId: string, method: string, params: unknown) => void;
+  subscribeSessionTopic: (socketId: string, sessionId: string) => void;
+  unsubscribeSessionTopic: (socketId: string, sessionId: string) => void;
+  removeSocketSessionTopics: (socketId: string) => void;
   logInfo: (message: string) => void;
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
@@ -62,9 +70,9 @@ export type HelmHandlerContext = {
   getHelms: () => HelmSummary[];
   setHelms: (items: HelmSummary[]) => void;
   loadAvailableHelms: () => HelmSummary[];
-  getWorkspaces: () => WorkspaceSummary[];
-  setWorkspaces: (items: WorkspaceSummary[]) => void;
-  loadAvailableWorkspaces: () => WorkspaceSummary[];
+  getWorktrees: () => WorktreeSummary[];
+  setWorktrees: (items: WorktreeSummary[]) => void;
+  loadAvailableWorktrees: () => WorktreeSummary[];
   getAgents: () => AcpAgentProvider[];
   setAgents: (items: AcpAgentProvider[]) => void;
   loadAvailableAgents: () => AcpAgentProvider[];
@@ -82,6 +90,7 @@ export type HelmHandlerContext = {
   sessionMessageStore: any;
   sessionArtifactStore: any;
   sessionRuntimeStore: any;
+  liveMessageBuffer: LiveMessageBuffer;
 
   createRuntime: typeof createAcpRuntime;
   connectAcpConnection: typeof connectAcpConnection;
@@ -91,7 +100,7 @@ export type HelmHandlerContext = {
     deckClientId: string;
     project: ProjectSummary;
     helm: HelmSummary;
-    workspace: WorkspaceSummary;
+    worktree: WorktreeSummary;
     agent: AcpAgentProvider;
     sessionConfig?: {
       agentMode?: string;
@@ -141,6 +150,8 @@ export type HelmHandlerContext = {
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   }) => Promise<{
     draftId: string;
     ok: boolean;
@@ -187,7 +198,7 @@ export type HelmHandlerContext = {
   ) => SessionSummary | undefined;
   persistSessionMessage: (sessionId: string, message: AgentMessage) => void;
   publishDiffUpdate: (sessionId: string, files: FileDiffSummary[]) => Promise<void>;
-  hydrateDiffsFromWorkspaceGit: (
+  hydrateDiffsFromWorktreeGit: (
     sessionId: string,
     files: FileDiffSummary[],
   ) => Promise<FileDiffSummary[]>;

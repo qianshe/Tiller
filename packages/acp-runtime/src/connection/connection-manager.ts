@@ -1,4 +1,4 @@
-import type { AcpAgentProvider, AgentMessage, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AgentMessage, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { AcpConnection, type AcpConnectionOptions, type AcpSessionRuntimeHandle, type OpenAcpSessionRequest } from "./acp-connection";
 import { resolveAcpConnectionKey, type AcpConnectionKey } from "./connection-key";
 import type { AcpConnectionInventoryItem } from "./connection-types";
@@ -12,8 +12,7 @@ export type AcpConnectionLifecycleEvent = {
     | "connection-reconnect";
   key: AcpConnectionKey;
   providerId: string;
-  workspaceId: string;
-  workspacePath: string;
+  cwd: string;
   sessionId?: string;
 };
 
@@ -29,7 +28,7 @@ export type AcpConnectionManagerOptions = {
 
 export type OpenManagedConnectionOptions = {
   provider: AcpAgentProvider;
-  workspace: WorkspaceSummary;
+  worktree: WorktreeSummary;
   sessionConfig?: AcpConnectionOptions["sessionConfig"];
   onLifecycleEvent?: (event: AcpConnectionLifecycleEvent) => void;
   sessionId?: string;
@@ -58,8 +57,7 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
         type,
         key,
         providerId: params.provider.id,
-        workspaceId: params.workspace.id,
-        workspacePath: params.workspace.path,
+        cwd: params.worktree.path,
         sessionId: params.sessionId,
       });
     };
@@ -101,8 +99,7 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
       type: "connection-reconnect",
       key,
       providerId: params.provider.id,
-      workspaceId: params.workspace.id,
-      workspacePath: params.workspace.path,
+      cwd: params.worktree.path,
       sessionId: params.sessionId,
     });
     const pending = pendingConnections.get(key);
@@ -128,14 +125,14 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
     const request: OpenAcpSessionRequest = params.restore
       ? {
           tillerSessionId: params.sessionId,
-          workspace: params.workspace,
+          worktree: params.worktree,
           kind: params.restore.strategy,
           runtimeSessionId: params.restore.runtimeSessionId,
           onEvent: params.onEvent,
         }
       : {
           tillerSessionId: params.sessionId,
-          workspace: params.workspace,
+          worktree: params.worktree,
           kind: "new",
           onEvent: params.onEvent,
         };

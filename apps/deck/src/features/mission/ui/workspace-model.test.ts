@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMissionWorkspaceModel } from "./workspace-model.js";
+import { buildMissionWorktreeModel } from "./workspace-model.js";
 
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -9,14 +9,14 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     socketRef: { current: {} },
     activeSessionId: "session-1",
     selectedProjectId: "project-1",
-    selectedWorkspaceId: "workspace-1",
+    selectedCwd: "D:/repo",
     selectedAgentId: "codex",
     activeSession: {
       id: "session-1",
       status: "idle",
       projectId: "project-1",
-      workspaceId: "workspace-1",
-      workspaceName: "main",
+      cwd: "D:/repo",
+      worktreeName: "main",
       agentId: "codex",
       agentName: "Codex",
       resume: {
@@ -44,7 +44,7 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     activeSessionProjectId: "project-1",
     activeSessionProject: { id: "project-1", name: "Tiller", helmId: "local" },
     draftProject: null,
-    selectedWorkspace: { id: "workspace-1", name: "main", path: "D:/repo" },
+    selectedWorktree: { name: "main", path: "D:/repo" },
     selectedDraftAgent: { id: "codex", name: "Codex" },
     activeSessionMessages: [],
     pendingPermission: null,
@@ -52,14 +52,14 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     effectiveMissionHelmId: "local",
     activeHelm: null,
     missionProjects: [{ id: "project-1", helmId: "local" }],
-    workspaces: [{ id: "workspace-1", name: "main", path: "D:/repo" }],
+    worktrees: [{ name: "main", path: "D:/repo" }],
     resumeStartRequestsRef: { current: new Set<string>() },
     ...overrides,
   } as any;
 }
 
-test("workspace model blocks sending while historical session is restoring", () => {
-  const model = buildMissionWorkspaceModel(baseInput({
+test("worktree model blocks sending while historical session is restoring", () => {
+  const model = buildMissionWorktreeModel(baseInput({
     activeSession: {
       ...baseInput().activeSession,
       resume: {
@@ -76,9 +76,69 @@ test("workspace model blocks sending while historical session is restoring", () 
   assert.match(model.activeSessionRestoreGate.message, /正在恢复 ACP 会话/);
 });
 
-test("workspace model allows sending once restored to same-process runtime", () => {
-  const model = buildMissionWorkspaceModel(baseInput());
+test("worktree model allows sending once restored to same-process runtime", () => {
+  const model = buildMissionWorktreeModel(baseInput());
 
   assert.equal(model.canSend, true);
   assert.equal(model.activeSessionRestoreGate.canChat, true);
+});
+
+test("worktree model blocks new-session sends while draft runtime is still prewarming", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: true,
+  }));
+
+  assert.equal(model.canSend, false);
+});
+
+test("worktree model blocks new-session sends until draft runtime is ready", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: false,
+    agentModelOptions: {},
+  }));
+
+  assert.equal(model.canSend, false);
+});
+
+test("worktree model allows new-session sends once draft runtime is ready", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: false,
+    agentModelOptions: {
+      "codex::D:/repo::project-1": {
+        loading: false,
+        warmed: true,
+        draftId: "draft-codex-1",
+        runtimeSessionId: "runtime-1",
+        modelOptions: [],
+        configOptions: [],
+        state: {},
+      },
+    },
+  }));
+
+  assert.equal(model.canSend, true);
+});
+
+test("worktree model prefers matching cwd worktree over stale session worktree name", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: {
+      ...baseInput().activeSession,
+      worktreeName: "main",
+      cwd: "D:/repo",
+    },
+    worktrees: [
+      {
+        name: "codex/acp-session-performance-optimization",
+        path: "D:/repo",
+      },
+    ],
+  }));
+
+  assert.equal(model.overviewWorktreeName, "codex/acp-session-performance-optimization");
 });

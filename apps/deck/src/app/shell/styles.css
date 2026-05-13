@@ -154,6 +154,24 @@ h3 {
     box-shadow 0.24s ease;
 }
 
+.top-nav::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  display: block;
+  width: 96px;
+  height: 10px;
+  transform: translateX(-50%);
+}
+
+.top-nav:hover::before,
+.top-nav:focus-within::before {
+  bottom: -360px;
+  width: 144px;
+  height: 360px;
+}
+
 .top-nav::after {
   content: "";
   position: absolute;
@@ -164,8 +182,10 @@ h3 {
   height: 10px;
   transform: translateX(-50%);
   border-radius: 0 0 999px 999px;
-  background: var(--color-surface-strong);
-  box-shadow: 0 12px 24px rgb(26 28 29 / 0.08);
+  background: var(--foreground);
+  box-shadow:
+    0 12px 24px rgb(26 28 29 / 0.14),
+    0 0 0 1px var(--primary-soft);
 }
 
 .top-nav:hover,

@@ -13,8 +13,15 @@ export async function handleDeviceRpcRequest(
     case "device/revoke":
       return revokeDevice(params as { deviceId: string }, context);
     case "device/authenticate":
+      return {
+        ok: true,
+        message: "Device already authenticated.",
+      };
     case "device/pair":
-      return undefined;
+      return {
+        ok: false,
+        message: "Pairing is only available before socket authentication.",
+      };
     default:
       return undefined;
   }

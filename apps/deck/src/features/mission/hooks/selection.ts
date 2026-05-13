@@ -2,7 +2,6 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  SessionReasoningEffort,
   SessionSummary,
 } from "@tiller/shared";
 import {
@@ -19,21 +18,13 @@ type UseSelectionOptions = {
   setExpandedMissionHelmIds: Dispatch<SetStateAction<Set<string>>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
-  setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
+  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
   setSelectedModel: Dispatch<SetStateAction<string>>;
   setActiveSessionId: (sessionId: string | null) => void;
   setWorktreePickerOpen: Dispatch<SetStateAction<boolean>>;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
 };
-
-type SessionDraftPreferencePatch = {
-  agentMode?: string;
-  model?: string;
-  reasoningEffort?: SessionReasoningEffort;
-};
-
-export type { SessionDraftPreferencePatch };
 
 /**
  * Coordinates mission tree, draft selectors and active session selection.
@@ -47,7 +38,7 @@ export function useSelection({
   setExpandedMissionHelmIds,
   setExpandedMissionProjectIds,
   setSelectedProjectId,
-  setSelectedWorkspaceId,
+  setSelectedCwd,
   setSelectedAgentId,
   setSelectedModel,
   setActiveSessionId,
@@ -72,8 +63,8 @@ export function useSelection({
     );
   }
 
-  function selectDraftWorkspace(workspaceId: string) {
-    setSelectedWorkspaceId(workspaceId);
+  function selectDraftWorktree(worktreeId: string) {
+    setSelectedCwd(worktreeId);
     setWorktreePickerOpen(false);
   }
 
@@ -107,11 +98,12 @@ export function useSelection({
       setExpandedMissionProjectIds(
         (current) => new Set([...current, projectId]),
       );
-      setSelectedWorkspaceId((current) =>
-        project.workspaceIds?.includes(current ?? "")
+      setSelectedCwd((current) => {
+        const worktreePaths = (project.worktrees ?? []).map((worktree) => worktree.path);
+        return worktreePaths.includes(current ?? "")
           ? current
-          : (project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null),
-      );
+          : (project.path ?? worktreePaths[0] ?? null);
+      });
       setSelectedAgentId(null);
       setSelectedModel("provider-default");
       setAgentPickerOpen(false);
@@ -141,7 +133,7 @@ export function useSelection({
   return {
     toggleMissionHelmNode,
     toggleMissionProjectNode,
-    selectDraftWorkspace,
+    selectDraftWorktree,
     selectDraftAgent,
     selectHelm,
     selectProject,

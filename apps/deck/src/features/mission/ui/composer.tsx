@@ -19,8 +19,9 @@ import type {
   SessionConfigOption,
   SessionReasoningEffort,
   SessionSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
+import type { SessionConfigPreferencePatch } from "../types";
 import type { DeckPreferences } from "../../preferences";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
@@ -38,10 +39,10 @@ type MissionComposerProps = {
   agentPickerRef: MutableRefObject<HTMLDivElement | null>;
   agentPickerOpen: boolean;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
-  selectedWorkspaceName: string;
-  draftWorkspaceOptions: WorkspaceSummary[];
-  selectedWorkspaceId: string | null;
-  selectDraftWorkspace: (workspaceId: string) => void;
+  selectedWorktreeName: string;
+  draftWorktreeOptions: WorktreeSummary[];
+  selectedCwd: string | null;
+  selectDraftWorktree: (worktreeId: string) => void;
   currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
@@ -70,17 +71,14 @@ type MissionComposerProps = {
   slashSelectedIndex: number;
   applySlashCommand: (cmd: AvailableCommand) => void;
   setSlashSelectedIndex: Dispatch<SetStateAction<number>>;
+  openSlashCommands: () => void;
   showDraftAgentModeSelect: boolean;
   missionConfigPicker: MissionConfigPicker;
   setMissionConfigPicker: Dispatch<SetStateAction<MissionConfigPicker>>;
   draftAgentModePickerLabel: string;
   draftAgentModeOptions: AgentModeOption[];
   effectiveDraftAgentMode?: string;
-  updateSessionDraftPreferences: (next: {
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  }) => void;
+  updateSessionDraftPreferences: (next: SessionConfigPreferencePatch) => void;
   draftModelPlaceholder: string;
   draftModelPickerDisabled: boolean;
   draftModelPickerLabel: string;
@@ -118,10 +116,10 @@ export function MissionComposer({
   agentPickerRef,
   agentPickerOpen,
   setAgentPickerOpen,
-  selectedWorkspaceName,
-  draftWorkspaceOptions,
-  selectedWorkspaceId,
-  selectDraftWorkspace,
+  selectedWorktreeName,
+  draftWorktreeOptions,
+  selectedCwd,
+  selectDraftWorktree,
   currentGitBranch,
   copy,
   agentLocked,
@@ -146,6 +144,7 @@ export function MissionComposer({
   slashSelectedIndex,
   applySlashCommand,
   setSlashSelectedIndex,
+  openSlashCommands,
   showDraftAgentModeSelect,
   missionConfigPicker,
   setMissionConfigPicker,
@@ -178,14 +177,8 @@ export function MissionComposer({
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const modelSettingsLoading =
     draftModelLoading ||
-    (!activeSession && selectedDraftAgent?.id === "opencode" && draftConfigOptions.length === 0);
+    (!activeSession && selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0);
 
-  function focusSlashCommand() {
-    if (!prompt.startsWith("/")) {
-      setPrompt((current) => (current ? `/${current}` : "/"));
-    }
-    missionPromptRef.current?.focus();
-  }
 
   return (
     <div
@@ -262,7 +255,7 @@ export function MissionComposer({
               className="mission-slash-trigger size-8 rounded-full bg-surface text-base"
               aria-label="输入斜杠命令"
               title="输入斜杠命令"
-              onClick={focusSlashCommand}
+              onClick={openSlashCommands}
             >
               /
             </Button>

@@ -1,4 +1,4 @@
-import type { AgentPromptContent, SessionReasoningEffort } from "@tiller/shared";
+import type { AgentPromptContent, SessionConfigOptionValue, SessionReasoningEffort } from "@tiller/shared";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
@@ -19,6 +19,8 @@ export type SessionConfigureRequest = {
   agentMode?: string;
   model?: string;
   reasoningEffort?: SessionReasoningEffort;
+  configId?: string;
+  value?: SessionConfigOptionValue;
 };
 
 async function resolvePromptRuntime(
@@ -103,18 +105,22 @@ export async function configureSessionRuntime(
         agentMode: params.agentMode,
         model: params.model,
         reasoningEffort: params.reasoningEffort,
+        configId: params.configId,
+        value: params.value,
       })
     : null;
   const nextAgentMode = runtimeResult?.state.agentMode ?? params.agentMode ?? current.agentMode;
   const nextModel = runtimeResult?.state.model ?? params.model;
   const nextReasoning = runtimeResult?.state.reasoningEffort ?? params.reasoningEffort;
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
+  const nextConfigOptions = runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions ?? current.configOptions;
   const updatedAt = new Date().toISOString();
   const next = context.hydrateSessionSummary({
     ...current,
     agentMode: nextAgentMode,
     model: nextModel,
     modelOptions: nextModelOptions,
+    configOptions: nextConfigOptions,
     reasoningEffort: nextReasoning,
     updatedAt,
   });
@@ -128,7 +134,7 @@ export async function configureSessionRuntime(
       model: nextModel,
       reasoningEffort: nextReasoning,
     },
-    options: [],
+    options: nextConfigOptions ?? [],
     message: runtimeResult?.runtimeApplied ? "Session config updated." : "Session config saved.",
   };
 }

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as projectListFiles from "./project/list-files";
-import * as workspaceGitListBranches from "./workspace/git/list-branches";
-import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
+import * as projectGitListBranches from "./project/git-list-branches";
+import * as projectGitCreateWorktree from "./project/git-create-worktree";
 import * as sessionDraft from "./session/draft";
 import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
@@ -18,25 +18,25 @@ test("project/list_files validates required projectId", () => {
   assert.throws(() => projectListFiles.ParamsSchema.parse({}));
 });
 
-test("workspace/git/list_branches result matches expected shape", () => {
-  assert.equal(workspaceGitListBranches.method, "workspace/git/list_branches");
-  const ok = workspaceGitListBranches.ResultSchema.parse({
+test("project/git/list_branches result matches expected shape", () => {
+  assert.equal(projectGitListBranches.method, "project/git/list_branches");
+  const ok = projectGitListBranches.ResultSchema.parse({
     ok: true,
     projectId: "p1",
     branches: ["main"],
-    workspaces: [],
+    worktrees: [],
     message: "",
   });
   assert.equal(ok.ok, true);
 });
 
-test("workspace/git/create_branch shares the list_branches result schema", () => {
-  assert.equal(workspaceGitCreateBranch.method, "workspace/git/create_branch");
-  workspaceGitCreateBranch.ResultSchema.parse({
+test("project/git/create_worktree shares the list_branches result schema", () => {
+  assert.equal(projectGitCreateWorktree.method, "project/git/create_worktree");
+  projectGitCreateWorktree.ResultSchema.parse({
     ok: false,
     projectId: "p1",
     branches: [],
-    workspaces: [],
+    worktrees: [],
     message: "no git repo",
   });
 });
@@ -47,10 +47,10 @@ test("session/draft enforces deck and selected agent scope", () => {
     sessionDraft.ParamsSchema.parse({
       deckClientId: "deck-1",
       projectId: "p1",
-      workspaceId: "ws1",
+      cwd: "D:/repo",
       agentId: "a1",
     }),
-    { deckClientId: "deck-1", projectId: "p1", workspaceId: "ws1", agentId: "a1" },
+    { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "a1" },
   );
 });
 

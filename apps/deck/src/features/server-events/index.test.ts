@@ -19,8 +19,8 @@ function session(id: string): SessionSummary {
     projectId: "p1",
     projectName: "Project",
     helmId: "h1",
-    workspaceId: "w1",
-    workspaceName: "Workspace",
+    cwd: "D:/repo",
+    worktreeName: "Worktree",
     agentId: "a1",
     agentName: "Agent",
     status: "running",
@@ -37,7 +37,7 @@ function resetStore() {
     helms: [],
     helmInventories: {},
     projects: [],
-    workspaces: [],
+    worktrees: [],
     sessions: [],
     statuses: {},
     messages: {},
@@ -84,6 +84,72 @@ test("activity RPC notifications append assistant messages without changing sess
   assert.equal(
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
+  );
+});
+
+test("activity RPC notifications preserve and clear assistant streaming state", () => {
+  resetStore();
+  const streamingMessage: AgentMessage = {
+    id: "m1",
+    role: "assistant",
+    text: "hel",
+    timestamp: "2026-05-04T01:00:00.000Z",
+  };
+  const finalMessage: AgentMessage = {
+    ...streamingMessage,
+    text: "hello",
+    timestamp: "2026-05-04T01:00:01.000Z",
+  };
+
+  applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message: streamingMessage, streaming: true } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+  applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message: finalMessage, streaming: false } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "hello");
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.streaming, false);
+});
+
+test("streaming assistant chunks do not update session summary state", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "agent_message",
+        message: {
+          id: "m1",
+          role: "assistant",
+          text: "hel",
+          timestamp: "2026-05-04T01:00:00.000Z",
+        } satisfies AgentMessage,
+        streaming: true,
+      },
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.updatedAt,
+    "2026-05-04T00:00:00.000Z",
   );
 });
 
@@ -138,15 +204,15 @@ test("inventory RPC results hydrate projects for the current helm", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
       writeAgentModelOptionsCache: () => undefined,
       selectedAgentId: null,
-      selectedWorkspaceId: null,
+      selectedCwd: null,
       resolveModelOptions: () => [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel: "provider-default",

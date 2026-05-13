@@ -97,7 +97,11 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
   }
 
   if (updateType === "available_commands_update") {
-    const rawCommands = Array.isArray(update.availableCommands) ? update.availableCommands : [];
+    const rawCommands = Array.isArray(update.availableCommands)
+      ? update.availableCommands
+      : Array.isArray(update.available_commands)
+        ? update.available_commands
+        : [];
     const commands: AvailableCommand[] = rawCommands
       .filter((cmd: any) => cmd && typeof cmd.name === "string")
       .map((cmd: any) => {
@@ -242,13 +246,24 @@ export function extractSessionConfigOptions(payload: any): AcpSessionConfigOptio
       selectedValue: option.selectedValue,
       value: option.value,
       options: Array.isArray(option.options)
-        ? option.options.map((item: any) => ({
-            value: item?.value,
-            label: typeof item?.label === "string" ? item.label : typeof item?.name === "string" ? item.name : undefined,
-            name: typeof item?.name === "string" ? item.name : undefined,
-          }))
+        ? flattenSessionConfigOptions(option.options)
         : undefined,
     }));
+}
+
+function flattenSessionConfigOptions(
+  options: any[],
+): NonNullable<AcpSessionConfigOption["options"]> {
+  return options.flatMap((item: any): NonNullable<AcpSessionConfigOption["options"]> => {
+    if (Array.isArray(item?.options)) {
+      return flattenSessionConfigOptions(item.options);
+    }
+    return [{
+      value: item?.value,
+      label: typeof item?.label === "string" ? item.label : typeof item?.name === "string" ? item.name : undefined,
+      name: typeof item?.name === "string" ? item.name : undefined,
+    }];
+  });
 }
 
 export function extractAcpModelState(payload: AcpSessionResponseWithModels | any): AcpModelState | undefined {
@@ -300,6 +315,33 @@ export function hasSessionConfigOptionValue(configOptions: AcpSessionConfigOptio
 
   const candidates = [option.currentValue, option.selectedValue, option.value, ...(option.options ?? []).map((item) => item.value)];
   return candidates.some((candidate) => candidate === value);
+}
+
+export function hasSessionConfigOptionIdValue(
+  configOptions: AcpSessionConfigOption[],
+  configId: string,
+  value: AcpSessionConfigOption["value"],
+) {
+  const option = configOptions.find((item) => item.id === configId);
+  if (!option) {
+    return false;
+  }
+  const knownValues = [option.currentValue, option.selectedValue, option.value];
+  const knownPrimitiveTypes = new Set(
+    knownValues
+      .filter((candidate): candidate is string | boolean => typeof candidate === "string" || typeof candidate === "boolean")
+      .map((candidate) => typeof candidate),
+  );
+  if (knownPrimitiveTypes.size && !knownPrimitiveTypes.has(typeof value)) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return true;
+  }
+  if (typeof value === "boolean") {
+    return true;
+  }
+  return typeof option.currentValue === typeof value || typeof option.value === typeof value;
 }
 
 export function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {
@@ -393,11 +435,11 @@ function extractPermissionRequest(sessionId: string, updateType: string | undefi
         : typeof update.permission?.reason === "string"
           ? update.permission.reason
           : "Agent requested permission.",
-    workspacePath:
+    cwd:
       typeof update.cwd === "string"
         ? update.cwd
-        : typeof update.workspacePath === "string"
-          ? update.workspacePath
+        : typeof update.cwd === "string"
+          ? update.cwd
           : typeof update.permission?.cwd === "string"
             ? update.permission.cwd
             : process.cwd(),

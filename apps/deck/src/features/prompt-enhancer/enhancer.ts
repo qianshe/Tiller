@@ -78,9 +78,9 @@ export type PromptEnhancerPreferences = {
 
 export type PromptEnhancerContext = {
   projectName?: string | null;
-  workspaceName?: string | null;
+  worktreeName?: string | null;
   projectSummary?: string | null;
-  workspaceSummary?: string | null;
+  worktreeSummary?: string | null;
   sessionStatus?: string | null;
   sessionSummary?: string | null;
 };
@@ -93,14 +93,14 @@ export type PromptEnhancerModelOption = {
 type FetchLike = typeof fetch;
 
 const INSTRUCTION_TEMPLATE_PLACEHOLDER_PATTERN =
-  /\{\{\s*(projectName|workspaceName|projectSummary|workspaceSummary|sessionStatus|sessionSummary|userPrompt)\s*\}\}/g;
+  /\{\{\s*(projectName|worktreeName|projectSummary|worktreeSummary|sessionStatus|sessionSummary|userPrompt)\s*\}\}/g;
 
 export function buildEnhancedPrompt(
   rawPrompt: string,
   preferences: PromptEnhancerPreferences,
   context: {
     projectName?: string | null;
-    workspaceName?: string | null;
+    worktreeName?: string | null;
     agentName?: string | null;
     model?: string | null;
     reasoningEffort?: string | null;
@@ -114,7 +114,7 @@ export function buildEnhancedPrompt(
 
   const contextLines = [
     context.projectName ? `- Project: ${context.projectName}` : null,
-    context.workspaceName ? `- Workspace: ${context.workspaceName}` : null,
+    context.worktreeName ? `- Worktree: ${context.worktreeName}` : null,
     context.agentName ? `- Agent: ${context.agentName}` : null,
     context.model ? `- Model: ${context.model}` : null,
     context.reasoningEffort ? `- Reasoning: ${context.reasoningEffort}` : null,
@@ -350,11 +350,11 @@ function renderInstructionTemplate(
 ) {
   const values: Record<string, string> = {
     projectName: context.projectName?.trim() || "Not available.",
-    workspaceName: context.workspaceName?.trim() || "Not available.",
+    worktreeName: context.worktreeName?.trim() || "Not available.",
     projectSummary:
       context.projectSummary?.trim() || summarizeProjectContext(context),
-    workspaceSummary:
-      context.workspaceSummary?.trim() || summarizeWorkspaceContext(context),
+    worktreeSummary:
+      context.worktreeSummary?.trim() || summarizeWorktreeContext(context),
     sessionStatus: context.sessionStatus?.trim() || "Not available.",
     sessionSummary:
       context.sessionSummary?.trim() || "No prior session context.",
@@ -375,16 +375,16 @@ function summarizeProjectContext(context: PromptEnhancerContext) {
     context.projectName?.trim()
       ? `Project: ${context.projectName.trim()}.`
       : "",
-    context.workspaceName?.trim()
-      ? `Workspace: ${context.workspaceName.trim()}.`
+    context.worktreeName?.trim()
+      ? `Worktree: ${context.worktreeName.trim()}.`
       : "",
   ].filter(Boolean);
   return parts.length ? parts.join(" ") : "Not available.";
 }
 
-function summarizeWorkspaceContext(context: PromptEnhancerContext) {
-  return context.workspaceName?.trim()
-    ? `Workspace: ${context.workspaceName.trim()}.`
+function summarizeWorktreeContext(context: PromptEnhancerContext) {
+  return context.worktreeName?.trim()
+    ? `Worktree: ${context.worktreeName.trim()}.`
     : "Not available.";
 }
 

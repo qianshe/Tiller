@@ -13,7 +13,7 @@ type SessionTitleMap = Record<string, string>;
 
 type UseSessionTitlesOptions = {
   client: DeckRpcClient | null;
-  messages: Record<string, AgentMessage[]>;
+  getSessionMessages: (sessionId: string) => AgentMessage[];
   sessionTitles: SessionTitleMap;
   setSessionTitles: (
     value: SessionTitleMap | ((current: SessionTitleMap) => SessionTitleMap),
@@ -26,7 +26,7 @@ type UseSessionTitlesOptions = {
  */
 export function useSessionTitles({
   client,
-  messages,
+  getSessionMessages,
   sessionTitles,
   setSessionTitles,
   promptEnhancerLlm,
@@ -48,13 +48,13 @@ export function useSessionTitles({
   }
 
   function findFirstUserMessage(sessionId: string) {
-    return messages[sessionId]?.find((message) => message.role === "user")
+    return getSessionMessages(sessionId).find((message) => message.role === "user")
       ?.text;
   }
 
   function resolveSessionTitleSource(session: SessionSummary) {
     // Collect last 2-3 user messages for better context
-    const userMessages = (messages[session.id] ?? [])
+    const userMessages = getSessionMessages(session.id)
       .filter((m) => m.role === "user")
       .slice(-3)
       .map((m) => m.text);

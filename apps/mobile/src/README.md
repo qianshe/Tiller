@@ -32,5 +32,5 @@ Suggested first screens:
 - mission inbox
 - pending approvals
 - mission detail
-- workspace selector
+- worktree selector
 - settings / device pairing

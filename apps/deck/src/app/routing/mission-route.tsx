@@ -1,6 +1,6 @@
 import {
   DEFAULT_LOGBOOK_VISIBLE_LIMIT,
-  MissionWorkspace,
+  MissionWorktree,
 } from "../../features/mission";
 
 export function renderMissionRoute(source: any) {
@@ -12,7 +12,7 @@ export function renderMissionRoute(source: any) {
     socketRef,
     activeSessionId,
     selectedProjectId,
-    selectedWorkspaceId,
+    selectedCwd,
     selectedAgentId,
     activeSession,
     diffs,
@@ -26,8 +26,8 @@ export function renderMissionRoute(source: any) {
     projectFilesByScope,
     activeSessionProject,
     draftProject,
-    selectedWorkspace,
-    workspaces,
+    selectedWorktree,
+    worktrees,
     selectedDraftAgent,
     projectFileFilter,
     collapsedProjectFileDirectories,
@@ -61,7 +61,7 @@ export function renderMissionRoute(source: any) {
     agentConnectionInventory,
     setSelectedMissionHelmId,
     setSelectedProjectId,
-    setSelectedWorkspaceId,
+    setSelectedCwd,
     setSelectedAgentId,
     setExpandedMissionProjectIds,
     setActiveSessionId,
@@ -94,9 +94,9 @@ export function renderMissionRoute(source: any) {
     agentPickerRef,
     agentPickerOpen,
     setAgentPickerOpen,
-    selectedWorkspaceName,
-    draftWorkspaceOptions,
-    selectDraftWorkspace,
+    selectedWorktreeName,
+    draftWorktreeOptions,
+    selectDraftWorktree,
     agentLocked,
     filteredAgents,
     selectDraftAgent,
@@ -116,6 +116,7 @@ export function renderMissionRoute(source: any) {
     slashSelectedIndex,
     applySlashCommand,
     setSlashSelectedIndex,
+    openSlashCommands,
     showDraftAgentModeSelect,
     missionConfigPicker,
     setMissionConfigPicker,
@@ -142,7 +143,6 @@ export function renderMissionRoute(source: any) {
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
-    messages,
     activityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
@@ -162,7 +162,7 @@ export function renderMissionRoute(source: any) {
     toggleProjectFileDirectory,
   } = source;
   return (
-    <MissionWorkspace
+    <MissionWorktree
       prompt={prompt}
       promptImages={promptImages}
       rpcClientRef={rpcClientRef}
@@ -170,7 +170,7 @@ export function renderMissionRoute(source: any) {
       socketRef={socketRef}
       activeSessionId={activeSessionId}
       selectedProjectId={selectedProjectId}
-      selectedWorkspaceId={selectedWorkspaceId}
+      selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}
       activeSession={activeSession}
       diffs={diffs}
@@ -184,8 +184,8 @@ export function renderMissionRoute(source: any) {
       projectFilesByScope={projectFilesByScope}
       activeSessionProject={activeSessionProject}
       draftProject={draftProject}
-      selectedWorkspace={selectedWorkspace}
-      workspaces={workspaces}
+      selectedWorktree={selectedWorktree}
+      worktrees={worktrees}
       selectedDraftAgent={selectedDraftAgent}
       projectFileFilter={projectFileFilter}
       collapsedProjectFileDirectories={collapsedProjectFileDirectories}
@@ -219,7 +219,7 @@ export function renderMissionRoute(source: any) {
       agentConnectionInventory={agentConnectionInventory}
       setSelectedMissionHelmId={setSelectedMissionHelmId}
       setSelectedProjectId={setSelectedProjectId}
-      setSelectedWorkspaceId={setSelectedWorkspaceId}
+      setSelectedCwd={setSelectedCwd}
       setSelectedAgentId={setSelectedAgentId}
       setExpandedMissionProjectIds={setExpandedMissionProjectIds}
       setActiveSessionId={setActiveSessionId}
@@ -252,9 +252,9 @@ export function renderMissionRoute(source: any) {
       agentPickerRef={agentPickerRef}
       agentPickerOpen={agentPickerOpen}
       setAgentPickerOpen={setAgentPickerOpen}
-      selectedWorkspaceName={selectedWorkspaceName}
-      draftWorkspaceOptions={draftWorkspaceOptions}
-      selectDraftWorkspace={selectDraftWorkspace}
+      selectedWorktreeName={selectedWorktreeName}
+      draftWorktreeOptions={draftWorktreeOptions}
+      selectDraftWorktree={selectDraftWorktree}
       agentLocked={agentLocked}
       filteredAgents={filteredAgents}
       selectDraftAgent={selectDraftAgent}
@@ -274,6 +274,7 @@ export function renderMissionRoute(source: any) {
       slashSelectedIndex={slashSelectedIndex}
       applySlashCommand={applySlashCommand}
       setSlashSelectedIndex={setSlashSelectedIndex}
+      openSlashCommands={openSlashCommands}
       showDraftAgentModeSelect={showDraftAgentModeSelect}
       missionConfigPicker={missionConfigPicker}
       setMissionConfigPicker={setMissionConfigPicker}
@@ -300,7 +301,6 @@ export function renderMissionRoute(source: any) {
       cancelSession={cancelSession}
       missionDisplayPaneStyle={missionDisplayPaneStyle}
       selectedMissionDiffFilePath={selectedMissionDiffFilePath}
-      messages={messages}
       activityHistoryState={activityHistoryState}
       activityVisibleCounts={activityVisibleCounts}
       setActivityVisibleCounts={setActivityVisibleCounts}

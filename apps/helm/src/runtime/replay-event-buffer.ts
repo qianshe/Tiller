@@ -20,6 +20,15 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
   const outputs = new Map<string, CommandChunk>();
   let diffs: FileDiffSummary[] | null = null;
 
+  function snapshot() {
+    return {
+      messages: Array.from(messages.values()),
+      toolCalls: Array.from(toolCalls.values()),
+      outputs: Array.from(outputs.values()),
+      diffs: diffs ?? [],
+    };
+  }
+
   return {
     add(event: SessionRuntimeEvent) {
       switch (event.type) {
@@ -42,6 +51,7 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
           return false;
       }
     },
+    snapshot,
     flush(): RestoreReplayFlushCounts {
       for (const message of messages.values()) {
         context.sessionMessageStore.append(sessionId, message);

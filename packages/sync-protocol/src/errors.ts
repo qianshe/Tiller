@@ -14,7 +14,7 @@ export const ErrorCode = {
   DeviceRevoked: -32004,
   HelmNotFound: -32010,
   ProjectNotFound: -32011,
-  WorkspaceNotFound: -32012,
+  WorktreeNotFound: -32012,
   ConfigPersistFailed: -32013,
   GitOperationFailed: -32014,
   ProviderNotFound: -32020,

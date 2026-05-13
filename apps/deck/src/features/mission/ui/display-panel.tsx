@@ -26,7 +26,7 @@ export type RuntimeOverviewItem = {
   id: string;
   agentId?: string;
   projectId?: string;
-  workspaceId?: string;
+  worktreeId?: string;
   label: string;
   meta: string;
   status: string;

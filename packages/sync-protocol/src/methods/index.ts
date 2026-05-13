@@ -1,15 +1,14 @@
-import type { z } from "zod";
+import { z } from "zod";
 import type { NotificationDescriptor, RequestDescriptor } from "./descriptor";
 import * as helmList from "./helm/list";
 import * as helmSave from "./helm/save";
 import * as projectList from "./project/list";
 import * as projectListFiles from "./project/list-files";
+import * as projectListWorktrees from "./project/list-worktrees";
+import * as projectGitListBranches from "./project/git-list-branches";
+import * as projectGitCreateWorktree from "./project/git-create-worktree";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
-import * as workspaceList from "./workspace/list";
-import * as workspaceSave from "./workspace/save";
-import * as workspaceGitListBranches from "./workspace/git/list-branches";
-import * as workspaceGitCreateBranch from "./workspace/git/create-branch";
 import * as agentList from "./agent/list";
 import * as agentTest from "./agent/test";
 import * as agentConnections from "./agent/connections";
@@ -26,6 +25,8 @@ import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
+import * as sessionSubscribe from "./session/subscribe";
+import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
@@ -50,12 +51,11 @@ const METHOD_DESCRIPTORS = {
   [helmSave.method]: helmSave.descriptor,
   [projectList.method]: projectList.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
+  [projectListWorktrees.method]: projectListWorktrees.descriptor,
+  [projectGitListBranches.method]: projectGitListBranches.descriptor,
+  [projectGitCreateWorktree.method]: projectGitCreateWorktree.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
-  [workspaceList.method]: workspaceList.descriptor,
-  [workspaceSave.method]: workspaceSave.descriptor,
-  [workspaceGitListBranches.method]: workspaceGitListBranches.descriptor,
-  [workspaceGitCreateBranch.method]: workspaceGitCreateBranch.descriptor,
   [agentList.method]: agentList.descriptor,
   [agentTest.method]: agentTest.descriptor,
   [agentConnections.method]: agentConnections.descriptor,
@@ -72,6 +72,8 @@ const METHOD_DESCRIPTORS = {
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
+  [sessionSubscribe.method]: sessionSubscribe.descriptor,
+  [sessionUnsubscribe.method]: sessionUnsubscribe.descriptor,
   [sessionConfigure.method]: sessionConfigure.descriptor,
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
@@ -98,12 +100,11 @@ export const CLIENT_REQUEST_METHODS = [
   helmSave.method,
   projectList.method,
   projectListFiles.method,
+  projectListWorktrees.method,
+  projectGitListBranches.method,
+  projectGitCreateWorktree.method,
   projectSave.method,
   projectDelete.method,
-  workspaceList.method,
-  workspaceSave.method,
-  workspaceGitListBranches.method,
-  workspaceGitCreateBranch.method,
   agentList.method,
   agentTest.method,
   agentConnections.method,
@@ -120,6 +121,8 @@ export const CLIENT_REQUEST_METHODS = [
   sessionCheckResume.method,
   sessionResume.method,
   sessionPrompt.method,
+  sessionSubscribe.method,
+  sessionUnsubscribe.method,
   sessionConfigure.method,
   sessionSetConfigOption.method,
   sessionRename.method,
@@ -143,5 +146,4 @@ export const SERVER_NOTIFICATION_METHODS = [
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];
 export type ClientNotificationMethod =
   (typeof CLIENT_NOTIFICATION_METHODS)[number];
-export type ServerNotificationMethod =
-  (typeof SERVER_NOTIFICATION_METHODS)[number];
+export type ServerNotificationMethod = (typeof SERVER_NOTIFICATION_METHODS)[number];

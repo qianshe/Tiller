@@ -5,7 +5,6 @@ import { dirname, resolve } from "node:path";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
-  listAvailableProjects as listConfiguredProjects,
   listAvailableProviders,
   loadTillerConfigStub,
   readTillerConfig,
@@ -13,9 +12,8 @@ import {
   resolveProjectById,
   resolveProviderById,
   saveHelmToConfig,
-  saveProjectToConfig,
   saveProviderToConfig,
-  saveWorkspaceToConfig,
+  saveWorktreeToConfig,
 } from "@tiller/agent-registry";
 import {
   connectAcpConnection,
@@ -39,7 +37,7 @@ import {
   type SessionResumeInfo,
   type SessionSummary,
   type TrustedDeviceSummary,
-  type WorkspaceSummary,
+  type WorktreeSummary,
 } from "@tiller/shared";
 import {
   applyAgentMessageToSummary,
@@ -56,7 +54,9 @@ import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
+import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createSessionServices, type SessionRecord } from "./runtime/session-services";
+import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
@@ -112,23 +112,22 @@ const projectCatalog = createProjectCatalog({
   configPath,
   host: HOST,
   port: PORT,
-  defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+  defaultWorktreeRoot: DEFAULT_WORKSPACE_ROOT,
 });
 const {
   loadAvailableHelms,
   loadAvailableProjects,
   loadAvailableProjectsWithSemanticSummaries,
-  loadAvailableWorkspaces,
-  resolveDefaultProjectAgentId,
+  loadAvailableWorktrees,
 } = projectCatalog;
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
+const sessionTopics = createSessionTopicRegistry();
+const liveMessageBuffer = createLiveMessageBuffer();
 let helms = loadAvailableHelms();
-let workspaces = loadAvailableWorkspaces();
+let worktrees = loadAvailableWorktrees();
 let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
-normalizeProjectAgentDefaultsOnStartup();
-projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const sessionServices = createSessionServices({
@@ -140,7 +139,7 @@ const sessionServices = createSessionServices({
   sessionRuntimeStore,
   getAgents: () => agents,
   getProjects: () => projects,
-  getWorkspaces: () => workspaces,
+  getWorktrees: () => worktrees,
   createHandlerContext,
   broadcastNotification,
   logInfo,
@@ -151,7 +150,7 @@ const {
   clearPermissionRequestsForSession,
   deleteLocalSessionData,
   handleRuntimeEvent,
-  hydrateDiffsFromWorkspaceGit,
+  hydrateDiffsFromWorktreeGit,
   hydrateSessionSummary,
   migrateStoredSessionSummary,
   configureRuntimeDraft,
@@ -193,23 +192,6 @@ const beginAuthenticationFlow = createSocketAuthenticator({
   logError,
 });
 
-function normalizeProjectAgentDefaultsOnStartup() {
-  const availableAgents = listAvailableProviders(configPath);
-  let updated = 0;
-  for (const project of listConfiguredProjects(configPath)) {
-    const nextDefaultAgentId = resolveDefaultProjectAgentId(
-      availableAgents,
-      project.defaultAgentId,
-    );
-    if (nextDefaultAgentId && project.defaultAgentId !== nextDefaultAgentId) {
-      saveProjectToConfig({ ...project, defaultAgentId: nextDefaultAgentId }, configPath);
-      updated += 1;
-    }
-  }
-  if (updated) {
-    logInfo(`[tiller] project.agent.default updated=${updated} default=codex`);
-  }
-}
 
 async function checkForTillerUpdatesOnStart() {
   const options = resolveUpdateOptions({ env: process.env, config: tillerConfig });
@@ -244,8 +226,10 @@ server.on("connection", (socket) => {
   logInfo("[tiller] client connected");
 
   socket.on("close", () => {
+    const socketId = getSocketId(socket);
     logInfo("[tiller] client disconnected");
-    authenticatedSockets.remove(getSocketId(socket));
+    sessionTopics.removeSocket(socketId);
+    authenticatedSockets.remove(socketId);
   });
 
   beginAuthenticationFlow(socket);
@@ -316,9 +300,10 @@ function attachRpcConnection(socket: WebSocket) {
     );
   });
   const connection = new JsonRpcConnection(stream, {
-    onRequest: (method, params) => handleHelmRpcRequest(method, params, createHandlerContext()),
+    onRequest: (method, params) =>
+      handleHelmRpcRequest(method, params, createHandlerContext(getSocketId(socket))),
     onNotification: (method, params) =>
-      handleHelmRpcNotification(method, params, createHandlerContext()),
+      handleHelmRpcNotification(method, params, createHandlerContext(getSocketId(socket))),
     onError: (error) => {
       logError(
         `[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -330,11 +315,16 @@ function attachRpcConnection(socket: WebSocket) {
   });
 }
 
-function createHandlerContext(): HelmHandlerContext {
+function createHandlerContext(socketId?: string): HelmHandlerContext {
   return {
     configPath,
+    socketId,
     notify,
     broadcastNotification,
+    broadcastSessionTopic,
+    subscribeSessionTopic: sessionTopics.subscribe,
+    unsubscribeSessionTopic: sessionTopics.unsubscribe,
+    removeSocketSessionTopics: sessionTopics.removeSocket,
     logInfo,
     logDebug,
     logWarn,
@@ -349,11 +339,11 @@ function createHandlerContext(): HelmHandlerContext {
       helms = items;
     },
     loadAvailableHelms,
-    getWorkspaces: () => workspaces,
-    setWorkspaces: (items) => {
-      workspaces = items;
+    getWorktrees: () => worktrees,
+    setWorktrees: (items) => {
+      worktrees = items;
     },
-    loadAvailableWorkspaces,
+    loadAvailableWorktrees,
     getAgents: () => agents,
     setAgents: (items) => {
       agents = items;
@@ -373,6 +363,7 @@ function createHandlerContext(): HelmHandlerContext {
     sessionMessageStore,
     sessionArtifactStore,
     sessionRuntimeStore,
+    liveMessageBuffer,
     createRuntime: createAcpRuntime,
     connectAcpConnection,
     reconnectAcpConnection,
@@ -397,7 +388,7 @@ function createHandlerContext(): HelmHandlerContext {
     updateSessionSummary,
     persistSessionMessage,
     publishDiffUpdate,
-    hydrateDiffsFromWorkspaceGit,
+    hydrateDiffsFromWorktreeGit,
     clearPermissionRequestsForSession,
     deleteLocalSessionData,
   };
@@ -425,6 +416,18 @@ function toTrustedDeviceSummary(
 function broadcastNotification(method: string, params: unknown) {
   for (const record of authenticatedSockets.listAll()) {
     notify(record.socket, method, params);
+  }
+}
+
+function broadcastSessionTopic(sessionId: string, method: string, params: unknown) {
+  const subscriberIds = new Set(sessionTopics.listSubscribers(sessionId));
+  if (!subscriberIds.size) {
+    return;
+  }
+  for (const record of authenticatedSockets.listAll()) {
+    if (subscriberIds.has(record.socketId)) {
+      notify(record.socket, method, params);
+    }
   }
 }
 

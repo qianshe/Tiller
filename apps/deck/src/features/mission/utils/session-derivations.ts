@@ -87,8 +87,12 @@ export function resolveSessionProjectId(session: SessionSummary, projects: Proje
     return nameProject.id;
   }
 
-  const workspaceProject = projects.find((project) => project.workspaceIds?.includes(session.workspaceId));
-  return workspaceProject?.id ?? session.projectId;
+  const worktreeProject = projects.find((project) =>
+    (project.worktrees ?? []).some(
+      (worktree) => normalizePath(worktree.path) === normalizePath(session.cwd),
+    ),
+  );
+  return worktreeProject?.id ?? session.projectId;
 }
 
 export function toggleExpandedIdSet(current: Set<string>, id: string) {
@@ -101,20 +105,20 @@ export function toggleExpandedIdSet(current: Set<string>, id: string) {
   return next;
 }
 
-export function resolveDraftSelectionId<T extends { id: string }>(
+export function resolveDraftSelectionId<T extends { path: string }>(
   currentId: string | null | undefined,
   availableItems: T[],
   preferredId?: string | null,
 ) {
-  if (currentId && availableItems.some((item) => item.id === currentId)) {
+  if (currentId && availableItems.some((item) => item.path === currentId)) {
     return currentId;
   }
 
-  if (preferredId && availableItems.some((item) => item.id === preferredId)) {
+  if (preferredId && availableItems.some((item) => item.path === preferredId)) {
     return preferredId;
   }
 
-  return availableItems[0]?.id ?? null;
+  return availableItems[0]?.path ?? null;
 }
 
 export function resolveMissionHelms(
@@ -138,13 +142,17 @@ export function resolveMissionHelms(
 }
 
 export function resolveProjectFilesScope(input: {
-  activeSession: Pick<SessionSummary, "workspaceId"> | null | undefined;
+  activeSession: Pick<SessionSummary, "cwd"> | null | undefined;
   activeSessionProjectId: string | null | undefined;
 }) {
   if (input.activeSession && input.activeSessionProjectId) {
-    return { projectId: input.activeSessionProjectId, workspaceId: input.activeSession.workspaceId };
+    return { projectId: input.activeSessionProjectId, cwd: input.activeSession.cwd };
   }
-  return { projectId: null, workspaceId: null };
+  return { projectId: null, cwd: null };
+}
+
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
 export function resolveMissionSelectedProjectId(input: {

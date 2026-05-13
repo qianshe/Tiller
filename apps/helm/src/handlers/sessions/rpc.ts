@@ -1,14 +1,16 @@
+import { basename } from "node:path";
 import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   type AgentPromptContent,
   type PermissionDecision,
   type ProjectSummary,
+  type SessionConfigOptionValue,
   type SessionReasoningEffort,
   type SessionSummary,
-  type WorkspaceSummary,
+  type WorktreeSummary,
 } from "@tiller/shared";
 import {
-  isProjectRootBranchWorkspace,
+  isProjectRootBranchWorktree,
   resolveSessionCleanupOutcome,
 } from "../../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
@@ -21,20 +23,27 @@ import type { HelmHandlerContext } from "../context";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
 
-export function resolveProjectSessionWorkspace(
+export function resolveProjectSessionWorktree(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
-  workspaceId: string,
+  worktrees: WorktreeSummary[],
+  params: { cwd: string },
 ) {
-  const workspace = workspaces.find((item) => item.id === workspaceId);
-  if (!workspace) {
-    return undefined;
-  }
-  if (isProjectRootBranchWorkspace(project, workspace)) {
-    return { ...workspace, path: project.path };
-  }
-  return workspace;
+  const requestedCwd = params.cwd.trim();
+  const normalizedCwd = normalizeWorktreePath(requestedCwd);
+  const worktree = worktrees.find(
+    (item) => normalizeWorktreePath(item.path) === normalizedCwd,
+  );
+  return {
+    name: worktree?.name ?? basename(normalizedCwd) ?? project.name,
+    path: requestedCwd,
+    summary: worktree?.summary,
+  } satisfies WorktreeSummary;
 }
+
+function normalizeWorktreePath(path: string) {
+  return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 
 export async function handleSessionRpcRequest(
   method: string,
@@ -44,6 +53,10 @@ export async function handleSessionRpcRequest(
   switch (method) {
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
+    case "session/subscribe":
+      return subscribeSession(params as { sessionId: string }, context);
+    case "session/unsubscribe":
+      return unsubscribeSession(params as { sessionId: string }, context);
     case "session/list_messages":
       return listMessages(
         params as { sessionId: string; limit?: number; before?: string },
@@ -63,7 +76,7 @@ export async function handleSessionRpcRequest(
         params as {
           deckClientId: string;
           projectId: string;
-          workspaceId: string;
+          cwd: string;
           agentId: string;
           agentMode?: string;
           model?: string;
@@ -85,7 +98,7 @@ export async function handleSessionRpcRequest(
       return createSession(
         params as {
           projectId: string;
-          workspaceId: string;
+          cwd: string;
           agentId: string;
           agentMode?: string;
           model?: string;
@@ -112,6 +125,8 @@ export async function handleSessionRpcRequest(
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
+          configId?: string;
+          value?: SessionConfigOptionValue;
         },
         context,
       );
@@ -123,6 +138,8 @@ export async function handleSessionRpcRequest(
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
+          configId?: string;
+          value?: SessionConfigOptionValue;
         },
         context,
       );
@@ -171,6 +188,28 @@ function listSessions(params: { limit?: number; before?: string }, context: Helm
   };
 }
 
+function subscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
+  if (!context.socketId) {
+    throw new Error("Session topic subscription requires an authenticated socket");
+  }
+  context.subscribeSessionTopic(context.socketId, params.sessionId);
+  return {
+    ok: true,
+    message: `Subscribed to session ${params.sessionId}.`,
+  };
+}
+
+function unsubscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
+  if (!context.socketId) {
+    throw new Error("Session topic unsubscription requires an authenticated socket");
+  }
+  context.unsubscribeSessionTopic(context.socketId, params.sessionId);
+  return {
+    ok: true,
+    message: `Unsubscribed from session ${params.sessionId}.`,
+  };
+}
+
 // Deck consumes old session history through paged windows only. ACP restore replay may
 // repair Helm's local cache, but it must not push a full historical transcript to Deck.
 async function listMessages(
@@ -200,7 +239,7 @@ async function getArtifacts(
     limit: params.limit,
     before: params.before,
   });
-  const diffs = await context.hydrateDiffsFromWorkspaceGit(params.sessionId, artifacts.diffs);
+  const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
   return {
     sessionId: params.sessionId,
     outputs: artifacts.outputs,
@@ -247,7 +286,7 @@ async function createSessionDraft(
   params: {
     deckClientId: string;
     projectId: string;
-    workspaceId: string;
+    cwd: string;
     agentId: string;
     agentMode?: string;
     model?: string;
@@ -256,33 +295,30 @@ async function createSessionDraft(
   context: HelmHandlerContext,
 ) {
   const helms = context.loadAvailableHelms();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   const agents = context.loadAvailableAgents();
   context.setHelms(helms);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   context.setAgents(agents);
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
   context.setProjects(projects);
 
   const project = context.resolveProjectById(params.projectId, projects);
-  const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+  const worktree = project
+    ? resolveProjectSessionWorktree(project, worktrees, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
-  if (!project || !workspace || !agent || !helm) {
-    throw new Error("Project, helm, workspace, or agent not found");
-  }
-  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
-    throw new Error("Workspace does not belong to the selected project");
+  if (!project || !worktree || !agent || !helm) {
+    throw new Error("Project, helm, worktree, or agent not found");
   }
 
   return context.createRuntimeDraft({
     deckClientId: params.deckClientId,
     project,
     helm,
-    workspace,
+    worktree,
     agent,
     sessionConfig: {
       agentMode: params.agentMode,
@@ -307,7 +343,7 @@ async function discardSessionDraft(
 async function createSession(
   params: {
     projectId: string;
-    workspaceId: string;
+    cwd: string;
     agentId: string;
     agentMode?: string;
     model?: string;
@@ -316,40 +352,37 @@ async function createSession(
   context: HelmHandlerContext,
 ) {
   const helms = context.loadAvailableHelms();
-  const workspaces = context.loadAvailableWorkspaces();
+  const worktrees = context.loadAvailableWorktrees();
   const agents = context.loadAvailableAgents();
   context.setHelms(helms);
-  context.setWorkspaces(workspaces);
+  context.setWorktrees(worktrees);
   context.setAgents(agents);
   const projects = await context.loadAvailableProjectsWithSemanticSummaries();
   context.setProjects(projects);
 
   const project = context.resolveProjectById(params.projectId, projects);
-  const workspace = project
-    ? resolveProjectSessionWorkspace(project, workspaces, params.workspaceId)
+  const worktree = project
+    ? resolveProjectSessionWorktree(project, worktrees, params)
     : undefined;
   const agent = context.resolveProviderById(params.agentId, agents);
   const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
 
-  if (!project || !workspace || !agent || !helm) {
-    throw new Error("Project, helm, workspace, or agent not found");
-  }
-  if (project.workspaceIds?.length && !project.workspaceIds.includes(workspace.id)) {
-    throw new Error("Workspace does not belong to the selected project");
+  if (!project || !worktree || !agent || !helm) {
+    throw new Error("Project, helm, worktree, or agent not found");
   }
 
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   context.logInfo(
-    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} agent=${agent.id}`,
+    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${worktree.path} agent=${agent.id}`,
   );
   const summaryBase: SessionSummary = {
     id: sessionId,
     projectId: project.id,
     projectName: project.name,
     helmId: helm.id,
-    workspaceId: workspace.id,
-    workspaceName: workspace.name,
+    cwd: worktree.path,
+    worktreeName: worktree.name,
     agentId: agent.id,
     agentName: agent.name,
     agentMode: params.agentMode,
@@ -373,7 +406,7 @@ async function createSession(
     };
     const runtime = await context.createRuntime({
       sessionId,
-      workspace,
+      worktree,
       agent,
       sessionConfig,
       onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
@@ -386,7 +419,7 @@ async function createSession(
           "connection-reconnect": "ACP连接重连",
         } as const;
         context.logInfo(
-          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} workspace=${event.workspaceId} cwd=${event.workspacePath}`,
+          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
         );
       },
     });
@@ -403,7 +436,7 @@ async function createSession(
     context.logInfo(
       `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
-    context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, workspace, runtime });
+    context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
     context.sessionStore.upsert(summaryWithRuntime);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
     broadcastSessionUpdate(context, sessionId, {
@@ -415,7 +448,7 @@ async function createSession(
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
     context.logError(
-      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} workspace=${workspace.id} workspaceName=${workspace.name} workspacePath=${workspace.path} message=${message}`,
+      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${worktree.path} message=${message}`,
     );
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,
@@ -476,13 +509,14 @@ async function promptRuntimeDraft(
     projectId: draft.project.id,
     projectName: draft.project.name,
     helmId: draft.helm.id,
-    workspaceId: draft.workspace.id,
-    workspaceName: draft.workspace.name,
+    cwd: draft.worktree.path,
+    worktreeName: draft.worktree.name,
     agentId: draft.agent.id,
     agentName: draft.agent.name,
     agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
     model: draft.runtime.sessionConfigState?.model ?? draft.configState.model,
     modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
+    configOptions: draft.runtime.sessionConfigOptions ?? draft.configOptions,
     reasoningEffort:
       draft.runtime.sessionConfigState?.reasoningEffort ?? draft.configState.reasoningEffort,
     runtimeSessionId: draft.runtime.runtimeSessionId,
@@ -498,7 +532,7 @@ async function promptRuntimeDraft(
   context.sessions.set(sessionId, {
     summary,
     agent: draft.agent,
-    workspace: draft.workspace,
+    worktree: draft.worktree,
     runtime: draft.runtime,
   });
   context.sessionStore.upsert(summary);
@@ -529,6 +563,8 @@ async function configureSessionOrDraft(
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   },
   context: HelmHandlerContext,
 ) {
@@ -538,6 +574,8 @@ async function configureSessionOrDraft(
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     });
   }
   if (!params.sessionId) {
@@ -549,6 +587,8 @@ async function configureSessionOrDraft(
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     },
     context,
   );

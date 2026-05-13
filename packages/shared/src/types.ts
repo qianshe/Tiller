@@ -69,10 +69,11 @@ export type AcpAgentProvider = {
   capabilities?: Partial<AgentCapabilities>;
 };
 
-export type WorkspaceSummary = {
-  id: string;
+export type WorktreeSummary = {
   name: string;
   path: string;
+  branch?: string;
+  kind?: "root" | "git-worktree";
   /** Helm-generated lightweight summary for prompt enhancement context. */
   summary?: string;
 };
@@ -134,17 +135,16 @@ export type ProjectSummary = {
   id: string;
   name: string;
   helmId: string;
-  /** Project root path owned by project config; Helm may expose it as a runtime workspace without writing workspaces config. */
+  /** Project root path owned by project config. */
   path?: string;
   /** Helm-generated lightweight summary for prompt enhancement context. */
   summary?: string;
-  workspaceIds?: string[];
+  /** Git worktrees discovered or created for this project. */
+  worktrees?: WorktreeSummary[];
   /** Last Git branches discovered by Helm for this project root. */
   gitBranches?: string[];
   /** Current Git branch discovered by Helm for this project root. */
   gitCurrentBranch?: string;
-  defaultWorkspaceId?: string;
-  defaultAgentId?: string;
 };
 
 export type SessionRestoreMethod = "client-reconnect" | "session/load" | "session/resume" | "ui-history";
@@ -248,14 +248,18 @@ export type SessionSummary = {
   projectId: string;
   projectName: string;
   helmId: string;
-  workspaceId: string;
-  workspaceName: string;
+  /** Absolute cwd used by the ACP session. */
+  cwd: string;
+  /** Display label for the cwd's Git worktree. */
+  worktreeName?: string;
   agentId: string;
   agentName: string;
   /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
   agentMode?: string;
   model?: string;
   modelOptions?: AcpModelOption[];
+  /** Latest ACP session config options exposed by the active/restored runtime. */
+  configOptions?: SessionConfigOption[];
   reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;
@@ -277,6 +281,7 @@ export type AgentMessage = {
   text: string;
   timestamp: string;
   attachments?: AgentPromptImageContent[];
+  streaming?: boolean;
 };
 
 export type AgentPromptTextContent = {
@@ -310,7 +315,7 @@ export type PermissionRequest = {
   id: string;
   command: string;
   reason: string;
-  workspacePath: string;
+  cwd: string;
   options?: PermissionRequestOption[];
 };
 

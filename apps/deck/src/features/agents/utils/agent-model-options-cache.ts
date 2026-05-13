@@ -32,10 +32,10 @@ type AgentModelOptionsCache = Record<
   AgentModelOptionsEntry & { cachedAt: number }
 >;
 
-export function agentModelOptionsKey(providerId: string, workspaceId: string, projectId?: string | null) {
+export function agentModelOptionsKey(providerId: string, worktreeId: string, projectId?: string | null) {
   return projectId
-    ? `${providerId}::${workspaceId}::${projectId}`
-    : `${providerId}::${workspaceId}`;
+    ? `${providerId}::${worktreeId}::${projectId}`
+    : `${providerId}::${worktreeId}`;
 }
 
 export function readAgentModelOptionsCache(): Record<string, AgentModelOptionsEntry> {

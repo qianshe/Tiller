@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dispatchWithTrace, requestInitialSync } from "./request-dispatch.js";
+import {
+  dispatchWithTrace,
+  requestInitialSync,
+  subscribeToSessionTopic,
+  unsubscribeFromSessionTopic,
+} from "./request-dispatch.js";
 
 test("dispatchWithTrace sends JSON-RPC requests and applies result callbacks", async () => {
   const requested: Array<{ method: string; params: unknown }> = [];
@@ -45,7 +50,7 @@ test("dispatchWithTrace gives session creation a longer timeout", async () => {
   await dispatchWithTrace(
     client as any,
     "session/new",
-    { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    { projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
     (updater) => {
       trace = updater(trace);
     },
@@ -54,7 +59,7 @@ test("dispatchWithTrace gives session creation a longer timeout", async () => {
   assert.deepEqual(requested, [
     {
       method: "session/new",
-      params: { projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      params: { projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
       options: { timeoutMs: 180_000 },
     },
   ]);
@@ -75,7 +80,7 @@ test("dispatchWithTrace gives session draft creation a longer timeout", async ()
   await dispatchWithTrace(
     client as any,
     "session/draft",
-    { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+    { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
     (updater) => {
       trace = updater(trace);
     },
@@ -84,11 +89,41 @@ test("dispatchWithTrace gives session draft creation a longer timeout", async ()
   assert.deepEqual(requested, [
     {
       method: "session/draft",
-      params: { deckClientId: "deck-1", projectId: "p1", workspaceId: "w1", agentId: "opencode" },
+      params: { deckClientId: "deck-1", projectId: "p1", cwd: "D:/repo", agentId: "opencode" },
       options: { timeoutMs: 180_000 },
     },
   ]);
   assert.equal(trace.lastRequestType, "session/draft");
+});
+
+test("dispatchWithTrace gives session resume a longer timeout", async () => {
+  const requested: Array<{ method: string; params: unknown; options: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown, options?: unknown) => {
+      requested.push({ method, params, options });
+      return { ok: true };
+    },
+    notify: () => undefined,
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await dispatchWithTrace(
+    client as any,
+    "session/resume",
+    { sessionId: "s1" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [
+    {
+      method: "session/resume",
+      params: { sessionId: "s1" },
+      options: { timeoutMs: 180_000 },
+    },
+  ]);
+  assert.equal(trace.lastRequestType, "session/resume");
 });
 
 test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {
@@ -131,7 +166,6 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
   assert.deepEqual(methods, [
     { method: "helm/list", params: {} },
     { method: "project/list", params: {} },
-    { method: "workspace/list", params: {} },
     { method: "agent/list", params: {} },
     { method: "agent/connections", params: {} },
     { method: "session/list", params: { limit: 25 } },
@@ -139,4 +173,50 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
+});
+
+test("requestInitialSync clears session loading when session list fails", async () => {
+  const states: unknown[] = [];
+
+  await assert.rejects(
+    requestInitialSync({} as any, {
+      dispatch: async (_client, method) => {
+        if (method === "session/list") {
+          throw new Error("session list failed");
+        }
+      },
+      setSessionHistoryState: (state) => states.push(state),
+      sessionPageLimit: 25,
+    }),
+    /session list failed/,
+  );
+
+  assert.deepEqual(states, [
+    { hasMore: false, loading: true },
+    { hasMore: false, loading: false },
+  ]);
+});
+
+test("subscribeToSessionTopic dispatches session/subscribe", async () => {
+  const methods: Array<{ method: string; params: unknown }> = [];
+
+  await subscribeToSessionTopic({} as any, "s1", async (_client, method, params) => {
+    methods.push({ method, params });
+  });
+
+  assert.deepEqual(methods, [
+    { method: "session/subscribe", params: { sessionId: "s1" } },
+  ]);
+});
+
+test("unsubscribeFromSessionTopic dispatches session/unsubscribe", async () => {
+  const methods: Array<{ method: string; params: unknown }> = [];
+
+  await unsubscribeFromSessionTopic({} as any, "s1", async (_client, method, params) => {
+    methods.push({ method, params });
+  });
+
+  assert.deepEqual(methods, [
+    { method: "session/unsubscribe", params: { sessionId: "s1" } },
+  ]);
 });

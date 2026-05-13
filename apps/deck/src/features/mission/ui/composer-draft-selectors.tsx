@@ -1,6 +1,6 @@
 import type {
   AcpAgentProvider,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import { cn } from "../../../shared/utils/cn";
 import type {
@@ -17,10 +17,10 @@ type ComposerDraftSelectorsProps = {
   agentPickerRef: MutableRefObject<HTMLDivElement | null>;
   agentPickerOpen: boolean;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
-  selectedWorkspaceName: string;
-  draftWorkspaceOptions: WorkspaceSummary[];
-  selectedWorkspaceId: string | null;
-  selectDraftWorkspace: (workspaceId: string) => void;
+  selectedWorktreeName: string;
+  draftWorktreeOptions: WorktreeSummary[];
+  selectedCwd: string | null;
+  selectDraftWorktree: (worktreeId: string) => void;
   currentGitBranch?: string | null;
   copy: (typeof UI_COPY)[Locale];
   agentLocked: boolean;
@@ -31,7 +31,7 @@ type ComposerDraftSelectorsProps = {
 };
 
 /**
- * Draft-only workspace and agent pickers shown before a session exists.
+ * Draft-only worktree and agent pickers shown before a session exists.
  */
 export function ComposerDraftSelectors({
   worktreePickerRef,
@@ -40,10 +40,10 @@ export function ComposerDraftSelectors({
   agentPickerRef,
   agentPickerOpen,
   setAgentPickerOpen,
-  selectedWorkspaceName,
-  draftWorkspaceOptions,
-  selectedWorkspaceId,
-  selectDraftWorkspace,
+  selectedWorktreeName,
+  draftWorktreeOptions,
+  selectedCwd,
+  selectDraftWorktree,
   currentGitBranch,
   copy,
   agentLocked,
@@ -69,7 +69,7 @@ export function ComposerDraftSelectors({
           aria-haspopup="listbox"
           aria-expanded={worktreePickerOpen}
         >
-          <strong>{selectedWorkspaceName}</strong>
+          <strong>{selectedWorktreeName}</strong>
         </button>
         <span className="text-xs text-muted-foreground">
           当前分支：{currentGitBranch || "未检测"}
@@ -80,16 +80,16 @@ export function ComposerDraftSelectors({
             role="listbox"
             aria-label="Worktree"
           >
-            {draftWorkspaceOptions.map((workspace) => (
+            {draftWorktreeOptions.map((worktree) => (
               <button
-                key={workspace.id}
+                key={worktree.path}
                 type="button"
                 role="option"
-                aria-selected={workspace.id === selectedWorkspaceId}
-                className={cn("rounded-sm px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary", workspace.id === selectedWorkspaceId && "active bg-primary-soft text-primary")}
-                onClick={() => selectDraftWorkspace(workspace.id)}
+                aria-selected={worktree.path === selectedCwd}
+                className={cn("rounded-sm px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary", worktree.path === selectedCwd && "active bg-primary-soft text-primary")}
+                onClick={() => selectDraftWorktree(worktree.path)}
               >
-                <strong>{workspace.name}</strong>
+                <strong>{worktree.name}</strong>
               </button>
             ))}
           </div>

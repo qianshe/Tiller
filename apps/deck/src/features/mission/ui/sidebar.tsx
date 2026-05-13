@@ -44,7 +44,7 @@ type MissionSidebarProps = {
   selectDraftAgent: (agentId: string) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
-  setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
+  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
@@ -91,7 +91,7 @@ export function MissionSidebar({
   selectDraftAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
-  setSelectedWorkspaceId,
+  setSelectedCwd,
   setSelectedAgentId,
   setAgentPickerOpen,
   setExpandedMissionProjectIds,
@@ -246,7 +246,7 @@ export function MissionSidebar({
                               selectDraftAgent={selectDraftAgent}
                               setSelectedMissionHelmId={setSelectedMissionHelmId}
                               setSelectedProjectId={setSelectedProjectId}
-                              setSelectedWorkspaceId={setSelectedWorkspaceId}
+                              setSelectedCwd={setSelectedCwd}
                               setSelectedAgentId={setSelectedAgentId}
                               setAgentPickerOpen={setAgentPickerOpen}
                               setExpandedMissionProjectIds={

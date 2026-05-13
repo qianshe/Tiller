@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import { ensureTillerConfigDefaults } from "@tiller/agent-registry";
+import { ensureTillerConfigDefaults, readProjectYaml, saveProjectYaml } from "@tiller/agent-registry";
 import { handleConfigRpcRequest } from "./rpc";
 
 test("config RPC lists helms and updates context cache", async () => {
@@ -28,17 +28,85 @@ test("config RPC lists projects and updates context cache", async () => {
 
   const result = await handleConfigRpcRequest("project/list", {}, {
     loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => [],
+    configPath: join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json"),
     setProjects: (items: unknown[]) => {
       cached = items;
     },
+    logError: () => undefined,
   } as any);
 
   assert.deepEqual(result, { projects });
   assert.equal(cached, projects);
 });
 
+test("config RPC list projects refreshes the root worktree branch", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-list-git-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "checkout", "-b", "feature"], { stdio: "ignore" });
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      helms: [],
+      projects: [
+        {
+          id: "p1",
+          name: "Project",
+          helmId: "local",
+          path: repoPath.replace(/\\/g, "/"),
+          cwds: ["main"],
+          defaultCwd: "main",
+          gitBranches: ["main"],
+          gitCurrentBranch: "main",
+        },
+      ],
+      worktrees: [{ id: "main", name: "main", path: repoPath.replace(/\\/g, "/") }],
+      agents: [],
+    }),
+    "utf8",
+  );
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      gitBranches: ["main"],
+      gitCurrentBranch: "main",
+      worktrees: [{ name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" }],
+    },
+    configPath,
+  );
+
+  let cachedProjects: any[] = [];
+  const readConfig = () => JSON.parse(readFileSync(configPath, "utf8"));
+  const result = await handleConfigRpcRequest("project/list", {}, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    logError: () => undefined,
+  } as any) as { projects: Array<{ gitCurrentBranch?: string; defaultCwd?: string }> };
+
+  assert.equal(result.projects[0]?.gitCurrentBranch, "feature");
+  assert.equal(cachedProjects[0]?.gitCurrentBranch, "feature");
+  assert.equal(readProjectYaml("p1", configPath).worktrees?.some((worktree: any) => worktree.branch === "feature"), true);
+});
+
 test("config RPC lists ACP connection inventory", async () => {
-  const connections = [{ providerId: "codex", workspaceId: "main", status: "ready" }];
+  const connections = [{ providerId: "codex", cwd: "main", status: "ready" }];
 
   const result = await handleConfigRpcRequest("agent/connections", {}, {
     listAcpConnectionInventory: () => connections,
@@ -52,14 +120,14 @@ test("config RPC lists ACP connection inventory", async () => {
 test("config RPC connects an agent provider without creating a session", async () => {
   let connectCalled = false;
   const provider = { id: "codex", name: "Codex", command: "codex-acp" };
-  const workspace = { id: "main", name: "main", path: "D:/repo" };
+  const worktree = { id: "main", name: "main", path: "D:/repo" };
 
   const result = await handleConfigRpcRequest(
     "agent/connect",
-    { providerId: "codex", workspaceId: "main" },
+    { providerId: "codex", cwd: "D:/repo" },
     {
       getAgents: () => [provider],
-      getWorkspaces: () => [workspace],
+      getWorktrees: () => [worktree],
       getProjects: () => [],
       resolveProviderById: (id: string) => (id === "codex" ? provider : undefined),
       connectAcpConnection: async () => {
@@ -78,7 +146,7 @@ test("config RPC connects an agent provider without creating a session", async (
   assert.deepEqual(result, {
     ok: true,
     providerId: "codex",
-    workspaceId: "main",
+    cwd: "D:/repo",
     runtimeConnectionId: "conn-connect",
     connection: { runtimeConnectionId: "conn-connect" },
     connections: [{ runtimeConnectionId: "conn-connect" }],
@@ -90,13 +158,13 @@ test("config RPC connects an agent provider without creating a session", async (
 test("config RPC reconnects an agent provider without prewarming a session", async () => {
   let reconnectCalled = false;
   const provider = { id: "codex", name: "Codex", command: "codex-acp" };
-  const workspace = { id: "main", name: "main", path: "D:/repo" };
+  const worktree = { id: "main", name: "main", path: "D:/repo" };
   const result = await handleConfigRpcRequest(
     "agent/reconnect",
-    { providerId: "codex", workspaceId: "main" },
+    { providerId: "codex", cwd: "D:/repo" },
     {
       getAgents: () => [provider],
-      getWorkspaces: () => [workspace],
+      getWorktrees: () => [worktree],
       getProjects: () => [],
       resolveProviderById: (id: string) => (id === "codex" ? provider : undefined),
       reconnectAcpConnection: async () => {
@@ -115,7 +183,7 @@ test("config RPC reconnects an agent provider without prewarming a session", asy
   assert.deepEqual(result, {
     ok: true,
     providerId: "codex",
-    workspaceId: "main",
+    cwd: "D:/repo",
     runtimeConnectionId: "conn-1",
     connection: { runtimeConnectionId: "conn-1" },
     connections: [{ runtimeConnectionId: "conn-1" }],
@@ -131,6 +199,8 @@ test("ensureTillerConfigDefaults creates daemon auth config when file is missing
 
   assert.equal(result.updated, true);
   assert.deepEqual(saved, {
+    helms: [],
+    agents: [],
     daemon: {
       host: "127.0.0.1",
       port: 47631,
@@ -158,7 +228,8 @@ test("ensureTillerConfigDefaults adds missing daemon auth without changing endpo
     port: 47631,
     auth: "none",
   });
-  assert.deepEqual(saved.projects, [{ id: "p1", name: "Project", helmId: "local" }]);
+  assert.equal(saved.projects, undefined);
+  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).workspaces, undefined);
 });
 
 test("config RPC save helm creates daemon auth config field", async () => {
@@ -187,7 +258,7 @@ test("config RPC save helm creates daemon auth config field", async () => {
   });
 });
 
-test("config RPC prunes deleted git worktree workspaces", async () => {
+test("config RPC prunes deleted git worktree worktrees", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-prune-"));
   const repoPath = join(tempRoot, "repo");
   const worktreePath = join(tempRoot, "repo-feature");
@@ -211,11 +282,11 @@ test("config RPC prunes deleted git worktree workspaces", async () => {
           id: "p1",
           name: "Project",
           helmId: "local",
-          workspaceIds: ["p1-main", "p1-worktree-feature"],
-          defaultWorkspaceId: "p1-main",
+          cwds: ["p1-main", "p1-worktree-feature"],
+          defaultCwd: "p1-main",
         },
       ],
-      workspaces: [
+      worktrees: [
         { id: "p1-main", name: "main", path: repoPath.replace(/\\/g, "/") },
         { id: "p1-worktree-feature", name: "feature", path: worktreePath.replace(/\\/g, "/") },
       ],
@@ -224,39 +295,51 @@ test("config RPC prunes deleted git worktree workspaces", async () => {
     "utf8",
   );
 
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+        { name: "feature", path: worktreePath.replace(/\\/g, "/"), branch: "feature", kind: "git-worktree" },
+      ],
+    },
+    configPath,
+  );
+
   let cachedProjects: any[] = [];
-  let cachedWorkspaces: any[] = [];
-  const readConfig = () => JSON.parse(readFileSync(configPath, "utf8"));
+  let cachedWorktrees: any[] = [];
   const context = {
     configPath,
-    loadAvailableProjectsWithSemanticSummaries: async () => readConfig().projects,
-    loadAvailableWorkspaces: () => readConfig().workspaces,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
     setProjects: (items: any[]) => {
       cachedProjects = items;
     },
-    setWorkspaces: (items: any[]) => {
-      cachedWorkspaces = items;
+    setWorktrees: (items: any[]) => {
+      cachedWorktrees = items;
     },
     getProjects: () => cachedProjects,
     resolveProjectById: (id: string, projects: any[]) => projects.find((project) => project.id === id),
   } as any;
 
   const result = await handleConfigRpcRequest(
-    "workspace/git/list_branches",
+    "project/git/list_branches",
     { projectId: "p1" },
     context,
-  ) as { workspaces: Array<{ id: string }> };
+  ) as { worktrees: Array<{ path: string }> };
 
-  const saved = readConfig();
-  const savedWorkspaceIds = saved.workspaces.map((workspace: any) => workspace.id);
-  assert.equal(result.workspaces.some((workspace) => workspace.id === "p1-worktree-feature"), false);
-  assert.equal(saved.projects[0].workspaceIds.includes("p1-worktree-feature"), false);
-  assert.equal(savedWorkspaceIds.includes("p1-worktree-feature"), false);
-  assert.equal(savedWorkspaceIds.includes("p1-main"), true);
-  assert.equal(cachedWorkspaces.some((workspace) => workspace.id === "p1-worktree-feature"), false);
+  const savedProject = readProjectYaml("p1", configPath);
+  const deletedPath = worktreePath.replace(/\\/g, "/");
+  assert.equal(result.worktrees.some((worktree) => worktree.path === deletedPath), false);
+  assert.equal(savedProject.worktrees?.some((worktree) => worktree.path === deletedPath), false);
+  assert.equal(savedProject.worktrees?.some((worktree) => worktree.path === repoPath.replace(/\\/g, "/")), true);
+  assert.equal(cachedWorktrees.some((worktree) => worktree.path === deletedPath), false);
 });
 
-test("config RPC deletes a project and its configured workspaces", async () => {
+test("config RPC deletes a project and its configured worktrees", async () => {
   const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
   writeFileSync(
     configPath,
@@ -267,53 +350,59 @@ test("config RPC deletes a project and its configured workspaces", async () => {
           id: "p1",
           name: "Project",
           helmId: "local",
-          workspaceIds: ["w1"],
-          defaultWorkspaceId: "w1",
+          cwds: ["w1"],
+          defaultCwd: "w1",
         },
       ],
-      workspaces: [
+      worktrees: [
         { id: "w1", name: "main", path: "D:/repo" },
         { id: "w2", name: "keep", path: "D:/keep" },
       ],
       agents: [],
     }),
   );
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: "D:/repo",
+      worktrees: [{ name: "main", path: "D:/repo" }],
+    },
+    configPath,
+  );
   let cachedProjects: unknown[] = [];
-  let cachedWorkspaces: unknown[] = [];
+  let cachedWorktrees: unknown[] = [];
 
   const result = await handleConfigRpcRequest("project/delete", { projectId: "p1" }, {
     configPath,
     loadAvailableProjectsWithSemanticSummaries: async () => [],
-    loadAvailableWorkspaces: () => [{ id: "w2", name: "keep", path: "D:/keep" }],
+    loadAvailableWorktrees: () => [{ id: "w2", name: "keep", path: "D:/keep" }],
     setProjects: (items: unknown[]) => {
       cachedProjects = items;
     },
-    setWorkspaces: (items: unknown[]) => {
-      cachedWorkspaces = items;
+    setWorktrees: (items: unknown[]) => {
+      cachedWorktrees = items;
     },
   } as any);
 
   assert.deepEqual(result, {
     ok: true,
     projectId: "p1",
-    message: `Deleted project from ${configPath}`,
+    message: `Deleted project from ${join(dirname(configPath), "projects", "p1", "project.yaml")}`,
   });
-  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).projects, []);
-  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).workspaces, [
-    { id: "w2", name: "keep", path: "D:/keep" },
-  ]);
   assert.deepEqual(cachedProjects, []);
-  assert.deepEqual(cachedWorkspaces, [{ id: "w2", name: "keep", path: "D:/keep" }]);
+  assert.deepEqual(cachedWorktrees, [{ id: "w2", name: "keep", path: "D:/keep" }]);
 });
 
-test("config RPC deletes an agent and clears project defaults", async () => {
+test("config RPC deletes an agent without mutating projects", async () => {
   const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
   writeFileSync(
     configPath,
     JSON.stringify({
       helms: [],
-      projects: [{ id: "p1", name: "Project", helmId: "local", defaultAgentId: "codex" }],
-      workspaces: [],
+      projects: [{ id: "p1", name: "Project", helmId: "local" }],
+      worktrees: [],
       agents: [
         { id: "codex", name: "Codex", command: "codex", transport: "stdio", protocol: "acp" },
         { id: "keep", name: "Keep", command: "keep", transport: "stdio", protocol: "acp" },
@@ -347,7 +436,6 @@ test("config RPC deletes an agent and clears project defaults", async () => {
   assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).agents.map((agent: any) => agent.id), [
     "keep",
   ]);
-  assert.equal(JSON.parse(readFileSync(configPath, "utf8")).projects[0].defaultAgentId, undefined);
   assert.deepEqual(cachedAgents.map((agent: any) => agent.id), ["keep"]);
   assert.deepEqual(cachedProjects, [{ id: "p1", name: "Project", helmId: "local" }]);
 });

@@ -112,10 +112,10 @@ test("permission drawer summarizes long shell commands and keeps full command ex
         id: "permission-1",
         command: `Run shell command :: ${command}`,
         reason: "需要启动本地开发服务",
-        workspacePath: "D:/myProject/tools/Tiller",
+        cwd: "D:/myProject/tools/Tiller",
       },
       copy: drawerCopy,
-      showWorkspace: false,
+      showWorktree: false,
       onRespond: () => undefined,
     }),
   );

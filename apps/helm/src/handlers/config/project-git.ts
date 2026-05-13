@@ -1,162 +1,74 @@
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { readTillerConfig, saveProjectToConfig, saveWorkspaceToConfig } from "@tiller/agent-registry";
-import type { ProjectSummary, WorkspaceSummary } from "@tiller/shared";
+import { saveProjectYaml } from "@tiller/agent-registry";
+import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
+
 function normalizeGitBranchName(input: string) {
   return input.trim().replace(/\s+/g, "-");
 }
 
-function validateGitBranchName(branchName: string) {
-  if (
-    !branchName ||
-    branchName.includes("..") ||
-    branchName.startsWith("/") ||
-    branchName.endsWith("/") ||
-    !/^[A-Za-z0-9._/-]+$/.test(branchName)
-  ) {
-    throw new Error(
-      "Branch name can only contain letters, numbers, dot, slash, underscore and dash.",
-    );
-  }
+function safeWorktreeSlug(input: string) {
+  return normalizeGitBranchName(input).replace(/[^a-zA-Z0-9._/-]+/g, "-").replace(/[\\/]+/g, "-");
 }
 
-function safeWorktreeSlug(branchName: string) {
-  return branchName.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "worktree";
+export function resolveProjectRoot(project: ProjectSummary, worktrees: WorktreeSummary[]) {
+  return project.path ?? worktrees[0]?.path;
 }
 
-async function runGit(cwd: string, args: string[]) {
-  return execFileAsync("git", ["-C", cwd, ...args], {
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-    windowsHide: true,
-    maxBuffer: 1024 * 1024,
-  });
+export async function resolveGitRoot(cwd: string) {
+  const result = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
+  return result.stdout.trim().replace(/\\/g, "/");
 }
 
-export async function resolveGitRoot(path: string) {
-  const result = await runGit(path, ["rev-parse", "--show-toplevel"]);
-  return result.stdout.trim() || path;
-}
-
-export async function listGitBranches(root: string) {
+export async function listGitBranches(gitRoot: string) {
   const [branchesResult, currentResult] = await Promise.all([
-    runGit(root, ["branch", "--format=%(refname:short)"]),
-    runGit(root, ["branch", "--show-current"]).catch(() => ({ stdout: "" })),
+    runGit(gitRoot, ["branch", "--format=%(refname:short)"]),
+    runGit(gitRoot, ["branch", "--show-current"]),
   ]);
   return {
-    branches: branchesResult.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean),
+    branches: branchesResult.stdout.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean),
     currentBranch: currentResult.stdout.trim() || undefined,
   };
 }
 
-type GitWorktreeEntry = {
-  path: string;
-  branch?: string;
-  head?: string;
-};
-
-export async function listGitWorktreeWorkspaces(
-  project: ProjectSummary,
-  gitRoot: string,
-): Promise<WorkspaceSummary[]> {
+export async function listGitWorktreeWorktrees(project: ProjectSummary, gitRoot: string) {
   const result = await runGit(gitRoot, ["worktree", "list", "--porcelain"]);
-  return parseGitWorktreePorcelain(result.stdout)
-    .filter((entry) => normalizeWorkspacePath(entry.path) !== normalizeWorkspacePath(gitRoot))
-    .map((entry) => {
-      const branchName = entry.branch ? stripBranchRef(entry.branch) : undefined;
-      const label = branchName || basename(entry.path) || entry.head?.slice(0, 7) || "worktree";
-      return {
-        id: `${project.id}-worktree-${safeWorktreeSlug(label)}`,
-        name: label,
-        path: normalizeWorkspacePath(entry.path),
-      };
-    });
-}
-
-function parseGitWorktreePorcelain(output: string): GitWorktreeEntry[] {
-  const entries: GitWorktreeEntry[] = [];
-  let current: GitWorktreeEntry | null = null;
-  for (const line of output.split(/\r?\n/)) {
-    if (!line.trim()) {
-      if (current) entries.push(current);
-      current = null;
-      continue;
+  const worktrees: WorktreeSummary[] = [];
+  let currentPath: string | undefined;
+  let currentBranch: string | undefined;
+  for (const line of result.stdout.split(/\r?\n/u)) {
+    if (line.startsWith("worktree ")) {
+      if (currentPath) {
+        worktrees.push(toWorktree(project, currentPath, currentBranch));
+      }
+      currentPath = line.slice("worktree ".length).trim().replace(/\\/g, "/");
+      currentBranch = undefined;
+    } else if (line.startsWith("branch ")) {
+      currentBranch = line.slice("branch ".length).replace(/^refs\/heads\//u, "").trim();
     }
-    const [key, ...valueParts] = line.split(" ");
-    const value = valueParts.join(" ").trim();
-    if (key === "worktree") {
-      if (current) entries.push(current);
-      current = { path: value };
-      continue;
-    }
-    if (!current) continue;
-    if (key === "branch") current.branch = value;
-    if (key === "HEAD") current.head = value;
   }
-  if (current) entries.push(current);
-  return entries;
-}
-
-function stripBranchRef(ref: string) {
-  return ref.replace(/^refs\/heads\//, "");
-}
-
-function normalizeWorkspacePath(path: string) {
-  return path.replace(/\\/g, "/");
-}
-
-export function resolveProjectRoot(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
-  if (project.path) {
-    return project.path;
+  if (currentPath) {
+    worktrees.push(toWorktree(project, currentPath, currentBranch));
   }
-  const workspace =
-    workspaces.find((item) => item.id === project.defaultWorkspaceId) ??
-    workspaces.find((item) => project.workspaceIds?.includes(item.id));
-  return workspace?.path;
+  return worktrees;
 }
 
-export function projectWorkspaceItems(project: ProjectSummary, workspaces: WorkspaceSummary[]) {
-  if (!project.workspaceIds?.length) {
-    return workspaces;
-  }
-  return workspaces.filter((workspace) => project.workspaceIds?.includes(workspace.id));
+function toWorktree(project: ProjectSummary, path: string, branch?: string): WorktreeSummary {
+  return {
+    name: branch ?? basename(path),
+    path,
+    branch,
+    kind: normalizePath(path) === normalizePath(project.path) ? "root" : "git-worktree",
+  };
 }
 
-function isNonGitRepositoryError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not a git repository|not a git repo|outside repository/i.test(message);
-}
-
-export function resolveProjectWorkspaceId(
-  project: Pick<ProjectSummary, "id" | "gitCurrentBranch">,
-  currentBranch?: string,
-) {
-  return currentBranch?.trim() || project.gitCurrentBranch?.trim() || `${project.id}-workspace`;
-}
-
-function isProjectRootWorkspaceId(
-  project: ProjectSummary,
-  gitInfo: { branches: string[]; currentBranch?: string },
-  workspaceId: string,
-) {
-  return (
-    workspaceId === `${project.id}-workspace` ||
-    workspaceId === project.gitCurrentBranch ||
-    gitInfo.branches.includes(workspaceId)
-  );
-}
-
-function stripRuntimeProjectSummary(project: ProjectSummary) {
-  const { summary: _runtimeSummary, ...persistableProject } = project;
-  return persistableProject;
+export function projectWorktreeItems(project: ProjectSummary, worktrees: WorktreeSummary[]) {
+  return mergeWorktrees(project.worktrees ?? [], worktrees);
 }
 
 export function persistProjectGitInfo(
@@ -165,194 +77,119 @@ export function persistProjectGitInfo(
   projectRoot: string,
   configPath: string,
 ) {
-  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
-  const previousWorkspaceIds = project.workspaceIds ?? [];
-  const workspaceIds = Array.from(
-    new Set([
-      workspaceId,
-      ...previousWorkspaceIds.filter(
-        (id) => id === workspaceId || !isProjectRootWorkspaceId(project, gitInfo, id),
-      ),
-    ]),
-  );
-  saveProjectToConfig(
+  const rootWorktree: WorktreeSummary = {
+    name: gitInfo.currentBranch ?? basename(projectRoot),
+    path: projectRoot.replace(/\\/g, "/"),
+    branch: gitInfo.currentBranch,
+    kind: "root",
+  };
+  saveProjectYaml(
     {
       ...stripRuntimeProjectSummary(project),
-      workspaceIds,
-      defaultWorkspaceId: workspaceId,
       gitBranches: gitInfo.branches,
       gitCurrentBranch: gitInfo.currentBranch,
+      worktrees: mergeWorktrees(project.worktrees ?? [], [rootWorktree]),
     },
     configPath,
   );
-  if (gitInfo.currentBranch) {
-    saveProjectRootWorkspaceToConfig(
-      {
-        id: workspaceId,
-        name: gitInfo.currentBranch,
-        path: projectRoot.replace(/\\/g, "/"),
-      },
-      project,
-      gitInfo,
-      configPath,
-    );
-  }
-}
-
-function saveProjectRootWorkspaceToConfig(
-  workspace: WorkspaceSummary,
-  project: ProjectSummary,
-  gitInfo: { branches: string[]; currentBranch?: string },
-  configPath: string,
-) {
-  const current = readTillerConfig(configPath);
-  const retainedWorkspaces = (current.workspaces ?? []).filter(
-    (item) => item.id !== workspace.id && !isProjectRootWorkspaceId(project, gitInfo, item.id),
-  );
-  writeFileSync(
-    configPath,
-    JSON.stringify(
-      {
-        ...current,
-        workspaces: [...retainedWorkspaces, workspace],
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-}
-
-export function shouldPersistProjectGitInfo(
-  project: ProjectSummary,
-  gitInfo: { branches: string[]; currentBranch?: string },
-) {
-  const previous = project.gitBranches ?? [];
-  const branchChanged =
-    previous.length !== gitInfo.branches.length ||
-    previous.some((branch, index) => branch !== gitInfo.branches[index]);
-  const currentChanged = project.gitCurrentBranch !== gitInfo.currentBranch;
-  const workspaceId = resolveProjectWorkspaceId(project, gitInfo.currentBranch);
-  const workspaceChanged =
-    project.defaultWorkspaceId !== workspaceId ||
-    !(project.workspaceIds ?? []).includes(workspaceId) ||
-    (project.workspaceIds ?? []).some(
-      (id) => id !== workspaceId && isProjectRootWorkspaceId(project, gitInfo, id),
-    );
-  return branchChanged || currentChanged || workspaceChanged;
 }
 
 export async function persistProjectGitInfoIfAvailable(
   project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
   configPath: string,
 ) {
-  const projectRoot = resolveProjectRoot(project, workspaces);
+  const projectRoot = resolveProjectRoot(project, worktrees);
   if (!projectRoot) {
-    return false;
-  }
-
-  try {
-    const gitRoot = await resolveGitRoot(projectRoot);
-    const gitInfo = await listGitBranches(gitRoot);
-    if (!gitInfo.branches.length) {
-      return false;
-    }
-
-    if (shouldPersistProjectGitInfo(project, gitInfo)) {
-      persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
-      return true;
-    }
-    return false;
-  } catch (error) {
-    if (isNonGitRepositoryError(error)) {
-      return false;
-    }
-    throw error;
-  }
-}
-
-export async function createProjectWorktree(
-  project: ProjectSummary,
-  workspaces: WorkspaceSummary[],
-  branchNameInput: string,
-  configPath: string,
-) {
-  const branchName = normalizeGitBranchName(branchNameInput);
-  validateGitBranchName(branchName);
-  const projectRoot = resolveProjectRoot(project, workspaces);
-  if (!projectRoot) {
-    throw new Error("Project has no path or workspace path to create a Git worktree from.");
+    return;
   }
   const gitRoot = await resolveGitRoot(projectRoot);
-  const { branches } = await listGitBranches(gitRoot);
-  const branchExists = branches.includes(branchName);
-  if (!branchExists) {
-    throw new Error(
-      `Branch ${branchName} does not exist. Create the branch in Git first, then reload project branches.`,
-    );
-  }
-  const worktreePath = join(gitRoot, ".worktrees", safeWorktreeSlug(branchName));
-  await mkdir(join(gitRoot, ".worktrees"), { recursive: true });
-  await runGit(gitRoot, ["worktree", "add", worktreePath, branchName]);
-
-  const workspaceId = `${project.id}-worktree-${safeWorktreeSlug(branchName)}`;
-  const workspace: WorkspaceSummary = {
-    id: workspaceId,
-    name: branchName,
-    path: worktreePath.replace(/\\/g, "/"),
-  };
-  saveWorkspaceToConfig(workspace, configPath);
-  saveProjectToConfig(
-    {
-      ...project,
-      workspaceIds: Array.from(new Set([...(project.workspaceIds ?? []), workspaceId])),
-      defaultWorkspaceId: project.defaultWorkspaceId ?? workspaceId,
-    },
-    configPath,
-  );
-  return workspace;
+  const gitInfo = await listGitBranches(gitRoot);
+  persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
 }
 
 export async function refreshProjectGitBranches(
   projects: ProjectSummary[],
-  workspaces: WorkspaceSummary[],
+  worktrees: WorktreeSummary[],
   configPath: string,
 ) {
   let updated = 0;
-  let skipped = 0;
   const failures: Array<{ projectId: string; message: string }> = [];
-
   for (const project of projects) {
-    const projectRoot = resolveProjectRoot(project, workspaces);
-    if (!projectRoot) {
-      skipped += 1;
-      continue;
-    }
-
     try {
-      const gitRoot = await resolveGitRoot(projectRoot);
-      const gitInfo = await listGitBranches(gitRoot);
-      if (!gitInfo.branches.length) {
-        skipped += 1;
+      const root = resolveProjectRoot(project, worktrees);
+      if (!root) {
         continue;
       }
-
-      if (shouldPersistProjectGitInfo(project, gitInfo)) {
-        persistProjectGitInfo(project, gitInfo, projectRoot, configPath);
+      const gitRoot = await resolveGitRoot(root);
+      const gitInfo = await listGitBranches(gitRoot);
+      if (
+        gitInfo.currentBranch !== project.gitCurrentBranch ||
+        gitInfo.branches.join("\0") !== (project.gitBranches ?? []).join("\0")
+      ) {
+        persistProjectGitInfo(project, gitInfo, root, configPath);
         updated += 1;
       }
     } catch (error) {
-      if (isNonGitRepositoryError(error)) {
-        skipped += 1;
-        continue;
-      }
-      failures.push({
-        projectId: project.id,
-        message: error instanceof Error ? error.message : "Failed to refresh Git branches",
-      });
+      failures.push({ projectId: project.id, message: error instanceof Error ? error.message : String(error) });
     }
   }
+  return { updated, failures };
+}
 
-  return { updated, skipped, failures };
+export async function createProjectWorktree(
+  project: ProjectSummary,
+  worktrees: WorktreeSummary[],
+  branchName: string,
+  configPath: string,
+) {
+  const projectRoot = resolveProjectRoot(project, worktrees);
+  if (!projectRoot) {
+    throw new Error("Project has no path.");
+  }
+  const gitRoot = await resolveGitRoot(projectRoot);
+  const normalized = normalizeGitBranchName(branchName);
+  const worktreePath = join(gitRoot, ".worktrees", safeWorktreeSlug(normalized));
+  await mkdir(join(gitRoot, ".worktrees"), { recursive: true });
+  await runGit(gitRoot, ["worktree", "add", worktreePath, normalized]);
+  const worktree: WorktreeSummary = {
+    name: normalized,
+    path: worktreePath.replace(/\\/g, "/"),
+    branch: normalized,
+    kind: "git-worktree",
+  };
+  saveProjectYaml({ ...project, worktrees: mergeWorktrees(project.worktrees ?? [], [worktree]) }, configPath);
+  return worktree;
+}
+
+function mergeWorktrees(left: WorktreeSummary[], right: WorktreeSummary[]) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const item of [...left, ...right]) {
+    byPath.set(normalizePath(item.path) ?? item.path, item);
+  }
+  return Array.from(byPath.values());
+}
+
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
+}
+
+function stripRuntimeProjectSummary(project: ProjectSummary): ProjectSummary {
+  return {
+    id: project.id,
+    name: project.name,
+    helmId: project.helmId,
+    path: project.path,
+    summary: project.summary,
+    gitBranches: project.gitBranches,
+    gitCurrentBranch: project.gitCurrentBranch,
+    worktrees: project.worktrees,
+  };
+}
+
+async function runGit(cwd: string, args: string[]) {
+  return execFileAsync("git", ["-C", cwd, ...args], {
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+    windowsHide: true,
+  });
 }

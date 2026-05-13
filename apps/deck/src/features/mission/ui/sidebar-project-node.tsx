@@ -23,7 +23,7 @@ type SidebarProjectNodeProps = {
   selectDraftAgent: (agentId: string) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
-  setSelectedWorkspaceId: Dispatch<SetStateAction<string | null>>;
+  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
   setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
@@ -57,7 +57,7 @@ export function SidebarProjectNode({
   selectDraftAgent,
   setSelectedMissionHelmId,
   setSelectedProjectId,
-  setSelectedWorkspaceId,
+  setSelectedCwd,
   setSelectedAgentId,
   setAgentPickerOpen,
   setExpandedMissionProjectIds,
@@ -123,9 +123,7 @@ export function SidebarProjectNode({
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);
             setSelectedProjectId(project.id);
-            setSelectedWorkspaceId(
-              project.defaultWorkspaceId ?? project.workspaceIds?.[0] ?? null,
-            );
+            setSelectedCwd(project.path ?? project.worktrees?.[0]?.path ?? null);
             setSelectedAgentId(null);
             setAgentPickerOpen(true);
             setExpandedMissionProjectIds(
@@ -194,7 +192,7 @@ export function SidebarProjectNode({
               );
             })
           ) : (
-            <div className="mission-tree-empty rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground">这个项目还没有任务。</div>
+            <p className="mission-tree-empty px-3 py-2 text-xs text-muted-foreground">这个项目还没有任务。</p>
           )}
         </div>
       ) : null}

@@ -3,7 +3,7 @@ import type {
   AcpAgentProvider,
   ProjectSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import type {
   Dispatch,
@@ -40,7 +40,7 @@ type HelmDetailSectionProps = {
   selectedHelmSavedProfile: DaemonProfile | null;
   selectedHelmProjects: ProjectSummary[];
   selectedHelmAgents: AcpAgentProvider[];
-  selectedHelmWorkspaces: WorkspaceSummary[];
+  selectedHelmWorktrees: WorktreeSummary[];
   selectedHelmSocket: WebSocket | null;
   selectedHelmRpcClient: DeckRpcClient | null;
   selectedHelmId: string;
@@ -89,7 +89,7 @@ export function HelmDetailSection({
   selectedHelmSavedProfile,
   selectedHelmProjects,
   selectedHelmAgents,
-  selectedHelmWorkspaces,
+  selectedHelmWorktrees,
   selectedHelmSocket,
   selectedHelmRpcClient,
   selectedHelmId,
@@ -166,7 +166,7 @@ export function HelmDetailSection({
           selectedHelmId={selectedHelmId}
           selectedHelmProjects={selectedHelmProjects}
           selectedHelmRpcClient={selectedHelmRpcClient}
-          selectedHelmWorkspaces={selectedHelmWorkspaces}
+          selectedHelmWorktrees={selectedHelmWorktrees}
           setDraft={setFleetProjectDraft}
           setFormOpen={setFleetProjectFormOpen}
           setSaveMessage={setFleetProjectSaveMessage}

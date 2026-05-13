@@ -4,9 +4,11 @@ import type {
   AcpModelOption,
   AgentMessage,
   SessionConfigOption,
+  SessionConfigOptionValue,
   SessionReasoningEffort,
   SessionSummary,
 } from "@tiller/shared";
+import type { SessionConfigPreferencePatch } from "../types";
 import { resolveModelOptionsFromConfig } from "./session-derivations";
 
 export const MODEL_OPTIONS = [
@@ -47,6 +49,20 @@ const NEW_SESSION_MODEL_WITH_INLINE_REASONING_HINT = [
   "模型请使用 provider/model 形式，例如 openai/gpt-5.4。",
 ].join("");
 
+const REASONING_CONFIG_CATEGORIES = new Set([
+  "thought_level",
+  "reasoning",
+  "reasoning_effort",
+]);
+
+function normalizeConfigCategory(option: SessionConfigOption) {
+  return option.category?.toLowerCase() ?? "";
+}
+
+function isReasoningConfigCategory(option: SessionConfigOption) {
+  return REASONING_CONFIG_CATEGORIES.has(normalizeConfigCategory(option));
+}
+
 export function resolvePreferredModel(
   currentModel: string | undefined,
   modelOptions: string[],
@@ -72,7 +88,7 @@ export function resolveAgentModeOptions(
   configOptions: SessionConfigOption[] = [],
 ) {
   const option = configOptions.find(
-    (item) => item.category?.toLowerCase() === "mode",
+    (item) => normalizeConfigCategory(item) === "mode",
   );
   return (option?.options ?? [])
     .map((item) => ({
@@ -80,6 +96,79 @@ export function resolveAgentModeOptions(
       label: item.label ?? item.name ?? String(item.value ?? ""),
     }))
     .filter((item) => item.value.trim().length > 0);
+}
+
+export type RenderableSessionConfigOption = {
+  option: SessionConfigOption;
+  pickerId: `config:${string}`;
+  values: Array<{ value: SessionConfigOptionValue; label: string }>;
+  currentValue: SessionConfigOptionValue | undefined;
+  currentLabel: string;
+};
+
+export function readSessionConfigOptionValue(option: SessionConfigOption) {
+  return option.currentValue ?? option.selectedValue ?? option.value;
+}
+
+export function resolveSessionConfigOptionValues(option: SessionConfigOption) {
+  if (option.options?.length) {
+    return option.options.map((candidate) => ({
+      value: candidate.value,
+      label: candidate.label ?? candidate.name ?? String(candidate.value),
+    }));
+  }
+
+  const currentValue = readSessionConfigOptionValue(option);
+  if (typeof currentValue === "boolean") {
+    return [
+      { value: true, label: "True" },
+      { value: false, label: "False" },
+    ];
+  }
+
+  return [];
+}
+
+export function resolveSessionConfigOptionLabel(
+  option: SessionConfigOption,
+  value: SessionConfigOptionValue | undefined,
+) {
+  const selected = option.options?.find((candidate) => candidate.value === value);
+  return selected?.label ?? selected?.name ?? String(value ?? option.name ?? option.id);
+}
+
+export function resolveRenderableSessionConfigOptions(
+  configOptions: SessionConfigOption[] = [],
+): RenderableSessionConfigOption[] {
+  return configOptions
+    .map((option) => {
+      const values = resolveSessionConfigOptionValues(option);
+      const currentValue = readSessionConfigOptionValue(option);
+      return {
+        option,
+        pickerId: `config:${option.id}` as const,
+        values,
+        currentValue,
+        currentLabel: resolveSessionConfigOptionLabel(option, currentValue),
+      };
+    })
+    .filter((item) => item.values.length > 0);
+}
+
+export function toSessionConfigPreferencePatch(
+  option: SessionConfigOption,
+  value: SessionConfigOptionValue,
+): SessionConfigPreferencePatch {
+  const category = normalizeConfigCategory(option);
+  return {
+    configId: option.id,
+    value,
+    ...(category === "mode" && typeof value === "string" ? { agentMode: value } : {}),
+    ...(category === "model" && typeof value === "string" ? { model: value } : {}),
+    ...(isReasoningConfigCategory(option) && typeof value === "string"
+      ? { reasoningEffort: value as SessionReasoningEffort }
+      : {}),
+  };
 }
 
 export function formatAgentModeLabel(value: string) {
@@ -101,7 +190,7 @@ export function resolveCurrentAgentMode(
   probedAgentMode?: string,
 ) {
   const option = configOptions.find(
-    (item) => item.category?.toLowerCase() === "mode",
+    (item) => normalizeConfigCategory(item) === "mode",
   );
   const modeOptions = resolveAgentModeOptions(configOptions);
   const validModes = new Set(modeOptions.map((item) => item.value));
@@ -144,11 +233,7 @@ export function resolveModelOptions(
 export function resolveReasoningOptions(
   configOptions: SessionConfigOption[] = [],
 ) {
-  const option = configOptions.find((item) =>
-    ["thought_level", "reasoning", "reasoning_effort"].includes(
-      item.category?.toLowerCase() ?? "",
-    ),
-  );
+  const option = configOptions.find((item) => isReasoningConfigCategory(item));
   const values = (option?.options ?? [])
     .map((item) => item.value)
     .filter(
@@ -269,12 +354,6 @@ export function resolveDraftConfigOptions(
 
 export function normalizeModelSelection(model: string | undefined) {
   return model && model !== "provider-default" ? model : undefined;
-}
-
-export function defaultAgentId(agents: AcpAgentProvider[]) {
-  return (
-    agents.find((agent) => agent.id === "codex")?.id ?? agents[0]?.id ?? null
-  );
 }
 
 export function resolveSessionConfigHint(

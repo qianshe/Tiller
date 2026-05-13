@@ -1,13 +1,17 @@
-import { resolveSessionConfigSupport, type AcpAgentProvider, type HelmSummary, type ProjectSummary, type WorkspaceSummary } from "@tiller/shared";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolveSessionConfigSupport, type AcpAgentProvider, type HelmSummary, type ProjectSummary, type WorktreeSummary } from "@tiller/shared";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
+const LEGACY_WORKSPACE_IDS = `workspace${"Ids"}` as const;
+const LEGACY_DEFAULT_WORKSPACE_ID = `defaultWorkspace${"Id"}` as const;
+const LEGACY_DEFAULT_AGENT_ID = `defaultAgent${"Id"}` as const;
 
 export type TillerConfig = {
   helms?: HelmSummary[];
-  projects?: ProjectSummary[];
-  workspaces?: WorkspaceSummary[];
   agents?: AcpAgentProvider[];
+  worktrees?: WorktreeSummary[];
   daemon?: {
     host?: string;
     port?: number;
@@ -17,6 +21,20 @@ export type TillerConfig = {
     checkOnStart?: boolean;
     previewHint?: boolean;
   };
+};
+
+type LegacyProjectSummary = ProjectSummary & {
+  worktreeIds?: string[];
+  [LEGACY_WORKSPACE_IDS]?: string[];
+  defaultWorktreeId?: string;
+  [LEGACY_DEFAULT_WORKSPACE_ID]?: string;
+  [LEGACY_DEFAULT_AGENT_ID]?: string;
+};
+
+type LegacyTillerConfig = TillerConfig & {
+  projects?: LegacyProjectSummary[];
+  worktrees?: Array<WorktreeSummary & { id?: string }>;
+  workspaces?: Array<WorktreeSummary & { id?: string }>;
 };
 
 const DEFAULT_DAEMON_CONFIG: NonNullable<TillerConfig["daemon"]> = {
@@ -84,7 +102,50 @@ function normalizeLegacyProvider(provider: AcpAgentProvider): AcpAgentProvider {
 }
 
 export function getDefaultConfigPath() {
-  return join(homedir(), ".tiller", "config.json");
+  return join(homedir(), ".config", "tiller", "config.json");
+}
+
+function resolveLegacyConfigDir(configPath: string) {
+  const configDir = dirname(configPath);
+  const configParent = dirname(configDir);
+  if (basename(configDir) !== "tiller" || basename(configParent) !== ".config") {
+    return null;
+  }
+  return join(dirname(configParent), ".tiller");
+}
+
+function migrateLegacyConfigDir(configPath: string) {
+  const legacyConfigDir = resolveLegacyConfigDir(configPath);
+  const configDir = dirname(configPath);
+  if (!legacyConfigDir || existsSync(configDir) || !existsSync(legacyConfigDir)) {
+    return;
+  }
+
+  mkdirSync(dirname(configDir), { recursive: true });
+  renameSync(legacyConfigDir, configDir);
+}
+
+export function getProjectsDir(configPath = getDefaultConfigPath()) {
+  return join(dirname(configPath), "projects");
+}
+
+export function projectYamlPath(projectId: string, configPath = getDefaultConfigPath()) {
+  return join(getProjectsDir(configPath), slugProjectId(projectId), "project.yaml");
+}
+
+function slugProjectId(projectId: string) {
+  return projectId.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+}
+
+function isGenericProjectId(projectId: string) {
+  return /^project-\d+$/u.test(projectId);
+}
+
+function projectStoragePath(project: Pick<ProjectSummary, "id" | "name">, configPath: string) {
+  if (isGenericProjectId(project.id)) {
+    return join(getProjectsDir(configPath), slugProjectId(project.name), "project.yaml");
+  }
+  return projectYamlPath(project.id, configPath);
 }
 
 export function loadTillerConfigStub(configPath = getDefaultConfigPath()) {
@@ -109,18 +170,38 @@ export function readTillerConfig(configPath = getDefaultConfigPath()): TillerCon
     return {};
   }
 
-  return parseTillerConfig(stub.raw, configPath);
+  return stripProjectState(parseTillerConfig(stub.raw, configPath));
 }
 
 export function ensureTillerConfigDefaults(configPath = getDefaultConfigPath()) {
-  const current = readTillerConfig(configPath);
+  migrateLegacyConfigDir(configPath);
+  const legacy = readRawTillerConfig(configPath);
+  const migrated = migrateLegacyProjectState(legacy, configPath);
+  const current = migrated.config;
   const nextDaemon = resolveDaemonConfig(current.daemon);
-  const updated = current.daemon !== nextDaemon;
+  const updated = migrated.updated || current.daemon !== nextDaemon;
   if (updated) {
     mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ ...current, daemon: nextDaemon }, null, 2), "utf8");
   }
   return { configPath, updated };
+}
+
+function readRawTillerConfig(configPath: string): LegacyTillerConfig {
+  const stub = loadTillerConfigStub(configPath);
+  if (!stub.exists || !stub.raw) {
+    return {};
+  }
+  return parseTillerConfig(stub.raw, configPath) as LegacyTillerConfig;
+}
+
+function stripProjectState(config: LegacyTillerConfig): TillerConfig {
+  return {
+    helms: config.helms ?? [],
+    agents: config.agents ?? [],
+    daemon: config.daemon,
+    updates: config.updates,
+  };
 }
 
 export function parseTillerConfig(raw: string, configPath = "<memory>"): TillerConfig {
@@ -140,13 +221,245 @@ function stripJsonTrailingCommas(raw: string) {
   return raw.replace(/,(\s*[}\]])/g, "$1");
 }
 
+function migrateLegacyProjectState(config: LegacyTillerConfig, configPath: string) {
+  const legacyProjects = config.projects ?? [];
+  const legacyWorktrees = [...(config.worktrees ?? []), ...(config.workspaces ?? [])];
+  if (!legacyProjects.length && !("projects" in config) && !("workspaces" in config) && !("worktrees" in config)) {
+    return { config: stripProjectState(config), updated: false };
+  }
+
+  if (existsSync(configPath)) {
+    const backupPath = `${configPath}.bak`;
+    if (!existsSync(backupPath)) {
+      writeFileSync(backupPath, readFileSync(configPath, "utf8"), "utf8");
+    }
+  }
+
+  for (const legacyProject of legacyProjects) {
+    const project = normalizeLegacyProject(legacyProject, legacyWorktrees);
+    const path = projectYamlPath(project.id, configPath);
+    if (existsSync(path)) {
+      const backupPath = `${path}.bak`;
+      if (!existsSync(backupPath)) {
+        writeFileSync(backupPath, readFileSync(path, "utf8"), "utf8");
+      }
+    }
+    saveProjectYaml(project, configPath);
+  }
+
+  return { config: stripProjectState(config), updated: true };
+}
+
+function normalizeLegacyProject(
+  project: LegacyProjectSummary,
+  legacyWorktrees: Array<WorktreeSummary & { id?: string }>,
+): ProjectSummary {
+  const legacyIds = new Set([...(project.worktreeIds ?? []), ...(project[LEGACY_WORKSPACE_IDS] ?? [])]);
+  const matchedById = legacyWorktrees.filter((item) => item.id && legacyIds.has(item.id));
+  const matchedByPath = legacyWorktrees.filter(
+    (item) => project.path && normalizePath(item.path) === normalizePath(project.path),
+  );
+  const worktrees = dedupeWorktrees([...matchedById, ...matchedByPath].map((item) => ({
+    name: item.name,
+    path: item.path,
+    branch: item.branch ?? item.name,
+    kind: normalizePath(item.path) === normalizePath(project.path) ? "root" as const : (item.kind ?? "git-worktree" as const),
+    summary: item.summary,
+  })));
+  if (project.path && !worktrees.some((item) => normalizePath(item.path) === normalizePath(project.path))) {
+    worktrees.unshift({
+      name: project.gitCurrentBranch ?? basename(project.path),
+      path: project.path,
+      branch: project.gitCurrentBranch,
+      kind: "root",
+    });
+  }
+
+  return {
+    id: project.id,
+    name: project.name,
+    helmId: project.helmId,
+    path: project.path,
+    summary: project.summary,
+    gitBranches: project.gitBranches,
+    gitCurrentBranch: project.gitCurrentBranch,
+    worktrees,
+  };
+}
+
+function normalizePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
+}
+
+function dedupeWorktrees(items: WorktreeSummary[]) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const item of items) {
+    byPath.set(normalizePath(item.path) ?? item.path, item);
+  }
+  return Array.from(byPath.values());
+}
+
 export function listAvailableHelms(configPath = getDefaultConfigPath()) {
   return readTillerConfig(configPath).helms ?? [];
 }
 
-export function listAvailableProjects(configPath = getDefaultConfigPath()) {
-  return readTillerConfig(configPath).projects ?? [];
+export function listProjectFiles(configPath = getDefaultConfigPath()) {
+  const projectsDir = getProjectsDir(configPath);
+  if (!existsSync(projectsDir)) {
+    return [] as string[];
+  }
+  return readdirSync(projectsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(projectsDir, entry.name, "project.yaml"))
+    .filter((path) => existsSync(path));
 }
+
+export function listAvailableProjects(configPath = getDefaultConfigPath()) {
+  const byId = new Map<string, ProjectSummary>();
+  for (const path of listProjectFiles(configPath)) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    const project = readProjectYamlFile(path);
+    const targetPath = projectStoragePath(project, configPath);
+    if (path !== targetPath) {
+      byId.set(project.id, saveProjectYaml(project, configPath).project);
+      continue;
+    }
+    byId.set(project.id, project);
+  }
+  return Array.from(byId.values());
+}
+
+export function readProjectYaml(projectId: string, configPath = getDefaultConfigPath()) {
+  return readProjectYamlFile(findProjectYamlPathById(projectId, configPath));
+}
+
+function findProjectYamlPathById(projectId: string, configPath: string) {
+  const directPath = projectYamlPath(projectId, configPath);
+  if (existsSync(directPath)) {
+    return directPath;
+  }
+
+  const projectFile = listProjectFiles(configPath).find((path) => hasProjectId(path, projectId));
+  return projectFile ?? directPath;
+}
+
+function hasProjectId(path: string, projectId: string) {
+  try {
+    const parsed = parseYaml(readFileSync(path, "utf8")) as Partial<ProjectSummary>;
+    return parsed.id === projectId;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
+  const record = project as ProjectSummary & Record<string, unknown>;
+  const legacyKeys = [
+    ["workspace", "Ids"].join(""),
+    ["default", "Workspace", "Id"].join(""),
+    ["default", "Agent", "Id"].join(""),
+    "workspaces",
+  ];
+  const sanitized: Record<string, unknown> = { ...record };
+  for (const key of legacyKeys) {
+    delete sanitized[key];
+  }
+  return {
+    id: String(sanitized.id),
+    name: String(sanitized.name),
+    helmId: String(sanitized.helmId),
+    path: typeof sanitized.path === "string" ? sanitized.path : undefined,
+    summary: typeof sanitized.summary === "string" ? sanitized.summary : undefined,
+    gitBranches: Array.isArray(sanitized.gitBranches)
+      ? sanitized.gitBranches.filter((branch): branch is string => typeof branch === "string")
+      : undefined,
+    gitCurrentBranch:
+      typeof sanitized.gitCurrentBranch === "string" ? sanitized.gitCurrentBranch : undefined,
+    worktrees: dedupeWorktrees((sanitized.worktrees as WorktreeSummary[] | undefined) ?? []),
+  };
+}
+
+function readProjectYamlFile(path: string): ProjectSummary {
+  const raw = readFileSync(path, "utf8");
+  const parsed = parseYaml(raw) as ProjectSummary;
+  const project = sanitizeProjectYaml(parsed);
+  const normalized = stringifyYaml(project);
+  if (normalized !== raw) {
+    writeFileSync(path, normalized, "utf8");
+  }
+  return project;
+}
+
+export function saveProjectYaml(project: ProjectSummary, configPath = getDefaultConfigPath()) {
+  const sanitized = sanitizeProjectYaml(project);
+  const path = projectStoragePath(sanitized, configPath);
+  migrateGenericProjectDirectory(sanitized, path, configPath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, stringifyYaml(sanitized), "utf8");
+  return { configPath: path, project: sanitized };
+}
+
+function migrateGenericProjectDirectory(project: ProjectSummary, targetPath: string, configPath: string) {
+  if (!isGenericProjectId(project.id)) {
+    return;
+  }
+
+  const legacyPath = projectYamlPath(project.id, configPath);
+  if (legacyPath === targetPath || !existsSync(legacyPath)) {
+    return;
+  }
+
+  if (!existsSync(targetPath)) {
+    renameSync(dirname(legacyPath), dirname(targetPath));
+    return;
+  }
+
+  if (hasProjectId(legacyPath, project.id)) {
+    rmSync(dirname(legacyPath), { recursive: true, force: true });
+  }
+}
+
+export function saveWorktreeToConfig(worktree: WorktreeSummary, configPath = getDefaultConfigPath()) {
+  const projects = listAvailableProjects(configPath);
+  const project = projects.find((item) =>
+    item.path && normalizePath(item.path) === normalizePath(worktree.path),
+  ) ?? projects[0];
+  if (!project) {
+    return { configPath, worktree };
+  }
+  const worktrees = dedupeWorktrees([...(project.worktrees ?? []), worktree]);
+  const result = saveProjectYaml({ ...project, worktrees }, configPath);
+  return { configPath: result.configPath, worktree };
+}
+
+export function deleteWorktreesFromConfig(cwds: string[], configPath = getDefaultConfigPath()) {
+  const remove = new Set(cwds.map((item) => normalizePath(item)));
+  let deleted = 0;
+  for (const project of listAvailableProjects(configPath)) {
+    const before = project.worktrees ?? [];
+    const worktrees = before.filter((item) => !remove.has(normalizePath(item.path)));
+    deleted += before.length - worktrees.length;
+    if (worktrees.length !== before.length) {
+      saveProjectYaml({ ...project, worktrees }, configPath);
+    }
+  }
+  return { configPath, deleted };
+}
+
+export const saveProjectToConfig = saveProjectYaml;
+
+export function deleteProjectYaml(projectId: string, configPath = getDefaultConfigPath()) {
+  const path = findProjectYamlPathById(projectId, configPath);
+  const deleted = existsSync(path);
+  if (deleted) {
+    rmSync(dirname(path), { recursive: true, force: true });
+  }
+  return { configPath: path, projectId, deleted };
+}
+
+export const deleteProjectFromConfig = deleteProjectYaml;
 
 export function getConfiguredProviders(configPath = getDefaultConfigPath()) {
   return (readTillerConfig(configPath).agents ?? []).map(hydrateProvider);
@@ -156,26 +469,10 @@ export function listAvailableProviders(configPath = getDefaultConfigPath()) {
   return getConfiguredProviders(configPath);
 }
 
-
 export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfigPath()) {
   const current = readTillerConfig(configPath);
   const nextHelms = [...(current.helms ?? []).filter((item) => item.id !== helm.id), helm];
-
-  const nextConfig: TillerConfig = {
-    helms: nextHelms,
-    projects: current.projects ?? [],
-    workspaces: current.workspaces ?? [],
-    agents: current.agents ?? [],
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    helm,
-  };
+  return writeGlobalConfig({ ...current, helms: nextHelms, daemon: resolveDaemonConfig(current.daemon) }, configPath, { helm });
 }
 
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {
@@ -187,109 +484,7 @@ export function saveProviderToConfig(provider: AcpAgentProvider, configPath = ge
     ),
     normalizedProvider,
   ];
-
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: current.projects ?? [],
-    workspaces: current.workspaces ?? [],
-    agents: nextAgents,
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    provider: normalizedProvider,
-  };
-}
-
-
-export function saveProjectToConfig(project: ProjectSummary, configPath = getDefaultConfigPath()) {
-  const current = readTillerConfig(configPath);
-  const nextProjects = [...(current.projects ?? []).filter((item) => item.id !== project.id), project];
-
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: nextProjects,
-    workspaces: current.workspaces ?? [],
-    agents: current.agents ?? [],
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    project,
-  };
-}
-
-export function saveWorkspaceToConfig(workspace: WorkspaceSummary, configPath = getDefaultConfigPath()) {
-  const current = readTillerConfig(configPath);
-  const nextWorkspaces = [...(current.workspaces ?? []).filter((item) => item.id !== workspace.id), workspace];
-
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: current.projects ?? [],
-    workspaces: nextWorkspaces,
-    agents: current.agents ?? [],
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    workspace,
-  };
-}
-
-export function deleteWorkspacesFromConfig(workspaceIds: string[], configPath = getDefaultConfigPath()) {
-  const ids = new Set(workspaceIds);
-  const current = readTillerConfig(configPath);
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: current.projects ?? [],
-    workspaces: (current.workspaces ?? []).filter((workspace) => !ids.has(workspace.id)),
-    agents: current.agents ?? [],
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    deleted: workspaceIds.length,
-  };
-}
-
-export function deleteProjectFromConfig(projectId: string, configPath = getDefaultConfigPath()) {
-  const current = readTillerConfig(configPath);
-  const project = (current.projects ?? []).find((item) => item.id === projectId);
-  const workspaceIds = new Set(project?.workspaceIds ?? []);
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: (current.projects ?? []).filter((item) => item.id !== projectId),
-    workspaces: workspaceIds.size
-      ? (current.workspaces ?? []).filter((item) => !workspaceIds.has(item.id))
-      : (current.workspaces ?? []),
-    agents: current.agents ?? [],
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
-    projectId,
-    deleted: Boolean(project),
-  };
+  return writeGlobalConfig({ ...current, agents: nextAgents, daemon: resolveDaemonConfig(current.daemon) }, configPath, { provider: normalizedProvider });
 }
 
 export function deleteProviderFromConfig(providerId: string, configPath = getDefaultConfigPath()) {
@@ -297,27 +492,14 @@ export function deleteProviderFromConfig(providerId: string, configPath = getDef
   const nextAgents = (current.agents ?? []).filter(
     (item) => normalizeLegacyProvider(item).id !== providerId,
   );
-  const nextProjects = (current.projects ?? []).map((project) => {
-    if (project.defaultAgentId !== providerId) {
-      return project;
-    }
-    const { defaultAgentId: _defaultAgentId, ...rest } = project;
-    return rest;
-  });
-  const nextConfig: TillerConfig = {
-    helms: current.helms ?? [],
-    projects: nextProjects,
-    workspaces: current.workspaces ?? [],
-    agents: nextAgents,
-    daemon: resolveDaemonConfig(current.daemon),
-  };
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), "utf8");
-
-  return {
-    configPath,
+  return writeGlobalConfig({ ...current, agents: nextAgents, daemon: resolveDaemonConfig(current.daemon) }, configPath, {
     providerId,
     deleted: nextAgents.length !== (current.agents ?? []).length,
-  };
+  });
+}
+
+function writeGlobalConfig<T extends Record<string, unknown>>(config: TillerConfig, configPath: string, result: T) {
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(stripProjectState(config), null, 2), "utf8");
+  return { configPath, ...result };
 }

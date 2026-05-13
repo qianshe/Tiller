@@ -14,11 +14,11 @@ const composerShellSourceText = readFileSync(
   new URL("../ui/composer.tsx", import.meta.url),
   "utf8",
 );
-const workspaceSourceText = readFileSync(
+const worktreeSourceText = readFileSync(
   new URL("../ui/workspace.tsx", import.meta.url),
   "utf8",
 );
-const workspaceModelSourceText = readFileSync(
+const worktreeModelSourceText = readFileSync(
   new URL("../ui/workspace-model.ts", import.meta.url),
   "utf8",
 );
@@ -36,10 +36,11 @@ const viewModelSourceText = readFileSync(
 );
 
 test("mission draft composer waits for ACP connection before creating a session", () => {
-  assert.match(workspaceSourceText, /const selectedDraftConnection = !activeSession && selectedAgentId && selectedWorkspaceId/);
-  assert.match(workspaceSourceText, /const shouldShowComposer = Boolean\(activeSession \|\| selectedDraftConnection\)/);
-  assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean\(!activeSession && selectedAgentId && !selectedDraftConnection\)/);
+  assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && selectedAgentId && selectedCwd/);
+  assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(activeSession \|\| selectedDraftConnection\)/);
+  assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean\(!activeSession && selectedAgentId && !selectedDraftConnection\)/);
   assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
+  assert.doesNotMatch(selectionSourceText, /const selectedCwd = selectedWorktree/);
 });
 
 test("mission draft agent selection resets model before creating an ACP session", () => {
@@ -59,24 +60,24 @@ test("mission project plus owns the ACP picker and selected agent connects befor
   assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
-  assert.match(workspaceSourceText, /const shouldShowDraftPreparing = Boolean/);
-  assert.match(workspaceSourceText, /正在连接 ACP/);
+  assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean/);
+  assert.match(worktreeSourceText, /正在连接 ACP/);
 });
 
 test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {
-  assert.match(workspaceSourceText, /agentConnectionInventory as any\[\]/);
-  assert.match(workspaceSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
-  assert.match(workspaceSourceText, /canReconnect: true/);
-  assert.match(workspaceSourceText, /canConnect: Boolean/);
-  assert.match(workspaceSourceText, /canReconnect: false/);
-  assert.doesNotMatch(workspaceSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
+  assert.match(worktreeSourceText, /agentConnectionInventory as any\[\]/);
+  assert.match(worktreeSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
+  assert.match(worktreeSourceText, /canReconnect: true/);
+  assert.match(worktreeSourceText, /canConnect: Boolean/);
+  assert.match(worktreeSourceText, /canReconnect: false/);
+  assert.doesNotMatch(worktreeSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
 });
 
 test("mission starting sessions disable send without showing cancel", () => {
-  assert.match(workspaceSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
+  assert.match(worktreeSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
   assert.match(composerShellSourceText, /activeSession && sessionCanCancel/);
   assert.match(composerShellSourceText, /disabled=\{!canSend\}/);
-  assert.match(workspaceModelSourceText, /activeSessionStatus !== "starting" &&/);
+  assert.match(worktreeModelSourceText, /activeSessionStatus !== "starting" &&/);
 });
 
 test("mission selection effects does not auto-select the first project", () => {
@@ -85,11 +86,11 @@ test("mission selection effects does not auto-select the first project", () => {
 });
 
 test("mission worktree panel only lists project-scoped worktrees", () => {
-  assert.doesNotMatch(workspaceSourceText, /const projectWorktreeOptions = \(workspaces \?\? \[\]\)\.filter/);
-  assert.match(workspaceSourceText, /const hasWorktreeScope = Boolean\(activeSession \|\| selectedProjectId\)/);
+  assert.doesNotMatch(worktreeSourceText, /const projectWorktreeOptions = \(worktrees \?\? \[\]\)\.filter/);
+  assert.match(worktreeSourceText, /const hasWorktreeScope = Boolean\(activeSession \|\| selectedProjectId\)/);
   assert.match(
-    workspaceSourceText,
-    /const worktreeOptions = workspaceOptions\.filter\(isManagedWorktreeWorkspace\)/,
+    worktreeSourceText,
+    /const worktreeOptions = rawWorktreeOptions\.filter\(isManagedWorktreeWorktree\)/,
   );
   assert.match(viewModelSourceText, /if \(!draftProject\) \{\s*return \[\];\s*\}/);
 });
@@ -136,7 +137,7 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.doesNotMatch(composerSourceText, /正在加载模型列表/);
   assert.match(sourceText, /正在连接 ACP/);
   assert.match(composerShellSourceText, /modelLoading=\{/);
-  assert.match(composerShellSourceText, /selectedDraftAgent\?\.id === "opencode"/);
+  assert.match(composerShellSourceText, /selectedDraftAgent\?\.protocol === "acp"/);
   assert.match(composerShellSourceText, /draftConfigOptions\.length === 0/);
   assert.match(viewModelSourceText, /draftLoadingAgentModelOptions/);
   assert.match(viewModelSourceText, /key\.startsWith\(`\$\{draftAgentModelOptionsPrefix\}::`\)/);
@@ -145,8 +146,8 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(viewModelSourceText, /!draftHasLoadedModelOptions/);
 });
 
-test("mission model picker shows current agent mode even before full mode options arrive", () => {
-  assert.match(viewModelSourceText, /visibleDraftAgentModeOptions/);
-  assert.match(viewModelSourceText, /formatAgentModeLabel\(effectiveDraftAgentMode\)/);
+test("mission model picker only shows ACP-provided mode options", () => {
+  assert.match(viewModelSourceText, /const visibleDraftAgentModeOptions = draftAgentModeOptions/);
+  assert.doesNotMatch(viewModelSourceText, /formatAgentModeLabel\(effectiveDraftAgentMode\)/);
   assert.match(viewModelSourceText, /draftAgentModeOptions: visibleDraftAgentModeOptions/);
 });

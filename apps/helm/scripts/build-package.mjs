@@ -33,8 +33,8 @@ cpSync(deckDist, packagedDeck, { recursive: true });
 writePublishPackage();
 
 function writePublishPackage() {
-  const workspaceManifest = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-  const publishManifest = createPublishPackageManifest(workspaceManifest);
+  const worktreeManifest = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const publishManifest = createPublishPackageManifest(worktreeManifest);
   rmSync(publishRoot, { recursive: true, force: true });
   mkdirSync(publishRoot, { recursive: true });
   cpSync(resolve(helmRoot, "dist"), publishDist, { recursive: true });

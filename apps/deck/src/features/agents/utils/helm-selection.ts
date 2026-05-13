@@ -4,7 +4,7 @@ import type {
   ProjectSummary,
   SessionSummary,
   TrustedDeviceSummary,
-  WorkspaceSummary,
+  WorktreeSummary,
 } from "@tiller/shared";
 import {
   daemonProfileKey,
@@ -21,7 +21,7 @@ export type ConnectionState = "connecting" | "connected" | "disconnected";
 
 export type HelmInventoryBucket = {
   projects: ProjectSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
   sessions: SessionSummary[];
   trustedDevices: TrustedDeviceSummary[];
@@ -41,7 +41,7 @@ type ResolveHelmSelectionOptions = {
   trustedDevices: TrustedDeviceSummary[];
   projects: ProjectSummary[];
   agents: AcpAgentProvider[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   configuredHelms: HelmSummary[];
   socket: WebSocket | null;
   helmSockets: Map<string, WebSocket>;
@@ -63,7 +63,7 @@ export function resolveHelmSelection({
   trustedDevices,
   projects,
   agents,
-  workspaces,
+  worktrees,
   configuredHelms,
   socket,
   helmSockets,
@@ -154,8 +154,8 @@ export function resolveHelmSelection({
     selectedHelmTrustedDevices: selectedHelmIsCurrent
       ? trustedDevices
       : (selectedHelmInventory?.trustedDevices ?? []),
-    selectedHelmWorkspaces: selectedHelmIsCurrent
-      ? workspaces
-      : (selectedHelmInventory?.workspaces ?? []),
+    selectedHelmWorktrees: selectedHelmIsCurrent
+      ? worktrees
+      : (selectedHelmInventory?.worktrees ?? []),
   };
 }

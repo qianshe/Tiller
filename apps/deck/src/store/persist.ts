@@ -1,4 +1,4 @@
-import type { AcpAgentProvider, ProjectSummary, SessionSummary, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, ProjectSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import type { StorageLike } from "../features/auth";
 
 export type DeckSnapshotCache = {
@@ -6,7 +6,7 @@ export type DeckSnapshotCache = {
   cachedAt: string;
   projects: ProjectSummary[];
   sessions: SessionSummary[];
-  workspaces: WorkspaceSummary[];
+  worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
 };
 
@@ -29,7 +29,7 @@ export function readDeckSnapshot(storage: StorageLike, profileId: string): DeckS
       cachedAt: parsed.cachedAt,
       projects: parsed.projects ?? [],
       sessions: parsed.sessions ?? [],
-      workspaces: parsed.workspaces ?? [],
+      worktrees: parsed.worktrees ?? [],
       agents: parsed.agents ?? [],
     };
   } catch {

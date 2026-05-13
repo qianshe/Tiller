@@ -36,6 +36,14 @@ function deriveAvailableCommandMapsFromSessions(sessions: SessionSummary[]) {
   }
   return { bySession, byAgent };
 }
+
+function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
+  return Object.fromEntries(
+    sessions
+      .filter((session) => (session.configOptions?.length ?? 0) > 0)
+      .map((session) => [session.id, session.configOptions ?? []] as const),
+  );
+}
 type SessionUpdateParams = {
   sessionId: string;
   update: { kind: string } & Record<string, any>;
@@ -88,6 +96,22 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
   const store = useDeckStore.getState();
 
   store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  if ((payload.session.configOptions?.length ?? 0) > 0) {
+    store.setSessionConfigOptions((current) => ({
+      ...current,
+      [payload.session.id]: payload.session.configOptions ?? [],
+    }));
+  }
+  if ((payload.session.availableCommands?.length ?? 0) > 0) {
+    store.setSessionAvailableCommands((current) => ({
+      ...current,
+      [payload.session.id]: payload.session.availableCommands ?? [],
+    }));
+    store.setAgentAvailableCommands((current) => ({
+      ...current,
+      [payload.session.agentId]: payload.session.availableCommands ?? [],
+    }));
+  }
   store.setStatuses((current) => ({
     ...current,
     [payload.session.id]: payload.session.status,
@@ -184,9 +208,10 @@ export function applySessionResult(
           pruneSessionScopedMap(current, nextSessions),
         );
         store.setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
-        store.setSessionConfigOptions((current) =>
-          pruneSessionScopedMap(current, nextSessions),
-        );
+        store.setSessionConfigOptions((current) => ({
+          ...pruneSessionScopedMap(current, nextSessions),
+          ...deriveConfigOptionMapsFromSessions(nextSessions),
+        }));
         {
           const commandMaps = deriveAvailableCommandMapsFromSessions(nextSessions);
           store.setSessionAvailableCommands((current) => ({
@@ -200,6 +225,37 @@ export function applySessionResult(
         }
         store.setActiveSessionId((current: string | null) =>
           resolveActiveSessionId(current, nextSessions),
+        );
+      }
+      return true;
+    }
+    case "session/configure": {
+      if (!payload.sessionId) {
+        return false;
+      }
+      if (Array.isArray(payload.options)) {
+        store.setSessionConfigOptions((current) => ({
+          ...current,
+          [payload.sessionId]: payload.options,
+        }));
+      }
+      if (payload.state && typeof payload.state === "object") {
+        store.setSessions((current) =>
+          current.map((session) =>
+            session.id === payload.sessionId
+              ? {
+                  ...session,
+                  model: payload.state.model ?? session.model,
+                  agentMode: payload.state.agentMode ?? session.agentMode,
+                  reasoningEffort:
+                    payload.state.reasoningEffort ?? session.reasoningEffort,
+                  configOptions: Array.isArray(payload.options)
+                    ? payload.options
+                    : session.configOptions,
+                  updatedAt: new Date().toISOString(),
+                }
+              : session,
+          ),
         );
       }
       return true;
@@ -279,17 +335,24 @@ export function applySessionResult(
         );
       }
       return true;
-    case "session/resume":
+    case "session/resume": {
       setResumeFeedback(payload.message);
       resumeStartRequestsRef.current.delete(payload.sessionId);
+      const resume = payload.ok
+        ? payload.resume
+        : {
+            ...payload.resume,
+            state: "resume-unavailable",
+            reason: payload.message,
+          };
       store.setSessions((current) =>
         current.map((session) =>
           session.id === payload.sessionId
             ? {
                 ...session,
-                resume: payload.resume,
+                resume,
                 runtimeSessionId:
-                  payload.resume.runtimeSessionId ?? session.runtimeSessionId,
+                  resume.runtimeSessionId ?? session.runtimeSessionId,
               }
             : session,
         ),
@@ -298,6 +361,7 @@ export function applySessionResult(
         void dispatch(rpcClientRef.current, "agent/connections", {});
       }
       return true;
+    }
     case "session/cleanup":
       if (payload.result.remoteDeleted) {
         toast.success("会话已删除");
@@ -358,6 +422,22 @@ export function applySessionUpdate(
       store.setSessions((current) =>
         upsertSessionSummary(current, update.session),
       );
+      if ((update.session.configOptions?.length ?? 0) > 0) {
+        store.setSessionConfigOptions((current) => ({
+          ...current,
+          [update.session.id]: update.session.configOptions ?? [],
+        }));
+      }
+      if ((update.session.availableCommands?.length ?? 0) > 0) {
+        store.setSessionAvailableCommands((current) => ({
+          ...current,
+          [update.session.id]: update.session.availableCommands ?? [],
+        }));
+        store.setAgentAvailableCommands((current) => ({
+          ...current,
+          [update.session.agentId]: update.session.availableCommands ?? [],
+        }));
+      }
       if (!update.session.runtimeSessionId && context.pendingPromptRef.current) {
         store.setActiveSessionId(update.session.id);
         context.assignSessionTitleFromPrompt(update.session.id, context.pendingPromptRef.current);

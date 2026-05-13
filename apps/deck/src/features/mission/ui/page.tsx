@@ -8,7 +8,7 @@ type MissionPageProps = {
 };
 
 /**
- * Composition shell for the mission workspace panes.
+ * Composition shell for the mission worktree panes.
  */
 export function MissionPage({
   layoutRef,

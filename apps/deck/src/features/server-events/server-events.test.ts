@@ -20,8 +20,8 @@ function session(id: string): SessionSummary {
     projectId: "p1",
     projectName: "Project",
     helmId: "h1",
-    workspaceId: "w1",
-    workspaceName: "Workspace",
+    cwd: "D:/repo",
+    worktreeName: "Worktree",
     agentId: "a1",
     agentName: "Agent",
     status: "running",
@@ -38,7 +38,7 @@ function resetStore() {
     helms: [],
     helmInventories: {},
     projects: [],
-    workspaces: [],
+    worktrees: [],
     sessions: [],
     statuses: {},
     messages: {},
@@ -96,7 +96,7 @@ test("permission resolved notifications clear pending permission requests", () =
         id: "permission-1",
         command: "Approve MCP tool call :: {}",
         reason: "等待审核",
-        workspacePath: "D:/repo",
+        cwd: "D:/repo",
       },
     },
   });
@@ -172,15 +172,15 @@ test("inventory RPC results hydrate projects for the current helm", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
       writeAgentModelOptionsCache: () => undefined,
       selectedAgentId: null,
-      selectedWorkspaceId: null,
+      selectedCwd: null,
       resolveModelOptions: () => [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel: "provider-default",
@@ -214,7 +214,7 @@ test("session draft result hydrates draft model options and commands", () => {
       logicalScopeKey: "main:codex",
       warmed: true,
       providerId: "codex",
-      workspaceId: "main",
+      cwd: "main",
       runtimeSessionId: "runtime-1",
       currentModelId: "gpt-5.5",
       modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
@@ -226,17 +226,17 @@ test("session draft result hydrates draft model options and commands", () => {
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId) => `${providerId}:${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
       writeAgentModelOptionsCache: (entries) => {
         cached = entries;
       },
       selectedAgentId: "codex",
-      selectedWorkspaceId: "main",
+      selectedCwd: "main",
       resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel,
@@ -303,7 +303,7 @@ test("session draft result merges with an existing project scoped model options 
       logicalScopeKey: "main:opencode",
       warmed: true,
       providerId: "opencode",
-      workspaceId: "main",
+      cwd: "main",
       runtimeSessionId: "runtime-warm-1",
       currentModelId: "cpa-oai/gpt-5.5",
       modelOptions: [],
@@ -314,18 +314,18 @@ test("session draft result merges with an existing project scoped model options 
     "helm-1",
     true,
     {
-      projectFilesKey: (projectId, workspaceId) => `${projectId}:${workspaceId ?? ""}`,
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
       setProjectFilesByScope: () => undefined,
-      setSelectedWorkspaceId: () => undefined,
+      setSelectedCwd: () => undefined,
       setWorktreePickerOpen: () => undefined,
       setAgentTestResult: () => undefined,
-      agentModelOptionsKey: (providerId, workspaceId, projectId) =>
-        projectId ? `${providerId}::${workspaceId}::${projectId}` : `${providerId}::${workspaceId}`,
+      agentModelOptionsKey: (providerId, worktreeId, projectId) =>
+        projectId ? `${providerId}::${worktreeId}::${projectId}` : `${providerId}::${worktreeId}`,
       writeAgentModelOptionsCache: (entries) => {
         cached = entries;
       },
       selectedAgentId: "opencode",
-      selectedWorkspaceId: "main",
+      selectedCwd: "main",
       resolveModelOptions: (currentModel) => currentModel ? [currentModel] : [],
       resolvePreferredModel: (_current, options) => options[0],
       selectedModel: "cpa-oai/gpt-5.5",
@@ -473,6 +473,97 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("session RPC results hydrate config options from listed sessions", () => {
+  resetStore();
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: {},
+  };
+  const configOptions = [
+    {
+      id: "permission-mode",
+      name: "Permission Mode",
+      category: "mode",
+      currentValue: "bypassPermissions",
+      options: [{ value: "bypassPermissions", label: "Bypass Permissions" }],
+    },
+  ];
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [{ ...session("s1"), configOptions }],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef,
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, configOptions);
+});
+
+test("session check resume auto starts provider restore", () => {
+  resetStore();
+  let requested: { sessionId: string; reason: string } | null = null;
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/check_resume",
+    {
+      sessionId: "s1",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+        reason: "ACP agent advertises session/load; Helm can try agent-side restore and history replay.",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: (session: any) => session.resume?.state === "resume-available",
+      requestSessionResumeStart: (sessionId: string, reason: string) => {
+        requested = { sessionId, reason };
+      },
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set<string>() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(requested, {
+    sessionId: "s1",
+    reason: "检测到历史任务可恢复，正在自动重连 ACP 会话...",
+  });
+});
+
 test("successful session resume clears the pending restore request", () => {
   resetStore();
   const pendingRequests = new Set<string>(["s1"]);
@@ -524,13 +615,65 @@ test("successful session resume clears the pending restore request", () => {
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("failed session resume marks stale available metadata as unavailable", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  useDeckStore.setState({ sessions: [session("s1")] });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: false,
+      message: "Worktree worktree-1 is not configured.",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+        reason: "ACP agent advertises session/load; Helm can try agent-side restore and history replay.",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "Worktree worktree-1 is not configured.");
+  assert.equal(useDeckStore.getState().sessions[0]?.resume?.state, "resume-unavailable");
+  assert.equal(
+    useDeckStore.getState().sessions[0]?.resume?.reason,
+    "Worktree worktree-1 is not configured.",
+  );
+});
+
 test("permission list results hydrate pending permission requests", () => {
   resetStore();
   const request: PermissionRequest = {
     id: "permission-1",
     command: "Approve MCP tool call :: {}",
     reason: "需要审核工具调用",
-    workspacePath: "D:/repo",
+    cwd: "D:/repo",
   };
 
   const handled = applySessionResult(
@@ -570,7 +713,7 @@ test("empty permission list clears stale pending permission requests", () => {
         id: "permission-1",
         command: "Approve MCP tool call :: {}",
         reason: "已过期的审核请求",
-        workspacePath: "D:/repo",
+        cwd: "D:/repo",
       },
     },
   });

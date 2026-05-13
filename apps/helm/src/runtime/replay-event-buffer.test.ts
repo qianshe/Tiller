@@ -100,6 +100,21 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
   buffer.add(output);
   buffer.add(diff);
 
+  assert.deepEqual(buffer.snapshot(), {
+    messages: [],
+    toolCalls: [
+      {
+        ...firstToolCall.toolCall,
+        input: undefined,
+        output: undefined,
+        status: "completed",
+        updatedAt: "2026-05-08T08:00:01.000Z",
+      },
+      { ...output.toolCall, input: undefined, output: undefined },
+    ],
+    outputs: [output.chunk],
+    diffs: diff.files,
+  });
   assert.equal(stores.toolCalls.length, 0);
   assert.equal(stores.outputs.length, 0);
 
