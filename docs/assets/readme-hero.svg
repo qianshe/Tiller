@@ -1,0 +1,43 @@
+<svg width="960" height="300" viewBox="0 0 960 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Tiller</title>
+  <desc id="desc">Tiller wordmark using the frontend top navigation logo mark.</desc>
+  <defs>
+    <radialGradient id="softLight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(318 38) rotate(36) scale(520 360)">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.48" stop-color="#F3F7FB"/>
+      <stop offset="1" stop-color="#DDE7F2"/>
+    </radialGradient>
+    <radialGradient id="coolShadow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(760 265) rotate(-154) scale(560 260)">
+      <stop stop-color="#B8C7D8" stop-opacity="0.55"/>
+      <stop offset="0.58" stop-color="#E7EDF4" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="clothA" x1="0" y1="0" x2="960" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.72"/>
+      <stop offset="0.42" stop-color="#EDF3F9" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#C9D6E5" stop-opacity="0.42"/>
+    </linearGradient>
+    <linearGradient id="clothB" x1="90" y1="0" x2="710" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D5E0EC" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ACBBD0" stop-opacity="0.22"/>
+    </linearGradient>
+    <filter id="softBlur" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="300" fill="url(#softLight)"/>
+  <rect width="960" height="300" fill="url(#coolShadow)"/>
+  <path d="M-20 38C128 4 240 20 352 62C470 106 596 98 733 45C826 9 906 17 986 44V300H-20V38Z" fill="url(#clothA)" filter="url(#softBlur)" opacity="0.72"/>
+  <path d="M-24 214C106 158 226 162 346 202C486 248 608 238 746 185C846 147 928 162 984 192V300H-24V214Z" fill="url(#clothB)" filter="url(#softBlur)" opacity="0.78"/>
+  <path d="M0 0H960V300H0V0Z" fill="#F8FAFC" opacity="0.2"/>
+
+  <g transform="translate(344 107)" color="#070B16">
+    <svg x="0" y="0" width="64" height="56" viewBox="0 0 32 28" role="presentation" aria-hidden="true">
+      <path d="M16 0 31 28H24.2l-2.9-5.7h-3.1l2.4 5.7h-9.1l2.4-5.7h-3.1L7.8 28H1z" fill="currentColor"/>
+      <path d="M14.6 16.8h2.8l-1.4-3.5z" fill="#ffffff"/>
+    </svg>
+    <text x="92" y="42" fill="currentColor" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="42" font-weight="800" letter-spacing="5">Tiller</text>
+  </g>
+</svg>

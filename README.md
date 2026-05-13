@@ -1,6 +1,30 @@
-# Tiller
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="Tiller - Your local-first command deck for ACP coding agents" width="760" />
+</p>
 
-**Tiller is a local-first command deck for ACP coding agents.**
+<p align="center">
+  <strong>Chat with your local AI coding agents from any device on your trusted network.</strong>
+  <br />
+  No cloud control plane. No public bot hub. Just one private command deck.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-F59E0B?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@qianshe/tiller"><img alt="npm preview" src="https://img.shields.io/npm/v/%40qianshe%2Ftiller?tag=preview&amp;label=npm%20preview&amp;color=38BDF8&amp;style=flat-square" /></a>
+  <img alt="Node 22+" src="https://img.shields.io/badge/node-22%2B-0F172A?style=flat-square" />
+  <img alt="Platform: Web, Desktop, LAN" src="https://img.shields.io/badge/platform-Web%20%7C%20Desktop%20%7C%20LAN-0F172A?style=flat-square" />
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#highlights">Features</a> ·
+  <a href="#supported-agents">Agents</a> ·
+  <a href="#updating-tiller">Update</a> ·
+  <a href="#privacy-and-logs">Privacy</a> ·
+  <a href="#development">Development</a>
+</p>
+
+---
 
 Tiller 把运行在你电脑、工作站或服务器上的 Coding Agent 整理成一个浏览器工作台：你可以在同一个 Web UI 里查看项目、连接 Agent、恢复会话、发送 Prompt、跟踪消息、查看任务日志与文件变更。
 
