@@ -323,9 +323,13 @@ export class AcpConnection {
       if (!configId || typeof value === "undefined" || !hasSessionConfigOptionIdValue(session.configOptions, configId, value)) {
         return false;
       }
+      const setConfigOptionRequest =
+        typeof value === "boolean"
+          ? { sessionId: session.runtimeSessionId, configId, type: "boolean" as const, value }
+          : { sessionId: session.runtimeSessionId, configId, value };
       const result = await withConnectionRequest(
         "session/set_config_option",
-        this.state.agent.setSessionConfigOption({ sessionId: session.runtimeSessionId, configId, value } as any),
+        this.state.agent.setSessionConfigOption(setConfigOptionRequest as any),
         this.state.child,
         "",
         this.state.logFile,

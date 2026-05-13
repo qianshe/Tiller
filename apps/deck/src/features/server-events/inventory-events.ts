@@ -284,6 +284,49 @@ export function applyInventoryResult(
       }
       return true;
     }
+    case "session/configure": {
+      if (!payload.draftId) {
+        return false;
+      }
+      let nextState = payload.state;
+      store.setAgentModelOptions((current) => {
+        const entry = Object.entries(current).find(
+          ([, value]) => value.draftId === payload.draftId,
+        );
+        if (!entry) {
+          return current;
+        }
+        const [key, previous] = entry;
+        nextState = {
+          ...previous.state,
+          ...(payload.state ?? {}),
+        };
+        const next = {
+          ...current,
+          [key]: {
+            ...previous,
+            configOptions: Array.isArray(payload.options)
+              ? payload.options
+              : previous.configOptions,
+            state: nextState,
+          },
+        };
+        writeAgentModelOptionsCache(next);
+        return next;
+      });
+      if (sourceIsCurrentHelm && nextState && typeof nextState === "object") {
+        if (nextState.model) {
+          setSelectedModel(nextState.model);
+        }
+        if (nextState.agentMode) {
+          setSelectedAgentMode(nextState.agentMode);
+        }
+        if (nextState.reasoningEffort) {
+          setSelectedReasoningEffort(nextState.reasoningEffort);
+        }
+      }
+      return true;
+    }
     case "project/save":
       setConfigSaveMessage(payload.message);
       setFleetProjectSaveMessage(payload.message);

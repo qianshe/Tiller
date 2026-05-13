@@ -97,7 +97,11 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
   }
 
   if (updateType === "available_commands_update") {
-    const rawCommands = Array.isArray(update.availableCommands) ? update.availableCommands : [];
+    const rawCommands = Array.isArray(update.availableCommands)
+      ? update.availableCommands
+      : Array.isArray(update.available_commands)
+        ? update.available_commands
+        : [];
     const commands: AvailableCommand[] = rawCommands
       .filter((cmd: any) => cmd && typeof cmd.name === "string")
       .map((cmd: any) => {
@@ -322,8 +326,20 @@ export function hasSessionConfigOptionIdValue(
   if (!option) {
     return false;
   }
-  if (option.options?.length) {
-    return option.options.some((candidate) => candidate.value === value);
+  const knownValues = [option.currentValue, option.selectedValue, option.value];
+  const knownPrimitiveTypes = new Set(
+    knownValues
+      .filter((candidate): candidate is string | boolean => typeof candidate === "string" || typeof candidate === "boolean")
+      .map((candidate) => typeof candidate),
+  );
+  if (knownPrimitiveTypes.size && !knownPrimitiveTypes.has(typeof value)) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return true;
+  }
+  if (typeof value === "boolean") {
+    return true;
   }
   return typeof option.currentValue === typeof value || typeof option.value === typeof value;
 }

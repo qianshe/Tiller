@@ -5,6 +5,7 @@ import {
   sanitizeProtocolLogPayload,
   summarizeSessionUpdateNotification,
 } from "./runtime";
+import { hasSessionConfigOptionIdValue } from "./events";
 
 test("summarizeSessionUpdateNotification reports update shape without text content", () => {
   const summary = summarizeSessionUpdateNotification(
@@ -295,6 +296,54 @@ test("mapSessionUpdateNotification preserves available command kind metadata", (
       { name: "frontend-design", kind: "skill", rawKind: "skill" },
       { name: "review", kind: "command", rawKind: undefined },
     ],
+  );
+});
+
+test("mapSessionUpdateNotification accepts snake_case available commands", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_commands_snake",
+      update: {
+        sessionUpdate: "available_commands_update",
+        available_commands: [{ name: "help", description: "Show help" }],
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "available-commands");
+  if (mapped?.event.type !== "available-commands") {
+    throw new Error("Expected available-commands event");
+  }
+  assert.deepEqual(mapped.event.commands.map((command) => command.name), ["help"]);
+});
+
+test("hasSessionConfigOptionIdValue allows provider-owned string values for known option ids", () => {
+  assert.equal(
+    hasSessionConfigOptionIdValue(
+      [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          value: "claude-sonnet-4-5",
+          options: [{ value: "claude-sonnet-4-5", label: "Sonnet" }],
+        },
+      ],
+      "model",
+      "claude-opus-4-7",
+    ),
+    true,
+  );
+  assert.equal(
+    hasSessionConfigOptionIdValue([{ id: "web-search", name: "Web Search", value: false }], "web-search", true),
+    true,
+  );
+  assert.equal(
+    hasSessionConfigOptionIdValue([{ id: "web-search", name: "Web Search", value: false }], "web-search", "yes"),
+    false,
   );
 });
 

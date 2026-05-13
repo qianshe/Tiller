@@ -71,6 +71,7 @@ type MissionComposerProps = {
   slashSelectedIndex: number;
   applySlashCommand: (cmd: AvailableCommand) => void;
   setSlashSelectedIndex: Dispatch<SetStateAction<number>>;
+  openSlashCommands: () => void;
   showDraftAgentModeSelect: boolean;
   missionConfigPicker: MissionConfigPicker;
   setMissionConfigPicker: Dispatch<SetStateAction<MissionConfigPicker>>;
@@ -143,6 +144,7 @@ export function MissionComposer({
   slashSelectedIndex,
   applySlashCommand,
   setSlashSelectedIndex,
+  openSlashCommands,
   showDraftAgentModeSelect,
   missionConfigPicker,
   setMissionConfigPicker,
@@ -175,14 +177,8 @@ export function MissionComposer({
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const modelSettingsLoading =
     draftModelLoading ||
-    (!activeSession && selectedDraftAgent?.id === "opencode" && draftConfigOptions.length === 0);
+    (!activeSession && selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0);
 
-  function focusSlashCommand() {
-    if (!prompt.startsWith("/")) {
-      setPrompt((current) => (current ? `/${current}` : "/"));
-    }
-    missionPromptRef.current?.focus();
-  }
 
   return (
     <div
@@ -259,7 +255,7 @@ export function MissionComposer({
               className="mission-slash-trigger size-8 rounded-full bg-surface text-base"
               aria-label="输入斜杠命令"
               title="输入斜杠命令"
-              onClick={focusSlashCommand}
+              onClick={openSlashCommands}
             >
               /
             </Button>

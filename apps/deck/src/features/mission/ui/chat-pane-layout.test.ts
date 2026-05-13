@@ -99,6 +99,17 @@ test("slash command suppression resets after leaving slash mode", () => {
   );
 });
 
+test("slash command names normalize provider leading slashes", () => {
+  assert.match(slashCommandsHookSource, /normalizeSlashCommandName/);
+  assert.match(slashCommandsHookSource, /setPrompt\(`\/\$\{normalizeSlashCommandName\(cmd\.name\)\} `\)/);
+  assert.match(slashCommandsHookSource, /normalizeSlashCommandName\(cmd\.name\)\.toLowerCase\(\)\.startsWith\(commandToken\)/);
+});
+
+test("ACP model loading badge is not limited to OpenCode", () => {
+  assert.match(composerSource, /selectedDraftAgent\?\.protocol === "acp"/);
+  assert.doesNotMatch(composerSource, /selectedDraftAgent\?\.id === "opencode"/);
+});
+
 test("mission composer falls back to active session available commands", () => {
   assert.match(appRootSource, /activeSessionSlashCommands/);
   assert.match(appRootSource, /missionView\.activeSession\?\.availableCommands/);

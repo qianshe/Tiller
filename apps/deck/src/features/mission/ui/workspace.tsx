@@ -132,6 +132,7 @@ export function MissionWorktree(props: any) {
     slashSelectedIndex,
     applySlashCommand,
     setSlashSelectedIndex,
+    openSlashCommands,
     showDraftAgentModeSelect,
     missionConfigPicker,
     setMissionConfigPicker,
@@ -606,6 +607,7 @@ export function MissionWorktree(props: any) {
               slashSelectedIndex={slashSelectedIndex}
               applySlashCommand={applySlashCommand}
               setSlashSelectedIndex={setSlashSelectedIndex}
+              openSlashCommands={openSlashCommands}
               showDraftAgentModeSelect={showDraftAgentModeSelect}
               missionConfigPicker={missionConfigPicker}
               setMissionConfigPicker={setMissionConfigPicker}

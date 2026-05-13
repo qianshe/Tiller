@@ -83,6 +83,16 @@ test("worktree model allows sending once restored to same-process runtime", () =
   assert.equal(model.activeSessionRestoreGate.canChat, true);
 });
 
+test("worktree model blocks new-session sends while draft runtime is still prewarming", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: null,
+    activeSessionId: null,
+    draftModelLoading: true,
+  }));
+
+  assert.equal(model.canSend, false);
+});
+
 test("worktree model prefers matching cwd worktree over stale session worktree name", () => {
   const model = buildMissionWorktreeModel(baseInput({
     activeSession: {

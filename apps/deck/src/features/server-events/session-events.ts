@@ -96,6 +96,22 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
   const store = useDeckStore.getState();
 
   store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  if ((payload.session.configOptions?.length ?? 0) > 0) {
+    store.setSessionConfigOptions((current) => ({
+      ...current,
+      [payload.session.id]: payload.session.configOptions ?? [],
+    }));
+  }
+  if ((payload.session.availableCommands?.length ?? 0) > 0) {
+    store.setSessionAvailableCommands((current) => ({
+      ...current,
+      [payload.session.id]: payload.session.availableCommands ?? [],
+    }));
+    store.setAgentAvailableCommands((current) => ({
+      ...current,
+      [payload.session.agentId]: payload.session.availableCommands ?? [],
+    }));
+  }
   store.setStatuses((current) => ({
     ...current,
     [payload.session.id]: payload.session.status,
@@ -209,6 +225,37 @@ export function applySessionResult(
         }
         store.setActiveSessionId((current: string | null) =>
           resolveActiveSessionId(current, nextSessions),
+        );
+      }
+      return true;
+    }
+    case "session/configure": {
+      if (!payload.sessionId) {
+        return false;
+      }
+      if (Array.isArray(payload.options)) {
+        store.setSessionConfigOptions((current) => ({
+          ...current,
+          [payload.sessionId]: payload.options,
+        }));
+      }
+      if (payload.state && typeof payload.state === "object") {
+        store.setSessions((current) =>
+          current.map((session) =>
+            session.id === payload.sessionId
+              ? {
+                  ...session,
+                  model: payload.state.model ?? session.model,
+                  agentMode: payload.state.agentMode ?? session.agentMode,
+                  reasoningEffort:
+                    payload.state.reasoningEffort ?? session.reasoningEffort,
+                  configOptions: Array.isArray(payload.options)
+                    ? payload.options
+                    : session.configOptions,
+                  updatedAt: new Date().toISOString(),
+                }
+              : session,
+          ),
         );
       }
       return true;
@@ -375,6 +422,22 @@ export function applySessionUpdate(
       store.setSessions((current) =>
         upsertSessionSummary(current, update.session),
       );
+      if ((update.session.configOptions?.length ?? 0) > 0) {
+        store.setSessionConfigOptions((current) => ({
+          ...current,
+          [update.session.id]: update.session.configOptions ?? [],
+        }));
+      }
+      if ((update.session.availableCommands?.length ?? 0) > 0) {
+        store.setSessionAvailableCommands((current) => ({
+          ...current,
+          [update.session.id]: update.session.availableCommands ?? [],
+        }));
+        store.setAgentAvailableCommands((current) => ({
+          ...current,
+          [update.session.agentId]: update.session.availableCommands ?? [],
+        }));
+      }
       if (!update.session.runtimeSessionId && context.pendingPromptRef.current) {
         store.setActiveSessionId(update.session.id);
         context.assignSessionTitleFromPrompt(update.session.id, context.pendingPromptRef.current);

@@ -22,6 +22,10 @@ type UseSlashCommandsOptions = {
   onFallbackKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
 };
 
+function normalizeSlashCommandName(name: string) {
+  return name.replace(/^\/+/, "");
+}
+
 /**
  * Handles slash command filtering, popup dismissal and keyboard selection.
  */
@@ -60,7 +64,7 @@ export function useSlashCommands({
     if (!commandToken) {
       return commands;
     }
-    return commands.filter((cmd) => cmd.name.toLowerCase().startsWith(commandToken));
+    return commands.filter((cmd) => normalizeSlashCommandName(cmd.name).toLowerCase().startsWith(commandToken));
   }, [
     commandToken,
     activeSessionId,
@@ -124,8 +128,14 @@ export function useSlashCommands({
   }, [popupOpen, prompt]);
 
   function applyCommand(cmd: AvailableCommand) {
-    setPrompt(`/${cmd.name} `);
+    setPrompt(`/${normalizeSlashCommandName(cmd.name)} `);
     setSuppressedFor(null);
+    promptRef.current?.focus();
+  }
+
+  function openSlashCommands() {
+    setSuppressedFor(null);
+    setPrompt((current) => (current.startsWith("/") ? current : current ? `/${current}` : "/"));
     promptRef.current?.focus();
   }
 
@@ -183,6 +193,7 @@ export function useSlashCommands({
     slashSelectedIndex: selectedIndex,
     setSlashSelectedIndex: setSelectedIndex,
     applySlashCommand: applyCommand,
+    openSlashCommands,
     handleMissionPromptKeyDown: handlePromptKeyDown,
   };
 }

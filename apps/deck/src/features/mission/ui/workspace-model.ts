@@ -41,6 +41,7 @@ export function buildMissionWorktreeModel(input: any) {
     missionProjects,
     worktrees,
     resumeStartRequestsRef,
+    draftModelLoading,
   } = input;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
@@ -62,6 +63,7 @@ export function buildMissionWorktreeModel(input: any) {
     socketRef.current &&
     (activeSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
+    (activeSessionId || !draftModelLoading) &&
     (!promptImages.length ||
       !activeSession ||
       activeSession.imageInput !== false),
