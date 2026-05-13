@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="license Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-f59e0b" /></a>
-  <a href="https://www.npmjs.com/package/@qianshe/tiller"><img alt="npm preview" src="https://img.shields.io/npm/v/%40qianshe%2Ftiller?tag=preview&label=npm%20preview&color=f59e0b" /></a>
-  <img alt="node >=22" src="https://img.shields.io/badge/node-%3E%3D22-64748b" />
-  <img alt="platform Web Desktop LAN" src="https://img.shields.io/badge/platform-Web%20%7C%20Desktop%20%7C%20LAN-64748b" />
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-F59E0B?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@qianshe/tiller"><img alt="npm preview" src="https://img.shields.io/npm/v/%40qianshe%2Ftiller?tag=preview&amp;label=npm%20preview&amp;color=38BDF8&amp;style=flat-square" /></a>
+  <img alt="Node 22+" src="https://img.shields.io/badge/node-22%2B-0F172A?style=flat-square" />
+  <img alt="Platform: Web, Desktop, LAN" src="https://img.shields.io/badge/platform-Web%20%7C%20Desktop%20%7C%20LAN-0F172A?style=flat-square" />
 </p>
 
 <p align="center">
