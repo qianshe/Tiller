@@ -36,7 +36,11 @@ import { broadcastSessionUpdate } from "../rpc/notifications";
 import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
 import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
-import { buildSessionResumeInfo, resolveSessionRestoreCapabilities } from "./resume-info";
+import {
+  buildSessionResumeInfo,
+  markSessionResumeUnavailable,
+  resolveSessionRestoreCapabilities,
+} from "./resume-info";
 import {
   resolveProviderHistorySnapshot,
   type ProviderHistorySnapshot,
@@ -51,6 +55,38 @@ type SessionRuntimeConfig = {
   model?: string;
   reasoningEffort?: SessionReasoningEffort;
 };
+
+type ResumePreconditionInput = {
+  agent: AcpAgentProvider | undefined;
+  workspace: WorkspaceSummary | undefined;
+  runtimeSessionId?: string;
+  restoreMethod?: SessionResumeInfo["restoreMethod"];
+  agentId: string;
+  workspaceId: string;
+};
+
+function resolveResumeUnavailableReason({
+  agent,
+  workspace,
+  runtimeSessionId,
+  restoreMethod,
+  agentId,
+  workspaceId,
+}: ResumePreconditionInput): string | null {
+  if (!agent) {
+    return `Agent provider ${agentId} is not configured.`;
+  }
+  if (!workspace) {
+    return `Workspace ${workspaceId} is not configured.`;
+  }
+  if (!runtimeSessionId) {
+    return "ACP runtime session id is missing.";
+  }
+  if (restoreMethod !== "session/load" && restoreMethod !== "session/resume") {
+    return `ACP restore method ${restoreMethod ?? "none"} is unsupported.`;
+  }
+  return null;
+}
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -729,16 +765,19 @@ export function createSessionServices(options: SessionServicesOptions) {
     const agent = resolveProviderById(summary.agentId, options.getAgents());
     const workspace = options.getWorkspaces().find((item) => item.id === summary.workspaceId);
     const resume = buildResumeInfo(summary, agent);
-    if (
-      !agent ||
-      !workspace ||
-      !resume.runtimeSessionId ||
-      (resume.restoreMethod !== "session/load" && resume.restoreMethod !== "session/resume")
-    ) {
+    const unavailableReason = resolveResumeUnavailableReason({
+      agent,
+      workspace,
+      runtimeSessionId: resume.runtimeSessionId,
+      restoreMethod: resume.restoreMethod,
+      agentId: summary.agentId,
+      workspaceId: summary.workspaceId,
+    });
+    if (unavailableReason) {
       return {
         ok: false,
-        resume,
-        message: resume.reason,
+        resume: markSessionResumeUnavailable(resume, unavailableReason),
+        message: unavailableReason,
       };
     }
 

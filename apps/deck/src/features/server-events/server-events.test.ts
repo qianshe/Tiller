@@ -535,7 +535,7 @@ test("failed session resume marks stale available metadata as unavailable", () =
     {
       sessionId: "s1",
       ok: false,
-      message: "Workspace not found for this session.",
+      message: "Workspace workspace-1 is not configured.",
       resume: {
         state: "resume-available",
         mode: "reconnect",
@@ -568,11 +568,11 @@ test("failed session resume marks stale available metadata as unavailable", () =
 
   assert.equal(handled, true);
   assert.equal(pendingRequests.has("s1"), false);
-  assert.equal(feedback, "Workspace not found for this session.");
+  assert.equal(feedback, "Workspace workspace-1 is not configured.");
   assert.equal(useDeckStore.getState().sessions[0]?.resume?.state, "resume-unavailable");
   assert.equal(
     useDeckStore.getState().sessions[0]?.resume?.reason,
-    "Workspace not found for this session.",
+    "Workspace workspace-1 is not configured.",
   );
 });
 

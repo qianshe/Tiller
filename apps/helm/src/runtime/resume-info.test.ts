@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { markSessionResumeUnavailable } from "./resume-info";
 
-test("markSessionResumeUnavailable converts reconnect-capable resume into a terminal failure", () => {
+test("markSessionResumeUnavailable converts reconnect metadata into a terminal failure", () => {
   const resume = markSessionResumeUnavailable(
     {
       mode: "reconnect",
@@ -14,10 +14,10 @@ test("markSessionResumeUnavailable converts reconnect-capable resume into a term
       restoreMethod: "session/load",
       lastSeenAt: "2026-05-13T00:00:00.000Z",
     },
-    "Workspace not found for this session.",
+    "Workspace workspace-1 is not configured.",
   );
 
   assert.equal(resume.state, "resume-unavailable");
-  assert.equal(resume.reason, "Workspace not found for this session.");
+  assert.equal(resume.reason, "Workspace workspace-1 is not configured.");
   assert.equal(resume.restoreMethod, "session/load");
 });
