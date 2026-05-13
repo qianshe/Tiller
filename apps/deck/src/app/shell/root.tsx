@@ -26,7 +26,7 @@ import {
   shouldUseMissionVisualFixture,
   MissionAgentIcon,
   SessionCleanupConfirmDialog,
-  type SessionDraftPreferencePatch,
+  type SessionConfigPreferencePatch,
   useHistoryPagination,
   useMissionEffects,
   useMissionLayout,
@@ -231,23 +231,28 @@ export function App() {
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
 
-  function updateSessionDraftPreferences(next: SessionDraftPreferencePatch) {
+  function updateSessionDraftPreferences(next: SessionConfigPreferencePatch) {
     const activeSession = missionView.activeSession;
     const client = runtimeState.rpcClientRef.current;
+    const directConfigPatch = typeof next.configId === "string"
+      ? { configId: next.configId, value: next.value }
+      : null;
     if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
       void dispatch(client, "session/configure", {
         sessionId: activeSession.id,
-        agentMode:
-          next.agentMode ??
-          activeSession.agentMode ??
-          missionView.effectiveDraftAgentMode,
-        model: normalizeModelSelection(
-          next.model ?? activeSession.model ?? missionView.draftModel,
-        ),
-        reasoningEffort:
-          next.reasoningEffort ??
-          activeSession.reasoningEffort ??
-          runtimeState.selectedReasoningEffort,
+        ...(directConfigPatch ?? {
+          agentMode:
+            next.agentMode ??
+            activeSession.agentMode ??
+            missionView.effectiveDraftAgentMode,
+          model: normalizeModelSelection(
+            next.model ?? activeSession.model ?? missionView.draftModel,
+          ),
+          reasoningEffort:
+            next.reasoningEffort ??
+            activeSession.reasoningEffort ??
+            runtimeState.selectedReasoningEffort,
+        }),
       });
       return;
     }
@@ -263,9 +268,11 @@ export function App() {
     if (draftEntry?.draftId && client?.socket.readyState === WebSocket.OPEN) {
       void dispatch(client, "session/configure", {
         draftId: draftEntry.draftId,
-        agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
-        model: normalizeModelSelection(next.model ?? missionView.draftModel),
-        reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
+        ...(directConfigPatch ?? {
+          agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
+          model: normalizeModelSelection(next.model ?? missionView.draftModel),
+          reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
+        }),
       });
     }
     if (typeof next.agentMode === "string")

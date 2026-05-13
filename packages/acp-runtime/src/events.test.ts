@@ -186,6 +186,47 @@ test("mapSessionUpdateNotification maps config_option_update into config option 
   assert.equal(mapped.event.state.reasoningEffort, "high");
 });
 
+test("mapSessionUpdateNotification flattens grouped config option choices", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_grouped_cfg",
+      update: {
+        type: "config_option_update",
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "claude-sonnet-4-5-20250929",
+            options: [
+              {
+                group: "claude",
+                name: "Claude",
+                options: [
+                  { value: "claude-opus-4-5-20251101", name: "Opus 4.5" },
+                  { value: "claude-sonnet-4-5-20250929", name: "Sonnet 4.5" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "config-options");
+  if (mapped?.event.type !== "config-options") {
+    throw new Error("Expected config-options event");
+  }
+  assert.deepEqual(mapped.event.options[0]?.options, [
+    { value: "claude-opus-4-5-20251101", label: "Opus 4.5", name: "Opus 4.5" },
+    { value: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5", name: "Sonnet 4.5" },
+  ]);
+});
+
 test("mapSessionUpdateNotification maps inferred permission requests", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

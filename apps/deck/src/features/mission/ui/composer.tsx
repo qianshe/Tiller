@@ -21,6 +21,7 @@ import type {
   SessionSummary,
   WorkspaceSummary,
 } from "@tiller/shared";
+import type { SessionConfigPreferencePatch } from "../types";
 import type { DeckPreferences } from "../../preferences";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
@@ -76,11 +77,7 @@ type MissionComposerProps = {
   draftAgentModePickerLabel: string;
   draftAgentModeOptions: AgentModeOption[];
   effectiveDraftAgentMode?: string;
-  updateSessionDraftPreferences: (next: {
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  }) => void;
+  updateSessionDraftPreferences: (next: SessionConfigPreferencePatch) => void;
   draftModelPlaceholder: string;
   draftModelPickerDisabled: boolean;
   draftModelPickerLabel: string;

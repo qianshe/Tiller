@@ -4,6 +4,7 @@ import {
   type AgentPromptContent,
   type PermissionDecision,
   type ProjectSummary,
+  type SessionConfigOptionValue,
   type SessionReasoningEffort,
   type SessionSummary,
   type WorkspaceSummary,
@@ -125,6 +126,8 @@ export async function handleSessionRpcRequest(
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
+          configId?: string;
+          value?: SessionConfigOptionValue;
         },
         context,
       );
@@ -136,6 +139,8 @@ export async function handleSessionRpcRequest(
           agentMode?: string;
           model?: string;
           reasoningEffort?: SessionReasoningEffort;
+          configId?: string;
+          value?: SessionConfigOptionValue;
         },
         context,
       );
@@ -514,6 +519,7 @@ async function promptRuntimeDraft(
     agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
     model: draft.runtime.sessionConfigState?.model ?? draft.configState.model,
     modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
+    configOptions: draft.runtime.sessionConfigOptions ?? draft.configOptions,
     reasoningEffort:
       draft.runtime.sessionConfigState?.reasoningEffort ?? draft.configState.reasoningEffort,
     runtimeSessionId: draft.runtime.runtimeSessionId,
@@ -560,6 +566,8 @@ async function configureSessionOrDraft(
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   },
   context: HelmHandlerContext,
 ) {
@@ -569,6 +577,8 @@ async function configureSessionOrDraft(
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     });
   }
   if (!params.sessionId) {
@@ -580,6 +590,8 @@ async function configureSessionOrDraft(
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     },
     context,
   );

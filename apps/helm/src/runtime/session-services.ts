@@ -18,6 +18,7 @@ import type {
   SessionResumeInfo,
   SessionSummary,
   WorkspaceSummary,
+  SessionConfigOptionValue,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
@@ -262,6 +263,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
     return {
       ...aligned,
+      configOptions: record?.runtime.sessionConfigOptions ?? aligned.configOptions,
       imageInput: capabilities.imageInput,
       resume: buildResumeInfo(aligned, agent),
     };
@@ -748,6 +750,8 @@ export function createSessionServices(options: SessionServicesOptions) {
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   }) {
     const draft = runtimeDraftsById.get(params.draftId);
     if (!draft) {
@@ -757,10 +761,12 @@ export function createSessionServices(options: SessionServicesOptions) {
       agentMode: params.agentMode,
       model: params.model,
       reasoningEffort: params.reasoningEffort,
+      configId: params.configId,
+      value: params.value,
     });
     draft.configState = result.state;
     draft.modelState = result.modelState ?? draft.modelState;
-    draft.configOptions = draft.runtime.sessionConfigOptions ?? draft.configOptions;
+    draft.configOptions = result.options ?? draft.runtime.sessionConfigOptions ?? draft.configOptions;
     options.logInfo(
       `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
     );
@@ -897,6 +903,7 @@ export function createSessionServices(options: SessionServicesOptions) {
         ...summary,
         model: runtime.sessionConfigState?.model ?? summary.model,
         modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
+        configOptions: runtime.sessionConfigOptions ?? summary.configOptions,
         reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
         runtimeSessionId: runtime.runtimeSessionId,
         status: "idle",

@@ -242,13 +242,24 @@ export function extractSessionConfigOptions(payload: any): AcpSessionConfigOptio
       selectedValue: option.selectedValue,
       value: option.value,
       options: Array.isArray(option.options)
-        ? option.options.map((item: any) => ({
-            value: item?.value,
-            label: typeof item?.label === "string" ? item.label : typeof item?.name === "string" ? item.name : undefined,
-            name: typeof item?.name === "string" ? item.name : undefined,
-          }))
+        ? flattenSessionConfigOptions(option.options)
         : undefined,
     }));
+}
+
+function flattenSessionConfigOptions(
+  options: any[],
+): NonNullable<AcpSessionConfigOption["options"]> {
+  return options.flatMap((item: any): NonNullable<AcpSessionConfigOption["options"]> => {
+    if (Array.isArray(item?.options)) {
+      return flattenSessionConfigOptions(item.options);
+    }
+    return [{
+      value: item?.value,
+      label: typeof item?.label === "string" ? item.label : typeof item?.name === "string" ? item.name : undefined,
+      name: typeof item?.name === "string" ? item.name : undefined,
+    }];
+  });
 }
 
 export function extractAcpModelState(payload: AcpSessionResponseWithModels | any): AcpModelState | undefined {
@@ -300,6 +311,21 @@ export function hasSessionConfigOptionValue(configOptions: AcpSessionConfigOptio
 
   const candidates = [option.currentValue, option.selectedValue, option.value, ...(option.options ?? []).map((item) => item.value)];
   return candidates.some((candidate) => candidate === value);
+}
+
+export function hasSessionConfigOptionIdValue(
+  configOptions: AcpSessionConfigOption[],
+  configId: string,
+  value: AcpSessionConfigOption["value"],
+) {
+  const option = configOptions.find((item) => item.id === configId);
+  if (!option) {
+    return false;
+  }
+  if (option.options?.length) {
+    return option.options.some((candidate) => candidate.value === value);
+  }
+  return typeof option.currentValue === typeof value || typeof option.value === typeof value;
 }
 
 export function resolveSessionConfigState(configOptions: AcpSessionConfigOption[]): AcpSessionConfigState {

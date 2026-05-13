@@ -2,7 +2,6 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   AcpAgentProvider,
   ProjectSummary,
-  SessionReasoningEffort,
   SessionSummary,
 } from "@tiller/shared";
 import {
@@ -26,14 +25,6 @@ type UseSelectionOptions = {
   setWorktreePickerOpen: Dispatch<SetStateAction<boolean>>;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
 };
-
-type SessionDraftPreferencePatch = {
-  agentMode?: string;
-  model?: string;
-  reasoningEffort?: SessionReasoningEffort;
-};
-
-export type { SessionDraftPreferencePatch };
 
 /**
  * Coordinates mission tree, draft selectors and active session selection.

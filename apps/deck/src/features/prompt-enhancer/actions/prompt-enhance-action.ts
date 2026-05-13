@@ -46,11 +46,12 @@ export function usePromptEnhanceAction({
     try {
       const workspace = filteredWorkspaces.find(
         (item) =>
-          item.id === (activeSession?.workspaceId ?? selectedWorkspaceId),
+          item.id === (activeSession?.workspaceId ?? selectedWorkspaceId) ||
+          normalizeWorkspacePath(item.path) === normalizeWorkspacePath(activeSession?.workspacePath),
       );
       const enhanced = await enhancePromptWithLlm(rawPrompt, promptEnhancer, {
         projectName: draftProject?.name ?? activeSession?.projectName,
-        workspaceName: activeSession?.workspaceName ?? workspace?.name,
+        workspaceName: workspace?.name ?? activeSession?.workspaceName,
         projectSummary: draftProject?.summary,
         workspaceSummary: workspace?.summary,
         sessionStatus: activeSession?.status,
@@ -70,4 +71,8 @@ export function usePromptEnhanceAction({
       setPromptEnhancerBusy(false);
     }
   };
+}
+
+function normalizeWorkspacePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

@@ -5,7 +5,7 @@ export { useSessionMessageActions } from "./actions/session-message-actions";
 export { useHistoryPagination } from "./hooks/history-pagination";
 export { useMissionLayout } from "./hooks/layout";
 export { usePanelPages } from "./hooks/panel-pages";
-export { useSelection, type SessionDraftPreferencePatch } from "./hooks/selection";
+export { useSelection } from "./hooks/selection";
 export { useSessionTitles } from "./hooks/session-titles";
 export { useSlashCommands } from "./hooks/slash-commands";
 export {
@@ -29,4 +29,5 @@ export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./uti
 export { MissionAgentIcon } from "./ui/agent-icon";
 export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";
 export { MissionWorkspace } from "./ui/workspace";
-export type { ProjectFilesEntry } from "./types";
+export type { MissionConfigPicker } from "./ui/composer-config-controls";
+export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";

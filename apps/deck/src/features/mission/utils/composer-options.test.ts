@@ -76,7 +76,7 @@ test("formatAgentModeLabel converts provider values to readable labels", () => {
   assert.equal(formatAgentModeLabel("Sisyphus - Ultraworker"), "Sisyphus - Ultraworker");
 });
 
-test("resolveAgentModeOptions hides permission mode selectors from model settings", () => {
+test("resolveAgentModeOptions preserves ACP-provided permission mode choices", () => {
   assert.deepEqual(
     resolveAgentModeOptions([
       {
@@ -90,7 +90,10 @@ test("resolveAgentModeOptions hides permission mode selectors from model setting
         ],
       },
     ]),
-    [],
+    [
+      { value: "default", label: "Default" },
+      { value: "bypassPermissions", label: "Bypass Permissions" },
+    ],
   );
 });
 

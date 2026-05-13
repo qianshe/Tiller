@@ -3,11 +3,11 @@ import { Readable, Writable } from "node:stream";
 import { dirname, relative, resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorkspaceSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { resolveAcpRequestTimeout } from "../constants";
-import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
+import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
@@ -55,10 +55,11 @@ export type AcpSessionRuntimeHandle = {
   sessionConfigOptions: AcpSessionConfigOption[];
   sessionModelState: ReturnType<typeof extractAcpModelState>;
   prompt: (text: string, content?: AgentPromptContent[]) => Promise<void>;
-  configure: (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort }) => Promise<{
+  configure: (nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort; configId?: string; value?: SessionConfigOptionValue }) => Promise<{
     runtimeApplied: boolean;
     state: ReturnType<typeof resolveCombinedSessionConfigState>;
     modelState: ReturnType<typeof extractAcpModelState>;
+    options: AcpSessionConfigOption[];
   }>;
   respondPermission: (requestId: string, decision: PermissionDecision) => void;
   deleteSession: () => Promise<ProviderCleanupResult>;
@@ -311,24 +312,20 @@ export class AcpConnection {
 
   private async configureSession(
     tillerSessionId: string,
-    nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort },
-  ): Promise<{ runtimeApplied: boolean; state: ReturnType<typeof resolveCombinedSessionConfigState>; modelState: ReturnType<typeof extractAcpModelState> }> {
+    nextConfig: { agentMode?: string; model?: string; reasoningEffort?: SessionReasoningEffort; configId?: string; value?: SessionConfigOptionValue },
+  ): Promise<{ runtimeApplied: boolean; state: ReturnType<typeof resolveCombinedSessionConfigState>; modelState: ReturnType<typeof extractAcpModelState>; options: AcpSessionConfigOption[] }> {
     const session = this.sessions.get(tillerSessionId);
     if (!session) {
-      return { runtimeApplied: false, state: {}, modelState: undefined };
+      return { runtimeApplied: false, state: {}, modelState: undefined, options: [] };
     }
     let runtimeApplied = false;
-    const applyOption = async (category: "mode" | "model" | "thought_level", value: string | undefined) => {
-      if (!value || !hasSessionConfigOptionValue(session.configOptions, category, value)) {
-        return false;
-      }
-      const optionId = findSessionConfigOptionId(session.configOptions, category);
-      if (!optionId) {
+    const applyConfigOption = async (configId: string | undefined, value: SessionConfigOptionValue | undefined) => {
+      if (!configId || typeof value === "undefined" || !hasSessionConfigOptionIdValue(session.configOptions, configId, value)) {
         return false;
       }
       const result = await withConnectionRequest(
         "session/set_config_option",
-        this.state.agent.setSessionConfigOption({ sessionId: session.runtimeSessionId, configId: optionId, value }),
+        this.state.agent.setSessionConfigOption({ sessionId: session.runtimeSessionId, configId, value } as any),
         this.state.child,
         "",
         this.state.logFile,
@@ -337,14 +334,28 @@ export class AcpConnection {
       const nextOptions = extractSessionConfigOptions(result);
       if (nextOptions.length) {
         session.configOptions = nextOptions;
+      } else {
+        session.configOptions = updateSessionConfigOptionValueById(session.configOptions, configId, value);
       }
       session.onEvent({ type: "config-options", state: resolveSessionConfigState(session.configOptions), options: session.configOptions });
       runtimeApplied = true;
       return true;
     };
+    const applyOption = async (category: "mode" | "model" | "thought_level", value: string | undefined) => {
+      if (!value || !hasSessionConfigOptionValue(session.configOptions, category, value)) {
+        return false;
+      }
+      const optionId = findSessionConfigOptionId(session.configOptions, category);
+      if (!optionId) {
+        return false;
+      }
+      return applyConfigOption(optionId, value);
+    };
+
+    const directConfigApplied = await applyConfigOption(nextConfig.configId, nextConfig.value);
 
     let modeAppliedAsSdk = false;
-    if (nextConfig.agentMode) {
+    if (!directConfigApplied && nextConfig.agentMode) {
       try {
         await withConnectionRequest(
           "session/set_mode",
@@ -363,9 +374,9 @@ export class AcpConnection {
       }
     }
     if (!modeAppliedAsSdk) {
-      await applyOption("mode", nextConfig.agentMode);
+      await applyOption("mode", directConfigApplied ? undefined : nextConfig.agentMode);
     }
-    const modelAppliedAsConfig = await applyOption("model", nextConfig.model);
+    const modelAppliedAsConfig = directConfigApplied ? false : await applyOption("model", nextConfig.model);
     if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
       await withConnectionRequest(
         "session/set_model",
@@ -379,12 +390,13 @@ export class AcpConnection {
       session.onEvent({ type: "model-options", state: session.modelState });
       runtimeApplied = true;
     }
-    await applyOption("thought_level", nextConfig.reasoningEffort);
+    await applyOption("thought_level", directConfigApplied ? undefined : nextConfig.reasoningEffort);
 
     return {
       runtimeApplied,
       state: resolveCombinedSessionConfigState(session.configOptions, session.modelState),
       modelState: session.modelState,
+      options: session.configOptions,
     };
   }
 
@@ -772,6 +784,23 @@ export class AcpConnection {
 
 function resolveRequestedRuntimeSessionId(request: OpenAcpSessionRequest) {
   return request.kind === "load" ? request.runtimeSessionId : request.tillerSessionId;
+}
+
+function updateSessionConfigOptionValueById(
+  options: AcpSessionConfigOption[],
+  configId: string,
+  value: SessionConfigOptionValue,
+) {
+  return options.map((option) =>
+    option.id === configId
+      ? {
+          ...option,
+          currentValue: value,
+          selectedValue: value,
+          value,
+        }
+      : option,
+  );
 }
 
 function updateSessionConfigOptionValue(

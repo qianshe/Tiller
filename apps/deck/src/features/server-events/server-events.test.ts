@@ -473,6 +473,51 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("session RPC results hydrate config options from listed sessions", () => {
+  resetStore();
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: {},
+  };
+  const configOptions = [
+    {
+      id: "permission-mode",
+      name: "Permission Mode",
+      category: "mode",
+      currentValue: "bypassPermissions",
+      options: [{ value: "bypassPermissions", label: "Bypass Permissions" }],
+    },
+  ];
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [{ ...session("s1"), configOptions }],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async () => undefined,
+      toolCallsRef,
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, configOptions);
+});
+
 test("session check resume auto starts provider restore", () => {
   resetStore();
   let requested: { sessionId: string; reason: string } | null = null;

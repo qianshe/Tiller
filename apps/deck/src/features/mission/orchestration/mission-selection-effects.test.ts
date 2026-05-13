@@ -145,8 +145,8 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(viewModelSourceText, /!draftHasLoadedModelOptions/);
 });
 
-test("mission model picker shows current agent mode even before full mode options arrive", () => {
-  assert.match(viewModelSourceText, /visibleDraftAgentModeOptions/);
-  assert.match(viewModelSourceText, /formatAgentModeLabel\(effectiveDraftAgentMode\)/);
+test("mission model picker only shows ACP-provided mode options", () => {
+  assert.match(viewModelSourceText, /const visibleDraftAgentModeOptions = draftAgentModeOptions/);
+  assert.doesNotMatch(viewModelSourceText, /formatAgentModeLabel\(effectiveDraftAgentMode\)/);
   assert.match(viewModelSourceText, /draftAgentModeOptions: visibleDraftAgentModeOptions/);
 });

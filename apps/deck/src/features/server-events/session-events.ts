@@ -36,6 +36,14 @@ function deriveAvailableCommandMapsFromSessions(sessions: SessionSummary[]) {
   }
   return { bySession, byAgent };
 }
+
+function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
+  return Object.fromEntries(
+    sessions
+      .filter((session) => (session.configOptions?.length ?? 0) > 0)
+      .map((session) => [session.id, session.configOptions ?? []] as const),
+  );
+}
 type SessionUpdateParams = {
   sessionId: string;
   update: { kind: string } & Record<string, any>;
@@ -184,9 +192,10 @@ export function applySessionResult(
           pruneSessionScopedMap(current, nextSessions),
         );
         store.setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
-        store.setSessionConfigOptions((current) =>
-          pruneSessionScopedMap(current, nextSessions),
-        );
+        store.setSessionConfigOptions((current) => ({
+          ...pruneSessionScopedMap(current, nextSessions),
+          ...deriveConfigOptionMapsFromSessions(nextSessions),
+        }));
         {
           const commandMaps = deriveAvailableCommandMapsFromSessions(nextSessions);
           store.setSessionAvailableCommands((current) => ({

@@ -9,7 +9,6 @@ import { usePromptImages } from "../hooks/prompt-images";
 import {
   MODEL_OPTIONS,
   defaultAgentId,
-  formatAgentModeLabel,
   resolveAgentModeOptions,
   resolveBaseModelOptions,
   resolveCurrentAgentMode,
@@ -241,11 +240,7 @@ const effectiveDraftAgentMode = resolveCurrentAgentMode(
   draftConfigOptions,
   draftAgentModelOptions?.state.agentMode,
 );
-const visibleDraftAgentModeOptions = draftAgentModeOptions.length
-  ? draftAgentModeOptions
-  : effectiveDraftAgentMode
-    ? [{ value: effectiveDraftAgentMode, label: formatAgentModeLabel(effectiveDraftAgentMode) }]
-    : [];
+const visibleDraftAgentModeOptions = draftAgentModeOptions;
 const showDraftAgentModeSelect = visibleDraftAgentModeOptions.length > 0;
 const draftAgentModePickerLabel = showDraftAgentModeSelect
   ? (visibleDraftAgentModeOptions.find(

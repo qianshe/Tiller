@@ -258,6 +258,8 @@ export type SessionSummary = {
   agentMode?: string;
   model?: string;
   modelOptions?: AcpModelOption[];
+  /** Latest ACP session config options exposed by the active/restored runtime. */
+  configOptions?: SessionConfigOption[];
   reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   SessionConfigOption,
+  SessionConfigOptionValue,
   SessionReasoningEffort,
 } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
@@ -20,6 +21,8 @@ export const ParamsSchema = z
     agentMode: z.string().optional(),
     model: z.string().optional(),
     reasoningEffort: typedUnknown<SessionReasoningEffort>().optional(),
+    configId: z.string().optional(),
+    value: typedUnknown<SessionConfigOptionValue>().optional(),
   })
   .refine((value) => Boolean(value.sessionId) !== Boolean(value.draftId), {
     message: "Exactly one of sessionId or draftId is required.",

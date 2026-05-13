@@ -5,12 +5,14 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  AgentPromptContent,
   AvailableCommand,
   FileDiffSummary,
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
   SessionConfigOption,
+  SessionConfigOptionValue,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
@@ -148,6 +150,8 @@ export type HelmHandlerContext = {
     agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
   }) => Promise<{
     draftId: string;
     ok: boolean;

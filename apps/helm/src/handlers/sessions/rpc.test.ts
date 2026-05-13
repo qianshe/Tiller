@@ -236,6 +236,8 @@ test("session/configure routes draft config without requiring a visible session"
     agentMode: undefined,
     model: "gpt-5.5",
     reasoningEffort: "high",
+    configId: undefined,
+    value: undefined,
   });
   assert.deepEqual(result, {
     ok: true,
@@ -270,6 +272,8 @@ test("session/set_config_option remains a compatibility alias for draft config",
     agentMode: "plan",
     model: undefined,
     reasoningEffort: undefined,
+    configId: undefined,
+    value: undefined,
   });
   assert.deepEqual(result, {
     ok: true,
@@ -277,6 +281,35 @@ test("session/set_config_option remains a compatibility alias for draft config",
     state: { agentMode: "plan" },
     options: [],
     message: "Runtime draft config updated.",
+  });
+});
+
+test("session/configure forwards arbitrary config option values", async () => {
+  let configured: unknown;
+  await handleSessionRpcRequest(
+    "session/configure",
+    { draftId: "draft-1", configId: "notify", value: true },
+    {
+      configureRuntimeDraft: (params: unknown) => {
+        configured = params;
+        return {
+          ok: true,
+          draftId: "draft-1",
+          state: {},
+          options: [{ id: "notify", currentValue: true }],
+          message: "Runtime draft config updated.",
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(configured, {
+    draftId: "draft-1",
+    agentMode: undefined,
+    model: undefined,
+    reasoningEffort: undefined,
+    configId: "notify",
+    value: true,
   });
 });
 

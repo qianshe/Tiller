@@ -338,7 +338,7 @@ export function MissionWorkspace(props: any) {
         return {
           id: runtimeSession.tillerSessionId,
           projectName,
-          branchName: session?.workspaceName ?? workspace?.name ?? connection.workspaceId,
+          branchName: workspace?.name ?? session?.workspaceName ?? connection.workspaceId,
           status: statusLabel,
           model: session?.model ?? runtimeSession.model,
         };
