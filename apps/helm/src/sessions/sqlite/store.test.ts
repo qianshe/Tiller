@@ -66,6 +66,7 @@ function createDiff(path: string): FileDiffSummary {
   return { path, status: "modified", additions: 1, deletions: 2 };
 }
 
+
 test("sqlite session store initializes repeatedly and preserves summary ordering", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-summary-"));
   try {

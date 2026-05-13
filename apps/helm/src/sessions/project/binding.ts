@@ -18,6 +18,7 @@ export function alignSessionProjectBinding(
       ...summary,
       projectName: exactProject.name,
       helmId: exactProject.helmId,
+      cwd: summary.cwd || resolveProjectCwd(exactProject),
     };
   }
 
@@ -33,6 +34,7 @@ export function alignSessionProjectBinding(
     projectId: matchedProject.id,
     projectName: matchedProject.name,
     helmId: matchedProject.helmId,
+    cwd: summary.cwd || resolveProjectCwd(matchedProject),
   };
 }
 
@@ -54,6 +56,10 @@ export function alignSessionWorktreeBinding(
     cwd: summary.cwd || matchedWorktree.path,
     worktreeName: matchedWorktree.name,
   };
+}
+
+function resolveProjectCwd(project: ProjectSummary) {
+  return project.path || project.worktrees?.[0]?.path || "";
 }
 
 function normalizeWorktreePath(path: string | undefined) {

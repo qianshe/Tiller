@@ -40,6 +40,7 @@ test("mission draft composer waits for ACP connection before creating a session"
   assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(activeSession \|\| selectedDraftConnection\)/);
   assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean\(!activeSession && selectedAgentId && !selectedDraftConnection\)/);
   assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
+  assert.doesNotMatch(selectionSourceText, /const selectedCwd = selectedWorktree/);
 });
 
 test("mission draft agent selection resets model before creating an ACP session", () => {

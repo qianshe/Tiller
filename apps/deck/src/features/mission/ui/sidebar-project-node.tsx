@@ -192,7 +192,7 @@ export function SidebarProjectNode({
               );
             })
           ) : (
-            <div className="mission-tree-empty rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground">这个项目还没有任务。</div>
+            <p className="mission-tree-empty px-3 py-2 text-xs text-muted-foreground">这个项目还没有任务。</p>
           )}
         </div>
       ) : null}

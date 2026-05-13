@@ -67,6 +67,8 @@ export function useHistoryPagination({
     void dispatch(client, "session/list", {
       limit: sessionPageLimit,
       before: sessionHistoryState.nextCursor,
+    }).catch(() => {
+      setSessionHistoryState((current) => ({ ...current, loading: false }));
     });
   }
 

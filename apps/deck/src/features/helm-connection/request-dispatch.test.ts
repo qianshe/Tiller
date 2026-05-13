@@ -175,6 +175,28 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
 });
 
+test("requestInitialSync clears session loading when session list fails", async () => {
+  const states: unknown[] = [];
+
+  await assert.rejects(
+    requestInitialSync({} as any, {
+      dispatch: async (_client, method) => {
+        if (method === "session/list") {
+          throw new Error("session list failed");
+        }
+      },
+      setSessionHistoryState: (state) => states.push(state),
+      sessionPageLimit: 25,
+    }),
+    /session list failed/,
+  );
+
+  assert.deepEqual(states, [
+    { hasMore: false, loading: true },
+    { hasMore: false, loading: false },
+  ]);
+});
+
 test("subscribeToSessionTopic dispatches session/subscribe", async () => {
   const methods: Array<{ method: string; params: unknown }> = [];
 

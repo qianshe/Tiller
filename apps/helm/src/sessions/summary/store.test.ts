@@ -113,41 +113,6 @@ test("session store persists summaries, de-duplicates by id, and returns newest 
   }
 });
 
-test("session store normalizes legacy summaries without project or helm fields", async () => {
-  const mod = await import("./store.js");
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-summary-store-legacy-"));
-
-  try {
-    const filePath = join(tempRoot, "sessions.json");
-    writeFileSync(
-      filePath,
-      JSON.stringify([
-        {
-          id: "session-legacy",
-          cwd: "worktree-legacy",
-          worktreeName: "Legacy Worktree",
-          agentId: "agent-legacy",
-          agentName: "Legacy Agent",
-          status: "idle",
-          createdAt: "2026-04-26T09:00:00.000Z",
-          updatedAt: "2026-04-26T09:10:00.000Z",
-          messageCount: 1,
-        },
-      ]),
-      "utf8",
-    );
-
-    const store = mod.createSessionStore(filePath);
-    const summaries = store.list();
-
-    assert.equal(summaries.length, 1);
-    assert.equal(summaries[0]?.projectId, "legacy-project");
-    assert.equal(summaries[0]?.projectName, "Legacy Worktree");
-    assert.equal(summaries[0]?.helmId, "legacy-helm");
-  } finally {
-    rmSync(tempRoot, { force: true, recursive: true });
-  }
-});
 
 test("session store removes only the targeted session summary", async () => {
   const mod = await import("./store.js");

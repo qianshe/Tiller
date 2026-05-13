@@ -290,19 +290,50 @@ export function readProjectYaml(projectId: string, configPath = getDefaultConfig
   return readProjectYamlFile(projectYamlPath(projectId, configPath));
 }
 
-function readProjectYamlFile(path: string): ProjectSummary {
-  const parsed = parseYaml(readFileSync(path, "utf8")) as ProjectSummary;
+function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
+  const record = project as ProjectSummary & Record<string, unknown>;
+  const legacyKeys = [
+    ["workspace", "Ids"].join(""),
+    ["default", "Workspace", "Id"].join(""),
+    ["default", "Agent", "Id"].join(""),
+    "workspaces",
+  ];
+  const sanitized: Record<string, unknown> = { ...record };
+  for (const key of legacyKeys) {
+    delete sanitized[key];
+  }
   return {
-    ...parsed,
-    worktrees: dedupeWorktrees(parsed.worktrees ?? []),
+    id: String(sanitized.id),
+    name: String(sanitized.name),
+    helmId: String(sanitized.helmId),
+    path: typeof sanitized.path === "string" ? sanitized.path : undefined,
+    summary: typeof sanitized.summary === "string" ? sanitized.summary : undefined,
+    gitBranches: Array.isArray(sanitized.gitBranches)
+      ? sanitized.gitBranches.filter((branch): branch is string => typeof branch === "string")
+      : undefined,
+    gitCurrentBranch:
+      typeof sanitized.gitCurrentBranch === "string" ? sanitized.gitCurrentBranch : undefined,
+    worktrees: dedupeWorktrees((sanitized.worktrees as WorktreeSummary[] | undefined) ?? []),
   };
 }
 
+function readProjectYamlFile(path: string): ProjectSummary {
+  const raw = readFileSync(path, "utf8");
+  const parsed = parseYaml(raw) as ProjectSummary;
+  const project = sanitizeProjectYaml(parsed);
+  const normalized = stringifyYaml(project);
+  if (normalized !== raw) {
+    writeFileSync(path, normalized, "utf8");
+  }
+  return project;
+}
+
 export function saveProjectYaml(project: ProjectSummary, configPath = getDefaultConfigPath()) {
-  const path = projectYamlPath(project.id, configPath);
+  const sanitized = sanitizeProjectYaml(project);
+  const path = projectYamlPath(sanitized.id, configPath);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, stringifyYaml(project), "utf8");
-  return { configPath: path, project };
+  writeFileSync(path, stringifyYaml(sanitized), "utf8");
+  return { configPath: path, project: sanitized };
 }
 
 

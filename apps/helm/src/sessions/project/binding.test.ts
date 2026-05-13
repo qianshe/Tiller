@@ -22,7 +22,7 @@ function buildSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 const projects: ProjectSummary[] = [
-  { id: "project-alpha", name: "Alpha", helmId: "helm-1", worktrees: [{ name: "alpha", path: "worktree-alpha" }] },
+  { id: "project-alpha", name: "Alpha", helmId: "helm-1", path: "worktree-alpha", worktrees: [{ name: "alpha", path: "worktree-alpha" }] },
   { id: "project-beta", name: "Beta", helmId: "helm-1", worktrees: [{ name: "shared", path: "worktree-shared" }] },
 ];
 
@@ -33,6 +33,16 @@ test("alignSessionProjectBinding preserves a known stored project id over worktr
   assert.equal(aligned.projectName, "Alpha");
   assert.equal(aligned.helmId, "helm-1");
   assert.equal(aligned.cwd, "worktree-shared");
+});
+
+test("alignSessionProjectBinding fills missing cwd from the project path", () => {
+  const aligned = alignSessionProjectBinding(
+    buildSession({ cwd: undefined as unknown as string }),
+    projects,
+  );
+
+  assert.equal(aligned.projectId, "project-alpha");
+  assert.equal(aligned.cwd, "worktree-alpha");
 });
 
 test("alignSessionProjectBinding recovers legacy sessions by project name before worktree", () => {

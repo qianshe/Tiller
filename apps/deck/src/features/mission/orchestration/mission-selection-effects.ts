@@ -9,6 +9,10 @@ import {
   resolveSessionProjectId,
 } from "../utils/session-derivations";
 
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 export function useMissionSelectionEffects(source: any) {
   const {
     worktreePickerOpen,
@@ -196,27 +200,27 @@ export function useMissionSelectionEffects(source: any) {
   }, [draftProject, filteredAgents, selectedAgentId]);
   useEffect(() => {
     const selectedWorktree = filteredWorktrees.find(
-      (worktree: any) => worktree.id === selectedCwd,
+      (worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
     );
     const selectedProject = projects.find((project: any) => project.id === selectedProjectId);
-    const selectedCwd = selectedWorktree?.path ?? selectedProject?.path;
+    const selectedDraftCwd = selectedWorktree?.path ?? selectedCwd ?? selectedProject?.path;
     if (
       activeSession ||
       pairingState !== "paired" ||
       !selectedProjectId ||
       !selectedAgentId ||
-      !selectedCwd ||
+      !selectedDraftCwd ||
       !rpcClientRef.current ||
       rpcClientRef.current.socket.readyState !== WebSocket.OPEN
     ) {
       return;
     }
-    const key = agentModelOptionsKey(selectedAgentId, selectedCwd, selectedProjectId);
+    const key = agentModelOptionsKey(selectedAgentId, selectedDraftCwd, selectedProjectId);
     const cached = agentModelOptions[key];
     const hasReadyConnection = (agentConnectionInventory ?? []).some(
       (connection: any) =>
         connection.providerId === selectedAgentId &&
-        connection.cwd === selectedCwd &&
+        connection.cwd === selectedDraftCwd &&
         connection.initialized &&
         connection.status !== "closed" &&
         connection.status !== "error",
@@ -282,7 +286,7 @@ export function useMissionSelectionEffects(source: any) {
       void dispatch(rpcClientRef.current, "session/draft", {
         deckClientId: getDeckClientId(),
         projectId: selectedProjectId,
-        cwd: selectedCwd,
+        cwd: selectedDraftCwd,
         agentId: selectedAgentId,
         agentMode: effectiveDraftAgentMode,
         model: selectedModel === "provider-default" ? undefined : selectedModel,
@@ -315,7 +319,7 @@ export function useMissionSelectionEffects(source: any) {
     }));
     void dispatch(rpcClientRef.current, "agent/connect", {
       projectId: selectedProjectId,
-      cwd: selectedCwd,
+      cwd: selectedDraftCwd,
       providerId: selectedAgentId,
     });
   }, [
