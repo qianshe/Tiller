@@ -1,5 +1,5 @@
 import { resolveSessionConfigSupport, type AcpAgentProvider, type HelmSummary, type ProjectSummary, type WorktreeSummary } from "@tiller/shared";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -102,7 +102,27 @@ function normalizeLegacyProvider(provider: AcpAgentProvider): AcpAgentProvider {
 }
 
 export function getDefaultConfigPath() {
-  return join(homedir(), ".tiller", "config.json");
+  return join(homedir(), ".config", "tiller", "config.json");
+}
+
+function resolveLegacyConfigDir(configPath: string) {
+  const configDir = dirname(configPath);
+  const configParent = dirname(configDir);
+  if (basename(configDir) !== "tiller" || basename(configParent) !== ".config") {
+    return null;
+  }
+  return join(dirname(configParent), ".tiller");
+}
+
+function migrateLegacyConfigDir(configPath: string) {
+  const legacyConfigDir = resolveLegacyConfigDir(configPath);
+  const configDir = dirname(configPath);
+  if (!legacyConfigDir || existsSync(configDir) || !existsSync(legacyConfigDir)) {
+    return;
+  }
+
+  mkdirSync(dirname(configDir), { recursive: true });
+  renameSync(legacyConfigDir, configDir);
 }
 
 export function getProjectsDir(configPath = getDefaultConfigPath()) {
@@ -115,6 +135,17 @@ export function projectYamlPath(projectId: string, configPath = getDefaultConfig
 
 function slugProjectId(projectId: string) {
   return projectId.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+}
+
+function isGenericProjectId(projectId: string) {
+  return /^project-\d+$/u.test(projectId);
+}
+
+function projectStoragePath(project: Pick<ProjectSummary, "id" | "name">, configPath: string) {
+  if (isGenericProjectId(project.id)) {
+    return join(getProjectsDir(configPath), slugProjectId(project.name), "project.yaml");
+  }
+  return projectYamlPath(project.id, configPath);
 }
 
 export function loadTillerConfigStub(configPath = getDefaultConfigPath()) {
@@ -143,6 +174,7 @@ export function readTillerConfig(configPath = getDefaultConfigPath()): TillerCon
 }
 
 export function ensureTillerConfigDefaults(configPath = getDefaultConfigPath()) {
+  migrateLegacyConfigDir(configPath);
   const legacy = readRawTillerConfig(configPath);
   const migrated = migrateLegacyProjectState(legacy, configPath);
   const current = migrated.config;
@@ -283,11 +315,43 @@ export function listProjectFiles(configPath = getDefaultConfigPath()) {
 }
 
 export function listAvailableProjects(configPath = getDefaultConfigPath()) {
-  return listProjectFiles(configPath).map((path) => readProjectYamlFile(path));
+  const byId = new Map<string, ProjectSummary>();
+  for (const path of listProjectFiles(configPath)) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    const project = readProjectYamlFile(path);
+    const targetPath = projectStoragePath(project, configPath);
+    if (path !== targetPath) {
+      byId.set(project.id, saveProjectYaml(project, configPath).project);
+      continue;
+    }
+    byId.set(project.id, project);
+  }
+  return Array.from(byId.values());
 }
 
 export function readProjectYaml(projectId: string, configPath = getDefaultConfigPath()) {
-  return readProjectYamlFile(projectYamlPath(projectId, configPath));
+  return readProjectYamlFile(findProjectYamlPathById(projectId, configPath));
+}
+
+function findProjectYamlPathById(projectId: string, configPath: string) {
+  const directPath = projectYamlPath(projectId, configPath);
+  if (existsSync(directPath)) {
+    return directPath;
+  }
+
+  const projectFile = listProjectFiles(configPath).find((path) => hasProjectId(path, projectId));
+  return projectFile ?? directPath;
+}
+
+function hasProjectId(path: string, projectId: string) {
+  try {
+    const parsed = parseYaml(readFileSync(path, "utf8")) as Partial<ProjectSummary>;
+    return parsed.id === projectId;
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
@@ -330,12 +394,32 @@ function readProjectYamlFile(path: string): ProjectSummary {
 
 export function saveProjectYaml(project: ProjectSummary, configPath = getDefaultConfigPath()) {
   const sanitized = sanitizeProjectYaml(project);
-  const path = projectYamlPath(sanitized.id, configPath);
+  const path = projectStoragePath(sanitized, configPath);
+  migrateGenericProjectDirectory(sanitized, path, configPath);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, stringifyYaml(sanitized), "utf8");
   return { configPath: path, project: sanitized };
 }
 
+function migrateGenericProjectDirectory(project: ProjectSummary, targetPath: string, configPath: string) {
+  if (!isGenericProjectId(project.id)) {
+    return;
+  }
+
+  const legacyPath = projectYamlPath(project.id, configPath);
+  if (legacyPath === targetPath || !existsSync(legacyPath)) {
+    return;
+  }
+
+  if (!existsSync(targetPath)) {
+    renameSync(dirname(legacyPath), dirname(targetPath));
+    return;
+  }
+
+  if (hasProjectId(legacyPath, project.id)) {
+    rmSync(dirname(legacyPath), { recursive: true, force: true });
+  }
+}
 
 export function saveWorktreeToConfig(worktree: WorktreeSummary, configPath = getDefaultConfigPath()) {
   const projects = listAvailableProjects(configPath);
@@ -346,8 +430,8 @@ export function saveWorktreeToConfig(worktree: WorktreeSummary, configPath = get
     return { configPath, worktree };
   }
   const worktrees = dedupeWorktrees([...(project.worktrees ?? []), worktree]);
-  saveProjectYaml({ ...project, worktrees }, configPath);
-  return { configPath: projectYamlPath(project.id, configPath), worktree };
+  const result = saveProjectYaml({ ...project, worktrees }, configPath);
+  return { configPath: result.configPath, worktree };
 }
 
 export function deleteWorktreesFromConfig(cwds: string[], configPath = getDefaultConfigPath()) {
@@ -367,7 +451,7 @@ export function deleteWorktreesFromConfig(cwds: string[], configPath = getDefaul
 export const saveProjectToConfig = saveProjectYaml;
 
 export function deleteProjectYaml(projectId: string, configPath = getDefaultConfigPath()) {
-  const path = projectYamlPath(projectId, configPath);
+  const path = findProjectYamlPathById(projectId, configPath);
   const deleted = existsSync(path);
   if (deleted) {
     rmSync(dirname(path), { recursive: true, force: true });

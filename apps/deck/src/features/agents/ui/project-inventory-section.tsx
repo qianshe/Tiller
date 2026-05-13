@@ -79,7 +79,7 @@ export function ProjectInventorySection({
             const existingProject = draft.id
               ? selectedHelmProjects.find((project) => project.id === draft.id)
               : undefined;
-            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects);
+            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects, projectName);
             const existingWorktrees = existingProject?.worktrees ?? [];
             const worktrees = existingWorktrees.length
               ? existingWorktrees

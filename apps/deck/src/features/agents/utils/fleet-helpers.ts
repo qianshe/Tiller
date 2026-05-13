@@ -34,15 +34,38 @@ export function resolveHelmConnectionState(
   return helmConnectionStates[helm.key] ?? "disconnected";
 }
 
-export function createProjectId(projects: ProjectSummary[]) {
+export function createProjectId(projects: ProjectSummary[], projectName?: string) {
+  const ids = new Set(projects.map((project) => project.id));
+  const namedProjectId = sanitizeProjectId(projectName ?? "");
+  if (namedProjectId) {
+    return createUniqueProjectId(namedProjectId, ids);
+  }
+
   let index = projects.length + 1;
   let candidate = `project-${index}`;
-  const ids = new Set(projects.map((project) => project.id));
   while (ids.has(candidate)) {
     index += 1;
     candidate = `project-${index}`;
   }
   return candidate;
+}
+
+function createUniqueProjectId(baseId: string, ids: Set<string>) {
+  if (!ids.has(baseId)) {
+    return baseId;
+  }
+
+  let index = 2;
+  let candidate = `${baseId}-${index}`;
+  while (ids.has(candidate)) {
+    index += 1;
+    candidate = `${baseId}-${index}`;
+  }
+  return candidate;
+}
+
+function sanitizeProjectId(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export function slugify(value: string) {

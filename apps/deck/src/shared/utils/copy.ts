@@ -41,7 +41,7 @@ export const UI_COPY = {
       "可先录入一个真实 ACP 舰员 command 组合，例如 `opencode acp --pure`，确认无误后再写入 Helm 配置。",
     daemonConfigTitle: "写入 Helm 配置",
     daemonConfigHint:
-      "这里会向 `~/.tiller/config.json` 写入舰员 provider 条目。建议先测试当前舰员命令可用。",
+      "这里会向 `~/.config/tiller/config.json` 写入舰员 provider 条目。建议先测试当前舰员命令可用。",
     hooksTitle: "ACP 归一化层",
     hooksBody:
       "runtime 会把 session/update 尽量归一化为消息、权限请求、航行日志与 diff 事件，便于不同 ACP 舰员共用同一套 UI。",

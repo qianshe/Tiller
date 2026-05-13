@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
-import { resolveProjectWorktrees } from "./fleet-helpers.js";
+import { createProjectId, resolveProjectWorktrees } from "./fleet-helpers.js";
 
 function createProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
@@ -19,6 +19,18 @@ function createProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary 
     ...overrides,
   };
 }
+
+test("createProjectId uses the real project name for config directory ids", () => {
+  assert.equal(createProjectId([], "Tiller"), "Tiller");
+  assert.equal(
+    createProjectId([{ id: "Tiller", name: "Tiller", helmId: "local-helm" }], "Tiller"),
+    "Tiller-2",
+  );
+});
+
+test("createProjectId falls back to numeric project ids when project name is empty", () => {
+  assert.equal(createProjectId([], ""), "project-1");
+});
 
 test("fleet project worktrees include managed worktree paths only", () => {
   const worktrees: WorktreeSummary[] = [

@@ -38,7 +38,7 @@ Tiller 把运行在你电脑、工作站或服务器上的 Coding Agent 整理�
 - **Session-oriented workflow**：围绕项目、工作区、Agent 与 session 组织任务，适合恢复和继续推进。
 - **LAN-friendly**：可监听局域网地址，适合在办公室机器、家用服务器或开发主机上运行。
 - **Pairing by default for remote access**：局域网访问时可通过 pairing code 配对受信任设备。
-- **Private by design**：默认数据目录为 `~/.tiller`，日志避免记录 assistant 正文和命令输出正文。
+- **Private by design**：默认数据目录为 `~/.config/tiller`，日志避免记录 assistant 正文和命令输出正文。
 
 ## What can you use it for?
 
@@ -117,7 +117,7 @@ Environment variables are also supported:
 TILLER_HOST=0.0.0.0 TILLER_PORT=47631 tiller start
 ```
 
-Or configure `~/.tiller/config.json`:
+Or configure `~/.config/tiller/config.json`:
 
 ```json
 {
@@ -152,7 +152,7 @@ See the official ACP agent list: <https://agentclientprotocol.com/get-started/ag
 Tiller stores runtime data under your user directory by default:
 
 ```text
-~/.tiller/
+~/.config/tiller/
   config.json
   sessions.sqlite
   trusted-devices.json
@@ -172,7 +172,7 @@ TILLER_SESSION_STORE=json tiller start
 Tiller is designed for local-first operation:
 
 - Source workspaces stay on the machine where Tiller and the agent run.
-- Session data is stored in `~/.tiller` unless you explicitly change runtime configuration.
+- Session data is stored in `~/.config/tiller` unless you explicitly change runtime configuration.
 - Helm logs keep stream/event metadata and avoid printing assistant message bodies or command output bodies.
 - When troubleshooting message content, inspect `sessions.sqlite` directly instead of relying on logs.
 

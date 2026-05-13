@@ -29,9 +29,9 @@ Please include:
 
 - The embedded Deck is intended to manage the current local Tiller process.
 - LAN access must be treated as privileged access during alpha testing.
-- `daemon.auth: "pairing"` in `.tiller/config.json` (or `TILLER_AUTH=pairing`)
+- `daemon.auth: "pairing"` in `~/.config/tiller/config.json` (or `TILLER_AUTH=pairing`)
   can be used to re-enable pairing while the product security model is being finalized.
-- Session data, logs, and config are stored under the user's `.tiller` directory.
+- Session data, logs, and config are stored under the user's `~/.config/tiller` directory.
 
 ## Before public release
 
