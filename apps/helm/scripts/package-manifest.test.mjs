@@ -28,4 +28,7 @@ test("publish manifest wraps Helm as the public npm package", () => {
   assert.deepEqual(publishManifest.bin, { tiller: "./dist/index.js" });
   assert.deepEqual(publishManifest.files, ["dist"]);
   assert.equal(publishManifest.publishConfig.access, "public");
+  assert.equal(publishManifest.dependencies.yaml, manifest.dependencies.yaml);
+  assert.equal(typeof publishManifest.dependencies.yaml, "string");
+  assert.match(publishManifest.dependencies.yaml, /^\^?\d/);
 });
