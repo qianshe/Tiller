@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type {
+  AvailableCommand,
   AcpAgentProvider,
   ProjectSummary,
   SessionStatus,
@@ -22,8 +23,14 @@ type UseSnapshotCacheOptions = {
   setProjects: (projects: ProjectSummary[]) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   setWorktrees: (worktrees: WorktreeSummary[]) => void;
+  activeSessionId: string | null;
+  sessionAvailableCommands: Record<string, AvailableCommand[]>;
+  agentAvailableCommands: Record<string, AvailableCommand[]>;
   setAgents: (agents: AcpAgentProvider[]) => void;
   setStatuses: (statuses: StatusMap) => void;
+  setActiveSessionId: (sessionId: string | null) => void;
+  setSessionAvailableCommands: (commands: Record<string, AvailableCommand[]>) => void;
+  setAgentAvailableCommands: (commands: Record<string, AvailableCommand[]>) => void;
 };
 
 /**
@@ -37,11 +44,17 @@ export function useSnapshotCache({
   sessions,
   worktrees,
   agents,
+  activeSessionId,
+  sessionAvailableCommands,
+  agentAvailableCommands,
   setProjects,
   setSessions,
   setWorktrees,
   setAgents,
   setStatuses,
+  setActiveSessionId,
+  setSessionAvailableCommands,
+  setAgentAvailableCommands,
 }: UseSnapshotCacheOptions) {
   useEffect(() => {
     if (missionVisualMode) {
@@ -56,6 +69,9 @@ export function useSnapshotCache({
     setWorktrees(snapshot.worktrees);
     setAgents(snapshot.agents);
     setStatuses(createSessionStatusMap(snapshot.sessions));
+    setActiveSessionId(snapshot.activeSessionId ?? null);
+    setSessionAvailableCommands(snapshot.sessionAvailableCommands);
+    setAgentAvailableCommands(snapshot.agentAvailableCommands);
   }, [activeProfileId, missionVisualMode]);
 
   useEffect(() => {
@@ -69,6 +85,19 @@ export function useSnapshotCache({
       sessions,
       worktrees,
       agents,
+      activeSessionId,
+      sessionAvailableCommands,
+      agentAvailableCommands,
     });
-  }, [activeProfileId, agents, pairingState, projects, sessions, worktrees]);
+  }, [
+    activeProfileId,
+    activeSessionId,
+    agentAvailableCommands,
+    agents,
+    pairingState,
+    projects,
+    sessionAvailableCommands,
+    sessions,
+    worktrees,
+  ]);
 }

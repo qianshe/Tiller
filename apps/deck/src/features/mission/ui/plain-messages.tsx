@@ -260,15 +260,37 @@ function renderPlainMessageContent(
   collapsed: boolean,
   streaming = false,
 ) {
-  return message.role === "user" || streaming ? (
-    <div
-      className={
-        collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
-      }
-    >
-      {message.text}
-    </div>
-  ) : (
+  if (message.role === "user") {
+    return (
+      <div
+        className={
+          collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
+        }
+      >
+        {message.text}
+      </div>
+    );
+  }
+
+  if (streaming) {
+    const segmented = splitStreamingMarkdown(message.text);
+    if (!segmented) {
+      return <PlainStreamingText text={message.text} />;
+    }
+    return (
+      <>
+        <div
+          className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
+          data-mission-swipe-lock="true"
+        >
+          <MarkdownMessage text={segmented.markdown} />
+        </div>
+        {segmented.tail ? <PlainStreamingText text={segmented.tail} tail /> : null}
+      </>
+    );
+  }
+
+  return (
     <div
       className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
       data-mission-swipe-lock="true"
@@ -277,6 +299,80 @@ function renderPlainMessageContent(
     </div>
   );
 }
+
+type PlainStreamingTextProps = {
+  tail?: boolean;
+  text: string;
+};
+
+function PlainStreamingText({ tail = false, text }: PlainStreamingTextProps) {
+  return (
+    <div
+      className={cn(
+        "plain-message-text whitespace-pre-wrap",
+        tail && "plain-message-streaming-tail",
+      )}
+    >
+      {text}
+    </div>
+  );
+}
+
+type StreamingMarkdownSegment = {
+  markdown: string;
+  tail: string;
+};
+
+function splitStreamingMarkdown(text: string): StreamingMarkdownSegment | null {
+  const splitIndex = findStreamingMarkdownSplitIndex(text);
+  if (splitIndex === null) {
+    return null;
+  }
+  const markdown = text.slice(0, splitIndex).trimEnd();
+  if (!markdown.trim()) {
+    return null;
+  }
+  return {
+    markdown,
+    tail: text.slice(splitIndex).replace(/^\r?\n/u, ""),
+  };
+}
+
+function findStreamingMarkdownSplitIndex(text: string) {
+  let splitIndex: number | null = null;
+  let fence: MarkdownFenceState | null = null;
+  const linePattern = /.*(?:\r?\n|$)/gu;
+  let match: RegExpExecArray | null;
+  while ((match = linePattern.exec(text))) {
+    const line = match[0];
+    if (!line) {
+      break;
+    }
+    const lineEnd = match.index + line.length;
+    const marker = /^[ \t]*(`{3,}|~{3,})/u.exec(line)?.[1];
+    if (marker) {
+      const markerKind = marker[0] as "`" | "~";
+      if (fence && fence.marker === markerKind && marker.length >= fence.length) {
+        fence = null;
+        splitIndex = lineEnd;
+      } else if (!fence) {
+        fence = { marker: markerKind, length: marker.length };
+      }
+    }
+    if (!fence && /^\s*$/u.test(line) && match.index > 0) {
+      splitIndex = lineEnd;
+    }
+    if (lineEnd >= text.length) {
+      break;
+    }
+  }
+  return splitIndex;
+}
+
+type MarkdownFenceState = {
+  marker: "`" | "~";
+  length: number;
+};
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   return coalesceDisplayMessages(

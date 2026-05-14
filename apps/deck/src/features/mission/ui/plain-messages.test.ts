@@ -316,7 +316,7 @@ test("assistant non-structured messages keep markdown fallback", () => {
   assert.doesNotMatch(html, /structured-assistant-message/);
 });
 
-test("streaming assistant messages render as lightweight plain text", () => {
+test("streaming assistant messages keep incomplete markdown as lightweight plain text", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -343,6 +343,42 @@ test("streaming assistant messages render as lightweight plain text", () => {
   assert.match(html, /\| A \| B \|/);
   assert.doesNotMatch(html, /markdown-message/);
   assert.doesNotMatch(html, /<table/);
+});
+
+test("streaming assistant messages render completed markdown blocks before the active tail", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: [
+            "现在我已收集了足够的上下文。",
+            "",
+            "## Bug 根因分析",
+            "",
+            "概览：命令数据流",
+            "",
+            "slash 命令的数据流如下：",
+          ].join("\n"),
+          timestamp: "2026-05-12T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.match(html, /<h2 class="markdown-heading[^"]*">Bug 根因分析<\/h2>/);
+  assert.match(html, /plain-message-streaming-tail/);
+  assert.match(html, /slash 命令的数据流如下：/);
 });
 
 test("user messages render as plain text and keep the collapse affordance", () => {

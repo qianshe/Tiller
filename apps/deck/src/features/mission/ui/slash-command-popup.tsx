@@ -18,6 +18,12 @@ export function SlashCommandPopup({
       className="absolute bottom-full left-0 z-50 mb-2 grid w-[min(360px,calc(100vw-2rem))] max-h-80 overflow-y-auto rounded-xl border border-border-ghost bg-surface-elevated p-1.5 text-sm text-foreground shadow-ambient"
       role="listbox"
     >
+      {commands.length === 0 ? (
+        <div className="grid gap-1 rounded-lg px-3 py-2 text-muted-foreground">
+          <span className="font-semibold text-foreground">暂无可用命令</span>
+          <span className="text-xs">当前 ACP agent 未上报 slash commands。</span>
+        </div>
+      ) : null}
       {commands.map((cmd, index) => {
         const selected = index === selectedIndex;
         const description = cmd.description ?? cmd.input?.hint;

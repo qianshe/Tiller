@@ -63,6 +63,78 @@ const markdownComponents: Components = {
   img() {
     return null;
   },
+  h1({ children, className, node: _node, ...props }) {
+    return (
+      <h1
+        {...props}
+        className={[className, "markdown-heading my-3 text-xl font-semibold leading-tight text-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h1>
+    );
+  },
+  h2({ children, className, node: _node, ...props }) {
+    return (
+      <h2
+        {...props}
+        className={[className, "markdown-heading my-2 text-lg font-semibold leading-snug text-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h2>
+    );
+  },
+  h3({ children, className, node: _node, ...props }) {
+    return (
+      <h3
+        {...props}
+        className={[className, "markdown-heading my-2 text-base font-semibold leading-snug text-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h3>
+    );
+  },
+  h4({ children, className, node: _node, ...props }) {
+    return (
+      <h4
+        {...props}
+        className={[className, "markdown-heading my-2 text-sm font-semibold leading-snug text-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h4>
+    );
+  },
+  h5({ children, className, node: _node, ...props }) {
+    return (
+      <h5
+        {...props}
+        className={[className, "markdown-heading my-2 text-sm font-semibold leading-snug text-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h5>
+    );
+  },
+  h6({ children, className, node: _node, ...props }) {
+    return (
+      <h6
+        {...props}
+        className={[className, "markdown-heading my-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </h6>
+    );
+  },
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,

@@ -26,6 +26,20 @@ function normalizeSlashCommandName(name: string) {
   return name.replace(/^\/+/, "");
 }
 
+export function shouldShowSlashCommandPopup({
+  commandToken,
+  activeSessionAgentId,
+  suppressedFor,
+  prompt,
+}: {
+  commandToken: string | null;
+  activeSessionAgentId?: string | null;
+  suppressedFor: string | null;
+  prompt: string;
+}) {
+  return commandToken !== null && Boolean(activeSessionAgentId) && suppressedFor !== prompt;
+}
+
 /**
  * Handles slash command filtering, popup dismissal and keyboard selection.
  */
@@ -73,7 +87,12 @@ export function useSlashCommands({
     agentAvailableCommands,
   ]);
 
-  const popupOpen = filteredCommands.length > 0 && suppressedFor !== prompt;
+  const popupOpen = shouldShowSlashCommandPopup({
+    commandToken,
+    activeSessionAgentId,
+    suppressedFor,
+    prompt,
+  });
 
   useEffect(() => {
     if (commandToken === null || !activeSessionAgentId) {
@@ -141,12 +160,12 @@ export function useSlashCommands({
 
   function handlePromptKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (popupOpen) {
-      if (event.key === "ArrowDown") {
+      if (event.key === "ArrowDown" && filteredCommands.length > 0) {
         event.preventDefault();
         setSelectedIndex((index) => (index + 1) % filteredCommands.length);
         return;
       }
-      if (event.key === "ArrowUp") {
+      if (event.key === "ArrowUp" && filteredCommands.length > 0) {
         event.preventDefault();
         setSelectedIndex(
           (index) =>

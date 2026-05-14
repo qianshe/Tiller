@@ -23,11 +23,33 @@ test("snapshot cache restores the last known project/session view", () => {
     profileId: "local-helm",
     cachedAt: "2026-04-27T10:00:00.000Z",
     projects: [{ id: "project-1", name: "Tiller", helmId: "helm-1", worktrees: [] }],
-    sessions: [],
+    sessions: [
+      {
+        id: "session-1",
+        projectId: "project-1",
+        projectName: "Tiller",
+        helmId: "helm-1",
+        cwd: "D:/repo",
+        worktreeName: "main",
+        agentId: "codex",
+        agentName: "Codex",
+        status: "idle",
+        createdAt: "2026-04-27T10:00:00.000Z",
+        updatedAt: "2026-04-27T10:00:00.000Z",
+        messageCount: 0,
+      },
+    ],
     worktrees: [],
     agents: [],
+    activeSessionId: "session-1",
+    sessionAvailableCommands: { "session-1": [{ name: "review" }] },
+    agentAvailableCommands: { codex: [{ name: "review" }] },
   });
-  assert.equal(readDeckSnapshot(storage, "local-helm")?.projects[0]?.name, "Tiller");
+  const snapshot = readDeckSnapshot(storage, "local-helm");
+  assert.equal(snapshot?.projects[0]?.name, "Tiller");
+  assert.equal(snapshot?.activeSessionId, "session-1");
+  assert.deepEqual(snapshot?.sessionAvailableCommands["session-1"], [{ name: "review" }]);
+  assert.deepEqual(snapshot?.agentAvailableCommands.codex, [{ name: "review" }]);
 });
 
 test("snapshot cache returns null for invalid JSON", () => {

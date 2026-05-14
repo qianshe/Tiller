@@ -32,14 +32,23 @@ function createContext(overrides: Record<string, unknown> = {}) {
   return { context, dispatched };
 }
 
-test("createSession does not send an initial prompt without a ready draft", () => {
+test("createSession falls back to session/new when an initial prompt has no ready draft", () => {
   const { context, dispatched } = createContext();
 
-  const created = createSession("hello", undefined, context);
+  const created = createSession("hello", [{ type: "text", text: "hello" }], context);
 
-  assert.equal(created, false);
-  assert.deepEqual(dispatched, []);
-  assert.equal(context.pendingPromptRef.current, null);
+  assert.equal(created, true);
+  assert.equal(dispatched[0]?.method, "session/new");
+  assert.deepEqual(dispatched[0]?.params, {
+    projectId: "project-1",
+    cwd: "D:/repo",
+    agentId: "codex",
+    agentMode: undefined,
+    model: undefined,
+    reasoningEffort: "medium",
+  });
+  assert.equal(context.pendingPromptRef.current, "hello");
+  assert.deepEqual(context.pendingPromptContentRef.current, [{ type: "text", text: "hello" }]);
 });
 
 test("createSession sends an initial prompt through a ready draft", () => {
