@@ -422,6 +422,7 @@ export function MissionWorktree(props: any) {
       });
     }
 
+    const overviewConnectCwd = selectedCwd ?? activeSession?.cwd;
     for (const agent of agents as any[]) {
       const hasConnection = items.some((item) => item.agentId === agent.id);
       if (hasConnection) {
@@ -431,12 +432,12 @@ export function MissionWorktree(props: any) {
         id: `acp:${agent.id ?? agent.name ?? "acp"}`,
         agentId: agent.id,
         projectId: selectedProjectId ?? undefined,
-        cwd: selectedCwd ?? undefined,
+        cwd: overviewConnectCwd ?? undefined,
         label: agent.name ?? agent.id ?? "ACP",
         meta: "暂无连接",
         status: "未连接",
         runtimeSessionId: "暂无连接",
-        canConnect: Boolean(agent.id && selectedCwd),
+        canConnect: Boolean(agent.id && overviewConnectCwd),
         canReconnect: false,
       });
     }

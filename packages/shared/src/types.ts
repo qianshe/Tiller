@@ -222,6 +222,8 @@ export type AvailableCommand = {
   input?: { hint?: string };
   kind?: AvailableCommandKind;
   rawKind?: string;
+  source?: string;
+  scope?: string;
 };
 
 export type SessionConfigSupport = {

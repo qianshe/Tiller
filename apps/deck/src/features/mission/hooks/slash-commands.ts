@@ -26,6 +26,16 @@ function normalizeSlashCommandName(name: string) {
   return name.replace(/^\/+/, "");
 }
 
+export function formatSlashCommandLabel(command: Pick<AvailableCommand, "name" | "scope">) {
+  const name = normalizeSlashCommandName(command.name);
+  const scope = command.scope?.trim();
+  return scope ? `/${scope}:${name}` : `/${name}`;
+}
+
+export function formatSlashCommandInvocation(command: Pick<AvailableCommand, "name" | "scope">) {
+  return `${formatSlashCommandLabel(command)} `;
+}
+
 export function shouldShowSlashCommandPopup({
   commandToken,
   activeSessionAgentId,
@@ -78,7 +88,9 @@ export function useSlashCommands({
     if (!commandToken) {
       return commands;
     }
-    return commands.filter((cmd) => normalizeSlashCommandName(cmd.name).toLowerCase().startsWith(commandToken));
+    return commands.filter((cmd) =>
+      formatSlashCommandLabel(cmd).slice(1).toLowerCase().startsWith(commandToken),
+    );
   }, [
     commandToken,
     activeSessionId,
@@ -147,7 +159,7 @@ export function useSlashCommands({
   }, [popupOpen, prompt]);
 
   function applyCommand(cmd: AvailableCommand) {
-    setPrompt(`/${normalizeSlashCommandName(cmd.name)} `);
+    setPrompt(formatSlashCommandInvocation(cmd));
     setSuppressedFor(null);
     promptRef.current?.focus();
   }

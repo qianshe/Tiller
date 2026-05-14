@@ -17,3 +17,26 @@ test("slash command popup shows an empty state when provider reports no commands
   assert.match(html, /暂无可用命令/);
   assert.match(html, /未上报 slash commands/);
 });
+
+test("slash command popup renders scope and argument hints", () => {
+  const html = renderToStaticMarkup(
+    createElement(SlashCommandPopup, {
+      commands: [
+        {
+          name: "frontend-design",
+          kind: "skill",
+          source: "global",
+          scope: "skills",
+          input: { hint: "<brief>" },
+        },
+      ],
+      selectedIndex: 0,
+      onSelect: () => undefined,
+      onHover: () => undefined,
+    }),
+  );
+
+  assert.match(html, /\/skills:frontend-design/);
+  assert.match(html, /global/);
+  assert.match(html, /&lt;brief&gt;/);
+});

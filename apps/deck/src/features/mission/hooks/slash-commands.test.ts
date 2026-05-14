@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldShowSlashCommandPopup } from "./slash-commands";
+import { formatSlashCommandInvocation, shouldShowSlashCommandPopup } from "./slash-commands";
 
 test("slash popup opens for slash input even when command list is empty", () => {
   assert.equal(
@@ -23,5 +23,12 @@ test("slash popup stays closed when current slash prompt was suppressed", () => 
       prompt: "/",
     }),
     false,
+  );
+});
+
+test("formatSlashCommandInvocation includes scope for scoped commands", () => {
+  assert.equal(
+    formatSlashCommandInvocation({ name: "frontend-design", scope: "skills" }),
+    "/skills:frontend-design ",
   );
 });
