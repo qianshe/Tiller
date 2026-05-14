@@ -627,6 +627,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           agent: params.agent,
           runtime,
           attach: (sessionId: string) => {
+            runtime.attachTillerSession(sessionId);
             attachedSessionId = sessionId;
           },
           expiresTimer,

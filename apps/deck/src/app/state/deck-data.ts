@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  PermissionRequest,
   ProjectSummary,
   SessionStatus,
   SessionSummary,
@@ -62,9 +64,23 @@ export function useDeckData(missionVisualFixture: any) {
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
-  const storedPermissionRequests = useDeckStore((state) => state.permissionRequests);
-  const permissionRequests = (missionVisualFixture?.permissionRequests ?? storedPermissionRequests) as Record<string, any>;
-  const setPermissionRequests = useDeckStore((state) => state.setPermissionRequests);
+  const approvalItemsById = useDeckStore((state) => state.approvalItemsById);
+  const pendingApprovalIdsBySession = useDeckStore(
+    (state) => state.pendingApprovalIdsBySession,
+  );
+  const derivedPermissionRequests = useMemo<Record<string, PermissionRequest | null>>(() => {
+    const result: Record<string, PermissionRequest | null> = {};
+    for (const [sessionId, ids] of Object.entries(pendingApprovalIdsBySession)) {
+      const headId = ids?.[0];
+      if (!headId) continue;
+      const head = approvalItemsById[headId];
+      if (head) {
+        result[sessionId] = head.request;
+      }
+    }
+    return result;
+  }, [approvalItemsById, pendingApprovalIdsBySession]);
+  const permissionRequests = (missionVisualFixture?.permissionRequests ?? derivedPermissionRequests) as Record<string, any>;
 
   const storedOutputs = useDeckStore((state) => state.outputs);
   const outputs = (missionVisualFixture?.outputs ?? storedOutputs) as Record<string, CommandChunk[]>;
@@ -149,7 +165,8 @@ export function useDeckData(missionVisualFixture: any) {
     messageHistoryState,
     setMessageHistoryState,
     permissionRequests,
-    setPermissionRequests,
+    approvalItemsById,
+    pendingApprovalIdsBySession,
     outputs,
     setOutputs,
     toolCalls,

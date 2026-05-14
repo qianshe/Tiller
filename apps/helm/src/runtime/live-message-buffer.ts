@@ -14,7 +14,7 @@ export function createLiveMessageBuffer() {
 
     const next = {
       ...message,
-      text: `${current.text}${message.text}`,
+      text: mergeLiveMessageText(current.text, message.text),
       timestamp: message.timestamp,
     };
     messages.set(sessionId, next);
@@ -29,6 +29,16 @@ export function createLiveMessageBuffer() {
     const message = peek(sessionId);
     messages.delete(sessionId);
     return message;
+  }
+
+  function mergeLiveMessageText(currentText: string, incomingText: string) {
+    if (currentText === incomingText || currentText.endsWith(incomingText)) {
+      return currentText;
+    }
+    if (incomingText.startsWith(currentText)) {
+      return incomingText;
+    }
+    return `${currentText}${incomingText}`;
   }
 
   return { append, peek, finalize };

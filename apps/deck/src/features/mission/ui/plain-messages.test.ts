@@ -6,6 +6,7 @@ import type { AgentMessage } from "@tiller/shared";
 import {
   DEFAULT_VISIBLE_MESSAGE_LIMIT,
   PlainMessages,
+  resolveLoadMoreMessagesLabel,
   resolvePlainMessageRenderItems,
   resolveVisiblePlainMessages,
 } from "./plain-messages.js";
@@ -51,6 +52,19 @@ test("plain message timeline can reveal older loaded messages", () => {
       (item) => item.id,
     ),
     messages.slice(-40).map((item) => item.id),
+  );
+});
+
+test("plain message load-more label reports visible and loaded counts", () => {
+  assert.equal(
+    resolveLoadMoreMessagesLabel({
+      hasMoreHistory: true,
+      loading: false,
+      pageSize: DEFAULT_VISIBLE_MESSAGE_LIMIT,
+      totalLoaded: 45,
+      visible: 20,
+    }),
+    "查看更多（已显示 20/45，继续加载每次最多 20 条）",
   );
 });
 

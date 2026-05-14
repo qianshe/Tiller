@@ -325,6 +325,7 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     subscribeSessionTopic: sessionTopics.subscribe,
     unsubscribeSessionTopic: sessionTopics.unsubscribe,
     removeSocketSessionTopics: sessionTopics.removeSocket,
+    approvalIndex: permissionIndex,
     logInfo,
     logDebug,
     logWarn,

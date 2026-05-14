@@ -31,6 +31,7 @@ type AcpConnectionState = {
   provider: AcpAgentProvider;
   worktree: WorktreeSummary;
   launchCwd: string;
+  sessionConfig?: AcpConnectionOptions["sessionConfig"];
   child: ChildProcess;
   agent: acp.ClientSideConnection;
   logFile: string;
@@ -62,6 +63,7 @@ export type AcpSessionRuntimeHandle = {
     options: AcpSessionConfigOption[];
   }>;
   respondPermission: (requestId: string, decision: PermissionDecision) => void;
+  attachTillerSession: (sessionId: string) => void;
   deleteSession: () => Promise<ProviderCleanupResult>;
   close: () => Promise<ProviderCleanupResult>;
   cancel: () => void;
@@ -111,6 +113,7 @@ export class AcpConnection {
   static async open(options: AcpConnectionOptions): Promise<AcpConnection> {
     const launchConfig = resolveAcpLaunchConfig(options.provider, {
       fallbackCwd: process.cwd(),
+      sessionConfig: options.sessionConfig,
     });
     const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...launchConfig.env };
@@ -176,6 +179,7 @@ export class AcpConnection {
       provider: options.provider,
       worktree: options.worktree,
       launchCwd: launchConfig.cwd,
+      sessionConfig: options.sessionConfig,
       child,
       agent,
       logFile,
@@ -290,22 +294,33 @@ export class AcpConnection {
 
   private createRuntimeHandle(tillerSessionId: string, entry: AcpSessionEntry): AcpSessionRuntimeHandle {
     const state = () => resolveCombinedSessionConfigState(entry.configOptions, entry.modelState);
+    let activeTillerSessionId = tillerSessionId;
     return {
       runtimeSessionId: entry.runtimeSessionId,
       sessionCapabilities: this.state.capabilities,
       sessionConfigState: state(),
       sessionConfigOptions: entry.configOptions,
       sessionModelState: entry.modelState,
-      prompt: (text, content) => this.promptSession(tillerSessionId, text, content),
-      configure: (nextConfig) => this.configureSession(tillerSessionId, nextConfig),
+      prompt: (text, content) => this.promptSession(activeTillerSessionId, text, content),
+      configure: (nextConfig) => this.configureSession(activeTillerSessionId, nextConfig),
       respondPermission: (requestId, decision) => this.respondPermission(requestId, decision),
+      attachTillerSession: (sessionId) => {
+        if (sessionId === activeTillerSessionId) {
+          return;
+        }
+        if (this.sessions.get(activeTillerSessionId) === entry) {
+          this.sessions.delete(activeTillerSessionId);
+        }
+        this.sessions.set(sessionId, entry);
+        activeTillerSessionId = sessionId;
+      },
       deleteSession: async () => ({
         kind: "unsupported",
         providerId: this.state.provider.id,
         message: `${this.state.provider.name} does not advertise ACP session/delete in shared connection runtime yet.`,
       }),
-      close: () => this.closeSession(tillerSessionId),
-      cancel: () => this.cancelSession(tillerSessionId),
+      close: () => this.closeSession(activeTillerSessionId),
+      cancel: () => this.cancelSession(activeTillerSessionId),
       supportsPermissionResponses: true,
     };
   }
@@ -754,6 +769,7 @@ export class AcpConnection {
       key: resolveAcpConnectionKey({
         provider: this.state.provider,
         worktree: this.state.worktree,
+        sessionConfig: this.state.sessionConfig,
       }),
       providerId: this.state.provider.id,
       cwd: this.state.worktree.path,

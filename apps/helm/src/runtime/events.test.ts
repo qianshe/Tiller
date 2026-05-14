@@ -744,5 +744,33 @@ test("runtime available-commands events persist commands on the session summary"
   );
 });
 
+test("permission-request emits approval/created globally and skips session-topic permission_request", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  (context as any).approvalIndex = (context as any).permissionIndex;
+
+  const request = {
+    id: "approval-1",
+    command: "Run shell command :: {}",
+    reason: "需要审核",
+    cwd: "D:/repo",
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    { type: "permission-request", request } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const broadcastMethods = capture.broadcasts.map((item: any) => item.method);
+  const detailMethods = capture.detailBroadcasts.map((item: any) => item.method);
+
+  assert.equal(broadcastMethods.includes("approval/created"), true);
+  assert.equal(detailMethods.some((method) => method === "session/update"), false);
+  assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
+});
+
+
 
 

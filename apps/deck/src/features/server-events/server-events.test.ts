@@ -10,6 +10,7 @@ import type {
 } from "@tiller/shared";
 import { useDeckStore } from "../../store";
 import { applyActivityUpdate } from "./activity-events.js";
+import { applyApprovalResolved } from "./approval-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
 import { applySessionResult, applySessionUpdate } from "./session-events.js";
@@ -46,7 +47,10 @@ function resetStore() {
     outputs: {},
     toolCalls: {},
     diffs: {},
-    permissionRequests: {},
+    approvalItemsById: {},
+    pendingApprovalIds: [],
+    pendingApprovalIdsBySession: {},
+    approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
   });
@@ -88,37 +92,27 @@ test("activity RPC notifications append assistant messages without changing sess
   );
 });
 
-test("permission resolved notifications clear pending permission requests", () => {
+test("approval resolved notifications drop pending approvals from inventory", () => {
   resetStore();
-  useDeckStore.setState({
-    permissionRequests: {
-      s1: {
-        id: "permission-1",
-        command: "Approve MCP tool call :: {}",
-        reason: "等待审核",
-        cwd: "D:/repo",
-      },
-    },
+  useDeckStore.getState().upsertApproval({
+    sessionId: "s1",
+    request: {
+      id: "approval-1",
+      command: "Approve MCP tool call :: {}",
+      reason: "等待审核",
+      cwd: "D:/repo",
+    } as any,
   });
 
-  const handled = applyActivityUpdate(
-    {
-      sessionId: "s1",
-      update: {
-        kind: "permission_resolved",
-        permissionRequestId: "permission-1",
-        decision: "allow",
-      },
-    },
-    {
-      toolCallsRef: { current: {} },
-      mergeSessionToolCalls: () => undefined,
-      appendSystemMessage: () => undefined,
-    },
-  );
+  const handled = applyApprovalResolved({
+    sessionId: "s1",
+    approvalRequestId: "approval-1",
+    decision: "allow" as any,
+  });
 
   assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().permissionRequests.s1, null);
+  assert.equal(useDeckStore.getState().approvalItemsById["approval-1"], undefined);
+  assert.deepEqual(useDeckStore.getState().pendingApprovalIds, []);
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {
@@ -667,18 +661,18 @@ test("failed session resume marks stale available metadata as unavailable", () =
   );
 });
 
-test("permission list results hydrate pending permission requests", () => {
+test("approval list results hydrate pending approval inventory", () => {
   resetStore();
   const request: PermissionRequest = {
-    id: "permission-1",
+    id: "approval-1",
     command: "Approve MCP tool call :: {}",
     reason: "需要审核工具调用",
     cwd: "D:/repo",
   };
 
   const handled = applySessionResult(
-    "permission/list_pending",
-    { permissions: [{ sessionId: "s1", request }] },
+    "approval/list_pending",
+    { approvals: [{ sessionId: "s1", request }] },
     "helm-1",
     true,
     {
@@ -700,27 +694,25 @@ test("permission list results hydrate pending permission requests", () => {
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().permissionRequests, {
-    s1: request,
-  });
+  assert.deepEqual(useDeckStore.getState().pendingApprovalIds, ["approval-1"]);
+  assert.equal(useDeckStore.getState().approvalItemsById["approval-1"]?.request.id, "approval-1");
 });
 
-test("empty permission list clears stale pending permission requests", () => {
+test("empty approval list clears stale pending approval inventory", () => {
   resetStore();
-  useDeckStore.setState({
-    permissionRequests: {
-      s1: {
-        id: "permission-1",
-        command: "Approve MCP tool call :: {}",
-        reason: "已过期的审核请求",
-        cwd: "D:/repo",
-      },
-    },
+  useDeckStore.getState().upsertApproval({
+    sessionId: "s1",
+    request: {
+      id: "approval-stale",
+      command: "Approve MCP tool call :: {}",
+      reason: "已过期的审核请求",
+      cwd: "D:/repo",
+    } as any,
   });
 
   const handled = applySessionResult(
-    "permission/list_pending",
-    { permissions: [] },
+    "approval/list_pending",
+    { approvals: [] },
     "helm-1",
     true,
     {
@@ -742,5 +734,6 @@ test("empty permission list clears stale pending permission requests", () => {
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().permissionRequests, {});
+  assert.deepEqual(useDeckStore.getState().pendingApprovalIds, []);
+  assert.deepEqual(useDeckStore.getState().approvalItemsById, {});
 });

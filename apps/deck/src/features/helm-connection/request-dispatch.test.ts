@@ -151,6 +151,22 @@ test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async 
   assert.equal(trace.lastRequestType, "session/cancel");
 });
 
+test("requestInitialSync rehydrates approvals after reconnect", async () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method, params) => {
+      calls.push({ method, params });
+    },
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.equal(
+    calls.some((call) => call.method === "approval/list_pending"),
+    true,
+  );
+});
+
 test("requestInitialSync dispatches initial JSON-RPC methods in order", async () => {
   const methods: Array<{ method: string; params: unknown }> = [];
   const states: unknown[] = [];
@@ -169,7 +185,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "agent/list", params: {} },
     { method: "agent/connections", params: {} },
     { method: "session/list", params: { limit: 25 } },
-    { method: "permission/list_pending", params: {} },
+    { method: "approval/list_pending", params: {} },
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);

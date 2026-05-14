@@ -13,7 +13,7 @@ export type AcpConnectionKeyInput = {
   };
 };
 
-export function resolveAcpConnectionKey({ provider, worktree }: AcpConnectionKeyInput): AcpConnectionKey {
+export function resolveAcpConnectionKey({ provider, worktree, sessionConfig }: AcpConnectionKeyInput): AcpConnectionKey {
   const payload = stableStringify({
     providerId: provider.id,
     cwd: worktree.path,
@@ -22,8 +22,20 @@ export function resolveAcpConnectionKey({ provider, worktree }: AcpConnectionKey
     providerCwd: provider.cwd ?? null,
     env: provider.env ?? {},
     mcpServers: provider.mcpServers ?? [],
+    sessionConfig: normalizeSessionConfig(sessionConfig),
   });
   return `acp:${provider.id}:${hashKeyPayload(payload)}`;
+}
+
+function normalizeSessionConfig(sessionConfig: AcpConnectionKeyInput["sessionConfig"]) {
+  if (!sessionConfig?.agentMode && !sessionConfig?.model && !sessionConfig?.reasoningEffort) {
+    return null;
+  }
+  return {
+    agentMode: sessionConfig.agentMode ?? null,
+    model: sessionConfig.model ?? null,
+    reasoningEffort: sessionConfig.reasoningEffort ?? null,
+  };
 }
 
 function hashKeyPayload(payload: string) {

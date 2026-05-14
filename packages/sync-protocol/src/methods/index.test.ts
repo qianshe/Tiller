@@ -41,6 +41,8 @@ const expectedRequests = [
   "session/cleanup",
   "permission/list_pending",
   "permission/respond",
+  "approval/list_pending",
+  "approval/respond",
   "device/list",
   "device/revoke",
   "device/pair",
@@ -56,10 +58,15 @@ test("METHODS contains every request and notification method", () => {
   assert.equal(METHODS["session/cancel"].kind, "notification");
   assert.equal(METHODS["session/update"].kind, "notification");
   assert.equal(METHODS["error/raised"].kind, "notification");
+  assert.equal(METHODS["approval/created"].kind, "notification");
+  assert.equal(METHODS["approval/resolved"].kind, "notification");
 });
 
 test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_REQUEST_METHODS], expectedRequests);
   assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
-  assert.deepEqual([...SERVER_NOTIFICATION_METHODS], ["session/update", "error/raised"]);
+  assert.deepEqual(
+    [...SERVER_NOTIFICATION_METHODS],
+    ["session/update", "error/raised", "approval/created", "approval/resolved"],
+  );
 });

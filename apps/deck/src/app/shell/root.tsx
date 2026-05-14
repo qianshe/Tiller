@@ -36,6 +36,10 @@ import {
   useSessionTitles,
   useSlashCommands,
 } from "../../features/mission";
+import {
+  ApprovalToastStackContainer,
+  GlobalApprovalPanelContainer,
+} from "../../features/approvals";
 import { useCodeActions } from "../../features/pairing";
 import {
   useDeckPreferenceActions,
@@ -487,6 +491,17 @@ export function App() {
             controllers.cleanupSession(sessionId);
             runtimeState.setPendingSessionCleanup(null);
           }}
+        />
+        <GlobalApprovalPanelContainer
+          onOpenSession={(sessionId) => deckData.setActiveSessionId(sessionId)}
+          onRespond={(approvalRequestId, decision) =>
+            controllers.respondToPermission(approvalRequestId, decision)
+          }
+        />
+        <ApprovalToastStackContainer
+          onRespond={(approvalRequestId, decision) =>
+            controllers.respondToPermission(approvalRequestId, decision)
+          }
         />
       </main>
     </div>

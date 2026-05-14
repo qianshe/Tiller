@@ -23,6 +23,7 @@ type MissionPermissionDrawerProps = {
   copy: MissionPermissionDrawerCopy;
   showWorktree: boolean;
   fallbackToolTitle?: string | null;
+  resolving?: boolean;
   onRespond: (decision: PermissionDecision) => void;
 };
 
@@ -206,6 +207,7 @@ export function MissionPermissionDrawer({
   copy,
   showWorktree,
   fallbackToolTitle,
+  resolving = false,
   onRespond,
 }: MissionPermissionDrawerProps) {
   const commandDisplay = resolvePermissionCommandDisplay(
@@ -269,9 +271,11 @@ export function MissionPermissionDrawer({
               className="min-h-8 min-w-[72px] px-3 py-1.5 shadow-none"
               type="button"
               key={`${option.decision}-${option.label}`}
+              disabled={resolving}
+              aria-busy={resolving || undefined}
               onClick={() => onRespond(option.decision)}
             >
-              {resolvePermissionActionLabel(option, copy)}
+              {resolving ? "处理中..." : resolvePermissionActionLabel(option, copy)}
             </Button>
           ))}
         </div>

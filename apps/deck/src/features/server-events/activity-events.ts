@@ -57,18 +57,6 @@ export function applyActivityUpdate(
       }
       return true;
     }
-    case "permission_request":
-      store.setPermissionRequests((current) => ({
-        ...current,
-        [sessionId]: update.permissionRequest as never,
-      }));
-      return true;
-    case "permission_resolved":
-      store.setPermissionRequests((current) => ({
-        ...current,
-        [sessionId]: null,
-      }));
-      return true;
     case "command_output": {
       const chunk = update.chunk as Parameters<typeof commandChunkToToolCall>[0];
       store.setOutputs((current) => ({

@@ -32,6 +32,10 @@ import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
+import * as approvalListPending from "./approval/list-pending";
+import * as approvalRespond from "./approval/respond";
+import * as approvalCreated from "./approval/created";
+import * as approvalResolved from "./approval/resolved";
 import * as deviceList from "./device/list";
 import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
@@ -80,6 +84,10 @@ const METHOD_DESCRIPTORS = {
   [sessionCleanup.method]: sessionCleanup.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
+  [approvalListPending.method]: approvalListPending.descriptor,
+  [approvalRespond.method]: approvalRespond.descriptor,
+  [approvalCreated.method]: approvalCreated.descriptor,
+  [approvalResolved.method]: approvalResolved.descriptor,
   [deviceList.method]: deviceList.descriptor,
   [deviceRevoke.method]: deviceRevoke.descriptor,
   [devicePair.method]: devicePair.descriptor,
@@ -129,6 +137,8 @@ export const CLIENT_REQUEST_METHODS = [
   sessionCleanup.method,
   permissionListPending.method,
   permissionRespond.method,
+  approvalListPending.method,
+  approvalRespond.method,
   deviceList.method,
   deviceRevoke.method,
   devicePair.method,
@@ -141,6 +151,8 @@ export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
 export const SERVER_NOTIFICATION_METHODS = [
   sessionUpdate.method,
   errorRaised.method,
+  approvalCreated.method,
+  approvalResolved.method,
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];

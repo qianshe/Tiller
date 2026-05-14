@@ -37,7 +37,6 @@ test("applySessionListSnapshot removes stale session state when daemon returns a
             },
           ],
         },
-        permissionRequests: { [stale.id]: null },
         outputs: {
           [stale.id]: [
             {
@@ -68,7 +67,6 @@ test("applySessionListSnapshot removes stale session state when daemon returns a
   assert.equal(next.activeSessionId, null);
   assert.deepEqual(next.maps.statuses, {});
   assert.deepEqual(next.maps.messages, {});
-  assert.deepEqual(next.maps.permissionRequests, {});
   assert.deepEqual(next.maps.outputs, {});
   assert.deepEqual(next.maps.diffs, {});
 });
@@ -99,7 +97,6 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
             },
           ],
         },
-        permissionRequests: { [stale.id]: null, [live.id]: null },
         outputs: {
           [stale.id]: [
             {
@@ -151,7 +148,6 @@ test("applySessionListSnapshot keeps live sessions and prunes only stale records
       },
     ],
   });
-  assert.deepEqual(next.maps.permissionRequests, { [live.id]: null });
   assert.deepEqual(next.maps.outputs, {
     [live.id]: [
       {

@@ -46,24 +46,6 @@ test("session/unsubscribe records a session topic removal", async () => {
   assert.deepEqual(result, { ok: true, message: "Unsubscribed from session s1." });
 });
 
-test("permission/list_pending returns active permission requests", async () => {
-  const request = {
-    id: "permission-1",
-    command: "Approve MCP tool call :: {}",
-    reason: "需要审核工具调用",
-    cwd: "D:/repo",
-  };
-  const result = await handleSessionRpcRequest("permission/list_pending", {}, {
-    permissionIndex: new Map([
-      ["permission-1", { sessionId: "s1", request }],
-    ]),
-  } as any);
-
-  assert.deepEqual(result, {
-    permissions: [{ sessionId: "s1", request }],
-  });
-});
-
 test("session RPC notification cancels active runtime and clears stale handle", async () => {
   let cancelled = false;
   const sessions = new Map([["s1", { runtime: { cancel: () => { cancelled = true; } } }]]);
@@ -182,7 +164,7 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       modelState: runtime.sessionModelState,
       configState: runtime.sessionConfigState,
       configOptions: [],
-      availableCommands: [],
+      availableCommands: [{ name: "review" }, { name: "compact" }],
     }),
     buildResumeInfo: () => ({ supported: false }),
     hydrateSessionSummary: (summary: any) => summary,
@@ -203,11 +185,15 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       record.summary = next;
       return next;
     },
-  } as any) as { session: { id: string; runtimeSessionId: string; model?: string }; stopReason: string };
+  } as any) as { session: any; stopReason: string };
 
   assert.equal(result.stopReason, "end_turn");
   assert.equal(result.session.runtimeSessionId, "runtime-draft");
   assert.equal(result.session.model, "gpt-5.5");
+  assert.deepEqual(result.session.availableCommands, [
+    { name: "review" },
+    { name: "compact" },
+  ]);
   assert.equal(attachedSessionId, result.session.id);
   assert.equal(prompted, "你好");
 });

@@ -86,6 +86,7 @@ export function renderMissionRoute(source: any) {
     loadOlderMessages,
     toggleExpandedMessage,
     pendingPermission,
+    pendingApprovals,
     technicalPanels,
     respondToPermission,
     worktreePickerRef,
@@ -244,6 +245,7 @@ export function renderMissionRoute(source: any) {
       loadOlderMessages={loadOlderMessages}
       toggleExpandedMessage={toggleExpandedMessage}
       pendingPermission={pendingPermission}
+      pendingApprovals={pendingApprovals}
       technicalPanels={technicalPanels}
       respondToPermission={respondToPermission}
       worktreePickerRef={worktreePickerRef}

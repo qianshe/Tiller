@@ -21,3 +21,39 @@ test("live message buffer appends chunks into one assistant message", () => {
   assert.deepEqual(buffer.finalize("s1")?.text, "hello world");
   assert.equal(buffer.peek("s1"), null);
 });
+
+test("live message buffer replaces cumulative assistant snapshots", () => {
+  const buffer = createLiveMessageBuffer();
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello",
+    timestamp: "2026-05-12T00:00:00.000Z",
+  });
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello world",
+    timestamp: "2026-05-12T00:00:01.000Z",
+  });
+
+  assert.equal(buffer.peek("s1")?.text, "hello world");
+});
+
+test("live message buffer ignores duplicate assistant snapshots", () => {
+  const buffer = createLiveMessageBuffer();
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello",
+    timestamp: "2026-05-12T00:00:00.000Z",
+  });
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello",
+    timestamp: "2026-05-12T00:00:01.000Z",
+  });
+
+  assert.equal(buffer.peek("s1")?.text, "hello");
+});

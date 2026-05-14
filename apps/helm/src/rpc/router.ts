@@ -1,5 +1,6 @@
 import { ErrorCode, rpcError, validateParams, validateResult } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../handlers/context";
+import { handleApprovalRpcRequest } from "../handlers/approvals/rpc";
 import { handleConfigRpcRequest } from "../handlers/config/rpc";
 import { handleDeviceRpcRequest } from "../handlers/devices-rpc";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "../handlers/sessions/rpc";
@@ -11,6 +12,7 @@ export async function handleHelmRpcRequest(
 ): Promise<unknown> {
   const params = validateParams(method, rawParams);
   const result =
+    (await handleApprovalRpcRequest(method, params, context)) ??
     (await handleConfigRpcRequest(method, params, context)) ??
     (await handleDeviceRpcRequest(method, params, context)) ??
     (await handleSessionRpcRequest(method, params, context));

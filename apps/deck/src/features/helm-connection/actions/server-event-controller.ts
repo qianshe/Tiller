@@ -12,6 +12,8 @@ import {
 } from "../../mission/facade";
 import {
   applyActivityUpdate,
+  applyApprovalCreated,
+  applyApprovalResolved,
   applyDeviceResult,
   applyErrorRaised,
   applyInventoryResult,
@@ -189,6 +191,14 @@ export function createServerEventController(source: any, helpers: any) {
   }
 
   function handleRpcNotification(method: string, params: unknown) {
+    if (method === "approval/created") {
+      applyApprovalCreated(params as any);
+      return;
+    }
+    if (method === "approval/resolved") {
+      applyApprovalResolved(params as any);
+      return;
+    }
     if (method === "session/update") {
       const handledBySession = applySessionUpdate(params as any, sessionContext());
       if (!handledBySession) {

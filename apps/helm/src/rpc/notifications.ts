@@ -28,7 +28,5 @@ function isSessionDetailUpdate(update: unknown): boolean {
   return kind === "agent_message"
     || kind === "tool_call"
     || kind === "command_output"
-    || kind === "diff_update"
-    || kind === "permission_request"
-    || kind === "permission_resolved";
+    || kind === "diff_update";
 }

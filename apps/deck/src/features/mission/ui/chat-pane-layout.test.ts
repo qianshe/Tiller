@@ -123,7 +123,7 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
   assert.match(worktreeSource, /canReconnect: !reconnectPending/);
   assert.match(worktreeSource, /canConnect: reconnectPending/);
   assert.match(worktreeSource, /agentOrder/);
-  assert.match(worktreeSource, /return items\.sort/);
+  assert.match(worktreeSource, /return dedupeRuntimeOverviewItems\(items\)\.sort/);
 });
 
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {

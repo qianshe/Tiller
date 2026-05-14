@@ -4,7 +4,6 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
-  PermissionRequest,
   SessionConfigOption,
   SessionStatus,
   SessionSummary,
@@ -16,6 +15,7 @@ import type {
   DebugTrace,
   PairingState,
 } from "../../store/facade";
+import { useDeckStore } from "../../store";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 import { DeckRpcClient } from "./rpc-client";
@@ -60,7 +60,6 @@ type ConnectToDaemonContext = RpcHandlers & {
   setSessions: StoreSetter<SessionSummary[]>;
   setStatuses: StoreSetter<Record<string, SessionStatus>>;
   setMessages: StoreSetter<Record<string, AgentMessage[]>>;
-  setPermissionRequests: StoreSetter<Record<string, PermissionRequest | null>>;
   setOutputs: StoreSetter<Record<string, CommandChunk[]>>;
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   setToolCalls: StoreSetter<Record<string, AgentToolCall[]>>;
@@ -213,7 +212,6 @@ export function connectToDaemon(
     setSessions,
     setStatuses,
     setMessages,
-    setPermissionRequests,
     setOutputs,
     toolCallsRef,
     setToolCalls,
@@ -267,7 +265,7 @@ export function connectToDaemon(
     setSessions([]);
     setStatuses({});
     setMessages({});
-    setPermissionRequests({});
+    useDeckStore.getState().replacePendingApprovals([]);
     setOutputs({});
     toolCallsRef.current = {};
     setToolCalls({});

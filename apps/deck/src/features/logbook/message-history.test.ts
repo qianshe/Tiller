@@ -94,7 +94,7 @@ test("mergeAgentMessages replaces provider paragraph chunks with a later combine
 
   assert.deepEqual(
     merged.map((message) => [message.id, message.text]),
-    [["provider-message-1", "你好！我可以帮你："]],
+    [["provider-message-1#p0", "你好！\n\n我可以帮你："]],
   );
 });
 
@@ -124,8 +124,46 @@ test("mergeAgentMessages merges provider paragraph chunks from the same ACP stre
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0]?.text, "你好！我可以帮你：- 实现功能");
+  assert.equal(merged[0]?.text, "你好！\n\n我可以帮你：\n\n- 实现功能");
   assert.equal(merged[0]?.id, "provider-message-1#p0");
+});
+
+test("mergeAgentMessages preserves markdown block boundaries between provider paragraph chunks", () => {
+  const merged = [
+    {
+      id: "provider-message-1#p0",
+      role: "assistant",
+      text: "下面给出检查报告。",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+    {
+      id: "provider-message-1#p1",
+      role: "assistant",
+      text: "---",
+      timestamp: "2026-05-07T08:00:01.000Z",
+    },
+    {
+      id: "provider-message-1#p2",
+      role: "assistant",
+      text: "## 结论",
+      timestamp: "2026-05-07T08:00:02.000Z",
+    },
+    {
+      id: "provider-message-1#p3",
+      role: "assistant",
+      text: "| 项目 | 内容 |\n|---|---|\n| 状态 | 正常 |",
+      timestamp: "2026-05-07T08:00:03.000Z",
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message as AgentMessage),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(
+    merged[0]?.text,
+    "下面给出检查报告。\n\n---\n\n## 结论\n\n| 项目 | 内容 |\n|---|---|\n| 状态 | 正常 |",
+  );
 });
 
 test("mergeAgentMessages splits provider paragraph chunks at tool boundaries", () => {

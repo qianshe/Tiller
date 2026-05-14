@@ -42,10 +42,13 @@ type MissionChatPaneProps = {
   onToggleExpandedMessage: (messageId: string) => void;
   activityLoading: MissionToolActivity | null;
   pendingToolPresent: boolean;
-  pendingPermission: PermissionRequest | null;
+  pendingApprovals: ReadonlyArray<{
+    request: PermissionRequest;
+    resolving: boolean;
+  }>;
   pendingToolTitle: string | null;
   showPermissionWorktree: boolean;
-  onRespondToPermission: (decision: PermissionDecision) => void;
+  onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   children: ReactNode;
 };
 
@@ -68,7 +71,7 @@ export function MissionChatPane({
   onToggleExpandedMessage,
   activityLoading,
   pendingToolPresent,
-  pendingPermission,
+  pendingApprovals,
   pendingToolTitle,
   showPermissionWorktree,
   onRespondToPermission,
@@ -116,14 +119,20 @@ export function MissionChatPane({
           </>
         ) : null}{" "}
       </div>{" "}
-      {activeSession && pendingPermission ? (
-        <MissionPermissionDrawer
-          request={pendingPermission}
-          copy={copy}
-          showWorktree={showPermissionWorktree}
-          fallbackToolTitle={pendingToolTitle}
-          onRespond={onRespondToPermission}
-        />
+      {activeSession && pendingApprovals.length > 0 ? (
+        <div className="mission-approval-stack grid gap-2">
+          {pendingApprovals.map((approval) => (
+            <MissionPermissionDrawer
+              key={approval.request.id}
+              request={approval.request}
+              copy={copy}
+              showWorktree={showPermissionWorktree}
+              fallbackToolTitle={pendingToolTitle}
+              resolving={approval.resolving}
+              onRespond={(decision) => onRespondToPermission(approval.request.id, decision)}
+            />
+          ))}
+        </div>
       ) : null}
       {children}
     </div>

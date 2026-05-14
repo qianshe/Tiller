@@ -3,6 +3,7 @@ import { devtools, persist } from "zustand/middleware";
 import { createDeckStorePersistOptions } from "./middleware";
 import { createActivitiesSlice, type ActivitiesSlice } from "./slices/activities-slice";
 import { createAgentsSlice, type AgentsSlice } from "./slices/agents-slice";
+import { createApprovalsSlice, type ApprovalsSlice } from "./slices/approvals-slice";
 import {
   createConnectionSlice,
   type ConnectionSlice,
@@ -13,7 +14,6 @@ import {
   createPairingSlice,
   type PairingSlice,
 } from "./slices/pairing-slice";
-import { createPermissionsSlice, type PermissionsSlice } from "./slices/permissions-slice";
 import {
   createPreferencesSlice,
   type PreferencesSlice,
@@ -29,11 +29,11 @@ import {
 
 export type DeckStore = ActivitiesSlice &
   AgentsSlice &
+  ApprovalsSlice &
   ConnectionSlice &
   HelmsSlice &
   MessagesSlice &
   PairingSlice &
-  PermissionsSlice &
   PreferencesSlice &
   ProjectsSlice &
   SessionsSlice;
@@ -44,11 +44,11 @@ export const useDeckStore = create<DeckStore>()(
       (...args) => ({
         ...createActivitiesSlice(...args),
         ...createAgentsSlice(...args),
+        ...createApprovalsSlice(...args),
         ...createConnectionSlice(...args),
         ...createHelmsSlice(...args),
         ...createMessagesSlice(...args),
         ...createPairingSlice(...args),
-        ...createPermissionsSlice(...args),
         ...createPreferencesSlice(...args),
         ...createProjectsSlice(...args),
         ...createSessionsSlice(...args),

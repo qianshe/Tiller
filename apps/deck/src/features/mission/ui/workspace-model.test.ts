@@ -142,3 +142,14 @@ test("worktree model prefers matching cwd worktree over stale session worktree n
 
   assert.equal(model.overviewWorktreeName, "codex/acp-session-performance-optimization");
 });
+
+test("worktree model tolerates missing session-scoped maps", () => {
+  assert.doesNotThrow(() =>
+    buildMissionWorktreeModel(baseInput({
+      diffs: undefined,
+      outputs: undefined,
+      toolCalls: undefined,
+      statuses: undefined,
+    })),
+  );
+});
