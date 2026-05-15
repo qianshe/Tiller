@@ -118,7 +118,7 @@ export function groupToolCalls(
 export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
   return {
     id: `tool-${chunk.commandId}`,
-    kind: "terminal",
+    kind: "shell",
     title: chunk.commandId,
     status: chunk.stream === "stderr" ? "failed" : "running",
     commandId: chunk.commandId,

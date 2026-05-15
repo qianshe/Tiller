@@ -5,11 +5,32 @@ type ToolCallTone = { className: string; icon: string };
 const TOOL_CALL_TONES: Record<string, ToolCallTone> = {
   MCP: { className: "tool-call-mcp", icon: "◇" },
   Shell: { className: "tool-call-shell", icon: "⌁" },
-  File: { className: "tool-call-file", icon: "□" },
+  Read: { className: "tool-call-read", icon: "◫" },
+  Write: { className: "tool-call-write", icon: "✎" },
+  Search: { className: "tool-call-mcp", icon: "⌕" },
+  Fetch: { className: "tool-call-mcp", icon: "↧" },
+  Think: { className: "tool-call-builtin", icon: "◌" },
+  Todo: { className: "tool-call-builtin", icon: "☑" },
+  File: { className: "tool-call-file", icon: "◫" },
   Skill: { className: "tool-call-skill", icon: "✦" },
   Subagent: { className: "tool-call-subagent", icon: "◎" },
   "Built-in": { className: "tool-call-builtin", icon: "▵" },
   Tool: { className: "tool-call-generic", icon: "·" },
+};
+
+const KIND_LABELS: Record<AgentToolCall["kind"], keyof typeof TOOL_CALL_TONES> = {
+  mcp: "MCP",
+  skill: "Skill",
+  read: "Read",
+  write: "Write",
+  search: "Search",
+  shell: "Shell",
+  fetch: "Fetch",
+  think: "Think",
+  todo: "Todo",
+  subagent: "Subagent",
+  tool: "Tool",
+  unknown: "Tool",
 };
 
 const KNOWN_MCP_ROUTER_TOOLS = [
@@ -64,6 +85,10 @@ export function resolveToolCallTone(
 }
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
+  const labelFromKind = KIND_LABELS[kind];
+  if (labelFromKind && labelFromKind !== "Tool") {
+    return labelFromKind;
+  }
   const normalized = title.toLowerCase();
   if (
     kind === "subagent" ||
@@ -89,11 +114,11 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   ) {
     return "MCP";
   }
-  if (kind === "terminal" || isShellLikeToolTitle(kind, normalized)) {
+  if (kind === "shell" || isShellLikeToolTitle(kind, normalized)) {
     return "Shell";
   }
-  if (kind === "edit") {
-    return "File";
+  if (kind === "write" || kind === "read") {
+    return kind === "write" ? "Write" : "Read";
   }
   if (isBuiltInTool(normalized)) {
     return "Built-in";
@@ -102,7 +127,7 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
 }
 
 function isNamespacedMcpToolTitle(normalizedTitle: string) {
-  return /^tool:\s*[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/u.test(
+  return /^(?:tool:\s*)?[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/u.test(
     normalizedTitle.trim(),
   );
 }

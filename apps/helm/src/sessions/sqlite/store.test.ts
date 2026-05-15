@@ -176,6 +176,34 @@ test("sqlite message store matches append merge, replace, pagination, and remove
         createMessage("session-5-msg-1003", "2026-04-30T10:00:03.000Z", replayTail),
       );
       assert.equal(store.list("session-5")[0]?.text, replayedText);
+      store.append(
+        "session-6",
+        createMessage(
+          "session-6-msg-000001-000000-cabc12345",
+          "2026-04-30T10:00:00.000Z",
+          "first segment",
+        ),
+      );
+      store.append(
+        "session-6",
+        createMessage(
+          "session-6-msg-000001-000000-cdef67890",
+          "2026-04-30T10:00:01.000Z",
+          " continued",
+        ),
+      );
+      store.append(
+        "session-6",
+        createMessage(
+          "session-6-msg-000001-000001-c12345678",
+          "2026-04-30T10:00:02.000Z",
+          "second segment",
+        ),
+      );
+      assert.deepEqual(
+        store.list("session-6").map((item) => item.text),
+        ["first segment continued", "second segment"],
+      );
       const firstPage = store.listPage("session-1", { limit: 1 });
       assert.deepEqual(
         firstPage.messages.map((item) => item.id),
@@ -236,6 +264,53 @@ test("sqlite message store preserves insertion order and defaults to twenty-mess
       assert.deepEqual(latest.messages.map((item) => item.id).slice(0, 3), ["m6", "m7", "m8"]);
       assert.deepEqual(latest.messages.map((item) => item.id).slice(-3), ["m23", "m24", "m25"]);
       assert.equal(latest.hasMore, true);
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("sqlite artifact store normalizes historical MCP tool calls from persisted input", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-tool-kind-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("call_prbt7TQxsqcB92s2tKhL0PuD", "2026-05-15T10:00:00.000Z", {
+          kind: "tool",
+          title: "Tool call call_prbt…",
+          input: JSON.stringify({
+            title: "执行 1+1",
+            code: "nodeRepl.write(String(1 + 1));",
+            timeout_ms: 10000,
+          }),
+          status: "completed",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("call_shortTitle", "2026-05-15T10:00:01.000Z", {
+          kind: "mcp",
+          title: "js",
+          input: JSON.stringify({
+            title: "执行 2+2",
+            code: "nodeRepl.write(String(2 + 2));",
+            timeout_ms: 10000,
+          }),
+          status: "completed",
+        }),
+      );
+
+      const [toolCall, shortTitleToolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "mcp");
+      assert.equal(toolCall?.title, "Tool: node_repl/js");
+      assert.equal(shortTitleToolCall?.kind, "mcp");
+      assert.equal(shortTitleToolCall?.title, "Tool: node_repl/js");
+      assert.equal(store.getPage("session-1", { limit: 1 }).toolCalls[0]?.kind, "mcp");
     } finally {
       store.close();
     }

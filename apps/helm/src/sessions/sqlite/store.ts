@@ -3,6 +3,7 @@ import { basename, extname, join } from "node:path";
 import type {
   AgentMessage,
   AgentToolCall,
+  AgentToolCallKind,
   CommandChunk,
   FileDiffSummary,
   SessionSummary,
@@ -325,16 +326,23 @@ function getToolCall(db: DatabaseSync, sessionId: string, id: string) {
   `,
     )
     .get(sessionId, id) as { payload_json: string } | undefined;
-  return row ? parseJson<AgentToolCall>(row.payload_json) : null;
+  return row ? normalizeAgentToolCall(parseJson<AgentToolCall>(row.payload_json)) : null;
 }
 
 function upsertToolCall(db: DatabaseSync, sessionId: string, toolCall: AgentToolCall) {
+  const normalizedToolCall = normalizeAgentToolCall(toolCall)!;
   db.prepare(
     `
     INSERT OR REPLACE INTO session_tool_calls(session_id, id, timestamp, updated_at, payload_json)
     VALUES (?, ?, ?, ?, ?)
   `,
-  ).run(sessionId, toolCall.id, toolCall.timestamp, toolCall.updatedAt, JSON.stringify(toolCall));
+  ).run(
+    sessionId,
+    normalizedToolCall.id,
+    normalizedToolCall.timestamp,
+    normalizedToolCall.updatedAt,
+    JSON.stringify(normalizedToolCall),
+  );
 }
 
 function replaceSessionToolCalls(db: DatabaseSync, sessionId: string, toolCalls: AgentToolCall[]) {
@@ -384,9 +392,128 @@ function getSessionArtifacts(db: DatabaseSync, sessionId: string): SessionArtifa
     ),
     diffs: diffRows.map((row) => parseJson<FileDiffSummary>(row.payload_json)).filter(isNotNull),
     toolCalls: sortToolCalls(
-      toolCallRows.map((row) => parseJson<AgentToolCall>(row.payload_json)).filter(isNotNull),
+      toolCallRows
+        .map((row) => normalizeAgentToolCall(parseJson<AgentToolCall>(row.payload_json)))
+        .filter(isNotNull),
     ),
   };
+}
+
+const VALID_TOOL_CALL_KINDS = new Set<AgentToolCallKind>([
+  "mcp",
+  "skill",
+  "read",
+  "write",
+  "search",
+  "shell",
+  "fetch",
+  "think",
+  "todo",
+  "subagent",
+  "tool",
+  "unknown",
+]);
+
+function normalizeAgentToolCall(toolCall: AgentToolCall | null): AgentToolCall | null {
+  if (!toolCall) return null;
+
+  const normalizedKind = normalizeAgentToolCallKind(toolCall.kind);
+  const inputToolName = toolNameFromInput(toolCall.input);
+  if (!inputToolName || (normalizedKind !== "mcp" && !isHigherConfidenceToolKind("mcp", normalizedKind))) {
+    return { ...toolCall, kind: normalizedKind };
+  }
+
+  return {
+    ...toolCall,
+    kind: "mcp",
+    title: resolveMcpToolCallTitle(toolCall.title, toolCall.id, inputToolName),
+  };
+}
+
+function resolveMcpToolCallTitle(title: string, id: string, inputToolName: string) {
+  if (!isInformativeToolCallTitle(title, id) || isFallbackToolCallTitle(title)) {
+    return `Tool: ${inputToolName}`;
+  }
+
+  const unqualifiedInputToolName = inputToolName.split("/").at(-1);
+  return unqualifiedInputToolName && title.trim() === unqualifiedInputToolName
+    ? `Tool: ${inputToolName}`
+    : title;
+}
+
+function normalizeAgentToolCallKind(value: unknown): AgentToolCallKind {
+  if (value === "terminal") return "shell";
+  if (value === "edit") return "write";
+  return typeof value === "string" && VALID_TOOL_CALL_KINDS.has(value as AgentToolCallKind)
+    ? (value as AgentToolCallKind)
+    : "unknown";
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCallKind,
+  currentKind: AgentToolCallKind,
+) {
+  const rank: Record<AgentToolCallKind, number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 2,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
+function toolNameFromInput(input: string | undefined) {
+  if (!input) return undefined;
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const record = parsed as Record<string, unknown>;
+    const server = primitiveStringFrom(record.server);
+    const tool = primitiveStringFrom(record.tool ?? record.name ?? record.toolName ?? record.tool_name);
+    return server && tool ? `${server}/${tool}` : tool ?? server ?? inferToolNameFromStructuredPayload(record);
+  } catch {
+    return undefined;
+  }
+}
+
+function inferToolNameFromStructuredPayload(record: Record<string, unknown>) {
+  if (typeof record.code === "string" && ("timeout_ms" in record || "timeoutMs" in record)) {
+    return "node_repl/js";
+  }
+  if (
+    typeof record.project_root_path === "string" &&
+    typeof record.message === "string" &&
+    Array.isArray(record.predefined_options)
+  ) {
+    return "sanshu/zhi";
+  }
+  if (typeof record.project_path === "string" && typeof record.action === "string") {
+    return "sanshu/ji";
+  }
+  return undefined;
+}
+
+function primitiveStringFrom(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
 }
 
 function listRuntimeDescriptors(db: DatabaseSync) {

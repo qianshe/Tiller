@@ -89,7 +89,10 @@ export function createRuntimeClientMethods({
   return {
     async sessionUpdate(params: any) {
       const sessionToken = getSessionToken();
-      const mapped = mapSessionUpdateNotification({ method: "session/update", params });
+      const mapped = mapSessionUpdateNotification(
+        { method: "session/update", params },
+        { providerId: options.agent.id },
+      );
       if (!mapped || (sessionToken && mapped.sessionId !== sessionToken)) {
         return;
       }
@@ -144,7 +147,7 @@ export function createRuntimeClientMethods({
         type: "tool-call",
         toolCall: {
           id: `fs-write-${Date.now()}`,
-          kind: "edit",
+          kind: "write",
           title: `Write file: ${relativePath}`,
           status: "completed",
           input: params.path,
@@ -190,7 +193,7 @@ export function createRuntimeClientMethods({
             type: "tool-call",
             toolCall: {
               id: `tool-${terminalId}`,
-              kind: "terminal",
+              kind: "shell",
               title: commandLine,
               status: code === 0 ? "completed" : "failed",
               commandId: terminalId,
@@ -209,7 +212,7 @@ export function createRuntimeClientMethods({
         type: "tool-call",
         toolCall: {
           id: `tool-${terminalId}`,
-          kind: "terminal",
+          kind: "shell",
           title: commandLine,
           status: "running",
           commandId: terminalId,

@@ -11,7 +11,7 @@ test("activity log panel shows real user prompts and tool activity but hides ass
       sessionToolCalls: [
         {
           id: "tool-1",
-          kind: "terminal",
+          kind: "shell",
           title: "bash",
           status: "completed",
           input: "git branch --show-current",
@@ -84,7 +84,8 @@ test("activity log panel labels namespaced tools as MCP", () => {
   );
 
   assert.match(html, /MCP/);
-  assert.match(html, /Tool: sanshu\/zhi/);
+  assert.match(html, /sanshu\/zhi/);
+  assert.doesNotMatch(html, /Tool: sanshu\/zhi/);
 });
 
 test("activity log panel labels command-shaped generic tools as shell", () => {
@@ -158,3 +159,4 @@ test("activity log panel does not render provider diagnostics as assistant activ
   assert.match(html, /Tool/);
   assert.match(html, /Tool: read_file/);
 });
+

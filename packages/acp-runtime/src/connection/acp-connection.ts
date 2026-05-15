@@ -606,7 +606,7 @@ export class AcpConnection {
       type: "tool-call",
       toolCall: {
         id: `fs-write-${Date.now()}`,
-        kind: "edit",
+        kind: "write",
         title: `Write file: ${relativePath}`,
         status: "completed",
         input: params.path,
@@ -651,7 +651,7 @@ export class AcpConnection {
           type: "tool-call",
           toolCall: {
             id: `tool-${terminalId}`,
-            kind: "terminal",
+            kind: "shell",
             title: commandLine,
             status: code === 0 ? "completed" : "failed",
             commandId: terminalId,
@@ -669,7 +669,7 @@ export class AcpConnection {
       type: "tool-call",
       toolCall: {
         id: `tool-${terminalId}`,
-        kind: "terminal",
+        kind: "shell",
         title: commandLine,
         status: "running",
         commandId: terminalId,
@@ -749,7 +749,10 @@ export class AcpConnection {
   }
 
   private handleSessionUpdate(params: unknown): void {
-    const mapped = mapSessionUpdateNotification({ method: "session/update", params });
+    const mapped = mapSessionUpdateNotification(
+      { method: "session/update", params },
+      { providerId: this.state.provider.id },
+    );
     writeLogLine(
       this.state.logFile,
       "session-update",

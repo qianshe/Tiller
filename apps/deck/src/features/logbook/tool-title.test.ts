@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentToolCall } from "@tiller/shared";
 import { groupToolCalls } from "./timeline.js";
+import { resolveToolCallTone } from "./tool-call-tone.js";
 
 const superpowersSkillPath =
   "C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/56bcc02e/skills/brainstorming/SKILL.md";
@@ -14,7 +15,7 @@ test("groupToolCalls uses shell command prefix as title and expands only output"
   const grouped = groupToolCalls([
     {
       id: "call-shell",
-      kind: "terminal",
+      kind: "shell",
       title: "Tool: shell",
       status: "completed",
       input: JSON.stringify({
@@ -33,11 +34,80 @@ test("groupToolCalls uses shell command prefix as title and expands only output"
   assert.equal(grouped[0]?.text, "PASS");
 });
 
+test("groupToolCalls shows MCP titles without the generic Tool prefix", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-mcp",
+      kind: "mcp",
+      title: "Tool: node_repl/js",
+      status: "completed",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-old-mcp",
+      kind: "tool",
+      title: "Tool: sanshu/zhi",
+      status: "completed",
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "node_repl/js");
+  assert.equal(grouped[1]?.title, "sanshu/zhi");
+});
+
+test("groupToolCalls removes duplicated read and write verbs from titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-read",
+      kind: "read",
+      title: "Read packages\\acp-runtime\\src\\tool-events.ts",
+      status: "completed",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-write",
+      kind: "write",
+      title: "Write docs\\bug\\BUG-004.md",
+      status: "completed",
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "packages\\acp-runtime\\src\\tool-events.ts");
+  assert.equal(grouped[1]?.title, "docs\\bug\\BUG-004.md");
+});
+
+test("resolveToolCallTone distinguishes read and write kinds", () => {
+  assert.deepEqual(resolveToolCallTone("read", "apps\\deck\\src\\features\\logbook\\message-history.ts"), {
+    label: "Read",
+    className: "tool-call-read",
+    icon: "◫",
+  });
+  assert.deepEqual(resolveToolCallTone("write", "docs\\bug\\BUG-004.md"), {
+    label: "Write",
+    className: "tool-call-write",
+    icon: "✎",
+  });
+});
+
+test("resolveToolCallTone displays todo as a generic built-in activity", () => {
+  assert.deepEqual(resolveToolCallTone("todo", "0 todos"), {
+    label: "Todo",
+    className: "tool-call-builtin",
+    icon: "☑",
+  });
+});
+
 test("groupToolCalls summarizes Codex rawInput shell command arrays", () => {
   const grouped = groupToolCalls([
     {
       id: "call-shell-raw",
-      kind: "terminal",
+      kind: "shell",
       title: "call-shell-raw",
       status: "completed",
       input: JSON.stringify({
@@ -67,7 +137,7 @@ test("groupToolCalls shows SKILL.md shell reads as skill names", () => {
   const grouped = groupToolCalls([
     {
       id: "call-skill-read",
-      kind: "terminal",
+      kind: "shell",
       title: `Get-Content -Raw '${superpowersSkillPath}'`,
       status: "completed",
       input: JSON.stringify({
@@ -87,7 +157,7 @@ test("groupToolCalls extracts skill names from terminal titles without input", (
   const grouped = groupToolCalls([
     {
       id: "call-skill-title",
-      kind: "terminal",
+      kind: "shell",
       title: `Get-Content -Raw '${systemOpenaiSkillPath}'`,
       status: "completed",
       output: "skill docs",
@@ -251,7 +321,7 @@ test("groupToolCalls does not classify Codex terminal output as a skill without 
   const grouped = groupToolCalls([
     {
       id: "tool-codex-shell-output",
-      kind: "terminal",
+      kind: "shell",
       title: "echo docs",
       status: "completed",
       input: JSON.stringify({ command: "echo docs" }),
@@ -263,3 +333,4 @@ test("groupToolCalls does not classify Codex terminal output as a skill without 
 
   assert.equal(grouped[0]?.title, "echo docs");
 });
+

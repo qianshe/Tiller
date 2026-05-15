@@ -54,7 +54,7 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
     type: "tool-call",
     toolCall: {
       id: "call-1",
-      kind: "terminal",
+      kind: "shell",
       title: "pnpm test",
       status: "running",
       timestamp: "2026-05-08T08:00:00.000Z",
@@ -65,7 +65,7 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
     type: "tool-call",
     toolCall: {
       id: "call-1",
-      kind: "terminal",
+      kind: "shell",
       title: "pnpm test",
       status: "completed",
       timestamp: "2026-05-08T08:00:00.000Z",
@@ -83,7 +83,7 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
     },
     toolCall: {
       id: "tool-cmd-1",
-      kind: "terminal",
+      kind: "shell",
       title: "cmd-1",
       status: "running",
       timestamp: "2026-05-08T08:00:02.000Z",
@@ -128,3 +128,46 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
     { path: "src/index.ts", status: "modified", additions: 1, deletions: 0 },
   ]);
 });
+
+test("restore replay buffer keeps stronger tool-call classification across updates", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "tool-call",
+    toolCall: {
+      id: "call-1",
+      kind: "mcp",
+      title: "Tool: node_repl/js",
+      status: "running",
+      timestamp: "2026-05-08T08:00:00.000Z",
+      updatedAt: "2026-05-08T08:00:00.000Z",
+      input: JSON.stringify({ code: "nodeRepl.write('ok')", timeout_ms: 10000 }),
+    },
+  });
+  buffer.add({
+    type: "tool-call",
+    toolCall: {
+      id: "call-1",
+      kind: "tool",
+      title: "Tool call call-1",
+      status: "completed",
+      timestamp: "2026-05-08T08:00:01.000Z",
+      updatedAt: "2026-05-08T08:00:01.000Z",
+    },
+  });
+
+  assert.deepEqual(buffer.snapshot().toolCalls, [
+    {
+      id: "call-1",
+      kind: "mcp",
+      title: "Tool: node_repl/js",
+      status: "completed",
+      timestamp: "2026-05-08T08:00:00.000Z",
+      updatedAt: "2026-05-08T08:00:01.000Z",
+      input: JSON.stringify({ code: "nodeRepl.write('ok')", timeout_ms: 10000 }),
+      output: undefined,
+    },
+  ]);
+});
+

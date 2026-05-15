@@ -351,9 +351,23 @@ export type CommandChunk = {
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
 
+export type AgentToolCallKind =
+  | "mcp"
+  | "skill"
+  | "read"
+  | "write"
+  | "search"
+  | "shell"
+  | "fetch"
+  | "think"
+  | "todo"
+  | "subagent"
+  | "tool"
+  | "unknown";
+
 export type AgentToolCall = {
   id: string;
-  kind: "terminal" | "edit" | "subagent" | "tool" | "unknown";
+  kind: AgentToolCallKind;
   title: string;
   status: AgentToolCallStatus;
   commandId?: string;

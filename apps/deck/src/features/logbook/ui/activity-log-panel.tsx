@@ -268,6 +268,10 @@ function activityToneClass(accent: string) {
       return { border: "border-l-2 border-l-violet-400", icon: "bg-violet-400/15 text-violet-500" };
     case "tool-call-shell":
       return { border: "border-l-2 border-l-emerald-400", icon: "bg-emerald-400/15 text-emerald-500" };
+    case "tool-call-read":
+      return { border: "border-l-2 border-l-blue-300", icon: "bg-blue-300/15 text-blue-500" };
+    case "tool-call-write":
+      return { border: "border-l-2 border-l-orange-300", icon: "bg-orange-300/15 text-orange-500" };
     case "tool-call-file":
       return { border: "border-l-2 border-l-cyan-300", icon: "bg-cyan-300/15 text-cyan-500" };
     case "tool-call-skill":

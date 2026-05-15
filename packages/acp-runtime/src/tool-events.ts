@@ -37,7 +37,7 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
 export function mapCommandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
   return {
     id: `tool-${chunk.commandId}`,
-    kind: "terminal",
+    kind: "shell",
     title: chunk.commandId,
     status: chunk.stream === "stderr" ? "failed" : "running",
     commandId: chunk.commandId,
@@ -55,12 +55,20 @@ function resolveToolTitle(rawTitle: string | undefined, toolName: string | undef
   if (isInformativeToolTitle(toolName, id)) {
     return toolName!.includes(":") ? toolName! : `Tool: ${toolName}`;
   }
-  return commandId ?? rawTitle ?? id;
+  if (isInformativeToolTitle(commandId, id)) {
+    return commandId!;
+  }
+  return `Tool call ${shortOpaqueToolCallId(id)}`;
+}
+
+function shortOpaqueToolCallId(id: string) {
+  return id.length > 12 ? `${id.slice(0, 9)}…` : id;
 }
 
 function extractToolName(source: any, update: any) {
   return (
-    toolNameFromRawInput(source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input) ??
+    toolNameFromToolInput(source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input) ??
+    toolNameFromToolInput(source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input ?? update.input ?? update.arguments ?? update.args ?? update.params) ??
     primitiveStringFrom(
       source.toolName ??
         source.tool_name ??
@@ -79,6 +87,25 @@ function extractToolName(source: any, update: any) {
   );
 }
 
+function toolNameFromToolInput(input: unknown) {
+  return toolNameFromRawInput(parseToolInput(input));
+}
+
+function parseToolInput(input: unknown): unknown {
+  if (typeof input !== "string") {
+    return input;
+  }
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return input;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return input;
+  }
+}
+
 function toolNameFromRawInput(rawInput: unknown) {
   if (!rawInput || typeof rawInput !== "object") {
     return undefined;
@@ -89,7 +116,24 @@ function toolNameFromRawInput(rawInput: unknown) {
   if (server && tool) {
     return `${server}/${tool}`;
   }
-  return tool ?? server;
+  return tool ?? server ?? inferToolNameFromStructuredPayload(record);
+}
+
+function inferToolNameFromStructuredPayload(record: Record<string, unknown>) {
+  if (typeof record.code === "string" && ("timeout_ms" in record || "timeoutMs" in record)) {
+    return "node_repl/js";
+  }
+  if (
+    typeof record.project_root_path === "string" &&
+    typeof record.message === "string" &&
+    Array.isArray(record.predefined_options)
+  ) {
+    return "sanshu/zhi";
+  }
+  if (typeof record.project_path === "string" && typeof record.action === "string") {
+    return "sanshu/ji";
+  }
+  return undefined;
 }
 
 function stringifyToolPayload(value: unknown): string | undefined {
@@ -125,20 +169,27 @@ function primitiveStringFrom(value: unknown): string | undefined {
 }
 
 function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
+  const toolInput = parseToolInput(source.rawInput ?? source.raw_input ?? source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input);
+  const toolName = toolNameFromRawInput(toolInput);
   const raw = String(source.kind ?? source.type ?? updateType).toLowerCase();
-  if (/terminal|command|shell|bash|exec/u.test(raw)) {
-    return "terminal";
-  }
-  if (/edit|diff|patch|file/u.test(raw)) {
-    return "edit";
-  }
-  if (/subagent|agent/u.test(raw)) {
-    return "subagent";
-  }
-  if (/tool/u.test(raw)) {
-    return "tool";
-  }
+
+  if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
+  if (toolName) return "mcp";
+  if (/read/u.test(raw)) return "read";
+  if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
+  if (/search/u.test(raw)) return "search";
+  if (/execute|terminal|command|shell|bash|exec/u.test(raw)) return "shell";
+  if (/fetch/u.test(raw)) return "fetch";
+  if (/think/u.test(raw)) return "think";
+  if (/subagent|agent/u.test(raw)) return "subagent";
+  if (/tool/u.test(raw)) return "tool";
   return "unknown";
+}
+
+function isSkillToolInput(rawInput: unknown) {
+  if (!rawInput || typeof rawInput !== "object") return false;
+  const record = rawInput as Record<string, unknown>;
+  return typeof record.skillName === "string" || typeof record.skill === "string";
 }
 
 function inferToolCallStatus(updateType: string, status: unknown): AgentToolCall["status"] {

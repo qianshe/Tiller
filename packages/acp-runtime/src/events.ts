@@ -1,5 +1,6 @@
-import type { AcpModelOption, AcpModelState, AvailableCommand, AvailableCommandKind, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
+import type { AcpModelOption, AcpModelState, AgentToolCall, AvailableCommand, AvailableCommandKind, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime-types";
+import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 
 type AcpProtocolModelInfo = {
@@ -23,6 +24,14 @@ type AcpSessionResponseWithModels = {
 
 function timestamp() {
   return new Date().toISOString();
+}
+
+function normalizeProviderToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+  update: any,
+) {
+  return providerId === "opencode" ? normalizeOpenCodeToolCall(toolCall, update) : toolCall;
 }
 
 function readRawCommandKind(cmd: Record<string, unknown>) {
@@ -86,7 +95,10 @@ function parseCommandDescription(description: string | undefined) {
   return { description: match[1]?.trim() || description, source: match[2]?.toLowerCase() };
 }
 
-export function mapSessionUpdateNotification(payload: any): { sessionId: string; event: SessionRuntimeEvent } | null {
+export function mapSessionUpdateNotification(
+  payload: any,
+  options: { providerId?: string } = {},
+): { sessionId: string; event: SessionRuntimeEvent } | null {
   if (payload?.method !== "session/update") {
     return null;
   }
@@ -165,7 +177,7 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
       sessionId,
       event: {
         type: "tool-call",
-        toolCall: explicitToolCall,
+        toolCall: normalizeProviderToolCall(options.providerId, explicitToolCall, update),
       },
     };
   }

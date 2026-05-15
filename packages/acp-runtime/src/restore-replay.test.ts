@@ -43,7 +43,7 @@ const replayToolCallEvent: SessionRuntimeEvent = {
   type: "tool-call",
   toolCall: {
     id: "call-restore-1",
-    kind: "terminal",
+    kind: "shell",
     title: "pnpm test",
     status: "completed",
     timestamp: "2026-05-08T08:00:03.000Z",
@@ -62,7 +62,7 @@ const replayCommandOutputEvent: SessionRuntimeEvent = {
   },
   toolCall: {
     id: "tool-cmd-restore-1",
-    kind: "terminal",
+    kind: "shell",
     title: "cmd-restore-1",
     status: "running",
     commandId: "cmd-restore-1",
@@ -126,3 +126,4 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
   sink.onEvent(replayToolCallEvent);
   assert.deepEqual(forwarded, [replayToolCallEvent]);
 });
+

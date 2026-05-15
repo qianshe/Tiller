@@ -1,5 +1,5 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk, FileDiffSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
 type ReplayBufferContext = Pick<
@@ -88,8 +88,59 @@ function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCa
   toolCalls.set(next.id, {
     ...current,
     ...next,
+    kind: resolveToolCallKind(current?.kind, next.kind),
+    title: resolveToolCallTitle(current?.title, next.title, next.id),
     timestamp: current?.timestamp ?? next.timestamp,
     input: next.input ?? current?.input,
     output: `${current?.output ?? ""}${next.output ?? ""}` || undefined,
   });
+}
+
+function resolveToolCallKind(
+  currentKind: AgentToolCallKind | undefined,
+  incomingKind: AgentToolCallKind,
+) {
+  if (!currentKind) return incomingKind;
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCallKind,
+  currentKind: AgentToolCallKind,
+) {
+  const rank: Record<AgentToolCallKind, number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 2,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
+function resolveToolCallTitle(
+  currentTitle: string | undefined,
+  incomingTitle: string,
+  id: string,
+) {
+  if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
+    return incomingTitle;
+  }
+  return currentTitle || incomingTitle || id;
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
 }

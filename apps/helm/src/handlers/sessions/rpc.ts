@@ -1,7 +1,8 @@
 import { basename } from "node:path";
-import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
+import { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   type AgentPromptContent,
+  type AgentToolCall,
   type PermissionDecision,
   type ProjectSummary,
   type SessionConfigOptionValue,
@@ -250,6 +251,7 @@ async function getArtifacts(
   context: HelmHandlerContext,
 ) {
   await context.refreshAuthoritativeSessionHistory(params.sessionId);
+  repairProviderToolCalls(params.sessionId, context);
   const artifacts = context.sessionArtifactStore.getPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
@@ -263,6 +265,62 @@ async function getArtifacts(
     nextCursor: artifacts.nextCursor,
     hasMore: artifacts.hasMore,
   };
+}
+
+function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
+  const summary = resolveSessionSummary(sessionId, context);
+  const providerId = summary?.agentId;
+  if (!providerId) {
+    return;
+  }
+
+  const artifacts = context.sessionArtifactStore.get(sessionId);
+  const repairedToolCalls = artifacts.toolCalls.map((toolCall: AgentToolCall) =>
+    repairProviderToolCall(sessionId, providerId, toolCall),
+  );
+  if (!hasToolCallChanges(artifacts.toolCalls, repairedToolCalls)) {
+    return;
+  }
+
+  context.sessionArtifactStore.replaceToolCalls(sessionId, repairedToolCalls);
+}
+
+function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {
+  return (
+    context.sessions.get(sessionId)?.summary ??
+    context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId)
+  );
+}
+
+function repairProviderToolCall(
+  sessionId: string,
+  providerId: string,
+  toolCall: AgentToolCall,
+) {
+  const mapped = mapSessionUpdateNotification(
+    {
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          type: "tool_call_update",
+          toolCall,
+        },
+      },
+    },
+    { providerId },
+  );
+  return mapped?.event.type === "tool-call" ? mapped.event.toolCall : toolCall;
+}
+
+function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
+  if (left.length !== right.length) {
+    return true;
+  }
+  return left.some((item, index) => {
+    const next = right[index];
+    return !next || item.kind !== next.kind || item.title !== next.title || item.input !== next.input;
+  });
 }
 
 function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {

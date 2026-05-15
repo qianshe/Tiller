@@ -1,10 +1,12 @@
 import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AgentToolCall } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
+import { createMessageSegmentIdAllocator } from "./message-segment-id";
 
 const liveEventSequenceBySession = new Map<string, number>();
-const assistantStreamSegmentBySession = new Map<string, number>();
+const messageSegmentIds = createMessageSegmentIdAllocator();
 const activeAssistantStreamLogBySession = new Map<
   string,
   { key: string; endsWithNewline: boolean }
@@ -26,46 +28,43 @@ function nextLiveEventSequence(sessionId: string) {
 }
 
 function bumpAssistantStreamSegment(sessionId: string) {
-  assistantStreamSegmentBySession.set(
-    sessionId,
-    (assistantStreamSegmentBySession.get(sessionId) ?? 0) + 1,
-  );
+  messageSegmentIds.bumpToolBoundary(sessionId);
   activeAssistantRuntimeMessageBySession.delete(sessionId);
 }
 
-function currentAssistantStreamSegmentMessageId(sessionId: string) {
-  return `${sessionId}-msg-s${assistantStreamSegmentBySession.get(sessionId) ?? 0}`;
-}
-
 function startNextAssistantResponseSegment(sessionId: string) {
-  if (activeAssistantRuntimeMessageBySession.has(sessionId)) {
-    bumpAssistantStreamSegment(sessionId);
+  if (!activeAssistantRuntimeMessageBySession.has(sessionId)) {
+    return;
   }
+  messageSegmentIds.startAssistantTurn(sessionId);
+  activeAssistantRuntimeMessageBySession.delete(sessionId);
 }
 
 function normalizeRuntimeAssistantMessageId(
   sessionId: string,
   message: { id: string; text: string },
 ) {
-  if (!isRuntimeGeneratedMessageId(message.id)) {
-    return message.id;
-  }
-
-  let segmentId = currentAssistantStreamSegmentMessageId(sessionId);
   const active = activeAssistantRuntimeMessageBySession.get(sessionId);
-  if (
-    active?.segmentId === segmentId &&
-    active.sourceId !== message.id &&
-    shouldStartNewRuntimeAssistantSegment(active.text, message.text)
-  ) {
-    bumpAssistantStreamSegment(sessionId);
-    segmentId = currentAssistantStreamSegmentMessageId(sessionId);
+  if (active && !shouldStartNewRuntimeAssistantSegment(active.text, message.text)) {
+    activeAssistantRuntimeMessageBySession.set(sessionId, {
+      sourceId: message.id,
+      segmentId: active.segmentId,
+      text: mergeAssistantStreamText(active.text, message.text),
+    });
+    return active.segmentId;
   }
 
+  if (active) {
+    messageSegmentIds.bumpToolBoundary(sessionId);
+  }
+  const segmentId = messageSegmentIds.nextAssistantSegmentId(sessionId, {
+    text: message.text,
+    providerMessageId: isRuntimeGeneratedMessageId(message.id) ? null : message.id,
+  });
   activeAssistantRuntimeMessageBySession.set(sessionId, {
     sourceId: message.id,
     segmentId,
-    text: mergeAssistantStreamText(active?.segmentId === segmentId ? active.text : "", message.text),
+    text: message.text,
   });
   return segmentId;
 }
@@ -98,7 +97,7 @@ function mergeAssistantStreamText(currentText: string, incomingText: string) {
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
-  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-[a-z0-9]+$/iu.test(id);
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:[a-z0-9]+|\d{6}-\d{6}-[pc][a-z0-9]{1,32})$/iu.test(id);
 }
 
 function oneLine(value: string, maxLength = 220) {
@@ -260,10 +259,13 @@ export function handleRuntimeEvent(
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
-      context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
+      const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall) as
+        | { toolCalls?: AgentToolCall[] }
+        | undefined;
+      const mergedToolCall = artifacts?.toolCalls?.find((item) => item.id === event.toolCall.id) ?? event.toolCall;
       broadcastSessionUpdate(context, sessionId, {
         kind: "tool_call",
-        toolCall: event.toolCall,
+        toolCall: mergedToolCall,
       });
       return;
     case "command-output":

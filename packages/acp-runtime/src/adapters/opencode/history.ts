@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { AcpAgentProvider, AgentMessage, AgentToolCall } from "@tiller/shared";
 import type { AcpAuthoritativeHistory } from "../types";
+import { inferOpenCodeToolKind } from "./tool-calls";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
@@ -211,7 +212,7 @@ function collectToolCalls(message: any): AgentToolCall[] {
     calls.push({
       id,
       commandId: id,
-      kind: inferOpenCodeToolKind(toolName, title),
+      kind: inferOpenCodeToolKind(toolName, title, state.input),
       title,
       status: normalizeToolStatus(state.status),
       ...(input ? { input } : {}),
@@ -254,23 +255,6 @@ function normalizeToolStatus(status: unknown): AgentToolCall["status"] {
   return "completed";
 }
 
-function inferOpenCodeToolKind(toolName: string, title: string): AgentToolCall["kind"] {
-  const raw = `${toolName} ${title}`.toLowerCase();
-  if (/bash|shell|terminal|execute/u.test(raw)) {
-    return "terminal";
-  }
-  if (/edit|patch|write|file/u.test(raw)) {
-    return "edit";
-  }
-  if (/task|agent|subagent|background/u.test(raw)) {
-    return "subagent";
-  }
-  if (/tool|mcp/u.test(raw)) {
-    return "tool";
-  }
-  return "unknown";
-}
-
 function stringifyToolPayload(value: unknown) {
   if (typeof value === "string") {
     return value;
@@ -305,3 +289,4 @@ function sortByTimestamp<T extends { timestamp: string; id: string }>(items: T[]
 function isOpenCodeCommand(command: string) {
   return /^opencode(?:\.exe)?$/iu.test(command);
 }
+
