@@ -29,6 +29,7 @@ export type SessionRecord = {
 };
 
 export type PermissionRecord = { sessionId: string; request: PermissionRequest };
+export type ApprovalRecord = PermissionRecord;
 
 export type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
 
@@ -85,6 +86,7 @@ export type HelmHandlerContext = {
   toTrustedDeviceSummary: (record: any) => TrustedDeviceSummary;
 
   sessions: Map<string, any>;
+  approvalIndex: Map<string, ApprovalRecord>;
   permissionIndex: Map<string, PermissionRecord>;
   sessionStore: any;
   sessionMessageStore: any;

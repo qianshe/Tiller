@@ -71,6 +71,16 @@ test("inline code keeps the surrounding reading font instead of forcing monospac
   assert.doesNotMatch(html, /font-mono/);
 });
 
+test("markdown headings stay message-sized instead of using browser default display sizes", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={"# Bug 根因分析\n\n## 概览：命令数据流"} />,
+  );
+
+  assert.match(html, /markdown-heading/);
+  assert.match(html, /text-xl/);
+  assert.match(html, /text-lg/);
+});
+
 test("assistant markdown text inserts paragraph breaks at ACP boundary markers", () => {
   const normalized = normalizeMarkdownMessageText(
     "Fallback metadata issues.我会继续排查喵~[🌳木] 已定位根因。",

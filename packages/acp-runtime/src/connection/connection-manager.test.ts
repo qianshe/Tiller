@@ -20,19 +20,27 @@ const worktree: WorktreeSummary = {
   path: "D:/myProject/tools/Tiller",
 };
 
-test("connection key includes cwd but ignores session config", () => {
-  const first = resolveAcpConnectionKey({
+test("connection key includes cwd and session config", () => {
+  const base = resolveAcpConnectionKey({ provider, worktree });
+  const configured = resolveAcpConnectionKey({
     provider,
     worktree,
     sessionConfig: { model: "gpt-5.5", reasoningEffort: "high" },
   });
-  const second = resolveAcpConnectionKey({
+  const otherConfig = resolveAcpConnectionKey({
     provider,
-    worktree: { ...worktree, path: "D:/other" },
+    worktree,
     sessionConfig: { model: "gpt-5.4", reasoningEffort: "low" },
   });
+  const otherWorktree = resolveAcpConnectionKey({
+    provider,
+    worktree: { ...worktree, path: "D:/other" },
+    sessionConfig: { model: "gpt-5.5", reasoningEffort: "high" },
+  });
 
-  assert.notEqual(first, second);
+  assert.notEqual(base, configured);
+  assert.notEqual(configured, otherConfig);
+  assert.notEqual(configured, otherWorktree);
 });
 
 test("connection key changes when provider launch identity changes", () => {
@@ -120,6 +128,7 @@ test("connection manager reuses an in-flight connection open", async () => {
           prompt: async () => undefined,
           configure: async () => ({ runtimeApplied: false, state: {}, modelState: undefined, options: [] }),
           respondPermission: () => undefined,
+          attachTillerSession: () => undefined,
           deleteSession: async () => ({ kind: "unsupported", providerId: provider.id, message: "unsupported" }),
           close: async () => ({ kind: "remote-closed", providerId: provider.id, message: "closed" }),
           cancel: () => undefined,
@@ -171,6 +180,7 @@ test("connection manager reuses one provider connection across session worktrees
             prompt: async () => undefined,
             configure: async () => ({ runtimeApplied: false, state: {}, modelState: undefined, options: [] }),
             respondPermission: () => undefined,
+            attachTillerSession: () => undefined,
             deleteSession: async () => ({ kind: "unsupported", providerId: provider.id, message: "unsupported" }),
             close: async () => ({ kind: "remote-closed", providerId: provider.id, message: "closed" }),
             cancel: () => undefined,
@@ -224,6 +234,7 @@ test("connection manager replaces a closed cached connection", async () => {
           prompt: async () => undefined,
           configure: async () => ({ runtimeApplied: false, state: {}, modelState: undefined, options: [] }),
           respondPermission: () => undefined,
+          attachTillerSession: () => undefined,
           deleteSession: async () => ({ kind: "unsupported", providerId: provider.id, message: "unsupported" }),
           close: async () => ({ kind: "remote-closed", providerId: provider.id, message: "closed" }),
           cancel: () => undefined,

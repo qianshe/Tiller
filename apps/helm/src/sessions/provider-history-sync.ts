@@ -85,6 +85,10 @@ function isSameStoredMessage(left: AgentMessage, right: AgentMessage) {
 }
 
 function splitMessageIntoParagraphs(message: AgentMessage): AgentMessage[] {
+  if (message.role !== "assistant") {
+    return [message];
+  }
+
   const paragraphs = message.text
     .split(/\n\s*\n/u)
     .map((paragraph) => paragraph.trim())

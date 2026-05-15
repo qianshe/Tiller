@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage } from "@tiller/shared";
 import { Button } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
@@ -37,6 +37,8 @@ export function PlainMessages({
   const [visibleMessageCount, setVisibleMessageCount] = useState(
     DEFAULT_VISIBLE_MESSAGE_LIMIT,
   );
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const localScrollSnapshotRef = useRef<ScrollSnapshot | null>(null);
 
   useEffect(() => {
     setVisibleMessageCount(DEFAULT_VISIBLE_MESSAGE_LIMIT);
@@ -57,9 +59,34 @@ export function PlainMessages({
   const hasHiddenLoadedMessages = visibleMessages.length < displayMessages.length;
   const canLoadMoreMessages =
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
+  const loadMoreLabel = resolveLoadMoreMessagesLabel({
+    hasMoreHistory: Boolean(historyState?.hasMore),
+    loading: Boolean(historyState?.loading),
+    pageSize: DEFAULT_VISIBLE_MESSAGE_LIMIT,
+    totalLoaded: displayMessages.length,
+    visible: visibleMessages.length,
+  });
+
+  useEffect(() => {
+    const snapshot = localScrollSnapshotRef.current;
+    const scrollContainer = listRef.current?.parentElement;
+    if (!snapshot || !scrollContainer) {
+      return;
+    }
+    scrollContainer.scrollTop =
+      scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
+    localScrollSnapshotRef.current = null;
+  }, [visibleRenderMessages.length]);
 
   function showMoreMessages() {
     const nextVisibleCount = visibleMessageCount + DEFAULT_VISIBLE_MESSAGE_LIMIT;
+    const scrollContainer = listRef.current?.parentElement;
+    if (scrollContainer) {
+      localScrollSnapshotRef.current = {
+        scrollHeight: scrollContainer.scrollHeight,
+        scrollTop: scrollContainer.scrollTop,
+      };
+    }
     setVisibleMessageCount(nextVisibleCount);
     if (
       displayMessages.length <= nextVisibleCount &&
@@ -75,7 +102,7 @@ export function PlainMessages({
   }
 
   return (
-    <div className="plain-message-list conversation-timeline grid gap-4">
+    <div ref={listRef} className="plain-message-list conversation-timeline grid gap-4">
       {canLoadMoreMessages ? (
         <button
           className="secondary load-more-history rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:opacity-60"
@@ -83,7 +110,7 @@ export function PlainMessages({
           onClick={showMoreMessages}
           disabled={historyState?.loading}
         >
-          {historyState?.loading ? "加载中..." : "查看更多"}
+          {loadMoreLabel}
         </button>
       ) : null}
       {visibleRenderMessages.map(({ message, renderKey, isContinuation }) => {
@@ -105,6 +132,30 @@ export function PlainMessages({
       })}
     </div>
   );
+}
+
+type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
+
+type LoadMoreMessagesLabelInput = {
+  hasMoreHistory: boolean;
+  loading: boolean;
+  pageSize: number;
+  totalLoaded: number;
+  visible: number;
+};
+
+export function resolveLoadMoreMessagesLabel({
+  hasMoreHistory,
+  loading,
+  pageSize,
+  totalLoaded,
+  visible,
+}: LoadMoreMessagesLabelInput) {
+  if (loading) {
+    return "加载中...";
+  }
+  const historyHint = hasMoreHistory ? `，继续加载每次最多 ${pageSize} 条` : "";
+  return `查看更多（已显示 ${visible}/${totalLoaded}${historyHint}）`;
 }
 
 type PlainMessageItemProps = {
@@ -209,15 +260,37 @@ function renderPlainMessageContent(
   collapsed: boolean,
   streaming = false,
 ) {
-  return message.role === "user" || streaming ? (
-    <div
-      className={
-        collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
-      }
-    >
-      {message.text}
-    </div>
-  ) : (
+  if (message.role === "user") {
+    return (
+      <div
+        className={
+          collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
+        }
+      >
+        {message.text}
+      </div>
+    );
+  }
+
+  if (streaming) {
+    const segmented = splitStreamingMarkdown(message.text);
+    if (!segmented) {
+      return <PlainStreamingText text={message.text} />;
+    }
+    return (
+      <>
+        <div
+          className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
+          data-mission-swipe-lock="true"
+        >
+          <MarkdownMessage text={segmented.markdown} />
+        </div>
+        {segmented.tail ? <PlainStreamingText text={segmented.tail} tail /> : null}
+      </>
+    );
+  }
+
+  return (
     <div
       className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
       data-mission-swipe-lock="true"
@@ -226,6 +299,80 @@ function renderPlainMessageContent(
     </div>
   );
 }
+
+type PlainStreamingTextProps = {
+  tail?: boolean;
+  text: string;
+};
+
+function PlainStreamingText({ tail = false, text }: PlainStreamingTextProps) {
+  return (
+    <div
+      className={cn(
+        "plain-message-text whitespace-pre-wrap",
+        tail && "plain-message-streaming-tail",
+      )}
+    >
+      {text}
+    </div>
+  );
+}
+
+type StreamingMarkdownSegment = {
+  markdown: string;
+  tail: string;
+};
+
+function splitStreamingMarkdown(text: string): StreamingMarkdownSegment | null {
+  const splitIndex = findStreamingMarkdownSplitIndex(text);
+  if (splitIndex === null) {
+    return null;
+  }
+  const markdown = text.slice(0, splitIndex).trimEnd();
+  if (!markdown.trim()) {
+    return null;
+  }
+  return {
+    markdown,
+    tail: text.slice(splitIndex).replace(/^\r?\n/u, ""),
+  };
+}
+
+function findStreamingMarkdownSplitIndex(text: string) {
+  let splitIndex: number | null = null;
+  let fence: MarkdownFenceState | null = null;
+  const linePattern = /.*(?:\r?\n|$)/gu;
+  let match: RegExpExecArray | null;
+  while ((match = linePattern.exec(text))) {
+    const line = match[0];
+    if (!line) {
+      break;
+    }
+    const lineEnd = match.index + line.length;
+    const marker = /^[ \t]*(`{3,}|~{3,})/u.exec(line)?.[1];
+    if (marker) {
+      const markerKind = marker[0] as "`" | "~";
+      if (fence && fence.marker === markerKind && marker.length >= fence.length) {
+        fence = null;
+        splitIndex = lineEnd;
+      } else if (!fence) {
+        fence = { marker: markerKind, length: marker.length };
+      }
+    }
+    if (!fence && /^\s*$/u.test(line) && match.index > 0) {
+      splitIndex = lineEnd;
+    }
+    if (lineEnd >= text.length) {
+      break;
+    }
+  }
+  return splitIndex;
+}
+
+type MarkdownFenceState = {
+  marker: "`" | "~";
+  length: number;
+};
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   return coalesceDisplayMessages(

@@ -140,7 +140,7 @@ test("planProviderHistorySync replaces when latest id matches but hash changed",
   ]);
 });
 
-test("toParagraphMessages keeps stable paragraph ids and trims blank paragraphs", () => {
+test("toParagraphMessages keeps stable assistant paragraph ids and trims blank paragraphs", () => {
   const messages = toParagraphMessages([
     baseMessage("provider-1", "第一段\n\n\n第二段\n\n  \n第三段"),
   ]);
@@ -153,6 +153,26 @@ test("toParagraphMessages keeps stable paragraph ids and trims blank paragraphs"
       ["provider-1#p2", "第三段"],
     ],
   );
+});
+
+test("toParagraphMessages keeps provider user prompts as one message", () => {
+  const message = baseMessage(
+    "provider-user",
+    [
+      "IF COMPLEX - DO NOT STRUGGLE ALONE.",
+      "",
+      "# Task",
+      "",
+      "调查这个 bug 的根因。",
+      "",
+      "# Acceptance Criteria",
+      "",
+      "- 给出触发路径。",
+    ].join("\n"),
+  );
+  const messages = toParagraphMessages([{ ...message, role: "user" }]);
+
+  assert.deepEqual(messages, [{ ...message, role: "user" }]);
 });
 
 test("shouldRepairProviderHistorySnapshot detects persisted restore replay mixed with authoritative paragraphs", () => {

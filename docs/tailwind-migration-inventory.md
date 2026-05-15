@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1783
+- Total lines: 1803
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 770
-- Top-level selectors: 138
+- Lines: 790
+- Top-level selectors: 141
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -108,8 +108,11 @@ Selectors:
 - `.top-nav-mobile-item.active`
 - `.top-nav-mobile-menu`
 - `.top-nav::after`
+- `.top-nav::before`
 - `.top-nav:focus-within`
+- `.top-nav:focus-within::before`
 - `.top-nav:hover`
+- `.top-nav:hover::before`
 - `.workspace-single`
 - `[data-deck-reduce-motion="true"] *`
 - `[data-deck-theme="dark"]`

@@ -60,7 +60,7 @@ export async function requestInitialSync(
     setSessionHistoryState({ hasMore: false, loading: false });
     throw error;
   }
-  await dispatch(client, "permission/list_pending", {});
+  await dispatch(client, "approval/list_pending", {});
   await dispatch(client, "device/list", {});
 }
 

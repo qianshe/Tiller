@@ -216,7 +216,7 @@ test("AcpConnection.open terminates the child process when initialize times out"
   }
 });
 
-test("AcpConnection.open ignores per-session config when launching shared connection", async () => {
+test("AcpConnection.open applies per-session config when launching connection", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-launch-config-"));
   try {
     const { agentPath, launchArgsPath } = writeInitializeOnlyAgent(tempDir);
@@ -227,8 +227,8 @@ test("AcpConnection.open ignores per-session config when launching shared connec
     });
 
     const launchArgs = JSON.parse(readFileSync(launchArgsPath, "utf8")) as string[];
-    assert.equal(launchArgs.some((arg) => arg.includes("gpt-5.5")), false);
-    assert.equal(launchArgs.some((arg) => arg.includes("model_reasoning_effort")), false);
+    assert.equal(launchArgs.some((arg) => arg.includes("gpt-5.5")), true);
+    assert.equal(launchArgs.some((arg) => arg.includes("model_reasoning_effort")), true);
     assert.equal(connection.inventory().initialized, true);
 
     await connection.dispose();
@@ -603,6 +603,41 @@ test("intentional connection dispose does not broadcast an exit error", async ()
 
     assert.equal(connection.inventory().status, "closed");
     assert.equal(events.some((event) => event.type === "error" && event.message?.includes("ACP process exited")), false);
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("runtime handle rekeys draft inventory when attached to a real session", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-draft-attach-"));
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      worktree: { ...worktree, path: tempDir },
+    });
+
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "draft-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: () => undefined,
+    });
+
+    handle.attachTillerSession("session-1");
+
+    assert.equal(connection.inventory().activeSessionCount, 1);
+    assert.deepEqual(
+      connection.inventory().sessions.map((session) => session.tillerSessionId),
+      ["session-1"],
+    );
+
+    await handle.close();
+    assert.equal(connection.inventory().activeSessionCount, 0);
+
+    await connection.dispose();
   } finally {
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true });

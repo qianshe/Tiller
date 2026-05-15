@@ -568,6 +568,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
+    let readyDraft: RuntimeDraft | undefined;
     options.logInfo(
       `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.worktree.path}`,
     );
@@ -589,15 +590,25 @@ export function createSessionServices(options: SessionServicesOptions) {
           }
           if (event.type === "model-options") {
             modelState = event.state;
+            if (readyDraft) {
+              readyDraft.modelState = event.state;
+            }
             return;
           }
           if (event.type === "config-options") {
             configState = event.state;
             configOptions = event.options;
+            if (readyDraft) {
+              readyDraft.configState = event.state;
+              readyDraft.configOptions = event.options;
+            }
             return;
           }
           if (event.type === "available-commands") {
             availableCommands = event.commands;
+            if (readyDraft) {
+              readyDraft.availableCommands = event.commands;
+            }
             return;
           }
           if (event.type === "error") {
@@ -627,6 +638,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           agent: params.agent,
           runtime,
           attach: (sessionId: string) => {
+            runtime.attachTillerSession(sessionId);
             attachedSessionId = sessionId;
           },
           expiresTimer,
@@ -637,6 +649,7 @@ export function createSessionServices(options: SessionServicesOptions) {
           configOptions: configOptions.length ? configOptions : runtime.sessionConfigOptions,
           availableCommands,
         };
+        readyDraft = draft;
         if (pendingDraft.obsolete) {
           await cleanupDraftRuntime(draft, "obsolete");
           throw new Error("Draft became obsolete before creation completed.");

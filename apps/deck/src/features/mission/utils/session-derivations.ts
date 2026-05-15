@@ -4,7 +4,6 @@ import type {
   CommandChunk,
   FileDiffSummary,
   HelmSummary,
-  PermissionRequest,
   ProjectSummary,
   SessionConfigOption,
   SessionStatus,
@@ -14,7 +13,6 @@ import type {
 export type SessionScopedMaps = {
   statuses: Record<string, SessionStatus>;
   messages: Record<string, AgentMessage[]>;
-  permissionRequests: Record<string, PermissionRequest | null>;
   outputs: Record<string, CommandChunk[]>;
   diffs: Record<string, FileDiffSummary[]>;
 };
@@ -69,7 +67,6 @@ export function applySessionListSnapshot(
     maps: {
       statuses: createSessionStatusMap(sessions),
       messages: pruneSessionScopedMap(snapshot.maps.messages, sessions),
-      permissionRequests: pruneSessionScopedMap(snapshot.maps.permissionRequests, sessions),
       outputs: pruneSessionScopedMap(snapshot.maps.outputs, sessions),
       diffs: pruneSessionScopedMap(snapshot.maps.diffs, sessions),
     } satisfies SessionScopedMaps,

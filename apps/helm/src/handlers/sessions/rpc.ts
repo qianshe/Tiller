@@ -144,12 +144,12 @@ export async function handleSessionRpcRequest(
         context,
       );
     case "permission/respond":
-      return respondPermission(
-        params as { permissionRequestId: string; decision: "allow" | "deny" },
-        context,
-      );
     case "permission/list_pending":
-      return listPendingPermissions(context);
+      // Moved to approvals/rpc.ts so the legacy methods read from the unified
+      // approvalIndex. The router invokes handleApprovalRpcRequest before this
+      // handler, so falling through here means the approval handler returned
+      // undefined intentionally and we should not double-resolve.
+      return undefined;
     case "session/rename":
       return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
@@ -517,6 +517,7 @@ async function promptRuntimeDraft(
     model: draft.runtime.sessionConfigState?.model ?? draft.configState.model,
     modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
     configOptions: draft.runtime.sessionConfigOptions ?? draft.configOptions,
+    availableCommands: draft.availableCommands,
     reasoningEffort:
       draft.runtime.sessionConfigState?.reasoningEffort ?? draft.configState.reasoningEffort,
     runtimeSessionId: draft.runtime.runtimeSessionId,
@@ -592,64 +593,6 @@ async function configureSessionOrDraft(
     },
     context,
   );
-}
-
-function respondPermission(
-  params: { permissionRequestId: string; decision: PermissionDecision },
-  context: HelmHandlerContext,
-) {
-  const permission = context.permissionIndex.get(params.permissionRequestId);
-  if (!permission) {
-    throw new Error("Permission request not found");
-  }
-  const record = context.sessions.get(permission.sessionId);
-  if (!record) {
-    throw new Error("Session not found for permission response");
-  }
-  if (!record.runtime.supportsPermissionResponses) {
-    const error = new Error(
-      "Real ACP permission passthrough is not wired yet. The request is still pending.",
-    );
-    (error as Error & { code?: string }).code = "ACP_PERMISSION_UNSUPPORTED";
-    throw error;
-  }
-  context.permissionIndex.delete(params.permissionRequestId);
-  broadcastSessionUpdate(context, permission.sessionId, {
-    kind: "permission_resolved",
-    permissionRequestId: params.permissionRequestId,
-    decision: params.decision,
-  });
-  const updated = context.updateSessionSummary(permission.sessionId, (current) => ({
-    ...current,
-    status: "running",
-    updatedAt: new Date().toISOString(),
-  }));
-  broadcastSessionUpdate(context, permission.sessionId, {
-    kind: "status_change",
-    status: "running",
-    message: "Permission response sent",
-  });
-  if (updated) {
-    broadcastSessionUpdate(context, permission.sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
-  record.runtime.respondPermission(params.permissionRequestId, params.decision);
-  return {
-    ok: true,
-    permissionRequestId: params.permissionRequestId,
-    decision: params.decision,
-  };
-}
-
-function listPendingPermissions(context: HelmHandlerContext) {
-  return {
-    permissions: Array.from(context.permissionIndex.values()).map((permission) => ({
-      sessionId: permission.sessionId,
-      request: permission.request,
-    })),
-  };
 }
 
 async function renameSession(

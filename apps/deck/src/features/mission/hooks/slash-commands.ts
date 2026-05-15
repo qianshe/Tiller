@@ -26,6 +26,30 @@ function normalizeSlashCommandName(name: string) {
   return name.replace(/^\/+/, "");
 }
 
+export function formatSlashCommandLabel(command: Pick<AvailableCommand, "name" | "scope">) {
+  const name = normalizeSlashCommandName(command.name);
+  const scope = command.scope?.trim();
+  return scope ? `/${scope}:${name}` : `/${name}`;
+}
+
+export function formatSlashCommandInvocation(command: Pick<AvailableCommand, "name" | "scope">) {
+  return `${formatSlashCommandLabel(command)} `;
+}
+
+export function shouldShowSlashCommandPopup({
+  commandToken,
+  activeSessionAgentId,
+  suppressedFor,
+  prompt,
+}: {
+  commandToken: string | null;
+  activeSessionAgentId?: string | null;
+  suppressedFor: string | null;
+  prompt: string;
+}) {
+  return commandToken !== null && Boolean(activeSessionAgentId) && suppressedFor !== prompt;
+}
+
 /**
  * Handles slash command filtering, popup dismissal and keyboard selection.
  */
@@ -64,7 +88,9 @@ export function useSlashCommands({
     if (!commandToken) {
       return commands;
     }
-    return commands.filter((cmd) => normalizeSlashCommandName(cmd.name).toLowerCase().startsWith(commandToken));
+    return commands.filter((cmd) =>
+      formatSlashCommandLabel(cmd).slice(1).toLowerCase().startsWith(commandToken),
+    );
   }, [
     commandToken,
     activeSessionId,
@@ -73,7 +99,12 @@ export function useSlashCommands({
     agentAvailableCommands,
   ]);
 
-  const popupOpen = filteredCommands.length > 0 && suppressedFor !== prompt;
+  const popupOpen = shouldShowSlashCommandPopup({
+    commandToken,
+    activeSessionAgentId,
+    suppressedFor,
+    prompt,
+  });
 
   useEffect(() => {
     if (commandToken === null || !activeSessionAgentId) {
@@ -128,7 +159,7 @@ export function useSlashCommands({
   }, [popupOpen, prompt]);
 
   function applyCommand(cmd: AvailableCommand) {
-    setPrompt(`/${normalizeSlashCommandName(cmd.name)} `);
+    setPrompt(formatSlashCommandInvocation(cmd));
     setSuppressedFor(null);
     promptRef.current?.focus();
   }
@@ -141,12 +172,12 @@ export function useSlashCommands({
 
   function handlePromptKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (popupOpen) {
-      if (event.key === "ArrowDown") {
+      if (event.key === "ArrowDown" && filteredCommands.length > 0) {
         event.preventDefault();
         setSelectedIndex((index) => (index + 1) % filteredCommands.length);
         return;
       }
-      if (event.key === "ArrowUp") {
+      if (event.key === "ArrowUp" && filteredCommands.length > 0) {
         event.preventDefault();
         setSelectedIndex(
           (index) =>

@@ -1,4 +1,4 @@
-import type { AgentPromptContent, SessionConfigOptionValue, SessionReasoningEffort } from "@tiller/shared";
+import type { AgentPromptContent, AvailableCommand, SessionConfigOptionValue, SessionReasoningEffort } from "@tiller/shared";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
@@ -22,6 +22,30 @@ export type SessionConfigureRequest = {
   configId?: string;
   value?: SessionConfigOptionValue;
 };
+
+function parseSlashCommandName(text: string) {
+  const match = /^\s*\/(\S+)/u.exec(text);
+  return match?.[1]?.replace(/^\/+/, "") ?? null;
+}
+
+function availableCommandInvocations(command: AvailableCommand) {
+  const name = command.name.replace(/^\/+/, "");
+  const scope = command.scope?.trim();
+  return scope ? [name, `${scope}:${name}`] : [name];
+}
+
+function assertSupportedSlashCommand(text: string, commands: AvailableCommand[] | undefined, agentName: string) {
+  const commandName = parseSlashCommandName(text);
+  if (!commandName || !commands?.length) {
+    return;
+  }
+  const supported = commands.some((command) => availableCommandInvocations(command).includes(commandName));
+  if (supported) {
+    return;
+  }
+  const available = commands.map((command) => `/${availableCommandInvocations(command).at(-1)}`).join(", ");
+  throw new Error(`/${commandName} command is not supported by ${agentName}. Available commands: ${available}`);
+}
 
 async function resolvePromptRuntime(
   params: Pick<SessionPromptRequest, "sessionId" | "text">,
@@ -61,6 +85,12 @@ export async function sendPromptToSession(
     (error as Error & { code?: string }).code = ACP_IMAGE_INPUT_UNSUPPORTED_CODE;
     throw error;
   }
+
+  assertSupportedSlashCommand(
+    params.text,
+    record.summary?.availableCommands,
+    record.summary?.agentName ?? record.agent?.name ?? record.agent?.id ?? "ACP agent",
+  );
 
   context.logInfo(
     `[tiller] 阶段=发送Prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,

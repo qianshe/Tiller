@@ -73,6 +73,12 @@ test("mission ACP overview uses connection inventory instead of inferring status
   assert.doesNotMatch(worktreeSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
 });
 
+test("mission ACP overview can connect inactive agents while a session is active", () => {
+  assert.match(worktreeSourceText, /const overviewConnectCwd = selectedCwd \?\? activeSession\?\.cwd/);
+  assert.match(worktreeSourceText, /cwd: overviewConnectCwd \?\? undefined/);
+  assert.match(worktreeSourceText, /canConnect: Boolean\(agent\.id && overviewConnectCwd\)/);
+});
+
 test("mission starting sessions disable send without showing cancel", () => {
   assert.match(worktreeSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
   assert.match(composerShellSourceText, /activeSession && sessionCanCancel/);

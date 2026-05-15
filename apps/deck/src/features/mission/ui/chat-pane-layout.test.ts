@@ -101,8 +101,8 @@ test("slash command suppression resets after leaving slash mode", () => {
 
 test("slash command names normalize provider leading slashes", () => {
   assert.match(slashCommandsHookSource, /normalizeSlashCommandName/);
-  assert.match(slashCommandsHookSource, /setPrompt\(`\/\$\{normalizeSlashCommandName\(cmd\.name\)\} `\)/);
-  assert.match(slashCommandsHookSource, /normalizeSlashCommandName\(cmd\.name\)\.toLowerCase\(\)\.startsWith\(commandToken\)/);
+  assert.match(slashCommandsHookSource, /formatSlashCommandInvocation\(cmd\)/);
+  assert.match(slashCommandsHookSource, /formatSlashCommandLabel\(cmd\)\.slice\(1\)\.toLowerCase\(\)\.startsWith\(commandToken\)/);
 });
 
 test("ACP model loading badge is not limited to OpenCode", () => {
@@ -123,7 +123,7 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
   assert.match(worktreeSource, /canReconnect: !reconnectPending/);
   assert.match(worktreeSource, /canConnect: reconnectPending/);
   assert.match(worktreeSource, /agentOrder/);
-  assert.match(worktreeSource, /return items\.sort/);
+  assert.match(worktreeSource, /return dedupeRuntimeOverviewItems\(items\)\.sort/);
 });
 
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {

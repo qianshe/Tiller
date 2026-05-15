@@ -17,6 +17,7 @@ export type SessionMessagePage = {
 const DEFAULT_MESSAGE_PAGE_LIMIT = 20;
 const MAX_MESSAGE_PAGE_LIMIT = 200;
 const ORDER_CURSOR_PREFIX = "order";
+const PROVIDER_PARAGRAPH_MESSAGE_ID_PATTERN = /^(?<base>.+)#p\d+$/u;
 
 export function createSessionMessageStore(rootDir: string) {
   return {
@@ -60,11 +61,16 @@ export function pageSessionMessages(
   const endIndex = resolvePageEndIndex(normalized, options.before);
   const eligible = normalized.slice(0, endIndex);
   const startIndex = Math.max(eligible.length - limit, 0);
-  const page = eligible.slice(startIndex);
-  const hasMore = startIndex > 0;
+  const pageStartIndex = expandPageStartForProviderParagraphGroup(
+    normalized,
+    startIndex,
+    endIndex,
+  );
+  const page = eligible.slice(pageStartIndex);
+  const hasMore = pageStartIndex > 0;
   return {
     messages: page,
-    nextCursor: hasMore ? encodeOrderCursor(startIndex, page[0]?.id) : undefined,
+    nextCursor: hasMore ? encodeOrderCursor(pageStartIndex, page[0]?.id) : undefined,
     hasMore,
   };
 }
@@ -98,6 +104,34 @@ function decodeLegacyHistoryCursor(cursor: string | undefined) {
     return null;
   }
   return { timestamp, id };
+}
+
+function expandPageStartForProviderParagraphGroup(
+  messages: AgentMessage[],
+  startIndex: number,
+  endIndex: number,
+) {
+  if (startIndex <= 0 || startIndex >= endIndex) {
+    return startIndex;
+  }
+
+  const base = providerParagraphMessageBase(messages[startIndex]?.id);
+  if (!base) {
+    return startIndex;
+  }
+
+  let expandedStart = startIndex;
+  while (
+    expandedStart > 0 &&
+    providerParagraphMessageBase(messages[expandedStart - 1]?.id) === base
+  ) {
+    expandedStart -= 1;
+  }
+  return expandedStart;
+}
+
+function providerParagraphMessageBase(id: string | undefined) {
+  return id ? PROVIDER_PARAGRAPH_MESSAGE_ID_PATTERN.exec(id)?.groups?.base : undefined;
 }
 
 function resolvePageEndIndex(messages: AgentMessage[], cursor: string | undefined) {

@@ -45,7 +45,10 @@ function resetStore() {
     outputs: {},
     toolCalls: {},
     diffs: {},
-    permissionRequests: {},
+    approvalItemsById: {},
+    pendingApprovalIds: [],
+    pendingApprovalIdsBySession: {},
+    approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
   });

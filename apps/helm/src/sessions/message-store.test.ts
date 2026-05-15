@@ -528,3 +528,34 @@ test("session message store defaults to latest twenty paragraph messages", async
     rmSync(tempRoot, { force: true, recursive: true });
   }
 });
+
+test("session message store does not split one provider paragraph message across pages", async () => {
+  const mod = await import("./message-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-message-store-provider-group-page-"));
+
+  try {
+    const store = mod.createSessionMessageStore(tempRoot);
+    store.append("session-1", {
+      id: "msg-user-1",
+      role: "user",
+      text: "review this plan",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    });
+    for (let index = 0; index < 25; index += 1) {
+      store.append("session-1", {
+        id: `provider-message-1#p${index}`,
+        role: "assistant",
+        text: `paragraph ${index}`,
+        timestamp: `2026-05-07T08:00:${String(index + 1).padStart(2, "0")}.000Z`,
+      });
+    }
+
+    const latest = store.listPage("session-1");
+    assert.equal(latest.messages.length, 25);
+    assert.equal(latest.messages[0]?.id, "provider-message-1#p0");
+    assert.equal(latest.messages.at(-1)?.id, "provider-message-1#p24");
+    assert.equal(latest.hasMore, true);
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});

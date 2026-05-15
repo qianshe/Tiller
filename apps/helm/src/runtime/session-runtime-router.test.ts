@@ -33,8 +33,9 @@ function createContext(options: {
     sessionCapabilities?: { imageInput?: boolean };
   };
   restoreOk?: boolean;
+  summary?: Partial<SessionSummary>;
 } = {}) {
-  const summary = createSummary();
+  const summary = createSummary(options.summary);
   const persisted: AgentMessage[] = [];
   const broadcasts: Array<{ method: string; params: any }> = [];
   let currentSummary = summary;
@@ -103,6 +104,61 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   assert.equal(result.stopReason, "end_turn");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
+});
+
+test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    summary: { availableCommands: [{ name: "review" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await assert.rejects(
+    sendPromptToSession({ sessionId: "session-1", text: "/unknown please" }, context),
+    /command is not supported/u,
+  );
+
+  assert.deepEqual(prompted, []);
+  assert.equal(persisted.length, 0);
+});
+
+test("sendPromptToSession allows supported slash commands as ACP text prompts", async () => {
+  const prompted: string[] = [];
+  const { context } = createContext({
+    summary: { availableCommands: [{ name: "review" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession({ sessionId: "session-1", text: "/review branch" }, context);
+
+  assert.deepEqual(prompted, ["/review branch"]);
+});
+
+test("sendPromptToSession allows scoped slash command invocations", async () => {
+  const prompted: string[] = [];
+  const { context } = createContext({
+    summary: { availableCommands: [{ name: "frontend-design", scope: "skills" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession({ sessionId: "session-1", text: "/skills:frontend-design hero" }, context);
+
+  assert.deepEqual(prompted, ["/skills:frontend-design hero"]);
 });
 
 test("sendPromptToSession restores a stale session before dispatch", async () => {

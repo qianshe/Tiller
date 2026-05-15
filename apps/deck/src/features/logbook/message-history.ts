@@ -91,7 +91,9 @@ export function mergeAgentMessages(
       const isCumulativeSnapshot = incoming.text.startsWith(last.text);
       const nextText = isCumulativeSnapshot
         ? incoming.text
-        : `${last.text}${incoming.text}`;
+        : shouldMergeProviderParagraphs(last, incoming)
+          ? joinProviderParagraphText(last.text, incoming.text)
+          : `${last.text}${incoming.text}`;
       return [
         ...items.slice(0, -1),
         {
@@ -192,7 +194,9 @@ function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
 function combineAssistantText(current: AgentMessage, incoming: AgentMessage) {
   return incoming.text.startsWith(current.text)
     ? incoming.text
-    : `${current.text}${incoming.text}`;
+    : shouldMergeProviderParagraphs(current, incoming)
+      ? joinProviderParagraphText(current.text, incoming.text)
+      : `${current.text}${incoming.text}`;
 }
 
 function replaceLastMessage(
@@ -269,6 +273,33 @@ function normalizedRuntimeSegmentId(id: string) {
 function isSameProviderParagraphMessage(leftId: string, rightId: string) {
   const leftBase = providerParagraphMessageBase(leftId);
   return Boolean(leftBase && leftBase === providerParagraphMessageBase(rightId));
+}
+
+function shouldMergeProviderParagraphs(
+  current: AgentMessage,
+  incoming: AgentMessage,
+) {
+  return (
+    current.role === "assistant" &&
+    incoming.role === "assistant" &&
+    isSameProviderParagraphMessage(current.id, incoming.id)
+  );
+}
+
+function joinProviderParagraphText(
+  currentText: string,
+  incomingText: string,
+) {
+  if (!currentText) {
+    return incomingText;
+  }
+  if (!incomingText) {
+    return currentText;
+  }
+  if (/\n\s*\n$/u.test(currentText) || /^\s*\n/u.test(incomingText)) {
+    return `${currentText}${incomingText}`;
+  }
+  return `${currentText}\n\n${incomingText}`;
 }
 
 function providerParagraphMessageBase(id: string) {

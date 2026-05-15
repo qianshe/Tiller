@@ -195,9 +195,6 @@ export function applySessionResult(
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setPermissionRequests((current) =>
-          pruneSessionScopedMap(current, nextSessions),
-        );
         store.setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
         store.setToolCalls((current) => {
           const next = pruneSessionScopedMap(current, nextSessions);
@@ -323,15 +320,13 @@ export function applySessionResult(
         );
       }
       return true;
-    case "permission/list_pending":
+    case "approval/list_pending":
       if (sourceIsCurrentHelm) {
-        store.setPermissionRequests(
-          Object.fromEntries(
-            (payload.permissions ?? []).map((permission: any) => [
-              permission.sessionId,
-              permission.request,
-            ]),
-          ),
+        store.replacePendingApprovals(
+          (payload.approvals ?? []).map((approval: any) => ({
+            sessionId: approval.sessionId,
+            request: approval.request,
+          })),
         );
       }
       return true;
@@ -380,9 +375,7 @@ export function applySessionResult(
       store.setMessages((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setPermissionRequests((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
-      );
+      store.dropSessionApprovals(payload.result.sessionId);
       store.setOutputs((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
@@ -402,6 +395,8 @@ export function applySessionResult(
       );
       return true;
     case "permission/respond":
+    case "approval/respond":
+    case "approval/list_pending":
     case "session/prompt":
     case "session/set_config_option":
       return true;

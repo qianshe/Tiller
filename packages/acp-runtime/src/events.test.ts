@@ -270,6 +270,8 @@ test("mapSessionUpdateNotification preserves available command kind metadata", (
             name: "frontend-design",
             description: "Use this skill for polished UI.",
             type: "skill",
+            input: { hint: "<brief>" },
+            meta: { source: "global", scope: "skills" },
           },
           {
             name: "review",
@@ -290,13 +292,90 @@ test("mapSessionUpdateNotification preserves available command kind metadata", (
       name: command.name,
       kind: command.kind,
       rawKind: command.rawKind,
+      input: command.input,
+      source: command.source,
+      scope: command.scope,
     })),
     [
-      { name: "ralph-loop", kind: "builtin", rawKind: undefined },
-      { name: "frontend-design", kind: "skill", rawKind: "skill" },
-      { name: "review", kind: "command", rawKind: undefined },
+      { name: "ralph-loop", kind: "builtin", rawKind: undefined, input: undefined, source: undefined, scope: undefined },
+      {
+        name: "frontend-design",
+        kind: "skill",
+        rawKind: "skill",
+        input: { hint: "<brief>" },
+        source: "global",
+        scope: "skills",
+      },
+      { name: "review", kind: "command", rawKind: undefined, input: undefined, source: undefined, scope: undefined },
     ],
   );
+});
+
+test("mapSessionUpdateNotification infers ClaudeCode user skills from description suffix", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_claude_skills",
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "frontend-design",
+            description: "Create distinctive frontend interfaces. (user)",
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "available-commands");
+  if (mapped?.event.type !== "available-commands") {
+    throw new Error("Expected available-commands event");
+  }
+  assert.deepEqual(mapped.event.commands[0], {
+    name: "frontend-design",
+    description: "Create distinctive frontend interfaces.",
+    input: undefined,
+    kind: "skill",
+    rawKind: undefined,
+    source: "user",
+    scope: undefined,
+  });
+});
+
+test("mapSessionUpdateNotification infers top-level user source commands as skills", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_user_source_skills",
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "frontend-design",
+            description: "Create distinctive frontend interfaces.",
+            source: "user",
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "available-commands");
+  if (mapped?.event.type !== "available-commands") {
+    throw new Error("Expected available-commands event");
+  }
+  assert.deepEqual(mapped.event.commands[0], {
+    name: "frontend-design",
+    description: "Create distinctive frontend interfaces.",
+    input: undefined,
+    kind: "skill",
+    rawKind: undefined,
+    source: "user",
+    scope: undefined,
+  });
 });
 
 test("mapSessionUpdateNotification accepts snake_case available commands", () => {

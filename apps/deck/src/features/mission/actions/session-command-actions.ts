@@ -15,6 +15,7 @@ import type {
 } from "react";
 import type { AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import { useDeckStore } from "../../../store";
 import { toast } from "../../toast";
 import {
   createSession as createSessionImpl,
@@ -206,18 +207,23 @@ export function useSessionCommandActions({
     event.currentTarget.form?.requestSubmit();
   }
 
-  function respondToPermission(decision: PermissionDecision) {
+  function respondToPermission(approvalRequestId: string, decision: PermissionDecision) {
     const client = rpcClientRef.current;
     if (!activeSessionId || !isClientOpen(client)) {
       return;
     }
-    const permissionRequest = permissionRequests[activeSessionId];
-    if (!permissionRequest) {
+    const store = useDeckStore.getState();
+    const approval = store.approvalItemsById[approvalRequestId];
+    if (!approval || approval.resolving) {
       return;
     }
-    void dispatch(client, "permission/respond", {
-      permissionRequestId: permissionRequest.id,
+    store.markApprovalResolving(approvalRequestId, true);
+    void dispatch(client, "approval/respond", {
+      approvalRequestId,
       decision,
+    }).catch((error) => {
+      useDeckStore.getState().markApprovalResolving(approvalRequestId, false);
+      throw error;
     });
   }
 

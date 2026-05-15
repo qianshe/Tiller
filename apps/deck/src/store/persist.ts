@@ -1,4 +1,10 @@
-import type { AcpAgentProvider, ProjectSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
+import type {
+  AcpAgentProvider,
+  AvailableCommand,
+  ProjectSummary,
+  SessionSummary,
+  WorktreeSummary,
+} from "@tiller/shared";
 import type { StorageLike } from "../features/auth";
 
 export type DeckSnapshotCache = {
@@ -8,10 +14,25 @@ export type DeckSnapshotCache = {
   sessions: SessionSummary[];
   worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
+  activeSessionId?: string | null;
+  sessionAvailableCommands: Record<string, AvailableCommand[]>;
+  agentAvailableCommands: Record<string, AvailableCommand[]>;
 };
 
 export function snapshotStorageKey(profileId: string) {
   return `tiller.deck-snapshot.${profileId}`;
+}
+
+function normalizeCommandMap(value: unknown): Record<string, AvailableCommand[]> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, AvailableCommand[]] =>
+        typeof entry[0] === "string" && Array.isArray(entry[1]),
+    ),
+  );
 }
 
 export function readDeckSnapshot(storage: StorageLike, profileId: string): DeckSnapshotCache | null {
@@ -31,6 +52,9 @@ export function readDeckSnapshot(storage: StorageLike, profileId: string): DeckS
       sessions: parsed.sessions ?? [],
       worktrees: parsed.worktrees ?? [],
       agents: parsed.agents ?? [],
+      activeSessionId: typeof parsed.activeSessionId === "string" ? parsed.activeSessionId : null,
+      sessionAvailableCommands: normalizeCommandMap(parsed.sessionAvailableCommands),
+      agentAvailableCommands: normalizeCommandMap(parsed.agentAvailableCommands),
     };
   } catch {
     return null;

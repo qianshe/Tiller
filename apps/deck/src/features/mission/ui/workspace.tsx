@@ -9,6 +9,7 @@ import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
 import { buildMissionWorktreeModel } from "./workspace-model";
+import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,6 +103,7 @@ export function MissionWorktree(props: any) {
     loadOlderMessages,
     toggleExpandedMessage,
     pendingPermission,
+    pendingApprovals,
     technicalPanels,
     respondToPermission,
     worktreePickerRef,
@@ -367,6 +369,36 @@ export function MissionWorktree(props: any) {
       };
     });
 
+    if (activeSession?.agentId && activeSession.cwd) {
+      const agent = (agents as any[]).find((item) => item.id === activeSession.agentId);
+      const worktree = (worktrees ?? []).find(
+        (item: any) => normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession.cwd),
+      );
+      const status = statuses[activeSession.id] ?? activeSession.status;
+      items.push({
+        id: `acp:${activeSession.agentId}:${activeSession.cwd}:active-session`,
+        agentId: activeSession.agentId,
+        projectId: activeSession.projectId ?? selectedProjectId ?? undefined,
+        cwd: activeSession.cwd,
+        label: agent?.name ?? activeSession.agentName ?? activeSession.agentId ?? "ACP",
+        meta: worktree?.name ?? activeSession.worktreeName ?? activeSession.cwd,
+        status: activeSessionRestoreGate.canChat ? "已连接" : "连接中",
+        runtimeSessionId: formatRuntimeSessionCount(1, activeSessionRestoreGate.canChat ? 1 : 0),
+        model: activeSession.model,
+        canReconnect: true,
+        canConnect: false,
+        children: [
+          {
+            id: activeSession.id,
+            projectName: activeSession.projectName ?? "未选项目",
+            branchName: worktree?.name ?? activeSession.worktreeName ?? activeSession.cwd,
+            status: copy.status[status] ?? status,
+            model: activeSession.model,
+          },
+        ],
+      });
+    }
+
     for (const [key, entry] of Object.entries(agentModelOptions ?? {}) as Array<[string, any]>) {
       const [agentId, cwd] = key.split("::");
       if (!entry?.runtimeSessionId || items.some((item) => item.agentId === agentId && item.cwd === cwd)) {
@@ -390,6 +422,7 @@ export function MissionWorktree(props: any) {
       });
     }
 
+    const overviewConnectCwd = selectedCwd ?? activeSession?.cwd;
     for (const agent of agents as any[]) {
       const hasConnection = items.some((item) => item.agentId === agent.id);
       if (hasConnection) {
@@ -399,12 +432,12 @@ export function MissionWorktree(props: any) {
         id: `acp:${agent.id ?? agent.name ?? "acp"}`,
         agentId: agent.id,
         projectId: selectedProjectId ?? undefined,
-        cwd: selectedCwd ?? undefined,
+        cwd: overviewConnectCwd ?? undefined,
         label: agent.name ?? agent.id ?? "ACP",
         meta: "暂无连接",
         status: "未连接",
         runtimeSessionId: "暂无连接",
-        canConnect: Boolean(agent.id && selectedCwd),
+        canConnect: Boolean(agent.id && overviewConnectCwd),
         canReconnect: false,
       });
     }
@@ -412,7 +445,7 @@ export function MissionWorktree(props: any) {
     const agentOrder = new Map(
       (agents as any[]).map((agent, index) => [agent.id, index]),
     );
-    return items.sort(
+    return dedupeRuntimeOverviewItems(items).sort(
       (left, right) =>
         (agentOrder.get(left.agentId) ?? Number.MAX_SAFE_INTEGER) -
           (agentOrder.get(right.agentId) ?? Number.MAX_SAFE_INTEGER) ||
@@ -547,7 +580,7 @@ export function MissionWorktree(props: any) {
           onToggleExpandedMessage={toggleExpandedMessage}
           activityLoading={missionActivityLoading}
           pendingToolPresent={Boolean(pendingToolActivity)}
-          pendingPermission={pendingPermission}
+          pendingApprovals={pendingApprovals}
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
           onRespondToPermission={respondToPermission}

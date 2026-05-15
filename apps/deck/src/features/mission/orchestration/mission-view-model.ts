@@ -41,6 +41,8 @@ export function useMissionViewModel(ctx: any) {
     copy,
     locale,
     permissionRequests,
+    approvalItemsById,
+    pendingApprovalIdsBySession,
     selectedAgentId,
     selectedAgentMode,
     selectedModel,
@@ -165,6 +167,14 @@ const technicalPanels = resolveTechnicalPanelPreferences(deckPreferences);
 const pendingPermission = activeSession
   ? (permissionRequests[activeSession.id] ?? null)
   : null;
+const pendingApprovals = useMemo(() => {
+  if (!activeSession) return [];
+  const ids = pendingApprovalIdsBySession[activeSession.id] ?? [];
+  return ids
+    .map((id) => approvalItemsById[id])
+    .filter((item) => Boolean(item))
+    .map((item) => ({ request: item.request, resolving: item.resolving }));
+}, [activeSession, approvalItemsById, pendingApprovalIdsBySession]);
 const selectedDraftAgent =
   filteredAgents.find((agent) => agent.id === selectedAgentId) ?? null;
 const draftAgent =
@@ -330,6 +340,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     activeResumeLabel,
     technicalPanels,
     pendingPermission,
+    pendingApprovals,
     selectedDraftAgent,
     draftAgent,
     draftAgentMode,

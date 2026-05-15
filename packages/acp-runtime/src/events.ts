@@ -26,7 +26,7 @@ function timestamp() {
 }
 
 function readRawCommandKind(cmd: Record<string, unknown>) {
-  for (const key of ["kind", "type", "source", "category"]) {
+  for (const key of ["kind", "type", "category"]) {
     const value = cmd[key];
     if (typeof value === "string" && value.trim()) {
       return value.trim();
@@ -53,6 +53,37 @@ function normalizeAvailableCommandKind(
   }
   if (/^\s*[\[(]builtin[\])]/iu.test(description ?? "")) return "builtin";
   return rawKind ? "unknown" : "command";
+}
+
+function readCommandMetadataString(cmd: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = cmd[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  const meta = cmd.meta;
+  if (meta && typeof meta === "object") {
+    const record = meta as Record<string, unknown>;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+  return undefined;
+}
+
+function parseCommandDescription(description: string | undefined) {
+  if (!description) {
+    return { description, source: undefined };
+  }
+  const match = /^(.*?)\s*\((user)\)\s*$/iu.exec(description);
+  if (!match) {
+    return { description, source: undefined };
+  }
+  return { description: match[1]?.trim() || description, source: match[2]?.toLowerCase() };
 }
 
 export function mapSessionUpdateNotification(payload: any): { sessionId: string; event: SessionRuntimeEvent } | null {
@@ -106,13 +137,17 @@ export function mapSessionUpdateNotification(payload: any): { sessionId: string;
       .filter((cmd: any) => cmd && typeof cmd.name === "string")
       .map((cmd: any) => {
         const rawKind = readRawCommandKind(cmd);
-        const description = typeof cmd.description === "string" ? cmd.description : undefined;
+        const parsedDescription = parseCommandDescription(typeof cmd.description === "string" ? cmd.description : undefined);
+        const description = parsedDescription.description;
+        const source = readCommandMetadataString(cmd, ["source", "origin"]) ?? parsedDescription.source;
         return {
           name: cmd.name,
           description,
           input: cmd.input && typeof cmd.input === "object" ? { hint: typeof cmd.input.hint === "string" ? cmd.input.hint : undefined } : undefined,
-          kind: normalizeAvailableCommandKind(rawKind, description),
+          kind: source === "user" && !rawKind ? "skill" : normalizeAvailableCommandKind(rawKind, description),
           rawKind,
+          source,
+          scope: readCommandMetadataString(cmd, ["scope", "scopePrefix", "scope_prefix"]),
         };
       });
     return {

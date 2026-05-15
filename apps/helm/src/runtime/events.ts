@@ -248,10 +248,11 @@ export function handleRuntimeEvent(
         updatedAt: new Date().toISOString(),
         lastMessagePreview: event.request.reason,
       }));
-      context.permissionIndex.set(event.request.id, { sessionId, request: event.request });
-      broadcastSessionUpdate(context, sessionId, {
-        kind: "permission_request",
-        permissionRequest: event.request,
+      context.approvalIndex.set(event.request.id, { sessionId, request: event.request });
+      context.broadcastNotification("approval/created", {
+        sessionId,
+        request: event.request,
+        session: context.sessions.get(sessionId)?.summary ?? null,
       });
       return;
     case "tool-call":
