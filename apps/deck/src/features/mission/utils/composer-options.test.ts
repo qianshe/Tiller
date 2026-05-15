@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentMessage } from "@tiller/shared";
 import { resolveSessionConfigSupport, type SessionSummary } from "@tiller/shared";
 import {
   formatAgentModeLabel,
@@ -7,6 +8,7 @@ import {
   resolveCurrentAgentMode,
   resolveDraftConfigOptions,
   resolveRenderableSessionConfigOptions,
+  summarizeSessionContext,
   toSessionConfigPreferencePatch,
 } from "./composer-options";
 
@@ -181,4 +183,55 @@ test("resolveSessionConfigSupport does not infer support from command names with
     resolveSessionConfigSupport({ command: "opencode" }),
     { model: "none", reasoningEffort: "none" },
   );
+});
+
+test("summarizeSessionContext focuses on recent dialogue instead of runtime metadata", () => {
+  const active = { ...session("session-active", "opencode"), messageCount: 14 };
+  const messages: AgentMessage[] = [
+    {
+      id: "u1",
+      role: "user",
+      text: "请检查会话恢复时重复 user 消息的问题。",
+      timestamp: "2026-05-15T00:00:00.000Z",
+    },
+    {
+      id: "a1",
+      role: "assistant",
+      text: "结论：重复来自 provider exportHistory 返回额外重组 prompt，应该在同步阶段过滤。",
+      timestamp: "2026-05-15T00:00:01.000Z",
+    },
+  ];
+
+  const summary = summarizeSessionContext(active, messages);
+
+  assert.match(summary, /最近问答与结论/);
+  assert.match(summary, /用户：请检查会话恢复/);
+  assert.match(summary, /助手结论：结论：重复来自/);
+  assert.doesNotMatch(summary, /Session session-active is idle/);
+  assert.doesNotMatch(summary, /messages: 14/);
+});
+
+test("summarizeSessionContext compresses long code and mermaid blocks", () => {
+  const active = session("session-active", "opencode");
+  const messages: AgentMessage[] = [
+    {
+      id: "a1",
+      role: "assistant",
+      text: "```mermaid\nsequenceDiagram\nA->>B: very long diagram\n```\n结论：保留关键判断。",
+      timestamp: "2026-05-15T00:00:01.000Z",
+    },
+    {
+      id: "a2",
+      role: "assistant",
+      text: `长回复：${"x".repeat(500)}`,
+      timestamp: "2026-05-15T00:00:02.000Z",
+    },
+  ];
+
+  const summary = summarizeSessionContext(active, messages);
+
+  assert.match(summary, /\[Mermaid 图已省略\]/);
+  assert.match(summary, /长回复：x+/);
+  assert.match(summary, /…/);
+  assert.ok(summary.length < 1800);
 });

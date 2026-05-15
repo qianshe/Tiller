@@ -19,6 +19,7 @@ type UsePromptEnhanceActionOptions = {
   filteredWorktrees: WorktreeSummary[];
   selectedCwd: string | null;
   activeSession: SessionSummary | null;
+  activeSessionProject?: ProjectSummary | null;
   draftProject: ProjectSummary | null;
   activeSessionMessages: AgentMessage[];
 };
@@ -32,6 +33,7 @@ export function usePromptEnhanceAction({
   filteredWorktrees,
   selectedCwd,
   activeSession,
+  activeSessionProject,
   draftProject,
   activeSessionMessages,
 }: UsePromptEnhanceActionOptions) {
@@ -49,10 +51,11 @@ export function usePromptEnhanceAction({
           normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession?.cwd ?? selectedCwd ?? undefined) ||
           normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession?.cwd),
       );
+      const project = activeSessionProject ?? draftProject;
       const enhanced = await enhancePromptWithLlm(rawPrompt, promptEnhancer, {
-        projectName: draftProject?.name ?? activeSession?.projectName,
+        projectName: project?.name ?? activeSession?.projectName,
         worktreeName: worktree?.name ?? activeSession?.worktreeName,
-        projectSummary: draftProject?.summary,
+        projectSummary: project?.summary,
         worktreeSummary: worktree?.summary,
         sessionStatus: activeSession?.status,
         sessionSummary: summarizeSessionContext(

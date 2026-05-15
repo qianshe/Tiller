@@ -115,7 +115,8 @@ test("default prompt enhancer treats project and session context as private refe
   assert.match(body, /New product or app/);
   assert.match(body, /phrase them as options or questions/);
   assert.match(body, /directly usable as the user's next message/);
-  assert.match(body, /Do not prefix it with meta commentary/);
+  assert.match(body, /Do not include explanations, confirmations, caveats/);
+  assert.match(body, /Do not say 'if this is the bug'/);
   assert.match(body, /Do not output guessed file paths/);
   assert.doesNotMatch(body, /AGENTS/);
   assert.doesNotMatch(body, /# Context/);
@@ -163,6 +164,161 @@ test("enhancePromptWithLlm strips markdown fences from LLM output", async () => 
   );
 
   assert.equal(enhanced, "## 目标\n检查设置页。");
+});
+
+test("enhancePromptWithLlm strips meta preface before the usable prompt", async () => {
+  const fetcher = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content:
+                "根据会话上下文，如果你指的是这个 bug，请使用以下 prompt:\n\n# Task\n检查重复消息。\n\n# Verification\n说明结果。",
+            },
+          },
+        ],
+      }),
+      { status: 200 },
+    )) as typeof fetch;
+
+  const enhanced = await enhancePromptWithLlm(
+    "查一下重复消息",
+    basePreferences,
+    {},
+    fetcher,
+  );
+
+  assert.equal(enhanced, "# Task\n检查重复消息。\n\n# Verification\n说明结果。");
+});
+
+test("enhancePromptWithLlm strips single-line enhanced prompt labels", async () => {
+  const fetcher = (async () =>
+    new Response(
+      JSON.stringify({ choices: [{ message: { content: "优化后的提示词如下：检查设置页。" } }] }),
+      { status: 200 },
+    )) as typeof fetch;
+
+  const enhanced = await enhancePromptWithLlm(
+    "检查设置页",
+    basePreferences,
+    {},
+    fetcher,
+  );
+
+  assert.equal(enhanced, "检查设置页。");
+});
+
+test("enhancePromptWithLlm strips explanatory preface before separator prompts", async () => {
+  const fetcher = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: [
+                "根据会话摘要，问题是数据层缺少过滤导致重复 user 消息。",
+                "我将把‘怎么解决’转化为一个可执行的修复规划 prompt。",
+                "",
+                "---",
+                "",
+                "Bug 4 的根因已确认：OpenCode wrapper echo 会写入本地历史。",
+                "请先给出修复方案，不要直接改代码。",
+              ].join("\n"),
+            },
+          },
+        ],
+      }),
+      { status: 200 },
+    )) as typeof fetch;
+
+  const enhanced = await enhancePromptWithLlm(
+    "怎么解决",
+    basePreferences,
+    {},
+    fetcher,
+  );
+
+  assert.equal(
+    enhanced,
+    "Bug 4 的根因已确认：OpenCode wrapper echo 会写入本地历史。\n请先给出修复方案，不要直接改代码。",
+  );
+});
+
+test("enhancePromptWithLlm compacts duplicate private reference context", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  await enhancePromptWithLlm(
+    "优化提示词",
+    basePreferences,
+    {
+      projectSummary: [
+        "Project: Tiller",
+        "Project: Tiller",
+        "AGENTS.md: 遵守项目规则",
+        "AGENTS.md: 遵守项目规则",
+      ].join("\n"),
+      sessionSummary: [
+        "最近问答与结论：",
+        "- 助手结论：Bug 4 在当前代码base 中仍处于未修复状态。",
+        "- 助手结论：Bug 4 在当前代码base 中仍处于未修复状态。",
+      ].join("\n"),
+    },
+    fetcher,
+  );
+
+  const body = String(calls[0]?.init.body);
+  assert.equal((body.match(/Project: Tiller/g) ?? []).length, 0);
+  assert.equal((body.match(/AGENTS\.md: 遵守项目规则/g) ?? []).length, 1);
+  assert.equal((body.match(/Bug 4 在当前代码base 中仍处于未修复状态/g) ?? []).length, 1);
+});
+
+test("enhancePromptWithLlm keeps AGENTS project context and drops CLAUDE README blocks", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  await enhancePromptWithLlm(
+    "优化提示词",
+    basePreferences,
+    {
+      projectSummary: [
+        "Project: Tiller",
+        "Configured summary: Project: Tiller Worktree: codex/session-prompt-queue Path: D:/repo",
+        "AGENTS.md:",
+        "# Tiller - AI Agent 开发指南",
+        "## 项目简介",
+        "Tiller 是 local-first command deck。",
+        "CLAUDE.md:",
+        "本项目的 AI Agent 开发指南以 AGENTS.md 为唯一维护入口。",
+        "README.md:",
+        "Session summary: 最近问答与结论：",
+      ].join("\n"),
+    },
+    fetcher,
+  );
+
+  const body = String(calls[0]?.init.body);
+  assert.doesNotMatch(body, /Project: Tiller/);
+  assert.doesNotMatch(body, /Worktree: codex\/session-prompt-queue/);
+  assert.match(body, /AGENTS\.md:/);
+  assert.match(body, /Tiller 是 local-first command deck/);
+  assert.doesNotMatch(body, /CLAUDE\.md:/);
+  assert.doesNotMatch(body, /README\.md:/);
+  assert.doesNotMatch(body, /唯一维护入口/);
+  assert.doesNotMatch(body, /Session summary: 最近问答与结论/);
 });
 
 test("enhancePromptWithLlm uses the configured instruction template", async () => {

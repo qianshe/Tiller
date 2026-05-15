@@ -80,6 +80,13 @@ test("composer enables send for a typed new-session prompt", () => {
   assert.doesNotMatch(html, /aria-label="发送"[^>]*disabled=""/);
 });
 
+test("composer uses a tighter frame and padded square textarea", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps()));
+
+  assert.match(html, /rounded-md border border-border-ghost\/70 bg-surface px-3 py-2\.5/);
+  assert.match(html, /rounded-none border-0 bg-transparent px-1 py-0/);
+});
+
 test("composer shows only the interrupt action while a session can be cancelled", () => {
   const html = renderToStaticMarkup(
     createElement(MissionComposer, baseProps({

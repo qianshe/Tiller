@@ -187,7 +187,7 @@ export function MissionComposer({
       data-mission-swipe-lock="true"
     >
       <form
-        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface p-3"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-md border border-border-ghost/70 bg-surface px-3 py-2.5"
         onSubmit={submitPrompt}
       >
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
@@ -205,7 +205,7 @@ export function MissionComposer({
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
             rows={1}
-            className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
+            className="min-h-28 resize-none rounded-none border-0 bg-transparent px-1 py-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup

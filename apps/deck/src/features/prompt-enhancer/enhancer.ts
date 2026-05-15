@@ -11,6 +11,7 @@ export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
     "Use private reference only to resolve ambiguity about the target area,",
     "constraints, or existing work.",
     "Do not copy project or session summaries into the output.",
+    "Do not restate the context before the prompt.",
     "If the private reference is not needed, ignore it.",
   ].join(" "),
   ["<user_draft>", "{{userPrompt}}", "</user_draft>"].join("\n"),
@@ -18,9 +19,9 @@ export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
     "Output contract:",
     "- Apply the internal workflow silently: Keep → Drop → Clarify → Inspect → Propose → Verify → Defer.",
     "- Return only the enhanced prompt, without Markdown code fences.",
+    "- Do not include explanations, confirmations, caveats, or conditional wrappers before/after the prompt.",
+    "- Do not say 'if this is the bug' or 'please use the following prompt'; just output the prompt.",
     "- Make the output directly usable as the user's next message.",
-    "- Do not prefix it with meta commentary such as",
-    '  "Here is the enhanced prompt" or "优化后的提示词如下".',
     "- Use the user's language unless the user asks otherwise.",
     "- Preserve the user's intent and explicit constraints.",
     "- Preserve the task mode (discussion, investigation, implementation, review, or fix).",
@@ -186,7 +187,13 @@ export async function enhancePromptWithLlm(
           role: "system",
           content:
             llm.systemPrompt.trim() ||
-            "Rewrite the user's draft into a clear, actionable coding-agent prompt. Return only the rewritten prompt.",
+            [
+              "Rewrite the user's draft into a clear, actionable coding-agent prompt.",
+              "Return exactly and only the rewritten prompt text.",
+              "The first character of your response must be part of the final prompt, not commentary.",
+              "Do not explain what you changed, do not add confirmation text, and do not wrap the prompt.",
+              "Never begin with context summaries such as '根据会话摘要', 'Based on the context', or 'I will'.",
+            ].join(" "),
         },
         {
           role: "user",
@@ -351,13 +358,16 @@ function renderInstructionTemplate(
   const values: Record<string, string> = {
     projectName: context.projectName?.trim() || "Not available.",
     worktreeName: context.worktreeName?.trim() || "Not available.",
-    projectSummary:
+    projectSummary: compactProjectReference(
       context.projectSummary?.trim() || summarizeProjectContext(context),
-    worktreeSummary:
+    ),
+    worktreeSummary: compactPrivateReference(
       context.worktreeSummary?.trim() || summarizeWorktreeContext(context),
+    ),
     sessionStatus: context.sessionStatus?.trim() || "Not available.",
-    sessionSummary:
+    sessionSummary: compactPrivateReference(
       context.sessionSummary?.trim() || "No prior session context.",
+    ),
     userPrompt,
   };
 
@@ -370,16 +380,62 @@ function renderInstructionTemplate(
     : [rendered, "", "User draft:", userPrompt].join("\n");
 }
 
-function summarizeProjectContext(context: PromptEnhancerContext) {
-  const parts = [
-    context.projectName?.trim()
-      ? `Project: ${context.projectName.trim()}.`
-      : "",
-    context.worktreeName?.trim()
-      ? `Worktree: ${context.worktreeName.trim()}.`
-      : "",
-  ].filter(Boolean);
-  return parts.length ? parts.join(" ") : "Not available.";
+function compactPrivateReference(text: string) {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.replace(/\s+/gu, " ").trim();
+    if (!line) {
+      continue;
+    }
+    const key = line.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    lines.push(line);
+  }
+  return lines.join("\n") || "Not available.";
+}
+
+function compactProjectReference(text: string) {
+  const rawLines = text.split(/\r?\n/u);
+  const agentsStart = rawLines.findIndex((line) => /^\s*AGENTS\.md\s*:/iu.test(line));
+  if (agentsStart >= 0) {
+    const nextDuplicateDocStart = rawLines.findIndex(
+      (line, index) =>
+        index > agentsStart && /^\s*(?:CLAUDE|README)\.md\s*:/iu.test(line),
+    );
+    const agentsLines = rawLines.slice(
+      agentsStart,
+      nextDuplicateDocStart >= 0 ? nextDuplicateDocStart : undefined,
+    );
+    return compactPrivateReference(agentsLines.join("\n"));
+  }
+
+  const lines: string[] = [];
+  let skippingDuplicateDoc = false;
+  for (const line of rawLines) {
+    if (/^\s*(?:CLAUDE|README)\.md\s*:/iu.test(line)) {
+      skippingDuplicateDoc = true;
+      continue;
+    }
+    if (/^\s*AGENTS\.md\s*:/iu.test(line)) {
+      skippingDuplicateDoc = false;
+    }
+    if (skippingDuplicateDoc) {
+      continue;
+    }
+    if (/^\s*(?:Project|Worktree|Configured summary)\s*:/iu.test(line)) {
+      continue;
+    }
+    lines.push(line);
+  }
+  return compactPrivateReference(lines.join("\n"));
+}
+
+function summarizeProjectContext(_context: PromptEnhancerContext) {
+  return "Not available.";
 }
 
 function summarizeWorktreeContext(context: PromptEnhancerContext) {
@@ -391,5 +447,38 @@ function summarizeWorktreeContext(context: PromptEnhancerContext) {
 function normalizeEnhancedPrompt(content?: string) {
   const trimmed = content?.trim() ?? "";
   const fenced = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i);
-  return (fenced?.[1] ?? trimmed).trim();
+  return stripPromptEnhancerMetaPreface(fenced?.[1] ?? trimmed).trim();
+}
+
+function stripPromptEnhancerMetaPreface(content: string) {
+  const normalized = content.trim();
+  const separatorPrompt = stripMetaPrefaceBeforeSeparator(normalized);
+  if (separatorPrompt !== normalized) {
+    return separatorPrompt;
+  }
+
+  const headingIndex = normalized.search(/^#\s+(?:Task|Acceptance Criteria|Verification|Questions|任务|验收|验证|问题)\b/imu);
+  if (headingIndex > 0 && looksLikeEnhancerMetaPreface(normalized.slice(0, headingIndex))) {
+    return normalized.slice(headingIndex);
+  }
+
+  return normalized.replace(
+    /^(?:Here(?:'s| is)\s+(?:the\s+)?(?:enhanced|rewritten)\s+prompt|(?:优化|增强|改写)后的?提示词(?:如下)?|请使用以下\s*prompt)\s*[:：]?\s*/iu,
+    "",
+  );
+}
+
+function stripMetaPrefaceBeforeSeparator(content: string) {
+  const separator = /(?:^|\n)\s*---\s*(?:\n|$)/u.exec(content);
+  if (!separator?.index) {
+    return content;
+  }
+
+  const prefix = content.slice(0, separator.index).trim();
+  const suffix = content.slice(separator.index + separator[0].length).trim();
+  return prefix && suffix && looksLikeEnhancerMetaPreface(prefix) ? suffix : content;
+}
+
+function looksLikeEnhancerMetaPreface(prefix: string) {
+  return /(?:prompt|提示词|如下|请使用|根据.*(?:上下文|摘要|会话)|我将|I will|Based on.*context|如果.*请)/iu.test(prefix);
 }

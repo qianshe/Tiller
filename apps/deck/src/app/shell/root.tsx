@@ -336,6 +336,7 @@ export function App() {
     filteredWorktrees: missionView.filteredWorktrees,
     selectedCwd: runtimeState.selectedCwd,
     activeSession: missionView.activeSession,
+    activeSessionProject: missionView.activeSessionProject,
     draftProject: missionView.draftProject,
     activeSessionMessages: missionView.activeSessionMessages,
   });
