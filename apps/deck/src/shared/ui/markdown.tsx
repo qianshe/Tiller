@@ -760,7 +760,6 @@ function MermaidFullscreenViewer({
               transform: controllerRef.current.getTransformStyle(),
               transformOrigin: "center",
               touchAction: "none",
-              willChange: "transform",
             }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
