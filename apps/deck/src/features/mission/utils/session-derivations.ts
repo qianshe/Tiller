@@ -195,9 +195,10 @@ export function resolveSessionTitle(session: SessionSummary, preview = session.l
 }
 
 export function resolvePromptPlaceholder(agent?: { command?: string; args?: string[] } | null) {
-  const command = [agent?.command, ...(agent?.args ?? [])]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-    .join(" ")
+  const rawCommand = agent?.command?.trim();
+  const command = rawCommand
+    ?.replace(/^.*[\\/]/u, "")
+    .replace(/\.(cmd|exe|bat|ps1)$/iu, "")
     .trim();
   return `向 ${command || "ACP 舰员"} 下达指令；/ 调用命令`;
 }

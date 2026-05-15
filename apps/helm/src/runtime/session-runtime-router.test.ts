@@ -4,6 +4,8 @@ import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { sendPromptToSession, drainPromptQueue } from "./session-runtime-router";
 import { createSessionPromptQueueManager } from "./session-prompt-queue";
+import { createLiveMessageBuffer } from "./live-message-buffer";
+import { flushLiveAssistantMessage } from "./events";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -64,6 +66,7 @@ function createContext(options: {
   const context = {
     sessions,
     promptQueue: createSessionPromptQueueManager(),
+    liveMessageBuffer: createLiveMessageBuffer(),
     drainPromptQueue: async (sessionId: string) => {
       await drainPromptQueue(sessionId, context as unknown as HelmHandlerContext);
     },
@@ -122,6 +125,67 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   assert.equal(result.accepted, "sent");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
+});
+
+test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "延迟到 prompt 完成后 flush 的回复",
+          timestamp: "2026-05-15T10:00:00.000Z",
+        });
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复", clientMessageId: "client-flush" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复"],
+      ["assistant", "延迟到 prompt 完成后 flush 的回复"],
+    ],
+  );
+});
+
+test("sendPromptToSession does not duplicate assistant text already flushed by status handling", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "已由 status 路径 flush 的回复",
+          timestamp: "2026-05-15T10:01:00.000Z",
+        });
+        flushLiveAssistantMessage("session-1", context);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复一次", clientMessageId: "client-no-dup" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复一次"],
+      ["assistant", "已由 status 路径 flush 的回复"],
+    ],
+  );
 });
 
 test("sendPromptToSession acknowledges before a long ACP prompt completes", async () => {

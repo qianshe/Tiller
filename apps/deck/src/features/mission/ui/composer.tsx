@@ -178,6 +178,7 @@ export function MissionComposer({
   const modelSettingsLoading =
     draftModelLoading ||
     (!activeSession && selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0);
+  const showInterruptOnly = Boolean(activeSession && sessionCanCancel);
 
 
   return (
@@ -320,7 +321,7 @@ export function MissionComposer({
           </div>
           <div className="min-w-0" />
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-2">
-            {deckPreferences.promptEnhancer.enabled ? (
+            {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
                 variant="outline"
                 size="icon"
@@ -333,11 +334,12 @@ export function MissionComposer({
                 ✦
               </Button>
             ) : null}
-            {activeSession && sessionCanCancel ? (
+            {showInterruptOnly && activeSession ? (
               <Button
                 variant="destructive"
                 size="icon"
                 type="button"
+                className="mission-cancel-session-button size-12 rounded-2xl bg-destructive text-base font-bold text-white shadow-ambient hover:bg-destructive/90"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
@@ -345,15 +347,17 @@ export function MissionComposer({
                 ■
               </Button>
             ) : null}
-            <Button
-              size="icon"
-              type="submit"
-              disabled={!canSend}
-              aria-label="发送"
-              title="发送"
-            >
-              ➤
-            </Button>
+            {!showInterruptOnly ? (
+              <Button
+                size="icon"
+                type="submit"
+                disabled={!canSend}
+                aria-label="发送"
+                title="发送"
+              >
+                ➤
+              </Button>
+            ) : null}
           </div>
         </div>
       </form>

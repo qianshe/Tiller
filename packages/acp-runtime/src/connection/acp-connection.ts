@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { dirname, relative, resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
@@ -435,6 +436,7 @@ export class AcpConnection {
         this.state.logFile,
         this.state.provider,
       );
+      await waitUntilNextEventLoopTurn();
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";

@@ -5,6 +5,7 @@ import {
 } from "@tiller/shared";
 import { applyUserPromptToSummary } from "../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
+import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
 
 export type SessionPromptRequest = {
@@ -114,6 +115,11 @@ export async function sendPromptImmediately(
   }
 
   await record.runtime.prompt(item.text, item.content);
+  if (flushLiveAssistantMessage(item.sessionId, context)) {
+    context.logInfo(
+      `[tiller] 阶段=Prompt完成兜底落盘 session=${item.sessionId} reason=assistant_buffer_after_prompt_completion`,
+    );
+  }
   return "end_turn" as const;
 }
 

@@ -157,10 +157,10 @@ function writeAssistantStreamText(sessionId: string, text: string) {
   }
 }
 
-function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
+export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
   const message = context.liveMessageBuffer.finalize(sessionId);
   if (!message) {
-    return;
+    return false;
   }
   context.persistSessionMessage(sessionId, message);
   context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, message));
@@ -169,6 +169,7 @@ function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContex
     message,
     streaming: false,
   });
+  return true;
 }
 
 
