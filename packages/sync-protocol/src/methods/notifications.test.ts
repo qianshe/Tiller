@@ -12,8 +12,8 @@ import * as deviceAuthenticate from "./device/authenticate";
 test("session/prompt result has stopReason", () => {
   assert.equal(sessionPrompt.method, "session/prompt");
   assert.deepEqual(
-    sessionPrompt.ResultSchema.parse({ stopReason: "end_turn" }),
-    { stopReason: "end_turn" },
+    sessionPrompt.ResultSchema.parse({ accepted: "sent", stopReason: "end_turn" }),
+    { accepted: "sent", stopReason: "end_turn" },
   );
 });
 
@@ -49,6 +49,8 @@ test("session/update accepts every kind", () => {
     "model_options",
     "commands_available",
     "session_updated",
+    "prompt_queue",
+    "user_message",
     "permission_request",
     "permission_resolved",
   ]) {
@@ -68,13 +70,17 @@ test("session/update accepts every kind", () => {
                   ? { kind, commands: [] }
                   : kind === "session_updated"
                     ? { kind, session: {} }
-                    : kind === "agent_message"
-                      ? { kind, message: {} }
-                      : kind === "tool_call"
-                        ? { kind, toolCall: {} }
-                        : kind === "permission_request"
-                          ? { kind, permissionRequest: {} }
-                          : { kind, status: "running" },
+                    : kind === "prompt_queue"
+                      ? { kind, queue: { sessionId: "s1", queued: [] } }
+                      : kind === "user_message"
+                        ? { kind, message: { id: "m1", role: "user", text: "hello", timestamp: "2026-05-15T00:00:00.000Z" } }
+                        : kind === "agent_message"
+                          ? { kind, message: {} }
+                          : kind === "tool_call"
+                            ? { kind, toolCall: {} }
+                            : kind === "permission_request"
+                              ? { kind, permissionRequest: {} }
+                              : { kind, status: "running" },
     });
   }
 });

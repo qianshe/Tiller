@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
+import { createSessionPromptQueueManager } from "../../runtime/session-prompt-queue";
+
+function createPromptQueueContextExtras() {
+  const promptQueue = createSessionPromptQueueManager();
+  return {
+    promptQueue,
+    drainPromptQueue: async () => undefined,
+  };
+}
+
+function flushPromises() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 test("session RPC lists paged sessions", async () => {
   const sessions = [{ id: "s1", updatedAt: "2026-05-06T00:00:00.000Z" }];
@@ -58,8 +71,9 @@ test("session RPC notification cancels active runtime and clears stale handle", 
   assert.equal(sessions.has("s1"), false);
 });
 
-test("session/prompt waits for runtime prompt failures", async () => {
+test("session/prompt acknowledges before runtime prompt failures are reported", async () => {
   const sessionId = "s1";
+  const broadcasts: any[] = [];
   const context = {
     sessions: new Map([
       [
@@ -74,16 +88,23 @@ test("session/prompt waits for runtime prompt failures", async () => {
         },
       ],
     ]),
+    ...createPromptQueueContextExtras(),
     logInfo: () => undefined,
+    logError: () => undefined,
     persistSessionMessage: () => undefined,
     updateSessionSummary: () => undefined,
-    broadcastNotification: () => undefined,
+    broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
   };
 
-  await assert.rejects(
-    handleSessionRpcRequest("session/prompt", { sessionId, text: "继续" }, context as any),
-    /Session is not active: s1/u,
-  );
+  const result = await handleSessionRpcRequest(
+    "session/prompt",
+    { sessionId, text: "继续" },
+    context as any,
+  ) as { accepted: "sent" };
+
+  assert.equal(result.accepted, "sent");
+  await flushPromises();
+  assert.equal(broadcasts.some((item) => item.method === "error/raised"), true);
 });
 
 test("session/rename persists and broadcasts the next title", async () => {
@@ -174,6 +195,7 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
     },
     persistRuntimeDescriptor: () => undefined,
     sessions,
+    ...createPromptQueueContextExtras(),
     logInfo: () => undefined,
     logError: () => undefined,
     broadcastNotification: () => undefined,
@@ -185,9 +207,10 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       record.summary = next;
       return next;
     },
-  } as any) as { session: any; stopReason: string };
+  } as any) as { session: any; accepted: "sent" };
 
-  assert.equal(result.stopReason, "end_turn");
+  await flushPromises();
+  assert.equal(result.accepted, "sent");
   assert.equal(result.session.runtimeSessionId, "runtime-draft");
   assert.equal(result.session.model, "gpt-5.5");
   assert.deepEqual(result.session.availableCommands, [
@@ -196,6 +219,52 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   ]);
   assert.equal(attachedSessionId, result.session.id);
   assert.equal(prompted, "你好");
+});
+
+test("session/update_queued_prompt edits a queued prompt and broadcasts queue", async () => {
+  const promptQueue = createSessionPromptQueueManager();
+  const item = promptQueue.enqueue({
+    sessionId: "s1",
+    text: "before",
+    clientMessageId: "client-1",
+  });
+  const broadcasts: any[] = [];
+
+  const result = (await handleSessionRpcRequest(
+    "session/update_queued_prompt",
+    { sessionId: "s1", queueItemId: item.id, text: "after" },
+    {
+      promptQueue,
+      broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+    } as any,
+  )) as { ok: boolean; queueItem: { text: string } };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.queueItem.text, "after");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "prompt_queue");
+});
+
+test("session/delete_queued_prompt deletes a queued prompt and broadcasts queue", async () => {
+  const promptQueue = createSessionPromptQueueManager();
+  const item = promptQueue.enqueue({
+    sessionId: "s1",
+    text: "remove me",
+    clientMessageId: "client-1",
+  });
+  const broadcasts: any[] = [];
+
+  const result = (await handleSessionRpcRequest(
+    "session/delete_queued_prompt",
+    { sessionId: "s1", queueItemId: item.id },
+    {
+      promptQueue,
+      broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+    } as any,
+  )) as { ok: boolean; queue: { queued: unknown[] } };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.queue.queued.length, 0);
+  assert.equal(broadcasts.at(-1)?.params.update.queue.queued.length, 0);
 });
 
 test("session/configure routes draft config without requiring a visible session", async () => {

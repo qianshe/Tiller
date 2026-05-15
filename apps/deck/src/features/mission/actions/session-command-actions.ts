@@ -18,6 +18,10 @@ import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade
 import { useDeckStore } from "../../../store";
 import { toast } from "../../toast";
 import {
+  deleteQueuedPrompt as deleteQueuedPromptImpl,
+  updateQueuedPrompt as updateQueuedPromptImpl,
+} from "./queued-prompt-actions";
+import {
   createSession as createSessionImpl,
   requestSessionResumeStart as requestSessionResumeStartImpl,
   startResume as startResumeImpl,
@@ -185,7 +189,6 @@ export function useSessionCommandActions({
       setPrompt,
       setPromptImages,
       createClientUserMessageId,
-      appendUserMessage,
       dispatch,
     });
   }
@@ -255,6 +258,14 @@ export function useSessionCommandActions({
     void dispatch(client, "session/cancel", { sessionId });
   }
 
+  function updateQueuedPrompt(sessionId: string, queueItemId: string, text: string) {
+    updateQueuedPromptImpl(sessionId, queueItemId, text, { rpcClientRef, dispatch });
+  }
+
+  function deleteQueuedPrompt(sessionId: string, queueItemId: string) {
+    deleteQueuedPromptImpl(sessionId, queueItemId, { rpcClientRef, dispatch });
+  }
+
   return {
     cancelSession,
     cleanupSession,
@@ -266,5 +277,7 @@ export function useSessionCommandActions({
     startResume,
     submitPrompt,
     submitPromptFromKeyboard,
+    updateQueuedPrompt,
+    deleteQueuedPrompt,
   };
 }

@@ -81,6 +81,7 @@ export function renderMissionRoute(source: any) {
     handleChatMainScroll,
     pairingState,
     activeSessionMessages,
+    activePromptQueue,
     expandedMessageIds,
     messageHistoryState,
     loadOlderMessages,
@@ -89,6 +90,8 @@ export function renderMissionRoute(source: any) {
     pendingApprovals,
     technicalPanels,
     respondToPermission,
+    updateQueuedPrompt,
+    deleteQueuedPrompt,
     worktreePickerRef,
     worktreePickerOpen,
     setWorktreePickerOpen,
@@ -240,6 +243,7 @@ export function renderMissionRoute(source: any) {
       handleChatMainScroll={handleChatMainScroll}
       pairingState={pairingState}
       activeSessionMessages={activeSessionMessages}
+      activePromptQueue={activePromptQueue}
       expandedMessageIds={expandedMessageIds}
       messageHistoryState={messageHistoryState}
       loadOlderMessages={loadOlderMessages}
@@ -248,6 +252,8 @@ export function renderMissionRoute(source: any) {
       pendingApprovals={pendingApprovals}
       technicalPanels={technicalPanels}
       respondToPermission={respondToPermission}
+      updateQueuedPrompt={updateQueuedPrompt}
+      deleteQueuedPrompt={deleteQueuedPrompt}
       worktreePickerRef={worktreePickerRef}
       worktreePickerOpen={worktreePickerOpen}
       setWorktreePickerOpen={setWorktreePickerOpen}

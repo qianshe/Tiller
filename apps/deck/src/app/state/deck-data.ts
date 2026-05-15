@@ -9,6 +9,7 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
+  SessionPromptQueueSnapshot,
   WorktreeSummary,
 } from "@tiller/shared";
 
@@ -106,6 +107,11 @@ export function useDeckData(missionVisualFixture: any) {
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
   const sessionAvailableCommands = useDeckStore((state) => state.sessionAvailableCommands);
   const setSessionAvailableCommands = useDeckStore((state) => state.setSessionAvailableCommands);
+  const promptQueues = useDeckStore((state) => state.promptQueues) as Record<
+    string,
+    SessionPromptQueueSnapshot
+  >;
+  const setPromptQueue = useDeckStore((state) => state.setPromptQueue);
   const agentAvailableCommands = useDeckStore((state) => state.agentAvailableCommands);
   const setAgentAvailableCommands = useDeckStore((state) => state.setAgentAvailableCommands);
   const refreshAgentAvailableCommands = useDeckStore((state) => state.refreshAgentAvailableCommands);
@@ -183,6 +189,8 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionConfigOptions,
     sessionAvailableCommands,
     setSessionAvailableCommands,
+    promptQueues,
+    setPromptQueue,
     agentAvailableCommands,
     setAgentAvailableCommands,
     refreshAgentAvailableCommands,

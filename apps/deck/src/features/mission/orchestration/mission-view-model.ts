@@ -49,12 +49,14 @@ export function useMissionViewModel(ctx: any) {
     selectedReasoningEffort,
     agentModelOptions,
     sessionConfigOptions,
+    promptQueues,
     deckPreferences,
   } = source;
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,
   [activeSessionId, sessions],
 );
+const activePromptQueue = activeSessionId ? promptQueues?.[activeSessionId] : undefined;
 const {
   promptImages,
   setPromptImages,
@@ -311,6 +313,7 @@ const effectiveDraftReasoningEffort =
 const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   return {
     activeSession,
+    activePromptQueue,
     promptImages,
     setPromptImages,
     imagePasteNotice,

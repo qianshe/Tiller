@@ -344,17 +344,16 @@ export function MissionComposer({
               >
                 ■
               </Button>
-            ) : (
-              <Button
-                size="icon"
-                type="submit"
-                disabled={!canSend}
-                aria-label="发送"
-                title="发送"
-              >
-                ➤
-              </Button>
-            )}
+            ) : null}
+            <Button
+              size="icon"
+              type="submit"
+              disabled={!canSend}
+              aria-label="发送"
+              title="发送"
+            >
+              ➤
+            </Button>
           </div>
         </div>
       </form>

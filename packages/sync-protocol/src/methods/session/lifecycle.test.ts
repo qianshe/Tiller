@@ -9,6 +9,8 @@ import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
 import * as sessionPrompt from "./prompt";
+import * as sessionUpdateQueuedPrompt from "./update-queued-prompt";
+import * as sessionDeleteQueuedPrompt from "./delete-queued-prompt";
 import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
@@ -95,7 +97,44 @@ test("session/prompt accepts either sessionId or draftId", () => {
   assert.throws(() =>
     sessionPrompt.ParamsSchema.parse({ sessionId: "s1", draftId: "d1", text: "hello" }),
   );
-  sessionPrompt.ResultSchema.parse({ stopReason: "end_turn", session: { id: "s1" } });
+  sessionPrompt.ResultSchema.parse({ accepted: "sent", stopReason: "end_turn", session: { id: "s1" } });
+});
+
+test("session/prompt result can report queued acceptance", () => {
+  assert.equal(sessionPrompt.method, "session/prompt");
+  const parsed = sessionPrompt.ResultSchema.parse({
+    accepted: "queued",
+    queueItem: {
+      id: "queue-1",
+      sessionId: "session-1",
+      text: "next",
+      clientMessageId: "client-1",
+      createdAt: "2026-05-15T00:00:00.000Z",
+      updatedAt: "2026-05-15T00:00:00.000Z",
+      status: "queued",
+    },
+  });
+  assert.equal(parsed.accepted, "queued");
+});
+
+test("queued prompt edit and delete methods use sessionId and queueItemId", () => {
+  assert.equal(sessionUpdateQueuedPrompt.method, "session/update_queued_prompt");
+  assert.equal(sessionDeleteQueuedPrompt.method, "session/delete_queued_prompt");
+  assert.equal(
+    sessionUpdateQueuedPrompt.ParamsSchema.parse({
+      sessionId: "session-1",
+      queueItemId: "queue-1",
+      text: "edited",
+    }).text,
+    "edited",
+  );
+  assert.equal(
+    sessionDeleteQueuedPrompt.ParamsSchema.parse({
+      sessionId: "session-1",
+      queueItemId: "queue-1",
+    }).queueItemId,
+    "queue-1",
+  );
 });
 
 test("session/configure allows partial active or draft config", () => {

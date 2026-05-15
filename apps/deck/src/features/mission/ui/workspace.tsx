@@ -98,6 +98,7 @@ export function MissionWorktree(props: any) {
     handleChatMainScroll,
     pairingState,
     activeSessionMessages,
+    activePromptQueue,
     expandedMessageIds,
     messageHistoryState,
     loadOlderMessages,
@@ -106,6 +107,8 @@ export function MissionWorktree(props: any) {
     pendingApprovals,
     technicalPanels,
     respondToPermission,
+    updateQueuedPrompt,
+    deleteQueuedPrompt,
     worktreePickerRef,
     worktreePickerOpen,
     setWorktreePickerOpen,
@@ -584,6 +587,9 @@ export function MissionWorktree(props: any) {
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
           onRespondToPermission={respondToPermission}
+          promptQueue={activePromptQueue}
+          onUpdateQueuedPrompt={updateQueuedPrompt}
+          onDeleteQueuedPrompt={deleteQueuedPrompt}
         >
           {shouldShowDraftPreparing ? (
             <div className="mission-draft-preparing m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">

@@ -301,6 +301,26 @@ export type AgentPromptImageContent = {
 
 export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
 
+export type SessionQueuedPromptStatus = "queued" | "sending" | "failed";
+
+export type SessionQueuedPrompt = {
+  id: string;
+  sessionId: string;
+  text: string;
+  content?: AgentPromptContent[];
+  clientMessageId: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SessionQueuedPromptStatus;
+  error?: string;
+};
+
+export type SessionPromptQueueSnapshot = {
+  sessionId: string;
+  inFlight?: SessionQueuedPrompt;
+  queued: SessionQueuedPrompt[];
+};
+
 export type PermissionDecision =
   | "allow"
   | "allow_session"

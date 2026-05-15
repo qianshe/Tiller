@@ -3,6 +3,7 @@ import type {
   AgentToolCall,
   PermissionDecision,
   PermissionRequest,
+  SessionPromptQueueSnapshot,
   SessionSummary,
 } from "@tiller/shared";
 import type {
@@ -16,6 +17,7 @@ import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { useMemo } from "react";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
+import { MissionQueuedPrompts } from "./queued-prompts";
 import { MissionToolLoading } from "./tool-loading";
 
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
@@ -49,6 +51,9 @@ type MissionChatPaneProps = {
   pendingToolTitle: string | null;
   showPermissionWorktree: boolean;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
+  promptQueue?: SessionPromptQueueSnapshot;
+  onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
+  onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
   children: ReactNode;
 };
 
@@ -75,6 +80,9 @@ export function MissionChatPane({
   pendingToolTitle,
   showPermissionWorktree,
   onRespondToPermission,
+  promptQueue,
+  onUpdateQueuedPrompt,
+  onDeleteQueuedPrompt,
   children,
 }: MissionChatPaneProps) {
   const boundaryTimestamps = useMemo(
@@ -133,6 +141,13 @@ export function MissionChatPane({
             />
           ))}
         </div>
+      ) : null}
+      {activeSession ? (
+        <MissionQueuedPrompts
+          queue={promptQueue}
+          onUpdate={onUpdateQueuedPrompt}
+          onDelete={onDeleteQueuedPrompt}
+        />
       ) : null}
       {children}
     </div>

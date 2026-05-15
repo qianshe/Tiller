@@ -117,6 +117,21 @@ export async function handleSessionRpcRequest(
         },
         context,
       );
+    case "session/update_queued_prompt":
+      return updateQueuedPrompt(
+        params as {
+          sessionId: string;
+          queueItemId: string;
+          text: string;
+          content?: AgentPromptContent[];
+        },
+        context,
+      );
+    case "session/delete_queued_prompt":
+      return deleteQueuedPrompt(
+        params as { sessionId: string; queueItemId: string },
+        context,
+      );
     case "session/configure":
       return configureSessionOrDraft(
         params as {
@@ -555,6 +570,34 @@ async function promptRuntimeDraft(
     }));
     throw error;
   }
+}
+
+function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "prompt_queue",
+    queue: context.promptQueue.snapshot(sessionId),
+  });
+}
+
+function updateQueuedPrompt(
+  params: { sessionId: string; queueItemId: string; text: string; content?: AgentPromptContent[] },
+  context: HelmHandlerContext,
+) {
+  const queueItem = context.promptQueue.updateQueuedPrompt(params.sessionId, params.queueItemId, {
+    text: params.text,
+    content: params.content,
+  });
+  broadcastPromptQueue(context, params.sessionId);
+  return { ok: true, queueItem };
+}
+
+function deleteQueuedPrompt(
+  params: { sessionId: string; queueItemId: string },
+  context: HelmHandlerContext,
+) {
+  const queue = context.promptQueue.deleteQueuedPrompt(params.sessionId, params.queueItemId);
+  broadcastPromptQueue(context, params.sessionId);
+  return { ok: true, queue };
 }
 
 async function configureSessionOrDraft(
