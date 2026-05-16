@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentToolCall,
   PermissionRequest,
+  SessionConfigOption,
   SessionSummary,
   TrustedDeviceSummary,
 } from "@tiller/shared";
@@ -55,6 +56,84 @@ function resetStore() {
     pairingFeedback: "",
   });
 }
+
+function createSessionEventContext(overrides: Record<string, unknown> = {}) {
+  return {
+    setSelectedProjectId: () => undefined,
+    pendingPromptRef: { current: null },
+    pendingPromptContentRef: { current: undefined },
+    rpcClientRef: { current: null },
+    assignSessionTitleFromPrompt: () => undefined,
+    createClientUserMessageId: (sessionId: string) => `${sessionId}-user-pending`,
+    appendUserMessage: () => undefined,
+    dispatch: async () => undefined,
+    toolCallsRef: { current: {} },
+    mergeSessionToolCalls: () => undefined,
+    shouldAutoStartSessionResume: () => false,
+    requestSessionResumeStart: () => undefined,
+    setResumeFeedback: () => undefined,
+    resumeStartRequestsRef: { current: new Set<string>() },
+    ...overrides,
+  };
+}
+
+test("session prompt results preserve the selected model when the incoming summary omits it", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("s1"), model: "gpt-5.5", reasoningEffort: "high" }],
+  });
+
+  const handled = applySessionResult(
+    "session/prompt",
+    { session: { ...session("s1"), status: "idle" as const } },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.5");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "high");
+});
+
+test("session creation results refresh ACP connection inventory when runtime is ready", () => {
+  resetStore();
+  const dispatched: string[] = [];
+
+  const handled = applySessionResult(
+    "session/new",
+    { session: { ...session("s1"), runtimeSessionId: "runtime-s1" } },
+    "helm-1",
+    true,
+    createSessionEventContext({
+      rpcClientRef: { current: { socket: { readyState: 1 } } },
+      dispatch: async (_client: unknown, method: string) => {
+        dispatched.push(method);
+      },
+    }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("runtime-ready session updates refresh ACP connection inventory", () => {
+  resetStore();
+  const dispatched: string[] = [];
+
+  const handled = applySessionUpdate(
+    { sessionId: "s1", update: { kind: "session_updated", session: { ...session("s1"), runtimeSessionId: "runtime-s1" } } },
+    createSessionEventContext({
+      rpcClientRef: { current: { socket: { readyState: 1 } } },
+      dispatch: async (_client: unknown, method: string) => {
+        dispatched.push(method);
+      },
+    }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(dispatched, ["agent/connections"]);
+});
 
 test("activity RPC notifications append assistant messages without changing session prompt metadata", () => {
   resetStore();
@@ -510,6 +589,145 @@ test("session RPC results hydrate config options from listed sessions", () => {
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, configOptions);
+});
+
+test("session config option display preserves session-bound model over provider defaults", () => {
+  resetStore();
+  const configOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "gpt-5.5",
+      options: [
+        { value: "gpt-5.4", label: "gpt-5.4" },
+        { value: "gpt-5.5", label: "GPT-5.5" },
+      ],
+    },
+    {
+      id: "reasoning_effort",
+      name: "Reasoning",
+      category: "reasoning_effort",
+      currentValue: "medium",
+      options: [
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+      ],
+    },
+  ];
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        model: "gpt-5.4",
+        reasoningEffort: "high",
+      },
+    ],
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "config_options",
+        state: { model: "gpt-5.5", reasoningEffort: "medium" },
+        options: configOptions,
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.5");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
+  assert.deepEqual(
+    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
+    ["gpt-5.5", "medium"],
+  );
+});
+
+test("session config option updates clear stale reasoning when options omit reasoning", () => {
+  resetStore();
+  const configOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        model: "claude-haiku-4-5",
+        reasoningEffort: "medium",
+      },
+    ],
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "config_options",
+        state: { model: "claude-haiku-4-5" },
+        options: configOptions,
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-haiku-4-5");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, undefined);
+  assert.deepEqual(
+    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
+    ["claude-haiku-4-5"],
+  );
+});
+
+test("arbitrary ACP config options stay scoped to their session", () => {
+  resetStore();
+  const approvalOption: SessionConfigOption = {
+    id: "approval-mode",
+    name: "Approval Mode",
+    category: "approval",
+    currentValue: "on-request",
+    options: [
+      { value: "on-request", label: "On Request" },
+      { value: "auto", label: "Auto" },
+    ],
+  };
+  const approvalOptions: SessionConfigOption[] = [approvalOption];
+  useDeckStore.setState({
+    sessions: [session("s1"), session("s2")],
+    sessionConfigOptions: {
+      s2: [
+        {
+          ...approvalOption,
+          currentValue: "auto",
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "config_options",
+        state: {},
+        options: approvalOptions,
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionConfigOptions.s1?.[0]?.currentValue, "on-request");
+  assert.equal(useDeckStore.getState().sessionConfigOptions.s2?.[0]?.currentValue, "auto");
 });
 
 test("session check resume auto starts provider restore", () => {

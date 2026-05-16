@@ -17,6 +17,7 @@ function createTestContext(
   logs: string[],
   capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
   sessionId = "session-1",
+  summaryPatch: Partial<SessionSummary> = {},
 ): HelmHandlerContext {
   const summary: SessionSummary = {
     id: sessionId,
@@ -31,6 +32,7 @@ function createTestContext(
     createdAt: "2026-04-30T00:00:00.000Z",
     updatedAt: "2026-04-30T00:00:00.000Z",
     messageCount: 0,
+    ...summaryPatch,
   };
 
   return {
@@ -592,6 +594,208 @@ test("runtime-generated independent assistant messages get distinct stream segme
   assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+});
+
+test("runtime config option defaults do not overwrite a stored session model selection", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-selected-model", {
+    model: "gpt-5.4",
+    reasoningEffort: "medium",
+  });
+
+  handleRuntimeEvent(
+    "session-selected-model",
+    {
+      type: "config-options",
+      state: { model: "gpt-5.5", reasoningEffort: "medium" },
+      options: [],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+});
+
+test("runtime config options omit reasoning when authoritative options omit reasoning", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-haiku", {
+    model: "claude-haiku-4-5",
+    reasoningEffort: "medium",
+  });
+
+  handleRuntimeEvent(
+    "session-haiku",
+    {
+      type: "config-options",
+      state: { model: "claude-haiku-4-5", reasoningEffort: "medium" },
+      options: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "claude-haiku-4-5",
+          options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+        },
+      ],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const configUpdate = capture.broadcasts.find(
+    (item) => (item as { method?: string }).method === "session/update",
+  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { reasoningEffort?: string } } } } | undefined;
+  assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, undefined);
+  assert.equal(configUpdate?.params?.update?.state?.reasoningEffort, undefined);
+  assert.equal(
+    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    false,
+  );
+});
+
+test("runtime config options preserve reasoning for haiku when ACP exposes reasoning", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-opencode-haiku", {
+    model: "opencode/haiku",
+  });
+
+  handleRuntimeEvent(
+    "session-opencode-haiku",
+    {
+      type: "config-options",
+      state: { model: "opencode/haiku", reasoningEffort: "medium" },
+      options: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "opencode/haiku",
+          options: [{ value: "opencode/haiku", label: "opencode/haiku" }],
+        },
+        {
+          id: "thought_level",
+          category: "thought_level",
+          currentValue: "medium",
+          options: [{ value: "medium", label: "Medium" }],
+        },
+      ],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const configUpdate = capture.broadcasts.find(
+    (item) => (item as { method?: string }).method === "session/update",
+  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { reasoningEffort?: string } } } } | undefined;
+  assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, "medium");
+  assert.equal(configUpdate?.params?.update?.state?.reasoningEffort, "medium");
+  assert.equal(
+    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    true,
+  );
+});
+
+test("runtime stale config option defaults do not re-add reasoning for selected model", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-stale-haiku", {
+    model: "claude-haiku-4-5",
+    configOptions: [
+      {
+        id: "model",
+        category: "model",
+        currentValue: "claude-haiku-4-5",
+        options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+      },
+    ],
+  });
+
+  handleRuntimeEvent(
+    "session-stale-haiku",
+    {
+      type: "config-options",
+      state: { model: "claude-opus-4-7", reasoningEffort: "medium" },
+      options: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "claude-opus-4-7",
+          options: [
+            { value: "claude-opus-4-7", label: "claude-opus-4-7" },
+            { value: "claude-haiku-4-5", label: "claude-haiku-4-5" },
+          ],
+        },
+        {
+          id: "thought_level",
+          category: "thought_level",
+          currentValue: "medium",
+          options: [{ value: "medium", label: "Medium" }],
+        },
+      ],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const configUpdate = capture.broadcasts.find(
+    (item) => (item as { method?: string }).method === "session/update",
+  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { model?: string; reasoningEffort?: string } } } } | undefined;
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "claude-haiku-4-5");
+  assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, undefined);
+  assert.equal(configUpdate?.params?.update?.state?.model, "claude-haiku-4-5");
+  assert.equal(
+    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    false,
+  );
+});
+
+test("runtime model option defaults do not overwrite a stored session model selection", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-selected-native-model", {
+    model: "gpt-5.4",
+  });
+
+  handleRuntimeEvent(
+    "session-selected-native-model",
+    {
+      type: "model-options",
+      state: {
+        currentModelId: "gpt-5.5",
+        options: [{ id: "gpt-5.4", name: "gpt-5.4" }, { id: "gpt-5.5", name: "gpt-5.5" }],
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+  assert.deepEqual(
+    capture.summaryUpdates?.at(-1)?.modelOptions?.map((option) => option.id),
+    ["gpt-5.4", "gpt-5.5"],
+  );
 });
 
 test("runtime-generated short assistant replies split after provider diagnostics", () => {

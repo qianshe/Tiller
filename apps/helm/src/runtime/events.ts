@@ -1,9 +1,13 @@
 import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
+import {
+  resolveConfigOptionsForSelection,
+  resolveConfigReasoningEffortForOptions,
+} from "./session-config-options";
 
 const liveEventSequenceBySession = new Map<string, number>();
 const messageSegmentIds = createMessageSegmentIdAllocator();
@@ -300,20 +304,39 @@ export function handleRuntimeEvent(
     case "config-options": {
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
+      const current = context.sessions.get(sessionId)?.summary ??
+        context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
+      const resolvedModel = current?.model ?? event.state.model;
+      const resolvedConfigOptions = resolveConfigOptionsForSelection({
+        incomingOptions: event.options,
+        previousOptions: current?.configOptions,
+        selectedModel: resolvedModel,
+      });
+      const resolvedReasoningEffort = resolveConfigReasoningEffortForOptions(
+        current?.reasoningEffort ?? event.state.reasoningEffort,
+        resolvedConfigOptions,
+      );
+      const resolvedOptions = resolvedConfigOptions.options ?? [];
+      const resolvedState = {
+        ...event.state,
+        model: resolvedModel,
+        reasoningEffort: resolvedReasoningEffort,
+      };
       context.logInfo(
-        `[tiller] 阶段=配置选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${event.state.model ?? "<none>"} reasoning=${event.state.reasoningEffort ?? "<none>"} options=${event.options.length}`,
+        `[tiller] 阶段=配置选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${resolvedModel ?? "<none>"} reasoning=${resolvedReasoningEffort ?? "<none>"} options=${resolvedOptions.length}`,
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
-        agentMode: event.state.agentMode ?? current.agentMode,
-        model: event.state.model ?? current.model,
-        reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
+        agentMode: current.agentMode ?? event.state.agentMode,
+        model: resolvedModel,
+        configOptions: resolvedOptions,
+        reasoningEffort: resolvedReasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
       broadcastSessionUpdate(context, sessionId, {
         kind: "config_options",
-        state: event.state,
-        options: event.options,
+        state: resolvedState,
+        options: resolvedOptions,
       });
       if (updated) {
         broadcastSessionUpdate(context, sessionId, {
@@ -331,7 +354,7 @@ export function handleRuntimeEvent(
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
-        model: event.state.currentModelId ?? current.model,
+        model: current.model ?? event.state.currentModelId,
         modelOptions: event.state.options,
         updatedAt: new Date().toISOString(),
       }));

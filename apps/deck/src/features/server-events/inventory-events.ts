@@ -18,6 +18,62 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
+function applyConfigStateToOptions(
+  options: SessionConfigOption[],
+  state: AgentModelOptionsEntry["state"],
+) {
+  return options.map((option) => {
+    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    let currentValue: SessionConfigOption["currentValue"] | undefined;
+    if (category === "model") {
+      currentValue = state.model;
+    } else if (category === "mode") {
+      currentValue = state.agentMode;
+    } else if (
+      category === "reasoning" ||
+      category === "reasoning_effort" ||
+      category === "thought_level"
+    ) {
+      currentValue = state.reasoningEffort;
+    }
+    return currentValue === undefined ? option : { ...option, currentValue };
+  });
+}
+
+function readConfigStateFromOptions(options: SessionConfigOption[]) {
+  return options.reduce<AgentModelOptionsEntry["state"]>((state, option) => {
+    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    const currentValue = option.currentValue ?? option.selectedValue ?? option.value;
+    if (category === "model" && typeof currentValue === "string") {
+      state.model = currentValue;
+    } else if (category === "mode" && typeof currentValue === "string") {
+      state.agentMode = currentValue;
+    } else if (
+      (category === "reasoning" ||
+        category === "reasoning_effort" ||
+        category === "thought_level") &&
+      typeof currentValue === "string"
+    ) {
+      state.reasoningEffort = currentValue as SessionReasoningEffort;
+    }
+    return state;
+  }, {});
+}
+
+function hasReasoningConfigOption(options: SessionConfigOption[]) {
+  return options.some((option) => {
+    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    return category === "reasoning" ||
+      category === "reasoning_effort" ||
+      category === "thought_level";
+  });
+}
+
+function omitReasoningState(state: AgentModelOptionsEntry["state"]) {
+  const { reasoningEffort: _reasoningEffort, ...withoutReasoning } = state;
+  return withoutReasoning;
+}
+
 export type InventoryServerEventContext = {
   projectFilesKey: (projectId: string, worktreeId?: string) => string;
   setProjectFilesByScope: StoreSetter<Record<string, ProjectFilesEntry>>;
@@ -297,17 +353,27 @@ export function applyInventoryResult(
           return current;
         }
         const [key, previous] = entry;
+        const payloadState = payload.state ?? {};
+        const hasPayloadOptions = Array.isArray(payload.options);
+        const rawConfigOptions = hasPayloadOptions
+          ? payload.options as SessionConfigOption[]
+          : previous.configOptions;
         nextState = {
           ...previous.state,
-          ...(payload.state ?? {}),
+          ...(hasPayloadOptions ? readConfigStateFromOptions(rawConfigOptions) : {}),
+          ...payloadState,
         };
+        if (hasPayloadOptions && !hasReasoningConfigOption(rawConfigOptions)) {
+          nextState = omitReasoningState(nextState);
+        }
+        const nextConfigOptions = hasPayloadOptions
+          ? rawConfigOptions
+          : applyConfigStateToOptions(previous.configOptions, nextState);
         const next = {
           ...current,
           [key]: {
             ...previous,
-            configOptions: Array.isArray(payload.options)
-              ? payload.options
-              : previous.configOptions,
+            configOptions: nextConfigOptions,
             state: nextState,
           },
         };

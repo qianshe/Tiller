@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 
 export type UpdateCommand = { command: string; args: string[] };
 
@@ -13,10 +13,16 @@ export function buildLatestUpdateCommand(platform = process.platform): UpdateCom
   };
 }
 
+export function resolveUpdateSpawnOptions(
+  platform = process.platform,
+): SpawnOptions {
+  return { stdio: "inherit", shell: platform === "win32" };
+}
+
 export async function runLatestUpdate(): Promise<number> {
   const { command, args } = buildLatestUpdateCommand();
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit", shell: false });
+    const child = spawn(command, args, resolveUpdateSpawnOptions());
     child.once("error", reject);
     child.once("exit", (code) => resolve(code ?? 1));
   });

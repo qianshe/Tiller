@@ -159,7 +159,7 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   let prompted = "";
   const runtime = {
     runtimeSessionId: "runtime-draft",
-    sessionConfigState: { model: "gpt-5.5" },
+    sessionConfigState: { model: "gpt-5.5", reasoningEffort: "medium" },
     sessionModelState: { options: [{ id: "gpt-5.5", name: "GPT-5.5" }] },
     sessionCapabilities: { sessionLoad: true },
     prompt: async (text: string) => { prompted = text; },
@@ -184,11 +184,23 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       attach: (sessionId: string) => { attachedSessionId = sessionId; },
       modelState: runtime.sessionModelState,
       configState: runtime.sessionConfigState,
-      configOptions: [],
+      configOptions: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [{ value: "gpt-5.5", label: "GPT-5.5" }],
+        },
+      ],
       availableCommands: [{ name: "review" }, { name: "compact" }],
     }),
     buildResumeInfo: () => ({ supported: false }),
-    hydrateSessionSummary: (summary: any) => summary,
+    hydrateSessionSummary: (summary: any) => ({
+      ...summary,
+      resume: sessions.has(summary.id)
+        ? { mode: "same-process", state: "resume-available", reason: "active", checkedAt: "2026-05-16T00:00:00.000Z" }
+        : { mode: "none", state: "history-only", reason: "missing active runtime", checkedAt: "2026-05-16T00:00:00.000Z" },
+    }),
     sessionStore: {
       upsert: (summary: any) => { storedSessions.push(summary); },
       list: () => storedSessions,
@@ -212,7 +224,9 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   await flushPromises();
   assert.equal(result.accepted, "sent");
   assert.equal(result.session.runtimeSessionId, "runtime-draft");
+  assert.equal(result.session.resume.mode, "same-process");
   assert.equal(result.session.model, "gpt-5.5");
+  assert.equal(result.session.reasoningEffort, undefined);
   assert.deepEqual(result.session.availableCommands, [
     { name: "review" },
     { name: "compact" },
@@ -431,7 +445,12 @@ test("session/new uses cwd without requiring cwd", async () => {
       resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
       resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
       buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "test", checkedAt: "2026-05-13T00:00:00.000Z" }),
-      hydrateSessionSummary: (summary: any) => summary,
+      hydrateSessionSummary: (summary: any) => ({
+        ...summary,
+        resume: sessions.has(summary.id)
+          ? { mode: "same-process", state: "resume-available", reason: "active", checkedAt: "2026-05-16T00:00:00.000Z" }
+          : { mode: "none", state: "history-only", reason: "missing active runtime", checkedAt: "2026-05-16T00:00:00.000Z" },
+      }),
       sessionStore: {
         upsert: (summary: any) => { storedSummary = summary; },
       },
@@ -462,4 +481,122 @@ test("session/new uses cwd without requiring cwd", async () => {
   assert.equal(storedSummary.cwd, "D:/repo");
   assert.equal(result.session.cwd, "D:/repo");
   assert.equal(result.session.runtimeSessionId, "runtime-1");
+  assert.equal((result.session as any).resume.mode, "same-process");
+});
+
+test("session/new preserves explicit reasoning until authoritative config options are known", async () => {
+  const project = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local-helm",
+    path: "D:/repo",
+    cwds: [],
+  };
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const agent = { id: "claude", name: "Claude" };
+  let runtimeSessionConfig: any;
+  let storedSummary: any;
+  const sessions = new Map();
+
+  const result = await handleSessionRpcRequest(
+    "session/new",
+    {
+      projectId: "project-1",
+      cwd: "D:/repo",
+      agentId: "claude",
+      model: "claude-haiku-4-5",
+      reasoningEffort: "high",
+    },
+    {
+      loadAvailableHelms: () => [helm],
+      loadAvailableWorktrees: () => [],
+      loadAvailableAgents: () => [agent],
+      loadAvailableProjectsWithSemanticSummaries: () => [project],
+      setHelms: () => undefined,
+      setWorktrees: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: (id: string) => (id === project.id ? project : undefined),
+      resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
+      resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
+      buildResumeInfo: () => ({
+        mode: "none",
+        state: "history-only",
+        reason: "test",
+        checkedAt: "2026-05-16T00:00:00.000Z",
+      }),
+      hydrateSessionSummary: (summary: any) => summary,
+      sessionStore: {
+        upsert: (summary: any) => {
+          storedSummary = summary;
+        },
+      },
+      persistRuntimeDescriptor: () => undefined,
+      broadcastNotification: () => undefined,
+      logInfo: () => undefined,
+      logError: () => undefined,
+      handleRuntimeEvent: () => undefined,
+      updateSessionSummary: () => undefined,
+      sessions,
+      createRuntime: async ({ sessionConfig }: any) => {
+        runtimeSessionConfig = sessionConfig;
+        return {
+          runtimeSessionId: "runtime-claude",
+          sessionCapabilities: { sessionLoad: true },
+          sessionConfigState: { reasoningEffort: "high" },
+          sessionModelState: {},
+        };
+      },
+    } as any,
+  ) as { session: { reasoningEffort?: string } };
+
+  assert.equal(runtimeSessionConfig.reasoningEffort, "high");
+  assert.equal(runtimeSessionConfig.model, "claude-haiku-4-5");
+  assert.equal(storedSummary.reasoningEffort, "high");
+  assert.equal(result.session.reasoningEffort, "high");
+});
+
+test("session/draft preserves explicit reasoning until authoritative config options are known", async () => {
+  const project = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local-helm",
+    path: "D:/repo",
+    cwds: [],
+  };
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const agent = { id: "claude", name: "Claude" };
+  let draftSessionConfig: any;
+
+  await handleSessionRpcRequest(
+    "session/draft",
+    {
+      deckClientId: "deck-1",
+      projectId: "project-1",
+      cwd: "D:/repo",
+      agentId: "claude",
+      model: "claude-haiku-4-5",
+      reasoningEffort: "medium",
+    },
+    {
+      loadAvailableHelms: () => [helm],
+      loadAvailableWorktrees: () => [],
+      loadAvailableAgents: () => [agent],
+      loadAvailableProjectsWithSemanticSummaries: () => [project],
+      setHelms: () => undefined,
+      setWorktrees: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: (id: string) => (id === project.id ? project : undefined),
+      resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
+      resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
+      createRuntimeDraft: async ({ sessionConfig }: any) => {
+        draftSessionConfig = sessionConfig;
+        return { ok: true };
+      },
+    } as any,
+  );
+
+  assert.equal(draftSessionConfig.reasoningEffort, "medium");
+  assert.equal(draftSessionConfig.model, "claude-haiku-4-5");
 });

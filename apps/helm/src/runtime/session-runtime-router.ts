@@ -7,6 +7,10 @@ import { applyUserPromptToSummary } from "../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
+import {
+  resolveConfigOptionsForSelection,
+  resolveConfigReasoningEffortForOptions,
+} from "./session-config-options";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -238,11 +242,19 @@ export async function configureSessionRuntime(
         value: params.value,
       })
     : null;
-  const nextAgentMode = runtimeResult?.state.agentMode ?? params.agentMode ?? current.agentMode;
-  const nextModel = runtimeResult?.state.model ?? params.model;
-  const nextReasoning = runtimeResult?.state.reasoningEffort ?? params.reasoningEffort;
+  const nextAgentMode = params.agentMode ?? runtimeResult?.state.agentMode ?? current.agentMode;
+  const nextModel = params.model ?? runtimeResult?.state.model ?? current.model;
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-  const nextConfigOptions = runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions ?? current.configOptions;
+  const resolvedConfigOptions = resolveConfigOptionsForSelection({
+    incomingOptions: runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions,
+    previousOptions: current.configOptions,
+    selectedModel: nextModel,
+  });
+  const nextConfigOptions = resolvedConfigOptions.options;
+  const nextReasoning = resolveConfigReasoningEffortForOptions(
+    params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort,
+    resolvedConfigOptions,
+  );
   const updatedAt = new Date().toISOString();
   const next = context.hydrateSessionSummary({
     ...current,
