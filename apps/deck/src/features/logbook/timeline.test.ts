@@ -50,7 +50,7 @@ test("sortAgentMessagesByTimeline orders messages by timestamp and preserves sou
 test("buildConversationTimeline interleaves messages and tool calls by timestamp", () => {
   const toolCall: AgentToolCall = {
     id: "tool-1",
-    kind: "terminal",
+    kind: "shell",
     title: "Run tests",
     status: "completed",
     commandId: "cmd-1",
@@ -70,7 +70,7 @@ test("groupToolCalls merges chunks for the same command id", () => {
   const calls: AgentToolCall[] = [
     {
       id: "tool-1",
-      kind: "terminal",
+      kind: "shell",
       title: "cmd",
       status: "running",
       commandId: "cmd",
@@ -81,7 +81,7 @@ test("groupToolCalls merges chunks for the same command id", () => {
     },
     {
       id: "tool-1",
-      kind: "terminal",
+      kind: "shell",
       title: "cmd",
       status: "completed",
       commandId: "cmd",
@@ -138,7 +138,7 @@ test("commandChunkToToolCall provides a terminal fallback for legacy command out
 
   const call = commandChunkToToolCall(chunk);
 
-  assert.equal(call.kind, "terminal");
+  assert.equal(call.kind, "shell");
   assert.equal(call.status, "failed");
   assert.equal(call.output, "ERR");
 });
@@ -155,7 +155,7 @@ test("resolvePendingToolActivity reports the latest running tool", () => {
     },
     {
       id: "tool-running",
-      kind: "terminal",
+      kind: "shell",
       title: "pnpm test",
       status: "running",
       timestamp: "2026-04-30T10:00:02.000Z",
@@ -177,7 +177,7 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   const current: AgentToolCall[] = [
     {
       id: "tool-1",
-      kind: "terminal",
+      kind: "shell",
       title: "cmd",
       status: "running",
       commandId: "cmd",
@@ -189,7 +189,7 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   const incoming: AgentToolCall[] = [
     {
       id: "tool-1",
-      kind: "terminal",
+      kind: "shell",
       title: "cmd",
       status: "completed",
       commandId: "cmd",
@@ -234,3 +234,4 @@ test("mergeToolCallHistory keeps the earliest start timestamp across replay merg
   assert.equal(merged[0]?.timestamp, "2026-04-30T10:22:14.142Z");
   assert.equal(merged[0]?.updatedAt, "2026-04-30T13:22:46.678Z");
 });
+

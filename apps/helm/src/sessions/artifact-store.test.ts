@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -122,7 +122,7 @@ test("session artifact store returns outputs and tool calls sorted by timestamp"
     });
     store.appendToolCall("session-1", {
       id: "tool-late",
-      kind: "terminal",
+      kind: "shell",
       title: "late",
       status: "completed",
       timestamp: "2026-04-26T12:15:03.000Z",
@@ -130,7 +130,7 @@ test("session artifact store returns outputs and tool calls sorted by timestamp"
     });
     store.appendToolCall("session-1", {
       id: "tool-early",
-      kind: "terminal",
+      kind: "shell",
       title: "early",
       status: "completed",
       timestamp: "2026-04-26T12:15:01.000Z",
@@ -216,6 +216,126 @@ test("session artifact store keeps informative tool title when later updates onl
     });
 
     assert.equal(store.get("session-1").toolCalls[0]?.title, "Tool: mcp_router/find_symbol");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session artifact store keeps tool kind title and input when later updates are weaker", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-tool-kind-"));
+
+  try {
+    const store = mod.createSessionArtifactStore(tempRoot);
+    store.appendToolCall("session-1", {
+      id: "call-1",
+      kind: "shell",
+      title: "Run verification",
+      status: "running",
+      input: "{\"command\":\"run verification\"}",
+      timestamp: "2026-05-15T10:00:00.000Z",
+      updatedAt: "2026-05-15T10:00:00.000Z",
+    });
+    store.appendToolCall("session-1", {
+      id: "call-1",
+      kind: "unknown",
+      title: "call-1",
+      status: "completed",
+      output: "PASS",
+      timestamp: "2026-05-15T10:00:01.000Z",
+      updatedAt: "2026-05-15T10:00:01.000Z",
+    });
+
+    const tool = store.get("session-1").toolCalls[0];
+    assert.equal(tool?.kind, "shell");
+    assert.equal(tool?.title, "Run verification");
+    assert.equal(tool?.input, "{\"command\":\"run verification\"}");
+    assert.equal(tool?.status, "completed");
+    assert.equal(tool?.output, "PASS");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session artifact store normalizes legacy terminal and edit tool kinds", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-legacy-kind-"));
+
+  try {
+    writeFileSync(join(tempRoot, "session-legacy.json"), JSON.stringify({
+      outputs: [],
+      diffs: [],
+      toolCalls: [
+        {
+          id: "tool-terminal",
+          kind: "terminal",
+          title: "Run command",
+          status: "completed",
+          timestamp: "2026-05-15T10:00:00.000Z",
+          updatedAt: "2026-05-15T10:00:00.000Z",
+        },
+        {
+          id: "tool-edit",
+          kind: "edit",
+          title: "Apply patch",
+          status: "completed",
+          timestamp: "2026-05-15T10:00:01.000Z",
+          updatedAt: "2026-05-15T10:00:01.000Z",
+        },
+      ],
+    }));
+
+    const tools = mod.createSessionArtifactStore(tempRoot).get("session-legacy").toolCalls;
+    assert.equal(tools.find((tool) => tool.id === "tool-terminal")?.kind, "shell");
+    assert.equal(tools.find((tool) => tool.id === "tool-edit")?.kind, "write");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("session artifact store derives MCP kind from historical tool input", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-historical-mcp-"));
+
+  try {
+    writeFileSync(join(tempRoot, "session-historical.json"), JSON.stringify({
+      outputs: [],
+      diffs: [],
+      toolCalls: [
+        {
+          id: "call-node-repl",
+          kind: "tool",
+          title: "Tool call call-node…",
+          status: "completed",
+          input: JSON.stringify({
+            title: "执行 1+1",
+            code: "nodeRepl.write(String(1 + 1));",
+            timeout_ms: 10000,
+          }),
+          timestamp: "2026-05-15T10:00:00.000Z",
+          updatedAt: "2026-05-15T10:00:00.000Z",
+        },
+        {
+          id: "call-node-repl-short-title",
+          kind: "mcp",
+          title: "js",
+          status: "completed",
+          input: JSON.stringify({
+            title: "执行 2+2",
+            code: "nodeRepl.write(String(2 + 2));",
+            timeout_ms: 10000,
+          }),
+          timestamp: "2026-05-15T10:00:01.000Z",
+          updatedAt: "2026-05-15T10:00:01.000Z",
+        },
+      ],
+    }));
+
+    const tools = mod.createSessionArtifactStore(tempRoot).get("session-historical").toolCalls;
+    assert.equal(tools[0]?.kind, "mcp");
+    assert.equal(tools[0]?.title, "Tool: node_repl/js");
+    assert.equal(tools[1]?.kind, "mcp");
+    assert.equal(tools[1]?.title, "Tool: node_repl/js");
   } finally {
     rmSync(tempRoot, { force: true, recursive: true });
   }
@@ -329,7 +449,7 @@ test("session artifact store pages latest tool activity and keeps latest diffs",
     for (let index = 1; index <= 4; index += 1) {
       store.appendToolCall("session-1", {
         id: `tool-${index}`,
-        kind: "terminal",
+        kind: "shell",
         title: `tool ${index}`,
         status: "completed",
         timestamp: `2026-04-27T08:05:0${index}.000Z`,
@@ -358,3 +478,4 @@ test("session artifact store pages latest tool activity and keeps latest diffs",
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+

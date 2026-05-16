@@ -1,10 +1,11 @@
-import type { AgentPromptContent, AvailableCommand, SessionConfigOptionValue, SessionReasoningEffort } from "@tiller/shared";
+import type { AgentPromptContent, AvailableCommand, SessionConfigOptionValue, SessionQueuedPrompt, SessionReasoningEffort } from "@tiller/shared";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
 } from "@tiller/shared";
 import { applyUserPromptToSummary } from "../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
+import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
 
 export type SessionPromptRequest = {
@@ -67,6 +68,107 @@ async function resolvePromptRuntime(
   return record;
 }
 
+function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "prompt_queue",
+    queue: context.promptQueue.snapshot(sessionId),
+  });
+}
+
+export async function sendPromptImmediately(
+  item: SessionQueuedPrompt,
+  context: HelmHandlerContext,
+) {
+  const record = await resolvePromptRuntime(item, context);
+  if (!record) {
+    context.logError(
+      `[tiller] 阶段=发送失败 session=${item.sessionId} reason=Session runtime not available`,
+    );
+    throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
+  }
+
+  const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
+  context.logInfo(
+    `[tiller] 阶段=发送Prompt session=${item.sessionId} chars=${item.text.length} images=${imageAttachments.length}`,
+  );
+  const timestamp = new Date().toISOString();
+  const userMessage = {
+    id: item.clientMessageId,
+    role: "user" as const,
+    text: item.text,
+    timestamp,
+    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
+  };
+  context.persistSessionMessage(item.sessionId, userMessage);
+  broadcastSessionUpdate(context, item.sessionId, {
+    kind: "user_message",
+    message: userMessage,
+  });
+  const updated = context.updateSessionSummary(item.sessionId, (current) =>
+    applyUserPromptToSummary(current, item.text, timestamp),
+  );
+  if (updated) {
+    broadcastSessionUpdate(context, item.sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
+
+  await record.runtime.prompt(item.text, item.content);
+  if (flushLiveAssistantMessage(item.sessionId, context)) {
+    context.logInfo(
+      `[tiller] 阶段=Prompt完成兜底落盘 session=${item.sessionId} reason=assistant_buffer_after_prompt_completion`,
+    );
+  }
+  return "end_turn" as const;
+}
+
+async function runInFlightPrompt(
+  item: SessionQueuedPrompt,
+  context: HelmHandlerContext,
+) {
+  try {
+    await sendPromptImmediately(item, context);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Prompt failed.";
+    context.logError(`[tiller] prompt.inflight failed session=${item.sessionId} message=${message}`);
+    broadcastErrorRaised(context, { sessionId: item.sessionId, message });
+  } finally {
+    context.promptQueue.clearInFlight(item.sessionId, item.id);
+    broadcastPromptQueue(context, item.sessionId);
+    void context.drainPromptQueue(item.sessionId);
+  }
+}
+
+export async function drainPromptQueue(sessionId: string, context: HelmHandlerContext) {
+  if (context.promptQueue.isDraining(sessionId) || context.promptQueue.hasInFlight(sessionId)) {
+    return;
+  }
+
+  context.promptQueue.setDraining(sessionId, true);
+  try {
+    while (!context.promptQueue.hasInFlight(sessionId)) {
+      const next = context.promptQueue.takeNext(sessionId);
+      if (!next) {
+        break;
+      }
+      const inFlight = context.promptQueue.setInFlight(next);
+      broadcastPromptQueue(context, sessionId);
+      try {
+        await sendPromptImmediately(inFlight, context);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Prompt failed.";
+        context.logError(`[tiller] prompt.queue failed session=${sessionId} message=${message}`);
+      } finally {
+        context.promptQueue.clearInFlight(sessionId, inFlight.id);
+        broadcastPromptQueue(context, sessionId);
+      }
+    }
+  } finally {
+    context.promptQueue.setDraining(sessionId, false);
+  }
+}
+
 export async function sendPromptToSession(
   params: SessionPromptRequest,
   context: HelmHandlerContext,
@@ -92,30 +194,27 @@ export async function sendPromptToSession(
     record.summary?.agentName ?? record.agent?.name ?? record.agent?.id ?? "ACP agent",
   );
 
-  context.logInfo(
-    `[tiller] 阶段=发送Prompt session=${params.sessionId} chars=${params.text.length} images=${imageAttachments.length}`,
-  );
-  const timestamp = new Date().toISOString();
-  const userMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;
-  context.persistSessionMessage(params.sessionId, {
-    id: userMessageId,
-    role: "user",
-    text: params.text,
-    timestamp,
-    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
-  });
-  const updated = context.updateSessionSummary(params.sessionId, (current) =>
-    applyUserPromptToSummary(current, params.text, timestamp),
-  );
-  if (updated) {
-    broadcastSessionUpdate(context, params.sessionId, {
-      kind: "session_updated",
-      session: updated,
+  const clientMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;
+  if (context.promptQueue.hasInFlight(params.sessionId)) {
+    const queueItem = context.promptQueue.enqueue({
+      sessionId: params.sessionId,
+      text: params.text,
+      content: params.content,
+      clientMessageId,
     });
+    broadcastPromptQueue(context, params.sessionId);
+    return { accepted: "queued" as const, queueItem };
   }
 
-  await record.runtime.prompt(params.text, params.content);
-  return { stopReason: "end_turn" };
+  const inFlight = context.promptQueue.markInFlight({
+    sessionId: params.sessionId,
+    text: params.text,
+    content: params.content,
+    clientMessageId,
+  });
+  broadcastPromptQueue(context, params.sessionId);
+  void runInFlightPrompt(inFlight, context);
+  return { accepted: "sent" as const };
 }
 
 export async function configureSessionRuntime(

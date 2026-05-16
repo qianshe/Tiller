@@ -1,6 +1,7 @@
 import type {
   AvailableCommand,
   SessionConfigOption,
+  SessionPromptQueueSnapshot,
   SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
@@ -34,6 +35,11 @@ export type SessionAvailableCommandsUpdater =
   | ((
       current: Record<string, AvailableCommand[]>,
     ) => Record<string, AvailableCommand[]>);
+export type SessionPromptQueuesUpdater =
+  | Record<string, SessionPromptQueueSnapshot>
+  | ((
+      current: Record<string, SessionPromptQueueSnapshot>,
+    ) => Record<string, SessionPromptQueueSnapshot>);
 export type AgentAvailableCommandsUpdater =
   | Record<string, AvailableCommand[]>
   | ((
@@ -54,6 +60,7 @@ export type SessionsSlice = {
   sessionTitles: Record<string, string>;
   sessionConfigOptions: Record<string, SessionConfigOption[]>;
   sessionAvailableCommands: Record<string, AvailableCommand[]>;
+  promptQueues: Record<string, SessionPromptQueueSnapshot>;
   agentAvailableCommands: Record<string, AvailableCommand[]>;
   activeSessionId: string | null;
   setSessions: (updater: SessionsUpdater) => void;
@@ -65,6 +72,8 @@ export type SessionsSlice = {
   setSessionAvailableCommands: (
     updater: SessionAvailableCommandsUpdater,
   ) => void;
+  setPromptQueues: (updater: SessionPromptQueuesUpdater) => void;
+  setPromptQueue: (sessionId: string, queue: SessionPromptQueueSnapshot) => void;
   setAgentAvailableCommands: (
     updater: AgentAvailableCommandsUpdater,
   ) => void;
@@ -164,6 +173,7 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   sessionTitles: readSessionTitles(),
   sessionConfigOptions: {},
   sessionAvailableCommands: {},
+  promptQueues: {},
   agentAvailableCommands: readAgentAvailableCommands(),
   activeSessionId: null,
   setSessions: (updater) =>
@@ -198,6 +208,15 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
         typeof updater === "function"
           ? updater(state.sessionAvailableCommands)
           : updater,
+    })),
+  setPromptQueues: (updater) =>
+    set((state) => ({
+      promptQueues:
+        typeof updater === "function" ? updater(state.promptQueues) : updater,
+    })),
+  setPromptQueue: (sessionId, queue) =>
+    set((state) => ({
+      promptQueues: { ...state.promptQueues, [sessionId]: queue },
     })),
   setAgentAvailableCommands: (updater) =>
     set((state) => {

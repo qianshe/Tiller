@@ -40,8 +40,9 @@ test("Mermaid viewport controller exposes a reusable transform style", () => {
 
   assert.equal(
     controller.getTransformStyle(),
-    "translate(-50%, -50%) translate3d(24px, -12px, 0) scale(1.25)",
+    "translate(-50%, -50%) translate(24px, -12px) scale(1.25)",
   );
+  assert.doesNotMatch(controller.getTransformStyle(), /translate3d/);
 });
 
 test("Mermaid viewport controller supports clamped pinch zoom", () => {

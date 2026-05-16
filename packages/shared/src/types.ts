@@ -301,6 +301,26 @@ export type AgentPromptImageContent = {
 
 export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
 
+export type SessionQueuedPromptStatus = "queued" | "sending" | "failed";
+
+export type SessionQueuedPrompt = {
+  id: string;
+  sessionId: string;
+  text: string;
+  content?: AgentPromptContent[];
+  clientMessageId: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SessionQueuedPromptStatus;
+  error?: string;
+};
+
+export type SessionPromptQueueSnapshot = {
+  sessionId: string;
+  inFlight?: SessionQueuedPrompt;
+  queued: SessionQueuedPrompt[];
+};
+
 export type PermissionDecision =
   | "allow"
   | "allow_session"
@@ -331,9 +351,23 @@ export type CommandChunk = {
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
 
+export type AgentToolCallKind =
+  | "mcp"
+  | "skill"
+  | "read"
+  | "write"
+  | "search"
+  | "shell"
+  | "fetch"
+  | "think"
+  | "todo"
+  | "subagent"
+  | "tool"
+  | "unknown";
+
 export type AgentToolCall = {
   id: string;
-  kind: "terminal" | "edit" | "subagent" | "tool" | "unknown";
+  kind: AgentToolCallKind;
   title: string;
   status: AgentToolCallStatus;
   commandId?: string;

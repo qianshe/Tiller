@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { dirname, relative, resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
@@ -435,6 +436,7 @@ export class AcpConnection {
         this.state.logFile,
         this.state.provider,
       );
+      await waitUntilNextEventLoopTurn();
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
@@ -604,7 +606,7 @@ export class AcpConnection {
       type: "tool-call",
       toolCall: {
         id: `fs-write-${Date.now()}`,
-        kind: "edit",
+        kind: "write",
         title: `Write file: ${relativePath}`,
         status: "completed",
         input: params.path,
@@ -649,7 +651,7 @@ export class AcpConnection {
           type: "tool-call",
           toolCall: {
             id: `tool-${terminalId}`,
-            kind: "terminal",
+            kind: "shell",
             title: commandLine,
             status: code === 0 ? "completed" : "failed",
             commandId: terminalId,
@@ -667,7 +669,7 @@ export class AcpConnection {
       type: "tool-call",
       toolCall: {
         id: `tool-${terminalId}`,
-        kind: "terminal",
+        kind: "shell",
         title: commandLine,
         status: "running",
         commandId: terminalId,
@@ -747,7 +749,10 @@ export class AcpConnection {
   }
 
   private handleSessionUpdate(params: unknown): void {
-    const mapped = mapSessionUpdateNotification({ method: "session/update", params });
+    const mapped = mapSessionUpdateNotification(
+      { method: "session/update", params },
+      { providerId: this.state.provider.id },
+    );
     writeLogLine(
       this.state.logFile,
       "session-update",

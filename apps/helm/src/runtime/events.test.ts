@@ -16,9 +16,10 @@ type TestContextCapture = {
 function createTestContext(
   logs: string[],
   capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
+  sessionId = "session-1",
 ): HelmHandlerContext {
   const summary: SessionSummary = {
-    id: "session-1",
+    id: sessionId,
     projectId: "project-1",
     projectName: "Project One",
     helmId: "helm-1",
@@ -35,7 +36,7 @@ function createTestContext(
   return {
     sessions: new Map([
       [
-        "session-1",
+        sessionId,
         {
           agent: { id: "opencode" },
           worktree: { id: "worktree-1" },
@@ -129,7 +130,7 @@ test("runtime session.message persists and broadcasts streaming chunks with debu
   }
 
   assert.equal(logs.length, 2);
-  assert.match(logs[0], /阶段=直播消息流开始 seq=\d+ .*role=assistant .*id=message-1/);
+  assert.match(logs[0], /阶段=直播消息流开始 seq=\d+ .*role=assistant .*id=session-1-msg-\d{6}-\d{6}-pmessage1/);
   assert.match(logs[1], /阶段=运行状态流/);
   assert.doesNotMatch(logs[0], /preview=|text=|chars=/);
   assert.deepEqual(writes, ["你", "好\n主人", "\n"]);
@@ -193,6 +194,99 @@ test("runtime streaming chunks defer summary persistence until flush", () => {
   assert.equal(capture.summaryUpdates?.length, 2);
   assert.equal(capture.persisted.length, 1);
   assert.equal(capture.persisted[0]?.text, "你好");
+});
+
+test("runtime assistant chunks reuse one ordered segment id", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture, "session-stream-ordered");
+
+  handleRuntimeEvent(
+    "session-stream-ordered",
+    {
+      type: "message",
+      message: {
+        id: "session-stream-ordered-msg-a",
+        role: "assistant",
+        text: "hello",
+        timestamp: "2026-05-15T10:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-stream-ordered",
+    {
+      type: "message",
+      message: {
+        id: "session-stream-ordered-msg-000001-000000-c1234abcd",
+        role: "assistant",
+        text: "hello world",
+        timestamp: "2026-05-15T10:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-stream-ordered",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.persisted.length, 1);
+  assert.equal(capture.persisted[0]?.text, "hello world");
+  assert.match(capture.persisted[0]?.id ?? "", /^session-stream-ordered-msg-000001-000000-/u);
+});
+
+test("repeated running status does not advance turn without an active assistant segment", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture, "session-no-bump");
+
+  handleRuntimeEvent(
+    "session-no-bump",
+    {
+      type: "status",
+      status: "running",
+      message: "started",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-no-bump",
+    {
+      type: "status",
+      status: "running",
+      message: "still running",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-no-bump",
+    {
+      type: "message",
+      message: {
+        id: "session-no-bump-msg-a",
+        role: "assistant",
+        text: "一次回复",
+        timestamp: "2026-05-15T10:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-no-bump",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.match(capture.persisted[0]?.id ?? "", /^session-no-bump-msg-000001-000000-/u);
 });
 
 test("runtime assistant stream closes before the next stage log", () => {
@@ -397,12 +491,12 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   );
 
   assert.deepEqual(
-    capture.persisted.map((message) => [message.id, message.text]),
-    [
-      ["session-1-msg-s0", "工具前说明"],
-      ["session-1-msg-s1", "工具后继续"],
-    ],
+    capture.persisted.map((message) => message.text),
+    ["工具前说明", "工具后继续"],
   );
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
   assert.equal(appendedToolCalls.length, 1);
 });
 
@@ -446,7 +540,7 @@ test("runtime-generated delta chunks with fresh source ids stay in one stream se
     context,
   );
 
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.deepEqual(
     capture.persisted.map((message) => message.text),
     ["当前分支是 `codex/debug-stream-tool-logs`,看起来正在调"],
@@ -495,8 +589,8 @@ test("runtime-generated independent assistant messages get distinct stream segme
 
   assert.equal(capture.persisted[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
   assert.equal(capture.persisted[1]?.text, "你好主人，我会按你的项目规则继续处理。");
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
-  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
 });
 
@@ -594,8 +688,8 @@ test("runtime running status starts a fresh assistant segment for the next promp
     context,
   );
 
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-s\d+$/u);
-  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-s\d+$/u);
+  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
 });
 
@@ -646,6 +740,60 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
             updatedAt: "2026-04-30T00:00:01.000Z",
             input: "git branch --show-current",
             output: "main",
+          },
+        },
+      },
+    },
+  ]);
+});
+
+test("runtime tool-call broadcasts keep stronger persisted classifications", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => ({
+    outputs: [],
+    diffs: [],
+    toolCalls: [
+      {
+        ...toolCall,
+        kind: "mcp",
+        title: "Tool: node_repl/js",
+      },
+    ],
+  });
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-1",
+        kind: "tool",
+        title: "Tool call call-1",
+        status: "completed",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(capture.detailBroadcasts, [
+    {
+      sessionId: "session-1",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          kind: "tool_call",
+          toolCall: {
+            id: "call-1",
+            kind: "mcp",
+            title: "Tool: node_repl/js",
+            status: "completed",
+            timestamp: "2026-04-30T00:00:01.000Z",
+            updatedAt: "2026-04-30T00:00:02.000Z",
           },
         },
       },

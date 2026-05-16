@@ -195,6 +195,9 @@ export function applySessionResult(
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
+        store.setPromptQueues((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setOutputs((current) => pruneSessionScopedMap(current, nextSessions));
         store.setToolCalls((current) => {
           const next = pruneSessionScopedMap(current, nextSessions);
@@ -498,6 +501,19 @@ export function applySessionUpdate(
       );
       return true;
     case "restore_replay_cached":
+      return true;
+    case "prompt_queue":
+      store.setPromptQueue(sessionId, update.queue);
+      return true;
+    case "user_message":
+      store.setMessages((current) => ({
+        ...current,
+        [sessionId]: mergeMessageHistory(
+          current[sessionId] ?? [],
+          [update.message],
+          { mode: "append" },
+        ),
+      }));
       return true;
     case "status_change":
       store.setStatuses((current) => ({

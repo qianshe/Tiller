@@ -54,7 +54,7 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
     {
       id: "call-1",
       commandId: "call-1",
-      kind: "tool",
+      kind: "mcp",
       title: "mcp-router_get_current_config",
       status: "completed",
       input: "{}",
@@ -114,6 +114,63 @@ test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlit
     ],
     toolCalls: [],
   });
+});
+
+test("parseOpenCodeExportHistory classifies OpenCode read/write/search and MCP tools", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant-tools",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              type: "tool",
+              tool: "read",
+              callID: "call-read",
+              state: {
+                status: "completed",
+                input: { filePath: "apps/deck/src/features/logbook/message-history.ts" },
+                title: "apps\\deck\\src\\features\\logbook\\message-history.ts",
+                time: { start: 1777543150384, end: 1777543150482 },
+              },
+            },
+            {
+              type: "tool",
+              tool: "write",
+              callID: "call-write",
+              state: {
+                status: "completed",
+                input: { filePath: "docs/bug/BUG-004.md" },
+                title: "docs\\bug\\BUG-004.md",
+                time: { start: 1777543150484, end: 1777543150582 },
+              },
+            },
+            {
+              type: "tool",
+              tool: "mcpServers_search_context",
+              callID: "call-mcp",
+              state: {
+                status: "completed",
+                input: { query: "Where is logbook rendered?" },
+                title: "mcpServers_search_context",
+                time: { start: 1777543150584, end: 1777543150682 },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    history.toolCalls.map((tool) => [tool.id, tool.kind, tool.title]),
+    [
+      ["call-read", "read", "apps\\deck\\src\\features\\logbook\\message-history.ts"],
+      ["call-write", "write", "docs\\bug\\BUG-004.md"],
+      ["call-mcp", "mcp", "mcpServers_search_context"],
+    ],
+  );
 });
 
 test("loadAdapterAuthoritativeHistory returns null for providers without native export", async () => {

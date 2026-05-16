@@ -404,23 +404,79 @@ export function summarizeSessionContext(
   if (!session) {
     return "暂无活跃任务；请先增强新任务草稿。";
   }
-  const recentMessages = sessionMessages
-    .slice(-4)
-    .map(
-      (message) =>
-        `${message.role}: ${message.text.replace(/\s+/g, " ").trim().slice(0, 180)}`,
-    );
-  return [
-    `Session ${session.id} is ${session.status}; messages: ${session.messageCount}.`,
-    session.lastMessagePreview
-      ? `最近意图/结果：${session.lastMessagePreview}`
-      : "",
-    recentMessages.length
-      ? ["最近消息：", ...recentMessages.map((message) => `- ${message}`)].join(
-          "\n",
-        )
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const summary = summarizeRecentDialogue(sessionMessages);
+  if (summary) {
+    return summary;
+  }
+  return session.lastMessagePreview
+    ? `最近结论：${sanitizeSessionSummaryText(session.lastMessagePreview, 320)}`
+    : "暂无可用于增强的最近对话内容。";
+}
+
+const SESSION_CONTEXT_MESSAGE_LIMIT = 10;
+const SESSION_CONTEXT_MIN_MESSAGE_CHARS = 12;
+const SESSION_CONTEXT_MAX_MESSAGE_CHARS = 320;
+const SESSION_CONTEXT_MAX_TOTAL_CHARS = 1800;
+
+type SessionDialogueTurn = { user?: string; assistant?: string };
+
+function summarizeRecentDialogue(sessionMessages: AgentMessage[]) {
+  const turns = buildRecentDialogueTurns(sessionMessages.slice(-SESSION_CONTEXT_MESSAGE_LIMIT));
+  const lines: string[] = [];
+  let totalChars = 0;
+  for (const turn of turns) {
+    const parts = [
+      turn.user ? `用户：${turn.user}` : "",
+      turn.assistant ? `助手结论：${turn.assistant}` : "",
+    ].filter(Boolean);
+    if (!parts.length) {
+      continue;
+    }
+    const line = `- ${parts.join("\n  ")}`;
+    if (totalChars + line.length > SESSION_CONTEXT_MAX_TOTAL_CHARS) {
+      break;
+    }
+    lines.push(line);
+    totalChars += line.length;
+  }
+
+  return lines.length ? ["最近问答与结论：", ...lines].join("\n") : "";
+}
+
+function buildRecentDialogueTurns(messages: AgentMessage[]) {
+  const turns: SessionDialogueTurn[] = [];
+  let current: SessionDialogueTurn | null = null;
+
+  for (const message of messages) {
+    if (message.role === "system") {
+      continue;
+    }
+    const text = sanitizeSessionSummaryText(message.text, SESSION_CONTEXT_MAX_MESSAGE_CHARS);
+    if (text.length < SESSION_CONTEXT_MIN_MESSAGE_CHARS) {
+      continue;
+    }
+
+    if (message.role === "user") {
+      current = { user: text };
+      turns.push(current);
+      continue;
+    }
+
+    if (!current || current.assistant) {
+      current = {};
+      turns.push(current);
+    }
+    current.assistant = text;
+  }
+
+  return turns.slice(-5);
+}
+
+function sanitizeSessionSummaryText(text: string, maxLength: number) {
+  const compact = text
+    .replace(/```mermaid[\s\S]*?```/giu, "[Mermaid 图已省略]")
+    .replace(/```[\s\S]*?```/gu, "[代码块已省略]")
+    .replace(/\s+/g, " ")
+    .trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}…` : compact;
 }

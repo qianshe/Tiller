@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type { AgentToolCall, AgentToolCallKind, CommandChunk, FileDiffSummary } from "@tiller/shared";
 import {
   compareTimestampIdPosition,
   decodeCursor,
@@ -58,9 +58,10 @@ export function createSessionArtifactStore(rootDir: string) {
                 ? {
                     ...item,
                     ...toolCall,
+                    kind: resolveToolCallKind(item.kind, toolCall.kind),
                     title: resolveToolCallTitle(item.title, toolCall.title, toolCall.id),
                     output: `${item.output ?? ""}${toolCall.output ?? ""}`,
-                    input: toolCall.input ?? item.input,
+                    input: resolveToolCallInput(item.input, toolCall.input),
                     timestamp: item.timestamp,
                     updatedAt: toolCall.updatedAt,
                   }
@@ -98,6 +99,38 @@ export function createSessionArtifactStore(rootDir: string) {
   };
 }
 
+function resolveToolCallKind(
+  currentKind: AgentToolCallKind,
+  incomingKind: AgentToolCallKind,
+) {
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCallKind,
+  currentKind: AgentToolCallKind,
+) {
+  const rank: Record<AgentToolCallKind, number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 2,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
+function resolveToolCallInput(currentInput: string | undefined, incomingInput: string | undefined) {
+  return incomingInput ?? currentInput;
+}
+
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
   if (isInformativeToolCallTitle(incomingTitle, id)) {
     return incomingTitle;
@@ -108,6 +141,10 @@ function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: s
 function isInformativeToolCallTitle(title: string | undefined, id: string) {
   const normalized = title?.trim();
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
 export function pageSessionArtifacts(
@@ -180,12 +217,99 @@ function getSessionArtifacts(rootDir: string, sessionId: string): SessionArtifac
         : [],
       diffs: Array.isArray(parsed?.diffs) ? parsed.diffs.filter(isFileDiffSummary) : [],
       toolCalls: Array.isArray(parsed?.toolCalls)
-        ? sortToolCalls(parsed.toolCalls.filter(isAgentToolCall))
+        ? sortToolCalls(
+            (parsed.toolCalls as unknown[]).filter(isAgentToolCall).map((item) => normalizeAgentToolCall(item)),
+          )
         : [],
     };
   } catch {
     return { outputs: [], diffs: [], toolCalls: [] };
   }
+}
+
+const VALID_TOOL_CALL_KINDS = new Set<AgentToolCallKind>([
+  "mcp",
+  "skill",
+  "read",
+  "write",
+  "search",
+  "shell",
+  "fetch",
+  "think",
+  "todo",
+  "subagent",
+  "tool",
+  "unknown",
+]);
+
+function normalizeAgentToolCallKind(value: unknown): AgentToolCallKind {
+  if (value === "terminal") return "shell";
+  if (value === "edit") return "write";
+  return typeof value === "string" && VALID_TOOL_CALL_KINDS.has(value as AgentToolCallKind)
+    ? (value as AgentToolCallKind)
+    : "unknown";
+}
+
+function normalizeAgentToolCall(toolCall: AgentToolCall): AgentToolCall {
+  const normalizedKind = normalizeAgentToolCallKind(toolCall.kind);
+  const inputToolName = toolNameFromInput(toolCall.input);
+  if (!inputToolName || (normalizedKind !== "mcp" && !isHigherConfidenceToolKind("mcp", normalizedKind))) {
+    return { ...toolCall, kind: normalizedKind };
+  }
+
+  return {
+    ...toolCall,
+    kind: "mcp",
+    title: resolveMcpToolCallTitle(toolCall.title, toolCall.id, inputToolName),
+  };
+}
+
+function resolveMcpToolCallTitle(title: string, id: string, inputToolName: string) {
+  if (!isInformativeToolCallTitle(title, id) || isFallbackToolCallTitle(title)) {
+    return `Tool: ${inputToolName}`;
+  }
+
+  const unqualifiedInputToolName = inputToolName.split("/").at(-1);
+  return unqualifiedInputToolName && title.trim() === unqualifiedInputToolName
+    ? `Tool: ${inputToolName}`
+    : title;
+}
+
+function toolNameFromInput(input: string | undefined) {
+  if (!input) return undefined;
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const record = parsed as Record<string, unknown>;
+    const server = primitiveStringFrom(record.server);
+    const tool = primitiveStringFrom(record.tool ?? record.name ?? record.toolName ?? record.tool_name);
+    return server && tool ? `${server}/${tool}` : tool ?? server ?? inferToolNameFromStructuredPayload(record);
+  } catch {
+    return undefined;
+  }
+}
+
+function inferToolNameFromStructuredPayload(record: Record<string, unknown>) {
+  if (typeof record.code === "string" && ("timeout_ms" in record || "timeoutMs" in record)) {
+    return "node_repl/js";
+  }
+  if (
+    typeof record.project_root_path === "string" &&
+    typeof record.message === "string" &&
+    Array.isArray(record.predefined_options)
+  ) {
+    return "sanshu/zhi";
+  }
+  if (typeof record.project_path === "string" && typeof record.action === "string") {
+    return "sanshu/ji";
+  }
+  return undefined;
+}
+
+function primitiveStringFrom(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
 }
 
 function sortCommandChunks(items: CommandChunk[]) {

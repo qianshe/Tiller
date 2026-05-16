@@ -232,12 +232,12 @@ function shouldMergeRuntimeGeneratedMessageIds(leftId: string, rightId: string) 
 }
 
 function normalizedRuntimeSegmentId(id: string) {
-  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-s(?<segment>\d+)$/iu.exec(id)
-    ?.groups?.segment;
+  const match = /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:(?:s(?<legacySegment>\d+))|(?<orderedSegment>\d{6}-\d{6})-[pc][a-z0-9]{1,32})$/iu.exec(id);
+  return match?.groups?.legacySegment ?? match?.groups?.orderedSegment;
 }
 
 function isRuntimeGeneratedMessageId(id: string) {
-  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-[a-z0-9]+$/iu.test(id);
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:[a-z0-9]+|\d{6}-\d{6}-[pc][a-z0-9]{1,32})$/iu.test(id);
 }
 
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {

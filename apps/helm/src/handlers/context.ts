@@ -20,6 +20,7 @@ import type {
 } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
+import type { SessionPromptQueueManager } from "../runtime/session-prompt-queue";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -93,6 +94,8 @@ export type HelmHandlerContext = {
   sessionArtifactStore: any;
   sessionRuntimeStore: any;
   liveMessageBuffer: LiveMessageBuffer;
+  promptQueue: SessionPromptQueueManager;
+  drainPromptQueue: (sessionId: string) => Promise<void>;
 
   createRuntime: typeof createAcpRuntime;
   connectAcpConnection: typeof connectAcpConnection;

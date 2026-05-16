@@ -536,6 +536,283 @@ test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput se
   }));
 });
 
+test("mapSessionUpdateNotification classifies MCP tools from rawInput server and tool", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-tools",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-mcp",
+        title: "call-mcp",
+        status: "in_progress",
+        rawInput: { server: "sanshu", tool: "zhi", arguments: { message: "review" } },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: sanshu/zhi");
+});
+
+test("mapSessionUpdateNotification classifies MCP tools from stringified input", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-tools-input",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-mcp-input",
+        title: "call-mcp-input",
+        status: "in_progress",
+        input: JSON.stringify({ server: "node_repl", tool: "js", arguments: { code: "1 + 1" } }),
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: node_repl/js");
+});
+
+test("mapSessionUpdateNotification classifies MCP tools from nested state input", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-tools-state-input",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCall: {
+          id: "call-mcp-state-input",
+          title: "call-mcp-state-input",
+          status: "completed",
+          state: {
+            input: JSON.stringify({ server: "node_repl", tool: "js", arguments: { code: "1 + 1" } }),
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: node_repl/js");
+});
+
+test("mapSessionUpdateNotification infers MCP tools from common structured payload shapes", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-tools-structured-input",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-structured-input",
+        title: "call-structured-input",
+        status: "completed",
+        input: JSON.stringify({
+          title: "执行 1+1",
+          code: "nodeRepl.write(String(1 + 1));",
+          timeout_ms: 10000,
+        }),
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: node_repl/js");
+});
+
+test("mapSessionUpdateNotification classifies ACP tool kinds without provider special cases", () => {
+  const cases = [
+    { acpKind: "read", expected: "read" },
+    { acpKind: "edit", expected: "write" },
+    { acpKind: "delete", expected: "write" },
+    { acpKind: "move", expected: "write" },
+    { acpKind: "execute", expected: "shell" },
+    { acpKind: "search", expected: "search" },
+    { acpKind: "think", expected: "think" },
+    { acpKind: "fetch", expected: "fetch" },
+  ] as const;
+
+  for (const item of cases) {
+    const mapped = mapSessionUpdateNotification({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: `session-${item.acpKind}`,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: `call-${item.acpKind}`,
+          title: `Tool ${item.acpKind}`,
+          kind: item.acpKind,
+          status: "in_progress",
+        },
+      },
+    });
+    assert.equal(mapped?.event.type, "tool-call");
+    if (mapped?.event.type !== "tool-call") {
+      throw new Error("Expected tool-call event");
+    }
+    assert.equal(mapped.event.toolCall.kind, item.expected);
+  }
+});
+
+test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-live",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-read",
+            title: "apps\\deck\\src\\features\\logbook\\message-history.ts",
+            status: "completed",
+            tool: "read",
+            state: {
+              input: { filePath: "apps/deck/src/features/logbook/message-history.ts" },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "apps\\deck\\src\\features\\logbook\\message-history.ts");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode path-only tool call history", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-path",
+            kind: "tool",
+            title: "apps\\helm\\src\\runtime\\events.ts",
+            status: "completed",
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "apps\\helm\\src\\runtime\\events.ts");
+});
+
+test("mapSessionUpdateNotification classifies OpenCode todo tools as generic todo", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-todo",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-todo",
+            title: "0 todos",
+            status: "completed",
+            tool: "todowrite",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "todo");
+  assert.equal(mapped.event.toolCall.title, "0 todos");
+});
+
+test("mapSessionUpdateNotification classifies skill-shaped rawInput before generic MCP", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-skill-tool",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-skill",
+        title: "call-skill",
+        status: "in_progress",
+        rawInput: { server: "private-tooling", tool: "run", skillName: "frontend-design", arguments: { prompt: "polish UI" } },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "skill");
+  assert.equal(mapped.event.toolCall.title, "Tool: private-tooling/run");
+});
+
+test("mapSessionUpdateNotification does not expose opaque call ids as primary titles", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-opaque-title",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_RUs6aeyyj0Tgyfxal2obKoEU",
+        title: "call_RUs6aeyyj0Tgyfxal2obKoEU",
+        status: "in_progress",
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.title, "Tool call call_RUs6…");
+});
+
 test("mapSessionUpdateNotification maps explicit tool call updates", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -563,7 +840,7 @@ test("mapSessionUpdateNotification maps explicit tool call updates", () => {
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.id, "tool_1");
-  assert.equal(mapped.event.toolCall.kind, "terminal");
+  assert.equal(mapped.event.toolCall.kind, "shell");
   assert.equal(mapped.event.toolCall.status, "completed");
   assert.equal(mapped.event.toolCall.output, "PASS src/index.test.ts");
 });

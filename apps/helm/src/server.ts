@@ -56,6 +56,8 @@ import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createSessionServices, type SessionRecord } from "./runtime/session-services";
+import { createSessionPromptQueueManager } from "./runtime/session-prompt-queue";
+import { drainPromptQueue } from "./runtime/session-runtime-router";
 import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
@@ -130,6 +132,7 @@ let agents = listAvailableProviders(configPath);
 let projects = loadAvailableProjects();
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
+const promptQueue = createSessionPromptQueueManager();
 const sessionServices = createSessionServices({
   sessions,
   permissionIndex,
@@ -365,6 +368,8 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     sessionArtifactStore,
     sessionRuntimeStore,
     liveMessageBuffer,
+    promptQueue,
+    drainPromptQueue: (sessionId) => drainPromptQueue(sessionId, createHandlerContext(socketId)),
     createRuntime: createAcpRuntime,
     connectAcpConnection,
     reconnectAcpConnection,

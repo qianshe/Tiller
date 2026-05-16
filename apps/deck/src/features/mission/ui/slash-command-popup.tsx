@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { AvailableCommand, AvailableCommandKind } from "@tiller/shared";
 import { formatSlashCommandLabel } from "../hooks/slash-commands";
 
@@ -14,6 +15,15 @@ export function SlashCommandPopup({
   onSelect,
   onHover,
 }: SlashCommandPopupProps) {
+  const selectedOptionRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    selectedOptionRef.current?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [selectedIndex, commands.length]);
+
   return (
     <div
       className="absolute bottom-full left-0 z-50 mb-2 grid w-[min(360px,calc(100vw-2rem))] max-h-80 overflow-y-auto rounded-xl border border-border-ghost bg-surface-elevated p-1.5 text-sm text-foreground shadow-ambient"
@@ -36,6 +46,7 @@ export function SlashCommandPopup({
             role="option"
             aria-selected={selected}
             aria-label={commandLabel}
+            ref={selected ? selectedOptionRef : null}
             className={`grid min-w-0 gap-1 rounded-lg px-3 py-2 text-left transition-colors ${selected ? "bg-surface-emphasis text-foreground" : "hover:bg-surface-sunken"}`}
             onMouseDown={(event) => {
               event.preventDefault();

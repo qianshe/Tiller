@@ -42,7 +42,7 @@ export class MermaidViewportController {
   }
 
   getTransformStyle(): string {
-    return `translate(-50%, -50%) translate3d(${this.state.x}px, ${this.state.y}px, 0) scale(${this.state.scale})`;
+    return `translate(-50%, -50%) translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
   }
 
   zoomIn(): MermaidViewportState {

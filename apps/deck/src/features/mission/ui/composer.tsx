@@ -178,6 +178,7 @@ export function MissionComposer({
   const modelSettingsLoading =
     draftModelLoading ||
     (!activeSession && selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0);
+  const showInterruptOnly = Boolean(activeSession && sessionCanCancel);
 
 
   return (
@@ -186,7 +187,7 @@ export function MissionComposer({
       data-mission-swipe-lock="true"
     >
       <form
-        className="chat-input-form mission-order-editor grid gap-3 rounded-lg border border-border-ghost bg-surface p-3"
+        className="chat-input-form mission-order-editor grid gap-3 rounded-md border border-border-ghost/70 bg-surface px-3 py-2.5"
         onSubmit={submitPrompt}
       >
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
@@ -204,7 +205,7 @@ export function MissionComposer({
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
             rows={1}
-            className="min-h-28 resize-none border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
+            className="min-h-28 resize-none rounded-none border-0 bg-transparent px-1 py-0 text-base shadow-none focus-visible:ring-0"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup
@@ -320,7 +321,7 @@ export function MissionComposer({
           </div>
           <div className="min-w-0" />
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-2">
-            {deckPreferences.promptEnhancer.enabled ? (
+            {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
                 variant="outline"
                 size="icon"
@@ -333,18 +334,20 @@ export function MissionComposer({
                 ✦
               </Button>
             ) : null}
-            {activeSession && sessionCanCancel ? (
+            {showInterruptOnly && activeSession ? (
               <Button
                 variant="destructive"
                 size="icon"
                 type="button"
+                className="mission-cancel-session-button size-12 rounded-2xl bg-destructive text-base font-bold text-white shadow-ambient hover:bg-destructive/90"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
               >
                 ■
               </Button>
-            ) : (
+            ) : null}
+            {!showInterruptOnly ? (
               <Button
                 size="icon"
                 type="submit"
@@ -354,7 +357,7 @@ export function MissionComposer({
               >
                 ➤
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </form>

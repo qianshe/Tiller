@@ -52,7 +52,6 @@ type SettingsPageProps = {
   refreshPromptEnhancerModels: () => void;
   setPromptEnhancerModelFilter: (value: string) => void;
   selectPromptEnhancerModel: (model: PromptEnhancerModelOption) => void;
-  resetPromptEnhancerDefaults: () => void;
   testPromptEnhancerSelectedModel: () => void;
 };
 
@@ -74,7 +73,6 @@ export function SettingsPage({
   refreshPromptEnhancerModels,
   setPromptEnhancerModelFilter,
   selectPromptEnhancerModel,
-  resetPromptEnhancerDefaults,
   testPromptEnhancerSelectedModel,
 }: SettingsPageProps) {
   const settingsCopy = resolveSettingsCopy(deckPreferences.language);
@@ -202,7 +200,6 @@ export function SettingsPage({
             refreshModels={refreshPromptEnhancerModels}
             setModelFilter={setPromptEnhancerModelFilter}
             selectModel={selectPromptEnhancerModel}
-            resetDefaults={resetPromptEnhancerDefaults}
             testSelectedModel={testPromptEnhancerSelectedModel}
           />
         </div>

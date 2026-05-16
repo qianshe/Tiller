@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentPromptContent, SessionSummary } from "@tiller/shared";
+import type { AgentPromptContent, SessionQueuedPrompt, SessionSummary } from "@tiller/shared";
 import { StopReasonSchema, typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
@@ -17,7 +17,9 @@ export const ParamsSchema = z
     path: ["sessionId"],
   });
 export const ResultSchema = z.object({
-  stopReason: StopReasonSchema,
+  accepted: z.enum(["sent", "queued"]),
+  stopReason: StopReasonSchema.optional(),
+  queueItem: typedUnknown<SessionQueuedPrompt>().optional(),
   session: typedUnknown<SessionSummary>().optional(),
 });
 export type Params = z.infer<typeof ParamsSchema>;

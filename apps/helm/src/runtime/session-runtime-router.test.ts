@@ -2,7 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import { sendPromptToSession } from "./session-runtime-router";
+import { sendPromptToSession, drainPromptQueue } from "./session-runtime-router";
+import { createSessionPromptQueueManager } from "./session-prompt-queue";
+import { createLiveMessageBuffer } from "./live-message-buffer";
+import { flushLiveAssistantMessage } from "./events";
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function flushPromises() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -50,6 +65,11 @@ function createContext(options: {
   }
   const context = {
     sessions,
+    promptQueue: createSessionPromptQueueManager(),
+    liveMessageBuffer: createLiveMessageBuffer(),
+    drainPromptQueue: async (sessionId: string) => {
+      await drainPromptQueue(sessionId, context as unknown as HelmHandlerContext);
+    },
     logInfo: () => undefined,
     logError: () => undefined,
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => persisted.push(message),
@@ -100,10 +120,100 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
     context,
   );
 
+  await flushPromises();
   assert.deepEqual(prompted, ["你好"]);
-  assert.equal(result.stopReason, "end_turn");
+  assert.equal(result.accepted, "sent");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
+});
+
+test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "延迟到 prompt 完成后 flush 的回复",
+          timestamp: "2026-05-15T10:00:00.000Z",
+        });
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复", clientMessageId: "client-flush" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复"],
+      ["assistant", "延迟到 prompt 完成后 flush 的回复"],
+    ],
+  );
+});
+
+test("sendPromptToSession does not duplicate assistant text already flushed by status handling", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "已由 status 路径 flush 的回复",
+          timestamp: "2026-05-15T10:01:00.000Z",
+        });
+        flushLiveAssistantMessage("session-1", context);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复一次", clientMessageId: "client-no-dup" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复一次"],
+      ["assistant", "已由 status 路径 flush 的回复"],
+    ],
+  );
+});
+
+test("sendPromptToSession acknowledges before a long ACP prompt completes", async () => {
+  const gate = deferred<void>();
+  const prompted: string[] = [];
+  const { context } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+        await gate.promise;
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "long prompt", clientMessageId: "client-long" },
+    context,
+  );
+
+  await flushPromises();
+  assert.equal(result.accepted, "sent");
+  assert.deepEqual(prompted, ["long prompt"]);
+  assert.equal(context.promptQueue.hasInFlight("session-1"), true);
+
+  gate.resolve();
+  await flushPromises();
+  assert.equal(context.promptQueue.hasInFlight("session-1"), false);
 });
 
 test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {
@@ -141,6 +251,7 @@ test("sendPromptToSession allows supported slash commands as ACP text prompts", 
 
   await sendPromptToSession({ sessionId: "session-1", text: "/review branch" }, context);
 
+  await flushPromises();
   assert.deepEqual(prompted, ["/review branch"]);
 });
 
@@ -158,6 +269,7 @@ test("sendPromptToSession allows scoped slash command invocations", async () => 
 
   await sendPromptToSession({ sessionId: "session-1", text: "/skills:frontend-design hero" }, context);
 
+  await flushPromises();
   assert.deepEqual(prompted, ["/skills:frontend-design hero"]);
 });
 
@@ -178,9 +290,55 @@ test("sendPromptToSession restores a stale session before dispatch", async () =>
     context,
   );
 
+  await flushPromises();
   assert.deepEqual(prompted, ["恢复后发送"]);
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.text, "恢复后发送");
+});
+
+test("sendPromptToSession queues behind an active in-flight prompt", async () => {
+  const { context, persisted, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        throw new Error("should not send while in-flight");
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  context.promptQueue.markInFlight({
+    sessionId: "session-1",
+    text: "first",
+    clientMessageId: "client-1",
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "second", clientMessageId: "client-2" },
+    context,
+  );
+
+  assert.equal(result.accepted, "queued");
+  assert.equal(persisted.length, 0);
+  assert.equal(context.promptQueue.snapshot("session-1").queued[0]?.text, "second");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "prompt_queue");
+});
+
+test("drainPromptQueue sends queued prompts in FIFO order", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  context.promptQueue.enqueue({ sessionId: "session-1", text: "second", clientMessageId: "client-2" });
+  context.promptQueue.enqueue({ sessionId: "session-1", text: "third", clientMessageId: "client-3" });
+
+  await drainPromptQueue("session-1", context);
+
+  assert.deepEqual(prompted, ["second", "third"]);
+  assert.deepEqual(persisted.map((message) => message.text), ["second", "third"]);
 });
 
 test("sendPromptToSession fails when no runtime can be restored", async () => {

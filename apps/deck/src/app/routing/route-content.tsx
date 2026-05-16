@@ -117,7 +117,6 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     refreshPromptEnhancerModels,
     setPromptEnhancerModelFilter,
     selectPromptEnhancerModel,
-    resetPromptEnhancerDefaults,
     testPromptEnhancerSelectedModel,
   } = source;
 function renderOverview() {
@@ -230,7 +229,6 @@ function renderSettings() {
       refreshPromptEnhancerModels={refreshPromptEnhancerModels}
       setPromptEnhancerModelFilter={setPromptEnhancerModelFilter}
       selectPromptEnhancerModel={selectPromptEnhancerModel}
-      resetPromptEnhancerDefaults={resetPromptEnhancerDefaults}
       testPromptEnhancerSelectedModel={testPromptEnhancerSelectedModel}
     />
   );

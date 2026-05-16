@@ -55,13 +55,31 @@ function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentM
   return (
     current.role === "assistant" &&
     incoming.role === "assistant" &&
-    isRuntimeGeneratedMessageId(current.id) &&
-    isRuntimeGeneratedMessageId(incoming.id)
+    shouldMergeRuntimeGeneratedMessageIds(current.id, incoming.id)
   );
 }
 
+function shouldMergeRuntimeGeneratedMessageIds(leftId: string, rightId: string) {
+  if (!isRuntimeGeneratedMessageId(leftId) || !isRuntimeGeneratedMessageId(rightId)) {
+    return false;
+  }
+
+  const leftSegment = normalizedRuntimeSegmentId(leftId);
+  const rightSegment = normalizedRuntimeSegmentId(rightId);
+  if (leftSegment || rightSegment) {
+    return Boolean(leftSegment && leftSegment === rightSegment);
+  }
+
+  return true;
+}
+
+function normalizedRuntimeSegmentId(id: string) {
+  const match = /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:(?:s(?<legacySegment>\d+))|(?<orderedSegment>\d{6}-\d{6})-[pc][a-z0-9]{1,32})$/iu.exec(id);
+  return match?.groups?.legacySegment ?? match?.groups?.orderedSegment;
+}
+
 function isRuntimeGeneratedMessageId(id: string) {
-  return /-msg-\d+$/u.test(id);
+  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:[a-z0-9]+|\d{6}-\d{6}-[pc][a-z0-9]{1,32})$/iu.test(id);
 }
 
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {

@@ -8,7 +8,7 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     return `Skill: ${skillNameFromCommand}`;
   }
 
-  if (call.kind !== "terminal") {
+  if (call.kind !== "shell") {
     const openCodeSkillName = extractOpenCodeSkillNameFromToolOutput(
       call.output,
     );
@@ -17,11 +17,21 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     }
   }
 
-  if (call.kind === "terminal") {
+  if (call.kind === "shell") {
     return summarizeCommand(call.input ?? call.title ?? fallback);
   }
 
-  return isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
+  const title = isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
+  if (call.kind === "mcp") {
+    return stripToolPrefix(title);
+  }
+  if (isNamespacedToolTitle(title)) {
+    return stripToolPrefix(title);
+  }
+  if (call.kind === "read" || call.kind === "write") {
+    return stripLeadingActionVerb(title, call.kind);
+  }
+  return title;
 }
 
 function extractSkillNameFromCommandSources(call: AgentToolCall) {
@@ -105,6 +115,19 @@ function isInformativeToolTitle(title: string | undefined, id: string) {
   return Boolean(
     normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized),
   );
+}
+
+function stripToolPrefix(title: string) {
+  return title.replace(/^Tool:\s*/iu, "").trim() || title;
+}
+
+function isNamespacedToolTitle(title: string) {
+  return /^Tool:\s*[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/iu.test(title.trim());
+}
+
+function stripLeadingActionVerb(title: string, kind: "read" | "write") {
+  const verb = kind === "read" ? "Read" : "Write";
+  return title.replace(new RegExp(`^${verb}\\s+`, "iu"), "").trim() || title;
 }
 
 function summarizeCommand(input: string) {

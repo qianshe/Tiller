@@ -57,12 +57,6 @@ type SubmitPromptContext = {
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
   createClientUserMessageId: (sessionId: string) => string;
-  appendUserMessage: (
-    sessionId: string,
-    text: string,
-    id: string,
-    attachments: AgentPromptImageContent[],
-  ) => void;
   dispatch: DispatchToHelm;
 };
 
@@ -186,7 +180,6 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     setPrompt,
     setPromptImages,
     createClientUserMessageId,
-    appendUserMessage,
     dispatch,
   } = context;
 
@@ -198,7 +191,6 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
   }
   const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
   const content = buildPromptContent(nextPrompt, promptImages);
-  const imagesToSend = promptImages;
   setImagePasteNotice("");
 
   if (!activeSessionId) {
@@ -214,7 +206,6 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
   }
 
   const clientMessageId = createClientUserMessageId(activeSessionId);
-  appendUserMessage(activeSessionId, messageText, clientMessageId, imagesToSend);
   setPrompt("");
   setPromptImages([]);
   void dispatch(client, "session/prompt", {

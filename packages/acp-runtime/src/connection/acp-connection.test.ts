@@ -11,7 +11,7 @@ import { AcpConnection } from "./acp-connection";
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -42,6 +42,7 @@ const launchArgsPath = ${JSON.stringify(launchArgsPath)};
 const pidPath = ${JSON.stringify(pidPath)};
 const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
 const exitOnPrompt = ${JSON.stringify(options.exitOnPrompt ?? false)};
+const fireAndForgetPromptUpdate = ${JSON.stringify(options.fireAndForgetPromptUpdate ?? false)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 writeFileSync(pidPath, String(process.pid), "utf8");
@@ -94,7 +95,7 @@ const agent = {
       process.exit(0);
     }
     const result = await client.readTextFile({ sessionId: params.sessionId, path: "marker.txt" });
-    await client.sessionUpdate({
+    const update = client.sessionUpdate({
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
@@ -102,6 +103,9 @@ const agent = {
         content: { type: "text", text: result.content },
       },
     });
+    if (!fireAndForgetPromptUpdate) {
+      await update;
+    }
     return {};
   },
   async closeSession(params) {
@@ -510,6 +514,40 @@ test("openOrCreateSession supports resume with the requested runtime session id"
 
     assert.equal(handle.runtimeSessionId, "remote-session-1");
     assert.equal(readFileSync(resumeSessionCountPath, "utf8"), "1");
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("prompt emits idle after fire-and-forget assistant updates are delivered", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-prompt-update-order-"));
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(join(tempDir, "marker.txt"), "async assistant text", "utf8");
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { fireAndForgetPromptUpdate: true });
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: Array<{ type: string; status?: string; message?: { text: string } }> = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event as { type: string; status?: string; message?: { text: string } }),
+    });
+
+    await handle.prompt("read marker");
+
+    const messageIndex = events.findIndex((event) => event.message?.text === "async assistant text");
+    const idleIndex = events.findIndex((event) => event.type === "status" && event.status === "idle");
+    assert.notEqual(messageIndex, -1);
+    assert.notEqual(idleIndex, -1);
+    assert.equal(messageIndex < idleIndex, true);
 
     await connection.dispose();
   } finally {

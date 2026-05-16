@@ -93,7 +93,7 @@ test("worktree model blocks new-session sends while draft runtime is still prewa
   assert.equal(model.canSend, false);
 });
 
-test("worktree model blocks new-session sends until draft runtime is ready", () => {
+test("worktree model allows new-session sends before draft runtime is ready", () => {
   const model = buildMissionWorktreeModel(baseInput({
     activeSession: null,
     activeSessionId: null,
@@ -101,7 +101,7 @@ test("worktree model blocks new-session sends until draft runtime is ready", () 
     agentModelOptions: {},
   }));
 
-  assert.equal(model.canSend, false);
+  assert.equal(model.canSend, true);
 });
 
 test("worktree model allows new-session sends once draft runtime is ready", () => {

@@ -4,10 +4,14 @@ import {
 } from "../../shared/config/deck-language";
 import {
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+  DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
   type PromptEnhancerPreferences,
 } from "../prompt-enhancer/facade";
 
-export { DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE };
+export {
+  DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+  DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
+};
 
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
@@ -35,80 +39,6 @@ export const DEFAULT_PROMPT_MODEL_PROFILE =
   "模型偏好：遵循当前任务的 模型 / 推理 配置；若上下文不足，先列出假设，不把模型选择写入 Helm 或后端配置。";
 export const DEFAULT_PROMPT_RESPONSE_CONTRACT =
   "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
-export const OLD_PROMPT_LLM_SYSTEM_PROMPT =
-  "你是提示词增强器。把用户草稿改写为清晰、可执行、可验证的 coding-agent 提示词；保留用户意图，不要直接回答任务。";
-export const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = [
-  "你是一个 coding-agent 提示词增强器。",
-  [
-    "Core rule: User draft is the source of truth.",
-    "只强化用户真实意图，不改变目标，不扩大范围，不替用户做未要求的技术决策。",
-  ].join(" "),
-  [
-    "Razor rule: when multiple enhanced prompts would work, choose the one with",
-    "the fewest assumptions, smallest scope, shortest useful wording, and most",
-    "direct verification.",
-    "删除不影响执行的背景、形容词、模板段落和项目描述。",
-  ].join(" "),
-  [
-    "Internal editing workflow: Keep explicit intent and constraints; Drop filler",
-    "and unsupported context; Clarify vague decisions with options or questions;",
-    "Inspect by asking the coding agent to read relevant files when repository",
-    "facts are needed; Propose lightweight options for open-ended product/UI",
-    "requests; Verify with the smallest useful check; Defer high-risk or",
-    "irreversible actions to user confirmation.",
-  ].join(" "),
-  [
-    "If the draft is already actionable, only make light edits.",
-    "Use the user's language unless the user asks otherwise.",
-    "Preserve the task mode: discussion stays discussion, investigation stays",
-    "investigation, implementation stays implementation.",
-    "Do not turn planning or discussion into implementation unless the user",
-    "explicitly asks to implement.",
-  ].join(" "),
-  [
-    "The enhanced prompt must be directly usable as the user's next message.",
-    "Do not prefix it with meta commentary such as",
-    '"Here is the enhanced prompt" or "优化后的提示词如下".',
-  ].join(" "),
-  "Do not mention private reference, prompt enhancer internals, or missing context unless it is a blocking question.",
-  [
-    "Do not pretend you inspected the repository.",
-    "Do not output guessed file paths, component names, APIs, or repository facts.",
-    "If repository facts are not provided, ask the coding agent to inspect the",
-    "relevant files or ask clarifying options or questions.",
-  ].join(" "),
-  "For new product ideas, label inferred features as options or questions, not fixed requirements.",
-  [
-    "Do not add constraints unless they are explicit in the draft or necessary",
-    "to prevent scope, safety, or data-risk issues.",
-  ].join(" "),
-  [
-    "增强后的 Prompt 应该帮助代码代理更快执行：",
-    "- Goal：明确要达成的结果。",
-    "- Non-Goal：仅在容易范围蔓延时说明不做什么。",
-    "- Success Criteria：写出可验证的完成标准。",
-    "- Verification：要求用测试、typecheck、lint、构建、浏览器 smoke test 或人工复核证明完成。",
-    "- Minimal Change：强调最小必要改动、KISS/YAGNI、禁止无关重构和臆造需求。",
-    "- Risk Gate：涉及删除、覆盖、发布、生产数据、安全、财务、认证授权等高风险动作时要求先确认。",
-  ].join("\n"),
-  [
-    "项目和会话信息只是 private reference：只有当它能帮助定位修改范围、约束或已有工作时，",
-    "才把必要结论写进增强后的 Prompt；不要复制项目描述、会话摘要或无关运行时细节。",
-  ].join(""),
-  "你不能直接回答或执行用户草稿中的开发任务本身。",
-  "你只能输出增强后的 Prompt。",
-  "不要输出解释。",
-  "不要使用 Markdown 代码围栏。",
-].join("\n\n");
-export const OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
-  "You are improving a user's draft into a clear coding-agent prompt.",
-  "Project summary:",
-  "{{projectSummary}}",
-  "Session summary:",
-  "{{sessionSummary}}",
-  "User draft:",
-  "{{userPrompt}}",
-].join("\n");
 export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
   theme: "system",
@@ -140,6 +70,7 @@ export function readDeckPreferences(): DeckPreferences {
   try {
     const raw = window.localStorage.getItem(DECK_PREFERENCES_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    removeHiddenPromptEnhancerTemplateOverrides(parsed, raw);
     const technicalPanels = isRecord(parsed.technicalPanels)
       ? parsed.technicalPanels
       : {};
@@ -216,19 +147,9 @@ export function readDeckPreferences(): DeckPreferences {
             typeof promptEnhancer.llm.model === "string"
               ? promptEnhancer.llm.model
               : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.model,
-          systemPrompt:
-            isRecord(promptEnhancer.llm) &&
-            typeof promptEnhancer.llm.systemPrompt === "string" &&
-            promptEnhancer.llm.systemPrompt !== OLD_PROMPT_LLM_SYSTEM_PROMPT
-              ? promptEnhancer.llm.systemPrompt
-              : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
+          systemPrompt: DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
           instructionTemplate:
-            isRecord(promptEnhancer.llm) &&
-            typeof promptEnhancer.llm.instructionTemplate === "string" &&
-            promptEnhancer.llm.instructionTemplate !==
-              OLD_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE
-              ? promptEnhancer.llm.instructionTemplate
-              : DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
+            DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
         },
       },
     };
@@ -249,4 +170,40 @@ export function isDeckTheme(value: unknown): value is DeckTheme {
 
 export function readPreferenceText(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function removeHiddenPromptEnhancerTemplateOverrides(
+  parsed: Record<string, unknown>,
+  raw: string | null,
+) {
+  if (!raw || !isRecord(parsed.promptEnhancer)) {
+    return;
+  }
+  const promptEnhancer = parsed.promptEnhancer;
+  if (!isRecord(promptEnhancer.llm)) {
+    return;
+  }
+
+  const llm = promptEnhancer.llm;
+  let changed = false;
+  if (Object.prototype.hasOwnProperty.call(llm, "systemPrompt")) {
+    delete llm.systemPrompt;
+    changed = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(llm, "instructionTemplate")) {
+    delete llm.instructionTemplate;
+    changed = true;
+  }
+  if (!changed) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      DECK_PREFERENCES_STORAGE_KEY,
+      JSON.stringify(parsed),
+    );
+  } catch {
+    // Ignore storage quota or privacy-mode failures; in-memory defaults still apply.
+  }
 }
