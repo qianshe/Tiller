@@ -122,6 +122,14 @@ function readConfigSelectionState(options: SessionConfigOption[]) {
   );
 }
 
+function toConfigPatchState(next: SessionConfigPreferencePatch) {
+  return {
+    ...(next.agentMode ? { agentMode: next.agentMode } : {}),
+    ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
+    ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+  } satisfies Pick<SessionConfigPreferencePatch, "agentMode" | "model" | "reasoningEffort">;
+}
+
 export function App() {
   const missionVisualMode = useMemo(() => shouldUseMissionVisualFixture(), []);
   const missionVisualFixture = useMemo(
@@ -298,14 +306,7 @@ export function App() {
             directConfigPatch.value,
           )
         : [];
-      const activeConfigState = directConfigPatch
-        ? {
-            ...readConfigSelectionState(activeConfigOptions),
-            ...(next.agentMode ? { agentMode: next.agentMode } : {}),
-            ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
-            ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
-          }
-        : null;
+      const activeConfigState = directConfigPatch ? toConfigPatchState(next) : null;
       if (directConfigPatch) {
         deckData.setSessionConfigOptions((current) => ({
           ...current,
@@ -349,13 +350,14 @@ export function App() {
           directConfigPatch.value,
         )
       : [];
+    const draftConfigPatchState = draftEntry && directConfigPatch
+      ? toConfigPatchState(next)
+      : null;
     const draftConfigState = draftEntry && directConfigPatch
       ? {
           ...draftEntry.state,
           ...readConfigSelectionState(draftConfigOptions),
-          ...(next.agentMode ? { agentMode: next.agentMode } : {}),
-          ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
-          ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+          ...draftConfigPatchState,
         }
       : null;
     if (draftKey && draftEntry && directConfigPatch) {
@@ -371,7 +373,7 @@ export function App() {
     if (draftEntry?.draftId && draftClient) {
       void dispatch(draftClient, "session/configure", {
         draftId: draftEntry.draftId,
-        ...(directConfigPatch ? { ...directConfigPatch, ...draftConfigState } : {
+        ...(directConfigPatch ? { ...directConfigPatch, ...draftConfigPatchState } : {
           agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
           model: normalizeModelSelection(next.model ?? missionView.draftModel),
           reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,

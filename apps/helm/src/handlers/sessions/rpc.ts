@@ -20,6 +20,10 @@ import {
   configureSessionRuntime,
   sendPromptToSession,
 } from "../../runtime/session-runtime-router";
+import {
+  resolveConfigOptionsForSelection,
+  resolveConfigReasoningEffortForOptions,
+} from "../../runtime/session-config-options";
 import type { HelmHandlerContext } from "../context";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
@@ -446,6 +450,7 @@ async function createSession(
 
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
+  const initialReasoningEffort = params.reasoningEffort;
   context.logInfo(
     `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${worktree.path} agent=${agent.id}`,
   );
@@ -460,7 +465,7 @@ async function createSession(
     agentName: agent.name,
     agentMode: params.agentMode,
     model: params.model,
-    reasoningEffort: params.reasoningEffort,
+    reasoningEffort: initialReasoningEffort,
     status: "starting",
     createdAt,
     updatedAt: createdAt,
@@ -496,14 +501,24 @@ async function createSession(
         );
       },
     });
+    const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
+    const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
+      incomingOptions: runtime.sessionConfigOptions,
+      previousOptions: summary.configOptions,
+      selectedModel: summaryRuntimeModel,
+    });
     const summaryWithRuntimeBase = {
       ...summary,
       status: "idle" as const,
       updatedAt: new Date().toISOString(),
       agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
-      model: summary.model ?? runtime.sessionConfigState?.model,
+      model: summaryRuntimeModel,
       modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-      reasoningEffort: summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+      configOptions: resolvedRuntimeConfigOptions.options,
+      reasoningEffort: resolveConfigReasoningEffortForOptions(
+        summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+        resolvedRuntimeConfigOptions,
+      ),
       runtimeSessionId: runtime.runtimeSessionId,
     };
     context.sessions.set(sessionId, { summary: summaryWithRuntimeBase, agent, worktree, runtime });
@@ -579,6 +594,17 @@ async function promptRuntimeDraft(
   const sessionId = `session-${Date.now()}`;
   draft.attach(sessionId);
   const createdAt = new Date().toISOString();
+  const summaryConfigModel = draft.configState.model ?? draft.runtime.sessionConfigState?.model;
+  const resolvedSummaryConfigOptions = resolveConfigOptionsForSelection({
+    incomingOptions: draft.runtime.sessionConfigOptions,
+    previousOptions: draft.configOptions,
+    selectedModel: summaryConfigModel,
+  });
+  const summaryConfigOptions = resolvedSummaryConfigOptions.options ?? [];
+  const summaryReasoningEffort = resolveConfigReasoningEffortForOptions(
+    draft.configState.reasoningEffort ?? draft.runtime.sessionConfigState?.reasoningEffort,
+    resolvedSummaryConfigOptions,
+  );
   const summaryBase: SessionSummary = {
     id: sessionId,
     projectId: draft.project.id,
@@ -591,10 +617,9 @@ async function promptRuntimeDraft(
     agentMode: draft.configState.agentMode ?? draft.runtime.sessionConfigState?.agentMode,
     model: draft.configState.model ?? draft.runtime.sessionConfigState?.model,
     modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
-    configOptions: draft.runtime.sessionConfigOptions ?? draft.configOptions,
+    configOptions: summaryConfigOptions,
     availableCommands: draft.availableCommands,
-    reasoningEffort:
-      draft.configState.reasoningEffort ?? draft.runtime.sessionConfigState?.reasoningEffort,
+    reasoningEffort: summaryReasoningEffort,
     runtimeSessionId: draft.runtime.runtimeSessionId,
     status: "idle",
     createdAt,
@@ -626,7 +651,45 @@ async function promptRuntimeDraft(
 
   try {
     const result = await sendPromptToSession({ ...params, sessionId }, context);
-    return { ...result, session: context.sessions.get(sessionId)?.summary ?? summary };
+    const currentSummary = context.sessions.get(sessionId)?.summary ?? summary;
+    const selectedModel = currentSummary.model ?? draft.configState.model ?? summaryConfigModel;
+    const resolvedCurrentConfigOptions = resolveConfigOptionsForSelection({
+      incomingOptions: currentSummary.configOptions,
+      previousOptions: summary.configOptions,
+      selectedModel,
+    });
+    const currentConfigOptions = resolvedCurrentConfigOptions.options;
+    const currentReasoningEffort = resolveConfigReasoningEffortForOptions(
+      currentSummary.reasoningEffort,
+      resolvedCurrentConfigOptions,
+    );
+    const hydratedSummary = context.hydrateSessionSummary({
+      ...currentSummary,
+      model: selectedModel,
+      configOptions: currentConfigOptions,
+      reasoningEffort: currentReasoningEffort,
+    });
+    const sanitizedSummary = {
+      ...hydratedSummary,
+      model: selectedModel,
+      configOptions: currentConfigOptions,
+      reasoningEffort: currentReasoningEffort,
+    };
+    const record = context.sessions.get(sessionId);
+    if (record) {
+      record.summary = sanitizedSummary;
+    }
+    context.sessionStore.upsert(sanitizedSummary);
+    context.persistRuntimeDescriptor(
+      sanitizedSummary,
+      draft.agent,
+      draft.runtime.sessionCapabilities,
+    );
+    broadcastSessionUpdate(context, sessionId, {
+      kind: "session_updated",
+      session: sanitizedSummary,
+    });
+    return { ...result, session: sanitizedSummary };
   } catch (error) {
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,

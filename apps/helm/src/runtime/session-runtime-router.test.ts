@@ -451,7 +451,135 @@ test("configureSessionRuntime applies arbitrary ACP config option to the session
     value: "auto",
   });
   assert.deepEqual(result.options, runtimeOptions);
-  assert.equal(broadcasts.at(-1)?.params.update.session.configOptions, runtimeOptions);
+  assert.deepEqual(broadcasts.at(-1)?.params.update.session.configOptions, runtimeOptions);
+});
+
+test("configureSessionRuntime omits reasoning when config options do not support it", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    summary: { reasoningEffort: "medium" },
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "claude-haiku-4-5", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "claude-haiku-4-5" },
+    context,
+  );
+
+  assert.equal(result.state.model, "claude-haiku-4-5");
+  assert.equal(result.state.reasoningEffort, undefined);
+  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, undefined);
+});
+
+test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "opencode/haiku",
+      options: [{ value: "opencode/haiku", label: "opencode/haiku" }],
+    },
+    {
+      id: "thought_level",
+      name: "Reasoning",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "opencode/haiku", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "opencode/haiku" },
+    context,
+  );
+
+  assert.equal(result.state.model, "opencode/haiku");
+  assert.equal(result.state.reasoningEffort, "medium");
+  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, "medium");
+  assert.equal(
+    result.options.some((option) => option.category === "thought_level"),
+    true,
+  );
+});
+
+test("configureSessionRuntime ignores stale default options for a different selected model", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-opus-4-7",
+      options: [
+        { value: "claude-opus-4-7", label: "claude-opus-4-7" },
+        { value: "claude-haiku-4-5", label: "claude-haiku-4-5" },
+      ],
+    },
+    {
+      id: "thought_level",
+      name: "Reasoning",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const previousOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  const { context } = createContext({
+    summary: { model: "claude-haiku-4-5", configOptions: previousOptions },
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "claude-opus-4-7", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "claude-haiku-4-5" },
+    context,
+  );
+
+  assert.equal(result.state.model, "claude-haiku-4-5");
+  assert.equal(result.state.reasoningEffort, undefined);
+  assert.deepEqual(result.options, previousOptions);
 });
 
 test("configureSessionRuntime saves config when no runtime is active", async () => {

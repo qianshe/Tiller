@@ -39,6 +39,10 @@ import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
 import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import {
+  resolveConfigOptionsForSelection,
+  resolveConfigReasoningEffortForOptions,
+} from "./session-config-options";
+import {
   buildSessionResumeInfo,
   markSessionResumeUnavailable,
   resolveSessionRestoreCapabilities,
@@ -255,9 +259,22 @@ export function createSessionServices(options: SessionServicesOptions) {
       descriptor,
       record?.runtime.sessionCapabilities,
     );
+    const hydratedModel = aligned.model ?? record?.runtime.sessionConfigState?.model;
+    const resolvedHydratedConfigOptions = resolveConfigOptionsForSelection({
+      incomingOptions: record?.runtime.sessionConfigOptions,
+      previousOptions: aligned.configOptions,
+      selectedModel: hydratedModel,
+    });
+    const hydratedConfigOptions = resolvedHydratedConfigOptions.options;
+    const hydratedReasoningEffort = resolveConfigReasoningEffortForOptions(
+      aligned.reasoningEffort ?? record?.runtime.sessionConfigState?.reasoningEffort,
+      resolvedHydratedConfigOptions,
+    );
     return {
       ...aligned,
-      configOptions: record?.runtime.sessionConfigOptions ?? aligned.configOptions,
+      model: hydratedModel,
+      reasoningEffort: hydratedReasoningEffort,
+      configOptions: hydratedConfigOptions,
       imageInput: capabilities.imageInput,
       resume: buildResumeInfo(aligned, agent),
     };
@@ -596,11 +613,27 @@ export function createSessionServices(options: SessionServicesOptions) {
             return;
           }
           if (event.type === "config-options") {
-            configState = event.state;
-            configOptions = event.options;
+            const previousState = readyDraft?.configState ?? configState;
+            const nextModel = previousState.model ?? event.state.model;
+            const resolvedConfigOptions = resolveConfigOptionsForSelection({
+              incomingOptions: event.options,
+              previousOptions: readyDraft?.configOptions ?? configOptions,
+              selectedModel: nextModel,
+            });
+            const nextOptions = resolvedConfigOptions.options ?? [];
+            const nextReasoning = resolveConfigReasoningEffortForOptions(
+              previousState.reasoningEffort ?? event.state.reasoningEffort,
+              resolvedConfigOptions,
+            );
+            configState = {
+              ...event.state,
+              model: nextModel,
+              reasoningEffort: nextReasoning,
+            };
+            configOptions = nextOptions;
             if (readyDraft) {
-              readyDraft.configState = event.state;
-              readyDraft.configOptions = event.options;
+              readyDraft.configState = configState;
+              readyDraft.configOptions = configOptions;
             }
             return;
           }
@@ -770,21 +803,33 @@ export function createSessionServices(options: SessionServicesOptions) {
       configId: params.configId,
       value: params.value,
     });
+    const nextModel = params.model ?? draft.configState.model ?? result.state.model;
+    const resolvedConfigOptions = resolveConfigOptionsForSelection({
+      incomingOptions: result.options ?? draft.runtime.sessionConfigOptions,
+      previousOptions: draft.configOptions,
+      selectedModel: nextModel,
+    });
+    const nextConfigOptions = resolvedConfigOptions.options ?? [];
+    const nextReasoning = resolveConfigReasoningEffortForOptions(
+      params.reasoningEffort ?? result.state.reasoningEffort ?? draft.configState.reasoningEffort,
+      resolvedConfigOptions,
+    );
     draft.configState = {
+      ...draft.configState,
       ...result.state,
-      agentMode: params.agentMode ?? result.state.agentMode,
-      model: params.model ?? result.state.model,
-      reasoningEffort: params.reasoningEffort ?? result.state.reasoningEffort,
+      agentMode: params.agentMode ?? result.state.agentMode ?? draft.configState.agentMode,
+      model: nextModel,
+      reasoningEffort: nextReasoning,
     };
     draft.modelState = result.modelState ?? draft.modelState;
-    draft.configOptions = result.options ?? draft.runtime.sessionConfigOptions ?? draft.configOptions;
+    draft.configOptions = nextConfigOptions;
     options.logInfo(
       `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
     );
     return {
       draftId: draft.draftId,
       ok: true,
-      state: result.state,
+      state: draft.configState,
       options: draft.configOptions,
       message: result.runtimeApplied ? "Runtime draft config updated." : "Runtime draft config saved.",
     };
@@ -910,12 +955,22 @@ export function createSessionServices(options: SessionServicesOptions) {
       } else if (historySnapshot?.source === "adapter-authoritative-history") {
         applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
       }
+      const restoredModel = summary.model ?? runtime.sessionConfigState?.model;
+      const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
+        incomingOptions: runtime.sessionConfigOptions,
+        previousOptions: summary.configOptions,
+        selectedModel: restoredModel,
+      });
+      const restoredConfigOptions = resolvedRestoredConfigOptions.options;
       const restoredSummary = hydrateSessionSummary({
         ...summary,
-        model: summary.model ?? runtime.sessionConfigState?.model,
+        model: restoredModel,
         modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-        configOptions: runtime.sessionConfigOptions ?? summary.configOptions,
-        reasoningEffort: summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+        configOptions: restoredConfigOptions,
+        reasoningEffort: resolveConfigReasoningEffortForOptions(
+          summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+          resolvedRestoredConfigOptions,
+        ),
         runtimeSessionId: runtime.runtimeSessionId,
         status: "idle",
         updatedAt: new Date().toISOString(),

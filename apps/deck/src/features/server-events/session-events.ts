@@ -51,22 +51,65 @@ function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
 
 type SessionConfigSelection = Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">;
 
+function configOptionCategory(option: SessionConfigOption) {
+  return option.category?.toLowerCase() ?? option.id.toLowerCase();
+}
+
+function isReasoningConfigOption(option: SessionConfigOption) {
+  const category = configOptionCategory(option);
+  return category === "reasoning" ||
+    category === "reasoning_effort" ||
+    category === "thought_level";
+}
+
+function hasReasoningConfigOption(options: SessionConfigOption[]) {
+  return options.some((option) => isReasoningConfigOption(option));
+}
+
+function readConfigSelectionFromOptions(options: SessionConfigOption[]) {
+  return options.reduce<SessionConfigSelection>((selection, option) => {
+    const category = configOptionCategory(option);
+    const currentValue = option.currentValue ?? option.selectedValue ?? option.value;
+    if (category === "mode" && typeof currentValue === "string") {
+      selection.agentMode = currentValue;
+    } else if (category === "model" && typeof currentValue === "string") {
+      selection.model = currentValue;
+    } else if (isReasoningConfigOption(option) && typeof currentValue === "string") {
+      selection.reasoningEffort = currentValue as SessionConfigSelection["reasoningEffort"];
+    }
+    return selection;
+  }, {});
+}
+
+function resolveSessionConfigSelection(
+  current: SessionConfigSelection | undefined,
+  state: Partial<SessionConfigSelection> | undefined,
+  options?: SessionConfigOption[],
+): SessionConfigSelection {
+  const selection: SessionConfigSelection = {
+    ...(current ?? {}),
+    ...(options ? readConfigSelectionFromOptions(options) : {}),
+    ...(state ?? {}),
+  };
+  if (options && !hasReasoningConfigOption(options)) {
+    const { reasoningEffort: _reasoningEffort, ...withoutReasoning } = selection;
+    return withoutReasoning as SessionConfigSelection;
+  }
+  return selection;
+}
+
 function applySessionConfigSelection(
   options: SessionConfigOption[],
   selection: SessionConfigSelection,
 ) {
   return options.map((option) => {
-    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    const category = configOptionCategory(option);
     let selectedValue: SessionConfigOption["currentValue"] | undefined;
     if (category === "model") {
       selectedValue = selection.model;
     } else if (category === "mode") {
       selectedValue = selection.agentMode;
-    } else if (
-      category === "reasoning" ||
-      category === "reasoning_effort" ||
-      category === "thought_level"
-    ) {
+    } else if (isReasoningConfigOption(option)) {
       selectedValue = selection.reasoningEffort;
     }
     return selectedValue === undefined
@@ -273,34 +316,36 @@ export function applySessionResult(
       if (!payload.sessionId) {
         return false;
       }
-      if (Array.isArray(payload.options)) {
+      const payloadOptions = Array.isArray(payload.options)
+        ? payload.options as SessionConfigOption[]
+        : undefined;
+      const payloadState = payload.state && typeof payload.state === "object"
+        ? payload.state as Partial<SessionConfigSelection>
+        : undefined;
+      if (payloadOptions) {
         const session = store.sessions.find((item) => item.id === payload.sessionId);
+        const selection = resolveSessionConfigSelection(session, payloadState, payloadOptions);
         store.setSessionConfigOptions((current) => ({
           ...current,
-          [payload.sessionId]: applySessionConfigSelection(payload.options, {
-            agentMode: payload.state?.agentMode ?? session?.agentMode,
-            model: payload.state?.model ?? session?.model,
-            reasoningEffort: payload.state?.reasoningEffort ?? session?.reasoningEffort,
-          }),
+          [payload.sessionId]: applySessionConfigSelection(payloadOptions, selection),
         }));
       }
-      if (payload.state && typeof payload.state === "object") {
+      if (payloadState) {
         store.setSessions((current) =>
-          current.map((session) =>
-            session.id === payload.sessionId
-              ? {
-                  ...session,
-                  model: payload.state.model ?? session.model,
-                  agentMode: payload.state.agentMode ?? session.agentMode,
-                  reasoningEffort:
-                    payload.state.reasoningEffort ?? session.reasoningEffort,
-                  configOptions: Array.isArray(payload.options)
-                    ? payload.options
-                    : session.configOptions,
-                  updatedAt: new Date().toISOString(),
-                }
-              : session,
-          ),
+          current.map((session) => {
+            if (session.id !== payload.sessionId) {
+              return session;
+            }
+            const selection = resolveSessionConfigSelection(session, payloadState, payloadOptions);
+            return {
+              ...session,
+              model: selection.model,
+              agentMode: selection.agentMode,
+              reasoningEffort: selection.reasoningEffort,
+              configOptions: payloadOptions ?? session.configOptions,
+              updatedAt: new Date().toISOString(),
+            };
+          }),
         );
       }
       return true;
@@ -500,11 +545,7 @@ export function applySessionUpdate(
       return true;
     case "config_options": {
       const session = store.sessions.find((item) => item.id === sessionId);
-      const selection = {
-        agentMode: session?.agentMode ?? update.state.agentMode,
-        model: session?.model ?? update.state.model,
-        reasoningEffort: session?.reasoningEffort ?? update.state.reasoningEffort,
-      };
+      const selection = resolveSessionConfigSelection(session, update.state, update.options);
       store.setSessionConfigOptions((current) => ({
         ...current,
         [sessionId]: applySessionConfigSelection(update.options, selection),
@@ -514,10 +555,10 @@ export function applySessionUpdate(
           session.id === sessionId
             ? {
                 ...session,
-                model: session.model ?? update.state.model,
-                agentMode: session.agentMode ?? update.state.agentMode,
-                reasoningEffort:
-                  session.reasoningEffort ?? update.state.reasoningEffort,
+                model: selection.model,
+                agentMode: selection.agentMode,
+                reasoningEffort: selection.reasoningEffort,
+                configOptions: update.options,
                 updatedAt: new Date().toISOString(),
               }
             : session,

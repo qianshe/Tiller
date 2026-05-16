@@ -638,11 +638,53 @@ test("session config option display preserves session-bound model over provider 
   );
 
   assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.4");
-  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "high");
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.5");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
   assert.deepEqual(
     useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
-    ["gpt-5.4", "high"],
+    ["gpt-5.5", "medium"],
+  );
+});
+
+test("session config option updates clear stale reasoning when options omit reasoning", () => {
+  resetStore();
+  const configOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        model: "claude-haiku-4-5",
+        reasoningEffort: "medium",
+      },
+    ],
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "config_options",
+        state: { model: "claude-haiku-4-5" },
+        options: configOptions,
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-haiku-4-5");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, undefined);
+  assert.deepEqual(
+    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
+    ["claude-haiku-4-5"],
   );
 });
 

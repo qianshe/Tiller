@@ -235,7 +235,7 @@ test("applySessionResult hydrates available commands from persisted session summ
   );
 });
 
-test("applyInventoryResult keeps draft config options aligned with selected model", () => {
+test("applyInventoryResult replaces draft config options and clears reasoning when options omit it", () => {
   resetStore();
   const defaultModelOptions: SessionConfigOption[] = [
     {
@@ -248,6 +248,22 @@ test("applyInventoryResult keeps draft config options aligned with selected mode
         { value: "claude-haiku-4-5", label: "claude-haiku-4-5" },
       ],
     },
+    {
+      id: "thought_level",
+      category: "thought_level",
+      name: "Reasoning",
+      currentValue: "high",
+      options: [{ value: "high", label: "High" }],
+    },
+  ];
+  const haikuOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      category: "model",
+      name: "Model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
   ];
   useDeckStore.getState().setAgentModelOptions({
     "claude::D:/repo::p1": {
@@ -255,7 +271,7 @@ test("applyInventoryResult keeps draft config options aligned with selected mode
       loading: false,
       modelOptions: [],
       configOptions: defaultModelOptions,
-      state: { model: "claude-opus-4-7" },
+      state: { model: "claude-opus-4-7", reasoningEffort: "high" },
     },
   });
 
@@ -264,7 +280,7 @@ test("applyInventoryResult keeps draft config options aligned with selected mode
     {
       draftId: "draft-1",
       state: { model: "claude-haiku-4-5" },
-      options: defaultModelOptions,
+      options: haikuOptions,
     },
     "helm-1",
     true,
@@ -276,10 +292,68 @@ test("applyInventoryResult keeps draft config options aligned with selected mode
     } as any,
   );
 
+  const entry = useDeckStore.getState().agentModelOptions["claude::D:/repo::p1"];
   assert.equal(handled, true);
+  assert.equal(entry?.configOptions[0]?.currentValue, "claude-haiku-4-5");
+  assert.equal(entry?.state.model, "claude-haiku-4-5");
+  assert.equal(entry?.state.reasoningEffort, undefined);
   assert.equal(
-    useDeckStore.getState().agentModelOptions["claude::D:/repo::p1"]?.configOptions[0]
-      ?.currentValue,
-    "claude-haiku-4-5",
+    entry?.configOptions.some((option) => option.category === "thought_level"),
+    false,
+  );
+});
+
+test("applyInventoryResult preserves haiku reasoning when ACP options expose it", () => {
+  resetStore();
+  const optionsWithReasoning: SessionConfigOption[] = [
+    {
+      id: "model",
+      category: "model",
+      name: "Model",
+      currentValue: "opencode/haiku",
+      options: [{ value: "opencode/haiku", label: "opencode/haiku" }],
+    },
+    {
+      id: "thought_level",
+      category: "thought_level",
+      name: "Reasoning",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  useDeckStore.getState().setAgentModelOptions({
+    "opencode::D:/repo::p1": {
+      draftId: "draft-2",
+      loading: false,
+      modelOptions: [],
+      configOptions: [],
+      state: {},
+    },
+  });
+
+  const handled = applyInventoryResult(
+    "session/configure",
+    {
+      draftId: "draft-2",
+      state: { model: "opencode/haiku" },
+      options: optionsWithReasoning,
+    },
+    "helm-1",
+    true,
+    {
+      writeAgentModelOptionsCache: () => undefined,
+      setSelectedModel: () => undefined,
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+    } as any,
+  );
+
+  const entry = useDeckStore.getState().agentModelOptions["opencode::D:/repo::p1"];
+  assert.equal(handled, true);
+  assert.equal(entry?.state.model, "opencode/haiku");
+  assert.equal(entry?.state.reasoningEffort, "medium");
+  assert.equal(
+    entry?.configOptions.some((option) => option.category === "thought_level"),
+    true,
   );
 });

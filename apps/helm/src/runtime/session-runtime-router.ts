@@ -7,6 +7,10 @@ import { applyUserPromptToSummary } from "../sessions/facade";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
+import {
+  resolveConfigOptionsForSelection,
+  resolveConfigReasoningEffortForOptions,
+} from "./session-config-options";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -240,9 +244,17 @@ export async function configureSessionRuntime(
     : null;
   const nextAgentMode = params.agentMode ?? runtimeResult?.state.agentMode ?? current.agentMode;
   const nextModel = params.model ?? runtimeResult?.state.model ?? current.model;
-  const nextReasoning = params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort;
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-  const nextConfigOptions = runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions ?? current.configOptions;
+  const resolvedConfigOptions = resolveConfigOptionsForSelection({
+    incomingOptions: runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions,
+    previousOptions: current.configOptions,
+    selectedModel: nextModel,
+  });
+  const nextConfigOptions = resolvedConfigOptions.options;
+  const nextReasoning = resolveConfigReasoningEffortForOptions(
+    params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort,
+    resolvedConfigOptions,
+  );
   const updatedAt = new Date().toISOString();
   const next = context.hydrateSessionSummary({
     ...current,
