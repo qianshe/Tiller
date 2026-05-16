@@ -770,7 +770,12 @@ export function createSessionServices(options: SessionServicesOptions) {
       configId: params.configId,
       value: params.value,
     });
-    draft.configState = result.state;
+    draft.configState = {
+      ...result.state,
+      agentMode: params.agentMode ?? result.state.agentMode,
+      model: params.model ?? result.state.model,
+      reasoningEffort: params.reasoningEffort ?? result.state.reasoningEffort,
+    };
     draft.modelState = result.modelState ?? draft.modelState;
     draft.configOptions = result.options ?? draft.runtime.sessionConfigOptions ?? draft.configOptions;
     options.logInfo(
@@ -907,10 +912,10 @@ export function createSessionServices(options: SessionServicesOptions) {
       }
       const restoredSummary = hydrateSessionSummary({
         ...summary,
-        model: runtime.sessionConfigState?.model ?? summary.model,
+        model: summary.model ?? runtime.sessionConfigState?.model,
         modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
         configOptions: runtime.sessionConfigOptions ?? summary.configOptions,
-        reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
+        reasoningEffort: summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
         runtimeSessionId: runtime.runtimeSessionId,
         status: "idle",
         updatedAt: new Date().toISOString(),

@@ -382,6 +382,78 @@ test("configureSessionRuntime applies config through an active runtime", async (
   assert.equal(broadcasts.at(-1)?.params.update.kind, "session_updated");
 });
 
+test("configureSessionRuntime persists explicit model over runtime default state", async () => {
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "gpt-5.5", reasoningEffort: "medium" },
+        modelState: {
+          currentModelId: "gpt-5.5",
+          options: [{ id: "gpt-5.4", name: "gpt-5.4" }, { id: "gpt-5.5", name: "gpt-5.5" }],
+        },
+      }),
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "gpt-5.4", reasoningEffort: "medium" },
+    context,
+  );
+
+  assert.equal(result.state.model, "gpt-5.4");
+  assert.equal(broadcasts.at(-1)?.params.update.session.model, "gpt-5.4");
+});
+
+test("configureSessionRuntime applies arbitrary ACP config option to the session runtime", async () => {
+  const configured: any[] = [];
+  const runtimeOptions = [
+    {
+      id: "approval-mode",
+      name: "Approval Mode",
+      category: "approval",
+      currentValue: "auto",
+      options: [
+        { value: "on-request", label: "On Request" },
+        { value: "auto", label: "Auto" },
+      ],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async (next: any) => {
+        configured.push(next);
+        return {
+          runtimeApplied: true,
+          state: {},
+          modelState: undefined,
+          options: runtimeOptions,
+        };
+      },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", configId: "approval-mode", value: "auto" },
+    context,
+  );
+
+  assert.deepEqual(configured[0], {
+    agentMode: undefined,
+    model: undefined,
+    reasoningEffort: undefined,
+    configId: "approval-mode",
+    value: "auto",
+  });
+  assert.deepEqual(result.options, runtimeOptions);
+  assert.equal(broadcasts.at(-1)?.params.update.session.configOptions, runtimeOptions);
+});
+
 test("configureSessionRuntime saves config when no runtime is active", async () => {
   const { context } = createContext();
   const { configureSessionRuntime } = await import("./session-runtime-router");

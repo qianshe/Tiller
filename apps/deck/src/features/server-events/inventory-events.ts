@@ -18,6 +18,28 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
+function applyConfigStateToOptions(
+  options: SessionConfigOption[],
+  state: AgentModelOptionsEntry["state"],
+) {
+  return options.map((option) => {
+    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    let currentValue: SessionConfigOption["currentValue"] | undefined;
+    if (category === "model") {
+      currentValue = state.model;
+    } else if (category === "mode") {
+      currentValue = state.agentMode;
+    } else if (
+      category === "reasoning" ||
+      category === "reasoning_effort" ||
+      category === "thought_level"
+    ) {
+      currentValue = state.reasoningEffort;
+    }
+    return currentValue === undefined ? option : { ...option, currentValue };
+  });
+}
+
 export type InventoryServerEventContext = {
   projectFilesKey: (projectId: string, worktreeId?: string) => string;
   setProjectFilesByScope: StoreSetter<Record<string, ProjectFilesEntry>>;
@@ -306,7 +328,7 @@ export function applyInventoryResult(
           [key]: {
             ...previous,
             configOptions: Array.isArray(payload.options)
-              ? payload.options
+              ? applyConfigStateToOptions(payload.options, nextState)
               : previous.configOptions,
             state: nextState,
           },

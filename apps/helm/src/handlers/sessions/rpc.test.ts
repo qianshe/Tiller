@@ -188,7 +188,12 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       availableCommands: [{ name: "review" }, { name: "compact" }],
     }),
     buildResumeInfo: () => ({ supported: false }),
-    hydrateSessionSummary: (summary: any) => summary,
+    hydrateSessionSummary: (summary: any) => ({
+      ...summary,
+      resume: sessions.has(summary.id)
+        ? { mode: "same-process", state: "resume-available", reason: "active", checkedAt: "2026-05-16T00:00:00.000Z" }
+        : { mode: "none", state: "history-only", reason: "missing active runtime", checkedAt: "2026-05-16T00:00:00.000Z" },
+    }),
     sessionStore: {
       upsert: (summary: any) => { storedSessions.push(summary); },
       list: () => storedSessions,
@@ -212,6 +217,7 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   await flushPromises();
   assert.equal(result.accepted, "sent");
   assert.equal(result.session.runtimeSessionId, "runtime-draft");
+  assert.equal(result.session.resume.mode, "same-process");
   assert.equal(result.session.model, "gpt-5.5");
   assert.deepEqual(result.session.availableCommands, [
     { name: "review" },
@@ -431,7 +437,12 @@ test("session/new uses cwd without requiring cwd", async () => {
       resolveProviderById: (id: string) => (id === agent.id ? agent : undefined),
       resolveHelmById: (id: string) => (id === helm.id ? helm : undefined),
       buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "test", checkedAt: "2026-05-13T00:00:00.000Z" }),
-      hydrateSessionSummary: (summary: any) => summary,
+      hydrateSessionSummary: (summary: any) => ({
+        ...summary,
+        resume: sessions.has(summary.id)
+          ? { mode: "same-process", state: "resume-available", reason: "active", checkedAt: "2026-05-16T00:00:00.000Z" }
+          : { mode: "none", state: "history-only", reason: "missing active runtime", checkedAt: "2026-05-16T00:00:00.000Z" },
+      }),
       sessionStore: {
         upsert: (summary: any) => { storedSummary = summary; },
       },
@@ -462,4 +473,5 @@ test("session/new uses cwd without requiring cwd", async () => {
   assert.equal(storedSummary.cwd, "D:/repo");
   assert.equal(result.session.cwd, "D:/repo");
   assert.equal(result.session.runtimeSessionId, "runtime-1");
+  assert.equal((result.session as any).resume.mode, "same-process");
 });

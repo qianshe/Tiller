@@ -305,9 +305,9 @@ export function handleRuntimeEvent(
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
-        agentMode: event.state.agentMode ?? current.agentMode,
-        model: event.state.model ?? current.model,
-        reasoningEffort: event.state.reasoningEffort ?? current.reasoningEffort,
+        agentMode: current.agentMode ?? event.state.agentMode,
+        model: current.model ?? event.state.model,
+        reasoningEffort: current.reasoningEffort ?? event.state.reasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
       broadcastSessionUpdate(context, sessionId, {
@@ -331,7 +331,7 @@ export function handleRuntimeEvent(
       );
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
-        model: event.state.currentModelId ?? current.model,
+        model: current.model ?? event.state.currentModelId,
         modelOptions: event.state.options,
         updatedAt: new Date().toISOString(),
       }));

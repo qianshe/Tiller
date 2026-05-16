@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
+import type { AgentMessage, SessionConfigOption, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
 import { useDeckStore } from "../../store";
-import { applyDeviceResult, applySessionResult, applySessionUpdate } from "./rpc-event-appliers.js";
+import { applyDeviceResult, applyInventoryResult, applySessionResult, applySessionUpdate } from "./rpc-event-appliers.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -232,5 +232,54 @@ test("applySessionResult hydrates available commands from persisted session summ
   assert.deepEqual(
     useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
     ["review", "compact"],
+  );
+});
+
+test("applyInventoryResult keeps draft config options aligned with selected model", () => {
+  resetStore();
+  const defaultModelOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      category: "model",
+      name: "Model",
+      currentValue: "claude-opus-4-7",
+      options: [
+        { value: "claude-opus-4-7", label: "claude-opus-4-7" },
+        { value: "claude-haiku-4-5", label: "claude-haiku-4-5" },
+      ],
+    },
+  ];
+  useDeckStore.getState().setAgentModelOptions({
+    "claude::D:/repo::p1": {
+      draftId: "draft-1",
+      loading: false,
+      modelOptions: [],
+      configOptions: defaultModelOptions,
+      state: { model: "claude-opus-4-7" },
+    },
+  });
+
+  const handled = applyInventoryResult(
+    "session/configure",
+    {
+      draftId: "draft-1",
+      state: { model: "claude-haiku-4-5" },
+      options: defaultModelOptions,
+    },
+    "helm-1",
+    true,
+    {
+      writeAgentModelOptionsCache: () => undefined,
+      setSelectedModel: () => undefined,
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.equal(
+    useDeckStore.getState().agentModelOptions["claude::D:/repo::p1"]?.configOptions[0]
+      ?.currentValue,
+    "claude-haiku-4-5",
   );
 });

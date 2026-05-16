@@ -238,9 +238,9 @@ export async function configureSessionRuntime(
         value: params.value,
       })
     : null;
-  const nextAgentMode = runtimeResult?.state.agentMode ?? params.agentMode ?? current.agentMode;
-  const nextModel = runtimeResult?.state.model ?? params.model;
-  const nextReasoning = runtimeResult?.state.reasoningEffort ?? params.reasoningEffort;
+  const nextAgentMode = params.agentMode ?? runtimeResult?.state.agentMode ?? current.agentMode;
+  const nextModel = params.model ?? runtimeResult?.state.model ?? current.model;
+  const nextReasoning = params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort;
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
   const nextConfigOptions = runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions ?? current.configOptions;
   const updatedAt = new Date().toISOString();

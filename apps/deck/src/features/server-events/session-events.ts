@@ -4,6 +4,7 @@ import type {
   AgentPromptImageContent,
   AgentToolCall,
   AvailableCommand,
+  SessionConfigOption,
   SessionSummary,
 } from "@tiller/shared";
 import { toast } from "../toast";
@@ -41,8 +42,37 @@ function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
   return Object.fromEntries(
     sessions
       .filter((session) => (session.configOptions?.length ?? 0) > 0)
-      .map((session) => [session.id, session.configOptions ?? []] as const),
+      .map((session) => [
+        session.id,
+        applySessionConfigSelection(session.configOptions ?? [], session),
+      ] as const),
   );
+}
+
+type SessionConfigSelection = Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">;
+
+function applySessionConfigSelection(
+  options: SessionConfigOption[],
+  selection: SessionConfigSelection,
+) {
+  return options.map((option) => {
+    const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+    let selectedValue: SessionConfigOption["currentValue"] | undefined;
+    if (category === "model") {
+      selectedValue = selection.model;
+    } else if (category === "mode") {
+      selectedValue = selection.agentMode;
+    } else if (
+      category === "reasoning" ||
+      category === "reasoning_effort" ||
+      category === "thought_level"
+    ) {
+      selectedValue = selection.reasoningEffort;
+    }
+    return selectedValue === undefined
+      ? option
+      : { ...option, currentValue: selectedValue };
+  });
 }
 type SessionUpdateParams = {
   sessionId: string;
@@ -57,6 +87,12 @@ function pendingPromptImages(content: AgentPromptContent[] | undefined) {
   return content?.filter(
     (item): item is AgentPromptImageContent => item.type === "image",
   ) ?? [];
+}
+
+function requestAgentConnectionsRefresh(context: SessionServerEventContext) {
+  if (context.rpcClientRef.current?.socket?.readyState === 1) {
+    void context.dispatch(context.rpcClientRef.current, "agent/connections", {});
+  }
 }
 
 export type SessionServerEventContext = {
@@ -99,7 +135,10 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
   if ((payload.session.configOptions?.length ?? 0) > 0) {
     store.setSessionConfigOptions((current) => ({
       ...current,
-      [payload.session.id]: payload.session.configOptions ?? [],
+      [payload.session.id]: applySessionConfigSelection(
+        payload.session.configOptions ?? [],
+        payload.session,
+      ),
     }));
   }
   if ((payload.session.availableCommands?.length ?? 0) > 0) {
@@ -142,6 +181,7 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
       clientMessageId,
     });
   }
+  requestAgentConnectionsRefresh(context);
   return true;
 }
 
@@ -234,9 +274,14 @@ export function applySessionResult(
         return false;
       }
       if (Array.isArray(payload.options)) {
+        const session = store.sessions.find((item) => item.id === payload.sessionId);
         store.setSessionConfigOptions((current) => ({
           ...current,
-          [payload.sessionId]: payload.options,
+          [payload.sessionId]: applySessionConfigSelection(payload.options, {
+            agentMode: payload.state?.agentMode ?? session?.agentMode,
+            model: payload.state?.model ?? session?.model,
+            reasoningEffort: payload.state?.reasoningEffort ?? session?.reasoningEffort,
+          }),
         }));
       }
       if (payload.state && typeof payload.state === "object") {
@@ -423,7 +468,10 @@ export function applySessionUpdate(
       if ((update.session.configOptions?.length ?? 0) > 0) {
         store.setSessionConfigOptions((current) => ({
           ...current,
-          [update.session.id]: update.session.configOptions ?? [],
+          [update.session.id]: applySessionConfigSelection(
+            update.session.configOptions ?? [],
+            update.session,
+          ),
         }));
       }
       if ((update.session.availableCommands?.length ?? 0) > 0) {
@@ -446,27 +494,37 @@ export function applySessionUpdate(
           pendingPromptImages(context.pendingPromptContentRef.current),
         );
       }
+      if (update.session.runtimeSessionId) {
+        requestAgentConnectionsRefresh(context);
+      }
       return true;
-    case "config_options":
+    case "config_options": {
+      const session = store.sessions.find((item) => item.id === sessionId);
+      const selection = {
+        agentMode: session?.agentMode ?? update.state.agentMode,
+        model: session?.model ?? update.state.model,
+        reasoningEffort: session?.reasoningEffort ?? update.state.reasoningEffort,
+      };
       store.setSessionConfigOptions((current) => ({
         ...current,
-        [sessionId]: update.options,
+        [sessionId]: applySessionConfigSelection(update.options, selection),
       }));
       store.setSessions((current) =>
         current.map((session) =>
           session.id === sessionId
             ? {
                 ...session,
-                model: update.state.model ?? session.model,
-                agentMode: update.state.agentMode ?? session.agentMode,
+                model: session.model ?? update.state.model,
+                agentMode: session.agentMode ?? update.state.agentMode,
                 reasoningEffort:
-                  update.state.reasoningEffort ?? session.reasoningEffort,
+                  session.reasoningEffort ?? update.state.reasoningEffort,
                 updatedAt: new Date().toISOString(),
               }
             : session,
         ),
       );
       return true;
+    }
     case "commands_available":
       store.setSessionAvailableCommands((current) => {
         if (availableCommandListsEqual(current[sessionId], update.commands)) {

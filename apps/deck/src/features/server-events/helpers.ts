@@ -77,9 +77,21 @@ export function upsertSessionSummary(
   current: SessionSummary[],
   incoming: SessionSummary,
 ) {
+  const previous = current.find((session) => session.id === incoming.id);
+  const next = previous
+    ? {
+        ...incoming,
+        model: incoming.model ?? previous.model,
+        agentMode: incoming.agentMode ?? previous.agentMode,
+        reasoningEffort: incoming.reasoningEffort ?? previous.reasoningEffort,
+        modelOptions: incoming.modelOptions ?? previous.modelOptions,
+        configOptions: incoming.configOptions ?? previous.configOptions,
+        availableCommands: incoming.availableCommands ?? previous.availableCommands,
+      }
+    : incoming;
   return [
     ...current.filter((session) => session.id !== incoming.id),
-    incoming,
+    next,
   ].sort(
     (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
   );

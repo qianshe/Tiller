@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, SessionConfigOption, SessionConfigOptionValue } from "@tiller/shared";
 import {
   agentModelOptionsKey,
   readAgentModelOptionsCache,
@@ -87,6 +87,39 @@ function tryCollapseMobileAddressBar() {
   }
 
   window.scrollTo({ top: MOBILE_ADDRESSBAR_SCROLL_OFFSET, behavior: "smooth" });
+}
+
+function applyConfigOptionValue(
+  options: SessionConfigOption[] = [],
+  configId: string,
+  value: SessionConfigOptionValue | undefined,
+) {
+  return options.map((option) =>
+    option.id === configId ? { ...option, currentValue: value } : option,
+  );
+}
+
+function readConfigSelectionState(options: SessionConfigOption[]) {
+  return options.reduce<Pick<SessionConfigPreferencePatch, "agentMode" | "model" | "reasoningEffort">>(
+    (state, option) => {
+      const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
+      const currentValue = option.currentValue ?? option.selectedValue ?? option.value;
+      if (category === "mode" && typeof currentValue === "string") {
+        state.agentMode = currentValue;
+      } else if (category === "model" && typeof currentValue === "string") {
+        state.model = currentValue;
+      } else if (
+        (category === "reasoning" ||
+          category === "reasoning_effort" ||
+          category === "thought_level") &&
+        typeof currentValue === "string"
+      ) {
+        state.reasoningEffort = currentValue as SessionConfigPreferencePatch["reasoningEffort"];
+      }
+      return state;
+    },
+    {},
+  );
 }
 
 export function App() {
@@ -237,27 +270,66 @@ export function App() {
 
   function updateSessionDraftPreferences(next: SessionConfigPreferencePatch) {
     const activeSession = missionView.activeSession;
-    const client = runtimeState.rpcClientRef.current;
+    const resolveConfigClient = (sessionHelmId?: string | null) => {
+      const candidateHelmIds = [
+        sessionHelmId,
+        runtimeState.selectedMissionHelmId,
+        runtimeState.primaryHelmKeyRef.current,
+      ];
+      for (const helmId of candidateHelmIds) {
+        if (!helmId) continue;
+        const helmClient = runtimeState.helmRpcClientRefs.current.get(helmId);
+        if (helmClient?.socket.readyState === WebSocket.OPEN) {
+          return helmClient;
+        }
+      }
+      const directClient = runtimeState.rpcClientRef.current;
+      return directClient?.socket.readyState === WebSocket.OPEN ? directClient : null;
+    };
     const directConfigPatch = typeof next.configId === "string"
       ? { configId: next.configId, value: next.value }
       : null;
-    if (activeSession && client?.socket.readyState === WebSocket.OPEN) {
-      void dispatch(client, "session/configure", {
-        sessionId: activeSession.id,
-        ...(directConfigPatch ?? {
-          agentMode:
-            next.agentMode ??
-            activeSession.agentMode ??
-            missionView.effectiveDraftAgentMode,
-          model: normalizeModelSelection(
-            next.model ?? activeSession.model ?? missionView.draftModel,
-          ),
-          reasoningEffort:
-            next.reasoningEffort ??
-            activeSession.reasoningEffort ??
-            runtimeState.selectedReasoningEffort,
-        }),
-      });
+    if (activeSession) {
+      const client = resolveConfigClient(activeSession.helmId);
+      const activeConfigOptions = directConfigPatch
+        ? applyConfigOptionValue(
+            deckData.sessionConfigOptions[activeSession.id] ?? [],
+            directConfigPatch.configId,
+            directConfigPatch.value,
+          )
+        : [];
+      const activeConfigState = directConfigPatch
+        ? {
+            ...readConfigSelectionState(activeConfigOptions),
+            ...(next.agentMode ? { agentMode: next.agentMode } : {}),
+            ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
+            ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+          }
+        : null;
+      if (directConfigPatch) {
+        deckData.setSessionConfigOptions((current) => ({
+          ...current,
+          [activeSession.id]: activeConfigOptions,
+        }));
+      }
+      if (client) {
+        void dispatch(client, "session/configure", {
+          sessionId: activeSession.id,
+          ...(directConfigPatch ? { ...directConfigPatch, ...activeConfigState } : {
+            agentMode:
+              next.agentMode ??
+              activeSession.agentMode ??
+              missionView.effectiveDraftAgentMode,
+            model: normalizeModelSelection(
+              next.model ?? activeSession.model ?? missionView.draftModel,
+            ),
+            reasoningEffort:
+              next.reasoningEffort ??
+              activeSession.reasoningEffort ??
+              runtimeState.selectedReasoningEffort,
+          }),
+        });
+      }
       return;
     }
     const draftKey =
@@ -269,10 +341,37 @@ export function App() {
           )
         : null;
     const draftEntry = draftKey ? deckData.agentModelOptions[draftKey] : undefined;
-    if (draftEntry?.draftId && client?.socket.readyState === WebSocket.OPEN) {
-      void dispatch(client, "session/configure", {
+    const draftClient = resolveConfigClient(null);
+    const draftConfigOptions = draftEntry && directConfigPatch
+      ? applyConfigOptionValue(
+          draftEntry.configOptions,
+          directConfigPatch.configId,
+          directConfigPatch.value,
+        )
+      : [];
+    const draftConfigState = draftEntry && directConfigPatch
+      ? {
+          ...draftEntry.state,
+          ...readConfigSelectionState(draftConfigOptions),
+          ...(next.agentMode ? { agentMode: next.agentMode } : {}),
+          ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
+          ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+        }
+      : null;
+    if (draftKey && draftEntry && directConfigPatch) {
+      deckData.setAgentModelOptions((current) => ({
+        ...current,
+        [draftKey]: {
+          ...draftEntry,
+          configOptions: draftConfigOptions,
+          state: draftConfigState ?? draftEntry.state,
+        },
+      }));
+    }
+    if (draftEntry?.draftId && draftClient) {
+      void dispatch(draftClient, "session/configure", {
         draftId: draftEntry.draftId,
-        ...(directConfigPatch ?? {
+        ...(directConfigPatch ? { ...directConfigPatch, ...draftConfigState } : {
           agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
           model: normalizeModelSelection(next.model ?? missionView.draftModel),
           reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,

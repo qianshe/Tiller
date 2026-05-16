@@ -17,6 +17,7 @@ function createTestContext(
   logs: string[],
   capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
   sessionId = "session-1",
+  summaryPatch: Partial<SessionSummary> = {},
 ): HelmHandlerContext {
   const summary: SessionSummary = {
     id: sessionId,
@@ -31,6 +32,7 @@ function createTestContext(
     createdAt: "2026-04-30T00:00:00.000Z",
     updatedAt: "2026-04-30T00:00:00.000Z",
     messageCount: 0,
+    ...summaryPatch,
   };
 
   return {
@@ -592,6 +594,63 @@ test("runtime-generated independent assistant messages get distinct stream segme
   assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+});
+
+test("runtime config option defaults do not overwrite a stored session model selection", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-selected-model", {
+    model: "gpt-5.4",
+    reasoningEffort: "medium",
+  });
+
+  handleRuntimeEvent(
+    "session-selected-model",
+    {
+      type: "config-options",
+      state: { model: "gpt-5.5", reasoningEffort: "medium" },
+      options: [],
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+});
+
+test("runtime model option defaults do not overwrite a stored session model selection", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-selected-native-model", {
+    model: "gpt-5.4",
+  });
+
+  handleRuntimeEvent(
+    "session-selected-native-model",
+    {
+      type: "model-options",
+      state: {
+        currentModelId: "gpt-5.5",
+        options: [{ id: "gpt-5.4", name: "gpt-5.4" }, { id: "gpt-5.5", name: "gpt-5.5" }],
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+  assert.deepEqual(
+    capture.summaryUpdates?.at(-1)?.modelOptions?.map((option) => option.id),
+    ["gpt-5.4", "gpt-5.5"],
+  );
 });
 
 test("runtime-generated short assistant replies split after provider diagnostics", () => {

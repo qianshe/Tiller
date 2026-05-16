@@ -51,6 +51,26 @@ test("createSession falls back to session/new when an initial prompt has no read
   assert.deepEqual(context.pendingPromptContentRef.current, [{ type: "text", text: "hello" }]);
 });
 
+test("createSession sends the selected model in the session/new request", () => {
+  const { context, dispatched } = createContext({
+    selectedModel: "gpt-5.5",
+    selectedReasoningEffort: "high",
+  });
+
+  const created = createSession("hello", undefined, context);
+
+  assert.equal(created, true);
+  assert.equal(dispatched[0]?.method, "session/new");
+  assert.deepEqual(dispatched[0]?.params, {
+    projectId: "project-1",
+    cwd: "D:/repo",
+    agentId: "codex",
+    agentMode: undefined,
+    model: "gpt-5.5",
+    reasoningEffort: "high",
+  });
+});
+
 test("createSession sends an initial prompt through a ready draft", () => {
   const { context, dispatched } = createContext({
     agentModelOptions: {

@@ -496,16 +496,18 @@ async function createSession(
         );
       },
     });
-    const summaryWithRuntime = context.hydrateSessionSummary({
+    const summaryWithRuntimeBase = {
       ...summary,
-      status: "idle",
+      status: "idle" as const,
       updatedAt: new Date().toISOString(),
-      agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
-      model: runtime.sessionConfigState?.model ?? summary.model,
+      agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
+      model: summary.model ?? runtime.sessionConfigState?.model,
       modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-      reasoningEffort: runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
+      reasoningEffort: summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
       runtimeSessionId: runtime.runtimeSessionId,
-    });
+    };
+    context.sessions.set(sessionId, { summary: summaryWithRuntimeBase, agent, worktree, runtime });
+    const summaryWithRuntime = context.hydrateSessionSummary(summaryWithRuntimeBase);
     context.logInfo(
       `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
@@ -586,19 +588,25 @@ async function promptRuntimeDraft(
     worktreeName: draft.worktree.name,
     agentId: draft.agent.id,
     agentName: draft.agent.name,
-    agentMode: draft.runtime.sessionConfigState?.agentMode ?? draft.configState.agentMode,
-    model: draft.runtime.sessionConfigState?.model ?? draft.configState.model,
+    agentMode: draft.configState.agentMode ?? draft.runtime.sessionConfigState?.agentMode,
+    model: draft.configState.model ?? draft.runtime.sessionConfigState?.model,
     modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
     configOptions: draft.runtime.sessionConfigOptions ?? draft.configOptions,
     availableCommands: draft.availableCommands,
     reasoningEffort:
-      draft.runtime.sessionConfigState?.reasoningEffort ?? draft.configState.reasoningEffort,
+      draft.configState.reasoningEffort ?? draft.runtime.sessionConfigState?.reasoningEffort,
     runtimeSessionId: draft.runtime.runtimeSessionId,
     status: "idle",
     createdAt,
     updatedAt: createdAt,
     messageCount: 0,
   };
+  context.sessions.set(sessionId, {
+    summary: summaryBase,
+    agent: draft.agent,
+    worktree: draft.worktree,
+    runtime: draft.runtime,
+  });
   const summary = context.hydrateSessionSummary({
     ...summaryBase,
     resume: context.buildResumeInfo(summaryBase, draft.agent),
