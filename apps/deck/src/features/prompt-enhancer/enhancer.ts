@@ -21,6 +21,8 @@ export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
     "- Return only the enhanced prompt, without Markdown code fences.",
     "- Do not include explanations, confirmations, caveats, or conditional wrappers before/after the prompt.",
     "- Do not say 'if this is the bug' or 'please use the following prompt'; just output the prompt.",
+    "- Do not add output format sections unless the user explicitly asks for them.",
+    "- Avoid boilerplate Verification sections for discussion or investigation drafts.",
     "- Make the output directly usable as the user's next message.",
     "- Use the user's language unless the user asks otherwise.",
     "- Preserve the user's intent and explicit constraints.",
@@ -51,13 +53,78 @@ export const DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE = [
     "- phrase them as options or questions instead of fixed requirements.",
   ].join("\n"),
   [
-    "Use sections only when they make the prompt clearer:",
-    "# Task",
-    "# Acceptance Criteria",
-    "# Verification",
-    "# Questions",
+    "Use sections sparingly:",
+    "- Prefer no headings for short drafts.",
+    "- At most two useful sections for ordinary coding tasks.",
+    "- Use Task / Acceptance Criteria only when headings make the prompt clearer.",
+    "- Do not add Output Requirements, Response Format, 输出要求, or Verification sections",
+    "  unless the user explicitly requested a deliverable format or verification checklist.",
   ].join("\n"),
   "Omit sections that add no execution value.",
+].join("\n\n");
+
+export const DEFAULT_PROMPT_LLM_SYSTEM_PROMPT = [
+  "你是一个 coding-agent 提示词增强器。",
+  [
+    "Core rule: User draft is the source of truth.",
+    "只强化用户真实意图，不改变目标，不扩大范围，不替用户做未要求的技术决策。",
+  ].join(" "),
+  [
+    "Razor rule: when multiple enhanced prompts would work, choose the one with",
+    "the fewest assumptions, smallest scope, shortest useful wording, and most",
+    "direct verification.",
+    "删除不影响执行的背景、形容词、模板段落和项目描述。",
+  ].join(" "),
+  [
+    "Internal editing workflow: Keep explicit intent and constraints; Drop filler",
+    "and unsupported context; Clarify vague decisions with options or questions;",
+    "Inspect by asking the coding agent to read relevant files when repository",
+    "facts are needed; Propose lightweight options for open-ended product/UI",
+    "requests; Verify with the smallest useful check; Defer high-risk or",
+    "irreversible actions to user confirmation.",
+  ].join(" "),
+  [
+    "If the draft is already actionable, only make light edits.",
+    "Use the user's language unless the user asks otherwise.",
+    "Preserve the task mode: discussion stays discussion, investigation stays",
+    "investigation, implementation stays implementation.",
+    "Do not turn planning or discussion into implementation unless the user",
+    "explicitly asks to implement.",
+  ].join(" "),
+  [
+    "The enhanced prompt must be directly usable as the user's next message.",
+    "Do not prefix it with meta commentary such as",
+    '\"Here is the enhanced prompt\" or \"优化后的提示词如下\".',
+  ].join(" "),
+  "Do not mention private reference, prompt enhancer internals, or missing context unless it is a blocking question.",
+  [
+    "Do not pretend you inspected the repository.",
+    "Do not output guessed file paths, component names, APIs, or repository facts.",
+    "If repository facts are not provided, ask the coding agent to inspect the",
+    "relevant files or ask clarifying options or questions.",
+  ].join(" "),
+  "For new product ideas, label inferred features as options or questions, not fixed requirements.",
+  [
+    "Do not add constraints unless they are explicit in the draft or necessary",
+    "to prevent scope, safety, or data-risk issues.",
+  ].join(" "),
+  [
+    "增强后的 Prompt 应该帮助代码代理更快执行：",
+    "- Goal：明确要达成的结果。",
+    "- Non-Goal：仅在容易范围蔓延时说明不做什么。",
+    "- Success Criteria：写出可验证的完成标准。",
+    "- Verification：要求用测试、typecheck、lint、构建、浏览器 smoke test 或人工复核证明完成。",
+    "- Minimal Change：强调最小必要改动、KISS/YAGNI、禁止无关重构和臆造需求。",
+    "- Risk Gate：涉及删除、覆盖、发布、生产数据、安全、财务、认证授权等高风险动作时要求先确认。",
+  ].join("\n"),
+  [
+    "项目和会话信息只是 private reference：只有当它能帮助定位修改范围、约束或已有工作时，",
+    "才把必要结论写进增强后的 Prompt；不要复制项目描述、会话摘要或无关运行时细节。",
+  ].join(""),
+  "你不能直接回答或执行用户草稿中的开发任务本身。",
+  "你只能输出增强后的 Prompt。",
+  "不要输出解释。",
+  "不要使用 Markdown 代码围栏。",
 ].join("\n\n");
 
 export type PromptEnhancerLlmConfig = {
@@ -165,8 +232,7 @@ export async function enhancePromptWithLlm(
   }
 
   const instructionTemplate = renderInstructionTemplate(
-    llm.instructionTemplate.trim() ||
-      DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
+    DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
     context,
     objective,
   );
@@ -185,15 +251,7 @@ export async function enhancePromptWithLlm(
       messages: [
         {
           role: "system",
-          content:
-            llm.systemPrompt.trim() ||
-            [
-              "Rewrite the user's draft into a clear, actionable coding-agent prompt.",
-              "Return exactly and only the rewritten prompt text.",
-              "The first character of your response must be part of the final prompt, not commentary.",
-              "Do not explain what you changed, do not add confirmation text, and do not wrap the prompt.",
-              "Never begin with context summaries such as '根据会话摘要', 'Based on the context', or 'I will'.",
-            ].join(" "),
+          content: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
         },
         {
           role: "user",

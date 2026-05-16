@@ -1,9 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import {
-  DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
-  DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-  type DeckPreferences,
-} from "../../preferences";
+import type { DeckPreferences } from "../../preferences";
 import {
   listPromptEnhancerModels,
   testPromptEnhancerConnectivity,
@@ -78,20 +74,6 @@ export function usePromptEnhancerSettings({
     });
   }
 
-  function resetDefaults() {
-    updatePreferences({
-      promptEnhancer: {
-        ...preferences.promptEnhancer,
-        llm: {
-          ...preferences.promptEnhancer.llm,
-          systemPrompt: DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-          instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
-        },
-      },
-    });
-    setStatus("已恢复默认增强器 System Prompt 与指令模板。");
-  }
-
   async function testSelectedModel() {
     setBusy(true);
     setStatus("正在测试 LLM 连通性...");
@@ -152,7 +134,6 @@ export function usePromptEnhancerSettings({
     setModelPickerOpen,
     updatePreference,
     updateLlmPreference,
-    resetDefaults,
     testSelectedModel,
     refreshModels,
     updateModelInput,

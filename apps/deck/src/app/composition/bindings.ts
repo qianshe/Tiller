@@ -53,7 +53,6 @@ export function buildAppRouteContext(input: any) {
     promptEnhancerModelPickerOpen: input.promptEnhancerSettings.modelPickerOpen,
     setPromptEnhancerModelPickerOpen: input.promptEnhancerSettings.setModelPickerOpen,
     updatePromptEnhancerLlmPreference: input.promptEnhancerSettings.updateLlmPreference,
-    resetPromptEnhancerDefaults: input.promptEnhancerSettings.resetDefaults,
     testPromptEnhancerSelectedModel: input.promptEnhancerSettings.testSelectedModel,
     refreshPromptEnhancerModels: input.promptEnhancerSettings.refreshModels,
     updatePromptEnhancerModelInput: input.promptEnhancerSettings.updateModelInput,

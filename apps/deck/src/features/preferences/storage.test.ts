@@ -12,7 +12,7 @@ import {
 const ENGINE_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE =
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE;
 
-function withStoredPreferences(raw: string, callback: () => void) {
+function withStoredPreferences(raw: string, callback: (store: Map<string, string>) => void) {
   const previousWindow = (globalThis as { window?: unknown }).window;
   const store = new Map([[DECK_PREFERENCES_STORAGE_KEY, raw]]);
   Object.defineProperty(globalThis, "window", {
@@ -20,11 +20,12 @@ function withStoredPreferences(raw: string, callback: () => void) {
     value: {
       localStorage: {
         getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => store.set(key, value),
       },
     },
   });
   try {
-    callback();
+    callback(store);
   } finally {
     if (previousWindow === undefined) {
       delete (globalThis as { window?: unknown }).window;
@@ -146,4 +147,37 @@ test("default prompt enhancer system prompt encodes self-contained goal and razo
   assert.match(DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, /Verification/);
   assert.match(DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, /Minimal Change/);
   assert.doesNotMatch(DEFAULT_PROMPT_LLM_SYSTEM_PROMPT, /AGENTS/);
+});
+
+test("readDeckPreferences ignores stored prompt enhancer system prompt and template overrides", () => {
+  withStoredPreferences(
+    JSON.stringify({
+      promptEnhancer: {
+        llm: {
+          systemPrompt: "CUSTOM SYSTEM PROMPT",
+          instructionTemplate: "CUSTOM TEMPLATE",
+        },
+      },
+    }),
+    (store) => {
+      const preferences = readDeckPreferences();
+
+      assert.equal(
+        preferences.promptEnhancer.llm.systemPrompt,
+        DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.systemPrompt,
+      );
+      assert.equal(
+        preferences.promptEnhancer.llm.instructionTemplate,
+        DEFAULT_DECK_PREFERENCES.promptEnhancer.llm.instructionTemplate,
+      );
+
+      const persisted = JSON.parse(
+        store.get(DECK_PREFERENCES_STORAGE_KEY) ?? "{}",
+      ) as Record<string, unknown>;
+      const llm = (persisted.promptEnhancer as { llm?: Record<string, unknown> })
+        .llm;
+      assert.equal(llm?.systemPrompt, undefined);
+      assert.equal(llm?.instructionTemplate, undefined);
+    },
+  );
 });

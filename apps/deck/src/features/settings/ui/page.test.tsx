@@ -56,7 +56,6 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
       refreshPromptEnhancerModels={noop}
       setPromptEnhancerModelFilter={noop}
       selectPromptEnhancerModel={noop}
-      resetPromptEnhancerDefaults={noop}
       testPromptEnhancerSelectedModel={noop}
     />,
   );
@@ -65,4 +64,8 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(html, /语言/);
   assert.match(html, /主题/);
   assert.match(html, /技术面板/);
+  assert.match(html, /LLM 增强器/);
+  assert.doesNotMatch(html, /增强器 System Prompt/);
+  assert.doesNotMatch(html, /增强器指令模板/);
+  assert.doesNotMatch(html, /恢复默认模板/);
 });

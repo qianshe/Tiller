@@ -7,15 +7,10 @@ import {
   CardTitle,
   Input,
   Label,
-  Textarea,
 } from "@/shared/ui";
 import { cn } from "@/shared/utils/cn";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
-import {
-  DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
-  DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
-  type DeckPreferences,
-} from "../../preferences";
+import type { DeckPreferences } from "../../preferences";
 
 type PromptEnhancerCardProps = {
   deckPreferences: DeckPreferences;
@@ -36,7 +31,6 @@ type PromptEnhancerCardProps = {
   refreshModels: () => void;
   setModelFilter: (value: string) => void;
   selectModel: (model: PromptEnhancerModelOption) => void;
-  resetDefaults: () => void;
   testSelectedModel: () => void;
 };
 
@@ -54,7 +48,6 @@ export function PromptEnhancerCard({
   refreshModels,
   setModelFilter,
   selectModel,
-  resetDefaults,
   testSelectedModel,
 }: PromptEnhancerCardProps) {
   return (
@@ -102,32 +95,7 @@ export function PromptEnhancerCard({
             autoComplete="off"
           />
         </Label>
-        <Label className="grid gap-2 md:col-span-2">
-          <span>增强器 System Prompt</span>
-          <Textarea
-            className="min-h-[150px] max-h-[260px] px-[18px] py-4 text-[0.95rem] leading-[1.58]"
-            value={deckPreferences.promptEnhancer.llm.systemPrompt}
-            onChange={(event) =>
-              updateLlmPreference("systemPrompt", event.target.value)
-            }
-            placeholder={DEFAULT_PROMPT_LLM_SYSTEM_PROMPT}
-          />
-        </Label>
-        <Label className="grid gap-2 md:col-span-2">
-          <span>增强器指令模板</span>
-          <Textarea
-            className="min-h-[260px] max-h-[480px] px-[18px] py-4 text-[0.95rem] leading-[1.58]"
-            value={deckPreferences.promptEnhancer.llm.instructionTemplate}
-            onChange={(event) =>
-              updateLlmPreference("instructionTemplate", event.target.value)
-            }
-            placeholder={DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE}
-          />
-        </Label>
         <div className="flex flex-wrap items-center gap-3 md:col-span-2">
-          <Button variant="secondary" type="button" onClick={resetDefaults}>
-            恢复默认模板
-          </Button>
           <Button
             variant="secondary"
             type="button"

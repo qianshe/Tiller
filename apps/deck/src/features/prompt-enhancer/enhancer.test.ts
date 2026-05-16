@@ -117,6 +117,10 @@ test("default prompt enhancer treats project and session context as private refe
   assert.match(body, /directly usable as the user's next message/);
   assert.match(body, /Do not include explanations, confirmations, caveats/);
   assert.match(body, /Do not say 'if this is the bug'/);
+  assert.match(body, /Do not add output format sections unless the user explicitly asks for them/);
+  assert.match(body, /Avoid boilerplate Verification sections for discussion or investigation drafts/);
+  assert.match(body, /Prefer no headings for short drafts/);
+  assert.match(body, /At most two useful sections/);
   assert.match(body, /Do not output guessed file paths/);
   assert.doesNotMatch(body, /AGENTS/);
   assert.doesNotMatch(body, /# Context/);
@@ -321,7 +325,7 @@ test("enhancePromptWithLlm keeps AGENTS project context and drops CLAUDE README 
   assert.doesNotMatch(body, /Session summary: 最近问答与结论/);
 });
 
-test("enhancePromptWithLlm uses the configured instruction template", async () => {
+test("enhancePromptWithLlm ignores hidden custom system prompt and instruction template", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
@@ -337,6 +341,7 @@ test("enhancePromptWithLlm uses the configured instruction template", async () =
       ...basePreferences,
       llm: {
         ...basePreferences.llm,
+        systemPrompt: "CUSTOM SYSTEM PROMPT",
         instructionTemplate: "CUSTOM AUGMENT TEMPLATE",
       },
     },
@@ -344,10 +349,14 @@ test("enhancePromptWithLlm uses the configured instruction template", async () =
     fetcher,
   );
 
-  assert.match(String(calls[0]?.init.body), /CUSTOM AUGMENT TEMPLATE/);
+  const body = String(calls[0]?.init.body);
+  assert.doesNotMatch(body, /CUSTOM AUGMENT TEMPLATE/);
+  assert.doesNotMatch(body, /CUSTOM SYSTEM PROMPT/);
+  assert.match(body, /Enhance the user draft into a concise, precise prompt/);
+  assert.match(body, /你是一个 coding-agent 提示词增强器/);
 });
 
-test("enhancePromptWithLlm replaces instruction template tags", async () => {
+test("enhancePromptWithLlm renders built-in instruction template tags", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
@@ -375,9 +384,10 @@ test("enhancePromptWithLlm replaces instruction template tags", async () => {
   );
 
   const body = String(calls[0]?.init.body);
-  assert.match(body, /项目=Deck\/Helm project summary/);
-  assert.match(body, /会话=User is tuning Settings/);
-  assert.match(body, /草稿=检查设置页/);
+  assert.match(body, /Project summary: Deck\/Helm project summary/);
+  assert.match(body, /Session summary: User is tuning Settings/);
+  assert.match(body, /<user_draft>\\n检查设置页\\n<\/user_draft>/);
+  assert.doesNotMatch(body, /项目=Deck\/Helm project summary/);
 });
 
 test("testPromptEnhancerConnectivity only sends a minimal ping", async () => {
