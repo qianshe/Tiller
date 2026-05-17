@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentMessage } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall } from "@tiller/shared";
 import { Button } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { cn } from "../../../shared/utils/cn";
@@ -12,6 +12,7 @@ export const DEFAULT_VISIBLE_MESSAGE_LIMIT = 20;
 type PlainMessagesProps = {
   sessionId: string | null;
   items: AgentMessage[];
+  thinkingToolCalls?: AgentToolCall[];
   emptyText: string;
   assistantLabel: string;
   roleLabels: Record<AgentMessage["role"], string>;
@@ -25,6 +26,7 @@ type PlainMessagesProps = {
 export function PlainMessages({
   sessionId,
   items,
+  thinkingToolCalls = [],
   emptyText,
   assistantLabel,
   roleLabels,
@@ -48,23 +50,27 @@ export function PlainMessages({
     () => sortDisplayMessages(items, boundaryTimestamps),
     [items, boundaryTimestamps],
   );
-  const visibleMessages = useMemo(
-    () => displayMessages.slice(-visibleMessageCount),
-    [displayMessages, visibleMessageCount],
+  const displayItems = useMemo(
+    () => buildPlainConversationItems(displayMessages, thinkingToolCalls),
+    [displayMessages, thinkingToolCalls],
+  );
+  const visibleItems = useMemo(
+    () => displayItems.slice(-visibleMessageCount),
+    [displayItems, visibleMessageCount],
   );
   const visibleRenderMessages = useMemo(
-    () => resolvePlainMessageRenderItems(visibleMessages),
-    [visibleMessages],
+    () => resolvePlainMessageRenderItems(visibleItems),
+    [visibleItems],
   );
-  const hasHiddenLoadedMessages = visibleMessages.length < displayMessages.length;
+  const hasHiddenLoadedMessages = visibleItems.length < displayItems.length;
   const canLoadMoreMessages =
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
   const loadMoreLabel = resolveLoadMoreMessagesLabel({
     hasMoreHistory: Boolean(historyState?.hasMore),
     loading: Boolean(historyState?.loading),
     pageSize: DEFAULT_VISIBLE_MESSAGE_LIMIT,
-    totalLoaded: displayMessages.length,
-    visible: visibleMessages.length,
+    totalLoaded: displayItems.length,
+    visible: visibleItems.length,
   });
 
   useEffect(() => {
@@ -89,7 +95,7 @@ export function PlainMessages({
     }
     setVisibleMessageCount(nextVisibleCount);
     if (
-      displayMessages.length <= nextVisibleCount &&
+      displayItems.length <= nextVisibleCount &&
       historyState?.hasMore &&
       !historyState.loading
     ) {
@@ -97,7 +103,7 @@ export function PlainMessages({
     }
   }
 
-  if (!displayMessages.length) {
+  if (!displayItems.length) {
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
   }
 
@@ -113,17 +119,21 @@ export function PlainMessages({
           {loadMoreLabel}
         </button>
       ) : null}
-      {visibleRenderMessages.map(({ message, renderKey, isContinuation }) => {
-        const isExpanded = expandedMessageIds.has(message.id);
+      {visibleRenderMessages.map((renderItem) => {
+        if (renderItem.kind === "thinking") {
+          return <PlainThinkingItem key={renderItem.renderKey} item={renderItem.toolCall} />;
+        }
+
+        const isExpanded = expandedMessageIds.has(renderItem.message.id);
         return (
           <PlainMessageItem
-            key={renderKey}
-            isContinuation={isContinuation}
+            key={renderItem.renderKey}
+            isContinuation={renderItem.isContinuation}
             isExpanded={isExpanded}
-            message={message}
+            message={renderItem.message}
             onToggleExpandedMessage={onToggleExpandedMessage}
             roleLabel={resolveMessageRoleLabel(
-              message,
+              renderItem.message,
               assistantLabel,
               roleLabels,
             )}
@@ -254,6 +264,61 @@ const PlainMessageItem = memo(function PlainMessageItem({
     </article>
   );
 });
+
+function PlainThinkingItem({ item }: { item: AgentToolCall }) {
+  const isRunning = item.status === "pending" || item.status === "running";
+  const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
+  const title = resolveThinkingTitle(item);
+
+  return (
+    <details
+      className="plain-thinking rounded-xl border border-border-ghost bg-surface-elevated/80 p-0 shadow-ambient"
+      open={isRunning || undefined}
+    >
+      <summary className="grid cursor-pointer list-none grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-2 rounded-full ring-4 ring-surface-sunken",
+            isRunning ? "animate-pulse bg-accent" : "bg-info",
+          )}
+        />
+        <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+          {title}
+        </span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {resolveThinkingStatusLabel(item.status)}
+        </span>
+      </summary>
+      <div className="border-t border-border-ghost px-3 py-2 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+        <MarkdownMessage text={text} />
+      </div>
+    </details>
+  );
+}
+
+function resolveThinkingTitle(item: AgentToolCall) {
+  const rawTitle = item.title?.trim();
+  if (!rawTitle || /^thinking$/iu.test(rawTitle) || rawTitle === item.id) {
+    return "Thinking";
+  }
+  return `Thinking · ${rawTitle}`;
+}
+
+function resolveThinkingStatusLabel(status: AgentToolCall["status"]) {
+  switch (status) {
+    case "completed":
+      return "完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+      return "取消";
+    case "waiting_for_permission":
+      return "等待";
+    default:
+      return "思考中";
+  }
+}
 
 function renderPlainMessageContent(
   message: AgentMessage,
@@ -391,27 +456,84 @@ export function resolveVisiblePlainMessages(
   return sortDisplayMessages(items, boundaryTimestamps).slice(-visibleCount);
 }
 
-type PlainMessageRenderItem = {
-  isContinuation: boolean;
-  message: AgentMessage;
-  renderKey: string;
-};
+type PlainConversationItem =
+  | { kind: "message"; timestamp: string; message: AgentMessage }
+  | { kind: "thinking"; timestamp: string; toolCall: AgentToolCall };
+
+type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
+
+type PlainMessageRenderItem =
+  | {
+      isContinuation: boolean;
+      kind: "message";
+      message: AgentMessage;
+      renderKey: string;
+    }
+  | {
+      kind: "thinking";
+      renderKey: string;
+      toolCall: AgentToolCall;
+    };
 
 export function resolvePlainMessageRenderItems(
-  items: AgentMessage[],
+  items: PlainMessageRenderSource[],
 ): PlainMessageRenderItem[] {
+  const normalizedItems = items.map(normalizePlainMessageRenderSource);
   const seenKeys = new Map<string, number>();
-  return items.map((message, index) => {
-    const previous = items[index - 1];
-    const baseKey = message.id || `${message.role}-${message.timestamp || index}`;
+  return normalizedItems.map((item, index) => {
+    if (item.kind === "thinking") {
+      const baseKey = `thinking-${item.toolCall.id}`;
+      const seenCount = seenKeys.get(baseKey) ?? 0;
+      seenKeys.set(baseKey, seenCount + 1);
+      return {
+        kind: "thinking",
+        renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
+        toolCall: item.toolCall,
+      };
+    }
+
+    const previous = normalizedItems[index - 1];
+    const baseKey = item.message.id || `${item.message.role}-${item.message.timestamp || index}`;
     const seenCount = seenKeys.get(baseKey) ?? 0;
     seenKeys.set(baseKey, seenCount + 1);
     return {
-      isContinuation: message.role === "assistant" && previous?.role === "assistant",
-      message,
+      isContinuation: item.message.role === "assistant" && previous?.kind === "message" && previous.message.role === "assistant",
+      kind: "message",
+      message: item.message,
       renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
     };
   });
+}
+
+function normalizePlainMessageRenderSource(
+  item: PlainMessageRenderSource,
+): PlainConversationItem {
+  if ("role" in item) {
+    return {
+      kind: "message",
+      timestamp: item.timestamp,
+      message: item,
+    };
+  }
+  return item;
+}
+
+function buildPlainConversationItems(
+  messages: AgentMessage[],
+  thinkingToolCalls: AgentToolCall[],
+): PlainConversationItem[] {
+  return [
+    ...messages.map((message) => ({
+      kind: "message" as const,
+      timestamp: message.timestamp,
+      message,
+    })),
+    ...thinkingToolCalls.map((toolCall) => ({
+      kind: "thinking" as const,
+      timestamp: toolCall.timestamp,
+      toolCall,
+    })),
+  ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
 }
 
 function shouldCollapsePlainMessage(text: string) {

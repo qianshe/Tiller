@@ -813,6 +813,32 @@ test("mapSessionUpdateNotification does not expose opaque call ids as primary ti
   assert.equal(mapped.event.toolCall.title, "Tool call call_RUs6…");
 });
 
+test("mapSessionUpdateNotification maps sparse tool call updates as weak metadata patches", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-sparse-tool-update",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "toolu_01Sparse",
+        status: "completed",
+        rawOutput: "ok",
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.id, "toolu_01Sparse");
+  assert.equal(mapped.event.toolCall.kind, "tool");
+  assert.equal(mapped.event.toolCall.title, "Tool call toolu_01S…");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.output, "ok");
+});
+
 test("mapSessionUpdateNotification maps explicit tool call updates", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

@@ -118,9 +118,12 @@ function buildActivityTimeline(
   commandChunks: CommandChunk[],
   sessionMessages: AgentMessage[],
 ): ActivityTimelineItem[] {
+  const visibleToolCalls = sessionToolCalls.filter(
+    (toolCall) => toolCall.kind !== "think",
+  );
   const toolItems = groupToolCalls(
-    sessionToolCalls.length
-      ? sessionToolCalls
+    visibleToolCalls.length
+      ? visibleToolCalls
       : commandChunks.map(commandChunkToToolCall),
   );
   const promptItems = sessionMessages
@@ -165,6 +168,8 @@ function ToolActivityCard({
   const label = toolTone.label ?? "Tool";
   const status = resolveToolStatusLabel(item.status, streamTone);
   const accent = status.tone === "danger" ? "stderr" : (toolTone.className ?? "tool-call-default");
+  const outputText = item.text.trim();
+  const inputText = outputText ? "" : formatToolInputPreview(item.input);
 
   return (
     <ActivityDetails
@@ -175,13 +180,32 @@ function ToolActivityCard({
       stream={status.label}
       streamTone={status.tone}
     >
-      {item.text.trim() ? (
+      {outputText ? (
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
           {item.text}
         </pre>
+      ) : inputText ? (
+        <div className="grid gap-1 pl-7">
+          <span className="text-xs font-semibold text-muted-foreground">无输出，仅有调用参数</span>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">
+            {inputText}
+          </pre>
+        </div>
       ) : null}
     </ActivityDetails>
   );
+}
+
+function formatToolInputPreview(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return trimmed;
+  }
 }
 
 type ActivityDetailsProps = {

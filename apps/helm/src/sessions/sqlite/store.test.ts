@@ -319,6 +319,48 @@ test("sqlite artifact store normalizes historical MCP tool calls from persisted 
   }
 });
 
+test("sqlite artifact store preserves strong tool metadata when sparse updates arrive", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-sparse-tool-update-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_01Write", "2026-05-17T10:00:00.000Z", {
+          kind: "write",
+          title: "Write",
+          input: JSON.stringify({ file_path: "apps/deck/src/app.tsx" }),
+          status: "running",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_01Write", "2026-05-17T10:00:01.000Z", {
+          kind: "tool",
+          title: "Tool call toolu_01W...",
+          output: "ok",
+          status: "completed",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        }),
+      );
+
+      const [toolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "write");
+      assert.equal(toolCall?.title, "Write");
+      assert.equal(toolCall?.input, JSON.stringify({ file_path: "apps/deck/src/app.tsx" }));
+      assert.equal(toolCall?.status, "completed");
+      assert.equal(toolCall?.output, "ok");
+      assert.equal(toolCall?.timestamp, "2026-05-17T10:00:00.000Z");
+      assert.equal(toolCall?.updatedAt, "2026-05-17T10:00:01.000Z");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store paginates outputs/tool calls and replaces diffs/tool calls", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-"));
   try {

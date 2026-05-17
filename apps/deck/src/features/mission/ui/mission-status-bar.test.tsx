@@ -21,8 +21,8 @@ test("MissionStatusBar shows model loading label only", () => {
       promptEnhancing: false,
     }),
   );
-  assert.match(html, /模型加载中/);
-  assert.doesNotMatch(html, /增强中/);
+  assert.match(html, /模型加载中.../);
+  assert.doesNotMatch(html, /增强中.../);
   assert.doesNotMatch(html, /·/);
 });
 
@@ -33,8 +33,8 @@ test("MissionStatusBar shows enhancing label only", () => {
       promptEnhancing: true,
     }),
   );
-  assert.match(html, /增强中/);
-  assert.doesNotMatch(html, /模型加载中/);
+  assert.match(html, /增强中.../);
+  assert.doesNotMatch(html, /模型加载中.../);
   assert.doesNotMatch(html, /·/);
 });
 
@@ -45,14 +45,14 @@ test("MissionStatusBar shows both labels joined by middle dot in fixed order", (
       promptEnhancing: true,
     }),
   );
-  assert.match(html, /模型加载中/);
-  assert.match(html, /增强中/);
+  assert.match(html, /模型加载中.../);
+  assert.match(html, /增强中.../);
   assert.match(html, /·/);
-  const modelIndex = html.indexOf("模型加载中");
+  const modelIndex = html.indexOf("模型加载中...");
   const dotIndex = html.indexOf("·");
-  const enhancingIndex = html.indexOf("增强中");
+  const enhancingIndex = html.indexOf("增强中...");
   assert.ok(modelIndex >= 0 && dotIndex > modelIndex && enhancingIndex > dotIndex,
-    `expected order 模型加载中 -> · -> 增强中, got indices ${modelIndex}/${dotIndex}/${enhancingIndex}`);
+    `expected order 模型加载中... -> · -> 增强中..., got indices ${modelIndex}/${dotIndex}/${enhancingIndex}`);
 });
 
 test("MissionStatusBar uses compact status typography", () => {

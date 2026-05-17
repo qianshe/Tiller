@@ -53,6 +53,8 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     draftModelPickerDisabled: false,
     draftModelPickerLabel: "模型",
     draftModelLoading: false,
+    draftModelConfigReady: true,
+    modelSettingsLocked: false,
     draftModelBaseOptions: [],
     resolveReasoningOptionsForModel: () => [],
     draftAllModelOptions: [],
@@ -98,6 +100,53 @@ test("composer uses compact sidecar and action button sizing", () => {
   assert.match(html, /mission-send-prompt-button[^\"]*size-7/);
 });
 
+test("composer keeps model settings locked until active session config is ready", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "session-1" },
+    draftModelLoading: false,
+    draftModelConfigReady: false,
+    draftConfigOptions: [{ id: "cached", label: "cached", type: "text" }],
+  })));
+
+  assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
+  assert.match(html, /模型加载中/);
+});
+
+test("composer can lock settings without showing model loading once config is ready", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "session-1" },
+    draftModelLoading: false,
+    draftModelConfigReady: true,
+    modelSettingsLocked: true,
+  })));
+
+  assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
+  assert.doesNotMatch(html, /模型加载中/);
+});
+
+test("composer hides model loading for active sessions that already know the model", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "session-1", model: "claude-sonnet-4" },
+    draftModelLoading: true,
+    draftModelConfigReady: false,
+  })));
+
+  assert.doesNotMatch(html, /aria-label="打开任务设置"[^>]*disabled=""/);
+  assert.doesNotMatch(html, /模型加载中/);
+});
+
+test("composer ignores stale draft loading when active session config is ready", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "session-1", model: "claude-sonnet-4" },
+    draftModelLoading: true,
+    draftModelConfigReady: true,
+  })));
+
+  assert.doesNotMatch(html, /aria-label="打开任务设置"[^>]*disabled=""/);
+  assert.doesNotMatch(html, /模型加载中/);
+});
+
+
 test("composer shows only the interrupt action while a session can be cancelled", () => {
   const html = renderToStaticMarkup(
     createElement(MissionComposer, baseProps({
@@ -108,7 +157,9 @@ test("composer shows only the interrupt action while a session can be cancelled"
   );
 
   assert.match(html, /aria-label="取消任务"/);
-  assert.match(html, /mission-cancel-session-button/);
+  assert.match(html, /mission-cancel-session-button[^\"]*size-7/);
+  assert.doesNotMatch(html, /mission-cancel-session-button[^\"]*size-12/);
+  assert.match(html, /mission-cancel-session-stop-icon[^\"]*size-1\.5/);
   assert.doesNotMatch(html, /aria-label="增强提示词"/);
   assert.doesNotMatch(html, /aria-label="发送"/);
 });

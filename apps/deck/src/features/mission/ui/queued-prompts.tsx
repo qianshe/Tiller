@@ -8,7 +8,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Input,
   Textarea,
 } from "../../../shared/ui";
 
@@ -70,29 +69,28 @@ export function MissionQueuedPrompts({
   }
 
   return (
-    <div className="mission-prompt-queue border-t border-border-ghost bg-surface/95 p-3">
-      <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+    <div className="mission-prompt-queue border-t border-border-ghost bg-surface/95 p-1">
+      <div className="mb-0.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Prompt 队列</strong>
-        <span className="truncate">ACP 完成当前 Prompt 后会自动发送队首</span>
+        <span className="truncate">ACP 完成当前 Prompt 后自动发送队首</span>
       </div>
-      <div className="rounded-lg border border-border-ghost bg-surface-sunken px-2 py-1">
+      <div className="rounded-md border border-border-ghost bg-surface-sunken px-1.5 py-0.5">
         {items.map((item, index) => {
           const editingDisabled = item.status === "sending";
           return (
             <div
               key={item.id}
-              className="flex min-w-0 items-center gap-2 border-b border-border-ghost py-1.5 last:border-b-0"
+              className="flex min-w-0 items-center gap-1.5 border-b border-border-ghost py-0.5 last:border-b-0"
             >
-              <div className="w-16 shrink-0 text-xs text-muted-foreground">
+              <div className="w-14 shrink-0 text-xs text-muted-foreground">
                 <span>{queueItemLabel(item, index)}</span>
               </div>
-              <Input
-                value={toSingleLine(item.text)}
-                readOnly
-                disabled={editingDisabled}
+              <span
                 title={item.text}
-                className="h-9 min-w-0 flex-1"
-              />
+                className="mission-queued-prompt-text min-w-0 flex-1 truncate text-xs text-foreground"
+              >
+                {toSingleLine(item.text)}
+              </span>
               {item.error ? (
                 <span className="max-w-36 truncate text-xs text-danger" title={item.error}>
                   {item.error}
@@ -102,7 +100,7 @@ export function MissionQueuedPrompts({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="shrink-0"
+                className="h-6 shrink-0 px-1.5"
                 disabled={editingDisabled}
                 onClick={() => openEditor(item)}
               >
@@ -112,7 +110,7 @@ export function MissionQueuedPrompts({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="shrink-0"
+                className="h-6 shrink-0 px-1.5"
                 disabled={editingDisabled}
                 onClick={() => onDelete(item.sessionId, item.id)}
               >

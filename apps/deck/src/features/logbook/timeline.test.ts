@@ -235,3 +235,39 @@ test("mergeToolCallHistory keeps the earliest start timestamp across replay merg
   assert.equal(merged[0]?.updatedAt, "2026-04-30T13:22:46.678Z");
 });
 
+test("mergeToolCallHistory preserves strong metadata when sparse updates arrive", () => {
+  const current: AgentToolCall[] = [
+    {
+      id: "toolu_01Search",
+      kind: "search",
+      title: "Search",
+      status: "running",
+      input: JSON.stringify({ pattern: "composer", path: "apps" }),
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+    },
+  ];
+  const incoming: AgentToolCall[] = [
+    {
+      id: "toolu_01Search",
+      kind: "tool",
+      title: "Tool call toolu_01S...",
+      status: "completed",
+      output: "found",
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+    },
+  ];
+
+  const merged = mergeToolCallHistory(current, incoming);
+  const grouped = groupToolCalls(merged);
+
+  assert.equal(merged[0]?.kind, "search");
+  assert.equal(merged[0]?.title, "Search");
+  assert.equal(merged[0]?.input, JSON.stringify({ pattern: "composer", path: "apps" }));
+  assert.equal(merged[0]?.status, "completed");
+  assert.equal(merged[0]?.output, "found");
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Search: composer");
+});
+

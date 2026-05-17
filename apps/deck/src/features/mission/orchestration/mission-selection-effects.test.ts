@@ -167,6 +167,7 @@ test("mission model picker surfaces loading state without hiding cached options"
   assert.match(viewModelSourceText, /draftLoadingAgentModelOptions/);
   assert.match(viewModelSourceText, /key\.startsWith\(`\$\{draftAgentModelOptionsPrefix\}::`\)/);
   assert.match(viewModelSourceText, /draftHasLoadedModelOptions/);
+  assert.match(viewModelSourceText, /draftLoadingAgentModelOptions\?\.loading/);
   assert.match(viewModelSourceText, /awaitingDraftAgentModelOptions/);
   assert.match(viewModelSourceText, /!draftHasLoadedModelOptions/);
 });

@@ -149,6 +149,7 @@ export function MissionWorktree(props: any) {
     draftModelPickerDisabled,
     draftModelPickerLabel,
     draftModelLoading,
+    draftModelConfigReady,
     draftModelBaseOptions,
     resolveReasoningOptionsForModel,
     draftAllModelOptions,
@@ -212,6 +213,7 @@ export function MissionWorktree(props: any) {
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
+    composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
   const rawWorktreeOptions = hasWorktreeScope
@@ -579,6 +581,7 @@ export function MissionWorktree(props: any) {
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
+          activityHistoryState={activityHistoryState}
           onLoadOlderMessages={loadOlderMessages}
           onToggleExpandedMessage={toggleExpandedMessage}
           activityLoading={missionActivityLoading}
@@ -658,6 +661,8 @@ export function MissionWorktree(props: any) {
               draftModelPickerDisabled={draftModelPickerDisabled}
               draftModelPickerLabel={draftModelPickerLabel}
               draftModelLoading={draftModelLoading}
+              draftModelConfigReady={draftModelConfigReady}
+              modelSettingsLocked={Boolean(activeSession && !activeSessionRestoreGate.canChat)}
               draftModelBaseOptions={draftModelBaseOptions}
               resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
               draftAllModelOptions={draftAllModelOptions}

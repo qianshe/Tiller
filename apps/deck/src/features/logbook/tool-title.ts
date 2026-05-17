@@ -29,7 +29,10 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     return stripToolPrefix(title);
   }
   if (call.kind === "read" || call.kind === "write") {
-    return stripLeadingActionVerb(title, call.kind);
+    return extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ?? stripLeadingActionVerb(title, call.kind);
+  }
+  if (call.kind === "search") {
+    return summarizeSearchInput(title, parseToolCallInputObject(call.input)) ?? title;
   }
   return title;
 }
@@ -100,12 +103,65 @@ function extractSkillNameFromStructuredInput(
   return undefined;
 }
 
+function extractFilePathFromStructuredInput(
+  parsed: Record<string, unknown> | null,
+) {
+  if (!parsed) {
+    return undefined;
+  }
+  const candidate =
+    parsed.file_path ??
+    parsed.filePath ??
+    parsed.path ??
+    parsed.relative_path ??
+    parsed.relativePath ??
+    parsed.notebook_path ??
+    parsed.notebookPath;
+  return typeof candidate === "string" && candidate.trim() ? compactDisplayPath(candidate.trim()) : undefined;
+}
+
+function summarizeSearchInput(
+  title: string,
+  parsed: Record<string, unknown> | null,
+) {
+  if (!parsed) {
+    return undefined;
+  }
+  const query =
+    parsed.pattern ??
+    parsed.query ??
+    parsed.search_string ??
+    parsed.searchString ??
+    parsed.substring_pattern ??
+    parsed.substringPattern;
+  if (typeof query !== "string" || !query.trim()) {
+    return undefined;
+  }
+  const normalizedTitle = stripToolPrefix(title).trim();
+  const prefix = normalizedTitle && !/^Tool call\b/u.test(normalizedTitle) ? normalizedTitle : "Search";
+  return `${prefix}: ${truncateInline(query.trim(), 56)}`;
+}
+
+function compactDisplayPath(path: string) {
+  const normalized = path.replace(/\\/gu, "/");
+  const markerMatch = normalized.match(/(?:^|\/)((?:apps|packages|docs|scripts)\/.*)$/u);
+  if (markerMatch?.[1]) {
+    return markerMatch[1];
+  }
+  return normalized;
+}
+
+function truncateInline(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/gu, " ");
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}…` : compact;
+}
+
 export function resolveMergedToolTitle(
   currentTitle: string,
   incomingTitle: string,
   id: string,
 ) {
-  return isInformativeToolTitle(incomingTitle, id)
+  return isInformativeToolTitle(incomingTitle, id) && !isFallbackToolTitle(incomingTitle)
     ? incomingTitle
     : currentTitle || incomingTitle || id;
 }
@@ -115,6 +171,10 @@ function isInformativeToolTitle(title: string | undefined, id: string) {
   return Boolean(
     normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized),
   );
+}
+
+function isFallbackToolTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
 function stripToolPrefix(title: string) {

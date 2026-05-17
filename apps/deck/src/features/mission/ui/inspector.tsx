@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { cn } from "../../../shared/utils/cn";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/ui/tabs";
 import { MissionPanelHeader, MissionPanelLoadingBadge } from "./panel-header";
 
 type MissionInspectorProps = {
@@ -51,29 +51,27 @@ export function MissionInspector({
               title={title}
               action={loading ? <MissionPanelLoadingBadge /> : null}
             />
-            <nav className="mission-inspector-tabs grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1" aria-label="项目变更子页">
-              <button
-                type="button"
-                className={cn(
-                  "rounded-md px-2 py-1.5 text-xs font-semibold text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground",
-                  selectedPage === "diff" && "bg-primary-soft text-primary",
-                )}
-                onClick={() => setSelectedPage("diff")}
-              >
-                Git Diff ({diffCount})
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "rounded-md px-2 py-1.5 text-xs font-semibold text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground",
-                  selectedPage === "worktrees" && "bg-primary-soft text-primary",
-                )}
-                onClick={() => setSelectedPage("worktrees")}
-              >
-                Worktrees ({worktreeCount})
-              </button>
-            </nav>
-            {selectedPage === "diff" ? diffPanel : worktreeList}
+            <Tabs
+              value={selectedPage}
+              onValueChange={(value) => setSelectedPage(value as "worktrees" | "diff")}
+              className="grid min-h-0 gap-2 overflow-hidden"
+              aria-label="项目变更子页"
+            >
+              <TabsList size="xs" className="grid grid-cols-2">
+                <TabsTrigger size="xs" value="diff">
+                  Git Diff ({diffCount})
+                </TabsTrigger>
+                <TabsTrigger size="xs" value="worktrees">
+                  Worktrees ({worktreeCount})
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="diff" className="mt-0 min-h-0 overflow-hidden">
+                {diffPanel}
+              </TabsContent>
+              <TabsContent value="worktrees" className="mt-0 min-h-0 overflow-hidden">
+                {worktreeList}
+              </TabsContent>
+            </Tabs>
           </section>
         </aside>
       ) : null}

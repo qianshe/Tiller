@@ -18,6 +18,10 @@ const sidebarProjectNodeSource = readFileSync(
 const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
+const missionViewModelSource = readFileSync(
+  resolve(currentDir, "../orchestration/mission-view-model.ts"),
+  "utf8",
+);
 const missionSelectionEffectsSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-selection-effects.ts"),
   "utf8",
@@ -46,6 +50,25 @@ const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layou
 const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash-commands.ts"), "utf8");
 const sessionEventsSource = readFileSync(resolve(currentDir, "../../server-events/session-events.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
+
+test("mission message history loading also advances artifact history for thinking cards", () => {
+  const historyPaginationSource = readFileSync(resolve(currentDir, "../hooks/history-pagination.ts"), "utf8");
+
+  assert.match(historyPaginationSource, /function loadOlderActivities/);
+  assert.match(historyPaginationSource, /const canLoadMessages =/);
+  assert.match(historyPaginationSource, /const canLoadActivities =/);
+  assert.match(historyPaginationSource, /!canLoadMessages && !canLoadActivities/);
+  assert.match(historyPaginationSource, /if \(canLoadMessages\)/);
+  assert.match(historyPaginationSource, /if \(canLoadActivities\)/);
+});
+
+test("mission chat history state includes activity history for thinking-only pages", () => {
+  assert.match(worktreeSource, /activityHistoryState=\{activityHistoryState\}/);
+  assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
+  assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryState\}/);
+  assert.match(messageTimelineSource, /resolveConversationHistoryState/);
+  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\| activityHistoryState\?\.hasMore/);
+});
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
@@ -110,6 +133,28 @@ test("ACP model loading badge is not limited to OpenCode", () => {
   assert.match(composerSource, /selectedDraftAgent\?\.protocol === "acp"/);
   assert.doesNotMatch(composerSource, /selectedDraftAgent\?\.id === "opencode"/);
 });
+
+test("mission composer uses restore-aware model loading state", () => {
+  assert.match(worktreeModelSource, /composerModelLoading/);
+  assert.match(worktreeModelSource, /activeSession && !activeSessionRestoreGate\.canChat/);
+  assert.match(worktreeSource, /draftModelLoading=\{draftModelLoading\}/);
+  assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(activeSession && !activeSessionRestoreGate\.canChat\)\}/);
+});
+
+test("mission composer requires active-session config readiness before settings can open", () => {
+  assert.match(missionViewModelSource, /const draftModelConfigReady = activeSession/);
+  assert.match(missionViewModelSource, /const draftLoadingAgentModelOptions = !activeSession && draftAgentModelOptionsPrefix/);
+  assert.match(missionViewModelSource, /sessionConfigOptions\[activeSession\.id\]/);
+  assert.match(missionViewModelSource, /activeSession\.configOptions\?\.length/);
+  assert.match(missionViewModelSource, /activeSession\.modelOptions\?\.length/);
+  assert.match(missionViewModelSource, /\|\|\s*\(activeSession\.configOptions\?\.length \?\? 0\) > 0/);
+  assert.match(worktreeSource, /draftModelConfigReady=\{draftModelConfigReady\}/);
+  assert.match(composerSource, /const modelConfigMissing = activeSession/);
+  assert.match(composerSource, /\? !draftModelConfigReady/);
+  assert.match(composerSource, /const modelSettingsDisabled = activeSession/);
+  assert.match(composerSource, /\? \(modelConfigMissing && !activeSessionModelKnown\) \|\| modelSettingsLocked/);
+});
+
 
 test("mission composer falls back to active session available commands", () => {
   assert.match(appRootSource, /activeSessionSlashCommands/);
@@ -182,7 +227,7 @@ test("mission display page navigation is placed above the content", () => {
 
 test("mission display panel header uses compact height", () => {
   assert.match(displayPanelSource, /MissionPanelHeader/);
-  assert.match(displayPanelSource, /mission-display-add-page-button[^\n]+size-7/);
+  assert.doesNotMatch(displayPanelSource, /mission-display-add-page-button/);
   assert.match(displayPanelSource, /title="任务展示"/);
   assert.match(displayPanelSource, /bordered/);
   assert.doesNotMatch(displayPanelSource, /<p className="eyebrow[^>]*>展示<\/p>/);

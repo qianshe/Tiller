@@ -1,4 +1,4 @@
-import { cn } from "../../../shared/utils/cn";
+import { Tabs, TabsList, TabsTrigger } from "../../../shared/ui/tabs";
 import { resolveMissionPanelIcon } from "./diff-tree";
 
 export type MissionPanelPage = {
@@ -20,25 +20,31 @@ export function MissionPanelNav({
   onDrop: (pageId: string) => void;
 }) {
   return (
-    <nav className="mission-panel-tree flex gap-1 overflow-x-auto border-b border-border-ghost bg-surface-sunken/60 p-2" aria-label="展示页">
-      {pages.map((page) => {
-        const custom = page.id.startsWith("custom-");
-        return (
-          <button
-            className={cn("mission-panel-node inline-flex min-h-10 min-w-20 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground", selectedPageId === page.id && "active bg-primary-soft text-primary")}
-            draggable={custom}
-            key={page.id}
-            type="button"
-            onClick={() => onSelect(page.id)}
-            onDragStart={() => custom ? onDragStart(page.id) : undefined}
-            onDragOver={(event) => { if (custom) event.preventDefault(); }}
-            onDrop={() => custom ? onDrop(page.id) : undefined}
-          >
-            <span className="mission-panel-node-icon text-base">{resolveMissionPanelIcon(page.id)}</span>
-            <span>{page.title}</span>
-          </button>
-        );
-      })}
-    </nav>
+    <Tabs value={selectedPageId} onValueChange={onSelect}>
+      <TabsList
+        size="sm"
+        aria-label="展示页"
+        className="mission-panel-tree flex w-full justify-start gap-0.5 overflow-x-auto rounded-none border-b border-border-ghost bg-transparent"
+      >
+        {pages.map((page) => {
+          const custom = page.id.startsWith("custom-");
+          return (
+            <TabsTrigger
+              key={page.id}
+              size="xs"
+              value={page.id}
+              draggable={custom}
+              onDragStart={() => (custom ? onDragStart(page.id) : undefined)}
+              onDragOver={(event) => { if (custom) event.preventDefault(); }}
+              onDrop={() => (custom ? onDrop(page.id) : undefined)}
+              className="gap-1"
+            >
+              <span className="text-sm">{resolveMissionPanelIcon(page.id)}</span>
+              <span>{page.title}</span>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }

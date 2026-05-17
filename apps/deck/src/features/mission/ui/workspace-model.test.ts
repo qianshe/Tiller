@@ -76,6 +76,24 @@ test("worktree model blocks sending while historical session is restoring", () =
   assert.match(model.activeSessionRestoreGate.message, /正在恢复 ACP 会话/);
 });
 
+test("worktree model marks composer model controls loading while ACP session is restoring", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: {
+      ...baseInput().activeSession,
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+      },
+    },
+    resumeStartRequestsRef: { current: new Set(["session-1"]) },
+    draftModelLoading: false,
+  }));
+
+  assert.equal(model.composerModelLoading, true);
+});
+
+
 test("worktree model allows sending once restored to same-process runtime", () => {
   const model = buildMissionWorktreeModel(baseInput());
 

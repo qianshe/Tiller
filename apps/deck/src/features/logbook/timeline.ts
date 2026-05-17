@@ -28,6 +28,7 @@ export type ConversationToolCallItem = {
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
   text: string;
+  input: string;
   streams: Array<CommandChunk["stream"]>;
 };
 
@@ -92,12 +93,14 @@ export function groupToolCalls(
         toolKind: call.kind,
         timestamp: call.timestamp,
         text: call.output ?? "",
+        input: call.input ?? "",
         streams: call.stream ? [call.stream] : [],
       });
       continue;
     }
 
     current.text = `${current.text}${call.output ?? ""}`;
+    current.input = current.input || call.input || "";
     if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
       current.timestamp = call.timestamp;
     }
@@ -149,6 +152,7 @@ export function mergeToolCallHistory(
     merged[index] = {
       ...existing,
       ...next,
+      kind: resolveToolCallKind(existing.kind, next.kind),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
       output: `${existing.output ?? ""}${next.output ?? ""}`,
       input: next.input ?? existing.input,
@@ -163,6 +167,34 @@ export function mergeToolCallHistory(
   return merged.sort(
     (left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
   );
+}
+
+function resolveToolCallKind(
+  currentKind: AgentToolCall["kind"],
+  incomingKind: AgentToolCall["kind"],
+) {
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCall["kind"],
+  currentKind: AgentToolCall["kind"],
+) {
+  const rank: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 3,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
 }
 
 export {

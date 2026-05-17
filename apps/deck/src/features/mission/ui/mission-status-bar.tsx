@@ -3,8 +3,8 @@ type MissionStatusBarProps = {
   promptEnhancing: boolean;
 };
 
-const MODEL_LOADING_LABEL = "模型加载中";
-const PROMPT_ENHANCING_LABEL = "增强中";
+const MODEL_LOADING_LABEL = "模型加载中...";
+const PROMPT_ENHANCING_LABEL = "增强中...";
 
 export function MissionStatusBar({
   modelLoading,

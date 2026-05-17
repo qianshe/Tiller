@@ -284,22 +284,7 @@ export function MissionDisplayPanel({
       aria-label="任务展示容器"
       data-mission-mobile-pane="display"
     >
-      <MissionPanelHeader
-        title="任务展示"
-        bordered
-        action={
-          <Button
-            size="icon"
-            variant="outline"
-            type="button"
-            className="mission-display-add-page-button size-7 !text-sm"
-            onClick={onAddPage}
-            aria-label="增加展示页"
-          >
-            ＋
-          </Button>
-        }
-      />
+      <MissionPanelHeader title="任务展示" bordered />
       <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
         {" "}
         <MissionPanelNav

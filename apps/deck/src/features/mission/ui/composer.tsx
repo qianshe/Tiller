@@ -84,6 +84,8 @@ type MissionComposerProps = {
   draftModelPickerDisabled: boolean;
   draftModelPickerLabel: string;
   draftModelLoading: boolean;
+  draftModelConfigReady: boolean;
+  modelSettingsLocked: boolean;
   draftModelBaseOptions: string[];
   resolveReasoningOptionsForModel: (
     model: string,
@@ -157,6 +159,8 @@ export function MissionComposer({
   draftModelPickerDisabled,
   draftModelPickerLabel,
   draftModelLoading,
+  draftModelConfigReady,
+  modelSettingsLocked,
   draftModelBaseOptions,
   resolveReasoningOptionsForModel,
   draftAllModelOptions,
@@ -176,9 +180,16 @@ export function MissionComposer({
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const modelSettingsLoading =
-    draftModelLoading ||
-    (!activeSession && selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0);
+  const activeSessionModelKnown = Boolean(activeSession?.model?.trim());
+  const modelConfigMissing = activeSession
+    ? !draftModelConfigReady
+    : selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0;
+  const modelConfigLoading = activeSession
+    ? modelConfigMissing && !activeSessionModelKnown
+    : draftModelLoading || modelConfigMissing;
+  const modelSettingsDisabled = activeSession
+    ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked
+    : modelConfigMissing || draftModelLoading || modelSettingsLocked;
   const showInterruptOnly = Boolean(activeSession && sessionCanCancel);
 
 
@@ -234,10 +245,10 @@ export function MissionComposer({
               aria-haspopup="menu"
               aria-expanded={toolsOpen}
               aria-label="打开任务设置"
-              title="打开任务设置"
-              disabled={modelSettingsLoading}
+              title="模型设置"
+              disabled={modelSettingsDisabled}
               onClick={() => {
-                if (modelSettingsLoading) {
+                if (modelSettingsDisabled) {
                   return;
                 }
                 setToolsOpen((current) => !current);
@@ -278,7 +289,7 @@ export function MissionComposer({
             >
               +
             </Button>
-            {toolsOpen && !modelSettingsLoading ? (
+            {toolsOpen && !modelSettingsDisabled ? (
               <div
                 className="mission-tools-menu absolute bottom-full left-0 z-50 mb-2 grid w-56 max-w-[calc(100vw-3rem)] gap-3 overflow-visible rounded-lg border border-border-ghost bg-popover-glass p-3 shadow-ambient backdrop-blur-2xl"
                 role="menu"
@@ -299,7 +310,7 @@ export function MissionComposer({
                     modelPlaceholder={draftModelPlaceholder}
                     modelDisabled={draftModelPickerDisabled}
                     modelLabel={draftModelPickerLabel}
-                    modelLoading={modelSettingsLoading}
+                    modelLoading={modelConfigLoading}
                     modelBaseOptions={draftModelBaseOptions}
                     resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
                     allModelOptions={draftAllModelOptions}
@@ -316,7 +327,7 @@ export function MissionComposer({
             ) : null}
           </div>
           <MissionStatusBar
-            modelLoading={modelSettingsLoading}
+            modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
           />
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
@@ -339,12 +350,15 @@ export function MissionComposer({
                 variant="destructive"
                 size="icon"
                 type="button"
-                className="mission-cancel-session-button size-12 rounded-2xl bg-destructive text-base font-bold text-white shadow-ambient hover:bg-destructive/90"
+                className="mission-cancel-session-button size-7 rounded-full bg-destructive !text-sm font-bold text-white shadow-ambient hover:bg-destructive/90"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
               >
-                ■
+                <span
+                  aria-hidden="true"
+                  className="mission-cancel-session-stop-icon block size-1.5 rounded-[1px] bg-current"
+                />
               </Button>
             ) : null}
             {!showInterruptOnly ? (

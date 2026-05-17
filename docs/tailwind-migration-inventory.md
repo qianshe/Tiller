@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1811
+- Total lines: 1818
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 798
-- Top-level selectors: 143
+- Lines: 794
+- Top-level selectors: 141
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -55,12 +55,9 @@ Selectors:
 - `.mission-responsive-mode .mission-panel-tree`
 - `.mission-responsive-mode .mission-permission-drawer`
 - `.mission-responsive-mode .mission-session-meta`
-- `.mission-responsive-mode .mission-session-metric`
-- `.mission-responsive-mode .mission-session-metrics`
 - `.mission-responsive-mode .mission-session-overview`
 - `.mission-responsive-mode .mission-session-overview-content`
 - `.mission-responsive-mode .mission-session-overview-header`
-- `.mission-responsive-mode .mission-session-preview`
 - `.mission-responsive-mode [data-mission-mobile-pane]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [role="button"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] a`
@@ -77,6 +74,7 @@ Selectors:
 - `.mission-responsive-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"]`
 - `.mission-status-scroll`
 - `.mission-status-scroll::-webkit-scrollbar`
+- `.mission-tools-trigger:disabled`
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
 - `.motion-reduced *`
@@ -167,7 +165,7 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 290
+- Lines: 301
 - Top-level selectors: 5
 - Hard-coded color tokens: 88
 
