@@ -116,6 +116,11 @@ h3 {
   scroll-padding-block: 10px;
 }
 
+.chat-main,
+.mission-responsive-mode [data-mission-mobile-pane="chat"] {
+  scrollbar-gutter: stable;
+}
+
 .compact {
   margin-top: 4px;
 }
@@ -375,9 +380,9 @@ h3 {
     z-index: 5;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    min-height: 16px;
+    min-height: 3px;
     gap: 8px;
-    padding: 4px 14px max(4px, env(safe-area-inset-bottom));
+    padding: 2px 14px max(2px, env(safe-area-inset-bottom));
     border-top: 0;
     background: var(--color-surface);
   }
@@ -387,7 +392,7 @@ h3 {
     align-items: center;
     justify-content: center;
     gap: 0;
-    min-height: 8px;
+    min-height: 3px;
     padding: 0;
     border-radius: 999px;
     background: transparent;
@@ -541,22 +546,12 @@ h3 {
   }
 
   .mission-responsive-mode .mission-session-overview-header,
-  .mission-responsive-mode .mission-session-meta,
-  .mission-responsive-mode .mission-session-preview {
+  .mission-responsive-mode .mission-session-meta {
     display: none;
   }
 
-  .mission-responsive-mode .mission-session-overview-content,
-  .mission-responsive-mode .mission-session-metrics {
+  .mission-responsive-mode .mission-session-overview-content {
     gap: 6px;
-  }
-
-  .mission-responsive-mode .mission-session-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .mission-responsive-mode .mission-session-metric {
-    padding: 6px 8px;
   }
 
   .mission-responsive-mode .mission-composer {
@@ -596,9 +591,9 @@ h3 {
   }
 
   .mission-responsive-mode:focus-within .mission-mobile-pager {
-    min-height: 16px;
-    padding-top: 4px;
-    padding-bottom: max(4px, env(safe-area-inset-bottom));
+    min-height: 3px;
+    padding-top: 2px;
+    padding-bottom: max(2px, env(safe-area-inset-bottom));
   }
 
   .mission-responsive-mode:focus-within .mission-mobile-pager-label {
@@ -785,5 +780,19 @@ h3 {
 [data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184 / 0.68);
   background-clip: padding-box;
+}
+
+.mission-tools-trigger:disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.mission-status-scroll {
+  scrollbar-width: none;
+}
+
+.mission-status-scroll::-webkit-scrollbar {
+  display: none;
 }
 

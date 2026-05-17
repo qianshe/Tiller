@@ -72,9 +72,6 @@ export function SessionRow({
         </span>
         <span className="mission-tree-main grid min-w-0 gap-0.5">
           <strong className="min-w-0 truncate font-medium leading-tight">{title}</strong>
-          <span className="mission-tree-session-meta flex min-w-0 items-center truncate text-xs text-muted-foreground">
-            <span className="truncate">{session.agentName}</span>
-          </span>
         </span>
         <span className="mission-tree-session-side grid min-w-8 shrink-0 justify-items-end gap-0.5">
           {worktreeLabel ? (

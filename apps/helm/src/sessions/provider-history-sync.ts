@@ -60,6 +60,14 @@ export function toParagraphMessages(providerMessages: AgentMessage[]): AgentMess
   return providerMessages.flatMap((message) => splitMessageIntoParagraphs(message));
 }
 
+export function filterNewProviderHistoryMessages(
+  localMessages: AgentMessage[],
+  incomingMessages: AgentMessage[],
+): AgentMessage[] {
+  const existingIds = new Set(localMessages.map((message) => message.id));
+  return incomingMessages.filter((message) => !existingIds.has(message.id));
+}
+
 export function shouldRepairProviderHistorySnapshot(
   localMessages: AgentMessage[],
   providerMessages: AgentMessage[],

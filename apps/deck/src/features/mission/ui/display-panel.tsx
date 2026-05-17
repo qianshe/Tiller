@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Button, Card, CardContent, Input } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { formatDiffStatus, renderDiffPatch, renderDiffStats } from "./diff-tree";
+import { MissionPanelHeader } from "./panel-header";
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
 
 type OverviewItem = {
@@ -18,8 +19,8 @@ function parseOverviewItem(item: string): OverviewItem {
   };
 }
 
-function isWideOverviewItem(label: string): boolean {
-  return label === "路径" || label === "摘要";
+function isWorktreeOverviewItem(label: string): boolean {
+  return label.toLowerCase() === "worktree";
 }
 
 export type RuntimeOverviewItem = {
@@ -32,6 +33,7 @@ export type RuntimeOverviewItem = {
   status: string;
   runtimeSessionId: string;
   model?: string;
+  reasoningEffort?: string;
   canConnect?: boolean;
   canReconnect?: boolean;
   children?: Array<{
@@ -40,6 +42,7 @@ export type RuntimeOverviewItem = {
     branchName: string;
     status: string;
     model?: string;
+    reasoningEffort?: string;
   }>;
 };
 
@@ -59,12 +62,24 @@ function runtimeStatusBadgeClass(status: string): string {
   return "bg-primary-soft text-primary";
 }
 
+function formatRuntimeChildMeta(child: NonNullable<RuntimeOverviewItem["children"]>[number]) {
+  return [
+    child.branchName,
+    child.status,
+    child.model,
+    child.reasoningEffort ? `推理 ${child.reasoningEffort}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 type MissionDisplayPanelProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
   selectedPage: MissionPanelPage;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
+  currentModelSummary?: string | null;
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
@@ -84,6 +99,7 @@ export function MissionDisplayPanel({
   selectedPage,
   overviewItems,
   runtimeOverviewItems,
+  currentModelSummary,
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
@@ -162,30 +178,25 @@ export function MissionDisplayPanel({
         </div>
       );
     }
+    const worktreeOverviewItems = overviewItems
+      .map(parseOverviewItem)
+      .filter((item) => isWorktreeOverviewItem(item.label));
     return (
       <div className="mission-panel-page mission-overview-page grid gap-3">
-        {overviewItems.length ? (
-          <div className="mission-overview-grid grid grid-cols-2 gap-2 max-xl:grid-cols-1">
-            {overviewItems.map((item) => {
-              const overviewItem = parseOverviewItem(item);
+        {worktreeOverviewItems.length ? (
+          <div className="mission-overview-grid grid gap-2">
+            {worktreeOverviewItems.map((overviewItem) => {
               return (
                 <Card
-                  key={item}
-                  className={cn(
-                    "mission-overview-card border-border-ghost bg-surface-sunken shadow-none",
-                    isWideOverviewItem(overviewItem.label) && "col-span-2 max-xl:col-span-1",
-                  )}
+                  key={`${overviewItem.label}:${overviewItem.value}`}
+                  className="mission-overview-card border-border-ghost bg-surface-sunken shadow-none"
                 >
                   <CardContent className="grid gap-1 p-3">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {overviewItem.label}
                     </span>
                     <strong
-                      className={cn(
-                        "text-sm font-semibold leading-relaxed text-foreground",
-                        overviewItem.label === "路径" && "break-all font-mono text-xs",
-                        overviewItem.label === "摘要" && "font-normal text-muted-foreground",
-                      )}
+                      className="min-w-0 truncate text-sm font-semibold leading-snug text-foreground"
                     >
                       {overviewItem.value}
                     </strong>
@@ -196,9 +207,14 @@ export function MissionDisplayPanel({
           </div>
         ) : (
           <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
-            选择左侧任务后显示项目信息
+            选择左侧任务后显示 Worktree 信息
           </div>
         )}
+        {currentModelSummary ? (
+          <div className="mission-current-model-line rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+            {currentModelSummary}
+          </div>
+        ) : null}
         <Card className="mission-runtime-overview border-border-ghost bg-surface-sunken shadow-none">
           <CardContent className="grid gap-2 p-3">
             <div className="flex items-center justify-between gap-2">
@@ -255,7 +271,7 @@ export function MissionDisplayPanel({
                           <li key={child.id} className="grid gap-0.5 rounded bg-surface-sunken px-2 py-1">
                             <span className="font-medium text-foreground">{child.projectName}</span>
                             <span>
-                              {child.branchName} · {child.status}{child.model ? ` · ${child.model}` : ""}
+                              {formatRuntimeChildMeta(child)}
                             </span>
                           </li>
                         ))}
@@ -283,24 +299,7 @@ export function MissionDisplayPanel({
       aria-label="任务展示容器"
       data-mission-mobile-pane="display"
     >
-      {" "}
-      <div className="mission-panel-head flex items-start justify-between gap-3 border-b border-border-ghost p-3">
-        {" "}
-        <div>
-          {" "}
-          <p className="eyebrow text-xs font-semibold uppercase tracking-wider text-muted-foreground">展示</p> <h3 className="text-base font-semibold text-foreground">任务展示</h3>{" "}
-        </div>{" "}
-        <Button
-          size="icon"
-          variant="outline"
-          type="button"
-          onClick={onAddPage}
-          aria-label="增加展示页"
-        >
-          {" "}
-          ＋{" "}
-        </Button>{" "}
-      </div>{" "}
+      <MissionPanelHeader title="任务展示" bordered />
       <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
         {" "}
         <MissionPanelNav

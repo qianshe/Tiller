@@ -116,7 +116,7 @@ function isHigherConfidenceToolKind(
     think: 2,
     todo: 2,
     fetch: 2,
-    search: 2,
+    search: 3,
     read: 3,
     write: 3,
     shell: 3,
@@ -132,7 +132,7 @@ function resolveToolCallInput(currentInput: string | undefined, incomingInput: s
 }
 
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
-  if (isInformativeToolCallTitle(incomingTitle, id)) {
+  if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
     return incomingTitle;
   }
   return currentTitle || incomingTitle || id;

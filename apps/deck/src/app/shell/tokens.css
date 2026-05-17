@@ -7,11 +7,22 @@
   --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  --radius: 0.75rem;
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
+  --radius: 0.5rem;     /* 8px  (was 12px) */
+  --radius-sm: 0.25rem; /* 4px  (was 8px)  */
+  --radius-md: 0.5rem;  /* 8px  (was 12px) */
+  --radius-lg: 0.75rem; /* 12px (was 16px) */
   --radius-full: 9999px;
+
+  /* Control density tokens — single source for button/tab/toolbar heights & paddings.
+     Use via h-[var(--control-h-*)] / px-[var(--control-px-*)] in cva variants. */
+  --control-h-xs: 1.75rem; /* 28px - dense toolbars */
+  --control-h-sm: 2rem;    /* 32px - tabs, sm buttons */
+  --control-h-md: 2.5rem;  /* 40px - default buttons, icon buttons */
+  --control-h-lg: 3rem;    /* 48px - lg buttons / hero CTAs */
+  --control-px-xs: 0.625rem; /* 10px */
+  --control-px-sm: 0.75rem;  /* 12px */
+  --control-px-md: 1rem;     /* 16px */
+  --control-px-lg: 1.5rem;   /* 24px */
 }
 
 @layer base {

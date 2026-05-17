@@ -257,6 +257,42 @@ test("session artifact store keeps tool kind title and input when later updates 
   }
 });
 
+test("session artifact store treats Tool call fallback titles as weak sparse updates", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-tool-fallback-title-"));
+
+  try {
+    const store = mod.createSessionArtifactStore(tempRoot);
+    store.appendToolCall("session-1", {
+      id: "toolu_01Read",
+      kind: "read",
+      title: "Read",
+      input: JSON.stringify({ file_path: "apps/deck/src/app.tsx" }),
+      status: "running",
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+    });
+    store.appendToolCall("session-1", {
+      id: "toolu_01Read",
+      kind: "tool",
+      title: "Tool call toolu_01R...",
+      status: "completed",
+      output: "ok",
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+    });
+
+    const tool = store.get("session-1").toolCalls[0];
+    assert.equal(tool?.kind, "read");
+    assert.equal(tool?.title, "Read");
+    assert.equal(tool?.input, JSON.stringify({ file_path: "apps/deck/src/app.tsx" }));
+    assert.equal(tool?.status, "completed");
+    assert.equal(tool?.output, "ok");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session artifact store normalizes legacy terminal and edit tool kinds", async () => {
   const mod = await import("./artifact-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-legacy-kind-"));

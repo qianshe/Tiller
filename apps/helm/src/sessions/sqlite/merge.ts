@@ -26,6 +26,7 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
   return {
     ...current,
     ...incoming,
+    kind: resolveToolCallKind(current.kind, incoming.kind),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     output: `${current.output ?? ""}${incoming.output ?? ""}`,
     input: incoming.input ?? current.input,
@@ -148,11 +149,43 @@ function collapseExactRepeatedText(text: string) {
   return text;
 }
 
+function resolveToolCallKind(
+  currentKind: AgentToolCall["kind"],
+  incomingKind: AgentToolCall["kind"],
+) {
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCall["kind"],
+  currentKind: AgentToolCall["kind"],
+) {
+  const rank: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 3,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
-  if (isInformativeToolCallTitle(incomingTitle, id)) {
+  if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
     return incomingTitle;
   }
   return currentTitle || incomingTitle || id;
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
 function isInformativeToolCallTitle(title: string | undefined, id: string) {

@@ -19,9 +19,6 @@ type LogbookPanelCopy = {
 
 type LogbookPanelProps = {
   activeSession: SessionSummary | null;
-  statusLabel: string;
-  diffCount: number;
-  logCount: number;
   sessionToolCalls: AgentToolCall[];
   commandChunks: CommandChunk[];
   sessionMessages: AgentMessage[];
@@ -34,13 +31,10 @@ type LogbookPanelProps = {
 };
 
 /**
- * Combines session metrics and activity timeline for the mission logbook page.
+ * Combines recent session activity and the activity timeline for the mission logbook page.
  */
 export function LogbookPanel({
   activeSession,
-  statusLabel,
-  diffCount,
-  logCount,
   sessionToolCalls,
   commandChunks,
   sessionMessages,
@@ -56,9 +50,6 @@ export function LogbookPanel({
       <div className="mission-logbook-summary min-h-0">
         <SessionOverviewCard
           activeSession={activeSession}
-          statusLabel={statusLabel}
-          diffCount={diffCount}
-          logCount={logCount}
         />
       </div>
       <div

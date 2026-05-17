@@ -83,13 +83,21 @@ export function useHistoryPagination({
 
   function loadOlderMessages(sessionId: string) {
     const client = getOpenClient(rpcClientRef);
-    const historyState = messageHistoryState[sessionId];
-    if (
-      !client ||
-      historyState?.loading ||
-      !historyState?.hasMore ||
-      !historyState.nextCursor
-    ) {
+    const messageState = messageHistoryState[sessionId];
+    const activityState = activityHistoryState[sessionId];
+    const canLoadMessages = Boolean(
+      messageState &&
+        !messageState.loading &&
+        messageState.hasMore &&
+        messageState.nextCursor,
+    );
+    const canLoadActivities = Boolean(
+      activityState &&
+        !activityState.loading &&
+        activityState.hasMore &&
+        activityState.nextCursor,
+    );
+    if (!client || (!canLoadMessages && !canLoadActivities)) {
       return;
     }
     if (activeSessionId === sessionId && chatMainRef.current) {
@@ -98,19 +106,24 @@ export function useHistoryPagination({
         scrollTop: chatMainRef.current.scrollTop,
       };
     }
-    setMessageHistoryState((current) => ({
-      ...current,
-      [sessionId]: {
-        hasMore: current[sessionId]?.hasMore ?? false,
-        ...current[sessionId],
-        loading: true,
-      },
-    }));
-    void dispatch(client, "session/list_messages", {
-      sessionId,
-      limit: messagePageLimit,
-      before: historyState.nextCursor,
-    });
+    if (canLoadMessages) {
+      setMessageHistoryState((current) => ({
+        ...current,
+        [sessionId]: {
+          hasMore: current[sessionId]?.hasMore ?? false,
+          ...current[sessionId],
+          loading: true,
+        },
+      }));
+      void dispatch(client, "session/list_messages", {
+        sessionId,
+        limit: messagePageLimit,
+        before: messageState?.nextCursor,
+      });
+    }
+    if (canLoadActivities) {
+      loadOlderActivities(sessionId);
+    }
   }
 
   function loadOlderActivities(sessionId: string) {

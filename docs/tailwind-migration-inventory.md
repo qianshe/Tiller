@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1803
+- Total lines: 1823
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 790
-- Top-level selectors: 141
+- Lines: 799
+- Top-level selectors: 143
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -22,6 +22,7 @@ Selectors:
 - `.admiral-connected`
 - `.admiral-connecting`
 - `.admiral-disconnected`
+- `.chat-main`
 - `.compact`
 - `.device-mono`
 - `.mission-inspector-section-head > div`
@@ -55,12 +56,9 @@ Selectors:
 - `.mission-responsive-mode .mission-panel-tree`
 - `.mission-responsive-mode .mission-permission-drawer`
 - `.mission-responsive-mode .mission-session-meta`
-- `.mission-responsive-mode .mission-session-metric`
-- `.mission-responsive-mode .mission-session-metrics`
 - `.mission-responsive-mode .mission-session-overview`
 - `.mission-responsive-mode .mission-session-overview-content`
 - `.mission-responsive-mode .mission-session-overview-header`
-- `.mission-responsive-mode .mission-session-preview`
 - `.mission-responsive-mode [data-mission-mobile-pane]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [role="button"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] a`
@@ -68,6 +66,7 @@ Selectors:
 - `.mission-responsive-mode [data-mission-mobile-pane] input`
 - `.mission-responsive-mode [data-mission-mobile-pane] select`
 - `.mission-responsive-mode [data-mission-mobile-pane] textarea`
+- `.mission-responsive-mode [data-mission-mobile-pane="chat"]`
 - `.mission-responsive-mode #mission-prompt-input`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager-label`
@@ -75,6 +74,9 @@ Selectors:
 - `.mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"]`
 - `.mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"]`
 - `.mission-responsive-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"]`
+- `.mission-status-scroll`
+- `.mission-status-scroll::-webkit-scrollbar`
+- `.mission-tools-trigger:disabled`
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
 - `.motion-reduced *`
@@ -165,7 +167,7 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 290
+- Lines: 301
 - Top-level selectors: 5
 - Hard-coded color tokens: 88
 

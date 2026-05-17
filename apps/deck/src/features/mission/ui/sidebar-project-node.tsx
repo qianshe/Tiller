@@ -7,6 +7,7 @@ import type {
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Badge, Button } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import type { MissionMobilePane } from "../hooks/layout";
 import { resolveSessionProjectId } from "../utils/session-derivations";
 import { SessionRow } from "./session-row";
 
@@ -39,6 +40,7 @@ type SidebarProjectNodeProps = {
   formatRelativeTime: (value: string) => string;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   toggleMissionProjectNode: (projectId: string) => void;
+  setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>;
 };
 
 /**
@@ -73,6 +75,7 @@ export function SidebarProjectNode({
   formatRelativeTime,
   setPendingSessionCleanup,
   toggleMissionProjectNode,
+  setSelectedMissionMobilePane,
 }: SidebarProjectNodeProps) {
   const projectNodeSessions = sessions.filter(
     (session) => resolveSessionProjectId(session, projects) === project.id,
@@ -158,6 +161,7 @@ export function SidebarProjectNode({
                 onClick={() => {
                   setAgentPickerOpen(false);
                   selectDraftAgent(agent.id);
+                  setSelectedMissionMobilePane("chat");
                 }}
               >
                 {agent.name}

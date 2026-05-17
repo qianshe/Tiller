@@ -156,6 +156,42 @@ test("streaming assistant chunks do not update session summary state", () => {
   );
 });
 
+test("live thinking tool calls update the chat tool-call store immediately", () => {
+  resetStore();
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = { current: {} };
+  const thinkingToolCall: AgentToolCall = {
+    id: "think-live",
+    kind: "think",
+    title: "Thinking",
+    status: "running",
+    output: "实时 Thinking",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    updatedAt: "2026-05-04T01:00:00.000Z",
+  };
+
+  const handled = applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "tool_call", toolCall: thinkingToolCall } },
+    {
+      toolCallsRef,
+      mergeSessionToolCalls: (sessionId, incoming) => {
+        useDeckStore.getState().setToolCalls((current) => {
+          const next = {
+            ...current,
+            [sessionId]: [...(current[sessionId] ?? []), ...incoming],
+          };
+          toolCallsRef.current = next;
+          return next;
+        });
+      },
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [thinkingToolCall]);
+  assert.deepEqual(toolCallsRef.current.s1, [thinkingToolCall]);
+});
+
 test("device RPC results sync trusted device inventory for the current helm", () => {
   resetStore();
   const device: TrustedDeviceSummary = {

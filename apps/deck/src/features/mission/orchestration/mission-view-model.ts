@@ -211,7 +211,7 @@ const draftAgentModelOptionsPrefix =
   selectedAgentId && selectedCwd
     ? `${selectedAgentId}::${selectedCwd}`
     : null;
-const draftLoadingAgentModelOptions = draftAgentModelOptionsPrefix
+const draftLoadingAgentModelOptions = !activeSession && draftAgentModelOptionsPrefix
   ? Object.entries(agentModelOptions).find(
       ([key, entry]) =>
         Boolean(entry?.loading) &&
@@ -237,6 +237,11 @@ const draftConfigOptions = activeSession
       sessionConfigOptions,
       selectedAgentId,
     ));
+const draftModelConfigReady = activeSession
+  ? (sessionConfigOptions[activeSession.id]?.length ?? 0) > 0 ||
+    (activeSession.configOptions?.length ?? 0) > 0 ||
+    (activeSession.modelOptions?.length ?? 0) > 0
+  : draftConfigOptions.length > 0;
 const cachedModelSession = activeSession
   ? null
   : sessions.find(
@@ -299,7 +304,9 @@ const draftModelPickerLabel = draftModelBaseOptions.length
     ? "加载模型..."
     : "暂无模型列表";
 const draftModelLoading = Boolean(
-  draftAgentModelOptions?.loading || awaitingDraftAgentModelOptions,
+  draftLoadingAgentModelOptions?.loading ||
+    draftAgentModelOptions?.loading ||
+    awaitingDraftAgentModelOptions,
 );
 const draftModelPickerDisabled =
   draftModelBaseOptions.length === 0 && !draftAgentModelOptions?.loading;
@@ -370,6 +377,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     effectiveDraftModelBase,
     draftModelPickerLabel,
     draftModelLoading,
+    draftModelConfigReady,
     draftModelPickerDisabled,
     draftReasoningOptions,
     effectiveDraftReasoningEffort,

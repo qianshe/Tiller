@@ -18,6 +18,7 @@ import {
 } from "../../helm-connection/facade";
 import { Badge, Button } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import type { MissionMobilePane } from "../hooks/layout";
 import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
 type MissionSidebarProps = {
@@ -65,6 +66,7 @@ type MissionSidebarProps = {
     loading: boolean;
   };
   toggleMissionProjectNode: (projectId: string) => void;
+  setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>;
   resizer: ReactNode;
 };
 export function MissionSidebar({
@@ -108,6 +110,7 @@ export function MissionSidebar({
   setPendingSessionCleanup,
   sessionHistoryState,
   toggleMissionProjectNode,
+  setSelectedMissionMobilePane,
   resizer,
 }: MissionSidebarProps) {
   const sidebarClassName = [
@@ -150,9 +153,6 @@ export function MissionSidebar({
                     {projects.length} 个
                   </Badge>
                 </div>
-                <p className="muted compact text-xs leading-relaxed text-muted-foreground">
-                  Helm → Project → Session
-                </p>
               </div>
             </div>
             <div className="mission-tree grid gap-2" role="tree" aria-label="任务层级树">
@@ -269,6 +269,9 @@ export function MissionSidebar({
                               }
                               toggleMissionProjectNode={
                                 toggleMissionProjectNode
+                              }
+                              setSelectedMissionMobilePane={
+                                setSelectedMissionMobilePane
                               }
                             />
                           );

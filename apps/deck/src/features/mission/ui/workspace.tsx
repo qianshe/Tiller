@@ -8,6 +8,7 @@ import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
+import { MissionStatusBar } from "./mission-status-bar";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
@@ -149,6 +150,7 @@ export function MissionWorktree(props: any) {
     draftModelPickerDisabled,
     draftModelPickerLabel,
     draftModelLoading,
+    draftModelConfigReady,
     draftModelBaseOptions,
     resolveReasoningOptionsForModel,
     draftAllModelOptions,
@@ -212,6 +214,7 @@ export function MissionWorktree(props: any) {
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
+    composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
   const rawWorktreeOptions = hasWorktreeScope
@@ -349,6 +352,7 @@ export function MissionWorktree(props: any) {
           branchName: worktree?.name ?? session?.worktreeName ?? connection.worktreeName ?? connection.cwd,
           status: statusLabel,
           model: session?.model ?? runtimeSession.model,
+          reasoningEffort: session?.reasoningEffort ?? runtimeSession.reasoningEffort,
         };
       });
       const reconnectKey = acpReconnectKey(connection.providerId, connection.cwd);
@@ -366,6 +370,7 @@ export function MissionWorktree(props: any) {
           Math.max(0, (connection.activeSessionCount ?? children.length) - (connection.pendingSessionCount ?? 0)),
         ),
         model: children[0]?.model,
+        reasoningEffort: children[0]?.reasoningEffort,
         canReconnect: !reconnectPending,
         canConnect: reconnectPending,
         children,
@@ -388,6 +393,7 @@ export function MissionWorktree(props: any) {
         status: activeSessionRestoreGate.canChat ? "已连接" : "连接中",
         runtimeSessionId: formatRuntimeSessionCount(1, activeSessionRestoreGate.canChat ? 1 : 0),
         model: activeSession.model,
+        reasoningEffort: activeSession.reasoningEffort,
         canReconnect: true,
         canConnect: false,
         children: [
@@ -397,6 +403,7 @@ export function MissionWorktree(props: any) {
             branchName: worktree?.name ?? activeSession.worktreeName ?? activeSession.cwd,
             status: copy.status[status] ?? status,
             model: activeSession.model,
+            reasoningEffort: activeSession.reasoningEffort,
           },
         ],
       });
@@ -421,6 +428,7 @@ export function MissionWorktree(props: any) {
         status: entry.loading ? "预热中" : "已预热",
         runtimeSessionId: `${worktreeName} · 预热连接`,
         model: entry.state?.model,
+        reasoningEffort: entry.state?.reasoningEffort,
         canReconnect: true,
       });
     }
@@ -556,6 +564,7 @@ export function MissionWorktree(props: any) {
           setPendingSessionCleanup={setPendingSessionCleanup}
           sessionHistoryState={sessionHistoryState}
           toggleMissionProjectNode={toggleMissionProjectNode}
+          setSelectedMissionMobilePane={setSelectedMissionMobilePane}
           resizer={
             !isMissionMobile && !effectiveSidebarCollapsed ? (
               <MissionPaneResizer
@@ -579,6 +588,7 @@ export function MissionWorktree(props: any) {
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
+          activityHistoryState={activityHistoryState}
           onLoadOlderMessages={loadOlderMessages}
           onToggleExpandedMessage={toggleExpandedMessage}
           activityLoading={missionActivityLoading}
@@ -597,6 +607,10 @@ export function MissionWorktree(props: any) {
               <span>
                 {selectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
               </span>
+              <MissionStatusBar
+                modelLoading={Boolean(draftConnectionEntry?.loading ?? selectedAgentId)}
+                promptEnhancing={false}
+              />
             </div>
           ) : null}
           {shouldShowRestoreGateNotice ? (
@@ -657,7 +671,9 @@ export function MissionWorktree(props: any) {
               draftModelPlaceholder={draftModelPlaceholder}
               draftModelPickerDisabled={draftModelPickerDisabled}
               draftModelPickerLabel={draftModelPickerLabel}
-              draftModelLoading={draftModelLoading}
+              draftModelLoading={composerModelLoading}
+              draftModelConfigReady={draftModelConfigReady}
+              modelSettingsLocked={Boolean(activeSession && !activeSessionRestoreGate.canChat)}
               draftModelBaseOptions={draftModelBaseOptions}
               resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
               draftAllModelOptions={draftAllModelOptions}
@@ -689,16 +705,14 @@ export function MissionWorktree(props: any) {
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
             selectedPage={selectedMissionPanelPage}
-            diffCount={missionDiffCount}
-            logCount={missionLogCount}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
+            currentModelSummary={`当前模型：${draftModelPickerLabel} · 推理：${resolveReasoningLabel(effectiveDraftReasoningEffort)}`}
             selectedDiffFilePath={selectedMissionDiffFilePath}
             diffs={activeDiffs}
             noDiffSummary={copy.noDiffSummary}
             onReconnectRuntime={reconnectAcpRuntime}
             activeSession={activeSession}
-            statusLabel={missionStatusLabel}
             sessionToolCalls={activeToolCalls}
             commandChunks={activeOutputs}
             sessionMessages={activeSessionMessages}

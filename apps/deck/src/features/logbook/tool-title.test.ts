@@ -95,6 +95,60 @@ test("resolveToolCallTone distinguishes read and write kinds", () => {
   });
 });
 
+
+test("groupToolCalls uses structured file paths for read and write titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-read",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({ file_path: "D:\\myProject\\tools\\Tiller\\apps\\deck\\src\\features\\logbook\\timeline.ts" }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-edit",
+      kind: "write",
+      title: "Edit",
+      status: "completed",
+      input: JSON.stringify({ file_path: "apps/deck/src/features/logbook/activity-log-panel.tsx" }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "apps/deck/src/features/logbook/timeline.ts");
+  assert.equal(grouped[1]?.title, "apps/deck/src/features/logbook/activity-log-panel.tsx");
+});
+
+
+test("groupToolCalls summarizes search tools from structured query inputs", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-grep",
+      kind: "search",
+      title: "Grep",
+      status: "completed",
+      input: JSON.stringify({ pattern: "航行日志", output_mode: "files_with_matches" }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-glob",
+      kind: "search",
+      title: "Glob",
+      status: "completed",
+      input: JSON.stringify({ pattern: "apps/deck/**/*.tsx" }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Grep: 航行日志");
+  assert.equal(grouped[1]?.title, "Glob: apps/deck/**/*.tsx");
+});
+
 test("resolveToolCallTone displays todo as a generic built-in activity", () => {
   assert.deepEqual(resolveToolCallTone("todo", "0 todos"), {
     label: "Todo",

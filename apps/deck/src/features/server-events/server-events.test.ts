@@ -117,6 +117,43 @@ test("session creation results refresh ACP connection inventory when runtime is 
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("session prompt creation clears consumed draft metadata from model options", () => {
+  resetStore();
+  useDeckStore.getState().setAgentModelOptions({
+    "codex::D:/repo::p1": {
+      loading: false,
+      warmed: true,
+      projectId: "p1",
+      draftId: "draft-codex-1",
+      deckClientId: "deck-1",
+      scopeKey: "deck-1:p1:D:/repo:codex",
+      logicalScopeKey: "p1:D:/repo:codex",
+      runtimeSessionId: "runtime-s1",
+      message: "ACP runtime prewarmed.",
+      modelOptions: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+      configOptions: [{ id: "model", label: "Model", type: "string" } as any],
+      state: { model: "gpt-5.5" },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/prompt",
+    { session: { ...session("s1"), runtimeSessionId: "runtime-s1" } },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const entry = useDeckStore.getState().agentModelOptions["codex::D:/repo::p1"];
+  assert.equal(handled, true);
+  assert.equal(entry?.draftId, undefined);
+  assert.equal(entry?.deckClientId, undefined);
+  assert.equal(entry?.scopeKey, undefined);
+  assert.equal(entry?.logicalScopeKey, undefined);
+  assert.equal(entry?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(entry?.modelOptions, [{ id: "gpt-5.5", name: "GPT 5.5" }]);
+});
+
 test("runtime-ready session updates refresh ACP connection inventory", () => {
   resetStore();
   const dispatched: string[] = [];

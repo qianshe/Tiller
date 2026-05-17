@@ -56,6 +56,9 @@ export function buildMissionWorktreeModel(input: any) {
       activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
     ),
   });
+  const composerModelLoading = Boolean(
+    draftModelLoading || (activeSession && !activeSessionRestoreGate.canChat),
+  );
   const canSend = Boolean(
     activeSessionRestoreGate.canChat &&
     activeSessionStatus !== "starting" &&
@@ -63,7 +66,7 @@ export function buildMissionWorktreeModel(input: any) {
     socketRef.current &&
     (activeSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
-    (!draftModelLoading) &&
+    (!composerModelLoading) &&
     (!promptImages.length ||
       !activeSession ||
       activeSession.imageInput !== false),
@@ -174,6 +177,7 @@ export function buildMissionWorktreeModel(input: any) {
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
+    composerModelLoading,
   };
 }
 

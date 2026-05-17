@@ -4,13 +4,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MissionDisplayPanel } from "./display-panel.js";
 
-test("mission overview renders active ACP connections below project cards", () => {
+test("mission overview keeps only worktree, current model and ACP list", () => {
   const html = renderToStaticMarkup(
     createElement(MissionDisplayPanel, {
       style: {},
       pages: [{ id: "overview", title: "概览" }],
       selectedPage: { id: "overview", title: "概览" },
-      overviewItems: ["Project · Tiller"],
+      overviewItems: [
+        "HELM · Local Helm",
+        "PROJECT · Tiller",
+        "WORKTREE · codex/fix-model-config-regression",
+        "路径 · D:/myProject/tools/Tiller",
+        "摘要 · Project: Tiller Worktree: codex/fix-model-config-regression",
+      ],
       runtimeOverviewItems: [
         {
           id: "acp:codex",
@@ -18,6 +24,8 @@ test("mission overview renders active ACP connections below project cards", () =
           meta: "Tiller · main · 空闲",
           status: "ACP",
           runtimeSessionId: "2 个会话",
+          model: "gpt-5.5",
+          reasoningEffort: "high",
           children: [
             {
               id: "session-1",
@@ -25,10 +33,12 @@ test("mission overview renders active ACP connections below project cards", () =
               branchName: "main",
               status: "空闲",
               model: "gpt-5.5",
+              reasoningEffort: "high",
             },
           ],
         },
       ],
+      currentModelSummary: "当前模型：GPT-5.5 · 推理：Medium",
       selectedDiffFilePath: null,
       diffs: [],
       noDiffSummary: "还没有文件变更。",
@@ -46,8 +56,14 @@ test("mission overview renders active ACP connections below project cards", () =
   assert.match(html, /ACP/);
   assert.match(html, /2 个会话/);
   assert.match(html, /Codex/);
-  assert.match(html, /Tiller/);
-  assert.match(html, /main · 空闲 · gpt-5.5/);
+  assert.match(html, /WORKTREE/);
+  assert.ok(html.includes("codex/fix-model-config-regression"));
+  assert.match(html, /当前模型：GPT-5.5 · 推理：Medium/);
+  assert.match(html, /main · 空闲 · gpt-5.5 · 推理 high/);
+  assert.doesNotMatch(html, /HELM/);
+  assert.doesNotMatch(html, /PROJECT/);
+  assert.doesNotMatch(html, /路径/);
+  assert.doesNotMatch(html, /摘要/);
   assert.match(html, /<details[^>]*class="[^"]*mission-runtime-item/);
   assert.doesNotMatch(html, /<details[^>]*\sopen=""/);
 });

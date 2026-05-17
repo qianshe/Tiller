@@ -18,6 +18,10 @@ const sidebarProjectNodeSource = readFileSync(
 const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
+const missionViewModelSource = readFileSync(
+  resolve(currentDir, "../orchestration/mission-view-model.ts"),
+  "utf8",
+);
 const missionSelectionEffectsSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-selection-effects.ts"),
   "utf8",
@@ -28,6 +32,7 @@ const projectFileListSource = readFileSync(
   "utf8",
 );
 const inspectorSource = readFileSync(resolve(currentDir, "inspector.tsx"), "utf8");
+const panelHeaderSource = readFileSync(resolve(currentDir, "panel-header.tsx"), "utf8");
 const logbookPanelSource = readFileSync(resolve(currentDir, "logbook-panel.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
   resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
@@ -45,6 +50,25 @@ const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layou
 const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash-commands.ts"), "utf8");
 const sessionEventsSource = readFileSync(resolve(currentDir, "../../server-events/session-events.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
+
+test("mission message history loading also advances artifact history for thinking cards", () => {
+  const historyPaginationSource = readFileSync(resolve(currentDir, "../hooks/history-pagination.ts"), "utf8");
+
+  assert.match(historyPaginationSource, /function loadOlderActivities/);
+  assert.match(historyPaginationSource, /const canLoadMessages =/);
+  assert.match(historyPaginationSource, /const canLoadActivities =/);
+  assert.match(historyPaginationSource, /!canLoadMessages && !canLoadActivities/);
+  assert.match(historyPaginationSource, /if \(canLoadMessages\)/);
+  assert.match(historyPaginationSource, /if \(canLoadActivities\)/);
+});
+
+test("mission chat history state includes activity history for thinking-only pages", () => {
+  assert.match(worktreeSource, /activityHistoryState=\{activityHistoryState\}/);
+  assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
+  assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryState\}/);
+  assert.match(messageTimelineSource, /resolveConversationHistoryState/);
+  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\| activityHistoryState\?\.hasMore/);
+});
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
@@ -110,6 +134,34 @@ test("ACP model loading badge is not limited to OpenCode", () => {
   assert.doesNotMatch(composerSource, /selectedDraftAgent\?\.id === "opencode"/);
 });
 
+test("mission composer uses restore-aware model loading state", () => {
+  assert.match(worktreeModelSource, /composerModelLoading/);
+  assert.match(worktreeModelSource, /activeSession && !activeSessionRestoreGate\.canChat/);
+  assert.match(worktreeSource, /draftModelLoading=\{composerModelLoading\}/);
+  assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(activeSession && !activeSessionRestoreGate\.canChat\)\}/);
+});
+
+test("mission loading gates render model loading in the state bar", () => {
+  assert.match(worktreeSource, /MissionStatusBar/);
+  assert.match(worktreeSource, /mission-draft-preparing[\s\S]*modelLoading=\{Boolean\(draftConnectionEntry\?\.loading \?\? selectedAgentId\)\}/);
+  assert.doesNotMatch(worktreeSource, /mission-restore-gate[\s\S]*<MissionStatusBar modelLoading=\{true\}/);
+});
+
+test("mission composer requires active-session config readiness before settings can open", () => {
+  assert.match(missionViewModelSource, /const draftModelConfigReady = activeSession/);
+  assert.match(missionViewModelSource, /const draftLoadingAgentModelOptions = !activeSession && draftAgentModelOptionsPrefix/);
+  assert.match(missionViewModelSource, /sessionConfigOptions\[activeSession\.id\]/);
+  assert.match(missionViewModelSource, /activeSession\.configOptions\?\.length/);
+  assert.match(missionViewModelSource, /activeSession\.modelOptions\?\.length/);
+  assert.match(missionViewModelSource, /\|\|\s*\(activeSession\.configOptions\?\.length \?\? 0\) > 0/);
+  assert.match(worktreeSource, /draftModelConfigReady=\{draftModelConfigReady\}/);
+  assert.match(composerSource, /const modelConfigMissing = activeSession/);
+  assert.match(composerSource, /\? !draftModelConfigReady/);
+  assert.match(composerSource, /const modelSettingsDisabled = activeSession/);
+  assert.match(composerSource, /\? \(modelConfigMissing && !activeSessionModelKnown\) \|\| modelSettingsLocked/);
+});
+
+
 test("mission composer falls back to active session available commands", () => {
   assert.match(appRootSource, /activeSessionSlashCommands/);
   assert.match(appRootSource, /missionView\.activeSession\?\.availableCommands/);
@@ -143,6 +195,7 @@ test("mission shell fills the viewport so the project pane stays visible on desk
 test("mission project sidebar uses shared primitives and explicit Tailwind tree rows", () => {
   assert.match(sidebarSource, /Badge/);
   assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
+  assert.doesNotMatch(sidebarSource, /Helm → Project → Session/);
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
@@ -159,7 +212,8 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
   assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)_auto\]/);
-  assert.match(sessionRowSource, /mission-tree-session-meta/);
+  assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
+  assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
   assert.match(sessionRowSource, /mission-tree-worktree-indicator/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
@@ -175,8 +229,25 @@ test("mission display page navigation is placed above the content", () => {
   assert.match(displayPanelSource, /mission-panel-body grid min-h-0 flex-1 grid-rows-\[auto_minmax\(0,1fr\)\]/);
   assert.doesNotMatch(displayPanelSource, /grid-cols-\[72px_minmax\(0,1fr\)\]/);
   assert.match(panelsSource, /mission-panel-tree flex/);
+  assert.match(panelsSource, /overflow-x-auto overflow-y-hidden/);
+  assert.match(panelsSource, /\[scrollbar-width:none\]/);
   assert.match(panelsSource, /border-b border-border-ghost/);
   assert.doesNotMatch(panelsSource, /border-r border-border-ghost/);
+});
+
+test("mission display panel header uses compact height", () => {
+  assert.match(displayPanelSource, /MissionPanelHeader/);
+  assert.doesNotMatch(displayPanelSource, /mission-display-add-page-button/);
+  assert.match(displayPanelSource, /title="任务展示"/);
+  assert.match(displayPanelSource, /bordered/);
+  assert.doesNotMatch(displayPanelSource, /<p className="eyebrow[^>]*>展示<\/p>/);
+  assert.match(inspectorSource, /MissionPanelHeader/);
+  assert.match(inspectorSource, /MissionPanelLoadingBadge/);
+  assert.match(inspectorSource, /className="section-head section-head-soft mission-inspector-section-head"/);
+  assert.match(panelHeaderSource, /PANEL_HEADER_FRAME_CLASS = "flex items-center justify-between gap-2 px-2 py-1\.5"/);
+  assert.match(panelHeaderSource, /PANEL_HEADER_TITLE_CLASS = "text-sm font-semibold leading-tight text-foreground"/);
+  assert.match(panelHeaderSource, /mission-inline-loading[^\n]+px-2[^\n]+py-0\.5[^\n]+text-\[10px\]/);
+  assert.doesNotMatch(inspectorSource, /<p className="eyebrow[^>]*>项目变更<\/p>/);
 });
 
 test("mission project overview renders structured cards instead of raw info text", () => {
@@ -261,6 +332,12 @@ test("mission mobile uses explicit edge paging zones instead of draggable cards"
   assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] button,[\s\S]*?z-index:\s*7;/);
 });
 
+test("mission composer tools trigger advertises disabled affordance", () => {
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*pointer-events:\s*auto;/s);
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*cursor:\s*not-allowed;/s);
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*opacity:\s*0\.6;/s);
+});
+
 const mobilePagerSource = readFileSync(resolve(currentDir, "mobile-pager.tsx"), "utf8");
 
 test("mission mobile pager is compact and exposes four pane destinations", () => {
@@ -270,7 +347,9 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(mobilePagerSource, /面板/);
   assert.match(mobilePagerSource, /检视/);
   assert.match(mobilePagerSource, /aria-label=\{item\.label\}/);
-  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*16px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*3px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*padding:\s*2px 14px max\(2px, env\(safe-area-inset-bottom\)\);/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager-item\s*{[^}]*min-height:\s*3px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-dot\s*{[^}]*height:\s*3px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-item\.active \.mission-mobile-pager-dot\s*{[^}]*opacity:\s*1;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-label\s*{[^}]*display:\s*none;/s);
@@ -305,6 +384,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 });
 
 const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
+const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
 const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
 const composerAttachmentsSource = readFileSync(
   resolve(currentDir, "composer-attachments.tsx"),
@@ -325,6 +405,7 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
   assert.match(shellStylesSource, /overflow-y:\s*auto/);
+  assert.match(shellStylesSource, /\.chat-main,\s*\.mission-responsive-mode \[data-mission-mobile-pane="chat"\]\s*{[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
@@ -362,12 +443,21 @@ test("mission wide headers truncate long titles instead of consuming layout", ()
 
 test("mission display and logbook headers stay compact on mobile", () => {
   assert.match(sessionOverviewCardSource, /mission-session-overview/);
-  assert.match(sessionOverviewCardSource, /mission-session-metrics/);
+  assert.doesNotMatch(sessionOverviewCardSource, /mission-session-metrics/);
   assert.match(sessionOverviewCardSource, /mission-session-preview/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-head,\s*\.mission-responsive-mode \.mission-inspector-section-head\s*{/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-head \.eyebrow,\s*\.mission-responsive-mode \.mission-inspector-section-head \.eyebrow\s*{[^}]*display:\s*none;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-tree\s*{[^}]*padding:\s*4px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-content\s*{[^}]*padding:\s*8px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-overview\s*{[^}]*padding:\s*8px;/s);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
+});
+
+test("mission inspector diff rows stay compact on mobile", () => {
+  assert.match(diffPanelSource, /mission-change-tree grid min-h-0 gap-0\.5/);
+  assert.match(diffPanelSource, /mission-file-row-compact[^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-\[11px\]/);
+  assert.match(diffPanelSource, /mission-file-status[^\"]*px-1[^\"]*text-\[9px\]/);
+  assert.match(diffPanelSource, /mission-change-group-title[^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-\[11px\]/);
+  assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
+  assert.doesNotMatch(diffPanelSource, /<strong className="min-w-0 truncate">\{node\.name\}<\/strong>/);
 });

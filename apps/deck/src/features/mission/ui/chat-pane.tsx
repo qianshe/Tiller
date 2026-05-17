@@ -23,7 +23,7 @@ import { MissionToolLoading } from "./tool-loading";
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
 type MissionToolActivity = ComponentProps<typeof MissionToolLoading>["activity"];
 
-type MessageHistoryState = {
+type HistoryState = {
   hasMore: boolean;
   loading: boolean;
 };
@@ -39,7 +39,8 @@ type MissionChatPaneProps = {
   activeSessionToolCalls: AgentToolCall[];
   copy: MissionChatPaneCopy;
   expandedMessageIds: ReadonlySet<string>;
-  messageHistoryState: Record<string, MessageHistoryState | undefined>;
+  messageHistoryState: Record<string, HistoryState | undefined>;
+  activityHistoryState: Record<string, HistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
   activityLoading: MissionToolActivity | null;
@@ -72,6 +73,7 @@ export function MissionChatPane({
   copy,
   expandedMessageIds,
   messageHistoryState,
+  activityHistoryState,
   onLoadOlderMessages,
   onToggleExpandedMessage,
   activityLoading,
@@ -85,6 +87,10 @@ export function MissionChatPane({
   onDeleteQueuedPrompt,
   children,
 }: MissionChatPaneProps) {
+  const thinkingToolCalls = useMemo(
+    () => activeSessionToolCalls.filter((toolCall) => toolCall.kind === "think"),
+    [activeSessionToolCalls],
+  );
   const boundaryTimestamps = useMemo(
     () => activeSessionToolCalls.map((toolCall) => toolCall.timestamp),
     [activeSessionToolCalls],
@@ -109,12 +115,14 @@ export function MissionChatPane({
           <>
             <MissionMessageTimeline
               items={activeSessionMessages}
+              thinkingToolCalls={thinkingToolCalls}
               boundaryTimestamps={boundaryTimestamps}
               sessionId={activeSession.id}
               assistantLabel={activeSession.agentName}
               copy={copy}
               expandedMessageIds={expandedMessageIds}
               historyStateBySession={messageHistoryState}
+              activityHistoryStateBySession={activityHistoryState}
               onLoadOlderMessages={onLoadOlderMessages}
               onToggleExpandedMessage={onToggleExpandedMessage}
             />{" "}
