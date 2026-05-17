@@ -56,11 +56,11 @@ export function ActivityLogPanel({
   }
 
   return (
-    <Card className="grid w-full gap-3 p-3 shadow-none">
+    <Card className="grid w-full gap-2 p-2 shadow-none">
       <CardHeader className="p-0">
         <CardTitle>{copy.commandOutput}</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-2 p-0">
+      <CardContent className="grid gap-1 p-0">
         {visibleTimelineItems.map((timelineItem) =>
           timelineItem.kind === "prompt" ? (
             <PromptActivityCard
@@ -157,7 +157,7 @@ function PromptActivityCard({ text }: { text: string }) {
       title={summarizeActivityText(text)}
       stream="user"
     >
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-6 font-mono text-xs leading-snug text-foreground">
         {text}
       </pre>
     </ActivityDetails>
@@ -188,13 +188,13 @@ function ToolActivityCard({
       streamTone={status.tone}
     >
       {outputText ? (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-6 font-mono text-xs leading-snug text-foreground">
           {item.text}
         </pre>
       ) : inputText ? (
-        <div className="grid gap-1 pl-7">
-          <span className="text-xs font-semibold text-muted-foreground">无输出，仅有调用参数</span>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">
+        <div className="grid gap-0.5 pl-6">
+          <span className="text-[11px] font-semibold text-muted-foreground">无输出，仅有调用参数</span>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground">
             {inputText}
           </pre>
         </div>
@@ -242,32 +242,32 @@ function ActivityDetails({
         tone.border,
       )}
     >
-      <summary className="grid min-h-9 cursor-pointer list-none grid-cols-[20px_minmax(56px,auto)_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 [&::-webkit-details-marker]:hidden">
+      <summary className="grid min-h-8 cursor-pointer list-none grid-cols-[16px_minmax(44px,auto)_minmax(0,1fr)_auto] items-center gap-1.5 px-2 py-1 [&::-webkit-details-marker]:hidden">
         <span
           className={cn(
-            "grid size-5 place-items-center rounded-sm font-mono text-xs font-bold",
+            "grid size-4 place-items-center rounded-sm font-mono text-[10px] font-bold",
             tone.icon,
           )}
           aria-hidden="true"
         >
           {icon}
         </span>
-        <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           {kind}
         </span>
-        <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
+        <strong className="min-w-0 truncate text-xs font-medium text-foreground">
           {title}
         </strong>
         <span
           className={cn(
-            "text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+            "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
             streamTone === "danger" && "text-destructive",
           )}
         >
           {stream}
         </span>
       </summary>
-      <div className="mx-3 mb-3 border-t border-border-ghost pt-2">{children}</div>
+      <div className="mx-2 mb-2 border-t border-border-ghost pt-1.5">{children}</div>
     </details>
   );
 }

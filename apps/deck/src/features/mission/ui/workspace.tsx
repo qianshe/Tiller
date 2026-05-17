@@ -352,6 +352,7 @@ export function MissionWorktree(props: any) {
           branchName: worktree?.name ?? session?.worktreeName ?? connection.worktreeName ?? connection.cwd,
           status: statusLabel,
           model: session?.model ?? runtimeSession.model,
+          reasoningEffort: session?.reasoningEffort ?? runtimeSession.reasoningEffort,
         };
       });
       const reconnectKey = acpReconnectKey(connection.providerId, connection.cwd);
@@ -369,6 +370,7 @@ export function MissionWorktree(props: any) {
           Math.max(0, (connection.activeSessionCount ?? children.length) - (connection.pendingSessionCount ?? 0)),
         ),
         model: children[0]?.model,
+        reasoningEffort: children[0]?.reasoningEffort,
         canReconnect: !reconnectPending,
         canConnect: reconnectPending,
         children,
@@ -391,6 +393,7 @@ export function MissionWorktree(props: any) {
         status: activeSessionRestoreGate.canChat ? "已连接" : "连接中",
         runtimeSessionId: formatRuntimeSessionCount(1, activeSessionRestoreGate.canChat ? 1 : 0),
         model: activeSession.model,
+        reasoningEffort: activeSession.reasoningEffort,
         canReconnect: true,
         canConnect: false,
         children: [
@@ -400,6 +403,7 @@ export function MissionWorktree(props: any) {
             branchName: worktree?.name ?? activeSession.worktreeName ?? activeSession.cwd,
             status: copy.status[status] ?? status,
             model: activeSession.model,
+            reasoningEffort: activeSession.reasoningEffort,
           },
         ],
       });
@@ -424,6 +428,7 @@ export function MissionWorktree(props: any) {
         status: entry.loading ? "预热中" : "已预热",
         runtimeSessionId: `${worktreeName} · 预热连接`,
         model: entry.state?.model,
+        reasoningEffort: entry.state?.reasoningEffort,
         canReconnect: true,
       });
     }
@@ -702,6 +707,7 @@ export function MissionWorktree(props: any) {
             selectedPage={selectedMissionPanelPage}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
+            currentModelSummary={`当前模型：${draftModelPickerLabel} · 推理：${resolveReasoningLabel(effectiveDraftReasoningEffort)}`}
             selectedDiffFilePath={selectedMissionDiffFilePath}
             diffs={activeDiffs}
             noDiffSummary={copy.noDiffSummary}

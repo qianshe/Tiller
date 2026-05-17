@@ -185,7 +185,7 @@ export function MissionComposer({
     ? !draftModelConfigReady
     : selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0;
   const modelConfigLoading = activeSession
-    ? modelConfigMissing && !activeSessionModelKnown
+    ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked
     : draftModelLoading || modelConfigMissing;
   const modelSettingsDisabled = activeSession
     ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked

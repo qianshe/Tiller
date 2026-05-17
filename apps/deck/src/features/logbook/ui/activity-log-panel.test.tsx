@@ -45,6 +45,41 @@ test("activity log panel excludes thinking tool calls from tool activity", () =>
   assert.match(html, /pnpm test/);
 });
 
+test("activity log panel uses compact activity rows", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogPanel, {
+      sessionId: "session-1",
+      sessionToolCalls: [
+        {
+          id: "tool-1",
+          kind: "read",
+          title: "READ packages/acp-runtime/src/adapters/claude/history.ts",
+          status: "completed",
+          output: "done",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:03.000Z",
+        },
+      ],
+      commandChunks: [],
+      sessionMessages: [],
+      visibleCount: 10,
+      visibleLimit: 10,
+      copy: { commandOutput: "航行日志", noCommandOutput: "暂无活动" },
+      onShowMore: () => {},
+      onLoadOlder: () => {},
+    }),
+  );
+
+  assert.match(html, /grid w-full gap-2 p-2/);
+  assert.match(html, /grid gap-1 p-0/);
+  assert.match(html, /min-h-8/);
+  assert.match(html, /gap-1\.5/);
+  assert.match(html, /size-4/);
+  assert.match(html, /text-xs font-medium/);
+  assert.doesNotMatch(html, /min-h-9/);
+  assert.doesNotMatch(html, /gap-3 p-3/);
+});
+
 test("activity log panel falls back to command chunks when tool calls only contain thinking", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
@@ -204,7 +239,7 @@ test("activity log panel hides local command wrapper prompts and keeps stdout", 
         {
           id: "cmd-stdout",
           role: "user",
-          text: "<local-command-stdout>Set model to opus (claude-opus-4-7)</local-command-stdout>",
+          text: "<local-command-stdout>Command completed</local-command-stdout>",
           timestamp: "2026-05-17T10:00:02.000Z",
         },
       ],
@@ -216,7 +251,7 @@ test("activity log panel hides local command wrapper prompts and keeps stdout", 
     }),
   );
 
-  assert.match(html, /Set model to opus/);
+  assert.match(html, /Command completed/);
   assert.doesNotMatch(html, /command-name/);
   assert.doesNotMatch(html, /local-command-caveat/);
   assert.doesNotMatch(html, /command-args/);

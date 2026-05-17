@@ -24,6 +24,7 @@ type MissionDisplaySectionProps = {
   selectedPage: MissionPanelPage;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
+  currentModelSummary?: string | null;
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
@@ -56,6 +57,7 @@ export function MissionDisplaySection({
   selectedPage,
   overviewItems,
   runtimeOverviewItems,
+  currentModelSummary,
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
@@ -85,6 +87,7 @@ export function MissionDisplaySection({
       selectedPage={selectedPage}
       overviewItems={overviewItems}
       runtimeOverviewItems={runtimeOverviewItems}
+      currentModelSummary={currentModelSummary}
       selectedDiffFilePath={selectedDiffFilePath}
       diffs={diffs}
       noDiffSummary={noDiffSummary}

@@ -125,16 +125,16 @@ test("composer locks model settings while new-session config is loading", () => 
   assert.match(html, /模型加载中/);
 });
 
-test("composer can lock settings without showing model loading once config is ready", () => {
+test("composer shows model loading while an active session is restoring", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
-    activeSession: { id: "session-1" },
+    activeSession: { id: "session-1", model: "claude-haiku-4-5" },
     draftModelLoading: false,
     draftModelConfigReady: true,
     modelSettingsLocked: true,
   })));
 
   assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
-  assert.doesNotMatch(html, /模型加载中/);
+  assert.match(html, /模型加载中/);
 });
 
 test("composer hides model loading for active sessions that already know the model", () => {
