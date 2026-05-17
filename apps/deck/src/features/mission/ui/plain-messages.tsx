@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall } from "@tiller/shared";
 import { Button } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
+import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
 
@@ -478,7 +479,7 @@ type PlainMessageRenderItem =
 export function resolvePlainMessageRenderItems(
   items: PlainMessageRenderSource[],
 ): PlainMessageRenderItem[] {
-  const normalizedItems = items.map(normalizePlainMessageRenderSource);
+  const normalizedItems = items.map(normalizePlainMessageRenderSource).filter((item): item is PlainConversationItem => Boolean(item));
   const seenKeys = new Map<string, number>();
   return normalizedItems.map((item, index) => {
     if (item.kind === "thinking") {
@@ -507,12 +508,26 @@ export function resolvePlainMessageRenderItems(
 
 function normalizePlainMessageRenderSource(
   item: PlainMessageRenderSource,
-): PlainConversationItem {
+): PlainConversationItem | null {
   if ("role" in item) {
+    const text = normalizeLocalCommandMessageText(item.text);
+    if (!text) {
+      return null;
+    }
     return {
       kind: "message",
       timestamp: item.timestamp,
-      message: item,
+      message: text === item.text ? item : { ...item, text },
+    };
+  }
+  if (item.kind === "message") {
+    const text = normalizeLocalCommandMessageText(item.message.text);
+    if (!text) {
+      return null;
+    }
+    return {
+      ...item,
+      message: text === item.message.text ? item.message : { ...item.message, text },
     };
   }
   return item;
@@ -523,11 +538,12 @@ function buildPlainConversationItems(
   thinkingToolCalls: AgentToolCall[],
 ): PlainConversationItem[] {
   return [
-    ...messages.map((message) => ({
-      kind: "message" as const,
-      timestamp: message.timestamp,
-      message,
-    })),
+    ...messages.flatMap((message) => {
+      const text = normalizeLocalCommandMessageText(message.text);
+      return text
+        ? [{ kind: "message" as const, timestamp: message.timestamp, message: text === message.text ? message : { ...message, text } }]
+        : [];
+    }),
     ...thinkingToolCalls.map((toolCall) => ({
       kind: "thinking" as const,
       timestamp: toolCall.timestamp,

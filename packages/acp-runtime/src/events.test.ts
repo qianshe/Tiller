@@ -162,6 +162,55 @@ test("mapSessionUpdateNotification generates stable ids for replayed chunks with
   }
 });
 
+
+test("mapSessionUpdateNotification maps realtime thinking content to think tool calls", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_thinking",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg-thinking",
+        content: [{ type: "thinking", thinking: "需要先定位实时链路" }],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.id, "msg-thinking:thinking");
+  assert.equal(mapped.event.toolCall.kind, "think");
+  assert.equal(mapped.event.toolCall.title, "Thinking");
+  assert.equal(mapped.event.toolCall.output, "需要先定位实时链路");
+  assert.equal(mapped.event.toolCall.status, "running");
+});
+
+test("mapSessionUpdateNotification maps standard ACP thought chunks to think tool calls", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_acp_thought",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "先分析 ACP thought chunk" },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "think");
+  assert.equal(mapped.event.toolCall.title, "Thinking");
+  assert.equal(mapped.event.toolCall.output, "先分析 ACP thought chunk");
+  assert.equal(mapped.event.toolCall.status, "running");
+});
+
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

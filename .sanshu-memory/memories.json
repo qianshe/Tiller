@@ -25,6 +25,14 @@
       "category": "Pattern",
       "created_at": "2026-05-01T08:31:30.885258400Z",
       "updated_at": "2026-05-01T08:31:30.885258400Z"
+    },
+    {
+      "id": "76394b87-539e-439b-bcf8-0791d016ee73",
+      "content": "Tiller ACP 代理架构规范：ACP provider/进程/SDK 差异必须隔离在 packages/acp-runtime 的 connection、runtime-session、adapters 层；Helm 只通过 @tiller/acp-runtime 公共 API 创建/复用连接、恢复 session、配置 runtime，不把 ACP SDK、provider 特例、命令拼接或重放抑制逻辑写入 server、rpc、handlers 或 Deck。新增 provider 特例优先扩展 AcpAgentAdapter（resolveLaunch、resolveCapabilities、resolveCleanup、resolveRequestTimeout、loadAuthoritativeHistory），并配套邻近 tests。",
+      "content_normalized": "tiller acp 代理架构规范acp provider/进程/sdk 差异必须隔离在 packages/acp-runtime 的 connectionruntime-sessionadapters 层helm 只通过 @tiller/acp-runtime 公共 api 创建/复用连接恢复 session配置 runtime不把 acp sdkprovider 特例命令拼接或重放抑制逻辑写入 serverrpchandlers 或 deck新增 provider 特例优先扩展 acpagentadapterresolvelaunchresolvecapabilitiesresolvecleanupresolverequesttimeoutloadauthoritativehistory并配套邻近 tests",
+      "category": "Pattern",
+      "created_at": "2026-05-17T13:03:58.231822300Z",
+      "updated_at": "2026-05-17T13:03:58.231822300Z"
     }
   ],
   "deleted_entries": [],

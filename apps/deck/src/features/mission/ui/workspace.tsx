@@ -616,7 +616,6 @@ export function MissionWorktree(props: any) {
                   : "正在恢复 ACP"}
               </strong>
               <span>{activeSessionRestoreGate.message}</span>
-              <MissionStatusBar modelLoading={true} promptEnhancing={false} />
             </div>
           ) : null}
           {shouldShowComposer ? (
@@ -667,7 +666,7 @@ export function MissionWorktree(props: any) {
               draftModelPlaceholder={draftModelPlaceholder}
               draftModelPickerDisabled={draftModelPickerDisabled}
               draftModelPickerLabel={draftModelPickerLabel}
-              draftModelLoading={draftModelLoading}
+              draftModelLoading={composerModelLoading}
               draftModelConfigReady={draftModelConfigReady}
               modelSettingsLocked={Boolean(activeSession && !activeSessionRestoreGate.canChat)}
               draftModelBaseOptions={draftModelBaseOptions}

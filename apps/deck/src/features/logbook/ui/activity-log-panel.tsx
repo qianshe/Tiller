@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { CommandOutput } from "./command-output";
 import { resolveToolCallTone } from "../tool-call-tone";
 import { commandChunkToToolCall, groupToolCalls } from "../timeline";
@@ -128,12 +129,12 @@ function buildActivityTimeline(
   );
   const promptItems = sessionMessages
     .filter((message) => message.role === "user" && !isAcpPromptWrapperEcho(message))
-    .map((message) => ({
-      kind: "prompt" as const,
-      id: message.id,
-      timestamp: message.timestamp,
-      text: message.text,
-    }));
+    .flatMap((message) => {
+      const text = normalizeLocalCommandMessageText(message.text);
+      return text
+        ? [{ kind: "prompt" as const, id: message.id, timestamp: message.timestamp, text }]
+        : [];
+    });
 
   return [
     ...promptItems,
@@ -149,7 +150,13 @@ function buildActivityTimeline(
 
 function PromptActivityCard({ text }: { text: string }) {
   return (
-    <ActivityDetails accent="prompt" icon="↗" kind="Prompt" title={summarizeActivityText(text)} stream="user">
+    <ActivityDetails
+      accent="prompt"
+      icon="↗"
+      kind="Prompt"
+      title={summarizeActivityText(text)}
+      stream="user"
+    >
       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words pl-7 font-mono text-sm leading-relaxed text-foreground">
         {text}
       </pre>

@@ -181,6 +181,47 @@ test("activity log panel shows tool arguments when output is empty", () => {
   assert.match(html, /航行日志/);
 });
 
+
+test("activity log panel hides local command wrapper prompts and keeps stdout", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogPanel, {
+      sessionId: "session-1",
+      sessionToolCalls: [],
+      commandChunks: [],
+      sessionMessages: [
+        {
+          id: "cmd-name",
+          role: "user",
+          text: "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>",
+          timestamp: "2026-05-17T10:00:00.000Z",
+        },
+        {
+          id: "cmd-caveat",
+          role: "user",
+          text: "<local-command-caveat>Caveat: generated local command metadata</local-command-caveat>",
+          timestamp: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "cmd-stdout",
+          role: "user",
+          text: "<local-command-stdout>Set model to opus (claude-opus-4-7)</local-command-stdout>",
+          timestamp: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      visibleCount: 10,
+      visibleLimit: 10,
+      copy: { commandOutput: "航行日志", noCommandOutput: "暂无活动" },
+      onShowMore: () => {},
+      onLoadOlder: () => {},
+    }),
+  );
+
+  assert.match(html, /Set model to opus/);
+  assert.doesNotMatch(html, /command-name/);
+  assert.doesNotMatch(html, /local-command-caveat/);
+  assert.doesNotMatch(html, /command-args/);
+});
+
 test("activity log panel labels namespaced tools as MCP", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {

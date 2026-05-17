@@ -137,14 +137,14 @@ test("ACP model loading badge is not limited to OpenCode", () => {
 test("mission composer uses restore-aware model loading state", () => {
   assert.match(worktreeModelSource, /composerModelLoading/);
   assert.match(worktreeModelSource, /activeSession && !activeSessionRestoreGate\.canChat/);
-  assert.match(worktreeSource, /draftModelLoading=\{draftModelLoading\}/);
+  assert.match(worktreeSource, /draftModelLoading=\{composerModelLoading\}/);
   assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(activeSession && !activeSessionRestoreGate\.canChat\)\}/);
 });
 
 test("mission loading gates render model loading in the state bar", () => {
   assert.match(worktreeSource, /MissionStatusBar/);
   assert.match(worktreeSource, /mission-draft-preparing[\s\S]*modelLoading=\{Boolean\(draftConnectionEntry\?\.loading \?\? selectedAgentId\)\}/);
-  assert.match(worktreeSource, /mission-restore-gate[\s\S]*modelLoading=\{true\}/);
+  assert.doesNotMatch(worktreeSource, /mission-restore-gate[\s\S]*<MissionStatusBar modelLoading=\{true\}/);
 });
 
 test("mission composer requires active-session config readiness before settings can open", () => {

@@ -951,6 +951,54 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   ]);
 });
 
+test("runtime ACP thought chunks with generated ids stay in one thinking stream", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const appendedToolCalls: AgentToolCall[] = [];
+  const context = createTestContext(logs, capture, "session-thought-stream");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+  };
+
+  handleRuntimeEvent(
+    "session-thought-stream",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-thought-stream-msg-alpha:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "先看 ACP ",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thought-stream",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-thought-stream-msg-beta:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "再对照 Zed",
+        timestamp: "2026-04-30T00:00:02.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(appendedToolCalls.length, 2);
+  assert.equal(appendedToolCalls[0]?.id, appendedToolCalls[1]?.id);
+  assert.match(appendedToolCalls[0]?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+:thinking$/u);
+  assert.equal(capture.persisted.length, 0);
+});
+
 test("runtime tool-call broadcasts keep stronger persisted classifications", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };

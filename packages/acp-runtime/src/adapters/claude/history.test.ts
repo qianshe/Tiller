@@ -73,6 +73,50 @@ test("parseClaudeCodeJsonlHistory maps messages and merges tool results", () => 
   ]);
 });
 
+
+test("parseClaudeCodeJsonlHistory hides local command wrappers and keeps stdout text", () => {
+  const history = parseClaudeCodeJsonlHistory(
+    [
+      JSON.stringify({
+        uuid: "msg-command",
+        timestamp: "2026-05-17T09:34:35.000Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>",
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-caveat",
+        timestamp: "2026-05-17T09:34:36.000Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: "<local-command-caveat>Caveat: generated local command metadata</local-command-caveat>",
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-stdout",
+        timestamp: "2026-05-17T09:34:37.000Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: "<local-command-stdout>Set model to opus (claude-opus-4-7)</local-command-stdout>",
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-stdout",
+      role: "user",
+      text: "Set model to opus (claude-opus-4-7)",
+      timestamp: "2026-05-17T09:34:37.000Z",
+    },
+  ]);
+});
+
 test("parseClaudeCodeJsonlHistory preserves thinking as collapsible think items", () => {
   const history = parseClaudeCodeJsonlHistory(
     JSON.stringify({

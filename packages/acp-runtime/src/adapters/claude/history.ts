@@ -139,12 +139,35 @@ function parseJsonLine(line: string): any | null {
 
 function collectClaudeText(content: unknown) {
   if (typeof content === "string") {
-    return content;
+    return normalizeClaudeLocalCommandText(content);
   }
-  return asArray(content)
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("");
+  return normalizeClaudeLocalCommandText(
+    asArray(content)
+      .filter((part) => part?.type === "text" && typeof part.text === "string")
+      .map((part) => part.text)
+      .join(""),
+  );
+}
+
+function normalizeClaudeLocalCommandText(text: string) {
+  const trimmed = text.trim();
+  const stdout = extractTaggedContent(trimmed, "local-command-stdout");
+  if (stdout !== undefined) {
+    return stdout.trim();
+  }
+  const stderr = extractTaggedContent(trimmed, "local-command-stderr");
+  if (stderr !== undefined) {
+    return stderr.trim();
+  }
+  if (/<(?:local-command-caveat|command-name|command-message|command-args)\b/iu.test(trimmed)) {
+    return "";
+  }
+  return text;
+}
+
+function extractTaggedContent(text: string, tagName: string) {
+  const match = text.match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "iu"));
+  return match?.[1];
 }
 
 function normalizeMessageRole(role: unknown): AgentMessage["role"] | null {

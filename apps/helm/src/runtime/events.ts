@@ -19,6 +19,10 @@ const activeAssistantRuntimeMessageBySession = new Map<
   string,
   { sourceId: string; segmentId: string; text: string }
 >();
+const activeAssistantRuntimeThinkingBySession = new Map<
+  string,
+  { sourceId: string; segmentId: string; text: string }
+>();
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
@@ -34,14 +38,19 @@ function nextLiveEventSequence(sessionId: string) {
 function bumpAssistantStreamSegment(sessionId: string) {
   messageSegmentIds.bumpToolBoundary(sessionId);
   activeAssistantRuntimeMessageBySession.delete(sessionId);
+  activeAssistantRuntimeThinkingBySession.delete(sessionId);
 }
 
 function startNextAssistantResponseSegment(sessionId: string) {
-  if (!activeAssistantRuntimeMessageBySession.has(sessionId)) {
+  if (
+    !activeAssistantRuntimeMessageBySession.has(sessionId) &&
+    !activeAssistantRuntimeThinkingBySession.has(sessionId)
+  ) {
     return;
   }
   messageSegmentIds.startAssistantTurn(sessionId);
   activeAssistantRuntimeMessageBySession.delete(sessionId);
+  activeAssistantRuntimeThinkingBySession.delete(sessionId);
 }
 
 function normalizeRuntimeAssistantMessageId(
@@ -71,6 +80,45 @@ function normalizeRuntimeAssistantMessageId(
     text: message.text,
   });
   return segmentId;
+}
+
+function normalizeRuntimeThinkingToolCall(
+  sessionId: string,
+  toolCall: AgentToolCall,
+): AgentToolCall {
+  const text = toolCall.output ?? "";
+  const active = activeAssistantRuntimeThinkingBySession.get(sessionId);
+  if (active && !shouldStartNewRuntimeAssistantSegment(active.text, text)) {
+    activeAssistantRuntimeThinkingBySession.set(sessionId, {
+      sourceId: toolCall.id,
+      segmentId: active.segmentId,
+      text: mergeAssistantStreamText(active.text, text),
+    });
+    return {
+      ...toolCall,
+      id: active.segmentId,
+      commandId: active.segmentId,
+    };
+  }
+
+  if (active) {
+    messageSegmentIds.bumpToolBoundary(sessionId);
+  }
+  const sourceId = toolCall.id.replace(/:thinking$/u, "");
+  const segmentId = `${messageSegmentIds.nextAssistantSegmentId(sessionId, {
+    text,
+    providerMessageId: isRuntimeGeneratedMessageId(sourceId) ? null : sourceId,
+  })}:thinking`;
+  activeAssistantRuntimeThinkingBySession.set(sessionId, {
+    sourceId: toolCall.id,
+    segmentId,
+    text,
+  });
+  return {
+    ...toolCall,
+    id: segmentId,
+    commandId: segmentId,
+  };
 }
 
 function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText: string) {
@@ -228,6 +276,7 @@ export function handleRuntimeEvent(
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
       };
+      activeAssistantRuntimeThinkingBySession.delete(sessionId);
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
       }
@@ -260,6 +309,18 @@ export function handleRuntimeEvent(
       });
       return;
     case "tool-call":
+      if (event.toolCall.kind === "think") {
+        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, event.toolCall);
+        const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
+          | { toolCalls?: AgentToolCall[] }
+          | undefined;
+        const mergedToolCall = artifacts?.toolCalls?.find((item) => item.id === toolCall.id) ?? toolCall;
+        broadcastSessionUpdate(context, sessionId, {
+          kind: "tool_call",
+          toolCall: mergedToolCall,
+        });
+        return;
+      }
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
