@@ -87,6 +87,17 @@ test("composer uses a tighter frame and padded square textarea", () => {
   assert.match(html, /rounded-none border-0 bg-transparent px-1 py-0/);
 });
 
+test("composer uses compact sidecar and action button sizing", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps()));
+
+  assert.match(html, /mission-composer-sidecar[^\"]*min-h-7[^\"]*gap-1\.5/);
+  assert.match(html, /mission-tools-trigger[^\"]*size-7/);
+  assert.match(html, /mission-slash-trigger[^\"]*size-7[^\"]*text-sm/);
+  assert.match(html, /mission-image-upload-trigger[^\"]*size-7[^\"]*text-sm/);
+  assert.match(html, /mission-enhance-prompt-button[^\"]*size-7/);
+  assert.match(html, /mission-send-prompt-button[^\"]*size-7/);
+});
+
 test("composer shows only the interrupt action while a session can be cancelled", () => {
   const html = renderToStaticMarkup(
     createElement(MissionComposer, baseProps({

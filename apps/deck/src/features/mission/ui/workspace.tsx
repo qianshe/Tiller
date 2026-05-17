@@ -689,8 +689,6 @@ export function MissionWorktree(props: any) {
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
             selectedPage={selectedMissionPanelPage}
-            diffCount={missionDiffCount}
-            logCount={missionLogCount}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
             selectedDiffFilePath={selectedMissionDiffFilePath}
@@ -698,7 +696,6 @@ export function MissionWorktree(props: any) {
             noDiffSummary={copy.noDiffSummary}
             onReconnectRuntime={reconnectAcpRuntime}
             activeSession={activeSession}
-            statusLabel={missionStatusLabel}
             sessionToolCalls={activeToolCalls}
             commandChunks={activeOutputs}
             sessionMessages={activeSessionMessages}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "../../../shared/utils/cn";
+import { MissionPanelHeader, MissionPanelLoadingBadge } from "./panel-header";
 
 type MissionInspectorProps = {
   collapsed: boolean;
@@ -45,15 +46,11 @@ export function MissionInspector({
           data-mission-mobile-pane="inspector"
         >
           <section className="inspector-section inspector-scroll mission-project-files-section grid min-h-0 gap-3 overflow-hidden p-3">
-            <div className="section-head section-head-soft mission-inspector-section-head flex items-start justify-between gap-3">
-              <div>
-                <p className="eyebrow text-xs font-semibold uppercase tracking-wider text-muted-foreground">项目变更</p>
-                <h3 className="text-base font-semibold text-foreground">{title}</h3>
-              </div>
-              {loading ? (
-                <span className="mission-inline-loading rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">加载中</span>
-              ) : null}
-            </div>
+            <MissionPanelHeader
+              className="section-head section-head-soft mission-inspector-section-head"
+              title={title}
+              action={loading ? <MissionPanelLoadingBadge /> : null}
+            />
             <nav className="mission-inspector-tabs grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1" aria-label="项目变更子页">
               <button
                 type="button"

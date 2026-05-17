@@ -28,6 +28,7 @@ const projectFileListSource = readFileSync(
   "utf8",
 );
 const inspectorSource = readFileSync(resolve(currentDir, "inspector.tsx"), "utf8");
+const panelHeaderSource = readFileSync(resolve(currentDir, "panel-header.tsx"), "utf8");
 const logbookPanelSource = readFileSync(resolve(currentDir, "logbook-panel.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
   resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
@@ -177,6 +178,21 @@ test("mission display page navigation is placed above the content", () => {
   assert.match(panelsSource, /mission-panel-tree flex/);
   assert.match(panelsSource, /border-b border-border-ghost/);
   assert.doesNotMatch(panelsSource, /border-r border-border-ghost/);
+});
+
+test("mission display panel header uses compact height", () => {
+  assert.match(displayPanelSource, /MissionPanelHeader/);
+  assert.match(displayPanelSource, /mission-display-add-page-button[^\n]+size-7/);
+  assert.match(displayPanelSource, /title="任务展示"/);
+  assert.match(displayPanelSource, /bordered/);
+  assert.doesNotMatch(displayPanelSource, /<p className="eyebrow[^>]*>展示<\/p>/);
+  assert.match(inspectorSource, /MissionPanelHeader/);
+  assert.match(inspectorSource, /MissionPanelLoadingBadge/);
+  assert.match(inspectorSource, /className="section-head section-head-soft mission-inspector-section-head"/);
+  assert.match(panelHeaderSource, /PANEL_HEADER_FRAME_CLASS = "flex items-center justify-between gap-2 px-2 py-1\.5"/);
+  assert.match(panelHeaderSource, /PANEL_HEADER_TITLE_CLASS = "text-sm font-semibold leading-tight text-foreground"/);
+  assert.match(panelHeaderSource, /mission-inline-loading[^\n]+px-2[^\n]+py-0\.5[^\n]+text-\[10px\]/);
+  assert.doesNotMatch(inspectorSource, /<p className="eyebrow[^>]*>项目变更<\/p>/);
 });
 
 test("mission project overview renders structured cards instead of raw info text", () => {
@@ -362,12 +378,12 @@ test("mission wide headers truncate long titles instead of consuming layout", ()
 
 test("mission display and logbook headers stay compact on mobile", () => {
   assert.match(sessionOverviewCardSource, /mission-session-overview/);
-  assert.match(sessionOverviewCardSource, /mission-session-metrics/);
+  assert.doesNotMatch(sessionOverviewCardSource, /mission-session-metrics/);
   assert.match(sessionOverviewCardSource, /mission-session-preview/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-head,\s*\.mission-responsive-mode \.mission-inspector-section-head\s*{/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-head \.eyebrow,\s*\.mission-responsive-mode \.mission-inspector-section-head \.eyebrow\s*{[^}]*display:\s*none;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-tree\s*{[^}]*padding:\s*4px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-content\s*{[^}]*padding:\s*8px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-overview\s*{[^}]*padding:\s*8px;/s);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
 });

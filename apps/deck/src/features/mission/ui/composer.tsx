@@ -30,6 +30,7 @@ import {
   type MissionConfigPicker,
 } from "./composer-config-controls";
 import { ComposerAttachments } from "./composer-attachments";
+import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
@@ -216,7 +217,7 @@ export function MissionComposer({
             />
           ) : null}
         </div>
-        <div className="mission-composer-sidecar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+        <div className="mission-composer-sidecar grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
           <div
             className="mission-composer-tools relative flex min-w-0 items-center gap-1 text-muted-foreground"
             onBlur={(event) => {
@@ -229,7 +230,7 @@ export function MissionComposer({
               type="button"
               variant="ghost"
               size="icon"
-              className="mission-tools-trigger size-8 rounded-full bg-surface"
+              className="mission-tools-trigger size-7 rounded-full bg-surface !text-sm"
               aria-haspopup="menu"
               aria-expanded={toolsOpen}
               aria-label="打开任务设置"
@@ -244,16 +245,11 @@ export function MissionComposer({
             >
               ⋯
             </Button>
-            {modelSettingsLoading ? (
-              <span className="truncate px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                models loading...
-              </span>
-            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="mission-slash-trigger size-8 rounded-full bg-surface text-base"
+              className="mission-slash-trigger size-7 rounded-full bg-surface !text-sm"
               aria-label="输入斜杠命令"
               title="输入斜杠命令"
               onClick={openSlashCommands}
@@ -275,7 +271,7 @@ export function MissionComposer({
               type="button"
               variant="ghost"
               size="icon"
-              className="mission-image-upload-trigger size-8 rounded-full bg-surface text-base"
+              className="mission-image-upload-trigger size-7 rounded-full bg-surface !text-sm"
               aria-label="添加图片"
               title="添加图片"
               onClick={() => imageInputRef.current?.click()}
@@ -319,13 +315,17 @@ export function MissionComposer({
               </div>
             ) : null}
           </div>
-          <div className="min-w-0" />
-          <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-2">
+          <MissionStatusBar
+            modelLoading={modelSettingsLoading}
+            promptEnhancing={promptEnhancerBusy}
+          />
+          <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
                 variant="outline"
                 size="icon"
                 type="button"
+                className="mission-enhance-prompt-button size-7 !text-sm"
                 onClick={enhancePromptDraft}
                 disabled={!prompt.trim() || promptEnhancerBusy}
                 aria-label="增强提示词"
@@ -351,6 +351,7 @@ export function MissionComposer({
               <Button
                 size="icon"
                 type="submit"
+                className="mission-send-prompt-button size-7 !text-sm"
                 disabled={!canSend}
                 aria-label="发送"
                 title="发送"

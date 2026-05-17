@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1803
+- Total lines: 1811
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 790
-- Top-level selectors: 141
+- Lines: 798
+- Top-level selectors: 143
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -75,6 +75,8 @@ Selectors:
 - `.mission-responsive-mode.mission-mobile-pane-display [data-mission-mobile-pane="display"]`
 - `.mission-responsive-mode.mission-mobile-pane-inspector [data-mission-mobile-pane="inspector"]`
 - `.mission-responsive-mode.mission-mobile-pane-project [data-mission-mobile-pane="project"]`
+- `.mission-status-scroll`
+- `.mission-status-scroll::-webkit-scrollbar`
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
 - `.motion-reduced *`

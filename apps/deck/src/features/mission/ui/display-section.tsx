@@ -22,8 +22,6 @@ type MissionDisplaySectionProps = {
   style: CSSProperties;
   pages: MissionPanelPage[];
   selectedPage: MissionPanelPage;
-  diffCount: number;
-  logCount: number;
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
   selectedDiffFilePath: string | null;
@@ -31,7 +29,6 @@ type MissionDisplaySectionProps = {
   noDiffSummary: string;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   activeSession: SessionSummary | null;
-  statusLabel: string;
   sessionToolCalls: AgentToolCall[];
   commandChunks: CommandChunk[];
   sessionMessages: AgentMessage[];
@@ -57,8 +54,6 @@ export function MissionDisplaySection({
   style,
   pages,
   selectedPage,
-  diffCount,
-  logCount,
   overviewItems,
   runtimeOverviewItems,
   selectedDiffFilePath,
@@ -66,7 +61,6 @@ export function MissionDisplaySection({
   noDiffSummary,
   onReconnectRuntime,
   activeSession,
-  statusLabel,
   sessionToolCalls,
   commandChunks,
   sessionMessages,
@@ -98,9 +92,6 @@ export function MissionDisplaySection({
       logbookContent={
         <LogbookPanel
           activeSession={activeSession}
-          statusLabel={statusLabel}
-          diffCount={diffCount}
-          logCount={logCount}
           sessionToolCalls={sessionToolCalls}
           commandChunks={commandChunks}
           sessionMessages={sessionMessages}

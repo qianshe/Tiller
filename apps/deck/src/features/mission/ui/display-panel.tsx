@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Button, Card, CardContent, Input } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { formatDiffStatus, renderDiffPatch, renderDiffStats } from "./diff-tree";
+import { MissionPanelHeader } from "./panel-header";
 import { MissionPanelNav, type MissionPanelPage } from "./panels";
 
 type OverviewItem = {
@@ -283,24 +284,22 @@ export function MissionDisplayPanel({
       aria-label="任务展示容器"
       data-mission-mobile-pane="display"
     >
-      {" "}
-      <div className="mission-panel-head flex items-start justify-between gap-3 border-b border-border-ghost p-3">
-        {" "}
-        <div>
-          {" "}
-          <p className="eyebrow text-xs font-semibold uppercase tracking-wider text-muted-foreground">展示</p> <h3 className="text-base font-semibold text-foreground">任务展示</h3>{" "}
-        </div>{" "}
-        <Button
-          size="icon"
-          variant="outline"
-          type="button"
-          onClick={onAddPage}
-          aria-label="增加展示页"
-        >
-          {" "}
-          ＋{" "}
-        </Button>{" "}
-      </div>{" "}
+      <MissionPanelHeader
+        title="任务展示"
+        bordered
+        action={
+          <Button
+            size="icon"
+            variant="outline"
+            type="button"
+            className="mission-display-add-page-button size-7 !text-sm"
+            onClick={onAddPage}
+            aria-label="增加展示页"
+          >
+            ＋
+          </Button>
+        }
+      />
       <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
         {" "}
         <MissionPanelNav

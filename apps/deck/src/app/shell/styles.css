@@ -541,22 +541,12 @@ h3 {
   }
 
   .mission-responsive-mode .mission-session-overview-header,
-  .mission-responsive-mode .mission-session-meta,
-  .mission-responsive-mode .mission-session-preview {
+  .mission-responsive-mode .mission-session-meta {
     display: none;
   }
 
-  .mission-responsive-mode .mission-session-overview-content,
-  .mission-responsive-mode .mission-session-metrics {
+  .mission-responsive-mode .mission-session-overview-content {
     gap: 6px;
-  }
-
-  .mission-responsive-mode .mission-session-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .mission-responsive-mode .mission-session-metric {
-    padding: 6px 8px;
   }
 
   .mission-responsive-mode .mission-composer {
@@ -785,5 +775,13 @@ h3 {
 [data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184 / 0.68);
   background-clip: padding-box;
+}
+
+.mission-status-scroll {
+  scrollbar-width: none;
+}
+
+.mission-status-scroll::-webkit-scrollbar {
+  display: none;
 }
 
