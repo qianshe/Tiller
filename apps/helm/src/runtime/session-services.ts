@@ -30,6 +30,7 @@ import {
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
 import {
+  filterNewProviderHistoryMessages,
   planProviderHistorySync,
   shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
@@ -380,8 +381,23 @@ export function createSessionServices(options: SessionServicesOptions) {
         options.sessionMessageStore.replace(sessionId, syncDecision.messages);
       }
     } else if (syncDecision.action === "append") {
-      for (const message of syncDecision.messages) {
+      const localMessages = options.sessionMessageStore.list(sessionId);
+      const appendMessages = filterNewProviderHistoryMessages(
+        localMessages,
+        syncDecision.messages,
+      );
+      for (const message of appendMessages) {
         options.sessionMessageStore.append(sessionId, message);
+      }
+      localMessageCount = appendMessages.length;
+      const messagesAfterAppend = appendMessages.length
+        ? [...localMessages, ...appendMessages]
+        : localMessages;
+      if (shouldRepairProviderHistorySnapshot(messagesAfterAppend, history.messages)) {
+        const repairedMessages = toParagraphMessages(history.messages);
+        options.sessionMessageStore.replace(sessionId, repairedMessages);
+        localMessageCount = repairedMessages.length;
+        logAction = "repair";
       }
     } else {
       const localMessages = options.sessionMessageStore.list(sessionId);

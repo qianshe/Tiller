@@ -74,7 +74,70 @@ test("plain messages avoids duplicated generic thinking titles", () => {
   assert.doesNotMatch(html, /Thinking · Thinking/);
 });
 
-test("plain messages hides local command wrappers and renders stdout only", () => {
+test("plain messages merges adjacent thinking tool calls in the conversation timeline", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "工具前说明。",
+          timestamp: "2026-05-17T10:00:00.000Z",
+        },
+        {
+          id: "assistant-2",
+          role: "assistant",
+          text: "工具后说明。",
+          timestamp: "2026-05-17T10:00:04.000Z",
+        },
+      ],
+      thinkingToolCalls: [
+        {
+          id: "think-1",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一段 Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "think-2",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第二段 Thinking",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+        {
+          id: "think-3",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第三段 Thinking",
+          timestamp: "2026-05-17T10:00:03.000Z",
+          updatedAt: "2026-05-17T10:00:03.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/plain-thinking/g)?.length, 1);
+  assert.match(html, /第一段 Thinking/);
+  assert.match(html, /第二段 Thinking/);
+  assert.match(html, /第三段 Thinking/);
+});
+
+test("plain messages hides local command wrappers and model switch stdout", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -92,10 +155,16 @@ test("plain messages hides local command wrappers and renders stdout only", () =
           timestamp: "2026-05-17T10:00:01.000Z",
         },
         {
-          id: "cmd-stdout",
+          id: "cmd-model-stdout",
           role: "user",
           text: "<local-command-stdout>Set model to opus (claude-opus-4-7)</local-command-stdout>",
           timestamp: "2026-05-17T10:00:02.000Z",
+        },
+        {
+          id: "cmd-stdout",
+          role: "user",
+          text: "<local-command-stdout>Command finished</local-command-stdout>",
+          timestamp: "2026-05-17T10:00:03.000Z",
         },
       ],
       thinkingToolCalls: [],
@@ -109,7 +178,8 @@ test("plain messages hides local command wrappers and renders stdout only", () =
     }),
   );
 
-  assert.match(html, /Set model to opus/);
+  assert.match(html, /Command finished/);
+  assert.doesNotMatch(html, /Set model to opus/);
   assert.doesNotMatch(html, /command-name/);
   assert.doesNotMatch(html, /local-command-caveat/);
   assert.doesNotMatch(html, /command-args/);

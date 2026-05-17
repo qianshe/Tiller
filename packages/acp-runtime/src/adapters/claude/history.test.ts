@@ -74,7 +74,7 @@ test("parseClaudeCodeJsonlHistory maps messages and merges tool results", () => 
 });
 
 
-test("parseClaudeCodeJsonlHistory hides local command wrappers and keeps stdout text", () => {
+test("parseClaudeCodeJsonlHistory hides local command wrappers and model switch stdout", () => {
   const history = parseClaudeCodeJsonlHistory(
     [
       JSON.stringify({
@@ -96,12 +96,21 @@ test("parseClaudeCodeJsonlHistory hides local command wrappers and keeps stdout 
         },
       }),
       JSON.stringify({
-        uuid: "msg-stdout",
+        uuid: "msg-model-stdout",
         timestamp: "2026-05-17T09:34:37.000Z",
         type: "user",
         message: {
           role: "user",
           content: "<local-command-stdout>Set model to opus (claude-opus-4-7)</local-command-stdout>",
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-stdout",
+        timestamp: "2026-05-17T09:34:38.000Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: "<local-command-stdout>Command finished</local-command-stdout>",
         },
       }),
     ].join("\n"),
@@ -111,8 +120,8 @@ test("parseClaudeCodeJsonlHistory hides local command wrappers and keeps stdout 
     {
       id: "msg-stdout",
       role: "user",
-      text: "Set model to opus (claude-opus-4-7)",
-      timestamp: "2026-05-17T09:34:37.000Z",
+      text: "Command finished",
+      timestamp: "2026-05-17T09:34:38.000Z",
     },
   ]);
 });

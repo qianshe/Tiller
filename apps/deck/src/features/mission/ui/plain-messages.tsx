@@ -537,7 +537,7 @@ function buildPlainConversationItems(
   messages: AgentMessage[],
   thinkingToolCalls: AgentToolCall[],
 ): PlainConversationItem[] {
-  return [
+  const sorted = [
     ...messages.flatMap((message) => {
       const text = normalizeLocalCommandMessageText(message.text);
       return text
@@ -550,6 +550,73 @@ function buildPlainConversationItems(
       toolCall,
     })),
   ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return mergeAdjacentThinkingItems(sorted);
+}
+
+function mergeAdjacentThinkingItems(
+  items: PlainConversationItem[],
+): PlainConversationItem[] {
+  return items.reduce<PlainConversationItem[]>((merged, item) => {
+    const last = merged.at(-1);
+    if (last?.kind !== "thinking" || item.kind !== "thinking") {
+      merged.push(item);
+      return merged;
+    }
+
+    merged[merged.length - 1] = {
+      kind: "thinking",
+      timestamp: last.timestamp,
+      toolCall: mergeThinkingToolCalls(last.toolCall, item.toolCall),
+    };
+    return merged;
+  }, []);
+}
+
+function mergeThinkingToolCalls(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+): AgentToolCall {
+  return {
+    ...current,
+    ...incoming,
+    id: current.id,
+    title: resolveMergedThinkingTitle(current.title, incoming.title),
+    status: resolveMergedThinkingStatus(current.status, incoming.status),
+    output: mergeOptionalText(current.output, incoming.output),
+    input: mergeOptionalText(current.input, incoming.input),
+    timestamp: current.timestamp,
+    updatedAt: incoming.updatedAt,
+  };
+}
+
+function resolveMergedThinkingTitle(
+  current: AgentToolCall["title"],
+  incoming: AgentToolCall["title"],
+) {
+  return /^thinking$/iu.test(current.trim()) ? incoming : current;
+}
+
+function resolveMergedThinkingStatus(
+  current: AgentToolCall["status"],
+  incoming: AgentToolCall["status"],
+) {
+  return current === "running" || incoming === "running" ? "running" : incoming;
+}
+
+function mergeOptionalText(
+  current: string | undefined,
+  incoming: string | undefined,
+) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming || current.endsWith(incoming)) {
+    return current;
+  }
+  if (incoming.startsWith(current)) {
+    return incoming;
+  }
+  return `${current}${incoming}`;
 }
 
 function shouldCollapsePlainMessage(text: string) {

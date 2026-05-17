@@ -3,6 +3,7 @@ import test from "node:test";
 import type { AgentMessage } from "@tiller/shared";
 import {
   buildProviderHistoryState,
+  filterNewProviderHistoryMessages,
   planProviderHistorySync,
   shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
@@ -173,6 +174,32 @@ test("toParagraphMessages keeps provider user prompts as one message", () => {
   const messages = toParagraphMessages([{ ...message, role: "user" }]);
 
   assert.deepEqual(messages, [{ ...message, role: "user" }]);
+});
+
+test("filterNewProviderHistoryMessages skips already stored paragraph ids", () => {
+  const providerMessages = [
+    baseMessage("provider-1", "旧消息"),
+    baseMessage("provider-2", "新消息第一段\n\n新消息第二段"),
+  ];
+  const incomingMessages = toParagraphMessages(providerMessages.slice(1));
+
+  assert.deepEqual(
+    filterNewProviderHistoryMessages(
+      [
+        ...toParagraphMessages(providerMessages),
+        baseMessage("local-extra", "本地额外消息"),
+      ],
+      incomingMessages,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    filterNewProviderHistoryMessages(
+      [toParagraphMessages(providerMessages)[0]],
+      incomingMessages,
+    ).map((message) => message.id),
+    ["provider-2#p0", "provider-2#p1"],
+  );
 });
 
 test("shouldRepairProviderHistorySnapshot detects persisted restore replay mixed with authoritative paragraphs", () => {

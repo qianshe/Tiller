@@ -121,6 +121,20 @@ function normalizeRuntimeThinkingToolCall(
   };
 }
 
+function resolveBroadcastToolCall(
+  incoming: AgentToolCall,
+  persisted: AgentToolCall | undefined,
+): AgentToolCall {
+  if (!persisted) {
+    return incoming;
+  }
+  return {
+    ...persisted,
+    ...(incoming.output !== undefined ? { output: incoming.output } : {}),
+    ...(incoming.input !== undefined ? { input: incoming.input } : {}),
+  };
+}
+
 function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText: string) {
   if (!currentText || !incomingText) {
     return false;
@@ -314,7 +328,10 @@ export function handleRuntimeEvent(
         const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
           | { toolCalls?: AgentToolCall[] }
           | undefined;
-        const mergedToolCall = artifacts?.toolCalls?.find((item) => item.id === toolCall.id) ?? toolCall;
+        const mergedToolCall = resolveBroadcastToolCall(
+          toolCall,
+          artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
+        );
         broadcastSessionUpdate(context, sessionId, {
           kind: "tool_call",
           toolCall: mergedToolCall,
@@ -327,7 +344,10 @@ export function handleRuntimeEvent(
       const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall) as
         | { toolCalls?: AgentToolCall[] }
         | undefined;
-      const mergedToolCall = artifacts?.toolCalls?.find((item) => item.id === event.toolCall.id) ?? event.toolCall;
+      const mergedToolCall = resolveBroadcastToolCall(
+        event.toolCall,
+        artifacts?.toolCalls?.find((item) => item.id === event.toolCall.id),
+      );
       broadcastSessionUpdate(context, sessionId, {
         kind: "tool_call",
         toolCall: mergedToolCall,

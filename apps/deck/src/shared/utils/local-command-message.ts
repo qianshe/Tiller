@@ -2,7 +2,8 @@ export function normalizeLocalCommandMessageText(text: string) {
   const trimmed = text.trim();
   const stdout = extractTaggedContent(trimmed, "local-command-stdout");
   if (stdout !== undefined) {
-    return stdout.trim();
+    const normalized = stdout.trim();
+    return shouldHideLocalCommandOutput(normalized) ? "" : normalized;
   }
   const stderr = extractTaggedContent(trimmed, "local-command-stderr");
   if (stderr !== undefined) {
@@ -12,6 +13,10 @@ export function normalizeLocalCommandMessageText(text: string) {
     return "";
   }
   return text;
+}
+
+function shouldHideLocalCommandOutput(text: string) {
+  return /^Set model to\b/iu.test(text);
 }
 
 function extractTaggedContent(text: string, tagName: string) {

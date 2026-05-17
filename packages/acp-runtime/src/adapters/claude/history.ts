@@ -153,7 +153,8 @@ function normalizeClaudeLocalCommandText(text: string) {
   const trimmed = text.trim();
   const stdout = extractTaggedContent(trimmed, "local-command-stdout");
   if (stdout !== undefined) {
-    return stdout.trim();
+    const normalized = stdout.trim();
+    return shouldHideClaudeLocalCommandOutput(normalized) ? "" : normalized;
   }
   const stderr = extractTaggedContent(trimmed, "local-command-stderr");
   if (stderr !== undefined) {
@@ -163,6 +164,10 @@ function normalizeClaudeLocalCommandText(text: string) {
     return "";
   }
   return text;
+}
+
+function shouldHideClaudeLocalCommandOutput(text: string) {
+  return /^Set model to\b/iu.test(text);
 }
 
 function extractTaggedContent(text: string, tagName: string) {
