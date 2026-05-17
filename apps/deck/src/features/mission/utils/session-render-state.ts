@@ -63,8 +63,18 @@ export function resolveMissionActivityLoading({
   pendingPermission: PermissionRequest | null;
 }) {
   if (!isSessionExecutionPending(status)) return null;
-  const pendingToolActivity = resolvePendingToolActivity(toolCalls);
+  const pendingToolActivity = resolvePendingToolActivity(
+    toolCalls.filter((toolCall) => toolCall.kind !== "think"),
+  );
   if (pendingToolActivity) return pendingToolActivity;
+  if (toolCalls.some(isPendingThinkingToolCall)) return null;
   if (pendingPermission) return null;
   return { title: "ACP 正在运行", status };
+}
+
+function isPendingThinkingToolCall(toolCall: AgentToolCall) {
+  return (
+    toolCall.kind === "think" &&
+    (toolCall.status === "pending" || toolCall.status === "running")
+  );
 }

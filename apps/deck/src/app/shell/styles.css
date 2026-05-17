@@ -116,6 +116,11 @@ h3 {
   scroll-padding-block: 10px;
 }
 
+.chat-main,
+.mission-responsive-mode [data-mission-mobile-pane="chat"] {
+  scrollbar-gutter: stable;
+}
+
 .compact {
   margin-top: 4px;
 }

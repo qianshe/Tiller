@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1818
+- Total lines: 1823
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 794
-- Top-level selectors: 141
+- Lines: 799
+- Top-level selectors: 143
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -22,6 +22,7 @@ Selectors:
 - `.admiral-connected`
 - `.admiral-connecting`
 - `.admiral-disconnected`
+- `.chat-main`
 - `.compact`
 - `.device-mono`
 - `.mission-inspector-section-head > div`
@@ -65,6 +66,7 @@ Selectors:
 - `.mission-responsive-mode [data-mission-mobile-pane] input`
 - `.mission-responsive-mode [data-mission-mobile-pane] select`
 - `.mission-responsive-mode [data-mission-mobile-pane] textarea`
+- `.mission-responsive-mode [data-mission-mobile-pane="chat"]`
 - `.mission-responsive-mode #mission-prompt-input`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager-label`

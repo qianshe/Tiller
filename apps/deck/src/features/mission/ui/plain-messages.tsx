@@ -66,13 +66,9 @@ export function PlainMessages({
   const hasHiddenLoadedMessages = visibleItems.length < displayItems.length;
   const canLoadMoreMessages =
     hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
-  const loadMoreLabel = resolveLoadMoreMessagesLabel({
-    hasMoreHistory: Boolean(historyState?.hasMore),
-    loading: Boolean(historyState?.loading),
-    pageSize: DEFAULT_VISIBLE_MESSAGE_LIMIT,
-    totalLoaded: displayItems.length,
-    visible: visibleItems.length,
-  });
+  const loadMoreLabel = resolveLoadMoreMessagesLabel(
+    Boolean(historyState?.loading),
+  );
 
   useEffect(() => {
     const snapshot = localScrollSnapshotRef.current;
@@ -147,17 +143,7 @@ export function PlainMessages({
 
 type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
 
-type LoadMoreMessagesLabelInput = {
-  hasMoreHistory: boolean;
-  loading: boolean;
-  pageSize: number;
-  totalLoaded: number;
-  visible: number;
-};
-
-export function resolveLoadMoreMessagesLabel({
-  loading,
-}: LoadMoreMessagesLabelInput) {
+export function resolveLoadMoreMessagesLabel(loading: boolean) {
   if (loading) {
     return "加载中...";
   }
@@ -261,59 +247,67 @@ const PlainMessageItem = memo(function PlainMessageItem({
   );
 });
 
-function PlainThinkingItem({ item }: { item: AgentToolCall }) {
-  const isRunning = item.status === "pending" || item.status === "running";
-  const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
-  const title = resolveThinkingTitle(item);
-
+function PlainThinkingIcon() {
   return (
-    <details
-      className="plain-thinking rounded-xl border border-border-ghost bg-surface-elevated/80 p-0 shadow-ambient"
-      open={isRunning || undefined}
+    <svg
+      className="plain-thinking-icon size-3"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
     >
-      <summary className="grid cursor-pointer list-none grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-2 rounded-full ring-4 ring-surface-sunken",
-            isRunning ? "animate-pulse bg-accent" : "bg-info",
-          )}
-        />
-        <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-          {title}
-        </span>
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {resolveThinkingStatusLabel(item.status)}
-        </span>
-      </summary>
-      <div className="border-t border-border-ghost px-3 py-2 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-        <MarkdownMessage text={text} />
-      </div>
-    </details>
+      <path
+        d="M5.6 11.4c-1.8 0-3.2-1.3-3.2-3 0-1.4.9-2.5 2.2-2.9.3-1.7 1.8-3 3.6-3 1.5 0 2.8.9 3.4 2.2 1.2.3 2.1 1.4 2.1 2.7 0 1.6-1.3 2.9-3 2.9H8.8L6.6 13v-1.6h-1Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.4 6.4h3.4M5.9 8.3h4.2"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
-function resolveThinkingTitle(item: AgentToolCall) {
-  const rawTitle = item.title?.trim();
-  if (!rawTitle || /^thinking$/iu.test(rawTitle) || rawTitle === item.id) {
-    return "Thinking";
-  }
-  return `Thinking · ${rawTitle}`;
-}
+function PlainThinkingItem({ item }: { item: AgentToolCall }) {
+  const isRunning = item.status === "pending" || item.status === "running";
+  const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
+  const [open, setOpen] = useState(isRunning);
 
-function resolveThinkingStatusLabel(status: AgentToolCall["status"]) {
-  switch (status) {
-    case "completed":
-      return "完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-      return "取消";
-    case "waiting_for_permission":
-      return "等待";
-    default:
-      return "思考中";
-  }
+  useEffect(() => {
+    setOpen(isRunning);
+  }, [isRunning]);
+
+  return (
+    <div className="plain-thinking-row mr-auto grid w-full max-w-[min(820px,100%)] grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
+      <span aria-hidden="true" className="mt-1.5 inline-flex size-3 items-center justify-center text-muted-foreground/60">
+        <PlainThinkingIcon />
+      </span>
+      <details
+        className="plain-thinking min-w-0 w-full text-muted-foreground"
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary
+          className="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-sm py-1 pr-1 text-xs text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          aria-label={open ? "收起 Thinking" : "展开 Thinking"}
+        >
+          <span className="min-w-0 truncate font-medium">
+            Thinking
+          </span>
+          <span aria-hidden="true" className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">
+            {open ? "⌃" : "⌄"}
+          </span>
+        </summary>
+        <div className="plain-thinking-content ml-1.5 border-l border-border-ghost pl-3.5 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+          <MarkdownMessage text={text} />
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function renderPlainMessageContent(

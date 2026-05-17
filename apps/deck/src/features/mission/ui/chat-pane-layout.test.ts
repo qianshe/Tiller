@@ -405,6 +405,7 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
   assert.match(shellStylesSource, /overflow-y:\s*auto/);
+  assert.match(shellStylesSource, /\.chat-main,\s*\.mission-responsive-mode \[data-mission-mobile-pane="chat"\]\s*{[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);

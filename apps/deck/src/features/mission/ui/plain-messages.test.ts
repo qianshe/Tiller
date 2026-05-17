@@ -55,17 +55,8 @@ test("plain message timeline can reveal older loaded messages", () => {
   );
 });
 
-test("plain message load-more label reports visible and loaded counts", () => {
-  assert.equal(
-    resolveLoadMoreMessagesLabel({
-      hasMoreHistory: true,
-      loading: false,
-      pageSize: DEFAULT_VISIBLE_MESSAGE_LIMIT,
-      totalLoaded: 45,
-      visible: 20,
-    }),
-    "查看更多",
-  );
+test("plain message load-more label stays concise", () => {
+  assert.equal(resolveLoadMoreMessagesLabel(false), "查看更多");
 });
 
 test("plain message timeline uses chronological latest messages from newest-first pages", () => {

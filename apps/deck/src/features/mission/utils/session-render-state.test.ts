@@ -138,6 +138,24 @@ test("mission activity loading prioritizes pending tool activity", () => {
   assert.equal(loading?.status, "waiting_for_permission");
 });
 
+test("mission activity loading leaves thinking to the chat timeline", () => {
+  const thinking = {
+    ...toolCall("running"),
+    id: "think-1",
+    commandId: undefined,
+    kind: "think",
+    title: "Thinking",
+  } as AgentToolCall;
+  const loading = resolveMissionActivityLoading({
+    status: "running",
+    messages: [agentMessage("assistant-1", "assistant", "2026-05-08T01:02:00.000Z")],
+    toolCalls: [thinking],
+    pendingPermission: null,
+  });
+
+  assert.equal(loading, null);
+});
+
 test("mission activity loading ignores stale pending tools after session ends", () => {
   const loading = resolveMissionActivityLoading({
     status: "idle",

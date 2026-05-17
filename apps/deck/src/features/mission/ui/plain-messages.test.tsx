@@ -30,7 +30,7 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
       emptyText: "等待回复",
       assistantLabel: "Assistant",
       roleLabels: { assistant: "Assistant", system: "System", user: "User" },
-      expandedMessageIds: new Set(),
+      expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
       onToggleExpandedMessage: () => {},
@@ -40,8 +40,13 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /Assistant/);
   assert.match(html, /先给一个结论。/);
   assert.match(html, /Thinking/);
-  assert.match(html, /Tab 替换边界探索/);
+  assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
   assert.match(html, /完整 Thinking 内容/);
+  assert.match(html, /plain-thinking-row[^"]*grid-cols-\[1rem_minmax\(0,1fr\)\]/);
+  assert.match(html, /plain-thinking-content[^"]*border-l/);
+  assert.match(html, /aria-label="展开 Thinking"/);
+  assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
+  assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
 });
 
 test("plain messages avoids duplicated generic thinking titles", () => {
@@ -63,7 +68,7 @@ test("plain messages avoids duplicated generic thinking titles", () => {
       emptyText: "等待回复",
       assistantLabel: "Assistant",
       roleLabels: { assistant: "Assistant", system: "System", user: "User" },
-      expandedMessageIds: new Set(),
+      expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
       onToggleExpandedMessage: () => {},
@@ -72,6 +77,46 @@ test("plain messages avoids duplicated generic thinking titles", () => {
 
   assert.match(html, /Thinking/);
   assert.doesNotMatch(html, /Thinking · Thinking/);
+});
+
+test("plain messages auto-expands running thinking and collapses completed thinking", () => {
+  const renderThinking = (status: "running" | "completed") =>
+    renderToStaticMarkup(
+      createElement(PlainMessages, {
+        sessionId: "session-1",
+        items: [],
+        thinkingToolCalls: [
+          {
+            id: `think-${status}`,
+            kind: "think",
+            title: "Thinking",
+            status,
+            output: `${status} Thinking`,
+            timestamp: "2026-05-17T10:00:01.000Z",
+            updatedAt: "2026-05-17T10:00:02.000Z",
+          },
+        ],
+        emptyText: "等待回复",
+        assistantLabel: "Assistant",
+        roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+        expandedMessageIds: new Set<string>(),
+        historyState: { hasMore: false, loading: false },
+        onLoadOlderMessages: () => {},
+        onToggleExpandedMessage: () => {},
+      }),
+    );
+
+  const runningHtml = renderThinking("running");
+  const completedHtml = renderThinking("completed");
+
+  assert.match(runningHtml, /<details[^>]*open=""/);
+  assert.doesNotMatch(completedHtml, /<details[^>]*open=""/);
+  assert.match(runningHtml, /aria-label="收起 Thinking"/);
+  assert.match(completedHtml, /aria-label="展开 Thinking"/);
+  assert.match(runningHtml, /⌃/);
+  assert.doesNotMatch(runningHtml, /⌄/);
+  assert.match(completedHtml, /⌄/);
+  assert.doesNotMatch(completedHtml, /⌃/);
 });
 
 test("plain messages load-more history button keeps a concise label", () => {
@@ -85,7 +130,7 @@ test("plain messages load-more history button keeps a concise label", () => {
       emptyText: "等待回复",
       assistantLabel: "Assistant",
       roleLabels: { assistant: "Assistant", system: "System", user: "User" },
-      expandedMessageIds: new Set(),
+      expandedMessageIds: new Set<string>(),
       historyState: { hasMore: true, loading: false },
       onLoadOlderMessages: () => {},
       onToggleExpandedMessage: () => {},
@@ -146,14 +191,14 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
       emptyText: "等待回复",
       assistantLabel: "Assistant",
       roleLabels: { assistant: "Assistant", system: "System", user: "User" },
-      expandedMessageIds: new Set(),
+      expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
       onToggleExpandedMessage: () => {},
     }),
   );
 
-  assert.equal(html.match(/plain-thinking/g)?.length, 1);
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
   assert.match(html, /第一段 Thinking/);
   assert.match(html, /第二段 Thinking/);
   assert.match(html, /第三段 Thinking/);
@@ -193,7 +238,7 @@ test("plain messages hides local command wrappers and model switch stdout", () =
       emptyText: "等待回复",
       assistantLabel: "Assistant",
       roleLabels: { assistant: "Assistant", system: "System", user: "User" },
-      expandedMessageIds: new Set(),
+      expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
       onToggleExpandedMessage: () => {},
