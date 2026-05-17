@@ -74,6 +74,28 @@ test("plain messages avoids duplicated generic thinking titles", () => {
   assert.doesNotMatch(html, /Thinking · Thinking/);
 });
 
+test("plain messages load-more history button keeps a concise label", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        { id: "user-1", role: "user", text: "第一条", timestamp: "2026-05-17T10:00:00.000Z" },
+      ],
+      thinkingToolCalls: [],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set(),
+      historyState: { hasMore: true, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, />查看更多<\/button>/);
+  assert.doesNotMatch(html, /已显示|继续加载每次最多|（/);
+});
+
 test("plain messages merges adjacent thinking tool calls in the conversation timeline", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {

@@ -13,7 +13,7 @@ export function normalizeGeneratedSessionTitle(value: string) {
   if (/<\/?(?:tool_call|function|parameter)(?:[\s=>/]|$)/iu.test(value)) {
     return "";
   }
-  return value.replace(/["'""''`#：:，,。.!！?？\s]+/gu, "").slice(0, 10);
+  return value.replace(/["'""''`#：:，,。.!！?？\s]+/gu, "");
 }
 
 export async function resolveRegeneratedSessionTitle(

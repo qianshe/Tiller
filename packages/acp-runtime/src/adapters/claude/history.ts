@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { normalizeLocalCommandMessageText } from "@tiller/shared";
 import type { AgentMessage, AgentToolCall, AgentToolCallKind } from "@tiller/shared";
 import type { AcpAuthoritativeHistory } from "../types";
 
@@ -138,41 +139,19 @@ function parseJsonLine(line: string): any | null {
 }
 
 function collectClaudeText(content: unknown) {
-  if (typeof content === "string") {
-    return normalizeClaudeLocalCommandText(content);
-  }
-  return normalizeClaudeLocalCommandText(
-    asArray(content)
-      .filter((part) => part?.type === "text" && typeof part.text === "string")
-      .map((part) => part.text)
-      .join(""),
-  );
-}
-
-function normalizeClaudeLocalCommandText(text: string) {
-  const trimmed = text.trim();
-  const stdout = extractTaggedContent(trimmed, "local-command-stdout");
-  if (stdout !== undefined) {
-    const normalized = stdout.trim();
-    return shouldHideClaudeLocalCommandOutput(normalized) ? "" : normalized;
-  }
-  const stderr = extractTaggedContent(trimmed, "local-command-stderr");
-  if (stderr !== undefined) {
-    return stderr.trim();
-  }
-  if (/<(?:local-command-caveat|command-name|command-message|command-args)\b/iu.test(trimmed)) {
-    return "";
-  }
-  return text;
+  const raw =
+    typeof content === "string"
+      ? content
+      : asArray(content)
+          .filter((part) => part?.type === "text" && typeof part.text === "string")
+          .map((part) => part.text)
+          .join("");
+  const normalized = normalizeLocalCommandMessageText(raw);
+  return shouldHideClaudeLocalCommandOutput(normalized) ? "" : normalized;
 }
 
 function shouldHideClaudeLocalCommandOutput(text: string) {
   return /^Set model to\b/iu.test(text);
-}
-
-function extractTaggedContent(text: string, tagName: string) {
-  const match = text.match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "iu"));
-  return match?.[1];
 }
 
 function normalizeMessageRole(role: unknown): AgentMessage["role"] | null {

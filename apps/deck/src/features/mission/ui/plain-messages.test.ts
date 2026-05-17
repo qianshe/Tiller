@@ -64,7 +64,7 @@ test("plain message load-more label reports visible and loaded counts", () => {
       totalLoaded: 45,
       visible: 20,
     }),
-    "查看更多（已显示 20/45，继续加载每次最多 20 条）",
+    "查看更多",
   );
 });
 

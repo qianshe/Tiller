@@ -156,17 +156,12 @@ type LoadMoreMessagesLabelInput = {
 };
 
 export function resolveLoadMoreMessagesLabel({
-  hasMoreHistory,
   loading,
-  pageSize,
-  totalLoaded,
-  visible,
 }: LoadMoreMessagesLabelInput) {
   if (loading) {
     return "加载中...";
   }
-  const historyHint = hasMoreHistory ? `，继续加载每次最多 ${pageSize} 条` : "";
-  return `查看更多（已显示 ${visible}/${totalLoaded}${historyHint}）`;
+  return "查看更多";
 }
 
 type PlainMessageItemProps = {

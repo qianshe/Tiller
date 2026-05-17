@@ -153,9 +153,6 @@ export function MissionSidebar({
                     {projects.length} 个
                   </Badge>
                 </div>
-                <p className="muted compact text-xs leading-relaxed text-muted-foreground">
-                  Helm → Project → Session
-                </p>
               </div>
             </div>
             <div className="mission-tree grid gap-2" role="tree" aria-label="任务层级树">

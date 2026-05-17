@@ -137,3 +137,14 @@ test("mission activity loading prioritizes pending tool activity", () => {
   assert.equal(loading?.title, "mcp_router/search_context");
   assert.equal(loading?.status, "waiting_for_permission");
 });
+
+test("mission activity loading ignores stale pending tools after session ends", () => {
+  const loading = resolveMissionActivityLoading({
+    status: "idle",
+    messages: [agentMessage("assistant-1", "assistant", "2026-05-08T01:02:00.000Z")],
+    toolCalls: [toolCall("running")],
+    pendingPermission: null,
+  });
+
+  assert.equal(loading, null);
+});

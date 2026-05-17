@@ -195,6 +195,7 @@ test("mission shell fills the viewport so the project pane stays visible on desk
 test("mission project sidebar uses shared primitives and explicit Tailwind tree rows", () => {
   assert.match(sidebarSource, /Badge/);
   assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
+  assert.doesNotMatch(sidebarSource, /Helm → Project → Session/);
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
@@ -211,7 +212,8 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
   assert.match(sessionRowSource, /grid-cols-\[16px_20px_minmax\(0,1fr\)_auto\]/);
-  assert.match(sessionRowSource, /mission-tree-session-meta/);
+  assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
+  assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
   assert.match(sessionRowSource, /mission-tree-worktree-indicator/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
@@ -227,6 +229,8 @@ test("mission display page navigation is placed above the content", () => {
   assert.match(displayPanelSource, /mission-panel-body grid min-h-0 flex-1 grid-rows-\[auto_minmax\(0,1fr\)\]/);
   assert.doesNotMatch(displayPanelSource, /grid-cols-\[72px_minmax\(0,1fr\)\]/);
   assert.match(panelsSource, /mission-panel-tree flex/);
+  assert.match(panelsSource, /overflow-x-auto overflow-y-hidden/);
+  assert.match(panelsSource, /\[scrollbar-width:none\]/);
   assert.match(panelsSource, /border-b border-border-ghost/);
   assert.doesNotMatch(panelsSource, /border-r border-border-ghost/);
 });
@@ -343,7 +347,9 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(mobilePagerSource, /面板/);
   assert.match(mobilePagerSource, /检视/);
   assert.match(mobilePagerSource, /aria-label=\{item\.label\}/);
-  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*16px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*3px;/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*padding:\s*2px 14px max\(2px, env\(safe-area-inset-bottom\)\);/s);
+  assert.match(shellStylesSource, /\.mission-mobile-pager-item\s*{[^}]*min-height:\s*3px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-dot\s*{[^}]*height:\s*3px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-item\.active \.mission-mobile-pager-dot\s*{[^}]*opacity:\s*1;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager-label\s*{[^}]*display:\s*none;/s);
@@ -378,6 +384,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 });
 
 const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
+const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
 const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
 const composerAttachmentsSource = readFileSync(
   resolve(currentDir, "composer-attachments.tsx"),
@@ -443,4 +450,13 @@ test("mission display and logbook headers stay compact on mobile", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-content\s*{[^}]*padding:\s*8px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-session-overview\s*{[^}]*padding:\s*8px;/s);
   assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-session-preview\s*{[^}]*display:\s*none;/s);
+});
+
+test("mission inspector diff rows stay compact on mobile", () => {
+  assert.match(diffPanelSource, /mission-change-tree grid min-h-0 gap-0\.5/);
+  assert.match(diffPanelSource, /mission-file-row-compact[^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-\[11px\]/);
+  assert.match(diffPanelSource, /mission-file-status[^\"]*px-1[^\"]*text-\[9px\]/);
+  assert.match(diffPanelSource, /mission-change-group-title[^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-\[11px\]/);
+  assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
+  assert.doesNotMatch(diffPanelSource, /<strong className="min-w-0 truncate">\{node\.name\}<\/strong>/);
 });

@@ -62,9 +62,9 @@ export function resolveMissionActivityLoading({
   toolCalls: AgentToolCall[];
   pendingPermission: PermissionRequest | null;
 }) {
+  if (!isSessionExecutionPending(status)) return null;
   const pendingToolActivity = resolvePendingToolActivity(toolCalls);
   if (pendingToolActivity) return pendingToolActivity;
   if (pendingPermission) return null;
-  if (!isSessionExecutionPending(status)) return null;
   return { title: "ACP 正在运行", status };
 }

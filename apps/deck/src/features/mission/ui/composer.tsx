@@ -195,7 +195,7 @@ export function MissionComposer({
 
   return (
     <div
-      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost bg-surface p-3"
+      className="chat-input-area draft-toolbar mission-composer"
       data-mission-swipe-lock="true"
     >
       <form

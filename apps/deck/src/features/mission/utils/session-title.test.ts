@@ -23,7 +23,7 @@ test("generated session titles normalize markdown and whitespace", () => {
 test("generated session titles keep a readable short display segment", () => {
   assert.equal(
     normalizeGeneratedSessionTitle("修复会话重命名提示词过严的问题"),
-    "修复会话重命名提示词",
+    "修复会话重命名提示词过严的问题",
   );
 });
 

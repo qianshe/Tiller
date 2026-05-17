@@ -85,6 +85,7 @@ test("composer enables send for a typed new-session prompt", () => {
 test("composer uses a tighter frame and padded square textarea", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps()));
 
+  assert.doesNotMatch(html, /chat-input-area[^\"]*border-t/);
   assert.match(html, /rounded-md border border-border-ghost\/70 bg-surface px-3 py-2\.5/);
   assert.match(html, /rounded-none border-0 bg-transparent px-1 py-0/);
 });
@@ -104,6 +105,18 @@ test("composer keeps model settings locked until active session config is ready"
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     activeSession: { id: "session-1" },
     draftModelLoading: false,
+    draftModelConfigReady: false,
+    draftConfigOptions: [{ id: "cached", label: "cached", type: "text" }],
+  })));
+
+  assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
+  assert.match(html, /模型加载中/);
+});
+
+test("composer locks model settings while new-session config is loading", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: null,
+    draftModelLoading: true,
     draftModelConfigReady: false,
     draftConfigOptions: [{ id: "cached", label: "cached", type: "text" }],
   })));

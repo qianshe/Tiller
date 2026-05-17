@@ -24,7 +24,7 @@ export function MissionPanelNav({
       <TabsList
         size="sm"
         aria-label="展示页"
-        className="mission-panel-tree flex w-full justify-start gap-0.5 overflow-x-auto rounded-none border-b border-border-ghost bg-transparent"
+        className="mission-panel-tree flex h-auto min-h-8 w-full justify-start gap-0.5 overflow-x-auto overflow-y-hidden rounded-none border-b border-border-ghost bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {pages.map((page) => {
           const custom = page.id.startsWith("custom-");
