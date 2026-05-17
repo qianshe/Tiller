@@ -277,6 +277,12 @@ test("mission mobile uses explicit edge paging zones instead of draggable cards"
   assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] button,[\s\S]*?z-index:\s*7;/);
 });
 
+test("mission composer tools trigger advertises disabled affordance", () => {
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*pointer-events:\s*auto;/s);
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*cursor:\s*not-allowed;/s);
+  assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*opacity:\s*0\.6;/s);
+});
+
 const mobilePagerSource = readFileSync(resolve(currentDir, "mobile-pager.tsx"), "utf8");
 
 test("mission mobile pager is compact and exposes four pane destinations", () => {

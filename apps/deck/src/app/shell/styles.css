@@ -777,6 +777,12 @@ h3 {
   background-clip: padding-box;
 }
 
+.mission-tools-trigger:disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .mission-status-scroll {
   scrollbar-width: none;
 }
