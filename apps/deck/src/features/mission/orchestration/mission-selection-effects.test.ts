@@ -68,6 +68,12 @@ test("mission project plus owns the ACP picker and selected agent connects befor
   assert.match(worktreeSourceText, /正在连接 ACP/);
 });
 
+test("mission mobile jumps to chat after selecting an ACP agent from project new task", () => {
+  assert.match(sidebarSourceText, /setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>/);
+  assert.match(sidebarSourceText, /setSelectedMissionMobilePane\("chat"\)/);
+  assert.match(worktreeSourceText, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
+});
+
 test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {
   assert.match(worktreeSourceText, /agentConnectionInventory as any\[\]/);
   assert.match(worktreeSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
@@ -124,6 +130,11 @@ test("mission selection effects creates a draft session without a separate model
   assert.match(sourceText, /session\/draft/);
   assert.doesNotMatch(sourceText, /agent\/get_model_options/);
   assert.match(sourceText, /正在创建 ACP 草稿会话并加载模型/);
+});
+
+test("mission selection effects refreshes cached model options when no draft is ready", () => {
+  assert.match(sourceText, /if \(cached\.draftId\) \{\s*return;\s*\}/);
+  assert.match(sourceText, /const shouldProbeModelOptions =\s*!cached\?\.draftId \|\|/);
 });
 
 test("mission selection effects preserves available model options while probing", () => {

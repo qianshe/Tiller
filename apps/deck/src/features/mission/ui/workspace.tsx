@@ -8,6 +8,7 @@ import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
+import { MissionStatusBar } from "./mission-status-bar";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
@@ -558,6 +559,7 @@ export function MissionWorktree(props: any) {
           setPendingSessionCleanup={setPendingSessionCleanup}
           sessionHistoryState={sessionHistoryState}
           toggleMissionProjectNode={toggleMissionProjectNode}
+          setSelectedMissionMobilePane={setSelectedMissionMobilePane}
           resizer={
             !isMissionMobile && !effectiveSidebarCollapsed ? (
               <MissionPaneResizer
@@ -600,6 +602,10 @@ export function MissionWorktree(props: any) {
               <span>
                 {selectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
               </span>
+              <MissionStatusBar
+                modelLoading={Boolean(draftConnectionEntry?.loading ?? selectedAgentId)}
+                promptEnhancing={false}
+              />
             </div>
           ) : null}
           {shouldShowRestoreGateNotice ? (
@@ -610,6 +616,7 @@ export function MissionWorktree(props: any) {
                   : "正在恢复 ACP"}
               </strong>
               <span>{activeSessionRestoreGate.message}</span>
+              <MissionStatusBar modelLoading={true} promptEnhancing={false} />
             </div>
           ) : null}
           {shouldShowComposer ? (

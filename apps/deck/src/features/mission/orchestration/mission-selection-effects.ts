@@ -256,12 +256,15 @@ export function useMissionSelectionEffects(source: any) {
         if (cached.state.reasoningEffort) {
           setSelectedReasoningEffort(cached.state.reasoningEffort);
         }
-        return;
+        if (cached.draftId) {
+          return;
+        }
       }
       if (cached?.loading) {
         return;
       }
       const shouldProbeModelOptions =
+        !cached?.draftId ||
         !cached?.message ||
         cached.message === "ACP provider connected." ||
         cached.message === "ACP 已连接" ||

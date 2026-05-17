@@ -51,6 +51,30 @@ function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
 
 type SessionConfigSelection = Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">;
 
+function clearConsumedDraftMetadata(runtimeSessionId: string) {
+  const store = useDeckStore.getState();
+  store.setAgentModelOptions((current) => {
+    let changed = false;
+    const next = Object.fromEntries(
+      Object.entries(current).map(([key, entry]) => {
+        if (entry.runtimeSessionId !== runtimeSessionId || !entry.draftId) {
+          return [key, entry];
+        }
+        changed = true;
+        const {
+          draftId: _draftId,
+          deckClientId: _deckClientId,
+          scopeKey: _scopeKey,
+          logicalScopeKey: _logicalScopeKey,
+          ...rest
+        } = entry;
+        return [key, rest];
+      }),
+    );
+    return changed ? next : current;
+  });
+}
+
 function configOptionCategory(option: SessionConfigOption) {
   return option.category?.toLowerCase() ?? option.id.toLowerCase();
 }
@@ -203,6 +227,7 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
     return true;
   }
   store.setActiveSessionId(payload.session.id);
+  clearConsumedDraftMetadata(payload.session.runtimeSessionId);
   if (pendingPromptRef.current && rpcClientRef.current) {
     const pendingPrompt = pendingPromptRef.current;
     const pendingContent = pendingPromptContentRef.current;
