@@ -357,3 +357,29 @@ test("applyInventoryResult preserves haiku reasoning when ACP options expose it"
     true,
   );
 });
+
+test("applySessionUpdate refreshes ACP connection inventory on status changes", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+  const dispatched: Array<{ method: string; params: unknown }> = [];
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "status_change",
+        status: "idle",
+        message: "ACP prompt completed",
+      },
+    },
+    {
+      rpcClientRef: { current: { socket: { readyState: 1 } } },
+      dispatch: (_client: unknown, method: string, params: unknown) => {
+        dispatched.push({ method, params });
+      },
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(dispatched, [{ method: "agent/connections", params: {} }]);
+});

@@ -132,7 +132,7 @@ export function parseOpenCodeSqliteHistory(
 
   return {
     messages: sortByTimestamp(messages),
-    toolCalls: sortByTimestamp(toolCalls),
+    toolCalls: sortByTimestamp(coalesceThinkingToolCalls(toolCalls)),
   };
 }
 
@@ -183,13 +183,20 @@ export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory
 
   return {
     messages: sortByTimestamp(messages),
-    toolCalls: sortByTimestamp(toolCalls),
+    toolCalls: sortByTimestamp(coalesceThinkingToolCalls(toolCalls)),
   };
 }
 
 function collectToolCalls(message: any): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
   for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+    if (part?.type === "reasoning") {
+      const thinking = collectReasoningToolCall(part, message);
+      if (thinking) {
+        calls.push(thinking);
+      }
+      continue;
+    }
     if (part?.type !== "tool") {
       continue;
     }
@@ -222,6 +229,64 @@ function collectToolCalls(message: any): AgentToolCall[] {
     });
   }
   return calls;
+}
+
+function collectReasoningToolCall(part: any, message: any): AgentToolCall | null {
+  const id = reasoningToolCallId(part, message);
+  const output = stringFrom(part.text ?? part.reasoning ?? part.thinking);
+  const timestamp = timestampFromMillis(part?.time?.start ?? part?.time?.created);
+  const updatedAt = timestampFromMillis(part?.time?.end ?? part?.time?.updated) ?? timestamp;
+  if (!id || !output || !timestamp || !updatedAt) {
+    return null;
+  }
+  return {
+    id,
+    commandId: id,
+    kind: "think",
+    title: "Thinking",
+    status: "completed",
+    output,
+    timestamp,
+    updatedAt,
+  };
+}
+
+function reasoningToolCallId(part: any, message: any) {
+  const sessionId = stringFrom(part.sessionID ?? part.sessionId);
+  if (sessionId) {
+    return `${sessionId}:thinking`;
+  }
+  return stringFrom(part.id) ?? `${stringFrom(message?.id ?? message?.info?.id) ?? "opencode"}:reasoning`;
+}
+
+function coalesceThinkingToolCalls(toolCalls: AgentToolCall[]) {
+  const coalesced = new Map<string, AgentToolCall>();
+  const result: AgentToolCall[] = [];
+
+  for (const toolCall of toolCalls) {
+    if (toolCall.kind !== "think") {
+      result.push(toolCall);
+      continue;
+    }
+
+    const existing = coalesced.get(toolCall.id);
+    if (!existing) {
+      const copy = { ...toolCall };
+      coalesced.set(toolCall.id, copy);
+      result.push(copy);
+      continue;
+    }
+
+    existing.output = [existing.output, toolCall.output].filter(Boolean).join("\n\n");
+    if (toolCall.timestamp < existing.timestamp) {
+      existing.timestamp = toolCall.timestamp;
+    }
+    if (toolCall.updatedAt > existing.updatedAt) {
+      existing.updatedAt = toolCall.updatedAt;
+    }
+  }
+
+  return result;
 }
 
 function collectMessageText(parts: unknown, role: AgentMessage["role"] | null) {
@@ -260,7 +325,17 @@ function normalizeOpenCodeUserTextParts(textParts: string[]) {
     ),
   );
 
-  return containedOriginal?.text ?? textParts.join("");
+  return unwrapOpenCodeEnhancedPrompt(containedOriginal?.text ?? textParts.join(""));
+}
+
+function unwrapOpenCodeEnhancedPrompt(value: string) {
+  const normalized = value.replace(/\r\n/gu, "\n").trim();
+  if (!/^\[[a-z-]+-mode\]/iu.test(normalized)) {
+    return value;
+  }
+  const sections = normalized.split(/\n---\n/u);
+  const tail = sections.at(-1)?.trim();
+  return tail || value;
 }
 
 function normalizeForContainment(value: string) {

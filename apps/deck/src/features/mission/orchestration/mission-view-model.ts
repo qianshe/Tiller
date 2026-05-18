@@ -51,7 +51,9 @@ export function useMissionViewModel(ctx: any) {
     sessionConfigOptions,
     promptQueues,
     deckPreferences,
+    toolCalls,
   } = source;
+const activeSessionToolCalls = activeSessionId ? (toolCalls?.[activeSessionId] ?? []) : [];
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,
   [activeSessionId, sessions],
@@ -69,6 +71,7 @@ const {
 const activeConversationUpdateKey = useActiveConversationUpdateKey(
   activeSessionId,
   activeSessionMessages,
+  activeSessionToolCalls,
 );
 const draftProject = useMemo(
   () => projects.find((project) => project.id === selectedProjectId) ?? null,

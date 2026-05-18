@@ -640,6 +640,7 @@ export function applySessionUpdate(
       }));
       return true;
     case "status_change":
+      requestAgentConnectionsRefresh(context);
       store.setStatuses((current) => ({
         ...current,
         [sessionId]: update.status,

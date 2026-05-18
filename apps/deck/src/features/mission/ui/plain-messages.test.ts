@@ -147,6 +147,30 @@ test("plain message timeline filters whole OpenCode wrapper echo messages", () =
   );
 });
 
+test("plain message timeline keeps a single OpenCode wrapper when no original prompt exists", () => {
+  const wrappedPrompt = [
+    "[analyze-mode]",
+    "ANALYSIS MODE. Gather context before diving deep:",
+    "SYNTHESIZE findings before proceeding.",
+    "---",
+    "MANDATORY delegate_task params: ALWAYS include load_skills=[] and run_in_background when calling delegate_task.",
+    "---",
+    "帮我分析下现在项目的分支是什么？",
+  ].join("\n");
+
+  assert.deepEqual(
+    resolveVisiblePlainMessages([
+      {
+        id: "wrapper-whole",
+        role: "user",
+        text: wrappedPrompt,
+        timestamp: "2026-05-06T01:05:01.000Z",
+      },
+    ]).map((item) => item.text),
+    [wrappedPrompt],
+  );
+});
+
 test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
   const chunks: AgentMessage[] = [
     {

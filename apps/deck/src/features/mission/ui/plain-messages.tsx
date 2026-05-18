@@ -430,9 +430,10 @@ type MarkdownFenceState = {
 };
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
+  const sortedMessages = sortAgentMessagesByTimeline(items);
   return coalesceDisplayMessages(
-    sortAgentMessagesByTimeline(items).filter(
-      (message) => !isAcpPromptWrapperEcho(message),
+    sortedMessages.filter(
+      (message) => !isAcpPromptWrapperEcho(message, sortedMessages),
     ),
     boundaryTimestamps,
   );
@@ -616,17 +617,31 @@ function shouldCollapsePlainMessage(text: string) {
   );
 }
 
-function isAcpPromptWrapperEcho(message: AgentMessage) {
+function isAcpPromptWrapperEcho(message: AgentMessage, messages: AgentMessage[]) {
   if (message.role !== "user") {
     return false;
   }
   const text = message.text.trim();
-  return (
-    /^\[[a-z-]+mode\]/iu.test(text) ||
-    text === "---" ||
-    text.includes("SYNTHESIZE findings before proceeding.") ||
-    text.includes("MANDATORY delegate_task params")
+  if (!text.includes("MANDATORY delegate_task params")) {
+    return text === "---" || /^\[[a-z-]+mode\]/iu.test(text) || text.includes("SYNTHESIZE findings before proceeding.");
+  }
+  const originalPrompt = extractOpenCodeWrapperOriginalPrompt(text);
+  return Boolean(
+    originalPrompt &&
+      messages.some(
+        (candidate) =>
+          candidate.id !== message.id &&
+          candidate.role === "user" &&
+          candidate.text.trim() === originalPrompt,
+      ),
   );
+}
+
+function extractOpenCodeWrapperOriginalPrompt(text: string) {
+  if (!/^\[[a-z-]+-mode\]/iu.test(text)) {
+    return null;
+  }
+  return text.split(/\n---\n/u).at(-1)?.trim() || null;
 }
 
 function resolveMessageRoleLabel(

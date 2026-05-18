@@ -8,7 +8,6 @@ import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import { MissionPaneResizer } from "./pane-resizer";
 import { MissionSidebar } from "./sidebar";
-import { MissionStatusBar } from "./mission-status-bar";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
@@ -607,10 +606,6 @@ export function MissionWorktree(props: any) {
               <span>
                 {selectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
               </span>
-              <MissionStatusBar
-                modelLoading={Boolean(draftConnectionEntry?.loading ?? selectedAgentId)}
-                promptEnhancing={false}
-              />
             </div>
           ) : null}
           {shouldShowRestoreGateNotice ? (

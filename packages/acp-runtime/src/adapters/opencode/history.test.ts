@@ -307,3 +307,108 @@ test("loadAdapterAuthoritativeHistory returns null for providers without native 
     null,
   );
 });
+
+test("parseOpenCodeExportHistory keeps single OpenCode analyze wrapper and extracts reasoning", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-user-wrapper",
+          info: { role: "user", time: { created: 1777543137952 } },
+          parts: [
+            {
+              type: "text",
+              text: [
+                "[analyze-mode]",
+                "ANALYSIS MODE. Gather context before diving deep:",
+                "---",
+                "MANDATORY delegate_task params: ALWAYS include load_skills",
+                "",
+                "---",
+                "",
+                "你是什么模型？并且分析一下还有没有plan需要执行的",
+              ].join("\n"),
+            },
+          ],
+        },
+        {
+          id: "msg-assistant-reasoning",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              id: "prt-reasoning",
+              type: "reasoning",
+              text: "Let me inspect the plan files.",
+              time: { start: 1777543138000, end: 1777543139000 },
+            },
+            { type: "text", text: "没有 plan 需要执行。" },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.match(history.messages[0]?.text ?? "", /^\[analyze-mode\]/u);
+  assert.match(history.messages[0]?.text ?? "", /你是什么模型？并且分析一下还有没有plan需要执行的/u);
+  assert.deepEqual(history.toolCalls, [
+    {
+      id: "prt-reasoning",
+      commandId: "prt-reasoning",
+      kind: "think",
+      title: "Thinking",
+      status: "completed",
+      output: "Let me inspect the plan files.",
+      timestamp: "2026-04-30T09:58:58.000Z",
+      updatedAt: "2026-04-30T09:58:59.000Z",
+    },
+  ]);
+});
+
+test("parseOpenCodeExportHistory merges OpenCode reasoning parts into one thinking item", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-a",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              id: "reason-a",
+              sessionID: "ses-1",
+              type: "reasoning",
+              text: "first thought",
+              time: { start: 1777543138000, end: 1777543139000 },
+            },
+          ],
+        },
+        {
+          id: "msg-b",
+          info: { role: "assistant", time: { created: 1777543140000 } },
+          parts: [
+            {
+              id: "reason-b",
+              sessionID: "ses-1",
+              type: "reasoning",
+              text: "second thought",
+              time: { start: 1777543141000, end: 1777543142000 },
+            },
+            { type: "text", text: "final" },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(history.toolCalls.filter((tool) => tool.kind === "think"), [
+    {
+      id: "ses-1:thinking",
+      commandId: "ses-1:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "completed",
+      output: "first thought\n\nsecond thought",
+      timestamp: "2026-04-30T09:58:58.000Z",
+      updatedAt: "2026-04-30T09:59:02.000Z",
+    },
+  ]);
+});
