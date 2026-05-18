@@ -107,8 +107,8 @@ export function SessionRow({
           <Button
             type="button"
             variant="ghost"
-            size="icon"
-            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger size-7 shrink-0 rounded-lg text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
+            size="icon-xs"
+            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger shrink-0 rounded-md text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
             aria-label={`${title} 的操作`}
             title="任务操作"
             onPointerDown={(event) => event.stopPropagation()}

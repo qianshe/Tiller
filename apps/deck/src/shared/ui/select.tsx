@@ -15,7 +15,8 @@ export const SelectTrigger = forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-10 w-full items-center justify-between rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&>span]:line-clamp-1",
+      // Workbench Void §5.3 — 24px height matches Input/Button at IDE density.
+      "flex h-[var(--control-h-md)] w-full items-center justify-between rounded-md border border-border-ghost bg-surface-sunken px-[var(--control-px-md)] text-[13px] text-foreground transition-colors placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&>span]:line-clamp-1",
       className,
     )}
     {...props}

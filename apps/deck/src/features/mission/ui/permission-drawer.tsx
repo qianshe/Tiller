@@ -245,7 +245,7 @@ export function MissionPermissionDrawer({
     >
       <div className="mission-permission-header grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
         <span
-          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning"
+          className="mt-0.5 inline-flex h-[var(--control-h-sm)] w-[var(--control-h-sm)] shrink-0 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning"
           aria-hidden="true"
         >
           !

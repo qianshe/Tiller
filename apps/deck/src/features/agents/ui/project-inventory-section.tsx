@@ -50,7 +50,7 @@ export function ProjectInventorySection({
 
   return (
     <section className="grid content-start gap-3">
-      <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      <div className="grid min-h-[var(--control-h-md)] grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <h3 className="m-0 text-base font-semibold text-foreground">项目列表</h3>
         <Button
           variant="outline"

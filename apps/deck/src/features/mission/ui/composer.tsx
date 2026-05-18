@@ -240,8 +240,8 @@ export function MissionComposer({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="mission-tools-trigger size-7 rounded-full bg-surface !text-sm"
+              size="icon-sm"
+              className="mission-tools-trigger rounded-full bg-surface"
               aria-haspopup="menu"
               aria-expanded={toolsOpen}
               aria-label="打开任务设置"
@@ -259,8 +259,8 @@ export function MissionComposer({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="mission-slash-trigger size-7 rounded-full bg-surface !text-sm"
+              size="icon-sm"
+              className="mission-slash-trigger rounded-full bg-surface"
               aria-label="输入斜杠命令"
               title="输入斜杠命令"
               onClick={openSlashCommands}
@@ -281,8 +281,8 @@ export function MissionComposer({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="mission-image-upload-trigger size-7 rounded-full bg-surface !text-sm"
+              size="icon-sm"
+              className="mission-image-upload-trigger rounded-full bg-surface"
               aria-label="添加图片"
               title="添加图片"
               onClick={() => imageInputRef.current?.click()}
@@ -334,9 +334,9 @@ export function MissionComposer({
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
                 variant="outline"
-                size="icon"
+                size="icon-sm"
                 type="button"
-                className="mission-enhance-prompt-button size-7 !text-sm"
+                className="mission-enhance-prompt-button"
                 onClick={enhancePromptDraft}
                 disabled={!prompt.trim() || promptEnhancerBusy}
                 aria-label="增强提示词"
@@ -348,9 +348,9 @@ export function MissionComposer({
             {showInterruptOnly && activeSession ? (
               <Button
                 variant="destructive"
-                size="icon"
+                size="icon-sm"
                 type="button"
-                className="mission-cancel-session-button size-7 rounded-full bg-destructive !text-sm font-bold text-white shadow-ambient hover:bg-destructive/90"
+                className="mission-cancel-session-button rounded-full font-bold text-white shadow-ambient"
                 onClick={() => cancelSession(activeSession.id)}
                 aria-label={copy.cancelSession}
                 title={copy.cancelSession}
@@ -363,9 +363,9 @@ export function MissionComposer({
             ) : null}
             {!showInterruptOnly ? (
               <Button
-                size="icon"
+                size="icon-sm"
                 type="submit"
-                className="mission-send-prompt-button size-7 !text-sm"
+                className="mission-send-prompt-button"
                 disabled={!canSend}
                 aria-label="发送"
                 title="发送"

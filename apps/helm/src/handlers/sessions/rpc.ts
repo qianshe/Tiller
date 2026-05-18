@@ -280,7 +280,7 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
 
   const artifacts = context.sessionArtifactStore.get(sessionId);
   const repairedToolCalls = artifacts.toolCalls.map((toolCall: AgentToolCall) =>
-    repairProviderToolCall(sessionId, providerId, toolCall),
+    repairCompletedThinkingToolCall(summary, repairProviderToolCall(sessionId, providerId, toolCall)),
   );
   if (!hasToolCallChanges(artifacts.toolCalls, repairedToolCalls)) {
     return;
@@ -317,13 +317,39 @@ function repairProviderToolCall(
   return mapped?.event.type === "tool-call" ? mapped.event.toolCall : toolCall;
 }
 
+function repairCompletedThinkingToolCall(
+  summary: SessionSummary,
+  toolCall: AgentToolCall,
+) {
+  if (
+    toolCall.kind !== "think" ||
+    (toolCall.status !== "running" && toolCall.status !== "pending") ||
+    summary.status === "running" ||
+    summary.status === "waiting_for_permission"
+  ) {
+    return toolCall;
+  }
+  return {
+    ...toolCall,
+    status: "completed" as const,
+    updatedAt: summary.updatedAt,
+  };
+}
+
 function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
   if (left.length !== right.length) {
     return true;
   }
   return left.some((item, index) => {
     const next = right[index];
-    return !next || item.kind !== next.kind || item.title !== next.title || item.input !== next.input;
+    return (
+      !next ||
+      item.kind !== next.kind ||
+      item.title !== next.title ||
+      item.status !== next.status ||
+      item.input !== next.input ||
+      item.updatedAt !== next.updatedAt
+    );
   });
 }
 

@@ -252,11 +252,11 @@ function collectReasoningToolCall(part: any, message: any): AgentToolCall | null
 }
 
 function reasoningToolCallId(part: any, message: any) {
-  const sessionId = stringFrom(part.sessionID ?? part.sessionId);
-  if (sessionId) {
-    return `${sessionId}:thinking`;
+  const messageId = stringFrom(message?.id ?? message?.info?.id);
+  if (messageId && stringFrom(part.sessionID ?? part.sessionId)) {
+    return `${messageId}:thinking`;
   }
-  return stringFrom(part.id) ?? `${stringFrom(message?.id ?? message?.info?.id) ?? "opencode"}:reasoning`;
+  return stringFrom(part.id) ?? `${messageId ?? "opencode"}:reasoning`;
 }
 
 function coalesceThinkingToolCalls(toolCalls: AgentToolCall[]) {

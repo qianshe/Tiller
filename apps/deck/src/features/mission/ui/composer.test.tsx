@@ -93,12 +93,24 @@ test("composer uses a tighter frame and padded square textarea", () => {
 test("composer uses compact sidecar and action button sizing", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps()));
 
+  // Workbench Void §5.2 — composer action buttons run at icon-sm (22px),
+  // which Tailwind emits as h-[var(--control-h-sm)]; see DESIGN.md v2.
+  // cn() puts cva variant classes BEFORE the trailing className prop, so
+  // assert each token independently rather than chaining via [^"]*.
   assert.match(html, /mission-composer-sidecar[^\"]*min-h-7[^\"]*gap-1\.5/);
-  assert.match(html, /mission-tools-trigger[^\"]*size-7/);
-  assert.match(html, /mission-slash-trigger[^\"]*size-7[^\"]*text-sm/);
-  assert.match(html, /mission-image-upload-trigger[^\"]*size-7[^\"]*text-sm/);
-  assert.match(html, /mission-enhance-prompt-button[^\"]*size-7/);
-  assert.match(html, /mission-send-prompt-button[^\"]*size-7/);
+  for (const label of [
+    "mission-tools-trigger",
+    "mission-slash-trigger",
+    "mission-image-upload-trigger",
+    "mission-enhance-prompt-button",
+    "mission-send-prompt-button",
+  ]) {
+    assert.match(html, new RegExp(label), `${label} not rendered`);
+  }
+  assert.match(html, /h-\[var\(--control-h-sm\)\] w-\[var\(--control-h-sm\)\]/);
+  // No leftover hand-coded size-7 (28px) or !important text overrides.
+  assert.doesNotMatch(html, /size-7/);
+  assert.doesNotMatch(html, /!text-sm/);
 });
 
 test("composer keeps model settings locked until active session config is ready", () => {
@@ -170,8 +182,13 @@ test("composer shows only the interrupt action while a session can be cancelled"
   );
 
   assert.match(html, /aria-label="取消任务"/);
-  assert.match(html, /mission-cancel-session-button[^\"]*size-7/);
-  assert.doesNotMatch(html, /mission-cancel-session-button[^\"]*size-12/);
+  // 22px icon-sm height (Workbench Void §5.2). cva variant classes precede
+  // the trailing className prop, so the height token lives separately on
+  // the same button; check both fragments exist rather than chaining.
+  assert.match(html, /mission-cancel-session-button/);
+  assert.match(html, /h-\[var\(--control-h-sm\)\] w-\[var\(--control-h-sm\)\]/);
+  assert.doesNotMatch(html, /size-12/);
+  assert.doesNotMatch(html, /size-7/);
   assert.match(html, /mission-cancel-session-stop-icon[^\"]*size-1\.5/);
   assert.doesNotMatch(html, /aria-label="增强提示词"/);
   assert.doesNotMatch(html, /aria-label="发送"/);

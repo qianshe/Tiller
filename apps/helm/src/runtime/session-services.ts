@@ -9,6 +9,7 @@ import type {
   AcpAgentProvider,
   AcpModelState,
   AgentMessage,
+  AgentToolCall,
   AvailableCommand,
   AgentPromptContent,
   FileDiffSummary,
@@ -351,6 +352,19 @@ export function createSessionServices(options: SessionServicesOptions) {
     };
   }
 
+  function mergeAuthoritativeToolCalls(
+    localToolCalls: AgentToolCall[],
+    authoritativeToolCalls: AgentToolCall[],
+  ) {
+    const authoritativeIds = new Set(authoritativeToolCalls.map((toolCall) => toolCall.id));
+    return [
+      ...authoritativeToolCalls,
+      ...localToolCalls.filter(
+        (toolCall) => toolCall.kind === "think" && !authoritativeIds.has(toolCall.id),
+      ),
+    ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  }
+
   function applyAuthoritativeProviderHistory(
     sessionId: string,
     agent: AcpAgentProvider,
@@ -359,7 +373,13 @@ export function createSessionServices(options: SessionServicesOptions) {
   ) {
     if (!history.messages.length) {
       if (history.toolCalls.length) {
-        options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+        options.sessionArtifactStore.replaceToolCalls(
+          sessionId,
+          mergeAuthoritativeToolCalls(
+            options.sessionArtifactStore.get(sessionId).toolCalls,
+            history.toolCalls,
+          ),
+        );
       }
       options.logInfo(
         `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
@@ -411,7 +431,13 @@ export function createSessionServices(options: SessionServicesOptions) {
 
     persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
     if (history.toolCalls.length) {
-      options.sessionArtifactStore.replaceToolCalls(sessionId, history.toolCalls);
+      options.sessionArtifactStore.replaceToolCalls(
+        sessionId,
+        mergeAuthoritativeToolCalls(
+          options.sessionArtifactStore.get(sessionId).toolCalls,
+          history.toolCalls,
+        ),
+      );
     }
     options.logInfo(
       `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,

@@ -36,7 +36,7 @@ export function AgentInventorySection({
 
   return (
     <section className="grid content-start gap-3">
-      <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      <div className="grid min-h-[var(--control-h-md)] grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <h3 className="m-0 text-base font-semibold text-foreground">ACP 舰员</h3>
         <Button
           variant="outline"
@@ -134,7 +134,7 @@ export function AgentInventorySection({
                 className="grid grid-cols-[76px_minmax(0,1fr)_40px] items-center gap-2 max-md:grid-cols-1"
                 key={`fleet-agent-arg-${index}`}
               >
-                <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-border-ghost bg-surface-sunken px-2 font-mono text-xs font-semibold text-muted-foreground max-md:justify-start">
+                <span className="inline-flex min-h-[var(--control-h-md)] items-center justify-center rounded-md border border-border-ghost bg-surface-sunken px-2 font-mono text-xs font-semibold text-muted-foreground max-md:justify-start">
                   args[{index}]
                 </span>
                 <Input

@@ -133,8 +133,8 @@ export function MissionSidebar({
           <Button
             type="button"
             variant="ghost"
-            size="icon"
-            className="mission-sidebar-toggle ml-auto size-7 text-muted-foreground hover:text-foreground"
+            size="icon-sm"
+            className="mission-sidebar-toggle ml-auto text-muted-foreground hover:text-foreground"
             onClick={() => setMissionSidebarCollapsed(true)}
             aria-expanded="true"
             aria-label="收起任务导航"

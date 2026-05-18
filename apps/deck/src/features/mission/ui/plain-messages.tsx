@@ -548,7 +548,11 @@ function mergeAdjacentThinkingItems(
 ): PlainConversationItem[] {
   return items.reduce<PlainConversationItem[]>((merged, item) => {
     const last = merged.at(-1);
-    if (last?.kind !== "thinking" || item.kind !== "thinking") {
+    if (
+      last?.kind !== "thinking" ||
+      item.kind !== "thinking" ||
+      last.toolCall.id !== item.toolCall.id
+    ) {
       merged.push(item);
       return merged;
     }
@@ -587,10 +591,10 @@ function resolveMergedThinkingTitle(
 }
 
 function resolveMergedThinkingStatus(
-  current: AgentToolCall["status"],
+  _current: AgentToolCall["status"],
   incoming: AgentToolCall["status"],
 ) {
-  return current === "running" || incoming === "running" ? "running" : incoming;
+  return incoming;
 }
 
 function mergeOptionalText(

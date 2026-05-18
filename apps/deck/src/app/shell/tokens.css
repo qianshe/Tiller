@@ -7,22 +7,30 @@
   --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  --radius: 0.5rem;     /* 8px  (was 12px) */
-  --radius-sm: 0.25rem; /* 4px  (was 8px)  */
-  --radius-md: 0.5rem;  /* 8px  (was 12px) */
-  --radius-lg: 0.75rem; /* 12px (was 16px) */
+  --radius: 0.5rem;     /* 8px */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.5rem;  /* 8px */
+  --radius-lg: 0.75rem; /* 12px */
   --radius-full: 9999px;
 
-  /* Control density tokens — single source for button/tab/toolbar heights & paddings.
-     Use via h-[var(--control-h-*)] / px-[var(--control-px-*)] in cva variants. */
-  --control-h-xs: 1.75rem; /* 28px - dense toolbars */
-  --control-h-sm: 2rem;    /* 32px - tabs, sm buttons */
-  --control-h-md: 2.5rem;  /* 40px - default buttons, icon buttons */
-  --control-h-lg: 3rem;    /* 48px - lg buttons / hero CTAs */
-  --control-px-xs: 0.625rem; /* 10px */
-  --control-px-sm: 0.75rem;  /* 12px */
-  --control-px-md: 1rem;     /* 16px */
-  --control-px-lg: 1.5rem;   /* 24px */
+  /* Workbench Void · Control density tokens · v2 IDE-first (24px default).
+     See docs/local/reference/DESIGN.md §5. Single source for all control sizing —
+     consumers must not hand-code h-7 / size-7 / px-4 type heights. */
+  --control-h-xs: 1.25rem;   /* 20px · compact   — inline actions, table rows */
+  --control-h-sm: 1.375rem;  /* 22px · toolbar   — top nav, status bar */
+  --control-h-md: 1.5rem;    /* 24px · default   — primary IDE density */
+  --control-h-lg: 2rem;      /* 32px · hero      — landing CTA, empty-state */
+  --control-px-xs: 0.375rem; /*  6px */
+  --control-px-sm: 0.5rem;   /*  8px */
+  --control-px-md: 0.5rem;   /*  8px — tighter than v1's 16px, see DESIGN.md §5.1 */
+  --control-px-lg: 1rem;     /* 16px */
+
+  /* Typography density — DESIGN.md §4.1 default body is 13px, not 14px. */
+  --text-default: 0.8125rem; /* 13px */
+  --text-2xs:     0.625rem;  /* 10px · only for badge counts / telemetry */
+
+  /* Focus ring width unified — DESIGN.md §3.3, fixes audit F-011. */
+  --ring-width: 2px;
 }
 
 @layer base {
@@ -43,6 +51,12 @@
     --primary-strong:       #0070eb;
     --on-primary:           #ffffff;
     --primary-soft:         #d8e2ff;
+
+    /* Accent === primary. Defined explicitly so Tailwind's `bg-accent` utility
+       resolves to brand blue instead of the framework's default violet
+       (fixes audit F-002). DESIGN.md §3.3. */
+    --accent:               var(--primary);
+    --accent-foreground:    var(--on-primary);
 
     --success:              #006b27;
     --success-container:    #008733;
@@ -286,6 +300,8 @@
   --color-primary-strong:       var(--primary-strong);
   --color-on-primary:           var(--on-primary);
   --color-primary-soft:         var(--primary-soft);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
   --color-success:              var(--success);
   --color-success-container:    var(--success-container);
   --color-on-success-container: var(--on-success-container);

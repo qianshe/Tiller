@@ -1061,6 +1061,60 @@ test("runtime thinking broadcasts deltas instead of persisted cumulative output"
   assert.deepEqual([...storedById.values()].map((toolCall) => toolCall.output), ["AB"]);
 });
 
+test("runtime status completion finalizes active thinking stream", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-thinking-complete");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current
+      ? {
+          ...current,
+          ...toolCall,
+          output: `${current.output ?? ""}${toolCall.output ?? ""}`,
+          timestamp: current.timestamp,
+        }
+      : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  handleRuntimeEvent(
+    "session-thinking-complete",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-thinking-complete-msg-a:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "A",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thinking-complete",
+    {
+      type: "status",
+      status: "idle",
+      message: "ACP prompt completed",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const stored = [...storedById.values()];
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0]?.status, "completed");
+  assert.equal(stored[0]?.output, "A");
+  const finalBroadcast = capture.detailBroadcasts.at(-1) as any;
+  assert.equal(finalBroadcast.method, "session/update");
+  assert.equal(finalBroadcast.params.update.toolCall.status, "completed");
+});
+
 test("runtime tool-call broadcasts keep stronger persisted classifications", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };

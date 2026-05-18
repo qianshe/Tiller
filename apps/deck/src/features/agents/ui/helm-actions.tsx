@@ -94,9 +94,7 @@ export function HelmActions({
           ) : null}
         </>
       ) : selectedHelmConnection === "connecting" ? (
-        <Badge variant="secondary" className="min-h-10 px-4">
-          连接中
-        </Badge>
+        <Badge variant="secondary">连接中</Badge>
       ) : (
         <Button
           variant="outline"

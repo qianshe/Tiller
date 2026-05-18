@@ -147,6 +147,14 @@ test("mission loading gates omit model-loading hint while ACP is still connectin
   assert.doesNotMatch(worktreeSource, /from "\.\/mission-status-bar"/);
 });
 
+test("mission chat hides restore and composer controls while Helm is disconnected", () => {
+  assert.match(worktreeSource, /const helmConnected = pairingState === "paired"/);
+  assert.match(worktreeSource, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| selectedDraftConnection\)\)/);
+  assert.match(worktreeSource, /const shouldShowDraftPreparing = Boolean\(helmConnected && !activeSession/);
+  assert.match(worktreeSource, /helmConnected && activeSession && !activeSessionRestoreGate\.canChat/);
+  assert.match(worktreeSource, /helmConnected=\{helmConnected\}/);
+});
+
 test("mission composer requires active-session config readiness before settings can open", () => {
   assert.match(missionViewModelSource, /const draftModelConfigReady = activeSession/);
   assert.match(missionViewModelSource, /const draftLoadingAgentModelOptions = !activeSession && draftAgentModelOptionsPrefix/);

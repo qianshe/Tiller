@@ -15,6 +15,53 @@ function flushPromises() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+test("session/get_artifacts repairs stale running thinking for idle sessions", async () => {
+  const sessionId = "session-thinking-history";
+  let toolCalls = [
+    {
+      id: "think-1",
+      commandId: "think-1",
+      kind: "think" as const,
+      title: "Thinking",
+      status: "running" as const,
+      output: "persisted thinking",
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/get_artifacts",
+    { sessionId },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        list: () => [
+          {
+            id: sessionId,
+            agentId: "opencode",
+            status: "idle",
+            updatedAt: "2026-05-17T10:00:10.000Z",
+          },
+        ],
+      },
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls }),
+        getPage: () => ({ outputs: [], diffs: [], toolCalls, hasMore: false }),
+        replaceToolCalls: (_sessionId: string, nextToolCalls: typeof toolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      hydrateDiffsFromWorktreeGit: async (_sessionId: string, diffs: unknown[]) => diffs,
+    } as any,
+  ) as { toolCalls: typeof toolCalls };
+
+  assert.equal(result.toolCalls[0]?.status, "completed");
+  assert.equal(result.toolCalls[0]?.output, "persisted thinking");
+  assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
+});
+
 test("session RPC lists paged sessions", async () => {
   const sessions = [{ id: "s1", updatedAt: "2026-05-06T00:00:00.000Z" }];
   const result = await handleSessionRpcRequest("session/list", { limit: 20 }, {

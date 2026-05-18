@@ -22,7 +22,7 @@ const activeAssistantRuntimeMessageBySession = new Map<
 >();
 const activeAssistantRuntimeThinkingBySession = new Map<
   string,
-  { sourceId: string; segmentId: string; text: string }
+  { sourceId: string; segmentId: string; text: string; timestamp: string }
 >();
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
@@ -91,8 +91,8 @@ function normalizeRuntimeThinkingToolCall(
   const active = activeAssistantRuntimeThinkingBySession.get(sessionId);
   if (active && !shouldStartNewRuntimeAssistantSegment(active.text, text)) {
     activeAssistantRuntimeThinkingBySession.set(sessionId, {
+      ...active,
       sourceId: toolCall.id,
-      segmentId: active.segmentId,
       text: mergeAssistantStreamText(active.text, text),
     });
     return {
@@ -114,6 +114,7 @@ function normalizeRuntimeThinkingToolCall(
     sourceId: toolCall.id,
     segmentId,
     text,
+    timestamp: toolCall.timestamp,
   });
   return {
     ...toolCall,
@@ -131,9 +132,40 @@ function resolveBroadcastToolCall(
   }
   return {
     ...persisted,
+    status: incoming.status,
+    updatedAt: incoming.updatedAt,
     ...(incoming.output !== undefined ? { output: incoming.output } : {}),
     ...(incoming.input !== undefined ? { input: incoming.input } : {}),
   };
+}
+
+function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerContext) {
+  const active = activeAssistantRuntimeThinkingBySession.get(sessionId);
+  if (!active) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const toolCall: AgentToolCall = {
+    id: active.segmentId,
+    commandId: active.segmentId,
+    kind: "think",
+    title: "Thinking",
+    status: "completed",
+    timestamp: active.timestamp,
+    updatedAt: now,
+  };
+  const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
+    | { toolCalls?: AgentToolCall[] }
+    | undefined;
+  const mergedToolCall = resolveBroadcastToolCall(
+    toolCall,
+    artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
+  );
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "tool_call",
+    toolCall: mergedToolCall,
+  });
+  activeAssistantRuntimeThinkingBySession.delete(sessionId);
 }
 
 function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText: string) {
@@ -263,6 +295,8 @@ export function handleRuntimeEvent(
       closeAssistantStreamLog(sessionId);
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
+      } else {
+        finalizeActiveRuntimeThinking(sessionId, context);
       }
       context.logInfo(
         `[tiller] 阶段=运行状态流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`,

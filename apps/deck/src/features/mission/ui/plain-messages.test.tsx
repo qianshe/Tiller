@@ -119,6 +119,84 @@ test("plain messages auto-expands running thinking and collapses completed think
   assert.doesNotMatch(completedHtml, /⌃/);
 });
 
+test("plain messages collapses merged thinking when the latest chunk completes", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [
+        {
+          id: "think-running",
+          kind: "think",
+          title: "Thinking",
+          status: "running",
+          output: "running Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+        {
+          id: "think-running",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "completed Thinking",
+          timestamp: "2026-05-17T10:00:03.000Z",
+          updatedAt: "2026-05-17T10:00:04.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /<details[^>]*open=""/);
+  assert.match(html, /aria-label="展开 Thinking"/);
+});
+
+test("plain messages keeps merged thinking open while the latest chunk is running", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [
+        {
+          id: "think-completed",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "completed Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+        {
+          id: "think-completed",
+          kind: "think",
+          title: "Thinking",
+          status: "running",
+          output: "running Thinking",
+          timestamp: "2026-05-17T10:00:03.000Z",
+          updatedAt: "2026-05-17T10:00:04.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /<details[^>]*open=""/);
+  assert.match(html, /aria-label="收起 Thinking"/);
+});
+
 test("plain messages load-more history button keeps a concise label", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
@@ -170,7 +248,7 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
           updatedAt: "2026-05-17T10:00:01.000Z",
         },
         {
-          id: "think-2",
+          id: "think-1",
           kind: "think",
           title: "Thinking",
           status: "completed",
@@ -179,7 +257,7 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
         {
-          id: "think-3",
+          id: "think-1",
           kind: "think",
           title: "Thinking",
           status: "completed",
@@ -202,6 +280,46 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
   assert.match(html, /第一段 Thinking/);
   assert.match(html, /第二段 Thinking/);
   assert.match(html, /第三段 Thinking/);
+});
+
+test("plain messages keeps adjacent thinking tool calls separate when ids differ", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [
+        {
+          id: "message-a:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一轮 Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "message-b:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第二轮 Thinking",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.match(html, /第一轮 Thinking/);
+  assert.match(html, /第二轮 Thinking/);
 });
 
 test("plain messages hides local command wrappers and model switch stdout", () => {

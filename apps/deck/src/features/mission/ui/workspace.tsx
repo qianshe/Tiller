@@ -243,7 +243,7 @@ export function MissionWorktree(props: any) {
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
+                      className="grid h-[var(--control-h-md)] w-[var(--control-h-md)] shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
                       aria-label={`${worktree.name} 的 Worktree 操作`}
                       title="Worktree 操作"
                     >
@@ -505,10 +505,11 @@ export function MissionWorktree(props: any) {
         ([key, entry]) => key.startsWith(`${selectedAgentId}::${selectedCwd}`) && entry?.loading,
       )?.[1]
     : null;
-  const shouldShowComposer = Boolean(activeSession || selectedDraftConnection);
-  const shouldShowDraftPreparing = Boolean(!activeSession && selectedAgentId && !selectedDraftConnection);
+  const helmConnected = pairingState === "paired";
+  const shouldShowComposer = Boolean(helmConnected && (activeSession || selectedDraftConnection));
+  const shouldShowDraftPreparing = Boolean(helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection);
   const shouldShowRestoreGateNotice = Boolean(
-    activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
+    helmConnected && activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
   );
   const composerPromptPlaceholder = shouldShowRestoreGateNotice
     ? activeSessionRestoreGate.message
@@ -580,7 +581,7 @@ export function MissionWorktree(props: any) {
           style={missionChatPaneStyle}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
-          helmConnected={pairingState === "paired"}
+          helmConnected={helmConnected}
           activeSession={activeSession}
           activeSessionMessages={activeSessionMessages}
           activeSessionToolCalls={activeToolCalls}

@@ -120,8 +120,8 @@ export function SidebarProjectNode({
         <Button
           type="button"
           variant="ghost"
-          size="icon"
-          className="mission-tree-new-inline size-7 shrink-0 rounded-lg text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
+          size="icon-xs"
+          className="mission-tree-new-inline shrink-0 rounded-md text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);

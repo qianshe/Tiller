@@ -364,7 +364,7 @@ test("parseOpenCodeExportHistory keeps single OpenCode analyze wrapper and extra
   ]);
 });
 
-test("parseOpenCodeExportHistory merges OpenCode reasoning parts into one thinking item", () => {
+test("parseOpenCodeExportHistory keeps OpenCode reasoning scoped to each assistant message", () => {
   const history = parseOpenCodeExportHistory(
     JSON.stringify({
       messages: [
@@ -378,6 +378,13 @@ test("parseOpenCodeExportHistory merges OpenCode reasoning parts into one thinki
               type: "reasoning",
               text: "first thought",
               time: { start: 1777543138000, end: 1777543139000 },
+            },
+            {
+              id: "reason-a2",
+              sessionID: "ses-1",
+              type: "reasoning",
+              text: "first follow-up",
+              time: { start: 1777543139500, end: 1777543139900 },
             },
           ],
         },
@@ -401,13 +408,23 @@ test("parseOpenCodeExportHistory merges OpenCode reasoning parts into one thinki
 
   assert.deepEqual(history.toolCalls.filter((tool) => tool.kind === "think"), [
     {
-      id: "ses-1:thinking",
-      commandId: "ses-1:thinking",
+      id: "msg-a:thinking",
+      commandId: "msg-a:thinking",
       kind: "think",
       title: "Thinking",
       status: "completed",
-      output: "first thought\n\nsecond thought",
+      output: "first thought\n\nfirst follow-up",
       timestamp: "2026-04-30T09:58:58.000Z",
+      updatedAt: "2026-04-30T09:58:59.900Z",
+    },
+    {
+      id: "msg-b:thinking",
+      commandId: "msg-b:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "completed",
+      output: "second thought",
+      timestamp: "2026-04-30T09:59:01.000Z",
       updatedAt: "2026-04-30T09:59:02.000Z",
     },
   ]);
