@@ -341,6 +341,25 @@ export type PermissionRequest = {
   options?: PermissionRequestOption[];
 };
 
+export type ApprovalPolicyAction = "allow" | "deny" | "confirm";
+
+export type ApprovalPolicyRule = {
+  id: string;
+  action: ApprovalPolicyAction;
+  label: string;
+  providerId?: string;
+  projectId?: string;
+  worktreePath?: string;
+  commandPattern?: string;
+  reasonPattern?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApprovalPolicy = {
+  rules: ApprovalPolicyRule[];
+};
+
 export type CommandChunk = {
   id: string;
   commandId: string;

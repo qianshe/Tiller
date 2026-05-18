@@ -1,4 +1,4 @@
-import { resolveSessionConfigSupport, type AcpAgentProvider, type HelmSummary, type ProjectSummary, type WorktreeSummary } from "@tiller/shared";
+import { resolveSessionConfigSupport, type AcpAgentProvider, type ApprovalPolicy, type HelmSummary, type ProjectSummary, type WorktreeSummary } from "@tiller/shared";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -21,6 +21,7 @@ export type TillerConfig = {
     checkOnStart?: boolean;
     previewHint?: boolean;
   };
+  approvalPolicy?: ApprovalPolicy;
 };
 
 type LegacyProjectSummary = ProjectSummary & {
@@ -201,6 +202,7 @@ function stripProjectState(config: LegacyTillerConfig): TillerConfig {
     agents: config.agents ?? [],
     daemon: config.daemon,
     updates: config.updates,
+    approvalPolicy: config.approvalPolicy,
   };
 }
 

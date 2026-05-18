@@ -1,4 +1,5 @@
 import type { PermissionDecision } from "@tiller/shared";
+import { buildApprovalPolicyRuleFromDecision } from "./permission-policy";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
 import type { HelmHandlerContext } from "../context";
 
@@ -66,6 +67,23 @@ export function respondApproval(
     );
     (error as Error & { code?: string }).code = "ACP_PERMISSION_UNSUPPORTED";
     throw error;
+  }
+
+  const policyRule = buildApprovalPolicyRuleFromDecision({
+    decision: params.decision,
+    request: approval.request,
+    sessionId: approval.sessionId,
+    providerId: record.summary?.agentId,
+    projectId: record.summary?.projectId,
+  });
+  if (policyRule) {
+    try {
+      context.saveApprovalPolicyRule(policyRule);
+    } catch (error) {
+      context.logWarn(
+        `[tiller] approval policy save failed; continuing one-time response: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   context.approvalIndex.delete(params.approvalRequestId);

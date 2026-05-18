@@ -5,6 +5,8 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  ApprovalPolicy,
+  ApprovalPolicyRule,
   AgentPromptContent,
   AvailableCommand,
   FileDiffSummary,
@@ -81,6 +83,8 @@ export type HelmHandlerContext = {
   getProjects: () => ProjectSummary[];
   setProjects: (items: ProjectSummary[]) => void;
   loadAvailableProjectsWithSemanticSummaries: () => Promise<ProjectSummary[]>;
+  readApprovalPolicy: () => ApprovalPolicy;
+  saveApprovalPolicyRule: (rule: ApprovalPolicyRule) => void;
 
   trustedDeviceStore: any;
   authenticatedSockets: any;

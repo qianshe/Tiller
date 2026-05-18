@@ -1,7 +1,8 @@
 import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentToolCall, SessionSummary } from "@tiller/shared";
+import type { AgentToolCall, PermissionDecision, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+import { resolveApprovalPolicyDecision } from "../handlers/approvals/permission-policy";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
 import {
@@ -315,6 +316,35 @@ export function handleRuntimeEvent(
         updatedAt: new Date().toISOString(),
         lastMessagePreview: event.request.reason,
       }));
+      const sessionRecord = context.sessions.get(sessionId);
+      let autoDecision: PermissionDecision | null = null;
+      try {
+        autoDecision = resolveApprovalPolicyDecision(
+          context.readApprovalPolicy(),
+          event.request,
+          {
+            providerId: sessionRecord?.summary?.agentId,
+            projectId: sessionRecord?.summary?.projectId,
+            worktreePath: event.request.cwd,
+          },
+        );
+      } catch (error) {
+        context.logWarn(
+          `[tiller] approval policy read failed; falling back to manual approval: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (autoDecision && sessionRecord?.runtime?.supportsPermissionResponses) {
+        context.logInfo(
+          `[tiller] 阶段=权限自动处理 ${runtimeLogScope(sessionId, context)} request=${event.request.id} decision=${autoDecision}`,
+        );
+        sessionRecord.runtime.respondPermission(event.request.id, autoDecision);
+        context.updateSessionSummary(sessionId, (current) => ({
+          ...current,
+          status: "running",
+          updatedAt: new Date().toISOString(),
+        }));
+        return;
+      }
       context.approvalIndex.set(event.request.id, { sessionId, request: event.request });
       context.broadcastNotification("approval/created", {
         sessionId,
