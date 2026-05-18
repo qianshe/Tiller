@@ -88,7 +88,6 @@ test("buildApprovalPolicyRuleFromDecision creates allow rule from allow_always",
   const rule = buildApprovalPolicyRuleFromDecision({
     decision: "allow_always",
     request,
-    sessionId: "session-1",
     providerId: "codex",
     projectId: "tiller",
     now: "2026-05-16T00:00:00.000Z",
@@ -96,7 +95,9 @@ test("buildApprovalPolicyRuleFromDecision creates allow rule from allow_always",
 
   assert.equal(rule?.action, "allow");
   assert.equal(rule?.providerId, "codex");
-  assert.equal(rule?.projectId, "tiller");
+  // allow_always 是全局作用域，不应绑死到当前 project / worktree
+  assert.equal(rule?.projectId, undefined);
+  assert.equal(rule?.worktreePath, undefined);
   assert.match(rule?.commandPattern ?? "", /MCP/);
 });
 
@@ -104,7 +105,6 @@ test("buildApprovalPolicyRuleFromDecision creates deny rule from deny_always", (
   const rule = buildApprovalPolicyRuleFromDecision({
     decision: "deny_always",
     request,
-    sessionId: "session-1",
     providerId: "codex",
     projectId: "tiller",
     now: "2026-05-16T00:00:00.000Z",
@@ -113,12 +113,55 @@ test("buildApprovalPolicyRuleFromDecision creates deny rule from deny_always", (
   assert.equal(rule?.action, "deny");
 });
 
+test("allow_always rules apply across different projects and worktrees", () => {
+  const rule = buildApprovalPolicyRuleFromDecision({
+    decision: "allow_always",
+    request,
+    providerId: "codex",
+    projectId: "tiller",
+    now: "2026-05-16T00:00:00.000Z",
+  });
+  assert.ok(rule);
+  // 规则不应该被钉死在生成时的 project / worktree 上
+  assert.equal(rule!.projectId, undefined);
+  assert.equal(rule!.worktreePath, undefined);
+
+  const policy: ApprovalPolicy = { rules: [rule!] };
+  assert.equal(
+    resolveApprovalPolicyDecision(policy, request, {
+      providerId: "codex",
+      projectId: "another-project",
+      worktreePath: "D:/elsewhere",
+    }),
+    "allow",
+  );
+});
+
+test("buildApprovalPolicyRuleFromDecision keeps id stable across projects", () => {
+  const ruleA = buildApprovalPolicyRuleFromDecision({
+    decision: "allow_always",
+    request,
+    providerId: "codex",
+    projectId: "tiller",
+    now: "2026-05-16T00:00:00.000Z",
+  });
+  const ruleB = buildApprovalPolicyRuleFromDecision({
+    decision: "allow_always",
+    request,
+    providerId: "codex",
+    projectId: "another-project",
+    now: "2026-05-16T00:01:00.000Z",
+  });
+  // 同一 provider + command 在不同 project 选"全局允许"应该指向同一条规则，
+  // 后写入的只是刷新 updatedAt，而不是把前一条悄悄替换成另一个 project 专属。
+  assert.equal(ruleA!.id, ruleB!.id);
+});
+
 test("buildApprovalPolicyRuleFromDecision ignores once and session decisions", () => {
   assert.equal(
     buildApprovalPolicyRuleFromDecision({
       decision: "allow",
       request,
-      sessionId: "session-1",
       now: "2026-05-16T00:00:00.000Z",
     }),
     null,
@@ -127,7 +170,6 @@ test("buildApprovalPolicyRuleFromDecision ignores once and session decisions", (
     buildApprovalPolicyRuleFromDecision({
       decision: "allow_session",
       request,
-      sessionId: "session-1",
       now: "2026-05-16T00:00:00.000Z",
     }),
     null,

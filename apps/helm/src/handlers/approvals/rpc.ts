@@ -72,7 +72,6 @@ export function respondApproval(
   const policyRule = buildApprovalPolicyRuleFromDecision({
     decision: params.decision,
     request: approval.request,
-    sessionId: approval.sessionId,
     providerId: record.summary?.agentId,
     projectId: record.summary?.projectId,
   });

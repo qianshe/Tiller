@@ -115,7 +115,6 @@ function resolvePermissionOptionDecision(
   }
 }
 
-
 const PERMISSION_ACTION_LABELS: Record<PermissionDecision, string> = {
   allow: "本次允许",
   allow_session: "本会话允许",
@@ -137,12 +136,10 @@ export function normalizePermissionRequestOptions(
 ): PermissionRequestOption[] {
   const byDecision = new Map<PermissionDecision, PermissionRequestOption>();
   for (const option of options) {
-    if (!byDecision.has(option.decision)) {
-      byDecision.set(option.decision, {
-        decision: option.decision,
-        label: PERMISSION_ACTION_LABELS[option.decision],
-      });
-    }
+    if (byDecision.has(option.decision)) continue;
+    // 保留 SDK 给出的原始 label，只有当 label 为空/缺失时回退到中文常量。
+    const label = option.label?.trim() ? option.label : PERMISSION_ACTION_LABELS[option.decision];
+    byDecision.set(option.decision, { decision: option.decision, label });
   }
   return PERMISSION_ACTION_ORDER.flatMap((decision) => {
     const option = byDecision.get(decision);

@@ -310,12 +310,6 @@ export function handleRuntimeEvent(
       context.logInfo(
         `[tiller] 阶段=权限请求 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
       );
-      context.updateSessionSummary(sessionId, (current) => ({
-        ...current,
-        status: "waiting_for_permission",
-        updatedAt: new Date().toISOString(),
-        lastMessagePreview: event.request.reason,
-      }));
       const sessionRecord = context.sessions.get(sessionId);
       let autoDecision: PermissionDecision | null = null;
       try {
@@ -338,13 +332,15 @@ export function handleRuntimeEvent(
           `[tiller] 阶段=权限自动处理 ${runtimeLogScope(sessionId, context)} request=${event.request.id} decision=${autoDecision}`,
         );
         sessionRecord.runtime.respondPermission(event.request.id, autoDecision);
-        context.updateSessionSummary(sessionId, (current) => ({
-          ...current,
-          status: "running",
-          updatedAt: new Date().toISOString(),
-        }));
+        // 自动审批不进入等待态，跳过 waiting_for_permission 写入避免状态闪烁。
         return;
       }
+      context.updateSessionSummary(sessionId, (current) => ({
+        ...current,
+        status: "waiting_for_permission",
+        updatedAt: new Date().toISOString(),
+        lastMessagePreview: event.request.reason,
+      }));
       context.approvalIndex.set(event.request.id, { sessionId, request: event.request });
       context.broadcastNotification("approval/created", {
         sessionId,

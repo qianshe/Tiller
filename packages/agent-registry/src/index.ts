@@ -1,1 +1,2 @@
-export * from "./registry";export * from "./permission-policy";
+export * from "./registry";
+export * from "./permission-policy";

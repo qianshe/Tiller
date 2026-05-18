@@ -27,7 +27,6 @@ export function resolveApprovalPolicyDecision(
 export function buildApprovalPolicyRuleFromDecision(params: {
   decision: PermissionDecision;
   request: PermissionRequest;
-  sessionId: string;
   providerId?: string;
   projectId?: string;
   now?: string;
@@ -40,13 +39,13 @@ export function buildApprovalPolicyRuleFromDecision(params: {
   const commandPattern = escapeRegex(commandStem);
   const label = `${action === "allow" ? "Allow" : "Deny"} ${commandStem}`;
 
+  // allow_always / deny_always 语义就是"全局"——只绑 provider + command，不绑
+  // 当前 project / worktree，避免跨上下文时被静默覆盖或意外失效。
   return {
     id: `approval-rule:${action}:${params.providerId ?? "any"}:${commandPattern}`,
     action,
     label,
     providerId: params.providerId,
-    projectId: params.projectId,
-    worktreePath: params.request.cwd,
     commandPattern,
     createdAt: now,
     updatedAt: now,
@@ -89,5 +88,5 @@ function escapeRegex(value: string) {
 }
 
 function normalizePath(value: string) {
-  return value.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+  return value.replace(/\\+/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }

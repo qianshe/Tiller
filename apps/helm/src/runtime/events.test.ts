@@ -1233,14 +1233,14 @@ test("permission-request emits approval/created globally and skips session-topic
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
 });
 
-
-
-
-
-
 test("permission-request auto-resolves matching approval policy without broadcasting approval", () => {
   const logs: string[] = [];
-  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
   const context = createTestContext(logs, capture);
   let responded: { requestId: string; decision: string } | null = null;
   const runtime = {
@@ -1286,6 +1286,8 @@ test("permission-request auto-resolves matching approval policy without broadcas
   assert.deepEqual(responded, { requestId: "approval-1", decision: "allow" });
   assert.equal(context.approvalIndex.has("approval-1"), false);
   assert.equal(capture.broadcasts.some((item: any) => item.method === "approval/created"), false);
+  // 自动审批必须保持状态不变，避免 running→waiting_for_permission→running 抖动
+  assert.equal(capture.summaryUpdates?.length, 0);
 });
 
 test("permission-request falls back to manual approval when policy read fails", () => {
