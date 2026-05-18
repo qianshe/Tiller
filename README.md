@@ -141,6 +141,10 @@ The current product focus is on common CLI coding agents such as:
 - **Claude Agent / Claude Code** via ACP adapter
 - **OpenCode**
 
+### ACP approval policy
+
+Tiller treats ACP approval policy as a client-side concern. Agent launch arguments such as Codex `sandbox_mode` and `approval_policy` still control the agent's own sandbox, while Tiller can persist `allow_always` / `deny_always` approval choices in `~/.config/tiller/config.json` and auto-resolve future matching ACP permission requests before Deck shows a popup.
+
 The ACP documentation lists many agents that can be used with an ACP client, including AgentPool, Augment Code, AutoDev, Blackbox AI, Claude Agent, Cline, Codex CLI, Cursor, Docker cagent, fast-agent, Factory Droid, Gemini CLI, GitHub Copilot public preview, Goose, Junie, Kimi CLI, Kiro CLI, OpenCode, OpenHands, Qoder CLI, Qwen Code, Stakpak, stdio Bus, VT Code and more.
 
 See the official ACP agent list: <https://agentclientprotocol.com/get-started/agents>

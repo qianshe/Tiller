@@ -7,10 +7,12 @@ import {
   getDefaultConfigPath,
   listAvailableProviders,
   loadTillerConfigStub,
+  readApprovalPolicy,
   readTillerConfig,
   resolveHelmById,
   resolveProjectById,
   resolveProviderById,
+  saveApprovalPolicyRule,
   saveHelmToConfig,
   saveProviderToConfig,
   saveWorktreeToConfig,
@@ -358,6 +360,10 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
       projects = items;
     },
     loadAvailableProjectsWithSemanticSummaries,
+    readApprovalPolicy: () => readApprovalPolicy(configPath),
+    saveApprovalPolicyRule: (rule) => {
+      saveApprovalPolicyRule(rule, configPath);
+    },
     trustedDeviceStore,
     authenticatedSockets,
     toTrustedDeviceSummary,

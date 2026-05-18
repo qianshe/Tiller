@@ -1,7 +1,8 @@
 import { applyAgentMessageToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentToolCall, SessionSummary } from "@tiller/shared";
+import type { AgentToolCall, PermissionDecision, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+import { resolveApprovalPolicyDecision } from "../handlers/approvals/permission-policy";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
 import {
@@ -309,6 +310,31 @@ export function handleRuntimeEvent(
       context.logInfo(
         `[tiller] 阶段=权限请求 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
       );
+      const sessionRecord = context.sessions.get(sessionId);
+      let autoDecision: PermissionDecision | null = null;
+      try {
+        autoDecision = resolveApprovalPolicyDecision(
+          context.readApprovalPolicy(),
+          event.request,
+          {
+            providerId: sessionRecord?.summary?.agentId,
+            projectId: sessionRecord?.summary?.projectId,
+            worktreePath: event.request.cwd,
+          },
+        );
+      } catch (error) {
+        context.logWarn(
+          `[tiller] approval policy read failed; falling back to manual approval: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (autoDecision && sessionRecord?.runtime?.supportsPermissionResponses) {
+        context.logInfo(
+          `[tiller] 阶段=权限自动处理 ${runtimeLogScope(sessionId, context)} request=${event.request.id} decision=${autoDecision}`,
+        );
+        sessionRecord.runtime.respondPermission(event.request.id, autoDecision);
+        // 自动审批不进入等待态，跳过 waiting_for_permission 写入避免状态闪烁。
+        return;
+      }
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         status: "waiting_for_permission",

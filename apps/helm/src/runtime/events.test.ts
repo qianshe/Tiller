@@ -49,6 +49,7 @@ function createTestContext(
     sessionStore: { list: () => [summary] },
     logInfo: (message: string) => logs.push(message),
     logDebug: () => undefined,
+    logWarn: (message: string) => logs.push(message),
     logError: (message: string) => logs.push(message),
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => {
       capture.persisted.push(message);
@@ -67,7 +68,10 @@ function createTestContext(
     broadcastSessionTopic: (sessionId: string, method: string, params: unknown) => {
       capture.detailBroadcasts.push({ sessionId, method, params });
     },
+    approvalIndex: new Map(),
     permissionIndex: new Map(),
+    readApprovalPolicy: () => ({ rules: [] }),
+    saveApprovalPolicyRule: () => undefined,
     liveMessageBuffer: createLiveMessageBuffer(),
     sessionArtifactStore: {
       appendOutput: () => undefined,
@@ -1229,6 +1233,86 @@ test("permission-request emits approval/created globally and skips session-topic
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
 });
 
+test("permission-request auto-resolves matching approval policy without broadcasting approval", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(logs, capture);
+  let responded: { requestId: string; decision: string } | null = null;
+  const runtime = {
+    supportsPermissionResponses: true,
+    respondPermission: (requestId: string, decision: string) => {
+      responded = { requestId, decision };
+    },
+  };
+  context.sessions.set("session-1", {
+    agent: { id: "codex" },
+    worktree: { path: "D:/repo" },
+    summary: { id: "session-1", agentId: "codex", projectId: "tiller" },
+    runtime,
+  } as any);
+  (context as any).readApprovalPolicy = () => ({
+    rules: [
+      {
+        id: "rule-1",
+        action: "allow",
+        label: "Allow sanshu",
+        providerId: "codex",
+        commandPattern: "^MCP • sanshu/",
+        createdAt: "2026-05-16T00:00:00.000Z",
+        updatedAt: "2026-05-16T00:00:00.000Z",
+      },
+    ],
+  });
 
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "permission-request",
+      request: {
+        id: "approval-1",
+        command: "MCP • sanshu/zhi :: {}",
+        reason: "Approve MCP tool call",
+        cwd: "D:/repo",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
+  assert.deepEqual(responded, { requestId: "approval-1", decision: "allow" });
+  assert.equal(context.approvalIndex.has("approval-1"), false);
+  assert.equal(capture.broadcasts.some((item: any) => item.method === "approval/created"), false);
+  // 自动审批必须保持状态不变，避免 running→waiting_for_permission→running 抖动
+  assert.equal(capture.summaryUpdates?.length, 0);
+});
 
+test("permission-request falls back to manual approval when policy read fails", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  (context as any).readApprovalPolicy = () => {
+    throw new Error("config read failed");
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "permission-request",
+      request: {
+        id: "approval-io-fallback",
+        command: "MCP • sanshu/zhi :: {}",
+        reason: "Approve MCP tool call",
+        cwd: "D:/repo",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(context.approvalIndex.has("approval-io-fallback"), true);
+  assert.equal(capture.broadcasts.some((item: any) => item.method === "approval/created"), true);
+  assert.equal(logs.some((line) => line.includes("approval policy read failed")), true);
+});

@@ -38,3 +38,63 @@ test("mapSdkPermissionRequest exposes scoped permission options", () => {
   assert.equal(mapped.optionIds.allow_always, "allow-always");
   assert.equal(mapped.optionIds.deny, "deny-once");
 });
+
+test("mapSdkPermissionRequest falls back to localized labels when SDK label is empty", () => {
+  const mapped = mapSdkPermissionRequest(
+    {
+      sessionId: "s1",
+      toolCall: {
+        toolCallId: "tool-1",
+        title: "Approve MCP tool call",
+        kind: "other",
+        status: "pending",
+        rawInput: { server_name: "mcp_router", request: { name: "zhi" } },
+      },
+      options: [
+        { optionId: "allow-once", name: "", kind: "allow_once" },
+        { optionId: "deny-once", name: "   ", kind: "reject_once" },
+      ],
+    },
+    "permission-empty-label",
+    "D:/myProject/tools/Tiller",
+  );
+
+  assert.deepEqual(mapped.request.options, [
+    { decision: "allow", label: "本次允许" },
+    { decision: "deny", label: "拒绝" },
+  ]);
+});
+
+
+test("mapSdkPermissionRequest deduplicates equivalent global allow options", () => {
+  const mapped = mapSdkPermissionRequest(
+    {
+      sessionId: "s1",
+      toolCall: {
+        toolCallId: "tool-1",
+        title: "Approve MCP tool call",
+        kind: "other",
+        status: "pending",
+        rawInput: { server_name: "mcp_router", request: { name: "zhi" } },
+      },
+      options: [
+        { optionId: "allow-global-1", name: "Always allow", kind: "allow_always" },
+        { optionId: "allow-global-2", name: "Always allow", kind: "allow_always" },
+        { optionId: "allow-global-3", name: "全局允许", kind: "allow_always" },
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "deny-once", name: "Deny", kind: "reject_once" },
+      ],
+    },
+    "permission-duplicate-global",
+    "D:/myProject/tools/Tiller",
+  );
+
+  assert.deepEqual(mapped.request.options, [
+    { decision: "allow", label: "Allow once" },
+    { decision: "allow_always", label: "Always allow" },
+    { decision: "deny", label: "Deny" },
+  ]);
+  assert.equal(mapped.optionIds.allow_always, "allow-global-1");
+  assert.equal(mapped.optionIds.allow, "allow-once");
+  assert.equal(mapped.optionIds.deny, "deny-once");
+});

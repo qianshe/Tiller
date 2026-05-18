@@ -199,6 +199,19 @@ function isAllowDecision(decision: PermissionDecision): boolean {
   return decision.startsWith("allow");
 }
 
+export function dedupePermissionOptions(
+  options: PermissionRequestOption[],
+): PermissionRequestOption[] {
+  const seen = new Set<PermissionDecision>();
+  return options.filter((option) => {
+    if (seen.has(option.decision)) {
+      return false;
+    }
+    seen.add(option.decision);
+    return true;
+  });
+}
+
 /**
  * Permission request drawer pinned below the active mission conversation.
  */
@@ -214,12 +227,14 @@ export function MissionPermissionDrawer({
     request.command,
     fallbackToolTitle,
   );
-  const permissionOptions = request.options?.length
-    ? request.options
-    : [
-        { decision: "allow" as const, label: copy.allowOnce },
-        { decision: "deny" as const, label: copy.deny },
-      ];
+  const permissionOptions = dedupePermissionOptions(
+    request.options?.length
+      ? request.options
+      : [
+          { decision: "allow" as const, label: copy.allowOnce },
+          { decision: "deny" as const, label: copy.deny },
+        ],
+  );
 
   return (
     <section

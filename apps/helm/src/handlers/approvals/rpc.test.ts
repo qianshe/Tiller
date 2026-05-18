@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ApprovalPolicyRule } from "@tiller/shared";
 import { handleApprovalRpcRequest } from "./rpc";
 
 const baseRequest = {
@@ -10,7 +11,9 @@ const baseRequest = {
 };
 
 function createContextWithApproval(overrides: Record<string, unknown> = {}) {
+  const runtimeResponses: Array<{ requestId: string; decision: string }> = [];
   return {
+    runtimeResponses,
     approvalIndex: new Map([
       ["approval-1", { sessionId: "s1", request: baseRequest }],
     ]),
@@ -19,13 +22,19 @@ function createContextWithApproval(overrides: Record<string, unknown> = {}) {
       [
         "s1",
         {
+          summary: { id: "s1", agentId: "codex", projectId: "tiller" },
           runtime: {
             supportsPermissionResponses: true,
-            respondPermission: () => undefined,
+            respondPermission: (requestId: string, decision: string) => {
+              runtimeResponses.push({ requestId, decision });
+            },
           },
         },
       ],
     ]),
+    saveApprovalPolicyRule: () => undefined,
+    readApprovalPolicy: () => ({ rules: [] }),
+    logWarn: () => undefined,
     updateSessionSummary: (_id: string, fn: (current: any) => any) =>
       fn({ id: "s1", status: "waiting_for_permission" }),
     broadcastNotification: () => undefined,
@@ -128,4 +137,58 @@ test("approval/respond resolves once and rejects the second concurrent completio
     ),
     /already resolved|not found/i,
   );
+});
+
+
+test("approval/respond persists allow_always as an allow policy rule", async () => {
+  const savedRules: ApprovalPolicyRule[] = [];
+  const context = createContextWithApproval({
+    saveApprovalPolicyRule: (rule: ApprovalPolicyRule) => savedRules.push(rule),
+  });
+
+  const result = await handleApprovalRpcRequest(
+    "approval/respond",
+    { approvalRequestId: "approval-1", decision: "allow_always" },
+    context,
+  ) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(savedRules.length, 1);
+  assert.equal(savedRules[0]?.action, "allow");
+  assert.deepEqual(context.runtimeResponses, [{ requestId: "approval-1", decision: "allow_always" }]);
+});
+
+test("approval/respond does not persist allow once", async () => {
+  const savedRules: ApprovalPolicyRule[] = [];
+  const context = createContextWithApproval({
+    saveApprovalPolicyRule: (rule: ApprovalPolicyRule) => savedRules.push(rule),
+  });
+
+  await handleApprovalRpcRequest(
+    "approval/respond",
+    { approvalRequestId: "approval-1", decision: "allow" },
+    context,
+  );
+
+  assert.equal(savedRules.length, 0);
+});
+
+test("approval/respond still responds when policy persistence fails", async () => {
+  const warnings: string[] = [];
+  const context = createContextWithApproval({
+    saveApprovalPolicyRule: () => {
+      throw new Error("disk full");
+    },
+    logWarn: (message: string) => warnings.push(message),
+  });
+
+  const result = await handleApprovalRpcRequest(
+    "approval/respond",
+    { approvalRequestId: "approval-1", decision: "allow_always" },
+    context,
+  ) as any;
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(context.runtimeResponses, [{ requestId: "approval-1", decision: "allow_always" }]);
+  assert.equal(warnings.some((line) => line.includes("approval policy save failed")), true);
 });

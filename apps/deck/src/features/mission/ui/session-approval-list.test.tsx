@@ -93,3 +93,33 @@ test("chat pane forwards approvalRequestId to onRespondToPermission via per-appr
   assert.match(html, /Run X/);
   assert.equal(lastInvocation, null);
 });
+
+
+test("permission drawer renders one global allow action for duplicate allow_always options", () => {
+  const request: PermissionRequest = {
+    id: "approval-duplicate-global",
+    command: "MCP • sanshu/zhi :: {}",
+    reason: "Approve MCP tool call",
+    cwd: "D:/repo",
+    options: [
+      { decision: "allow_always", label: "全局允许" },
+      { decision: "allow_always", label: "Always allow" },
+      { decision: "allow_always", label: "Allow globally" },
+      { decision: "allow", label: "本次允许" },
+      { decision: "deny", label: "拒绝" },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    createElement(MissionChatPane, {
+      ...baseProps,
+      activeSession: { id: "session-1", agentName: "OpenCode" } as any,
+      pendingApprovals: [{ sessionId: "session-1", request, resolving: false }],
+      onRespondToPermission: () => undefined,
+    } as any),
+  );
+
+  assert.equal((html.match(/全局允许/gu) ?? []).length, 1);
+  assert.equal((html.match(/本次允许/gu) ?? []).length, 1);
+  assert.equal((html.match(/拒绝/gu) ?? []).length, 1);
+});

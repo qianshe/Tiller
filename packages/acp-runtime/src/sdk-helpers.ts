@@ -60,16 +60,18 @@ export function mapPromptContentToSdkBlocks(content: AgentPromptContent[]): acp.
 
 export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id: string, cwd: string): SdkMappedPermissionRequest {
   const optionIds: Partial<Record<PermissionDecision, string>> = {};
-  const options: PermissionRequestOption[] = [];
+  const rawOptions: PermissionRequestOption[] = [];
 
   for (const option of params.options ?? []) {
     const decision = resolvePermissionOptionDecision(option, optionIds);
     if (!decision) {
       continue;
     }
-    options.push({ decision, label: option.name });
+    rawOptions.push({ decision, label: option.name });
     optionIds[decision] ??= option.optionId;
   }
+
+  const options = normalizePermissionRequestOptions(rawOptions);
 
   const allowOptionId = optionIds.allow ?? optionIds.allow_session ?? optionIds.allow_always;
   const denyOptionId = optionIds.deny ?? optionIds.deny_always;
@@ -111,6 +113,38 @@ function resolvePermissionOptionDecision(
     default:
       return null;
   }
+}
+
+const PERMISSION_ACTION_LABELS: Record<PermissionDecision, string> = {
+  allow: "本次允许",
+  allow_session: "本会话允许",
+  allow_always: "全局允许",
+  deny: "拒绝",
+  deny_always: "始终拒绝",
+};
+
+const PERMISSION_ACTION_ORDER: PermissionDecision[] = [
+  "allow",
+  "allow_session",
+  "allow_always",
+  "deny",
+  "deny_always",
+];
+
+export function normalizePermissionRequestOptions(
+  options: PermissionRequestOption[],
+): PermissionRequestOption[] {
+  const byDecision = new Map<PermissionDecision, PermissionRequestOption>();
+  for (const option of options) {
+    if (byDecision.has(option.decision)) continue;
+    // 保留 SDK 给出的原始 label，只有当 label 为空/缺失时回退到中文常量。
+    const label = option.label?.trim() ? option.label : PERMISSION_ACTION_LABELS[option.decision];
+    byDecision.set(option.decision, { decision: option.decision, label });
+  }
+  return PERMISSION_ACTION_ORDER.flatMap((decision) => {
+    const option = byDecision.get(decision);
+    return option ? [option] : [];
+  });
 }
 
 function isSessionPermissionOption(
