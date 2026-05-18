@@ -65,6 +65,71 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
   ]);
 });
 
+test("parseOpenCodeExportHistory replaces enhanced OpenCode user wrapper with original prompt", () => {
+  const originalPrompt = "调查这个 bug 的根因，给出触发路径。";
+  const enhancedPrompt = [
+    "IF COMPLEX - DO NOT STRUGGLE ALONE.",
+    "",
+    "# Task",
+    "",
+    originalPrompt,
+    "",
+    "# Acceptance Criteria",
+    "",
+    "- 给出修复建议。",
+  ].join("\n");
+
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-user-enhanced",
+          info: { role: "user", time: { created: 1777543137952 } },
+          parts: [
+            { type: "text", text: enhancedPrompt },
+            { type: "text", text: originalPrompt },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-enhanced",
+      role: "user",
+      text: originalPrompt,
+      timestamp: "2026-04-30T09:58:57.952Z",
+    },
+  ]);
+});
+
+test("parseOpenCodeExportHistory preserves normal user text parts when no wrapper contains another part", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-user-normal-parts",
+          info: { role: "user", time: { created: 1777543137952 } },
+          parts: [
+            { type: "text", text: "第一段" },
+            { type: "text", text: "第二段" },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-normal-parts",
+      role: "user",
+      text: "第一段第二段",
+      timestamp: "2026-04-30T09:58:57.952Z",
+    },
+  ]);
+});
+
 test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlite rows", () => {
   const history = parseOpenCodeSqliteHistory(
     [
@@ -114,6 +179,57 @@ test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlit
     ],
     toolCalls: [],
   });
+});
+
+test("parseOpenCodeSqliteHistory replaces enhanced OpenCode user wrapper with original prompt", () => {
+  const originalPrompt = "帮我解决这个问题，这个应该在插件中解决还是在通用里解决呢？";
+  const enhancedPrompt = [
+    "You are operating inside OpenCode.",
+    "",
+    "# User Request",
+    "",
+    originalPrompt,
+    "",
+    "# Runtime Notes",
+    "",
+    "Prefer concise answers.",
+  ].join("\n");
+
+  const history = parseOpenCodeSqliteHistory(
+    [
+      {
+        id: "msg-user-enhanced",
+        time_created: 1777543137952,
+        data: JSON.stringify({ role: "user", time: { created: 1777543137952 } }),
+      },
+    ],
+    [
+      {
+        id: "prt-enhanced",
+        message_id: "msg-user-enhanced",
+        time_created: 1777543137952,
+        time_updated: 1777543137952,
+        data: JSON.stringify({ type: "text", text: enhancedPrompt }),
+      },
+      {
+        id: "prt-original",
+        message_id: "msg-user-enhanced",
+        time_created: 1777543137953,
+        time_updated: 1777543137953,
+        data: JSON.stringify({ type: "text", text: originalPrompt }),
+      },
+    ],
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-enhanced",
+      role: "user",
+      text: originalPrompt,
+      timestamp: "2026-04-30T09:58:57.952Z",
+    },
+  ]);
+  assert.deepEqual(history.toolCalls, []);
 });
 
 test("parseOpenCodeExportHistory classifies OpenCode read/write/search and MCP tools", () => {

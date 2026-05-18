@@ -120,7 +120,7 @@ export function parseOpenCodeSqliteHistory(
     const parts = partsByMessageId.get(row.id) ?? [];
     const role = normalizeMessageRole(messageData?.role);
     const timestamp = timestampFromMillis(messageData?.time?.created ?? row.time_created);
-    const text = collectTextParts(parts);
+    const text = collectMessageText(parts, role);
     if (role && timestamp && text) {
       messages.push({ id: row.id, role, text, timestamp });
     }
@@ -171,7 +171,7 @@ export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory
     const messageId = stringFrom(message?.id ?? message?.info?.id);
     const role = normalizeMessageRole(message?.info?.role ?? message?.role);
     const timestamp = timestampFromMillis(message?.info?.time?.created ?? message?.time?.created);
-    const text = collectTextParts(message?.parts);
+    const text = collectMessageText(message?.parts, role);
     if (messageId && role && timestamp && text) {
       messages.push({ id: messageId, role, text, timestamp });
     }
@@ -224,14 +224,47 @@ function collectToolCalls(message: any): AgentToolCall[] {
   return calls;
 }
 
-function collectTextParts(parts: unknown) {
+function collectMessageText(parts: unknown, role: AgentMessage["role"] | null) {
+  const textParts = collectTextPartValues(parts);
+  if (role === "user") {
+    return normalizeOpenCodeUserTextParts(textParts);
+  }
+  return textParts.join("");
+}
+
+function collectTextPartValues(parts: unknown) {
   if (!Array.isArray(parts)) {
-    return "";
+    return [];
   }
   return parts
     .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("");
+    .map((part) => part.text);
+}
+
+function normalizeOpenCodeUserTextParts(textParts: string[]) {
+  if (textParts.length < 2) {
+    return textParts.join("");
+  }
+
+  const candidates = textParts
+    .map((text, index) => ({ index, text, normalized: normalizeForContainment(text) }))
+    .filter((part) => part.normalized.length > 0)
+    .sort((left, right) => left.normalized.length - right.normalized.length);
+
+  const containedOriginal = candidates.find((candidate) =>
+    candidates.some(
+      (other) =>
+        other.index !== candidate.index &&
+        other.normalized.length > candidate.normalized.length &&
+        other.normalized.includes(candidate.normalized),
+    ),
+  );
+
+  return containedOriginal?.text ?? textParts.join("");
+}
+
+function normalizeForContainment(value: string) {
+  return value.replace(/\r\n/gu, "\n").trim();
 }
 
 function normalizeMessageRole(role: unknown): AgentMessage["role"] | null {
