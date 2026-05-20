@@ -41,7 +41,7 @@ export const DEFAULT_PROMPT_RESPONSE_CONTRACT =
   "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
 export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
-  theme: "system",
+  theme: "dark",
   reduceMotion: false,
   technicalPanels: {
     logbookDefaultOpen: false,

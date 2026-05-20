@@ -187,22 +187,29 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
 });
 
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {
-  assert.match(worktreeSource, /grid-cols-\[var\(--mission-sidebar-width\)_var\(--mission-sidebar-resizer-width\)_minmax\(0,var\(--mission-chat-width\)\)_var\(--mission-display-resizer-width\)_var\(--mission-display-width\)_var\(--mission-inspector-resizer-width\)_var\(--mission-inspector-width\)\]/);
+  assert.match(worktreeSource, /mission-grid/);
   assert.doesNotMatch(worktreeSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
   assert.match(worktreeSource, /mission-sidebar-collapsed/);
+  assert.match(worktreeSource, /sidebar-collapsed/);
+  assert.match(worktreeSource, /display-collapsed/);
   assert.match(worktreeSource, /mission-inspector-collapsed/);
+  assert.match(worktreeSource, /inspector-collapsed/);
+  assert.match(worktreeSource, /wb-pane/);
 });
 
 test("mission shell fills the viewport so the project pane stays visible on desktop", () => {
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*width:\s*100vw;/s);
-  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*8px 12px 12px;/s);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\.v6-radial-shell\s*{[^}]*padding:\s*8px;/s);
   assert.doesNotMatch(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*96px 12px 12px;/s);
-  assert.match(shellStylesSource, /\.shell\.view-sessions\s+\.page-content\s*{[^}]*min-height:\s*calc\(100vh - 20px\);/s);
+  assert.match(shellStylesSource, /\.shell\.view-sessions\s+\.page-content\s*{[^}]*min-height:\s*calc\(100vh - 16px\);/s);
 });
 
 test("mission project sidebar uses shared primitives and explicit Tailwind tree rows", () => {
   assert.match(sidebarSource, /Badge/);
-  assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken/);
+  assert.match(sidebarSource, /wb-pane-head/);
+  assert.match(sidebarSource, /bg-surface-sunken border-r border-border-ghost/);
+  assert.match(sidebarSource, /mission-tree-switcher flex-1 overflow-auto p-1/);
   assert.doesNotMatch(sidebarSource, /Helm → Project → Session/);
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[18px_22px_minmax\(0,1fr\)_auto\]/);
@@ -211,7 +218,8 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
 });
 
 test("mission sidebar rows stay compact and session actions open below rows", () => {
-  assert.match(sidebarSource, /rounded-xl border border-border-ghost bg-surface-sunken p-2/);
+  assert.match(sidebarSource, /sidebar-section mission-tree-switcher flex-1 overflow-auto p-1/);
+  assert.match(sidebarSource, /mission-tree grid gap-1/);
   assert.match(sidebarProjectNodeSource, /px-2 py-1\.5/);
   assert.match(sessionRowSource, /px-2 py-1\.5/);
   assert.match(sessionRowSource, /DropdownMenuContent/);
@@ -281,11 +289,17 @@ test("session cleanup confirmation uses the shared centered dialog primitive", (
 });
 
 test("mission responsive collapse keeps chat as the last visible pane", () => {
-  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584/);
-  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280/);
-  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080/);
-  assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 24/);
-  assert.match(missionLayoutHookSource, /chat: \{ min: 280, max: 820 \}/);
+  assert.match(missionLayoutHookSource, /sidebar: 248/);
+  assert.match(missionLayoutHookSource, /display: 320/);
+  assert.match(missionLayoutHookSource, /inspector: 280/);
+  assert.match(missionLayoutHookSource, /MISSION_RESIZER_WIDTH = 4/);
+  assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 460/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081/);
+  assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081/);
+  assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 16/);
+  assert.match(missionLayoutHookSource, /chat: \{ min: MISSION_MIN_CHAT_WIDTH/);
+  assert.match(missionLayoutHookSource, /shouldCollapseInspectorForChat/);
+  assert.match(missionLayoutHookSource, /shouldCollapseDisplayForChat/);
   assert.match(missionLayoutHookSource, /--mission-sidebar-resizer-width/);
   assert.match(missionLayoutHookSource, /--mission-display-resizer-width/);
   assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);

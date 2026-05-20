@@ -294,7 +294,7 @@ export function MissionDisplayPanel({
   };
   return (
     <aside
-      className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
+      className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-l border-border-ghost shadow-none"
       style={style}
       aria-label="任务展示容器"
       data-mission-mobile-pane="display"

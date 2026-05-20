@@ -33,6 +33,14 @@
       "category": "Pattern",
       "created_at": "2026-05-17T13:03:58.231822300Z",
       "updated_at": "2026-05-17T13:03:58.231822300Z"
+    },
+    {
+      "id": "33a526cb-bb3f-47c0-bbcb-57b864708f45",
+      "content": "在 Tiller UI 复刻任务中，如果浏览器参考路由不可用或交互不切页，可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据；用户明确允许“直接去看代码设计”。",
+      "content_normalized": "在 tiller ui 复刻任务中如果浏览器参考路由不可用或交互不切页可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据用户明确允许直接去看代码设计",
+      "category": "Preference",
+      "created_at": "2026-05-20T17:01:56.604662100Z",
+      "updated_at": "2026-05-20T17:01:56.604662100Z"
     }
   ],
   "deleted_entries": [],

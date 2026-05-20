@@ -114,7 +114,7 @@ export function MissionSidebar({
   resizer,
 }: MissionSidebarProps) {
   const sidebarClassName = [
-    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-border-ghost bg-surface/95 p-2 shadow-none",
+    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-r border-border-ghost shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
   ]
     .filter(Boolean)
@@ -127,35 +127,37 @@ export function MissionSidebar({
         style={missionSidebarPaneStyle}
         aria-label="任务导航：Helm、项目与任务"
         data-mission-mobile-pane="project"
-        onScroll={handleMissionTreeScroll}
       >
         {!effectiveSidebarCollapsed ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="mission-sidebar-toggle ml-auto text-muted-foreground hover:text-foreground"
-            onClick={() => setMissionSidebarCollapsed(true)}
-            aria-expanded="true"
-            aria-label="收起任务导航"
-            title="收起任务导航"
-          >
-            ‹
-          </Button>
+          <div className="wb-pane-head bg-transparent">
+            <span className="wb-pane-head-eyebrow">Helm · 任务</span>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="mission-sidebar-toggle text-muted-foreground hover:text-foreground"
+              onClick={() => setMissionSidebarCollapsed(true)}
+              aria-expanded="true"
+              aria-label="收起任务导航"
+              title="收起任务导航"
+            >
+              ‹
+            </Button>
+          </div>
         ) : null}
         {missionSidebarCollapsed ? null : (
-          <div className="sidebar-section mission-tree-switcher grid gap-3">
-            <div className="section-head section-head-soft sidebar-heading-block rounded-xl border border-border-ghost bg-surface-sunken p-2">
-              <div className="grid gap-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold text-foreground">项目</h2>
-                  <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
-                    {projects.length} 个
-                  </Badge>
-                </div>
-              </div>
+          <div
+            className="sidebar-section mission-tree-switcher flex-1 overflow-auto p-1"
+            onScroll={handleMissionTreeScroll}
+          >
+            <div className="section-head section-head-soft sidebar-heading-block mb-1 flex items-center gap-2 px-1.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate">项目</span>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                {projects.length} 个
+              </Badge>
             </div>
-            <div className="mission-tree grid gap-2" role="tree" aria-label="任务层级树">
+            <div className="mission-tree grid gap-1" role="tree" aria-label="任务层级树">
               {missionHelms.map((helm) => {
                 const selectedHelm = helm.id === effectiveMissionHelmId;
                 const helmExpanded = expandedMissionHelmIds.has(helm.id);

@@ -5,15 +5,15 @@
 ## Summary
 
 - CSS files: 4
-- Total lines: 1839
+- Total lines: 1931
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 799
-- Top-level selectors: 143
-- Hard-coded color tokens: 1
+- Lines: 1098
+- Top-level selectors: 199
+- Hard-coded color tokens: 4
 
 Selectors:
 
@@ -25,6 +25,20 @@ Selectors:
 - `.chat-main`
 - `.compact`
 - `.device-mono`
+- `.h-ctl-lg`
+- `.h-ctl-md`
+- `.h-ctl-sm`
+- `.h-ctl-xs`
+- `.min-h-ctl-md`
+- `.mission-grid`
+- `.mission-grid.display-collapsed`
+- `.mission-grid.display-collapsed > :nth-child(4)`
+- `.mission-grid.display-collapsed > :nth-child(5)`
+- `.mission-grid.inspector-collapsed`
+- `.mission-grid.inspector-collapsed > :nth-child(6)`
+- `.mission-grid.inspector-collapsed > :nth-child(7)`
+- `.mission-grid.sidebar-collapsed`
+- `.mission-grid.sidebar-collapsed > :nth-child(2)`
 - `.mission-inspector-section-head > div`
 - `.mission-inspector-section-head h3`
 - `.mission-mobile-edge-pager`
@@ -39,6 +53,9 @@ Selectors:
 - `.mission-mobile-pager-label`
 - `.mission-panel-head > div`
 - `.mission-panel-head h3`
+- `.mission-resizer`
+- `.mission-resizer::before`
+- `.mission-resizer:hover`
 - `.mission-responsive-mode`
 - `.mission-responsive-mode .mission-composer`
 - `.mission-responsive-mode .mission-inspector-section-head`
@@ -85,10 +102,18 @@ Selectors:
 - `.muted`
 - `.page-content`
 - `.shell`
+- `.shell.v6-radial-shell`
+- `.shell.v6-radial-shell .page-content`
+- `.shell.v6-radial-shell > .top-nav`
+- `.shell.view-agents`
+- `.shell.view-dashboard`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
+- `.shell.view-sessions.v6-radial-shell .page-content`
+- `.shell.view-settings`
 - `.stack-gap`
 - `.subtle`
+- `.tabular`
 - `.top-nav`
 - `.top-nav .top-nav-github-link`
 - `.top-nav .top-nav-github-link.top-nav-github-link-mobile-visible`
@@ -115,7 +140,18 @@ Selectors:
 - `.top-nav:focus-within::before`
 - `.top-nav:hover`
 - `.top-nav:hover::before`
+- `.vp-frame`
+- `.w-ctl-md`
+- `.w-ctl-sm`
+- `.w-ctl-xs`
+- `.wb-focus-ring:focus-visible`
+- `.wb-pane`
+- `.wb-pane-head`
+- `.wb-pane-head-eyebrow`
+- `.wb-pane-sunken`
 - `.workspace-single`
+- `[data-deck-density="compact"]`
+- `[data-deck-density="cozy"]`
 - `[data-deck-reduce-motion="true"] *`
 - `[data-deck-theme="dark"]`
 - `[data-deck-theme="dark"] *`
@@ -132,12 +168,23 @@ Selectors:
 - `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb`
 - `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
 - `[data-deck-theme="tiller"] body`
+- `[data-deck-viewport="mobile"] .shell.v6-radial-shell`
+- `[data-deck-viewport="mobile"] .vp-frame`
+- `[data-deck-viewport="mobile"] .vp-frame .shell.v6-radial-shell`
+- `[data-deck-viewport="mobile"] .vp-frame main`
+- `[data-deck-viewport="mobile"] .vp-frame::after`
+- `[data-deck-viewport="mobile"] .vp-frame::before`
+- `[data-deck-viewport="tablet"] .shell.v6-radial-shell`
+- `[data-deck-viewport="tablet"] .vp-frame`
+- `[data-deck-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
 - `} .admiral-avatar`
+- `} .wb-pulse`
 - `} @keyframes mission-loading-pulse`
 - `} @keyframes mission-mobile-card-switch`
 - `} @keyframes mission-session-status-pulse`
 - `} *`
 - `@keyframes surface-fade`
+- `@keyframes wb-pulse-ring`
 - `@media (max-width: 1080px)`
 - `*`
 - `*::-webkit-scrollbar`
@@ -150,6 +197,15 @@ Selectors:
 - `40%`
 - `50%`
 - `body`
+- `body[data-density="compact"]`
+- `body[data-density="cozy"]`
+- `body[data-viewport="mobile"] .vp-frame`
+- `body[data-viewport="mobile"] .vp-frame .shell.v6-radial-shell`
+- `body[data-viewport="mobile"] .vp-frame main`
+- `body[data-viewport="mobile"] .vp-frame::after`
+- `body[data-viewport="mobile"] .vp-frame::before`
+- `body[data-viewport="tablet"] .vp-frame`
+- `body[data-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
 - `button`
 - `h1`
 - `h2`
@@ -163,21 +219,24 @@ Selectors:
 
 Hard-coded colors:
 
+- `#070707`
+- `#1a1c1d`
+- `#353535`
 - `rgb(`
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 317
+- Lines: 314
 - Top-level selectors: 5
-- Hard-coded color tokens: 88
+- Hard-coded color tokens: 57
 
 Selectors:
 
 - `[data-deck-theme="dark"]`
 - `[data-deck-theme="tiller"]`
-- `} } @theme inline`
 - `@layer base`
 - `@media (prefers-color-scheme: dark)`
+- `@theme inline`
 
 Hard-coded colors:
 
@@ -190,73 +249,43 @@ Hard-coded colors:
 - `#064b23`
 - `#0d1117`
 - `#0e0e0e`
-- `#0e5530`
-- `#10241a`
-- `#111820`
 - `#131313`
-- `#18212a`
 - `#1a1c1d`
 - `#1b1b1b`
 - `#1f1f1f`
 - `#1f242c`
 - `#1f2933`
-- `#1f5e90`
 - `#22c55e`
-- `#244563`
 - `#252b33`
-- `#26313b`
-- `#263440`
-- `#28734f`
 - `#2a2a2a`
-- `#2c3742`
 - `#2f3132`
 - `#2f3645`
-- `#314963`
-- `#33404d`
 - `#353535`
 - `#414755`
 - `#4a5568`
 - `#4ade80`
 - `#4b8eff`
-- `#52606e`
 - `#64748b`
-- `#762525`
 - `#86efac`
 - `#8a5600`
-- `#8b6419`
 - `#8e1515`
-- `#909ba6`
 - `#94a3b8`
-- `#9b3131`
 - `#a8a8ac`
-- `#a8b2bd`
 - `#aab4c0`
 - `#adc6ff`
-- `#aeb7c0`
-- `#b0bac4`
-- `#b8c1ca`
 - `#ba1a1a`
 - `#bfdbfe`
-- `#c6ced6`
-- `#c9e0d0`
-- `#ccd8e4`
-- `#d7dee5`
 - `#d7f3df`
 - `#d8dee6`
 - `#d8e2ff`
 - `#e2e2e4`
-- `#e5ebf0`
-- `#e6c7c7`
 - `#e6edf3`
 - `#e6eefc`
 - `#e7e9ee`
 - `#e8eef5`
-- `#edf3f8`
 - `#eef4ff`
 - `#f0f0f2`
-- `#f1f6fa`
 - `#f3f3f5`
-- `#f7fafc`
 - `#f7fff2`
 - `#f87171`
 - `#f9f9fb`
@@ -265,16 +294,15 @@ Hard-coded colors:
 - `#ff6b6b`
 - `#ffb000`
 - `#ffe0e0`
-- `#fff6df`
 - `#ffffff`
 - `rgb(`
 - `rgba(`
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 561
-- Top-level selectors: 60
-- Hard-coded color tokens: 12
+- Lines: 357
+- Top-level selectors: 39
+- Hard-coded color tokens: 6
 
 Selectors:
 
@@ -282,14 +310,24 @@ Selectors:
 - `.landing-copy`
 - `.landing-eyebrow`
 - `.landing-eyebrow span`
+- `.landing-github-link`
+- `.landing-github-link-desktop`
+- `.landing-github-link:focus-visible`
+- `.landing-github-link:hover`
 - `.landing-hero`
 - `.landing-hero h1`
 - `.landing-hero-content`
-- `.landing-hero::after`
 - `.landing-hero::before`
+- `.landing-meta`
+- `.landing-meta-item`
+- `.landing-meta-item dd`
+- `.landing-meta-item dd span`
+- `.landing-meta-item dt`
 - `.landing-primary`
 - `.landing-primary span`
+- `.landing-primary:hover`
 - `.landing-secondary`
+- `.landing-secondary:hover`
 - `.landing-ship-hotspot`
 - `.landing-ship-hotspot-agents`
 - `.landing-ship-hotspot-sessions`
@@ -302,54 +340,17 @@ Selectors:
 - `.landing-ship-hotspot:hover::after`
 - `.landing-ship-hotspot:hover::before`
 - `.landing-ship-hotspots`
-- `.landing-telemetry`
-- `.landing-telemetry-grid`
-- `.landing-telemetry-head`
-- `.landing-telemetry-kicker`
-- `.landing-telemetry-line`
-- `.landing-telemetry-stream`
-- `.landing-telemetry-stream::before`
-- `.landing-telemetry-track`
 - `.shell.view-overview`
 - `.shell.view-overview .page-content`
 - `.shell.view-overview > .top-nav`
-- `.shell.view-overview > .top-nav .admiral-avatar`
-- `.shell.view-overview > .top-nav .admiral-avatar svg`
-- `.shell.view-overview > .top-nav .admiral-avatar::after`
-- `.shell.view-overview > .top-nav .landing-cd-disc`
-- `.shell.view-overview > .top-nav .landing-cd-player`
-- `.shell.view-overview > .top-nav .landing-cd-player.is-playing .landing-cd-disc`
-- `.shell.view-overview > .top-nav .top-nav-actions`
-- `.shell.view-overview > .top-nav .top-nav-brand`
-- `.shell.view-overview > .top-nav .top-nav-brand strong`
-- `.shell.view-overview > .top-nav .top-nav-item`
-- `.shell.view-overview > .top-nav .top-nav-item:hover`
-- `.shell.view-overview > .top-nav .top-nav-item.active`
-- `.shell.view-overview > .top-nav .top-nav-links`
-- `.shell.view-overview > .top-nav .top-nav-logo`
-- `.shell.view-overview > .top-nav .top-nav-logo-mark`
-- `.shell.view-overview > .top-nav::after`
-- `} @keyframes landingCdSpin`
-- `} @keyframes landingJetPulse`
-- `} @media (max-width: 1180px)`
 - `} @media (max-width: 720px)`
-- `@keyframes landingTelemetryScroll`
-- `45%`
-- `button.landing-telemetry-line`
-- `button.landing-telemetry-line:hover`
-- `to`
+- `@media (max-width: 1180px)`
 
 Hard-coded colors:
 
-- `#000`
 - `#050914`
-- `#080d18`
-- `#0f172a`
-- `#111827`
-- `#4f5b6d`
-- `#94a3b8`
 - `#9bc7ff`
-- `#e2e8f0`
+- `#f5f7fb`
 - `#f8fbff`
 - `#ffffff`
 - `rgb(`

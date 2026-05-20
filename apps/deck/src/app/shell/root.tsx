@@ -53,6 +53,7 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { TopNav } from "../../shared/ui/layout/top-nav";
+import { RadialMenu, type RadialMenuItem } from "../../shared/ui";
 import { UI_COPY, type Locale } from "../../shared/utils/copy";
 import { formatRelativeTime } from "../../shared/utils/format-time";
 import {
@@ -71,6 +72,14 @@ import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
 const MOBILE_ADDRESSBAR_SCROLL_OFFSET = 80;
+
+const V6_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: "overview", icon: "home", label: "首页" },
+  { id: "dashboard", icon: "board", label: "Dashboard" },
+  { id: "sessions", icon: "mission", label: "工作台" },
+  { id: "agents", icon: "fleet", label: "舰队" },
+  { id: "settings", icon: "settings", label: "设置" },
+];
 
 function tryCollapseMobileAddressBar() {
   if (!window.matchMedia("(max-width: 1080px)").matches) {
@@ -514,89 +523,79 @@ export function App() {
     deckData.deckPreferences.theme,
     deckData.deckPreferences.reduceMotion,
   );
+  const deckTheme = deckData.deckPreferences.theme;
 
   useEffect(() => {
-    let collapsed = false;
-    const collapseOnce = () => {
-      if (collapsed) {
-        return;
-      }
-      collapsed = true;
-      tryCollapseMobileAddressBar();
-    };
+    document.body.dataset.theme = deckTheme;
+  }, [deckTheme]);
 
-    window.addEventListener("pointerdown", collapseOnce, {
-      once: true,
-      passive: true,
-    });
-    window.addEventListener("touchstart", collapseOnce, {
-      once: true,
-      passive: true,
-    });
-
-    return () => {
-      window.removeEventListener("pointerdown", collapseOnce);
-      window.removeEventListener("touchstart", collapseOnce);
-    };
-  }, []);
+  const appShell = (
+    <main className={shellClassName}>
+      <TopNav
+        activeView={route.activeView}
+        onNavigate={route.navigateToView}
+        connection={helmConnection.connection}
+        language={deckData.deckPreferences.language}
+      />
+      <AppRoutes
+        ctx={buildAppRouteContext({
+          runtimeState,
+          deckData,
+          missionView,
+          titleActions,
+          formatRelativeTime,
+          resolveCombinedModelValue,
+          resolveReasoningOptionsForModel,
+          resolveReasoningLabel,
+          appActions,
+          controllers,
+          panelPages: panelContext,
+          selection,
+          layout: layoutContext,
+          history,
+          preferenceActions,
+          promptEnhancerSettings,
+          slash,
+          codeActions,
+          helmConnection,
+          route,
+          activeProfileId,
+          copy,
+          agentLocked,
+          enhancePromptDraft,
+          updateSessionDraftPreferences,
+          toggleProjectFileDirectory,
+          openDiffDetail,
+          toggleExpandedMessage,
+          renderMissionAgentIcon,
+        })}
+      />
+      <SessionCleanupConfirmDialog
+        session={runtimeState.pendingSessionCleanup}
+        resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
+        onCancel={() => runtimeState.setPendingSessionCleanup(null)}
+        onConfirm={(sessionId) => {
+          controllers.cleanupSession(sessionId);
+          runtimeState.setPendingSessionCleanup(null);
+        }}
+      />
+      <ApprovalToastStackContainer
+        onRespond={(approvalRequestId, decision) =>
+          controllers.respondToPermission(approvalRequestId, decision)
+        }
+      />
+      <RadialMenu
+        activeView={route.activeView}
+        items={V6_RADIAL_ITEMS}
+        onNavigate={route.navigateToView}
+        enabled={true}
+      />
+    </main>
+  );
 
   return (
     <div className="mobile-addressbar-scroll-shell">
-      <main className={shellClassName}>
-        <TopNav
-          activeView={route.activeView}
-          onNavigate={route.navigateToView}
-          connection={helmConnection.connection}
-          language={deckData.deckPreferences.language}
-        />
-        <AppRoutes
-          ctx={buildAppRouteContext({
-            runtimeState,
-            deckData,
-            missionView,
-            titleActions,
-            formatRelativeTime,
-            resolveCombinedModelValue,
-            resolveReasoningOptionsForModel,
-            resolveReasoningLabel,
-            appActions,
-            controllers,
-            panelPages: panelContext,
-            selection,
-            layout: layoutContext,
-            history,
-            preferenceActions,
-            promptEnhancerSettings,
-            slash,
-            codeActions,
-            helmConnection,
-            route,
-            activeProfileId,
-            copy,
-            agentLocked,
-            enhancePromptDraft,
-            updateSessionDraftPreferences,
-            toggleProjectFileDirectory,
-            openDiffDetail,
-            toggleExpandedMessage,
-            renderMissionAgentIcon,
-          })}
-        />
-        <SessionCleanupConfirmDialog
-          session={runtimeState.pendingSessionCleanup}
-          resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
-          onCancel={() => runtimeState.setPendingSessionCleanup(null)}
-          onConfirm={(sessionId) => {
-            controllers.cleanupSession(sessionId);
-            runtimeState.setPendingSessionCleanup(null);
-          }}
-        />
-        <ApprovalToastStackContainer
-          onRespond={(approvalRequestId, decision) =>
-            controllers.respondToPermission(approvalRequestId, decision)
-          }
-        />
-      </main>
+      {appShell}
     </div>
   );
 }

@@ -15,25 +15,25 @@ export type MissionPaneWidths = Record<MissionPaneId, number>;
 export type MissionResizeHandle = "sidebar" | "display" | "inspector";
 
 const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = {
-  sidebar: 320,
+  sidebar: 248,
   chat: 500,
-  display: 420,
-  inspector: 320,
+  display: 320,
+  inspector: 280,
 };
+const MISSION_MIN_CHAT_WIDTH = 460;
 const MISSION_PANE_LIMITS: Record<
   MissionPaneId,
   { min: number; max?: number }
 > = {
-  sidebar: { min: 240, max: 400 },
-  chat: { min: 280, max: 820 },
-  display: { min: 320 },
-  inspector: { min: 320, max: 520 },
+  sidebar: { min: 220, max: 320 },
+  chat: { min: MISSION_MIN_CHAT_WIDTH, max: 1000 },
+  display: { min: 320, max: 520 },
+  inspector: { min: 280, max: 420 },
 };
-const MISSION_RESIZER_WIDTH = 8;
-const MISSION_OUTER_GUTTER = 24;
-const MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH = 1584;
-const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1280;
-const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1080;
+const MISSION_RESIZER_WIDTH = 4;
+const MISSION_OUTER_GUTTER = 16;
+const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081;
+const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
 const MISSION_MOBILE_WIDTH = 1081;
 type MissionLayoutOptions = {
   activeView: unknown;
@@ -78,10 +78,9 @@ function normalizeMissionPaneWidths(
   const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
 
   if (totalWidth < availableWidth) {
-    const fillerPane: MissionPaneId = displayCollapsed ? "chat" : "display";
     return {
       ...next,
-      [fillerPane]: next[fillerPane] + availableWidth - totalWidth,
+      chat: next.chat + availableWidth - totalWidth,
     };
   }
 
@@ -172,6 +171,77 @@ function createMissionPaneStyles(widths: MissionPaneWidths) {
   };
 }
 
+function countVisibleMissionResizers(
+  sidebarCollapsed: boolean,
+  displayCollapsed: boolean,
+  inspectorCollapsed: boolean,
+) {
+  return (
+    (sidebarCollapsed ? 0 : 1) +
+    (displayCollapsed ? 0 : 1) +
+    (inspectorCollapsed ? 0 : 1)
+  );
+}
+
+function resolveProjectedChatWidth(
+  viewportWidth: number,
+  sidebarCollapsed: boolean,
+  displayCollapsed: boolean,
+  inspectorCollapsed: boolean,
+) {
+  const projectedFixedWidth =
+    (sidebarCollapsed ? 0 : DEFAULT_MISSION_PANE_WIDTHS.sidebar) +
+    (displayCollapsed ? 0 : DEFAULT_MISSION_PANE_WIDTHS.display) +
+    (inspectorCollapsed ? 0 : DEFAULT_MISSION_PANE_WIDTHS.inspector) +
+    countVisibleMissionResizers(
+      sidebarCollapsed,
+      displayCollapsed,
+      inspectorCollapsed,
+    ) *
+      MISSION_RESIZER_WIDTH +
+    MISSION_OUTER_GUTTER;
+
+  return viewportWidth - projectedFixedWidth;
+}
+
+function shouldCollapseInspectorForChat(
+  viewportWidth: number,
+  sidebarCollapsed: boolean,
+  displayCollapsed: boolean,
+  inspectorCollapsed: boolean,
+) {
+  if (inspectorCollapsed) {
+    return false;
+  }
+  return (
+    resolveProjectedChatWidth(
+      viewportWidth,
+      sidebarCollapsed,
+      displayCollapsed,
+      false,
+    ) < MISSION_MIN_CHAT_WIDTH
+  );
+}
+
+function shouldCollapseDisplayForChat(
+  viewportWidth: number,
+  sidebarCollapsed: boolean,
+  displayCollapsed: boolean,
+  inspectorCollapsed: boolean,
+) {
+  if (displayCollapsed) {
+    return false;
+  }
+  return (
+    resolveProjectedChatWidth(
+      viewportWidth,
+      sidebarCollapsed,
+      false,
+      inspectorCollapsed,
+    ) < MISSION_MIN_CHAT_WIDTH
+  );
+}
+
 export function useMissionLayout(options: MissionLayoutOptions) {
   const { activeView, hasActiveSession } = options;
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
@@ -229,11 +299,23 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||
     missionViewportWidth < MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH;
-  const effectiveDisplayCollapsed =
-    missionViewportWidth < MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH;
+  const inspectorCollapsedForChat = shouldCollapseInspectorForChat(
+    missionViewportWidth,
+    effectiveSidebarCollapsed,
+    false,
+    missionInspectorCollapsed,
+  );
   const effectiveInspectorCollapsed =
-    missionInspectorCollapsed ||
-    missionViewportWidth < MISSION_AUTO_COLLAPSE_INSPECTOR_WIDTH;
+    missionInspectorCollapsed || inspectorCollapsedForChat;
+  const displayCollapsedForChat = shouldCollapseDisplayForChat(
+    missionViewportWidth,
+    effectiveSidebarCollapsed,
+    false,
+    effectiveInspectorCollapsed,
+  );
+  const effectiveDisplayCollapsed =
+    missionViewportWidth < MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH ||
+    displayCollapsedForChat;
   const resolvedMissionPaneWidths = normalizeMissionPaneWidths(
     missionPaneWidths,
     effectiveSidebarCollapsed,

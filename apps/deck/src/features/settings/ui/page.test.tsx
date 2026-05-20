@@ -61,10 +61,17 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   );
 
   assert.match(html, /设置/);
+  assert.match(html, /settings-section-nav/);
+  assert.match(html, /settings-section-frame/);
+  assert.match(html, /wb-pane/);
+  assert.match(html, /外观/);
+  assert.match(html, /面板/);
+  assert.match(html, /关于/);
   assert.match(html, /语言/);
   assert.match(html, /主题/);
   assert.match(html, /技术面板/);
-  assert.match(html, /LLM 增强器/);
+  assert.match(html, /Prompt 增强/);
+  assert.doesNotMatch(html, /LLM 增强器/);
   assert.doesNotMatch(html, /增强器 System Prompt/);
   assert.doesNotMatch(html, /增强器指令模板/);
   assert.doesNotMatch(html, /恢复默认模板/);

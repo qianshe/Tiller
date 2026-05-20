@@ -292,7 +292,7 @@ export function MissionWorktree(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none",
+    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 wb-pane flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg p-1 shadow-none",
     !activeSession && "mission-draft-chat",
   ]);
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
@@ -305,10 +305,13 @@ export function MissionWorktree(props: any) {
     setSelectedMissionMobilePane(MISSION_MOBILE_PANE_ORDER[nextIndex]);
   }
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar mission-responsive-mode grid h-[calc(100vh-20px)] min-h-[640px] w-full grid-cols-[var(--mission-sidebar-width)_var(--mission-sidebar-resizer-width)_minmax(0,var(--mission-chat-width))_var(--mission-display-resizer-width)_var(--mission-display-width)_var(--mission-inspector-resizer-width)_var(--mission-inspector-width)] gap-0 overflow-hidden rounded-lg border border-border-ghost bg-surface/80 p-1 shadow-ambient",
+    "card surface-card chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden rounded-lg bg-surface/80 shadow-ambient",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
+    effectiveSidebarCollapsed && "sidebar-collapsed",
     effectiveDisplayCollapsed && "mission-display-collapsed",
+    effectiveDisplayCollapsed && "display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
+    effectiveInspectorCollapsed && "inspector-collapsed",
     isMissionMobile && "mission-mobile-mode",
     `mission-mobile-pane-${resolvedMissionMobilePane}`,
   ]);

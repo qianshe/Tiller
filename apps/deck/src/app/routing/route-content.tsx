@@ -10,6 +10,11 @@ const OverviewPage = lazy(() =>
     default: module.OverviewPage,
   })),
 );
+const DashboardPage = lazy(() =>
+  import("../../features/dashboard/ui/page").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
 const AgentsPage = lazy(() =>
   import("../../features/agents/ui/page").then((module) => ({
     default: module.AgentsPage,
@@ -31,7 +36,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     ...ctx.appActions,
     ...ctx.controllers, ...ctx.panelPages, ...ctx.selection, ...ctx.layout,
     ...ctx.history, ...ctx.preferenceActions, ...ctx.promptEnhancerSettings,
-    ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx,
+    ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx, ...ctx.route,
   };
   const {
     activeView,
@@ -44,6 +49,9 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     worktrees,
     agents,
     sessions,
+    helms,
+    approvalItemsById,
+    toolCalls,
     navigateToView,
     openSession,
     resolveDisplaySessionTitle,
@@ -141,6 +149,47 @@ function renderOverview() {
   );
 }
 
+function renderDashboard() {
+  const activeHelmLabel = activeHelm
+    ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}`
+    : `${daemonHost || DEFAULT_DAEMON_HOST}:${daemonPort || DEFAULT_DAEMON_PORT}`;
+  const helmRows = (helms ?? []).map((helm: any) => ({
+    id: helm.id ?? `${helm.host}:${helm.port}`,
+    name: helm.name ?? "Local Helm",
+    endpoint: `${helm.host ?? DEFAULT_DAEMON_HOST}:${helm.port ?? DEFAULT_DAEMON_PORT}`,
+    agentCount: helm.agentCount ?? helm.agentsCount ?? agents.length,
+    projectCount: helm.projectCount ?? helm.projectsCount ?? projects.length,
+    sessionCount: helm.sessionCount ?? helm.sessions ?? sessions.length,
+    status: helm.status === "connected" || helm.status === "active" ? "active" : "idle",
+  }));
+  const approvalRows = Object.values(approvalItemsById ?? {}).map((item: any) => ({
+    id: item.id ?? item.request?.id ?? item.requestId ?? item.createdAt,
+    kind: item.request?.kind ?? item.request?.toolName ?? item.request?.type ?? "permission",
+    target: item.request?.path ?? item.request?.command ?? item.request?.url ?? item.request?.description ?? "权限请求",
+    agentName: item.request?.agentName ?? item.request?.agentId,
+  }));
+  const toolCallCount = Object.values(toolCalls ?? {}).reduce(
+    (total: number, calls: any) => total + (Array.isArray(calls) ? calls.length : 0),
+    0,
+  );
+
+  return (
+    <DashboardPage
+      activeHelmLabel={activeHelmLabel}
+      onlineHelmCount={connection === "connected" ? 1 : 0}
+      totalHelmCount={Math.max(helmRows.length, 1)}
+      activeSessionCount={sessions.length}
+      pendingApprovalCount={approvalRows.length}
+      localMessageCount={sessions.length}
+      toolCallCount={toolCallCount}
+      sessions={sessions}
+      helms={helmRows}
+      approvals={approvalRows}
+      onNavigateAgents={() => navigateToView("agents")}
+    />
+  );
+}
+
 function renderAgents() {
   return (
     <AgentsPage
@@ -234,9 +283,10 @@ function renderSettings() {
   );
 }
   return (
-    <div className="page-content stack-gap">
+    <div className="page-content">
       <Suspense fallback={null}>
         {activeView === "overview" && renderOverview()}
+        {activeView === "dashboard" && renderDashboard()}
         {activeView === "sessions" && <MissionRoute source={source} />}
         {activeView === "agents" && renderAgents()}
         {activeView === "settings" && renderSettings()}

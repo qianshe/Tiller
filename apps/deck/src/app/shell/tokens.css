@@ -33,6 +33,33 @@
   --ring-width: 2px;
 }
 
+@theme inline {
+  --color-background: var(--background);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-emphasis: var(--surface-emphasis);
+  --color-popover-glass: var(--popover-glass);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-success: var(--success-container);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+  --color-border-ghost: var(--border-ghost);
+  --color-ring: var(--ring);
+  --color-diff-added-bg: var(--diff-added-bg);
+  --color-diff-deleted-bg: var(--diff-deleted-bg);
+
+  --text-2xs--line-height: 0.875rem;
+  --text-default--line-height: 1.45;
+}
+
 @layer base {
   :root {
     /* New semantic tokens (light, sourced from docs/Light-DESIGN (2).md) */
@@ -176,60 +203,60 @@
   }
 
   [data-deck-theme="tiller"] {
-    --background:           #b8c1ca;
-    --canvas:               #c6ced6;
-    --surface:              #d7dee5;
-    --surface-elevated:     #e5ebf0;
-    --surface-sunken:       #aeb7c0;
-    --surface-emphasis:     #909ba6;
-    --popover-glass:        rgb(229 235 240 / 0.82);
+    --background:           #0e0e0e;
+    --canvas:               #131313;
+    --surface:              #1f1f1f;
+    --surface-elevated:     #2a2a2a;
+    --surface-sunken:       #1b1b1b;
+    --surface-emphasis:     #353535;
+    --popover-glass:        rgb(53 53 53 / 0.70);
 
-    --foreground:           #111820;
-    --muted-foreground:     #33404d;
+    --foreground:           #f0f0f2;
+    --muted-foreground:     #a8a8ac;
 
-    --primary:              #314963;
-    --primary-strong:       #1f5e90;
-    --on-primary:           #f7fafc;
-    --primary-soft:         rgb(49 73 99 / 0.14);
+    --primary:              #adc6ff;
+    --primary-strong:       #4b8eff;
+    --on-primary:           #002e69;
+    --primary-soft:         rgb(173 198 255 / 0.15);
 
-    --success:              #28734f;
-    --success-container:    rgb(40 115 79 / 0.14);
-    --on-success-container: #10241a;
-    --warning:              #8b6419;
-    --on-warning:           #fff6df;
-    --destructive:          #9b3131;
+    --success:              #4ade80;
+    --success-container:    rgb(74 222 128 / 0.15);
+    --on-success-container: #4ade80;
+    --warning:              #facc15;
+    --on-warning:           #facc15;
+    --destructive:          #ff6b6b;
 
-    --diff-added-bg:        #c9e0d0;
-    --diff-added-text:      #0e5530;
-    --diff-added-border:    #28734f;
-    --diff-deleted-bg:      #e6c7c7;
-    --diff-deleted-text:    #762525;
-    --diff-deleted-border:  #9b3131;
-    --diff-hunk-bg:         #ccd8e4;
-    --diff-hunk-text:       #244563;
-    --diff-meta-bg:         #a8b2bd;
-    --diff-meta-text:       #2c3742;
-    --markdown-code-bg:     #26313b;
-    --markdown-code-fg:     #edf3f8;
-    --markdown-code-head:   #b0bac4;
+    --diff-added-bg:        rgb(34 197 94 / 0.18);
+    --diff-added-text:      #86efac;
+    --diff-added-border:    #22c55e;
+    --diff-deleted-bg:      rgb(248 113 113 / 0.18);
+    --diff-deleted-text:    #fca5a5;
+    --diff-deleted-border:  #f87171;
+    --diff-hunk-bg:         rgb(96 165 250 / 0.20);
+    --diff-hunk-text:       #bfdbfe;
+    --diff-meta-bg:         #252b33;
+    --diff-meta-text:       #aab4c0;
+    --markdown-code-bg:     #0d1117;
+    --markdown-code-fg:     #e6edf3;
+    --markdown-code-head:   #1f242c;
 
-    --border-ghost:         rgb(26 36 46 / 0.15);
-    --ring:                 #314963;
+    --border-ghost:         rgb(65 71 85 / 0.10);
+    --ring:                 #adc6ff;
 
-    --terminal-bg:          #18212a;
-    --terminal-fg:          #f1f6fa;
+    --terminal-bg:          #0e0e0e;
+    --terminal-fg:          #f0f0f2;
 
-    --shadow-ambient:       0 0 84px rgb(49 73 99 / 0.12);
+    --shadow-ambient:       0 0 80px rgb(173 198 255 / 0.05);
 
-    --color-text-inverse:   #f7fafc;
-    --color-subtle:         #52606e;
-    --color-surface:        rgba(215, 222, 229, 0.88);
-    --color-surface-strong: rgba(229, 235, 240, 0.96);
-    --color-secondary-text: #263440;
-    --color-border-strong:  rgba(26, 36, 46, 0.22);
-    --shadow-panel:         0 24px 52px rgba(17, 24, 32, 0.16);
-    --shadow-card:          0 18px 38px rgba(17, 24, 32, 0.12);
-    --deck-color-scheme:    light;
+    --color-text-inverse:   #0e0e0e;
+    --color-subtle:         #94a3b8;
+    --color-surface:        rgba(31, 31, 31, 0.9);
+    --color-surface-strong: rgba(31, 31, 31, 0.96);
+    --color-secondary-text: #e6eefc;
+    --color-border-strong:  rgba(148, 163, 184, 0.24);
+    --shadow-panel:         0 20px 44px rgba(0, 0, 0, 0.28);
+    --shadow-card:          0 16px 34px rgba(0, 0, 0, 0.24);
+    --deck-color-scheme:    dark;
     --deck-body-background: var(--background);
   }
 
@@ -284,33 +311,4 @@
       --deck-body-background: var(--background);
     }
   }
-}
-
-@theme inline {
-  --color-background:           var(--background);
-  --color-canvas:               var(--canvas);
-  --color-surface:              var(--surface);
-  --color-surface-elevated:     var(--surface-elevated);
-  --color-surface-sunken:       var(--surface-sunken);
-  --color-surface-emphasis:     var(--surface-emphasis);
-  --color-popover-glass:        var(--popover-glass);
-  --color-foreground:           var(--foreground);
-  --color-muted-foreground:     var(--muted-foreground);
-  --color-primary:              var(--primary);
-  --color-primary-strong:       var(--primary-strong);
-  --color-on-primary:           var(--on-primary);
-  --color-primary-soft:         var(--primary-soft);
-  --color-accent:               var(--accent);
-  --color-accent-foreground:    var(--accent-foreground);
-  --color-success:              var(--success);
-  --color-success-container:    var(--success-container);
-  --color-on-success-container: var(--on-success-container);
-  --color-warning:              var(--warning);
-  --color-on-warning:           var(--on-warning);
-  --color-destructive:          var(--destructive);
-  --color-border-ghost:         var(--border-ghost);
-  --color-ring:                 var(--ring);
-  --color-terminal-bg:          var(--terminal-bg);
-  --color-terminal-fg:          var(--terminal-fg);
-  --shadow-ambient:             var(--shadow-ambient);
 }

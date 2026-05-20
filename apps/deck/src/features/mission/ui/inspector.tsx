@@ -40,7 +40,7 @@ export function MissionInspector({
 
       {!collapsed ? (
         <aside
-          className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-ghost bg-surface shadow-none"
+          className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-l border-border-ghost shadow-none"
           style={style}
           aria-label="任务检视器"
           data-mission-mobile-pane="inspector"

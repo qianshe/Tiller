@@ -1,130 +1,14 @@
-/* Overview owns the landing art direction. */
+/* Overview owns only the v6 landing art direction. */
 .shell.view-overview {
   width: 100%;
   min-height: 100vh;
   margin: 0;
   padding: 0;
-  color: #080d18;
-  background: url("/landing/command-deck-bg.png") center / cover no-repeat;
+  background: var(--background);
 }
 
 .shell.view-overview > .top-nav {
-  top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  min-height: 118px;
-  max-height: none;
-  padding: 42px clamp(24px, 4.2vw, 72px) 18px;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  transform: none;
-}
-
-.shell.view-overview > .top-nav::after {
-  display: none;
-}
-
-.shell.view-overview > .top-nav .top-nav-brand {
-  gap: 12px;
-  color: #050914;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.shell.view-overview > .top-nav .top-nav-brand strong {
-  font-size: 1.25rem;
-  font-weight: 800;
-}
-
-.shell.view-overview > .top-nav .top-nav-logo {
-  position: relative;
-  width: 30px;
-  height: 28px;
-  font-size: 0;
-  color: #050914;
-}
-
-.shell.view-overview > .top-nav .top-nav-logo-mark {
-  width: 100%;
-  height: 100%;
-}
-
-.shell.view-overview > .top-nav .top-nav-links {
-  display: none;
-}
-
-.shell.view-overview > .top-nav .top-nav-item {
-  padding: 8px 0;
-  border-radius: 0;
-  color: rgb(5 9 20 / 0.82);
-  font-weight: 600;
-  background: transparent;
-}
-
-.shell.view-overview > .top-nav .top-nav-item.active,
-.shell.view-overview > .top-nav .top-nav-item:hover {
-  color: #050914;
-  background: transparent;
-}
-
-.shell.view-overview > .top-nav .admiral-avatar {
-  width: 46px;
-  height: 46px;
-  border-radius: 999px;
-  color: #f8fbff;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  backdrop-filter: blur(12px);
-}
-
-.shell.view-overview > .top-nav .admiral-avatar svg {
-  display: block;
-  width: 24px;
-  height: 24px;
-}
-
-.shell.view-overview > .top-nav .admiral-avatar::after {
-  display: none;
-}
-
-.shell.view-overview > .top-nav .top-nav-actions {
-  justify-self: end;
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-}
-
-.shell.view-overview > .top-nav .landing-cd-player {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #050914;
-  box-shadow: none;
-  backdrop-filter: blur(12px);
-  cursor: pointer;
-}
-
-.shell.view-overview > .top-nav .landing-cd-disc {
-  width: 31px;
-  height: 31px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle, rgb(5 9 20 / 0.9) 0 9%, transparent 10% 20%, rgb(5 9 20 / 0.88) 21% 23%, transparent 24%),
-    conic-gradient(from 38deg, #f8fbff, #94a3b8, #0f172a, #e2e8f0, #f8fbff);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.42);
-}
-
-.shell.view-overview > .top-nav .landing-cd-player.is-playing .landing-cd-disc {
-  animation: landingCdSpin 2.8s linear infinite;
+  display: none !important;
 }
 
 .shell.view-overview .page-content {
@@ -137,195 +21,189 @@
   position: relative;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(680px, 1280px) minmax(280px, 420px);
+  grid-template-columns: 1fr;
   align-items: start;
-  justify-content: space-between;
-  gap: clamp(28px, 7vw, 96px);
-  padding: clamp(96px, 11vh, 136px) clamp(24px, 4.2vw, 72px) clamp(40px, 8vh, 88px);
+  padding: clamp(72px, 9vh, 120px) clamp(24px, 4.2vw, 72px) clamp(40px, 8vh, 88px);
   overflow: hidden;
-}
-
-.landing-hero::before,
-.landing-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-repeat: no-repeat;
-  mix-blend-mode: screen;
-  opacity: 0.62;
-  will-change: opacity, transform;
-  animation: landingJetPulse 2.8s ease-in-out infinite;
+  background: url("/landing/command-deck-bg.png") center / cover no-repeat;
+  color: #f5f7fb;
+  isolation: isolate;
 }
 
 .landing-hero::before {
-  background-image:
-    linear-gradient(90deg, transparent 0%, rgb(125 211 252 / 0.62) 45%, transparent 100%),
-    linear-gradient(90deg, transparent 0%, rgb(191 219 254 / 0.46) 48%, transparent 100%),
-    linear-gradient(90deg, transparent 0%, rgb(125 211 252 / 0.58) 46%, transparent 100%);
-  background-size: 78px 2px, 58px 1px, 86px 2px;
-  background-position: 57.5% 30.8%, 84% 25.8%, 88.5% 64.6%;
-}
-
-.landing-hero::after {
-  background-image:
-    linear-gradient(90deg, transparent 0%, rgb(147 197 253 / 0.5) 44%, transparent 100%),
-    linear-gradient(90deg, transparent 0%, rgb(226 232 240 / 0.45) 50%, transparent 100%);
-  background-size: 116px 2px, 72px 1px;
-  background-position: 18.5% 82%, 50.5% 37.6%;
-  animation-delay: -1.2s;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(11 18 38 / 0.32) 0%, rgb(11 18 38 / 0.5) 70%, rgb(11 18 38 / 0.72) 100%);
 }
 
 .landing-hero-content {
   position: relative;
   z-index: 2;
-  max-width: 1280px;
-  padding-top: clamp(44px, 7vh, 76px);
-  margin-left: clamp(120px, 10.8vw, 220px);
+  max-width: 860px;
+  margin-left: clamp(40px, 8vw, 180px);
+  padding-top: clamp(20px, 4vh, 56px);
 }
 
 .landing-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 22px;
-  color: #111827;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  margin: 0 0 22px;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .landing-eyebrow span {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #9bc7ff;
-  box-shadow: 0 0 18px rgb(96 165 250 / 0.72);
+  box-shadow: 0 0 16px rgb(96 165 250 / 0.72);
 }
 
 .landing-hero h1 {
-  color: #050914;
-  font-size: clamp(3rem, 5vw, 4.65rem);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
+  margin: 0;
+  font-size: clamp(2.6rem, 4.6vw, 4.2rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  font-weight: 700;
 }
 
 .landing-copy {
-  max-width: 860px;
-  margin-top: 24px;
-  color: #4f5b6d;
-  font-size: clamp(0.98rem, 1.08vw, 1.08rem);
-  line-height: 1.65;
+  max-width: 620px;
+  margin: 22px 0 0;
+  font-size: clamp(0.94rem, 1.05vw, 1.05rem);
+  line-height: 1.7;
+  opacity: 0.86;
 }
 
 .landing-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
-  margin-top: 44px;
+  gap: 12px;
+  margin-top: 36px;
 }
 
 .landing-primary,
 .landing-secondary {
-  min-height: 52px;
-  padding: 0 26px;
-  border-radius: 14px;
-  font-weight: 700;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .landing-primary {
   display: inline-flex;
   align-items: center;
-  gap: 13px;
+  gap: 10px;
+  border: 0;
   background: #050914;
   color: #ffffff;
-  box-shadow: 0 18px 42px rgb(2 8 23 / 0.22);
+  box-shadow: 0 14px 32px rgb(2 8 23 / 0.28);
 }
 
 .landing-primary span {
-  font-size: 1.45rem;
+  font-size: 1.2rem;
   line-height: 1;
 }
 
+.landing-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 40px rgb(2 8 23 / 0.32);
+}
+
 .landing-secondary {
-  border: 1px solid rgb(100 116 139 / 0.22);
-  background: rgb(248 250 252 / 0.42);
-  color: #111827;
+  border: 1px solid rgb(226 232 240 / 0.24);
+  background: rgb(15 23 42 / 0.42);
+  color: #f5f7fb;
   backdrop-filter: blur(10px);
 }
 
-.landing-telemetry {
-  align-self: end;
-  justify-self: end;
-  width: min(430px, 100%);
-  display: grid;
-  gap: 12px;
-  padding: 4px 0;
-  color: #f8fbff;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+.landing-secondary:hover {
+  background: rgb(15 23 42 / 0.6);
 }
 
-.landing-telemetry-head {
-  display: grid;
-  gap: 3px;
-  padding-left: 14px;
-  border-left: 1px solid rgb(226 232 240 / 0.36);
-  text-shadow: 0 12px 28px rgb(2 8 23 / 0.5);
+.landing-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(20px, 3vw, 44px);
+  margin: 56px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid rgb(100 116 139 / 0.22);
+  max-width: 560px;
 }
 
-.landing-telemetry-kicker {
-  margin-bottom: 0;
-  color: rgb(226 232 240 / 0.68);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+.landing-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.landing-meta-item dt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  opacity: 0.72;
 }
 
-.landing-telemetry-stream {
-  position: relative;
-  height: 154px;
-  overflow: hidden;
-  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+.landing-meta-item dd {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
-.landing-telemetry-stream::before {
-  content: "";
+.landing-meta-item dd span {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+.landing-github-link {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: #f5f7fb;
+  background: rgb(15 23 42 / 0.55);
+  border: 1px solid rgb(226 232 240 / 0.24);
+  backdrop-filter: blur(12px);
+  transition: transform 140ms ease, background 160ms ease, box-shadow 160ms ease;
+  text-decoration: none;
+}
+
+.landing-github-link:hover {
+  transform: translateY(-1px);
+  background: rgb(15 23 42 / 0.78);
+  box-shadow: 0 12px 28px rgb(2 8 23 / 0.22);
+}
+
+.landing-github-link:focus-visible {
+  outline: 2px solid rgb(147 197 253 / 0.9);
+  outline-offset: 3px;
+}
+
+.landing-github-link-desktop {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgb(147 197 253 / 0.72), transparent);
-}
-
-.landing-telemetry-track {
-  display: grid;
-  gap: 8px;
-  animation: landingTelemetryScroll 18s linear infinite;
-}
-
-.landing-telemetry-line {
-  display: block;
-  width: 100%;
-  padding: 6px 0 6px 14px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: rgb(248 250 252 / 0.86);
-  font: inherit;
-  font-size: 0.9rem;
-  line-height: 1.35;
-  text-align: left;
-  text-shadow: 0 12px 26px rgb(2 8 23 / 0.55);
-}
-
-button.landing-telemetry-line {
-  cursor: pointer;
-}
-
-button.landing-telemetry-line:hover {
-  color: #ffffff;
+  top: clamp(24px, 3.6vh, 40px);
+  right: clamp(24px, 4.2vw, 56px);
+  z-index: 4;
 }
 
 .landing-ship-hotspots {
@@ -341,34 +219,8 @@ button.landing-telemetry-line:hover {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  opacity: 1;
   pointer-events: auto;
   cursor: pointer;
-}
-
-.landing-ship-hotspot::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 10px);
-  min-width: max-content;
-  padding: 7px 11px;
-  border: 1px solid rgb(226 232 240 / 0.42);
-  border-radius: 999px;
-  color: #f8fbff;
-  background: rgb(5 9 20 / 0.74);
-  box-shadow: 0 18px 38px rgb(2 8 23 / 0.28);
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  opacity: 0;
-  pointer-events: none;
-  text-transform: uppercase;
-  transform: translate(-50%, 6px);
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
-  backdrop-filter: blur(12px);
 }
 
 .landing-ship-hotspot::before {
@@ -384,15 +236,30 @@ button.landing-telemetry-line:hover {
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -50%) scale(0.72);
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.landing-ship-hotspot:hover::after,
-.landing-ship-hotspot:focus-visible::after {
-  opacity: 1;
-  transform: translate(-50%, 0);
+.landing-ship-hotspot::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  min-width: max-content;
+  padding: 6px 10px;
+  border: 1px solid rgb(226 232 240 / 0.42);
+  border-radius: 999px;
+  background: rgb(5 9 20 / 0.74);
+  color: #f8fbff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  backdrop-filter: blur(12px);
 }
 
 .landing-ship-hotspot:hover::before,
@@ -401,12 +268,15 @@ button.landing-telemetry-line:hover {
   transform: translate(-50%, -50%) scale(1);
 }
 
-.landing-ship-hotspot:focus-visible {
+.landing-ship-hotspot:hover::after,
+.landing-ship-hotspot:focus-visible::after {
   opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.landing-ship-hotspot:focus-visible {
   outline: 2px solid rgb(147 197 253 / 0.9);
   outline-offset: 4px;
-  background: transparent;
-  box-shadow: 0 0 32px rgb(147 197 253 / 0.42);
 }
 
 .landing-ship-hotspot-sessions {
@@ -430,54 +300,13 @@ button.landing-telemetry-line:hover {
   height: 17%;
 }
 
-@keyframes landingTelemetryScroll {
-  from {
-    transform: translateY(0);
-  }
-
-  to {
-    transform: translateY(-50%);
-  }
-}
-
-@keyframes landingJetPulse {
-  0%,
-  100% {
-    opacity: 0.34;
-    transform: translateX(0) scaleX(0.82);
-    filter: blur(0.2px);
-  }
-
-  45% {
-    opacity: 0.82;
-    transform: translateX(-10px) scaleX(1.12);
-    filter: blur(0.6px);
-  }
-}
-
-@keyframes landingCdSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 1180px) {
-  .shell.view-overview {
-    background-position: 58% center;
-  }
-
   .landing-hero {
-    grid-template-columns: 1fr;
-    align-content: center;
+    background-position: 58% center;
   }
 
   .landing-hero-content {
     margin-left: 0;
-  }
-
-  .landing-telemetry {
-    justify-self: start;
-    align-self: auto;
   }
 }
 
@@ -494,41 +323,11 @@ button.landing-telemetry-line:hover {
     overflow: hidden;
   }
 
-  .shell.view-overview > .top-nav {
-    grid-template-columns: 1fr auto;
-    min-height: 92px;
-    padding: 24px 20px 12px;
-  }
-
-  .shell.view-overview > .top-nav .top-nav-links {
-    display: none;
-  }
-
-  .shell.view-overview > .top-nav .admiral-avatar {
-    width: 42px;
-    height: 42px;
-  }
-
-  .shell.view-overview > .top-nav .admiral-avatar svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .shell.view-overview > .top-nav .landing-cd-player {
-    width: 42px;
-    height: 42px;
-  }
-
-  .shell.view-overview > .top-nav .landing-cd-disc {
-    width: 28px;
-    height: 28px;
-  }
-
   .landing-hero {
     height: 100%;
     min-height: 0;
     align-content: center;
-    padding: 96px 20px 24px;
+    padding: 84px 20px 24px;
   }
 
   .landing-hero h1 {
@@ -544,17 +343,14 @@ button.landing-telemetry-line:hover {
     margin-top: 28px;
   }
 
+  .landing-meta {
+    gap: 22px;
+    margin-top: 34px;
+  }
+
   .landing-primary,
   .landing-secondary {
     width: 100%;
     justify-content: center;
-  }
-
-  .landing-telemetry-stream {
-    height: 126px;
-  }
-
-  .landing-telemetry-grid {
-    grid-template-columns: 1fr;
   }
 }

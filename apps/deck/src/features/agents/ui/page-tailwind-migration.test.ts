@@ -24,12 +24,20 @@ function listFiles(dir: string): string[] {
 
 test("agents overview layout uses shared UI and Tailwind classes", () => {
   const page = readUiFile("page.tsx");
-  const helmHub = readUiFile("helm-hub.tsx");
+  const agentsTree = readUiFile("agents-tree.tsx");
   const helmDetail = readUiFile("helm-detail-section.tsx");
 
-  assert.match(page, /import \{ Card \} from "@\/shared\/ui"/);
-  assert.match(helmHub, /import \{ Button, Card, CardContent, CardHeader, CardTitle \} from "@\/shared\/ui"/);
-  assert.match(helmDetail, /import \{ Badge, Card, CardContent, CardHeader \} from "@\/shared\/ui"/);
+  assert.match(page, /agents-fleet-shell/);
+  assert.match(page, /<AgentsTree/);
+  assert.match(page, /DeleteHelmConfigDialog/);
+  assert.match(page, /min-h-0 min-w-0 overflow-hidden/);
+  assert.doesNotMatch(page, /wb-pane flex min-h-0 min-w-0 flex-col overflow-hidden/);
+  assert.match(agentsTree, /settings-section-nav|agents-helm-tree/);
+  assert.match(agentsTree, /StatusDot/);
+  assert.match(helmDetail, /import \{ AgentIcon, Badge, Button, Icon, StatusDot \} from "@\/shared\/ui"/);
+  assert.match(helmDetail, /Agents \(\$\{selectedHelmAgents.length\}\)/);
+  assert.match(helmDetail, /h-full min-h-0/);
+  assert.match(helmDetail, /wb-pane-sunken/);
 });
 
 test("agents feature no longer depends on feature CSS class hooks", () => {
