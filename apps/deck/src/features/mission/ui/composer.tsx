@@ -198,10 +198,12 @@ export function MissionComposer({
     <div
       className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost p-2 bg-surface"
       data-mission-swipe-lock="true"
+      data-testid="mission-composer"
     >
       <form
         className="chat-input-form mission-composer-deck wb-pane-sunken p-2 max-w-[1080px] mx-auto grid gap-2"
         onSubmit={submitPrompt}
+        data-testid="composer-form"
       >
         <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
           <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
@@ -238,6 +240,7 @@ export function MissionComposer({
             placeholder={draftPromptPlaceholder}
             rows={3}
             className="min-h-[72px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+            data-testid="composer-input"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup

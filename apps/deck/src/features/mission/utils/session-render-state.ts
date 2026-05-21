@@ -10,14 +10,12 @@ import type { MissionPanelPage } from "../ui/panels";
 import { isSessionExecutionPending } from "./session-state";
 
 export function buildMissionPanelPages(
-  diffCount: number,
-  logCount: number,
+  _diffCount: number,
+  _logCount: number,
   customPages: MissionPanelPage[],
 ): MissionPanelPage[] {
   return [
-    { id: "overview", title: "概览" },
-    { id: "logbook", title: `航行日志 (${logCount})` },
-    ...(diffCount > 0 ? [{ id: "diff-detail", title: "Diff 详情" }] : []),
+    { id: "diff-detail", title: "Diff 详情" },
     ...customPages,
   ];
 }

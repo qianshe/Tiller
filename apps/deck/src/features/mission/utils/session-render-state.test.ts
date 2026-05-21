@@ -86,12 +86,10 @@ test("project file search ignores collapsed tree state", () => {
   );
 });
 
-test("mission display pages keep the Git diff list out but preserve diff detail", () => {
+test("mission display pages match v6 viewer chrome without overview/logbook tabs", () => {
   assert.deepEqual(
     buildMissionPanelPages(3, 2, [{ id: "custom-1", title: "自定义" }]),
     [
-      { id: "overview", title: "概览" },
-      { id: "logbook", title: "航行日志 (2)" },
       { id: "diff-detail", title: "Diff 详情" },
       { id: "custom-1", title: "自定义" },
     ],

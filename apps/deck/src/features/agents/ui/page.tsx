@@ -217,7 +217,10 @@ export function AgentsPage({
   };
 
   return (
-    <section className={`agents-fleet-shell agents-v6-page ${isMobile ? "flex flex-col h-screen p-1 bg-canvas" : "grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1"}`}>
+    <section
+      className={`agents-fleet-shell agents-v6-page ${isMobile ? "flex flex-col h-screen p-1 bg-canvas" : "grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1"}`}
+      data-testid="agents-page"
+    >
       {fleetAddHelmModalOpen ? (
         <FleetAddHelmDialog
           stage={fleetAddHelmStage}

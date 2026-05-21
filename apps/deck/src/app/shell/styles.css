@@ -402,11 +402,11 @@ body[data-viewport="mobile"] .vp-frame main {
   height: 100%;
   grid-template-columns:
     var(--mission-sidebar-width, 248px)
-    var(--mission-sidebar-resizer-width, 2px)
+    var(--mission-sidebar-resizer-width, 4px)
     minmax(0, var(--mission-chat-width, 1fr))
-    var(--mission-display-resizer-width, 2px)
+    var(--mission-display-resizer-width, 4px)
     var(--mission-display-width, 320px)
-    var(--mission-inspector-resizer-width, 2px)
+    var(--mission-inspector-resizer-width, 4px)
     var(--mission-inspector-width, 280px);
   gap: 0;
 }
@@ -436,7 +436,6 @@ body[data-viewport="mobile"] .vp-frame main {
 }
 
 .mission-resizer {
-  background: transparent;
   cursor: col-resize;
   position: relative;
 }

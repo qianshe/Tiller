@@ -238,10 +238,11 @@ export function MissionPermissionDrawer({
 
   return (
     <section
-      className="mission-permission-drawer absolute bottom-[calc(var(--mission-permission-composer-offset,190px)+24px)] left-3 right-3 z-40 grid grid-rows-[auto_auto] gap-3 rounded-[12px] border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient sm:right-auto sm:w-[min(560px,calc(100%-1.5rem))]"
+      className="mission-permission-drawer absolute bottom-[calc(var(--mission-permission-composer-offset,190px)+24px)] left-3 right-3 z-40 grid grid-rows-[auto_auto] gap-3 rounded-[8px] border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient sm:right-auto sm:w-[min(560px,calc(100%-1.5rem))]"
       role="region"
       aria-live="polite"
       aria-label={copy.permissionRequest}
+      data-testid="mission-permission-drawer"
     >
       <div className="mission-permission-header grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
         <span

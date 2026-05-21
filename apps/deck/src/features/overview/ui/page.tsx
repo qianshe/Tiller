@@ -85,7 +85,7 @@ export function OverviewPage({
     const recent = sessions.slice(0, 5);
 
     return (
-      <div className="max-w-full mx-auto px-3 py-3">
+      <div className="max-w-full mx-auto px-3 py-3" data-testid="overview-page">
         <section className="landing-hero-mobile mb-3">
           <GithubLink className="landing-github-link-mobile" />
           <p className="landing-eyebrow">
@@ -182,7 +182,7 @@ export function OverviewPage({
   }
 
   return (
-    <section className="landing-hero" aria-labelledby="landing-hero-title">
+    <section className="landing-hero" aria-labelledby="landing-hero-title" data-testid="overview-page">
       <GithubLink className="landing-github-link-desktop" />
       <div className="landing-hero-content">
         <p className="landing-eyebrow">

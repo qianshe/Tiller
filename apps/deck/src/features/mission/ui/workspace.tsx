@@ -218,19 +218,7 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
-  const openSessions = activeSession
-    ? [
-        activeSession,
-        ...(sessions as any[])
-          .filter((session) => session.id !== activeSession.id)
-          .sort(
-            (left, right) =>
-              new Date(right.updatedAt).getTime() -
-                new Date(left.updatedAt).getTime() ||
-              left.id.localeCompare(right.id),
-          ),
-      ].slice(0, 2)
-    : [];
+  const openSessions = activeSession ? [...(sessions as any[])] : [];
   const onToggleDisplay = () => {
     setMissionDisplayCollapsed((current: boolean) => !current);
   };

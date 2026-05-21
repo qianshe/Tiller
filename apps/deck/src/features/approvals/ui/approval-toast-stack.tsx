@@ -72,14 +72,14 @@ export function ApprovalToastStack({
       aria-live="polite"
       aria-label={TOAST_COPY.permissionRequest}
     >
-      <header className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-warning">
+      <header className="flex items-center justify-between text-meta font-semibold uppercase tracking-wider text-warning">
         <span>{TOAST_COPY.permissionRequest}</span>
         {remainingCount > 0 ? (
           <span className="text-muted-foreground">还有 {remainingCount} 项待处理</span>
         ) : null}
       </header>
       <div className="grid gap-1">
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           Session · {visible.sessionId}
         </span>
         <strong className="truncate text-[0.95rem] font-semibold text-foreground">

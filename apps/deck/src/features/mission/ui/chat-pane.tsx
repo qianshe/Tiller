@@ -171,7 +171,7 @@ export function MissionChatPane({
   }, [menuOpen]);
 
   return (
-    <div className={className} style={style} data-mission-mobile-pane="chat">
+    <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
       <div className="wb-pane-head" style={{ background: "var(--surface)" }}>
         {sidebarCollapsed ? (
           <button
@@ -207,7 +207,7 @@ export function MissionChatPane({
           {menuOpen ? (
             <div
               role="menu"
-              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[200px] overflow-hidden rounded-lg py-1"
+              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[200px] overflow-hidden rounded-[8px] py-1"
               style={{
                 background: "var(--popover-glass)",
                 backdropFilter: "blur(20px)",
@@ -276,7 +276,7 @@ export function MissionChatPane({
         </div>
       </div>
       <div
-        className="chat-main flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative"
+        className="chat-main flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         ref={chatMainRef}
         onScroll={onChatMainScroll}
         onDragOver={handleDragOver}

@@ -304,8 +304,10 @@ test("mission session rows stay tree-like instead of selected card pills", () =>
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
 });
 
-test("mission logbook keeps session summary fixed while activity list scrolls", () => {
-  assert.match(displayPanelSource, /mission-logbook-page grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/);
+test("mission display keeps v6 diff viewer chrome as the primary display surface", () => {
+  assert.match(displayPanelSource, /mission-diff-detail grid min-h-0 gap-2 overflow-hidden/);
+  assert.match(displayPanelSource, /mission-diff-file min-w-0 overflow-hidden rounded-\[8px\]/);
+  assert.doesNotMatch(displayPanelSource, /mission-logbook-page/);
   assert.match(logbookPanelSource, /mission-logbook-layout grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\]/);
   assert.match(logbookPanelSource, /mission-logbook-scroll min-h-0 overflow-auto/);
 });
@@ -321,7 +323,7 @@ test("mission display pane mirrors the v6 viewer chrome", () => {
   assert.match(displayPanelSource, /wb-pane-head/);
   assert.match(displayPanelSource, /展示栏/);
   assert.match(displayPanelSource, /mission-display-tab-strip/);
-  assert.match(displayPanelSource, /rounded-\[8px\]/);
+  assert.match(displayPanelSource, /rounded\b/);
   assert.match(displayPanelSource, /mission-display-status-bar/);
   assert.doesNotMatch(displayPanelSource, /MissionPanelNav/);
   assert.doesNotMatch(displayPanelSource, /MissionPanelHeader title="任务展示" bordered \/>/);
@@ -353,9 +355,10 @@ test("mission display panel header uses compact height", () => {
   assert.doesNotMatch(inspectorSource, /<p className="eyebrow[^>]*>项目变更<\/p>/);
 });
 
-test("mission project overview renders structured cards instead of raw info text", () => {
-  assert.match(displayPanelSource, /parseOverviewItem/);
-  assert.match(displayPanelSource, /mission-overview-card/);
+test("mission display no longer renders overview/runtime blocks in the v6 viewer", () => {
+  assert.doesNotMatch(displayPanelSource, /parseOverviewItem/);
+  assert.doesNotMatch(displayPanelSource, /mission-overview-card/);
+  assert.doesNotMatch(displayPanelSource, /mission-runtime-overview/);
   assert.doesNotMatch(displayPanelSource, /<InfoList/);
 });
 
@@ -380,7 +383,7 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /sidebar: 248/);
   assert.match(missionLayoutHookSource, /display: 320/);
   assert.match(missionLayoutHookSource, /inspector: 280/);
-  assert.match(missionLayoutHookSource, /MISSION_RESIZER_WIDTH = 2/);
+  assert.match(missionLayoutHookSource, /MISSION_RESIZER_WIDTH = 4/);
   assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 460/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081/);
@@ -402,6 +405,8 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);
   assert.match(displayPanelSource, /mission-pane-display col-start-5 col-end-6/);
   assert.match(inspectorSource, /mission-pane-inspector col-start-7 col-end-8/);
+  assert.match(paneResizerSource, /w-full/);
+  assert.doesNotMatch(paneResizerSource, /-mx-\[/);
   assert.match(paneResizerSource, /col-start-2 col-end-3/);
   assert.match(paneResizerSource, /col-start-4 col-end-5/);
   assert.match(paneResizerSource, /col-start-6 col-end-7/);
@@ -552,7 +557,7 @@ test("mission wide headers truncate long titles instead of consuming layout", ()
 
 test("mission display and logbook headers stay compact on mobile", () => {
   assert.match(sessionOverviewCardSource, /mission-session-overview/);
-  assert.match(sessionOverviewCardSource, /rounded-\[8px\]/);
+  assert.match(sessionOverviewCardSource, /rounded\b/);
   assert.doesNotMatch(sessionOverviewCardSource, /mission-session-metrics/);
   assert.match(sessionOverviewCardSource, /mission-session-preview/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-panel-head,\s*\.mission-responsive-mode \.mission-inspector-section-head\s*{/s);

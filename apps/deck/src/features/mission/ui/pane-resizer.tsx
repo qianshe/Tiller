@@ -30,7 +30,7 @@ export function MissionPaneResizer({
   return (
     <button
       type="button"
-      className={`mission-resizer mission-pane-resizer mission-pane-resizer-${handle} ${gridColumnClass} group relative z-20 w-full cursor-col-resize bg-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-[1080px]:hidden after:absolute after:inset-y-[30%] after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border-ghost after:transition hover:after:bg-primary focus-visible:after:bg-primary`}
+      className={`mission-resizer mission-pane-resizer mission-pane-resizer-${handle} ${gridColumnClass} group relative z-20 w-full cursor-col-resize bg-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-[1080px]:hidden after:absolute after:inset-y-[30%] after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border-ghost after:transition hover:bg-primary-soft/25 hover:after:bg-primary focus-visible:after:bg-primary`}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

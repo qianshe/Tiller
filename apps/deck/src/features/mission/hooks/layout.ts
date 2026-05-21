@@ -30,7 +30,7 @@ const MISSION_PANE_LIMITS: Record<
   display: { min: 320, max: 520 },
   inspector: { min: 280, max: 420 },
 };
-const MISSION_RESIZER_WIDTH = 2;
+const MISSION_RESIZER_WIDTH = 4;
 const MISSION_OUTER_GUTTER = 16;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
