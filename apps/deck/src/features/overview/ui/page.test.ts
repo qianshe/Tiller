@@ -27,7 +27,6 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.doesNotMatch(pageSource, /DashboardSection/);
   assert.doesNotMatch(pageSource, /buildOverviewMetrics/);
 
-  assert.match(stylesSource, /\.shell\.view-overview > \.top-nav \{\s*display: none !important;/);
   assert.match(stylesSource, /\.landing-meta/);
   assert.match(stylesSource, /\.landing-meta-item/);
   assert.match(stylesSource, /\.landing-github-link/);
@@ -36,10 +35,7 @@ test("overview page uses the starship landing hero treatment", () => {
     stylesSource,
     /background:\s*url\("\/landing\/command-deck-bg\.png"\) center \/ cover no-repeat;/u,
   );
-  assert.doesNotMatch(
-    stylesSource,
-    /\.shell\.view-overview\s*\{[^}]*background:\s*linear-gradient/u,
-  );
+  assert.doesNotMatch(stylesSource, /\.shell\.view-overview/);
   assert.match(stylesSource, /\.landing-hero \{/);
   assert.match(stylesSource, /color: #f5f7fb;/);
   assert.match(stylesSource, /background: linear-gradient\(180deg, rgb\(11 18 38 \/ 0\.32\)/);
@@ -58,6 +54,5 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(stylesSource, /\.landing-ship-hotspot-settings/);
   assert.match(stylesSource, /@media \(max-width: 1180px\)/);
   assert.match(stylesSource, /@media \(max-width: 720px\)/);
-  assert.match(stylesSource, /\.shell\.view-overview\s*{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
   assert.match(stylesSource, /\.landing-hero\s*{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
 });

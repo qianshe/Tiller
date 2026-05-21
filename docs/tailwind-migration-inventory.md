@@ -5,7 +5,7 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 2128
+- Total lines: 2099
 
 ## Files
 
@@ -412,8 +412,8 @@ Hard-coded colors:
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 425
-- Top-level selectors: 47
+- Lines: 396
+- Top-level selectors: 44
 - Hard-coded color tokens: 6
 
 Selectors:
@@ -459,9 +459,6 @@ Selectors:
 - `.landing-ship-hotspots`
 - `.overview-session-item-btn:active`
 - `.overview-session-item-btn:hover`
-- `.shell.view-overview`
-- `.shell.view-overview .page-content`
-- `.shell.view-overview > .top-nav`
 - `} .overview-session-item-btn`
 - `} @media (max-width: 720px)`
 - `@media (max-width: 1180px)`

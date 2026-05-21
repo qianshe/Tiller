@@ -79,7 +79,7 @@ export function resolveShellClassName(activeView: string, theme: string, reduceM
   return [
     "shell",
     `view-${activeView}`,
-    activeView !== "overview" ? "v6-radial-shell" : "",
+    "v6-radial-shell",
     `theme-${theme}`,
     reduceMotion ? "motion-reduced" : "",
   ]

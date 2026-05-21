@@ -1,22 +1,5 @@
-/* Overview owns only the v6 landing art direction. */
-.shell.view-overview {
-  width: 100%;
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  background: var(--background);
-}
-
-.shell.view-overview > .top-nav {
-  display: none !important;
-}
-
-.shell.view-overview .page-content {
-  min-height: 100vh;
-  padding: 0;
-  gap: 0;
-}
-
+/* Overview owns only the v6 landing art direction.
+   Shell width / height / padding / .top-nav hiding 由 .shell.v6-radial-shell 接管。 */
 .landing-hero {
   position: relative;
   min-height: 100vh;
@@ -311,18 +294,6 @@
 }
 
 @media (max-width: 720px) {
-  .shell.view-overview {
-    height: 100dvh;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .shell.view-overview .page-content {
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
-
   .landing-hero {
     height: 100%;
     min-height: 0;
