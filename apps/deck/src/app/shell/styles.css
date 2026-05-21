@@ -179,25 +179,11 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-[data-deck-density="compact"] {
-  --control-h-xs: 1rem;
-  --control-h-sm: 1.125rem;
-  --control-h-md: 1.25rem;
-  --control-h-lg: 1.75rem;
-}
-
 body[data-density="compact"] {
   --control-h-xs: 1rem;
   --control-h-sm: 1.125rem;
   --control-h-md: 1.25rem;
   --control-h-lg: 1.75rem;
-}
-
-[data-deck-density="cozy"] {
-  --control-h-xs: 1.5rem;
-  --control-h-sm: 1.625rem;
-  --control-h-md: 1.75rem;
-  --control-h-lg: 2.25rem;
 }
 
 body[data-density="cozy"] {
