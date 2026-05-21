@@ -52,7 +52,6 @@ import {
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
-import { TopNav } from "../../shared/ui/layout/top-nav";
 import { RadialMenu, type RadialMenuItem } from "../../shared/ui";
 import { UI_COPY, type Locale } from "../../shared/utils/copy";
 import { formatRelativeTime } from "../../shared/utils/format-time";
@@ -531,12 +530,6 @@ export function App() {
 
   const appShell = (
     <main className={shellClassName}>
-      <TopNav
-        activeView={route.activeView}
-        onNavigate={route.navigateToView}
-        connection={helmConnection.connection}
-        language={deckData.deckPreferences.language}
-      />
       <AppRoutes
         ctx={buildAppRouteContext({
           runtimeState,

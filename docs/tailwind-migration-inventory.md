@@ -5,23 +5,19 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 2099
+- Total lines: 1831
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 1110
-- Top-level selectors: 196
+- Lines: 842
+- Top-level selectors: 164
 - Hard-coded color tokens: 4
 
 Selectors:
 
 - `:root`
-- `.admiral-avatar svg`
-- `.admiral-connected`
-- `.admiral-connecting`
-- `.admiral-disconnected`
 - `.chat-main`
 - `.compact`
 - `.device-mono`
@@ -101,7 +97,6 @@ Selectors:
 - `.shell`
 - `.shell.v6-radial-shell`
 - `.shell.v6-radial-shell .page-content`
-- `.shell.v6-radial-shell > .top-nav`
 - `.shell.view-agents`
 - `.shell.view-dashboard`
 - `.shell.view-sessions`
@@ -112,32 +107,6 @@ Selectors:
 - `.stack-gap`
 - `.subtle`
 - `.tabular`
-- `.top-nav`
-- `.top-nav .top-nav-github-link`
-- `.top-nav .top-nav-github-link.top-nav-github-link-mobile-visible`
-- `.top-nav-actions`
-- `.top-nav-brand`
-- `.top-nav-brand:focus-visible`
-- `.top-nav-brand:hover`
-- `.top-nav-item`
-- `.top-nav-item:hover`
-- `.top-nav-item.active`
-- `.top-nav-links`
-- `.top-nav-links::-webkit-scrollbar`
-- `.top-nav-logo`
-- `.top-nav-logo-mark`
-- `.top-nav-menu-trigger`
-- `.top-nav-mobile-item`
-- `.top-nav-mobile-item:focus-visible`
-- `.top-nav-mobile-item:hover`
-- `.top-nav-mobile-item.active`
-- `.top-nav-mobile-menu`
-- `.top-nav::after`
-- `.top-nav::before`
-- `.top-nav:focus-within`
-- `.top-nav:focus-within::before`
-- `.top-nav:hover`
-- `.top-nav:hover::before`
 - `.vp-frame`
 - `.w-ctl-md`
 - `.w-ctl-sm`
@@ -160,7 +129,6 @@ Selectors:
 - `[data-deck-viewport="tablet"] .shell.v6-radial-shell`
 - `[data-deck-viewport="tablet"] .vp-frame`
 - `[data-deck-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
-- `[data-theme="dark"]`
 - `[data-theme="dark"] *`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb:hover`
@@ -175,8 +143,8 @@ Selectors:
 - `[data-theme="tiller"] *::-webkit-scrollbar-thumb`
 - `[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
 - `[data-theme="tiller"] body`
-- `} .admiral-avatar`
 - `} .wb-pulse`
+- `} [data-theme="dark"]`
 - `} @keyframes mission-loading-pulse`
 - `} @keyframes mission-mobile-card-switch`
 - `} @keyframes mission-session-status-pulse`

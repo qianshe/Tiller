@@ -1,5 +1,5 @@
 /* Overview owns only the v6 landing art direction.
-   Shell width / height / padding / .top-nav hiding 由 .shell.v6-radial-shell 接管。 */
+   Shell width / height / padding 由 .shell.v6-radial-shell 接管。 */
 .landing-hero {
   position: relative;
   min-height: 100vh;

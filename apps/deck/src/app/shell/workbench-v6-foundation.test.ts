@@ -44,8 +44,9 @@ test("Workbench v6 shell utility classes are available", () => {
   }
 });
 
-test("Workbench v6 shell hides legacy top navigation outside landing", () => {
-  assert.match(stylesCss, /\.shell\.v6-radial-shell > \.top-nav\s*\{[^}]*display:\s*none;/s);
+test("Workbench v6 shell no longer ships legacy top navigation", () => {
+  assert.doesNotMatch(stylesCss, /\.top-nav/);
+  assert.doesNotMatch(stylesCss, /\.admiral-/);
   assert.match(stylesCss, /\.shell\.v6-radial-shell \.page-content\s*\{[^}]*padding:\s*0;[^}]*gap:\s*0;/s);
   assert.match(stylesCss, /\.shell\.view-dashboard/);
 });
