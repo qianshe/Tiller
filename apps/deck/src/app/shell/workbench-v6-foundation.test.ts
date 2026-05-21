@@ -48,7 +48,7 @@ test("Workbench v6 shell no longer ships legacy top navigation", () => {
   assert.doesNotMatch(stylesCss, /\.top-nav/);
   assert.doesNotMatch(stylesCss, /\.admiral-/);
   assert.match(stylesCss, /\.shell\.v6-radial-shell \.page-content\s*\{[^}]*padding:\s*0;[^}]*gap:\s*0;/s);
-  assert.match(stylesCss, /\.shell\.view-dashboard/);
+  assert.match(stylesCss, /\.shell\.v6-radial-shell\s*\{[^}]*width:\s*100vw;/s);
 });
 
 test("Workbench v6 shell does not mount the design-only tweaks panel", () => {

@@ -65,30 +65,6 @@ h3 {
   font-size: 0.95rem;
 }
 
-.shell {
-  width: min(1400px, calc(100vw - 32px));
-  min-height: 100vh;
-  margin: 0 auto;
-  padding: 96px 0 40px;
-}
-
-.shell.view-sessions {
-  width: 100vw;
-  max-width: none;
-  margin: 0;
-  padding: 8px;
-}
-
-.shell.view-dashboard,
-.shell.view-agents,
-.shell.view-settings {
-  width: 100vw;
-  max-width: none;
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-}
-
 .shell.v6-radial-shell {
   width: 100vw;
   height: 100vh;
@@ -113,16 +89,6 @@ h3 {
 
 .shell.view-sessions.v6-radial-shell .page-content {
   overflow: hidden;
-}
-
-.page-content {
-  min-height: calc(100vh - 120px);
-}
-
-.shell.view-sessions .page-content {
-  min-height: calc(100vh - 16px);
-  padding: 0;
-  gap: 0;
 }
 
 .stack-gap,
@@ -445,11 +411,6 @@ body[data-viewport="mobile"] .vp-frame main {
   .mobile-addressbar-scroll-shell > .shell {
     position: sticky;
     top: 0;
-  }
-
-  .shell {
-    width: 100vw;
-    padding: 64px 12px 20px;
   }
 
   .shell.view-sessions {

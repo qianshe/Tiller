@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1831
+- Total lines: 1778
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 842
-- Top-level selectors: 164
+- Lines: 789
+- Top-level selectors: 157
 - Hard-coded color tokens: 4
 
 Selectors:
@@ -93,17 +93,12 @@ Selectors:
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
 - `.muted`
-- `.page-content`
-- `.shell`
 - `.shell.v6-radial-shell`
 - `.shell.v6-radial-shell .page-content`
-- `.shell.view-agents`
-- `.shell.view-dashboard`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
 - `.shell.view-sessions.v6-radial-shell`
 - `.shell.view-sessions.v6-radial-shell .page-content`
-- `.shell.view-settings`
 - `.stack-gap`
 - `.subtle`
 - `.tabular`
@@ -118,8 +113,6 @@ Selectors:
 - `.wb-pane-head-title`
 - `.wb-pane-sunken`
 - `.workspace-single`
-- `[data-deck-density="compact"]`
-- `[data-deck-density="cozy"]`
 - `[data-deck-viewport="mobile"] .shell.v6-radial-shell`
 - `[data-deck-viewport="mobile"] .vp-frame`
 - `[data-deck-viewport="mobile"] .vp-frame .shell.v6-radial-shell`

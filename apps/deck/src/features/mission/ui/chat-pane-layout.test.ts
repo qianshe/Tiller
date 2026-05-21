@@ -265,11 +265,10 @@ test("mission composer mirrors the v6 sunken command deck", () => {
 });
 
 test("mission shell fills the viewport so the project pane stays visible on desktop", () => {
-  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*width:\s*100vw;/s);
-  assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.shell\.v6-radial-shell\s*{[^}]*width:\s*100vw;/s);
   assert.match(shellStylesSource, /\.shell\.view-sessions\.v6-radial-shell\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.shell\.v6-radial-shell \.page-content\s*{[^}]*height:\s*100%;/s);
   assert.doesNotMatch(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*padding:\s*96px 12px 12px;/s);
-  assert.match(shellStylesSource, /\.shell\.view-sessions\s+\.page-content\s*{[^}]*min-height:\s*calc\(100vh - 16px\);/s);
 });
 
 test("mission project sidebar uses shared primitives and explicit Tailwind tree rows", () => {
