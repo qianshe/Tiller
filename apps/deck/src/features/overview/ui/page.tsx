@@ -75,115 +75,13 @@ export function OverviewPage({
     { label: "项目", value: String(projects.length), suffix: "个" },
     { label: "会话", value: String(sessions.length), suffix: "个" },
   ];
-
-  if (isMobile) {
-    const metrics = [
-      { k: "在线 Helm", v: onlineHelmCount, unit: "台" },
-      { k: "项目",       v: projects.length, unit: "个" },
-      { k: "会话",       v: sessions.length, unit: "个" },
-    ];
-    const recent = sessions.slice(0, 5);
-
-    return (
-      <div className="max-w-full mx-auto px-3 py-3" data-testid="overview-page">
-        <section className="landing-hero-mobile mb-3">
-          <GithubLink className="landing-github-link-mobile" />
-          <p className="landing-eyebrow">
-            <span aria-hidden="true" />
-            AI COMMAND PLATFORM
-          </p>
-          <h1 className="landing-hero-mobile-title">
-            把本地 AI Agent 代理
-            <br />
-            整理成一个指挥台
-          </h1>
-          <p className="landing-copy-mobile">
-            汇聚跑在你电脑、工作站或服务器上的 ACP Agent,本地运行、本地存储。
-          </p>
-          <div className="flex items-center gap-2 mt-4">
-            <button
-              type="button"
-              onClick={() => onNavigate("sessions")}
-              className="landing-primary landing-primary-mobile"
-            >
-              进入工作台
-              <span aria-hidden="true">›</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate("dashboard")}
-              className="landing-secondary landing-secondary-mobile"
-            >
-              查看 Dashboard
-            </button>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-border-ghost">
-            {metrics.map(m => (
-              <div key={m.k} className="flex flex-col">
-                <span className="text-[20px] font-semibold tabular leading-none">{m.v}</span>
-                <span className="text-muted-foreground text-2xs uppercase tracking-wider mt-1">
-                  {m.unit} {m.k}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="wb-pane">
-          <div className="wb-pane-head">
-            <span className="wb-pane-head-eyebrow">最近任务</span>
-            <div className="flex-1" />
-            <button
-              onClick={() => onNavigate("sessions")}
-              className="text-2xs text-muted-foreground active:text-foreground"
-            >
-              查看全部 ›
-            </button>
-          </div>
-          <ul className="divide-y divide-border-ghost">
-            {recent.map(s => {
-              const isStreaming = s.status === "starting" || s.status === "running";
-              const isAwaiting = s.status === "waiting_for_permission";
-              const tone = isStreaming ? "primary" : isAwaiting ? "warning" : "idle";
-
-              return (
-                <li key={s.id}>
-                  <button
-                    onClick={() => onOpenSession(s.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 active:bg-surface-sunken text-left overview-session-item-btn"
-                  >
-                    <StatusDot
-                      tone={tone}
-                      pulse={isStreaming}
-                    />
-                    <AgentIcon name={s.agentName || "agent"} size={14} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-section truncate">
-                        {resolveDisplaySessionTitle(s)}
-                      </div>
-                      <div className="font-mono text-2xs text-muted-foreground tabular truncate">
-                        {s.projectName || "Default"} · {s.messageCount || 0} msg · {formatRelativeTime(s.updatedAt)}
-                      </div>
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-            {recent.length === 0 && (
-              <li className="p-4 text-center text-muted-foreground text-2xs">
-                暂无会话任务
-              </li>
-            )}
-          </ul>
-        </section>
-      </div>
-    );
-  }
+  const githubLinkClassName = isMobile
+    ? "landing-github-link-mobile"
+    : "landing-github-link-desktop";
 
   return (
     <section className="landing-hero" aria-labelledby="landing-hero-title" data-testid="overview-page">
-      <GithubLink className="landing-github-link-desktop" />
+      <GithubLink className={githubLinkClassName} />
       <div className="landing-hero-content">
         <p className="landing-eyebrow">
           <span aria-hidden="true" />

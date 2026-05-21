@@ -5,7 +5,7 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1689
+- Total lines: 1694
 
 ## Files
 
@@ -353,7 +353,7 @@ Hard-coded colors:
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 396
+- Lines: 401
 - Top-level selectors: 44
 - Hard-coded color tokens: 6
 

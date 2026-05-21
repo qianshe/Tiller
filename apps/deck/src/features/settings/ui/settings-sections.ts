@@ -22,6 +22,6 @@ export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   { id: "motion", icon: "activity", label: "动效", desc: "减少过渡动画" },
   { id: "panels", icon: "terminal", label: "技术面板", desc: "诊断与辅助信息默认状态" },
   { id: "enhancer", icon: "sparkle", label: "Prompt 增强", desc: "OpenAI-compatible LLM 增强器" },
-  { id: "privacy", icon: "shield", label: "隐私", desc: "本地优先与敏感信息边界" },
+  { id: "privacy", icon: "shield", label: "隐私与日志", desc: "本地优先与敏感信息边界" },
   { id: "about", icon: "fileText", label: "关于", desc: "Tiller Deck 运行说明" },
 ];

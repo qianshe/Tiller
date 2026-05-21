@@ -295,10 +295,15 @@
 
 @media (max-width: 720px) {
   .landing-hero {
-    height: 100%;
-    min-height: 0;
+    min-height: 100vh;
+    height: auto;
     align-content: center;
-    padding: 84px 20px 24px;
+    padding: 20px 16px 24px;
+  }
+
+  .landing-hero-content {
+    padding-top: 0;
+    transform: translateY(-4vh);
   }
 
   .landing-hero h1 {

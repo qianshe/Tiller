@@ -26,6 +26,10 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(pageSource, /会话/);
   assert.doesNotMatch(pageSource, /DashboardSection/);
   assert.doesNotMatch(pageSource, /buildOverviewMetrics/);
+  assert.doesNotMatch(pageSource, /landing-hero-mobile/);
+  assert.doesNotMatch(pageSource, /landing-copy-mobile/);
+  assert.doesNotMatch(pageSource, /recent\.length === 0/);
+  assert.doesNotMatch(pageSource, /wb-pane[\s\S]*最近任务/);
 
   assert.match(stylesSource, /\.landing-meta/);
   assert.match(stylesSource, /\.landing-meta-item/);
@@ -54,5 +58,6 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(stylesSource, /\.landing-ship-hotspot-settings/);
   assert.match(stylesSource, /@media \(max-width: 1180px\)/);
   assert.match(stylesSource, /@media \(max-width: 720px\)/);
-  assert.match(stylesSource, /\.landing-hero\s*{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
+  assert.match(stylesSource, /\.landing-hero\s*{[^}]*align-content:\s*center;[^}]*padding:\s*20px 16px 24px;/s);
+  assert.match(stylesSource, /\.landing-hero-content\s*{[^}]*padding-top:\s*0;[^}]*transform:\s*translateY\(-4vh\);/s);
 });
