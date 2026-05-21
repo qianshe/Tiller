@@ -5,15 +5,15 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1778
+- Total lines: 1689
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 789
-- Top-level selectors: 157
-- Hard-coded color tokens: 4
+- Lines: 700
+- Top-level selectors: 140
+- Hard-coded color tokens: 1
 
 Selectors:
 
@@ -102,7 +102,6 @@ Selectors:
 - `.stack-gap`
 - `.subtle`
 - `.tabular`
-- `.vp-frame`
 - `.w-ctl-md`
 - `.w-ctl-sm`
 - `.w-ctl-xs`
@@ -113,15 +112,6 @@ Selectors:
 - `.wb-pane-head-title`
 - `.wb-pane-sunken`
 - `.workspace-single`
-- `[data-deck-viewport="mobile"] .shell.v6-radial-shell`
-- `[data-deck-viewport="mobile"] .vp-frame`
-- `[data-deck-viewport="mobile"] .vp-frame .shell.v6-radial-shell`
-- `[data-deck-viewport="mobile"] .vp-frame main`
-- `[data-deck-viewport="mobile"] .vp-frame::after`
-- `[data-deck-viewport="mobile"] .vp-frame::before`
-- `[data-deck-viewport="tablet"] .shell.v6-radial-shell`
-- `[data-deck-viewport="tablet"] .vp-frame`
-- `[data-deck-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
 - `[data-theme="dark"] *`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb:hover`
@@ -160,13 +150,6 @@ Selectors:
 - `body`
 - `body[data-density="compact"]`
 - `body[data-density="cozy"]`
-- `body[data-viewport="mobile"] .vp-frame`
-- `body[data-viewport="mobile"] .vp-frame .shell.v6-radial-shell`
-- `body[data-viewport="mobile"] .vp-frame main`
-- `body[data-viewport="mobile"] .vp-frame::after`
-- `body[data-viewport="mobile"] .vp-frame::before`
-- `body[data-viewport="tablet"] .vp-frame`
-- `body[data-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
 - `button`
 - `h1`
 - `h2`
@@ -177,9 +160,6 @@ Selectors:
 
 Hard-coded colors:
 
-- `#070707`
-- `#1a1c1d`
-- `#353535`
 - `rgb(`
 
 ### apps/deck/src/app/shell/tokens.css
