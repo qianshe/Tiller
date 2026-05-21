@@ -26,7 +26,7 @@ export function SettingsNavigation({ activeId, onSelect }: SettingsNavigationPro
               aria-current={active ? "page" : undefined}
             >
               <Icon name={section.icon} size={13} className={active ? "text-primary" : "text-muted-foreground"} />
-              <span className="text-[12.5px]">{section.label}</span>
+              <span className="text-section">{section.label}</span>
             </button>
           );
         })}

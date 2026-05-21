@@ -55,9 +55,14 @@ export function SessionRow({
       <button
         type="button"
         className={cn(
-          "mission-tree-row mission-tree-row-session grid min-w-0 grid-cols-[16px_20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-          session.id === activeSessionId && "active bg-primary-soft/65",
+          "mission-tree-row mission-tree-row-session grid min-w-0 grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-5 text-left text-action text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 cursor-grab active:cursor-grabbing",
+          session.id === activeSessionId && "active bg-primary-soft text-foreground",
         )}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData("application/x-tiller-session-id", session.id);
+          event.dataTransfer.effectAllowed = "copy";
+        }}
         onClick={() => openSession(session.id)}
         role="treeitem"
         aria-level={3}
@@ -65,38 +70,27 @@ export function SessionRow({
       >
         <span className="mission-tree-caret" />
         <span
-          className="mission-tree-agent-icon grid size-5 place-items-center overflow-hidden rounded bg-surface-sunken text-[10px]"
+          className="mission-tree-agent-icon grid size-3.5 place-items-center overflow-hidden rounded bg-surface-sunken text-2xs"
           title={session.agentName}
         >
           {renderAgentIcon(session.agentName)}
         </span>
-        <span className="mission-tree-main grid min-w-0 gap-0.5">
-          <strong className="min-w-0 truncate font-medium leading-tight">{title}</strong>
+        <span className="mission-tree-main flex min-w-0 items-center">
+          <span className="min-w-0 truncate text-action leading-none">{title}</span>
         </span>
-        <span className="mission-tree-session-side grid min-w-8 shrink-0 justify-items-end gap-0.5">
-          {worktreeLabel ? (
-            <span
-              className="mission-tree-worktree-indicator inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
-              title={`Worktree：${worktreeLabel}`}
-              aria-label={`Worktree：${worktreeLabel}`}
-            >
-              <WorktreeIcon />
-            </span>
-          ) : (
-            <span className="size-4" aria-hidden="true" />
-          )}
+        <span className="mission-tree-session-side flex shrink-0 items-center gap-1">
           {sessionPending ? (
             <Badge
               variant={
                 sessionStatus === "waiting_for_permission" ? "warning" : "success"
               }
-              className={`mission-tree-session-status mission-tree-session-status-${sessionStatus} px-1.5 py-0 text-[10px]`}
+              className={`mission-tree-session-status mission-tree-session-status-${sessionStatus} px-1.5 py-0 text-2xs font-mono tabular`}
               aria-label={copy.status[sessionStatus]}
             >
               {copy.status[sessionStatus]}
             </Badge>
           ) : (
-            <span className="mission-tree-time shrink-0 text-right text-[10px] text-muted-foreground">
+            <span className="mission-tree-time shrink-0 text-right font-mono text-2xs tabular text-muted-foreground">
               {formatRelativeTime(session.updatedAt)}
             </span>
           )}
@@ -108,7 +102,7 @@ export function SessionRow({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger shrink-0 rounded-md text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
+            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger shrink-0 rounded text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
             aria-label={`${title} 的操作`}
             title="任务操作"
             onPointerDown={(event) => event.stopPropagation()}

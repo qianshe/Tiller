@@ -238,7 +238,7 @@ export function MissionPermissionDrawer({
 
   return (
     <section
-      className="mission-permission-drawer absolute bottom-[calc(var(--mission-permission-composer-offset,190px)+24px)] left-3 right-3 z-40 grid grid-rows-[auto_auto] gap-3 rounded-2xl border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient sm:right-auto sm:w-[min(560px,calc(100%-1.5rem))]"
+      className="mission-permission-drawer absolute bottom-[calc(var(--mission-permission-composer-offset,190px)+24px)] left-3 right-3 z-40 grid grid-rows-[auto_auto] gap-3 rounded-[12px] border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient sm:right-auto sm:w-[min(560px,calc(100%-1.5rem))]"
       role="region"
       aria-live="polite"
       aria-label={copy.permissionRequest}
@@ -251,7 +251,7 @@ export function MissionPermissionDrawer({
           !
         </span>
         <div className="grid min-w-0 gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-warning">
+          <span className="text-meta font-semibold uppercase tracking-wider text-warning">
             {copy.permissionRequest}
           </span>
           <strong className="mission-permission-title max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[0.98rem] font-semibold text-foreground">

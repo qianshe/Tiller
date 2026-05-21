@@ -43,6 +43,8 @@ export function renderMissionRoute(source: any) {
     missionSidebarPaneStyle,
     handleMissionTreeScroll,
     setMissionSidebarCollapsed,
+    setMissionDisplayCollapsed,
+    setMissionInspectorCollapsed,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -205,6 +207,8 @@ export function renderMissionRoute(source: any) {
       missionSidebarPaneStyle={missionSidebarPaneStyle}
       handleMissionTreeScroll={handleMissionTreeScroll}
       setMissionSidebarCollapsed={setMissionSidebarCollapsed}
+      setMissionDisplayCollapsed={setMissionDisplayCollapsed}
+      setMissionInspectorCollapsed={setMissionInspectorCollapsed}
       missionHelms={missionHelms}
       effectiveMissionHelmId={effectiveMissionHelmId}
       activeHelm={activeHelm}

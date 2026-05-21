@@ -6,10 +6,10 @@ import { cn } from "@/shared/utils/cn";
 
 const buttonVariants = cva(
   // Workbench Void base · DESIGN.md §5.2 / §6.1
-  //   - 13px default text (text-[13px], not text-sm=14px)
+  //   - 13px default text via text-section, not Tailwind's 14px text-sm
   //   - icons sized 14px (toolbar density), set via [&_svg]:size-3.5
   //   - no border; pane boundaries use ring-1 in §6.1, not border-1
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-section font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -39,11 +39,11 @@ const buttonVariants = cva(
         // 24px · IDE default · DESIGN.md §5.1
         default: "h-[var(--control-h-md)] px-[var(--control-px-md)]",
         // 22px · toolbar / tab strip / status bar
-        sm: "h-[var(--control-h-sm)] rounded px-[var(--control-px-sm)] text-xs",
+        sm: "h-[var(--control-h-sm)] rounded px-[var(--control-px-sm)] text-meta",
         // 20px · compact · inline row actions, dense panels
-        xs: "h-[var(--control-h-xs)] rounded px-[var(--control-px-xs)] text-xs",
+        xs: "h-[var(--control-h-xs)] rounded px-[var(--control-px-xs)] text-meta",
         // 32px · hero · landing CTA / empty-state primary
-        lg: "h-[var(--control-h-lg)] rounded-md px-[var(--control-px-lg)] text-sm",
+        lg: "h-[var(--control-h-lg)] rounded-md px-[var(--control-px-lg)] text-section",
         // Icon · 24x24 default density
         icon: "h-[var(--control-h-md)] w-[var(--control-h-md)]",
         // Icon · 22x22 toolbar

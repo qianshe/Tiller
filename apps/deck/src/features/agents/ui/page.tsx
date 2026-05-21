@@ -1,9 +1,10 @@
-import type {
-  Dispatch,
-  FormEvent,
-  MutableRefObject,
-  ReactNode,
-  SetStateAction,
+import {
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type MutableRefObject,
+  type ReactNode,
+  type SetStateAction,
 } from "react";
 import type {
   AcpAgentProvider,
@@ -96,6 +97,7 @@ type AgentsPageProps = {
     socket: WebSocket | null,
     helmName: string,
   ) => ReactNode;
+  isMobile?: boolean;
 };
 export function AgentsPage({
   daemonHost,
@@ -160,7 +162,10 @@ export function AgentsPage({
   requestCounter,
   copy,
   renderTrustedDevicesPanel,
+  isMobile = false,
 }: AgentsPageProps) {
+  const [mobileScreen, setMobileScreen] = useState<"list" | "detail">("list");
+
   const helmSelection = resolveHelmSelection({
     daemonHost,
     daemonPort,
@@ -182,9 +187,11 @@ export function AgentsPage({
     rpcClient: rpcClientRef.current,
     helmRpcClients: helmRpcClientRefs.current,
   });
+
   if (!helmSelection) {
     return null;
   }
+
   const {
     currentHelmKey,
     helmCards,
@@ -201,8 +208,16 @@ export function AgentsPage({
     selectedHelmTrustedDevices,
     selectedHelmWorktrees,
   } = helmSelection;
+
+  const handleSelectHelmKey = (key: string) => {
+    setSelectedHelmKey(key);
+    if (isMobile) {
+      setMobileScreen("detail");
+    }
+  };
+
   return (
-    <section className="agents-fleet-shell agents-v6-page grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1">
+    <section className={`agents-fleet-shell agents-v6-page ${isMobile ? "flex flex-col h-screen p-1 bg-canvas" : "grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1"}`}>
       {fleetAddHelmModalOpen ? (
         <FleetAddHelmDialog
           stage={fleetAddHelmStage}
@@ -238,64 +253,129 @@ export function AgentsPage({
           }}
         />
       ) : null}
-      <div className="contents">
-        <AgentsTree
-          connection={connection}
-          currentHelmKey={currentHelmKey}
-          helmCards={helmCards}
-          helmConnectionStates={helmConnectionStates}
-          helmInventories={helmInventories}
-          isEmbeddedHelmDeck={isEmbeddedHelmDeck}
-          onAddHelm={openFleetAddHelmModal}
-          selectedHelm={selectedHelm}
-          selectedHelmCounts={{
-            agents: selectedHelmAgents.length,
-            projects: selectedHelmProjects.length,
-            worktrees: selectedHelmWorktrees.length,
-          }}
-          setSelectedHelmKey={setSelectedHelmKey}
-        />
-        <div className="min-h-0 min-w-0 overflow-hidden">
-          <HelmDetailSection
-            selectedHelm={selectedHelm}
-            selectedHelmConnection={selectedHelmConnection}
-            selectedHelmIsConnected={selectedHelmIsConnected}
-            selectedHelmIsCurrent={selectedHelmIsCurrent}
-            selectedHelmSavedProfile={selectedHelmSavedProfile}
-            selectedHelmProjects={selectedHelmProjects}
-            selectedHelmAgents={selectedHelmAgents}
-            selectedHelmWorktrees={selectedHelmWorktrees}
-            selectedHelmSocket={selectedHelmSocket}
-            selectedHelmRpcClient={selectedHelmRpcClient}
-            selectedHelmId={selectedHelmId}
-            selectedHelmTrustedDevices={selectedHelmTrustedDevices}
-            socketRef={socketRef}
-            helmSocketRefs={helmSocketRefs}
+      {isMobile ? (
+        mobileScreen === "list" ? (
+          <AgentsTree
+            connection={connection}
+            currentHelmKey={currentHelmKey}
+            helmCards={helmCards}
+            helmConnectionStates={helmConnectionStates}
+            helmInventories={helmInventories}
             isEmbeddedHelmDeck={isEmbeddedHelmDeck}
-            manualDisconnectRef={manualDisconnectRef}
-            lastFilesScopeKeyRef={lastFilesScopeKeyRef}
-            setConnection={setConnection}
-            setHelmConnectionState={setHelmConnectionState}
-            setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
-            connectDaemonProfile={connectDaemonProfile}
-            connectToDaemon={connectToDaemon}
-            fleetProjectFormOpen={fleetProjectFormOpen}
-            setFleetProjectFormOpen={setFleetProjectFormOpen}
-            fleetProjectDraft={fleetProjectDraft}
-            setFleetProjectDraft={setFleetProjectDraft}
-            setFleetProjectSaveMessage={setFleetProjectSaveMessage}
-            fleetProjectSaveMessage={fleetProjectSaveMessage}
-            fleetAgentFormOpen={fleetAgentFormOpen}
-            setFleetAgentFormOpen={setFleetAgentFormOpen}
-            fleetAgentDraft={fleetAgentDraft}
-            setFleetAgentDraft={setFleetAgentDraft}
-            requestCounter={requestCounter}
-            dispatch={dispatch}
-            copy={copy}
-            renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+            onAddHelm={openFleetAddHelmModal}
+            selectedHelm={selectedHelm}
+            selectedHelmCounts={{
+              agents: selectedHelmAgents.length,
+              projects: selectedHelmProjects.length,
+              worktrees: selectedHelmWorktrees.length,
+            }}
+            setSelectedHelmKey={handleSelectHelmKey}
+            isMobile={true}
           />
+        ) : (
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <HelmDetailSection
+              selectedHelm={selectedHelm}
+              selectedHelmConnection={selectedHelmConnection}
+              selectedHelmIsConnected={selectedHelmIsConnected}
+              selectedHelmIsCurrent={selectedHelmIsCurrent}
+              selectedHelmSavedProfile={selectedHelmSavedProfile}
+              selectedHelmProjects={selectedHelmProjects}
+              selectedHelmAgents={selectedHelmAgents}
+              selectedHelmWorktrees={selectedHelmWorktrees}
+              selectedHelmSocket={selectedHelmSocket}
+              selectedHelmRpcClient={selectedHelmRpcClient}
+              selectedHelmId={selectedHelmId}
+              selectedHelmTrustedDevices={selectedHelmTrustedDevices}
+              socketRef={socketRef}
+              helmSocketRefs={helmSocketRefs}
+              isEmbeddedHelmDeck={isEmbeddedHelmDeck}
+              manualDisconnectRef={manualDisconnectRef}
+              lastFilesScopeKeyRef={lastFilesScopeKeyRef}
+              setConnection={setConnection}
+              setHelmConnectionState={setHelmConnectionState}
+              setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
+              connectDaemonProfile={connectDaemonProfile}
+              connectToDaemon={connectToDaemon}
+              fleetProjectFormOpen={fleetProjectFormOpen}
+              setFleetProjectFormOpen={setFleetProjectFormOpen}
+              fleetProjectDraft={fleetProjectDraft}
+              setFleetProjectDraft={setFleetProjectDraft}
+              setFleetProjectSaveMessage={setFleetProjectSaveMessage}
+              fleetProjectSaveMessage={fleetProjectSaveMessage}
+              fleetAgentFormOpen={fleetAgentFormOpen}
+              setFleetAgentFormOpen={setFleetAgentFormOpen}
+              fleetAgentDraft={fleetAgentDraft}
+              setFleetAgentDraft={setFleetAgentDraft}
+              requestCounter={requestCounter}
+              dispatch={dispatch}
+              copy={copy}
+              renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+              isMobile={true}
+              onBack={() => setMobileScreen("list")}
+            />
+          </div>
+        )
+      ) : (
+        <div className="contents">
+          <AgentsTree
+            connection={connection}
+            currentHelmKey={currentHelmKey}
+            helmCards={helmCards}
+            helmConnectionStates={helmConnectionStates}
+            helmInventories={helmInventories}
+            isEmbeddedHelmDeck={isEmbeddedHelmDeck}
+            onAddHelm={openFleetAddHelmModal}
+            selectedHelm={selectedHelm}
+            selectedHelmCounts={{
+              agents: selectedHelmAgents.length,
+              projects: selectedHelmProjects.length,
+              worktrees: selectedHelmWorktrees.length,
+            }}
+            setSelectedHelmKey={setSelectedHelmKey}
+          />
+          <div className="min-h-0 min-w-0 overflow-hidden">
+            <HelmDetailSection
+              selectedHelm={selectedHelm}
+              selectedHelmConnection={selectedHelmConnection}
+              selectedHelmIsConnected={selectedHelmIsConnected}
+              selectedHelmIsCurrent={selectedHelmIsCurrent}
+              selectedHelmSavedProfile={selectedHelmSavedProfile}
+              selectedHelmProjects={selectedHelmProjects}
+              selectedHelmAgents={selectedHelmAgents}
+              selectedHelmWorktrees={selectedHelmWorktrees}
+              selectedHelmSocket={selectedHelmSocket}
+              selectedHelmRpcClient={selectedHelmRpcClient}
+              selectedHelmId={selectedHelmId}
+              selectedHelmTrustedDevices={selectedHelmTrustedDevices}
+              socketRef={socketRef}
+              helmSocketRefs={helmSocketRefs}
+              isEmbeddedHelmDeck={isEmbeddedHelmDeck}
+              manualDisconnectRef={manualDisconnectRef}
+              lastFilesScopeKeyRef={lastFilesScopeKeyRef}
+              setConnection={setConnection}
+              setHelmConnectionState={setHelmConnectionState}
+              setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
+              connectDaemonProfile={connectDaemonProfile}
+              connectToDaemon={connectToDaemon}
+              fleetProjectFormOpen={fleetProjectFormOpen}
+              setFleetProjectFormOpen={setFleetProjectFormOpen}
+              fleetProjectDraft={fleetProjectDraft}
+              setFleetProjectDraft={setFleetProjectDraft}
+              setFleetProjectSaveMessage={setFleetProjectSaveMessage}
+              fleetProjectSaveMessage={fleetProjectSaveMessage}
+              fleetAgentFormOpen={fleetAgentFormOpen}
+              setFleetAgentFormOpen={setFleetAgentFormOpen}
+              fleetAgentDraft={fleetAgentDraft}
+              setFleetAgentDraft={setFleetAgentDraft}
+              requestCounter={requestCounter}
+              dispatch={dispatch}
+              copy={copy}
+              renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

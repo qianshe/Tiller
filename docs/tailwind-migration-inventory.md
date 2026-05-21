@@ -4,15 +4,15 @@
 
 ## Summary
 
-- CSS files: 4
-- Total lines: 1931
+- CSS files: 10
+- Total lines: 2129
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 1098
-- Top-level selectors: 199
+- Lines: 1111
+- Top-level selectors: 196
 - Hard-coded color tokens: 4
 
 Selectors:
@@ -58,12 +58,12 @@ Selectors:
 - `.mission-resizer:hover`
 - `.mission-responsive-mode`
 - `.mission-responsive-mode .mission-composer`
+- `.mission-responsive-mode .mission-composer-deck`
 - `.mission-responsive-mode .mission-inspector-section-head`
 - `.mission-responsive-mode .mission-inspector-section-head .eyebrow`
 - `.mission-responsive-mode .mission-inspector-section-head h3`
 - `.mission-responsive-mode .mission-logbook-layout`
 - `.mission-responsive-mode .mission-mobile-pager`
-- `.mission-responsive-mode .mission-order-editor`
 - `.mission-responsive-mode .mission-pane-chat`
 - `.mission-responsive-mode .mission-pane-resizer`
 - `.mission-responsive-mode .mission-panel-content`
@@ -96,9 +96,6 @@ Selectors:
 - `.mission-tools-trigger:disabled`
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
-- `.motion-reduced *`
-- `.motion-reduced *::after`
-- `.motion-reduced *::before`
 - `.muted`
 - `.page-content`
 - `.shell`
@@ -109,6 +106,7 @@ Selectors:
 - `.shell.view-dashboard`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
+- `.shell.view-sessions.v6-radial-shell`
 - `.shell.view-sessions.v6-radial-shell .page-content`
 - `.shell.view-settings`
 - `.stack-gap`
@@ -148,26 +146,11 @@ Selectors:
 - `.wb-pane`
 - `.wb-pane-head`
 - `.wb-pane-head-eyebrow`
+- `.wb-pane-head-title`
 - `.wb-pane-sunken`
 - `.workspace-single`
 - `[data-deck-density="compact"]`
 - `[data-deck-density="cozy"]`
-- `[data-deck-reduce-motion="true"] *`
-- `[data-deck-theme="dark"]`
-- `[data-deck-theme="dark"] *`
-- `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="dark"] body`
-- `[data-deck-theme="system"]`
-- `[data-deck-theme="system"] *`
-- `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="system"] body`
-- `[data-deck-theme="tiller"]`
-- `[data-deck-theme="tiller"] *`
-- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="tiller"] body`
 - `[data-deck-viewport="mobile"] .shell.v6-radial-shell`
 - `[data-deck-viewport="mobile"] .vp-frame`
 - `[data-deck-viewport="mobile"] .vp-frame .shell.v6-radial-shell`
@@ -177,14 +160,31 @@ Selectors:
 - `[data-deck-viewport="tablet"] .shell.v6-radial-shell`
 - `[data-deck-viewport="tablet"] .vp-frame`
 - `[data-deck-viewport="tablet"] .vp-frame .shell.v6-radial-shell`
+- `[data-theme="dark"]`
+- `[data-theme="dark"] *`
+- `[data-theme="dark"] *::-webkit-scrollbar-thumb`
+- `[data-theme="dark"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="dark"] body`
+- `[data-theme="system"]`
+- `[data-theme="system"] *`
+- `[data-theme="system"] *::-webkit-scrollbar-thumb`
+- `[data-theme="system"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="system"] body`
+- `[data-theme="tiller"]`
+- `[data-theme="tiller"] *`
+- `[data-theme="tiller"] *::-webkit-scrollbar-thumb`
+- `[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="tiller"] body`
 - `} .admiral-avatar`
 - `} .wb-pulse`
 - `} @keyframes mission-loading-pulse`
 - `} @keyframes mission-mobile-card-switch`
 - `} @keyframes mission-session-status-pulse`
 - `} *`
+- `} h1`
 - `@keyframes surface-fade`
 - `@keyframes wb-pulse-ring`
+- `@layer base`
 - `@media (max-width: 1080px)`
 - `*`
 - `*::-webkit-scrollbar`
@@ -211,10 +211,7 @@ Selectors:
 - `h2`
 - `h3`
 - `html`
-- `input`
 - `p`
-- `select`
-- `textarea`
 - `to`
 
 Hard-coded colors:
@@ -226,88 +223,204 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 314
-- Top-level selectors: 5
-- Hard-coded color tokens: 57
+- Lines: 28
+- Top-level selectors: 0
+- Hard-coded color tokens: 0
+
+### apps/deck/src/app/shell/tokens/brand.css
+
+- Lines: 46
+- Top-level selectors: 1
+- Hard-coded color tokens: 0
 
 Selectors:
 
-- `[data-deck-theme="dark"]`
-- `[data-deck-theme="tiller"]`
-- `@layer base`
-- `@media (prefers-color-scheme: dark)`
+- `@theme`
+
+### apps/deck/src/app/shell/tokens/semantic.css
+
+- Lines: 46
+- Top-level selectors: 1
+- Hard-coded color tokens: 0
+
+Selectors:
+
 - `@theme inline`
+
+### apps/deck/src/app/shell/tokens/themes/dark.css
+
+- Lines: 66
+- Top-level selectors: 1
+- Hard-coded color tokens: 28
+
+Selectors:
+
+- `@layer base`
 
 Hard-coded colors:
 
 - `#002e69`
+- `#0d1117`
+- `#0e0e0e`
+- `#131313`
+- `#1b1b1b`
+- `#1f1f1f`
+- `#1f242c`
+- `#22c55e`
+- `#252b33`
+- `#2a2a2a`
+- `#353535`
+- `#4ade80`
+- `#4b8eff`
+- `#86efac`
+- `#94a3b8`
+- `#a8a8ac`
+- `#aab4c0`
+- `#adc6ff`
+- `#bfdbfe`
+- `#e6edf3`
+- `#e6eefc`
+- `#f0f0f2`
+- `#f87171`
+- `#facc15`
+- `#fca5a5`
+- `#ff6b6b`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/light.css
+
+- Lines: 117
+- Top-level selectors: 3
+- Hard-coded color tokens: 32
+
+Selectors:
+
+- `@layer base`
+- `body[data-density="compact"]`
+- `body[data-density="cozy"]`
+
+Hard-coded colors:
+
 - `#003f8a`
 - `#0058bc`
 - `#006b27`
 - `#0070eb`
 - `#008733`
 - `#064b23`
-- `#0d1117`
-- `#0e0e0e`
-- `#131313`
 - `#1a1c1d`
-- `#1b1b1b`
-- `#1f1f1f`
-- `#1f242c`
 - `#1f2933`
-- `#22c55e`
-- `#252b33`
-- `#2a2a2a`
 - `#2f3132`
 - `#2f3645`
-- `#353535`
 - `#414755`
 - `#4a5568`
-- `#4ade80`
-- `#4b8eff`
 - `#64748b`
-- `#86efac`
 - `#8a5600`
 - `#8e1515`
-- `#94a3b8`
-- `#a8a8ac`
-- `#aab4c0`
-- `#adc6ff`
 - `#ba1a1a`
-- `#bfdbfe`
 - `#d7f3df`
 - `#d8dee6`
 - `#d8e2ff`
 - `#e2e2e4`
-- `#e6edf3`
-- `#e6eefc`
 - `#e7e9ee`
 - `#e8eef5`
 - `#eef4ff`
 - `#f0f0f2`
 - `#f3f3f5`
 - `#f7fff2`
-- `#f87171`
 - `#f9f9fb`
-- `#facc15`
-- `#fca5a5`
-- `#ff6b6b`
 - `#ffb000`
 - `#ffe0e0`
 - `#ffffff`
 - `rgb(`
 - `rgba(`
 
+### apps/deck/src/app/shell/tokens/themes/system.css
+
+- Lines: 62
+- Top-level selectors: 1
+- Hard-coded color tokens: 28
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#002e69`
+- `#0d1117`
+- `#0e0e0e`
+- `#131313`
+- `#1b1b1b`
+- `#1f1f1f`
+- `#1f242c`
+- `#22c55e`
+- `#252b33`
+- `#2a2a2a`
+- `#353535`
+- `#4ade80`
+- `#4b8eff`
+- `#86efac`
+- `#94a3b8`
+- `#a8a8ac`
+- `#aab4c0`
+- `#adc6ff`
+- `#bfdbfe`
+- `#e6edf3`
+- `#e6eefc`
+- `#f0f0f2`
+- `#f87171`
+- `#facc15`
+- `#fca5a5`
+- `#ff6b6b`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/tiller.css
+
+- Lines: 66
+- Top-level selectors: 1
+- Hard-coded color tokens: 21
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#111820`
+- `#1f2933`
+- `#1f5e90`
+- `#28734f`
+- `#314963`
+- `#33404d`
+- `#4b5563`
+- `#8b6419`
+- `#909ba6`
+- `#9b3131`
+- `#aeb7c0`
+- `#b8c1ca`
+- `#c6ced6`
+- `#d7dee5`
+- `#d8dee6`
+- `#e5ebf0`
+- `#e8eef5`
+- `#f7fafc`
+- `#ffffff`
+- `rgb(`
+- `rgba(`
+
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 357
-- Top-level selectors: 39
+- Lines: 425
+- Top-level selectors: 47
 - Hard-coded color tokens: 6
 
 Selectors:
 
 - `.landing-actions`
 - `.landing-copy`
+- `.landing-copy-mobile`
 - `.landing-eyebrow`
 - `.landing-eyebrow span`
 - `.landing-github-link`
@@ -317,6 +430,8 @@ Selectors:
 - `.landing-hero`
 - `.landing-hero h1`
 - `.landing-hero-content`
+- `.landing-hero-mobile`
+- `.landing-hero-mobile-title`
 - `.landing-hero::before`
 - `.landing-meta`
 - `.landing-meta-item`
@@ -325,8 +440,10 @@ Selectors:
 - `.landing-meta-item dt`
 - `.landing-primary`
 - `.landing-primary span`
+- `.landing-primary-mobile`
 - `.landing-primary:hover`
 - `.landing-secondary`
+- `.landing-secondary-mobile`
 - `.landing-secondary:hover`
 - `.landing-ship-hotspot`
 - `.landing-ship-hotspot-agents`
@@ -340,9 +457,12 @@ Selectors:
 - `.landing-ship-hotspot:hover::after`
 - `.landing-ship-hotspot:hover::before`
 - `.landing-ship-hotspots`
+- `.overview-session-item-btn:active`
+- `.overview-session-item-btn:hover`
 - `.shell.view-overview`
 - `.shell.view-overview .page-content`
 - `.shell.view-overview > .top-nav`
+- `} .overview-session-item-btn`
 - `} @media (max-width: 720px)`
 - `@media (max-width: 1180px)`
 
@@ -380,10 +500,10 @@ Selectors:
 - `.toast-warning`
 - `[data-deck-reduce-motion="true"] .toast-exiting`
 - `[data-deck-reduce-motion="true"] .toast-item`
-- `[data-deck-theme="dark"] .toast-close`
-- `[data-deck-theme="dark"] .toast-close:focus-visible`
-- `[data-deck-theme="dark"] .toast-close:hover`
-- `[data-deck-theme="dark"] .toast-item`
+- `[data-theme="dark"] .toast-close`
+- `[data-theme="dark"] .toast-close:focus-visible`
+- `[data-theme="dark"] .toast-close:hover`
+- `[data-theme="dark"] .toast-item`
 - `} @keyframes toast-exit`
 - `} @media (max-width: 860px)`
 - `@keyframes toast-enter`

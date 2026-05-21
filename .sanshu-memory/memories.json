@@ -41,6 +41,14 @@
       "category": "Preference",
       "created_at": "2026-05-20T17:01:56.604662100Z",
       "updated_at": "2026-05-20T17:01:56.604662100Z"
+    },
+    {
+      "id": "1bd511b4-38cb-4f5b-934b-42023a242a51",
+      "content": "Tiller Mission 页 v6 复刻：用户明确要求只负责 Mission 页，像素级复刻应直接读取 docs/redesign/v6/src/views/mission.tsx 和 docs/redesign/v6/src/styles.css 的设计代码，再应用到 apps/deck 框架中；不要处理其他页面，不要管轮盘菜单/底部设置按钮。",
+      "content_normalized": "tiller mission 页 v6 复刻用户明确要求只负责 mission 页像素级复刻应直接读取 docs/redesign/v6/src/views/missiontsx 和 docs/redesign/v6/src/stylescss 的设计代码再应用到 apps/deck 框架中不要处理其他页面不要管轮盘菜单/底部设置按钮",
+      "category": "Context",
+      "created_at": "2026-05-20T17:42:34.081296600Z",
+      "updated_at": "2026-05-20T17:42:34.081296600Z"
     }
   ],
   "deleted_entries": [],

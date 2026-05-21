@@ -30,7 +30,7 @@ const MISSION_PANE_LIMITS: Record<
   display: { min: 320, max: 520 },
   inspector: { min: 280, max: 420 },
 };
-const MISSION_RESIZER_WIDTH = 4;
+const MISSION_RESIZER_WIDTH = 2;
 const MISSION_OUTER_GUTTER = 16;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
@@ -248,6 +248,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     DEFAULT_MISSION_PANE_WIDTHS,
   );
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
+  const [missionDisplayCollapsed, setMissionDisplayCollapsed] = useState(false);
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(false);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
@@ -310,10 +311,11 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   const displayCollapsedForChat = shouldCollapseDisplayForChat(
     missionViewportWidth,
     effectiveSidebarCollapsed,
-    false,
+    missionDisplayCollapsed,
     effectiveInspectorCollapsed,
   );
   const effectiveDisplayCollapsed =
+    missionDisplayCollapsed ||
     missionViewportWidth < MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH ||
     displayCollapsedForChat;
   const resolvedMissionPaneWidths = normalizeMissionPaneWidths(
@@ -363,6 +365,8 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     missionLayoutRef,
     missionSidebarCollapsed,
     setMissionSidebarCollapsed,
+    missionDisplayCollapsed,
+    setMissionDisplayCollapsed,
     missionInspectorCollapsed,
     setMissionInspectorCollapsed,
     effectiveSidebarCollapsed,

@@ -5,7 +5,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { Badge, Button } from "../../../shared/ui";
+import { Button, Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { MissionMobilePane } from "../hooks/layout";
 import { resolveSessionProjectId } from "../utils/session-derivations";
@@ -85,15 +85,15 @@ export function SidebarProjectNode({
     <div key={project.id} className="mission-tree-group grid gap-1" role="group">
       <div
         className={cn(
-          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-xl",
+          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded",
           selectedProject && "active bg-primary-soft/60",
         )}
       >
         <button
           type="button"
           className={cn(
-            "mission-tree-row mission-tree-row-project grid min-w-0 flex-1 grid-cols-[18px_22px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            selectedProject && "active text-primary",
+            "mission-tree-row mission-tree-row-project grid min-w-0 flex-1 grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-5 text-left text-section text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            selectedProject && "active text-foreground bg-surface-emphasis",
           )}
           onClick={() => toggleMissionProjectNode(project.id)}
           role="treeitem"
@@ -101,27 +101,22 @@ export function SidebarProjectNode({
           aria-expanded={projectExpanded}
           aria-selected={selectedProject}
         >
-          <span className="mission-tree-caret text-xs text-muted-foreground">
+          <span className="mission-tree-caret text-2xs text-muted-foreground">
             {projectExpanded ? "▾" : "▸"}
           </span>
-          <span
-            className="mission-tree-icon grid size-5 place-items-center rounded-md bg-surface-sunken text-xs"
-            aria-hidden="true"
-          >
-            {projectExpanded ? "📂" : "📁"}
+          <Icon name="folder" size={11} className="shrink-0 text-muted-foreground" />
+          <span className="mission-tree-main flex min-w-0 items-center">
+            <span className="truncate text-action">{project.name}</span>
           </span>
-          <span className="mission-tree-main grid min-w-0">
-            <strong className="truncate font-semibold">{project.name}</strong>
-          </span>
-          <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
+          <span className="shrink-0 font-mono text-2xs tabular text-muted-foreground">
             {sessionCountsByProject[project.id] ?? 0}
-          </Badge>
+          </span>
         </button>
         <Button
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="mission-tree-new-inline shrink-0 rounded-md text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
+          className="mission-tree-new-inline shrink-0 rounded text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);
@@ -143,7 +138,7 @@ export function SidebarProjectNode({
         </Button>
         {selectedProject && agentPickerOpen ? (
           <div
-            className="mission-tree-agent-menu absolute right-0 top-full z-50 mt-2 grid min-w-40 gap-1 rounded-xl border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+            className="mission-tree-agent-menu absolute right-0 top-full z-50 mt-2 grid min-w-40 gap-1 rounded-lg border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
             role="listbox"
             aria-label="选择 ACP Agent"
             onMouseDown={(event) => event.stopPropagation()}
@@ -155,7 +150,7 @@ export function SidebarProjectNode({
                 role="option"
                 aria-selected={agent.id === selectedAgentId}
                 className={cn(
-                  "rounded-lg px-3 py-2 text-left text-sm text-foreground transition hover:bg-primary-soft hover:text-primary",
+                  "rounded px-2.5 py-1.5 text-left text-section text-foreground transition hover:bg-primary-soft hover:text-primary",
                   agent.id === selectedAgentId && "active bg-primary-soft text-primary",
                 )}
                 onClick={() => {
@@ -172,7 +167,7 @@ export function SidebarProjectNode({
       </div>
       {projectExpanded ? (
         <div
-          className="mission-tree-children mission-tree-children-sessions ml-4 grid gap-1 border-l border-border-ghost pl-2"
+          className="mission-tree-children mission-tree-children-sessions ml-3 grid gap-1 border-l border-border-ghost pl-1.5"
           role="group"
         >
           {projectNodeSessions.length ? (
@@ -196,7 +191,7 @@ export function SidebarProjectNode({
               );
             })
           ) : (
-            <p className="mission-tree-empty px-3 py-2 text-xs text-muted-foreground">这个项目还没有任务。</p>
+            <p className="mission-tree-empty px-2.5 py-1.5 text-meta text-muted-foreground">这个项目还没有任务。</p>
           )}
         </div>
       ) : null}

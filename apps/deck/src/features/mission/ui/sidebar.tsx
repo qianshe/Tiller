@@ -5,6 +5,7 @@ import type {
   SetStateAction,
   UIEvent,
 } from "react";
+import { useMemo, useState } from "react";
 import type {
   AcpAgentProvider,
   HelmSummary,
@@ -16,7 +17,7 @@ import {
   daemonProfileKey,
   formatConnectionStatus,
 } from "../../helm-connection/facade";
-import { Badge, Button } from "../../../shared/ui";
+import { Badge, Button, Icon, Input, StatusDot } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { MissionMobilePane } from "../hooks/layout";
 import { SidebarProjectNode } from "./sidebar-project-node";
@@ -39,6 +40,8 @@ type MissionSidebarProps = {
   expandedMissionProjectIds: ReadonlySet<string>;
   sessions: SessionSummary[];
   sessionCountsByProject: Record<string, number>;
+  currentGitBranch: string | null;
+  missionDiffCount: number;
   agents: AcpAgentProvider[];
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
@@ -87,6 +90,8 @@ export function MissionSidebar({
   expandedMissionProjectIds,
   sessions,
   sessionCountsByProject,
+  currentGitBranch,
+  missionDiffCount,
   agents,
   selectedAgentId,
   agentPickerOpen,
@@ -113,6 +118,36 @@ export function MissionSidebar({
   setSelectedMissionMobilePane,
   resizer,
 }: MissionSidebarProps) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const searchableProjects = useMemo(
+    () =>
+      normalizedSearchQuery
+        ? projects.filter((project) =>
+            matchesMissionSidebarSearch(project, sessions, normalizedSearchQuery),
+          )
+        : projects,
+    [normalizedSearchQuery, projects, sessions],
+  );
+  const openNewTaskFromSidebar = () => {
+    const targetProject =
+      projects.find((project) => project.id === missionSelectedProjectId) ??
+      searchableProjects[0] ??
+      projects[0];
+    if (!targetProject) {
+      return;
+    }
+    setSelectedMissionHelmId(targetProject.helmId);
+    setSelectedProjectId(targetProject.id);
+    setSelectedCwd(targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null);
+    setSelectedAgentId(null);
+    setAgentPickerOpen(true);
+    setExpandedMissionProjectIds(
+      (current) => new Set([...current, targetProject.id]),
+    );
+    setActiveSessionId(null);
+  };
   const sidebarClassName = [
     "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-r border-border-ghost shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
@@ -129,31 +164,68 @@ export function MissionSidebar({
         data-mission-mobile-pane="project"
       >
         {!effectiveSidebarCollapsed ? (
-          <div className="wb-pane-head bg-transparent">
-            <span className="wb-pane-head-eyebrow">Helm · 任务</span>
-            <div className="flex-1" />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="mission-sidebar-toggle text-muted-foreground hover:text-foreground"
-              onClick={() => setMissionSidebarCollapsed(true)}
-              aria-expanded="true"
-              aria-label="收起任务导航"
-              title="收起任务导航"
-            >
-              ‹
-            </Button>
-          </div>
+          <>
+            <div className="wb-pane-head bg-transparent">
+              <span className="wb-pane-head-eyebrow">Helm · 任务</span>
+              <div className="flex-1" />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchOpen((open) => !open)}
+                aria-expanded={searchOpen}
+                aria-label="搜索任务"
+                title="搜索任务"
+              >
+                <Icon name="search" size={12} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-primary"
+                onClick={openNewTaskFromSidebar}
+                disabled={!projects.length}
+                aria-label="新建任务"
+                title="新建任务"
+              >
+                <Icon name="plus" size={12} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="mission-sidebar-toggle text-muted-foreground hover:text-foreground"
+                onClick={() => setMissionSidebarCollapsed(true)}
+                aria-expanded="true"
+                aria-label="收起任务导航"
+                title="收起任务导航"
+              >
+                ‹
+              </Button>
+            </div>
+            {searchOpen || searchQuery ? (
+              <div className="px-1.5 pb-1.5">
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                  placeholder="搜索项目、任务或 Agent"
+                  aria-label="任务搜索关键字"
+                  className="h-7"
+                />
+              </div>
+            ) : null}
+          </>
         ) : null}
         {missionSidebarCollapsed ? null : (
           <div
             className="sidebar-section mission-tree-switcher flex-1 overflow-auto p-1"
             onScroll={handleMissionTreeScroll}
           >
-            <div className="section-head section-head-soft sidebar-heading-block mb-1 flex items-center gap-2 px-1.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <div className="section-head section-head-soft sidebar-heading-block mb-1 flex items-center gap-2 px-1.5 py-1 text-2xs uppercase tracking-wider text-muted-foreground">
               <span className="min-w-0 flex-1 truncate">项目</span>
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+              <Badge variant="secondary" className="px-1.5 py-0 text-2xs">
                 {projects.length} 个
               </Badge>
             </div>
@@ -161,7 +233,13 @@ export function MissionSidebar({
               {missionHelms.map((helm) => {
                 const selectedHelm = helm.id === effectiveMissionHelmId;
                 const helmExpanded = expandedMissionHelmIds.has(helm.id);
-                const helmProjects = [...projects]
+                const helmMatchesSearch = Boolean(
+                  normalizedSearchQuery &&
+                    helm.name.toLowerCase().includes(normalizedSearchQuery),
+                );
+                const helmProjects = [
+                  ...(helmMatchesSearch ? projects : searchableProjects),
+                ]
                   .filter((project) => project.helmId === helm.id)
                   .sort(
                     (left, right) =>
@@ -182,8 +260,8 @@ export function MissionSidebar({
                     <button
                       type="button"
                       className={cn(
-                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[18px_24px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-transparent px-2.5 py-1.5 text-left text-sm text-foreground transition hover:border-border-ghost hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                        selectedHelm && "active border-primary/20 bg-primary-soft text-primary",
+                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-6 text-left text-section text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        selectedHelm && "active bg-primary-soft text-foreground",
                       )}
                       onClick={() => toggleMissionHelmNode(helm.id)}
                       role="treeitem"
@@ -191,36 +269,26 @@ export function MissionSidebar({
                       aria-expanded={helmExpanded}
                       aria-selected={selectedHelm}
                     >
-                      <span className="mission-tree-caret text-xs text-muted-foreground">
+                      <span className="mission-tree-caret text-2xs text-muted-foreground">
                         {helmExpanded ? "▾" : "▸"}
                       </span>
-                      <span
-                        className="mission-tree-icon grid size-5 place-items-center rounded-md bg-surface-sunken text-xs"
-                        aria-hidden="true"
-                      >
-                        ⎈
-                      </span>
-                      <span className="mission-tree-main grid min-w-0 gap-0.5">
-                        <strong className="truncate font-semibold">{helm.name}</strong>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {helm.host}:{helm.port} · {helmProjects.length}
-                          项目
-                        </span>
-                      </span>
-                      <Badge
-                        variant={
+                      <StatusDot
+                        tone={
                           helmConnectionState === "connected"
-                            ? "success"
+                            ? "active"
                             : helmConnectionState === "connecting"
-                              ? "warning"
-                              : "outline"
+                              ? "primary"
+                              : "idle"
                         }
-                        className="shrink-0 px-2 py-0.5 text-[10px]"
-                        title={formatConnectionStatus(helmConnectionState)}
-                        aria-label={formatConnectionStatus(helmConnectionState)}
-                      >
+                        pulse={helmConnectionState === "connecting"}
+                      />
+                      <span className="mission-tree-main flex min-w-0 items-center gap-1.5">
+                        <Icon name="server" size={11} className="shrink-0 text-muted-foreground" />
+                        <span className="truncate text-section">{helm.name}</span>
+                      </span>
+                      <span className="shrink-0 font-mono text-2xs tabular text-muted-foreground">
                         {helmProjects.length}
-                      </Badge>
+                      </span>
                     </button>
                     {helmExpanded ? (
                       <div
@@ -279,8 +347,8 @@ export function MissionSidebar({
                           );
                         })}
                         {!helmProjects.length ? (
-                          <div className="mission-tree-empty rounded-md bg-surface-sunken p-3 text-sm text-muted-foreground">
-                            这个 Helm 还没有项目。
+                          <div className="mission-tree-empty rounded bg-surface-sunken p-2.5 text-meta text-muted-foreground">
+                            {normalizedSearchQuery ? "没有匹配任务。" : "这个 Helm 还没有项目。"}
                           </div>
                         ) : null}
                       </div>
@@ -289,30 +357,58 @@ export function MissionSidebar({
                 );
               })}
               {!missionHelms.length ? (
-                <div className="empty-state sidebar-empty rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">暂无 Helm。</div>
+                <div className="empty-state sidebar-empty rounded border border-border-ghost bg-surface-sunken p-3 text-meta text-muted-foreground">暂无 Helm。</div>
               ) : null}
               {sessionHistoryState.loading ? (
-                <div className="mission-tree-empty rounded-md bg-surface-sunken p-3 text-sm text-muted-foreground"> 正在加载更多任务... </div>
+                <div className="mission-tree-empty rounded bg-surface-sunken p-2.5 text-meta text-muted-foreground"> 正在加载更多任务... </div>
               ) : null}
             </div>
           </div>
         )}
+        <div className="border-t border-border-ghost px-2 py-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
+          <Icon name="branch" size={10} />
+          <span className="font-mono tabular truncate">
+            {currentGitBranch || "未检测"}
+          </span>
+          <div className="flex-1" />
+          <span className="font-mono tabular">{missionDiffCount} dirty</span>
+        </div>
       </aside>
-      {missionSidebarCollapsed ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="mission-sidebar-toggle mission-sidebar-floating-toggle fixed left-6 top-8 z-30 rounded-full shadow-ambient"
-          onClick={() => setMissionSidebarCollapsed(false)}
-          aria-expanded="false"
-          aria-label="展开任务导航"
-          title="展开任务导航"
-        >
-          ›
-        </Button>
-      ) : null}
       {resizer}
     </>
   );
+}
+
+function matchesMissionSidebarSearch(
+  project: ProjectSummary,
+  sessions: SessionSummary[],
+  normalizedQuery: string,
+) {
+  const projectText = [
+    project.name,
+    project.path,
+    ...(project.worktrees ?? []).map((worktree) => worktree.name ?? worktree.path),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (projectText.includes(normalizedQuery)) {
+    return true;
+  }
+  return sessions.some((session) => {
+    if (session.projectId !== project.id) {
+      return false;
+    }
+    return [
+      session.title,
+      session.agentName,
+      session.projectName,
+      session.worktreeName,
+      session.cwd,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
 }

@@ -20,7 +20,7 @@ export function MissionStatusBar({
 
   return (
     <div
-      className="mission-status-bar mission-status-scroll flex min-w-0 max-w-full items-center justify-center justify-self-center overflow-x-auto whitespace-nowrap px-2 text-center text-[10px] leading-none text-muted-foreground"
+      className="mission-status-bar mission-status-scroll flex min-w-0 max-w-full items-center justify-center justify-self-center overflow-x-auto whitespace-nowrap px-2 text-center text-2xs leading-none text-muted-foreground"
       role="status"
       aria-live="polite"
     >

@@ -17,6 +17,8 @@ const technicalPanels: TechnicalPanelPreferences = {
 const deckPreferences: DeckPreferences = {
   language: "zh-CN",
   theme: "system",
+  density: "default",
+  timeFormat: "relative",
   reduceMotion: false,
   technicalPanels,
   promptEnhancer: {

@@ -298,7 +298,7 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
           <span className="min-w-0 truncate font-medium">
             Thinking
           </span>
-          <span aria-hidden="true" className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">
+          <span aria-hidden="true" className="ml-auto shrink-0 text-2xs text-muted-foreground/50">
             {open ? "⌃" : "⌄"}
           </span>
         </summary>

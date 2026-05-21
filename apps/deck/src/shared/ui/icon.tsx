@@ -22,6 +22,7 @@ export type TillerIconName =
   | "more"
   | "plus"
   | "x"
+  | "check"
   | "search"
   | "globe"
   | "server"
@@ -101,6 +102,7 @@ const ICONS: Record<TillerIconName, ReactNode> = {
   ),
   plus: <path d="M5 12h14M12 5v14" />,
   x: <path d="M18 6 6 18M6 6l12 12" />,
+  check: <path d="m5 12 4 4L19 6" />,
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

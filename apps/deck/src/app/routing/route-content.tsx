@@ -4,6 +4,7 @@ import {
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
+import { useEffectiveViewport } from "../../features/preferences";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -31,6 +32,9 @@ const MissionRoute = lazy(() =>
   })),
 );
 export function AppRoutes({ ctx }: { ctx: any }) {
+  const viewport = useEffectiveViewport();
+  const isMobile = viewport === "mobile";
+
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
     ...ctx.appActions,
@@ -130,6 +134,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
 function renderOverview() {
   return (
     <OverviewPage
+      isMobile={isMobile}
       copy={copy}
       connection={connection}
       activeHelm={activeHelm}
@@ -175,6 +180,7 @@ function renderDashboard() {
 
   return (
     <DashboardPage
+      isMobile={isMobile}
       activeHelmLabel={activeHelmLabel}
       onlineHelmCount={connection === "connected" ? 1 : 0}
       totalHelmCount={Math.max(helmRows.length, 1)}
@@ -193,6 +199,7 @@ function renderDashboard() {
 function renderAgents() {
   return (
     <AgentsPage
+      isMobile={isMobile}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
       defaultDaemonHost={DEFAULT_DAEMON_HOST}
@@ -261,6 +268,7 @@ function renderAgents() {
 function renderSettings() {
   return (
     <SettingsPage
+      isMobile={isMobile}
       deckPreferences={deckPreferences}
       technicalPanels={technicalPanels}
       promptModelPickerRef={promptModelPickerRef}

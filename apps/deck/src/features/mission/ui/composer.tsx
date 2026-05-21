@@ -1,5 +1,6 @@
 import {
   Button,
+  Icon,
   Textarea,
 } from "../../../shared/ui";
 import {
@@ -195,13 +196,32 @@ export function MissionComposer({
 
   return (
     <div
-      className="chat-input-area draft-toolbar mission-composer"
+      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost p-2 bg-surface"
       data-mission-swipe-lock="true"
     >
       <form
-        className="chat-input-form mission-order-editor grid gap-3 rounded-md border border-border-ghost/70 bg-surface px-3 py-2.5"
+        className="chat-input-form mission-composer-deck wb-pane-sunken p-2 max-w-[1080px] mx-auto grid gap-2"
         onSubmit={submitPrompt}
       >
+        <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
+          <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
+            <Icon name="folder" size={10} />
+            <span className="truncate">{selectedWorktreeName}</span>
+          </button>
+          {currentGitBranch ? (
+            <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
+              <Icon name="branch" size={10} />
+              <span className="truncate">{currentGitBranch}</span>
+            </button>
+          ) : null}
+          <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
+            <Icon name="terminal" size={10} />
+            <span className="truncate">{selectedDraftAgent?.name ?? "未选择 Agent"}</span>
+          </button>
+          <span className="ml-1 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground tabular">
+            → {activeSession?.title ?? draftPromptPlaceholder}
+          </span>
+        </div>
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments
             promptImages={promptImages}
@@ -216,8 +236,8 @@ export function MissionComposer({
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
-            rows={1}
-            className="min-h-28 resize-none rounded-none border-0 bg-transparent px-1 py-0 text-base shadow-none focus-visible:ring-0"
+            rows={3}
+            className="min-h-[72px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
           />
           {slashPopupOpen ? (
             <SlashCommandPopup
@@ -296,7 +316,7 @@ export function MissionComposer({
                 aria-label="任务设置"
               >
                 <div className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                     模型设置
                   </span>
                   <MissionConfigControls
@@ -330,6 +350,9 @@ export function MissionComposer({
             modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
           />
+          <span className="hidden min-w-0 truncate font-mono text-2xs text-muted-foreground tabular sm:block">
+            esc 取消 · ↑ 历史
+          </span>
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
@@ -363,14 +386,14 @@ export function MissionComposer({
             ) : null}
             {!showInterruptOnly ? (
               <Button
-                size="icon-sm"
+                size="sm"
                 type="submit"
-                className="mission-send-prompt-button"
+                className="mission-send-prompt-button h-ctl-md px-3 text-action font-medium"
                 disabled={!canSend}
                 aria-label="发送"
                 title="发送"
               >
-                ➤
+                发送 <Icon name="send" size={11} />
               </Button>
             ) : null}
           </div>

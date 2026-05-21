@@ -76,3 +76,26 @@ test("Switch and Checkbox accept controlled props", () => {
   assert.match(html, /custom-checkbox/);
   assert.match(html, /data-state="checked"/);
 });
+
+test("form controls use Workbench typography tokens", () => {
+  const html = renderToString(
+    createElement(
+      "div",
+      null,
+      createElement(Input, { defaultValue: "deck" }),
+      createElement(
+        Select,
+        { defaultValue: "deck" },
+        createElement(
+          SelectTrigger,
+          null,
+          createElement(SelectValue, { placeholder: "Choose" }),
+        ),
+      ),
+    ),
+  );
+
+  assert.match(html, /text-section/);
+  assert.doesNotMatch(html, /text-\[13px\]/);
+  assert.doesNotMatch(html, /text-sm/);
+});

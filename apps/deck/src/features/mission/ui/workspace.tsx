@@ -60,6 +60,8 @@ export function MissionWorktree(props: any) {
     missionSidebarPaneStyle,
     handleMissionTreeScroll,
     setMissionSidebarCollapsed,
+    setMissionDisplayCollapsed,
+    setMissionInspectorCollapsed,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -216,6 +218,25 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
+  const openSessions = activeSession
+    ? [
+        activeSession,
+        ...(sessions as any[])
+          .filter((session) => session.id !== activeSession.id)
+          .sort(
+            (left, right) =>
+              new Date(right.updatedAt).getTime() -
+                new Date(left.updatedAt).getTime() ||
+              left.id.localeCompare(right.id),
+          ),
+      ].slice(0, 2)
+    : [];
+  const onToggleDisplay = () => {
+    setMissionDisplayCollapsed((current: boolean) => !current);
+  };
+  const onToggleInspector = () => {
+    setMissionInspectorCollapsed((current: boolean) => !current);
+  };
   const rawWorktreeOptions = hasWorktreeScope
     ? draftWorktreeOptions.length
       ? draftWorktreeOptions
@@ -292,7 +313,7 @@ export function MissionWorktree(props: any) {
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 wb-pane flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg p-1 shadow-none",
+    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
@@ -305,7 +326,7 @@ export function MissionWorktree(props: any) {
     setSelectedMissionMobilePane(MISSION_MOBILE_PANE_ORDER[nextIndex]);
   }
   const missionLayoutClassName = joinClassNames([
-    "card surface-card chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden rounded-lg bg-surface/80 shadow-ambient",
+    "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveSidebarCollapsed && "sidebar-collapsed",
     effectiveDisplayCollapsed && "mission-display-collapsed",
@@ -544,6 +565,8 @@ export function MissionWorktree(props: any) {
           expandedMissionProjectIds={expandedMissionProjectIds}
           sessions={sessions}
           sessionCountsByProject={sessionCountsByProject}
+          currentGitBranch={currentGitBranch}
+          missionDiffCount={missionDiffCount}
           agents={agents}
           selectedAgentId={selectedAgentId}
           agentPickerOpen={agentPickerOpen}
@@ -586,6 +609,7 @@ export function MissionWorktree(props: any) {
           onChatMainScroll={handleChatMainScroll}
           helmConnected={helmConnected}
           activeSession={activeSession}
+          openSessions={openSessions}
           activeSessionMessages={activeSessionMessages}
           activeSessionToolCalls={activeToolCalls}
           copy={copy}
@@ -599,6 +623,15 @@ export function MissionWorktree(props: any) {
           pendingApprovals={pendingApprovals}
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
+          displayCollapsed={effectiveDisplayCollapsed}
+          inspectorCollapsed={effectiveInspectorCollapsed}
+          sidebarCollapsed={effectiveSidebarCollapsed}
+          onExpandSidebar={() => setMissionSidebarCollapsed(false)}
+          onToggleDisplay={onToggleDisplay}
+          onToggleInspector={onToggleInspector}
+          onFocusSession={openSession}
+          onRenameSession={regenerateSessionTitle}
+          onClearSession={setPendingSessionCleanup}
           onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
           onUpdateQueuedPrompt={updateQueuedPrompt}

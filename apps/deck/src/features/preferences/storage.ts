@@ -16,6 +16,8 @@ export {
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
 export type DeckTheme = "system" | "light" | "dark" | "tiller";
+export type DeckDensity = "compact" | "default" | "cozy";
+export type DeckTimeFormat = "relative" | "absolute";
 
 export type TechnicalPanelPreferences = {
   logbookDefaultOpen: boolean;
@@ -29,6 +31,8 @@ export type DeckPreferences = {
   language: DeckLanguage;
   theme: DeckTheme;
   reduceMotion: boolean;
+  density: DeckDensity;
+  timeFormat: DeckTimeFormat;
   technicalPanels: TechnicalPanelPreferences;
   promptEnhancer: PromptEnhancerPreferences;
 };
@@ -43,6 +47,8 @@ export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
   theme: "dark",
   reduceMotion: false,
+  density: "default",
+  timeFormat: "relative",
   technicalPanels: {
     logbookDefaultOpen: false,
     diffDefaultOpen: false,
@@ -87,6 +93,12 @@ export function readDeckPreferences(): DeckPreferences {
         ? parsed.theme
         : DEFAULT_DECK_PREFERENCES.theme,
       reduceMotion: parsed.reduceMotion === true,
+      density: isDeckDensity(parsed.density)
+        ? parsed.density
+        : DEFAULT_DECK_PREFERENCES.density,
+      timeFormat: isDeckTimeFormat(parsed.timeFormat)
+        ? parsed.timeFormat
+        : DEFAULT_DECK_PREFERENCES.timeFormat,
       technicalPanels: {
         logbookDefaultOpen:
           typeof technicalPanels.logbookDefaultOpen === "boolean"
@@ -166,6 +178,14 @@ export function isDeckTheme(value: unknown): value is DeckTheme {
   return (
     value === "system" || value === "light" || value === "dark" || value === "tiller"
   );
+}
+
+export function isDeckDensity(value: unknown): value is DeckDensity {
+  return value === "compact" || value === "default" || value === "cozy";
+}
+
+export function isDeckTimeFormat(value: unknown): value is DeckTimeFormat {
+  return value === "relative" || value === "absolute";
 }
 
 export function readPreferenceText(value: unknown, fallback: string) {

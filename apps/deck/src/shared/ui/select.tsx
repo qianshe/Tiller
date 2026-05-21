@@ -16,7 +16,7 @@ export const SelectTrigger = forwardRef<
     ref={ref}
     className={cn(
       // Workbench Void §5.3 — 24px height matches Input/Button at IDE density.
-      "flex h-[var(--control-h-md)] w-full items-center justify-between rounded-md border border-border-ghost bg-surface-sunken px-[var(--control-px-md)] text-[13px] text-foreground transition-colors placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&>span]:line-clamp-1",
+      "flex h-[var(--control-h-md)] w-full items-center justify-between rounded-md border border-border-ghost bg-surface-sunken px-[var(--control-px-md)] text-section text-foreground transition-colors placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&>span]:line-clamp-1",
       className,
     )}
     {...props}
@@ -95,7 +95,7 @@ export const SelectLabel = forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-sm font-semibold text-foreground", className)}
+    className={cn("px-2 py-1.5 text-section font-semibold text-foreground", className)}
     {...props}
   />
 ));
@@ -108,7 +108,7 @@ export const SelectItem = forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-foreground outline-none transition-colors focus:bg-primary-soft focus:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-section text-foreground outline-none transition-colors focus:bg-primary-soft focus:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}
     {...props}

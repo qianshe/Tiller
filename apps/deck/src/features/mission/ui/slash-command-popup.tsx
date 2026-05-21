@@ -60,7 +60,7 @@ export function SlashCommandPopup({
                 {formatCommandKind(cmd.kind)}
               </span>
               {cmd.source ? (
-                <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-2xs font-semibold text-muted-foreground">
                   {cmd.source}
                 </span>
               ) : null}
@@ -82,7 +82,7 @@ function formatCommandKind(kind: AvailableCommandKind | undefined) {
 }
 
 function resolveCommandKindBadgeClass(kind: AvailableCommandKind | undefined) {
-  const base = "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+  const base = "shrink-0 rounded-full px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide";
   if (kind === "skill") return `${base} bg-primary-soft text-primary`;
   if (kind === "builtin") return `${base} bg-warning/15 text-warning`;
   if (kind === "prompt" || kind === "workflow") return `${base} bg-success-container text-on-success-container`;

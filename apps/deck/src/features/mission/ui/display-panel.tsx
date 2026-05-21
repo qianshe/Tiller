@@ -1,10 +1,14 @@
 import type { FileDiffSummary } from "@tiller/shared";
 import type { CSSProperties, ReactNode } from "react";
-import { Button, Card, CardContent, Input } from "../../../shared/ui";
+import { Button, Card, CardContent, Icon, Input } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
-import { formatDiffStatus, renderDiffPatch, renderDiffStats } from "./diff-tree";
-import { MissionPanelHeader } from "./panel-header";
-import { MissionPanelNav, type MissionPanelPage } from "./panels";
+import {
+  formatDiffStatus,
+  renderDiffPatch,
+  renderDiffStats,
+  resolveMissionPanelIcon,
+} from "./diff-tree";
+import type { MissionPanelPage } from "./panels";
 
 type OverviewItem = {
   label: string;
@@ -171,7 +175,7 @@ export function MissionDisplayPanel({
             </div>{" "}
             </CardContent>
           </Card>{" "}
-          <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+          <div className="empty-state rounded-[8px] border border-border-ghost bg-surface-sunken p-3 text-meta text-muted-foreground">
             {" "}
             自定义展示页占位，可继续挂载文件树、预览、测试结果或工具输出。{" "}
           </div>{" "}
@@ -189,14 +193,14 @@ export function MissionDisplayPanel({
               return (
                 <Card
                   key={`${overviewItem.label}:${overviewItem.value}`}
-                  className="mission-overview-card border-border-ghost bg-surface-sunken shadow-none"
+                  className="mission-overview-card rounded-[8px] border-border-ghost bg-surface-sunken shadow-none"
                 >
                   <CardContent className="grid gap-1 p-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                       {overviewItem.label}
                     </span>
                     <strong
-                      className="min-w-0 truncate text-sm font-semibold leading-snug text-foreground"
+                      className="min-w-0 truncate text-section font-semibold leading-snug text-foreground"
                     >
                       {overviewItem.value}
                     </strong>
@@ -206,22 +210,22 @@ export function MissionDisplayPanel({
             })}
           </div>
         ) : (
-          <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+          <div className="empty-state rounded-[8px] border border-border-ghost bg-surface-sunken p-3 text-meta text-muted-foreground">
             选择左侧任务后显示 Worktree 信息
           </div>
         )}
         {currentModelSummary ? (
-          <div className="mission-current-model-line rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+          <div className="mission-current-model-line rounded-[8px] border border-border-ghost bg-surface-sunken px-3 py-2 text-meta text-muted-foreground">
             {currentModelSummary}
           </div>
         ) : null}
         <Card className="mission-runtime-overview border-border-ghost bg-surface-sunken shadow-none">
           <CardContent className="grid gap-2 p-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 ACP
               </span>
-              <span className="rounded-full bg-surface-emphasis px-2 py-0.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full bg-surface-emphasis px-2 py-0.5 font-mono text-2xs tabular text-muted-foreground">
                 {runtimeOverviewItems.length} 个
               </span>
             </div>
@@ -230,17 +234,17 @@ export function MissionDisplayPanel({
                 {runtimeOverviewItems.map((runtime) => (
                   <details
                     key={runtime.id}
-                    className="mission-runtime-item grid gap-1 rounded-md border border-border-ghost bg-surface px-2.5 py-2"
+                    className="mission-runtime-item grid gap-1 rounded-[8px] border border-border-ghost bg-surface px-2.5 py-2"
                   >
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 marker:hidden">
-                      <strong className="min-w-0 truncate text-sm text-foreground">
+                      <strong className="min-w-0 truncate text-section text-foreground">
                         {runtime.label}
                       </strong>
                       <span className="flex shrink-0 items-center gap-1">
                         {runtime.canConnect || runtime.canReconnect ? (
                           <button
                             type="button"
-                            className="rounded-full border border-border-ghost px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary"
+                            className="rounded-full border border-border-ghost px-2 py-0.5 text-meta font-medium text-muted-foreground hover:border-primary/50 hover:text-primary"
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -254,7 +258,7 @@ export function MissionDisplayPanel({
                         ) : null}
                         <span
                           className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            "rounded-full px-2 py-0.5 text-meta font-medium",
                             runtimeStatusBadgeClass(runtime.status),
                           )}
                         >
@@ -262,13 +266,13 @@ export function MissionDisplayPanel({
                         </span>
                       </span>
                     </summary>
-                    <code className="mt-1 block break-all text-[11px] text-muted-foreground">
+                    <code className="mt-1 block break-all font-mono text-meta tabular text-muted-foreground">
                       {runtime.runtimeSessionId}
                     </code>
                     {runtime.children?.length ? (
-                      <ul className="mt-1 grid gap-1 text-xs text-muted-foreground">
+                      <ul className="mt-1 grid gap-1 text-meta text-muted-foreground">
                         {runtime.children.map((child) => (
-                          <li key={child.id} className="grid gap-0.5 rounded bg-surface-sunken px-2 py-1">
+                          <li key={child.id} className="grid gap-0.5 rounded-[8px] bg-surface-sunken px-2 py-1">
                             <span className="font-medium text-foreground">{child.projectName}</span>
                             <span>
                               {formatRuntimeChildMeta(child)}
@@ -277,7 +281,7 @@ export function MissionDisplayPanel({
                         ))}
                       </ul>
                     ) : (
-                      <small className="mt-1 block text-xs text-muted-foreground">
+                      <small className="mt-1 block text-meta text-muted-foreground">
                         {runtime.meta}{runtime.model ? ` · ${runtime.model}` : ""}
                       </small>
                     )}
@@ -292,6 +296,8 @@ export function MissionDisplayPanel({
       </div>
     );
   };
+  const displayFilePath = selectedDiffFilePath ?? diffs[0]?.path ?? selectedPage.title;
+  const selectedDisplayDiff = diffs.find((file) => file.path === displayFilePath) ?? diffs[0];
   return (
     <aside
       className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-l border-border-ghost shadow-none"
@@ -299,21 +305,71 @@ export function MissionDisplayPanel({
       aria-label="任务展示容器"
       data-mission-mobile-pane="display"
     >
-      <MissionPanelHeader title="任务展示" bordered />
-      <div className="mission-panel-body grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0">
-        {" "}
-        <MissionPanelNav
-          pages={pages}
-          selectedPageId={selectedPage.id}
-          onSelect={onSelectPage}
-          onDragStart={onDragStart}
-          onDrop={onDrop}
-        />{" "}
-        <section className="mission-panel-content min-h-0 overflow-auto p-3">
-          {" "}
-          {renderSelectedPage()}{" "}
-        </section>{" "}
-      </div>{" "}
+      <div className="wb-pane-head">
+        <span className="wb-pane-head-eyebrow">展示栏</span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis"
+          title="收起展示栏"
+          aria-label="收起展示栏"
+        >
+          <Icon name="x" size={11} />
+        </button>
+      </div>
+      <div className="mission-display-tab-strip flex items-center gap-1 overflow-x-auto border-b border-border-ghost px-1 py-1 [scrollbar-width:none]">
+        {pages.map((page) => {
+          const selected = page.id === selectedPage.id;
+          const custom = page.id.startsWith("custom-");
+          return (
+            <button
+              key={page.id}
+              type="button"
+              className={cn(
+                "flex h-5 min-w-0 items-center gap-1 rounded px-1.5 text-2xs transition-colors",
+                selected
+                  ? "bg-surface-emphasis text-foreground"
+                  : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
+              )}
+              title={page.title}
+              draggable={custom}
+              onClick={() => onSelectPage(page.id)}
+              onDragStart={() => {
+                if (custom) onDragStart(page.id);
+              }}
+              onDragOver={(event) => {
+                if (custom) event.preventDefault();
+              }}
+              onDrop={() => {
+                if (custom) onDrop(page.id);
+              }}
+            >
+              <span className="text-2xs">{resolveMissionPanelIcon(page.id)}</span>
+              <span className="max-w-[150px] truncate font-mono tabular">{page.title}</span>
+              {selected ? (
+                <Icon name="x" size={9} className="ml-1 text-muted-foreground" />
+              ) : null}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-emphasis hover:text-foreground"
+          title="新增展示页"
+          aria-label="新增展示页"
+          onClick={onAddPage}
+        >
+          <Icon name="plus" size={10} />
+        </button>
+      </div>
+      <section className="mission-panel-content min-h-0 flex-1 overflow-auto p-3">
+        {renderSelectedPage()}
+      </section>
+      <div className="mission-display-status-bar flex items-center gap-2 border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
+        <Icon name="fileText" size={10} />
+        <span className="min-w-0 flex-1 truncate font-mono tabular">{displayFilePath}</span>
+        {selectedDisplayDiff ? renderDiffStats(selectedDisplayDiff) : null}
+      </div>
     </aside>
   );
 }

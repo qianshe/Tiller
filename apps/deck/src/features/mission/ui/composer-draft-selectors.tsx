@@ -61,7 +61,7 @@ export function ComposerDraftSelectors({
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Worktree</span>
         <button
           type="button"
-          className="mission-worktree-trigger flex min-h-[var(--control-h-md)] items-center justify-between rounded-md border border-border-ghost bg-surface px-[var(--control-px-md)] py-1 text-left text-[13px] text-foreground transition hover:bg-surface-emphasis"
+          className="mission-worktree-trigger flex min-h-[var(--control-h-md)] items-center justify-between rounded-md border border-border-ghost bg-surface px-[var(--control-px-md)] py-1 text-left text-section text-foreground transition hover:bg-surface-emphasis"
           onClick={() => {
             setAgentPickerOpen(false);
             setWorktreePickerOpen((current) => !current);
@@ -102,7 +102,7 @@ export function ComposerDraftSelectors({
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">ACP Agent（创建前必选）</span>
         <button
           type="button"
-          className="mission-agent-trigger flex min-h-[var(--control-h-md)] items-center justify-between rounded-md border border-border-ghost bg-surface px-[var(--control-px-md)] py-1 text-left text-[13px] text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
+          className="mission-agent-trigger flex min-h-[var(--control-h-md)] items-center justify-between rounded-md border border-border-ghost bg-surface px-[var(--control-px-md)] py-1 text-left text-section text-foreground transition hover:bg-surface-emphasis disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => {
             setWorktreePickerOpen(false);
             setAgentPickerOpen((current) => !current);

@@ -32,7 +32,7 @@ export function MissionDiffPanel({
 
   if (!diffs.length) {
     return (
-      <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+      <div className="empty-state rounded border border-border-ghost bg-surface-sunken p-3 text-meta text-muted-foreground">
         {noDiffSummary}
       </div>
     );
@@ -77,11 +77,11 @@ function renderDiffTreeNode({
       <button
         key={node.id}
         type="button"
-        className="mission-file-row mission-file-row-compact mission-file-row-button grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="mission-file-row mission-file-row-compact mission-file-row-button grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-0.5 text-left text-meta text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         onClick={() => onOpenDiffDetail(file.path)}
       >
-        <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-1 py-0.5 text-[9px] font-semibold text-primary`}>
+        <span className={`mission-file-status status-${file.status} rounded-full bg-primary-soft px-1 py-0.5 font-mono text-2xs font-semibold tabular text-primary`}>
           {formatDiffStatus(file.status)}
         </span>
         <span className="min-w-0 truncate">{node.name}</span>
@@ -98,14 +98,14 @@ function renderDiffTreeNode({
     >
       <button
         type="button"
-        className="mission-change-group-title grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] font-medium text-foreground transition hover:bg-surface-emphasis"
+        className="mission-change-group-title grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-0.5 text-left text-meta font-medium text-foreground transition hover:bg-surface-emphasis"
         style={{ paddingLeft: `${2 + depth * 14}px` }}
         onClick={() => onToggleDiffDirectory(node.path)}
         aria-expanded={!collapsed}
       >
         <span>{collapsed ? "▸" : "▾"}</span>
         <span className="min-w-0 truncate">{node.name}</span>
-        <span className="mission-change-count rounded-full bg-surface-emphasis px-2 py-0.5 text-xs text-muted-foreground">
+        <span className="mission-change-count rounded-full bg-surface-emphasis px-2 py-0.5 font-mono text-2xs tabular text-muted-foreground">
           {node.count}
         </span>
       </button>

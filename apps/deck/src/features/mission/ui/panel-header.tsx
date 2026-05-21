@@ -9,7 +9,7 @@ type MissionPanelHeaderProps = {
 };
 
 const PANEL_HEADER_FRAME_CLASS = "flex items-center justify-between gap-2 px-2 py-1.5";
-const PANEL_HEADER_TITLE_CLASS = "text-sm font-semibold leading-tight text-foreground";
+const PANEL_HEADER_TITLE_CLASS = "text-section font-semibold leading-tight text-foreground";
 
 export function MissionPanelHeader({
   title,
@@ -35,7 +35,7 @@ export function MissionPanelHeader({
 
 export function MissionPanelLoadingBadge() {
   return (
-    <span className="mission-inline-loading rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary">
+    <span className="mission-inline-loading rounded-full bg-primary-soft px-2 py-0.5 text-2xs font-semibold text-primary">
       加载中
     </span>
   );

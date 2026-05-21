@@ -11,6 +11,7 @@ export function usePreferencesEffects() {
   const language = useDeckStore((state) => state.preferences.language);
   const theme = useDeckStore((state) => state.preferences.theme);
   const reduceMotion = useDeckStore((state) => state.preferences.reduceMotion);
+  const density = useDeckStore((state) => state.preferences.density);
 
   useEffect(() => {
     const applyPreferences = () => {
@@ -24,6 +25,7 @@ export function usePreferencesEffects() {
       document.documentElement.dataset.theme = resolvedTheme;
       document.documentElement.dataset.deckTheme = theme;
       document.documentElement.dataset.deckReduceMotion = String(reduceMotion);
+      document.body.dataset.density = density;
     };
 
     applyPreferences();
@@ -35,5 +37,5 @@ export function usePreferencesEffects() {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", applyPreferences);
     return () => media.removeEventListener("change", applyPreferences);
-  }, [language, reduceMotion, theme]);
+  }, [language, reduceMotion, theme, density]);
 }

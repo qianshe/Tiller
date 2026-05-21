@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/ui/tabs";
-import { MissionPanelHeader, MissionPanelLoadingBadge } from "./panel-header";
+import { Icon } from "../../../shared/ui";
+import { MissionPanelLoadingBadge } from "./panel-header";
 
 type MissionInspectorProps = {
   collapsed: boolean;
@@ -26,13 +26,8 @@ export function MissionInspector({
   diffPanel,
   resizer,
 }: MissionInspectorProps) {
-  const [selectedPage, setSelectedPage] = useState<"worktrees" | "diff">("diff");
-  const title = resolveInspectorTitle(
-    selectedPage,
-    activeSessionPresent,
-    worktreeCount,
-    diffCount,
-  );
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const title = resolveInspectorTitle(activeSessionPresent, worktreeCount, diffCount);
 
   return (
     <>
@@ -45,34 +40,83 @@ export function MissionInspector({
           aria-label="任务检视器"
           data-mission-mobile-pane="inspector"
         >
-          <section className="inspector-section inspector-scroll mission-project-files-section grid min-h-0 gap-3 overflow-hidden p-3">
-            <MissionPanelHeader
-              className="section-head section-head-soft mission-inspector-section-head"
-              title={title}
-              action={loading ? <MissionPanelLoadingBadge /> : null}
-            />
-            <Tabs
-              value={selectedPage}
-              onValueChange={(value) => setSelectedPage(value as "worktrees" | "diff")}
-              className="grid min-h-0 gap-2 overflow-hidden"
-              aria-label="项目变更子页"
+          <div className="wb-pane-head mission-inspector-section-head">
+            <span className="wb-pane-head-eyebrow">工作区</span>
+            <span className="min-w-0 truncate font-mono text-meta text-muted-foreground tabular">
+              {title}
+            </span>
+            <div className="flex-1" />
+            {loading ? <MissionPanelLoadingBadge /> : null}
+            <button
+              type="button"
+              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis"
+              title="收起检视器"
+              aria-label="收起检视器"
             >
-              <TabsList size="xs" className="grid grid-cols-2">
-                <TabsTrigger size="xs" value="diff">
-                  Git Diff ({diffCount})
-                </TabsTrigger>
-                <TabsTrigger size="xs" value="worktrees">
-                  Worktrees ({worktreeCount})
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="diff" className="mt-0 min-h-0 overflow-hidden">
-                {diffPanel}
-              </TabsContent>
-              <TabsContent value="worktrees" className="mt-0 min-h-0 overflow-hidden">
+              <Icon name="x" size={11} />
+            </button>
+          </div>
+          <div className="mission-worktree-picker relative border-b border-border-ghost px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setPickerOpen((current) => !current)}
+              className="wb-focus-ring flex h-7 w-full items-center gap-1.5 rounded bg-surface px-2 text-left hover:bg-surface-emphasis"
+              title="选择 Worktree"
+              aria-expanded={pickerOpen}
+            >
+              <Icon name="branch" size={11} className="text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate font-mono text-2xs tabular">
+                {activeSessionPresent ? `${worktreeCount} Worktrees · ${diffCount} Diff` : "未选择任务"}
+              </span>
+              <Icon name="chevronDown" size={10} className="text-muted-foreground" />
+            </button>
+            {pickerOpen ? (
+              <div
+                className="absolute left-2 right-2 top-[calc(100%-2px)] z-10 max-h-[min(360px,55vh)] overflow-auto rounded-lg bg-popover text-popover-foreground shadow-lg"
+                style={{
+                  backdropFilter: "blur(20px)",
+                  boxShadow:
+                    "inset 0 0 0 1px var(--border-ghost), 0 12px 28px rgb(0 0 0 / 0.25)",
+                  animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+                }}
+              >
                 {worktreeList}
-              </TabsContent>
-            </Tabs>
-          </section>
+              </div>
+            ) : null}
+          </div>
+          <div className="flex-1 overflow-auto">
+            <section className="grid gap-2 p-2">{diffPanel}</section>
+          </div>
+          <div className="mission-inspector-commit border-t border-border-ghost bg-surface p-2">
+            <textarea
+              rows={2}
+              className="mb-2 w-full resize-none rounded bg-surface-sunken p-2 text-section shadow-[inset_0_0_0_1px_var(--border-ghost)] placeholder:text-muted-foreground focus:outline-none"
+              placeholder="提交信息(必填) · 描述本次变更"
+              aria-label="提交信息"
+            />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="flex h-ctl-md flex-1 items-center justify-center gap-1.5 rounded bg-surface-sunken px-3 text-section font-medium text-muted-foreground"
+                disabled
+              >
+                <Icon name="shield" size={12} /> Commit
+              </button>
+              <button
+                type="button"
+                className="flex h-ctl-md items-center gap-1.5 rounded bg-surface-sunken px-3 text-section hover:bg-surface-emphasis"
+              >
+                <Icon name="branch" size={11} /> Push
+              </button>
+              <button
+                type="button"
+                className="grid h-ctl-md w-7 place-items-center rounded bg-surface-sunken text-muted-foreground hover:bg-surface-emphasis"
+                title="更多操作"
+              >
+                <Icon name="more" size={11} />
+              </button>
+            </div>
+          </div>
         </aside>
       ) : null}
     </>
@@ -80,7 +124,6 @@ export function MissionInspector({
 }
 
 function resolveInspectorTitle(
-  selectedPage: "worktrees" | "diff",
   activeSessionPresent: boolean,
   worktreeCount: number,
   diffCount: number,
@@ -88,8 +131,8 @@ function resolveInspectorTitle(
   if (!activeSessionPresent) {
     return "未选择任务";
   }
-  if (selectedPage === "diff") {
-    return diffCount > 0 ? `${diffCount} 个变更` : "暂无变更";
+  if (diffCount > 0) {
+    return `${diffCount} 个变更`;
   }
   return worktreeCount > 0 ? `${worktreeCount} 个 Worktree` : "暂无 Worktree";
 }

@@ -27,6 +27,32 @@ export function createDeckStorePersistOptions(): PersistOptions<
       daemonProfiles: state.daemonProfiles,
       selectedHelmKey: state.selectedHelmKey,
     }),
+    merge: (persistedState, currentState) => {
+      const persisted = persistedState as PersistedDeckStore | undefined;
+      if (!persisted) return currentState;
+      return {
+        ...currentState,
+        ...persisted,
+        preferences: persisted.preferences
+          ? {
+              ...currentState.preferences,
+              ...persisted.preferences,
+              technicalPanels: {
+                ...currentState.preferences.technicalPanels,
+                ...(persisted.preferences.technicalPanels ?? {}),
+              },
+              promptEnhancer: {
+                ...currentState.preferences.promptEnhancer,
+                ...(persisted.preferences.promptEnhancer ?? {}),
+                llm: {
+                  ...currentState.preferences.promptEnhancer.llm,
+                  ...(persisted.preferences.promptEnhancer?.llm ?? {}),
+                },
+              },
+            }
+          : currentState.preferences,
+      };
+    },
   };
 }
 

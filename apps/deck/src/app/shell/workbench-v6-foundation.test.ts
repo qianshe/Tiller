@@ -7,10 +7,15 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const rootSource = readFileSync(resolve(currentDir, "root.tsx"), "utf8");
 const tokensCss = readFileSync(resolve(currentDir, "tokens.css"), "utf8");
+const brandCss = readFileSync(resolve(currentDir, "tokens/brand.css"), "utf8");
+const semanticCss = readFileSync(resolve(currentDir, "tokens/semantic.css"), "utf8");
+const lightCss = readFileSync(resolve(currentDir, "tokens/themes/light.css"), "utf8");
+const darkCss = readFileSync(resolve(currentDir, "tokens/themes/dark.css"), "utf8");
 const stylesCss = readFileSync(resolve(currentDir, "styles.css"), "utf8");
+const tokensBundle = [tokensCss, brandCss, semanticCss, lightCss, darkCss].join("\n");
 
 test("Workbench v6 Tailwind inline color aliases are registered", () => {
-  assert.match(tokensCss, /@theme inline\s*{/);
+  assert.match(semanticCss, /@theme inline\s*{/);
   for (const token of [
     "--color-background: var(--background);",
     "--color-canvas: var(--canvas);",
@@ -19,7 +24,7 @@ test("Workbench v6 Tailwind inline color aliases are registered", () => {
     "--color-accent: var(--accent);",
     "--text-default--line-height: 1.45;",
   ]) {
-    assert.match(tokensCss, new RegExp(token.replace(/[()]/g, "\\$&")));
+    assert.match(tokensBundle, new RegExp(token.replace(/[()]/g, "\\$&")));
   }
 });
 

@@ -20,9 +20,15 @@ test("style inventory script documents final CSS entry points", () => {
   assert.equal(existsSync(inventoryPath), true);
   const inventory = readFileSync(inventoryPath, "utf8");
 
-  assert.match(inventory, /- CSS files: 4/);
+  assert.match(inventory, /- CSS files: 10/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/styles\.css/);
   assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/brand\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/semantic\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/themes\/light\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/themes\/dark\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/themes\/tiller\.css/);
+  assert.match(inventory, /apps\/deck\/src\/app\/shell\/tokens\/themes\/system\.css/);
   assert.match(inventory, /apps\/deck\/src\/features\/overview\/ui\/page\.css/);
   assert.match(inventory, /apps\/deck\/src\/features\/toast\/styles\.css/);
   assert.doesNotMatch(inventory, /apps\/deck\/src\/features\/mission\/styles\.css/);

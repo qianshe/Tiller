@@ -77,6 +77,8 @@ type HelmDetailSectionProps = {
     socket: WebSocket | null,
     helmName: string,
   ) => ReactNode;
+  isMobile?: boolean;
+  onBack?: () => void;
 };
 
 /**
@@ -119,6 +121,8 @@ export function HelmDetailSection({
   dispatch,
   copy,
   renderTrustedDevicesPanel,
+  isMobile = false,
+  onBack,
 }: HelmDetailSectionProps) {
   const [activeTab, setActiveTab] = useState<"agents" | "projects" | "devices" | "worktrees" | "logs">("agents");
   const tabs = [
@@ -132,14 +136,26 @@ export function HelmDetailSection({
   return (
     <section className="wb-pane flex h-full min-h-0 flex-col overflow-hidden">
       <div className="wb-pane-head">
-        <Icon name="server" size={12} className="text-muted-foreground" />
-        <span className="font-mono text-2xs tabular text-foreground">{selectedHelm.name}</span>
+        {isMobile && onBack && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            type="button"
+            onClick={onBack}
+            title="返回"
+            className="-ml-1 mr-1"
+          >
+            <Icon name="chevronLeft" size={12} />
+          </Button>
+        )}
+        <Icon name="server" size={13} className="text-muted-foreground" />
+        <span className="text-section font-medium text-foreground">{selectedHelm.name}</span>
         <StatusDot
           tone={selectedHelmIsConnected ? "active" : selectedHelmConnection === "connecting" ? "primary" : "idle"}
           pulse={selectedHelmIsConnected || selectedHelmConnection === "connecting"}
           size={5}
         />
-        <span className="font-mono text-2xs tabular text-muted-foreground">
+        <span className="font-mono text-meta tabular text-muted-foreground">
           {selectedHelm.host}:{selectedHelm.port}
         </span>
         <div className="flex-1" />
@@ -169,7 +185,7 @@ export function HelmDetailSection({
           <button
             key={tab.id}
             type="button"
-            className={`h-7 whitespace-nowrap px-2 text-[12px] ${
+            className={`h-7 whitespace-nowrap px-2 text-action ${
               activeTab === tab.id
                 ? "-mb-px border-b-2 border-primary text-foreground"
                 : "text-muted-foreground hover:text-foreground"
@@ -203,13 +219,13 @@ export function HelmDetailSection({
                 <AgentIcon name={agent.name} size={24} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-[13px] font-medium text-foreground">{agent.name}</span>
+                    <span className="text-section font-medium text-foreground">{agent.name}</span>
                     <StatusDot tone={selectedHelmIsConnected ? "active" : "idle"} pulse={selectedHelmIsConnected} size={5} />
-                    <span className="font-mono text-2xs tabular text-muted-foreground">
+                    <span className="font-mono text-meta tabular text-muted-foreground">
                       {selectedHelmIsConnected ? "ready" : formatConnectionStatus(selectedHelmConnection)}
                     </span>
                   </div>
-                  <p className="m-0 truncate font-mono text-2xs tabular text-muted-foreground">
+                  <p className="m-0 truncate font-mono text-meta tabular text-muted-foreground">
                     {`${agent.command} ${(agent.args ?? []).join(" ")}`.trim() || agent.id}
                   </p>
                 </div>
@@ -255,7 +271,7 @@ export function HelmDetailSection({
               onClick={() => setFleetAgentFormOpen((current) => !current)}
             >
               <Icon name="plus" size={14} />
-              <span className="text-[12.5px]">注册新 ACP Agent</span>
+              <span className="text-section">注册新 ACP Agent</span>
             </button>
 
             {!selectedHelmAgents.length ? (
@@ -297,10 +313,10 @@ export function HelmDetailSection({
                 <article key={worktree.path} className="wb-pane-sunken grid gap-1 p-2.5">
                   <div className="flex items-center gap-2">
                     <Icon name="branch" size={12} className="text-muted-foreground" />
-                    <strong className="truncate text-[13px] text-foreground">{worktree.branch || "worktree"}</strong>
+                    <strong className="truncate text-section text-foreground">{worktree.branch || "worktree"}</strong>
                     <Badge variant="secondary" className="ml-auto">工作区</Badge>
                   </div>
-                  <p className="m-0 truncate font-mono text-2xs tabular text-muted-foreground">{worktree.path}</p>
+                  <p className="m-0 truncate font-mono text-meta tabular text-muted-foreground">{worktree.path}</p>
                 </article>
               ))
             ) : (
