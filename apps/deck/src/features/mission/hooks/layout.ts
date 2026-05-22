@@ -20,15 +20,15 @@ const DEFAULT_MISSION_PANE_WIDTHS: MissionPaneWidths = {
   display: 320,
   inspector: 280,
 };
-const MISSION_MIN_CHAT_WIDTH = 460;
+const MISSION_MIN_CHAT_WIDTH = 360;
 const MISSION_PANE_LIMITS: Record<
   MissionPaneId,
   { min: number; max?: number }
 > = {
-  sidebar: { min: 220, max: 320 },
-  chat: { min: MISSION_MIN_CHAT_WIDTH, max: 1000 },
-  display: { min: 320, max: 520 },
-  inspector: { min: 280, max: 420 },
+  sidebar: { min: 0 },
+  chat: { min: MISSION_MIN_CHAT_WIDTH },
+  display: { min: 0 },
+  inspector: { min: 0 },
 };
 const MISSION_RESIZER_WIDTH = 4;
 const MISSION_OUTER_GUTTER = 16;

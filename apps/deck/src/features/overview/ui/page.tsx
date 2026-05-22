@@ -61,9 +61,6 @@ export function OverviewPage({
   projects,
   sessions,
   onNavigate,
-  onOpenSession,
-  resolveDisplaySessionTitle,
-  formatRelativeTime,
   isMobile = false,
 }: OverviewPageProps) {
   const activeHelmLabel = activeHelm

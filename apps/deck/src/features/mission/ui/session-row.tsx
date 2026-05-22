@@ -16,6 +16,8 @@ import { cn } from "../../../shared/utils/cn";
 
 type SessionRowProps = {
   activeSessionId: string | null;
+  highlightedSessionId: string | null;
+  openSessionIds: ReadonlySet<string>;
   copy: { status: Record<SessionStatus, string> };
   formatRelativeTime: (value: string) => string;
   openSession: (sessionId: string) => void;
@@ -30,6 +32,8 @@ type SessionRowProps = {
 
 export function SessionRow({
   activeSessionId,
+  highlightedSessionId,
+  openSessionIds,
   copy,
   formatRelativeTime,
   openSession,
@@ -44,6 +48,9 @@ export function SessionRow({
   const sessionPending = isSessionExecutionPending(sessionStatus);
   const title = resolveDisplayTitle(session);
   const worktreeLabel = resolveSessionWorktreeLabel(session);
+  const isFocused = session.id === (highlightedSessionId ?? activeSessionId);
+  const isOpenSession = openSessionIds.has(session.id);
+  const isHighlighted = isFocused || isOpenSession;
 
   return (
     <div
@@ -55,8 +62,9 @@ export function SessionRow({
       <button
         type="button"
         className={cn(
-          "mission-tree-row mission-tree-row-session grid min-w-0 grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-5 text-left text-action text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 cursor-grab active:cursor-grabbing",
-          session.id === activeSessionId && "active bg-primary-soft text-foreground",
+          "mission-tree-row mission-tree-row-session grid min-w-0 grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 h-5 text-left text-action text-foreground transition hover:bg-surface-emphasis/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 cursor-grab active:cursor-grabbing",
+          isHighlighted && "active relative bg-surface-emphasis/70 pl-2 text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary",
+          isOpenSession && !isFocused && "bg-surface-emphasis/35 text-foreground",
         )}
         draggable
         onDragStart={(event) => {
@@ -66,11 +74,10 @@ export function SessionRow({
         onClick={() => openSession(session.id)}
         role="treeitem"
         aria-level={3}
-        aria-selected={session.id === activeSessionId}
+        aria-selected={isHighlighted}
       >
-        <span className="mission-tree-caret" />
         <span
-          className="mission-tree-agent-icon grid size-3.5 place-items-center overflow-hidden rounded bg-surface-sunken text-2xs"
+          className="mission-tree-agent-icon grid size-3.5 place-items-center overflow-hidden bg-transparent text-2xs text-muted-foreground"
           title={session.agentName}
         >
           {renderAgentIcon(session.agentName)}
@@ -84,7 +91,7 @@ export function SessionRow({
               variant={
                 sessionStatus === "waiting_for_permission" ? "warning" : "success"
               }
-              className={`mission-tree-session-status mission-tree-session-status-${sessionStatus} px-1.5 py-0 text-2xs font-mono tabular`}
+              className={`mission-tree-session-status mission-tree-session-status-${sessionStatus} rounded-none bg-transparent px-1.5 py-0 text-2xs font-mono tabular`}
               aria-label={copy.status[sessionStatus]}
             >
               {copy.status[sessionStatus]}

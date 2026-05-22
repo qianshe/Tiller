@@ -32,6 +32,8 @@ type SidebarProjectNodeProps = {
   statuses: Record<string, SessionStatus>;
   copy: { status: Record<SessionStatus, string> };
   activeSessionId: string | null;
+  highlightedSessionId: string | null;
+  openSessionIds: ReadonlySet<string>;
   openSession: (sessionId: string) => void;
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
@@ -67,6 +69,8 @@ export function SidebarProjectNode({
   statuses,
   copy,
   activeSessionId,
+  highlightedSessionId,
+  openSessionIds,
   openSession,
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
@@ -85,15 +89,15 @@ export function SidebarProjectNode({
     <div key={project.id} className="mission-tree-group grid gap-1" role="group">
       <div
         className={cn(
-          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded",
-          selectedProject && "active bg-primary-soft/60",
+          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1",
+          selectedProject && "active bg-surface-emphasis/50",
         )}
       >
         <button
           type="button"
           className={cn(
-            "mission-tree-row mission-tree-row-project grid min-w-0 flex-1 grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-5 text-left text-section text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            selectedProject && "active text-foreground bg-surface-emphasis",
+            "mission-tree-row mission-tree-row-project grid min-w-0 flex-1 grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 h-5 text-left text-section text-foreground transition hover:bg-surface-emphasis/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            selectedProject && "active text-foreground bg-transparent",
           )}
           onClick={() => toggleMissionProjectNode(project.id)}
           role="treeitem"
@@ -150,8 +154,8 @@ export function SidebarProjectNode({
                 role="option"
                 aria-selected={agent.id === selectedAgentId}
                 className={cn(
-                  "rounded px-2.5 py-1.5 text-left text-section text-foreground transition hover:bg-primary-soft hover:text-primary",
-                  agent.id === selectedAgentId && "active bg-primary-soft text-primary",
+                  "px-2.5 py-1.5 text-left text-section text-foreground transition hover:bg-surface-emphasis hover:text-primary",
+                  agent.id === selectedAgentId && "active bg-surface-emphasis/60 text-primary",
                 )}
                 onClick={() => {
                   setAgentPickerOpen(false);
@@ -167,7 +171,7 @@ export function SidebarProjectNode({
       </div>
       {projectExpanded ? (
         <div
-          className="mission-tree-children mission-tree-children-sessions ml-3 grid gap-1 border-l border-border-ghost pl-1.5"
+          className="mission-tree-children mission-tree-children-sessions ml-1 grid gap-1 pl-0"
           role="group"
         >
           {projectNodeSessions.length ? (
@@ -177,6 +181,8 @@ export function SidebarProjectNode({
                 <SessionRow
                   key={session.id}
                   activeSessionId={activeSessionId}
+                  highlightedSessionId={highlightedSessionId}
+                  openSessionIds={openSessionIds}
                   copy={copy}
                   formatRelativeTime={formatRelativeTime}
                   openSession={openSession}

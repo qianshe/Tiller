@@ -14,7 +14,7 @@ import type {
   RefObject,
   UIEventHandler,
 } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
@@ -43,8 +43,11 @@ type MissionChatPaneProps = {
   helmConnected: boolean;
   activeSession: SessionSummary | null;
   openSessions: SessionSummary[];
+  selectedSessionId: string | null;
   activeSessionMessages: AgentMessage[];
+  sessionMessagesById: Record<string, AgentMessage[] | undefined>;
   activeSessionToolCalls: AgentToolCall[];
+  sessionToolCallsById: Record<string, AgentToolCall[] | undefined>;
   copy: MissionChatPaneCopy;
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, HistoryState | undefined>;
@@ -66,7 +69,9 @@ type MissionChatPaneProps = {
   onToggleDisplay: () => void;
   onToggleInspector: () => void;
   onFocusSession: (sessionId: string) => void;
+  onSelectSessionView: (sessionId: string) => void;
   onRenameSession: (session: SessionSummary) => void;
+  onCloseSessionView: (session: SessionSummary) => void;
   onClearSession: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
@@ -85,8 +90,11 @@ export function MissionChatPane({
   onChatMainScroll,
   helmConnected,
   activeSession,
+  selectedSessionId,
   activeSessionMessages,
+  sessionMessagesById,
   activeSessionToolCalls,
+  sessionToolCallsById,
   copy,
   openSessions,
   expandedMessageIds,
@@ -106,7 +114,9 @@ export function MissionChatPane({
   onToggleDisplay,
   onToggleInspector,
   onFocusSession,
+  onSelectSessionView,
   onRenameSession,
+  onCloseSessionView,
   onClearSession,
   onRespondToPermission,
   promptQueue,
@@ -116,16 +126,55 @@ export function MissionChatPane({
 }: MissionChatPaneProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const thinkingToolCalls = useMemo(
-    () => activeSessionToolCalls.filter((toolCall) => toolCall.kind === "think"),
-    [activeSessionToolCalls],
-  );
-  const boundaryTimestamps = useMemo(
-    () => activeSessionToolCalls.map((toolCall) => toolCall.timestamp),
-    [activeSessionToolCalls],
-  );
-  const isSingleSession = openSessions.length === 1;
-  const singleSession = openSessions[0] ?? null;
+  const renderSessionStream = (session: SessionSummary) => {
+    const sessionMessages = sessionMessagesById[session.id]
+      ?? (session.id === activeSession?.id ? activeSessionMessages : []);
+    const sessionToolCalls = sessionToolCallsById[session.id]
+      ?? (session.id === activeSession?.id ? activeSessionToolCalls : []);
+    const sessionTimeline = splitMissionToolCalls(sessionToolCalls);
+    const isActiveSession = session.id === activeSession?.id;
+
+    return (
+      <>
+        {sessionMessages.length ? (
+          <MissionMessageTimeline
+            items={sessionMessages}
+            thinkingToolCalls={sessionTimeline.thinkingToolCalls}
+            toolCalls={sessionTimeline.timelineToolCalls}
+            boundaryTimestamps={sessionTimeline.boundaryTimestamps}
+            sessionId={session.id}
+            assistantLabel={session.agentName}
+            copy={copy}
+            expandedMessageIds={expandedMessageIds}
+            historyStateBySession={messageHistoryState}
+            activityHistoryStateBySession={activityHistoryState}
+            onLoadOlderMessages={onLoadOlderMessages}
+            onToggleExpandedMessage={onToggleExpandedMessage}
+          />
+        ) : (
+          <SessionPreviewMessages session={session} restoring={isActiveSession} />
+        )}
+        {isActiveSession && activityLoading ? (
+          <MissionToolLoading
+            activity={activityLoading}
+            pendingToolPresent={pendingToolPresent}
+          />
+        ) : null}
+      </>
+    );
+  };
+  const isSingleSession = openSessions.length <= 1;
+  const singleSession = openSessions[0];
+  const parallelGridCompact = openSessions.length <= 2;
+  const shouldLockChatMainScroll = openSessions.length > 0 && parallelGridCompact;
+  const shouldAnchorActiveParallelCard = openSessions.length > 2;
+  const parallelGridStyle = {
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
+    gridAutoRows: parallelGridCompact ? "minmax(0, 1fr)" : "minmax(360px, min(52vh, 560px))",
+  };
+  const visibleSessionStreamCounts = openSessions
+    .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
+    .join("|");
   const [dragOver, setDragOver] = useState(false);
   const sessionDragType = "application/x-tiller-session-id";
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -146,6 +195,15 @@ export function MissionChatPane({
     if (sessionId) {
       onFocusSession(sessionId);
     }
+  };
+  const handleChatMainScrollEvent: UIEventHandler<HTMLDivElement> = (event) => {
+    if (shouldLockChatMainScroll) {
+      if (event.currentTarget.scrollTop !== 0) {
+        event.currentTarget.scrollTop = 0;
+      }
+      return;
+    }
+    onChatMainScroll(event);
   };
 
   useEffect(() => {
@@ -169,6 +227,105 @@ export function MissionChatPane({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!shouldLockChatMainScroll) {
+      return;
+    }
+    const resetChatMainScroll = () => {
+      const chatMain = chatMainRef.current;
+      if (chatMain) {
+        chatMain.scrollTop = 0;
+      }
+    };
+    resetChatMainScroll();
+    const frame = window.requestAnimationFrame(resetChatMainScroll);
+    const timeout = window.setTimeout(resetChatMainScroll, 180);
+    const lateTimeout = window.setTimeout(resetChatMainScroll, 900);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
+    };
+  }, [activeSession?.id, chatMainRef, openSessions.length, shouldLockChatMainScroll]);
+
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number }>>({});
+  const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
+
+  useEffect(() => {
+    const chatMain = chatMainRef.current;
+    if (!chatMain) {
+      return;
+    }
+    const changedSessionIds: string[] = [];
+    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number }> = {};
+
+    openSessions.forEach((session) => {
+      const messageCount = sessionMessagesById[session.id]?.length ?? 0;
+      const toolCallCount = sessionToolCallsById[session.id]?.length ?? 0;
+      const previous = sessionBodyScrollSnapshotRef.current[session.id];
+      nextSnapshot[session.id] = { messageCount, toolCallCount };
+      if (!previous) {
+        if (messageCount > 0 || toolCallCount > 0) {
+          changedSessionIds.push(session.id);
+        }
+        return;
+      }
+      if (previous.messageCount !== messageCount || previous.toolCallCount !== toolCallCount) {
+        changedSessionIds.push(session.id);
+      }
+    });
+
+    sessionBodyScrollSnapshotRef.current = nextSnapshot;
+    if (!changedSessionIds.length) {
+      return;
+    }
+
+    const scrollChangedBodies = () => {
+      changedSessionIds.forEach((sessionId) => {
+        const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+        if (body) {
+          body.scrollTop = body.scrollHeight;
+          sessionBodyScrollPositionRef.current[sessionId] = {
+            scrollTop: body.scrollTop,
+            scrollHeight: body.scrollHeight,
+          };
+        }
+      });
+    };
+
+    scrollChangedBodies();
+    const frame = window.requestAnimationFrame(scrollChangedBodies);
+    const timeout = window.setTimeout(scrollChangedBodies, 180);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [chatMainRef, openSessions, sessionMessagesById, sessionToolCallsById, visibleSessionStreamCounts]);
+
+  useEffect(() => {
+    if (!shouldAnchorActiveParallelCard || !activeSession?.id) {
+      return;
+    }
+    const anchorActiveCard = () => {
+      const chatMain = chatMainRef.current;
+      const activeCard = chatMain?.querySelector<HTMLElement>('[data-active-session-card="true"]');
+      if (!chatMain || !activeCard) {
+        return;
+      }
+      const chatMainTop = chatMain.getBoundingClientRect().top;
+      const activeCardTop = activeCard.getBoundingClientRect().top;
+      chatMain.scrollTop += activeCardTop - chatMainTop;
+    };
+    const frame = window.requestAnimationFrame(anchorActiveCard);
+    const timeout = window.setTimeout(anchorActiveCard, 160);
+    const lateTimeout = window.setTimeout(anchorActiveCard, 800);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
+    };
+  }, [activeSession?.id, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
@@ -276,9 +433,12 @@ export function MissionChatPane({
         </div>
       </div>
       <div
-        className="chat-main flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className={cn(
+          "chat-main flex-1 w-full overflow-x-hidden min-h-0 relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          shouldLockChatMainScroll ? "overflow-y-clip" : "overflow-y-auto",
+        )}
         ref={chatMainRef}
-        onScroll={onChatMainScroll}
+        onScroll={handleChatMainScrollEvent}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -299,82 +459,44 @@ export function MissionChatPane({
           isSingleSession && singleSession ? (
             <SessionCard
               session={singleSession}
-              active={singleSession.id === activeSession?.id}
+              active={singleSession.id === selectedSessionId}
               flat
-              onFocus={onFocusSession}
-              onClose={onClearSession}
+              bodyScrollSnapshot={sessionBodyScrollPositionRef.current[singleSession.id]}
+              onBodyScroll={(event) => {
+                sessionBodyScrollPositionRef.current[singleSession.id] = {
+                  scrollTop: event.currentTarget.scrollTop,
+                  scrollHeight: event.currentTarget.scrollHeight,
+                };
+              }}
+              onFocus={onSelectSessionView}
+              onClose={onCloseSessionView}
             >
-              {singleSession.id === activeSession?.id ? (
-                <>
-                  {activeSessionMessages.length ? (
-                    <MissionMessageTimeline
-                      items={activeSessionMessages}
-                      thinkingToolCalls={thinkingToolCalls}
-                      boundaryTimestamps={boundaryTimestamps}
-                      sessionId={singleSession.id}
-                      assistantLabel={singleSession.agentName}
-                      copy={copy}
-                      expandedMessageIds={expandedMessageIds}
-                      historyStateBySession={messageHistoryState}
-                      activityHistoryStateBySession={activityHistoryState}
-                      onLoadOlderMessages={onLoadOlderMessages}
-                      onToggleExpandedMessage={onToggleExpandedMessage}
-                    />
-                  ) : (
-                    <SessionPreviewMessages session={singleSession} restoring />
-                  )}
-                  {activityLoading ? (
-                    <MissionToolLoading
-                      activity={activityLoading}
-                      pendingToolPresent={pendingToolPresent}
-                    />
-                  ) : null}
-                </>
-              ) : null}
+              {renderSessionStream(singleSession)}
             </SessionCard>
           ) : (
             <div
-              className="mission-session-grid grid gap-2 p-2"
-              style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
-                gridAutoRows: "minmax(360px, 480px)",
-              }}
+              className={cn(
+                "mission-session-grid grid box-border gap-2 p-2",
+                parallelGridCompact ? "h-full min-h-0 overflow-hidden" : "min-h-full",
+              )}
+              style={parallelGridStyle}
             >
               {openSessions.map((session) => (
                 <SessionCard
                   key={session.id}
                   session={session}
-                  active={session.id === activeSession?.id}
-                  onFocus={onFocusSession}
-                  onClose={onClearSession}
+                  active={session.id === selectedSessionId}
+                  bodyScrollSnapshot={sessionBodyScrollPositionRef.current[session.id]}
+                  onBodyScroll={(event) => {
+                    sessionBodyScrollPositionRef.current[session.id] = {
+                      scrollTop: event.currentTarget.scrollTop,
+                      scrollHeight: event.currentTarget.scrollHeight,
+                    };
+                  }}
+                  onFocus={onSelectSessionView}
+                  onClose={onCloseSessionView}
                 >
-                  {session.id === activeSession?.id ? (
-                    <>
-                      {activeSessionMessages.length ? (
-                        <MissionMessageTimeline
-                          items={activeSessionMessages}
-                          thinkingToolCalls={thinkingToolCalls}
-                          boundaryTimestamps={boundaryTimestamps}
-                          sessionId={session.id}
-                          assistantLabel={session.agentName}
-                          copy={copy}
-                          expandedMessageIds={expandedMessageIds}
-                          historyStateBySession={messageHistoryState}
-                          activityHistoryStateBySession={activityHistoryState}
-                          onLoadOlderMessages={onLoadOlderMessages}
-                          onToggleExpandedMessage={onToggleExpandedMessage}
-                        />
-                      ) : (
-                        <SessionPreviewMessages session={session} restoring />
-                      )}
-                      {activityLoading ? (
-                        <MissionToolLoading
-                          activity={activityLoading}
-                          pendingToolPresent={pendingToolPresent}
-                        />
-                      ) : null}
-                    </>
-                  ) : null}
+                  {renderSessionStream(session)}
                 </SessionCard>
               ))}
             </div>
@@ -411,6 +533,8 @@ export function MissionChatPane({
 function SessionCard({
   session,
   active,
+  bodyScrollSnapshot,
+  onBodyScroll,
   onFocus,
   onClose,
   flat = false,
@@ -418,6 +542,8 @@ function SessionCard({
 }: {
   session: SessionSummary;
   active: boolean;
+  bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
+  onBodyScroll: UIEventHandler<HTMLDivElement>;
   onFocus: (sessionId: string) => void;
   onClose: (session: SessionSummary) => void;
   flat?: boolean;
@@ -425,12 +551,30 @@ function SessionCard({
 }) {
   const isStreaming = session.status === "running";
   const statusTone = resolveSessionStatusTone(session.status);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+    if (bodyScrollSnapshot) {
+      body.scrollTop = Math.min(
+        bodyScrollSnapshot.scrollTop,
+        Math.max(body.scrollHeight - body.clientHeight, 0),
+      );
+      return;
+    }
+    body.scrollTop = Math.max(body.scrollHeight - body.clientHeight, 0);
+  }, [bodyScrollSnapshot]);
+
   return (
     <article
       onClick={() => onFocus(session.id)}
+      data-active-session-card={active ? "true" : undefined}
       className={cn(
-        "flex flex-col overflow-hidden",
-        flat ? "h-full bg-surface" : "bg-surface rounded-[8px] transition-all cursor-default",
+        "flex flex-col overflow-hidden [contain:layout_paint]",
+        flat ? "h-full bg-surface" : "h-full min-h-0 bg-surface rounded-[8px] transition-all cursor-default",
       )}
       style={
         flat
@@ -472,15 +616,24 @@ function SessionCard({
           <Icon name="x" size={11} />
         </button>
       </div>
-      <div className={cn("flex flex-1 flex-col gap-3 overflow-auto", flat ? "px-5 py-3" : "px-5 py-3")}>
-        {active ? (
-          <div className="space-y-3">{children}</div>
-        ) : (
-          <SessionPreviewMessages session={session} />
-        )}
+      <div
+        ref={bodyRef}
+        onScroll={onBodyScroll}
+        className={cn("flex flex-1 min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", flat ? "px-5 py-3" : "px-5 py-3")}
+        data-session-card-body={session.id}
+      >
+        <div className="space-y-3">{children}</div>
       </div>
     </article>
   );
+}
+
+function splitMissionToolCalls(toolCalls: AgentToolCall[]) {
+  return {
+    thinkingToolCalls: toolCalls.filter((toolCall) => toolCall.kind === "think"),
+    timelineToolCalls: toolCalls.filter((toolCall) => toolCall.kind !== "think"),
+    boundaryTimestamps: toolCalls.map((toolCall) => toolCall.timestamp),
+  };
 }
 
 function SessionPreviewMessages({ session, restoring = false }: { session: SessionSummary; restoring?: boolean }) {
@@ -511,7 +664,7 @@ function SessionPreviewMessages({ session, restoring = false }: { session: Sessi
           {restoring ? <StatusDot tone="primary" pulse size={5} /> : null}
         </header>
         <div className="space-y-2 text-section leading-relaxed text-muted-foreground">
-          <p>{restoring ? "正在恢复 ACP 会话，恢复成功后即可继续对话。" : "已保存此任务，点击卡片可切换并恢复上下文。"}</p>
+          <p>{restoring ? "正在加载 ACP 信息流，恢复成功后会继续同步输出。" : "此任务的信息流已保留在并行卡片中，切换焦点不会丢失当前上下文。"}</p>
         </div>
       </article>
     </div>

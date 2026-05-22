@@ -35,6 +35,7 @@ import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
+  contextSession?: SessionSummary | null;
   worktreePickerRef: MutableRefObject<HTMLDivElement | null>;
   worktreePickerOpen: boolean;
   setWorktreePickerOpen: Dispatch<SetStateAction<boolean>>;
@@ -114,6 +115,7 @@ type MissionComposerProps = {
 };
 export function MissionComposer({
   activeSession,
+  contextSession,
   worktreePickerRef,
   worktreePickerOpen,
   setWorktreePickerOpen,
@@ -192,23 +194,26 @@ export function MissionComposer({
     ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked
     : modelConfigMissing || draftModelLoading || modelSettingsLocked;
   const showInterruptOnly = Boolean(activeSession && sessionCanCancel);
+  const composerSession = contextSession ?? activeSession;
+  const composerProjectLabel = composerSession?.projectName ?? selectedWorktreeName;
+  const composerAgentLabel = composerSession?.agentName ?? selectedDraftAgent?.name ?? "未选择 ACP";
 
 
   return (
     <div
-      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost p-2 bg-surface"
+      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost px-2 py-1.5 bg-surface"
       data-mission-swipe-lock="true"
       data-testid="mission-composer"
     >
       <form
-        className="chat-input-form mission-composer-deck wb-pane-sunken p-2 max-w-[1080px] mx-auto grid gap-2"
+        className="chat-input-form mission-composer-deck wb-pane-sunken px-2 py-1.5 w-full max-w-[min(1120px,calc(100%_-_32px))] mx-auto grid gap-1.5"
         onSubmit={submitPrompt}
         data-testid="composer-form"
       >
         <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
           <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
             <Icon name="folder" size={10} />
-            <span className="truncate">{selectedWorktreeName}</span>
+            <span className="truncate">{composerProjectLabel}</span>
           </button>
           {currentGitBranch ? (
             <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
@@ -217,11 +222,11 @@ export function MissionComposer({
             </button>
           ) : null}
           <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
-            <Icon name="terminal" size={10} />
-            <span className="truncate">{selectedDraftAgent?.name ?? "未选择 Agent"}</span>
+            <Icon name="server" size={10} />
+            <span className="truncate">{composerAgentLabel}</span>
           </button>
           <span className="ml-1 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground tabular">
-            → {activeSession?.title ?? draftPromptPlaceholder}
+            → {composerSession?.title ?? draftPromptPlaceholder}
           </span>
         </div>
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
@@ -238,8 +243,8 @@ export function MissionComposer({
             onKeyDown={handleMissionPromptKeyDown}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
-            rows={3}
-            className="min-h-[72px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+            rows={2}
+            className="min-h-[48px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
             data-testid="composer-input"
           />
           {slashPopupOpen ? (
@@ -350,12 +355,10 @@ export function MissionComposer({
             ) : null}
           </div>
           <MissionStatusBar
+            className="col-start-2 justify-self-center pointer-events-none w-fit max-w-[min(18rem,50%)] rounded bg-surface-sunken/80 px-2 py-0.5 text-center shadow-sm"
             modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
           />
-          <span className="hidden min-w-0 truncate font-mono text-2xs text-muted-foreground tabular sm:block">
-            esc 取消 · ↑ 历史
-          </span>
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button

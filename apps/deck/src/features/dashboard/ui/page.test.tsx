@@ -32,6 +32,15 @@ test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals lay
   assert.match(html, /Allow/);
 });
 
+test("DashboardPage mobile keeps v6 priority order", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
+
+  assert.match(html, /grid grid-cols-2 gap-2 mb-3/);
+  assert.match(html, /待审批[\s\S]*Helm 矩阵[\s\S]*活动流/);
+  assert.match(html, /管理 ›/);
+  assert.match(html, /24h/);
+});
+
 test("DashboardPage uses shared v6 pane primitives and no redesign mock imports", () => {
   assert.match(pageSource, /wb-pane/);
   assert.match(pageSource, /Sparkline/);

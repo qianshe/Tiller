@@ -15,6 +15,7 @@ export function usePanelPages() {
     readMissionPanelPages(),
   );
   const [selectedPageId, setSelectedPageId] = useState("overview");
+  const [openedDiffFilePaths, setOpenedDiffFilePaths] = useState<string[]>([]);
   const [selectedDiffFilePath, setSelectedDiffFilePath] = useState<
     string | null
   >(null);
@@ -77,10 +78,29 @@ export function usePanelPages() {
     }
   }
 
+  function openDiffFile(path: string) {
+    setOpenedDiffFilePaths((current) =>
+      current.includes(path) ? current : [...current, path],
+    );
+    setSelectedDiffFilePath(path);
+    setSelectedPageId("diff-detail");
+  }
+
+  function closeDiffFile(path: string) {
+    setOpenedDiffFilePaths((current) => {
+      const next = current.filter((item) => item !== path);
+      if (selectedDiffFilePath === path) {
+        setSelectedDiffFilePath(next.at(-1) ?? null);
+      }
+      return next;
+    });
+  }
+
   return {
     customPages,
     selectedPageId,
     setSelectedPageId,
+    openedDiffFilePaths,
     selectedDiffFilePath,
     setSelectedDiffFilePath,
     collapsedDiffDirectories,
@@ -91,5 +111,7 @@ export function usePanelPages() {
     renamePage,
     movePage,
     deletePage,
+    openDiffFile,
+    closeDiffFile,
   };
 }

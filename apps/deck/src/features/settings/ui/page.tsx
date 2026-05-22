@@ -1,23 +1,8 @@
 import type { RefObject } from "react";
 import { useState } from "react";
-import {
-  Button,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Switch,
-  Icon,
-} from "@/shared/ui";
+import { Button, Switch, Icon } from "@/shared/ui";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
-import type {
-  DeckLanguage,
-  DeckPreferences,
-  DeckTheme,
-  TechnicalPanelPreferences,
-} from "../../preferences";
+import type { DeckPreferences, TechnicalPanelPreferences } from "../../preferences";
 import { resolveSettingsCopy } from "../utils/copy";
 import { PromptEnhancerCard } from "./prompt-enhancer-card";
 import { SettingsNavigation } from "./settings-navigation";
@@ -104,7 +89,7 @@ export function SettingsPage({
 
   const renderDetailContent = () => {
     return (
-      <div className="max-w-[720px]">
+      <div className="max-w-[640px]">
         {activeSection === "appearance" ? (
           <SettingsSectionFrame id={appearance.id} label={appearance.label} desc={appearance.desc}>
             <SettingsRow label={settingsCopy.themeLabel} desc="保留 system / light / dark / tiller 四种现有偏好值。">
@@ -187,7 +172,7 @@ export function SettingsPage({
 
         {activeSection === "language" ? (
           <SettingsSectionFrame id={language.id} label={language.label} desc={language.desc}>
-            <SettingsRow label={settingsCopy.languageLabel} desc="Deck 界面语言，不影响后端运行时。">
+            <SettingsRow label={settingsCopy.languageLabel} desc="切换会即时生效">
               <div className="flex flex-wrap gap-2">
                 {(["zh-CN", "en-US"] as const).map((lang) => {
                   const active = deckPreferences.language === lang;
@@ -208,7 +193,7 @@ export function SettingsPage({
                 })}
               </div>
             </SettingsRow>
-            <SettingsRow label="时间格式" desc="影响 mission 时间戳 / activity timeline。">
+            <SettingsRow label="时间格式" desc="影响 mission 时间戳 / activity timeline">
               <div className="flex flex-wrap gap-2">
                 {(["relative", "absolute"] as const).map((f) => {
                   const active = deckPreferences.timeFormat === f;
@@ -238,7 +223,7 @@ export function SettingsPage({
 
         {activeSection === "motion" ? (
           <SettingsSectionFrame id={motion.id} label={motion.label} desc={motion.desc}>
-            <SettingsRow label={settingsCopy.reduceMotion} desc={settingsCopy.motionEyebrow}>
+            <SettingsRow label="减少动效" desc="禁用 streaming pulse / drawer slide / fade transitions">
               <Switch
                 checked={deckPreferences.reduceMotion}
                 onCheckedChange={(checked) =>
@@ -250,44 +235,37 @@ export function SettingsPage({
         ) : null}
 
         {activeSection === "panels" ? (
-          <SettingsSectionFrame id={panels.id} label={panels.label} desc={settingsCopy.technicalTitle}>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <TechnicalSwitch
+          <SettingsSectionFrame id={panels.id} label={panels.label} desc={panels.desc}>
+            <SettingsRow label={settingsCopy.logbookOpen} desc="mission 进入时即可见工具调用列表">
+              <Switch
                 checked={technicalPanels.logbookDefaultOpen}
-                label={settingsCopy.logbookOpen}
-                onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("logbookDefaultOpen", checked)
-                }
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("logbookDefaultOpen", checked)}
               />
-              <TechnicalSwitch
+            </SettingsRow>
+            <SettingsRow label={settingsCopy.diffOpen} desc="mission 进入时即可见 patch 列表">
+              <Switch
                 checked={technicalPanels.diffDefaultOpen}
-                label={settingsCopy.diffOpen}
-                onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("diffDefaultOpen", checked)
-                }
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("diffDefaultOpen", checked)}
               />
-              <TechnicalSwitch
+            </SettingsRow>
+            <SettingsRow label={settingsCopy.runtimeMeta} desc="PID / Working dir / Spawn args">
+              <Switch
                 checked={technicalPanels.showSessionRuntimeMeta}
-                label={settingsCopy.runtimeMeta}
-                onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("showSessionRuntimeMeta", checked)
-                }
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("showSessionRuntimeMeta", checked)}
               />
-              <TechnicalSwitch
+            </SettingsRow>
+            <SettingsRow label={settingsCopy.permissionWorktree} desc="权限弹窗附加 cwd / scope 说明">
+              <Switch
                 checked={technicalPanels.showPermissionWorktree}
-                label={settingsCopy.permissionWorktree}
-                onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("showPermissionWorktree", checked)
-                }
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("showPermissionWorktree", checked)}
               />
-              <TechnicalSwitch
+            </SettingsRow>
+            <SettingsRow label={settingsCopy.connectionDebug} desc="WebSocket / RPC raw 帧">
+              <Switch
                 checked={technicalPanels.showConnectionDebug}
-                label={settingsCopy.connectionDebug}
-                onCheckedChange={(checked) =>
-                  updateTechnicalPanelPreference("showConnectionDebug", checked)
-                }
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("showConnectionDebug", checked)}
               />
-            </div>
+            </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
 
@@ -315,11 +293,11 @@ export function SettingsPage({
         {activeSection === "privacy" ? (
           <SettingsSectionFrame id={privacy.id} label={privacy.label} desc={privacy.desc}>
             <SettingsRow label="数据目录" desc="所有会话 / 配置 / 设备凭据保存路径">
-              <span className="font-mono text-action text-muted-foreground tabular">~/.config/tiller</span>
+              <span className="font-mono text-2xs text-muted-foreground tabular">~/.config/tiller</span>
             </SettingsRow>
             <SettingsRow label="日志保留" desc="单文件 ≤ 5MB · 滚动 5 份">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-action text-muted-foreground tabular mr-2">默认</span>
+                <span className="font-mono text-2xs text-muted-foreground tabular">默认</span>
                 <Button variant="outline" size="sm" className="h-6 px-2 text-2xs hover:bg-surface-sunken" onClick={handleOpenLogDir}>
                   打开日志目录
                 </Button>
@@ -328,20 +306,15 @@ export function SettingsPage({
             <SettingsRow label="不记录 assistant 正文" desc="Helm 默认行为 · 排查时直接读 sessions.sqlite">
               <Switch checked={noRecordAssistant} onCheckedChange={setNoRecordAssistant} />
             </SettingsRow>
-            <SettingsRow label="重置偏好与数据" desc="清空浏览器本地缓存的偏好，重置提示词增强、主题和技术面板的所有设置。">
-              <Button variant="outline" size="sm" type="button" onClick={resetDeckPreferences} className="text-destructive hover:bg-destructive/10">
-                清空本地数据
-              </Button>
-            </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
 
         {activeSection === "about" ? (
           <SettingsSectionFrame id={about.id} label={about.label} desc={about.desc}>
             <SettingsRow label="版本" desc="release channel · preview">
-              <span className="font-mono text-action text-muted-foreground tabular">v0.6.0-radial · @qianshe/tiller@preview</span>
+              <span className="font-mono text-2xs text-muted-foreground tabular">@qianshe/tiller@preview</span>
             </SettingsRow>
-            <SettingsRow label="许可证" desc="Apache License 2.0 / MIT">
+            <SettingsRow label="许可证" desc="Apache License 2.0">
               <Button variant="outline" size="sm" className="h-6 px-2 text-2xs hover:bg-surface-sunken" onClick={() => window.open("https://www.apache.org/licenses/LICENSE-2.0.html", "_blank")}>
                 查看
               </Button>
@@ -350,17 +323,6 @@ export function SettingsPage({
               <Button variant="outline" size="sm" className="h-7 px-3 text-action bg-primary text-on-primary hover:bg-primary-strong" onClick={handleCheckUpdates}>
                 立即检查
               </Button>
-            </SettingsRow>
-            <SettingsRow label="开源与社区" desc="Tiller 采用 Apache 2.0 / MIT 协议开源。欢迎贡献代码。">
-              <a
-                href="https://github.com/qianshe/Tiller"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1.5 rounded border border-border-ghost bg-surface px-2.5 py-1 text-meta text-muted-foreground hover:bg-surface-sunken hover:text-foreground transition-all"
-              >
-                <Icon name="sparkle" size={12} />
-                GitHub: qianshe/Tiller
-              </a>
             </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
@@ -375,8 +337,8 @@ export function SettingsPage({
           <div className="wb-pane-head px-3">
             <span className="wb-pane-head-eyebrow">设置</span>
           </div>
-          <div className="flex-1 overflow-auto p-2">
-            <div className="grid gap-2">
+          <div className="flex-1 overflow-auto p-1">
+            <div className="grid gap-0">
               {SETTINGS_SECTIONS.map((section) => (
                 <button
                   key={section.id}
@@ -385,16 +347,14 @@ export function SettingsPage({
                     setActiveSection(section.id);
                     setMobileScreen("detail");
                   }}
-                  className="wb-pane-sunken flex items-center gap-3 p-3 text-left w-full transition-colors hover:bg-surface-sunken"
+                  className="flex h-12 w-full items-center gap-2.5 rounded px-2 text-left transition-colors hover:bg-surface-sunken active:bg-surface-emphasis"
                 >
-                  <div className="flex h-7 w-7 items-center justify-center rounded bg-surface-sunken text-muted-foreground">
-                    <Icon name={section.icon} size={14} />
-                  </div>
+                  <Icon name={section.icon} size={16} className="text-muted-foreground" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-section font-medium text-foreground">{section.label}</div>
-                    <div className="text-meta text-muted-foreground truncate">{section.desc}</div>
+                    <div className="text-[14px] text-foreground">{section.label}</div>
+                    <div className="text-2xs text-muted-foreground truncate">{section.desc}</div>
                   </div>
-                  <Icon name="chevronRight" size={12} className="text-muted-foreground" />
+                  <Icon name="chevronRight" size={14} className="text-muted-foreground" />
                 </button>
               ))}
             </div>
@@ -449,24 +409,5 @@ export function SettingsPage({
         </div>
       </section>
     </section>
-  );
-}
-
-type TechnicalSwitchProps = {
-  checked: boolean;
-  label: string;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-function TechnicalSwitch({
-  checked,
-  label,
-  onCheckedChange,
-}: TechnicalSwitchProps) {
-  return (
-    <Label className="flex items-center gap-3 rounded-md bg-surface-sunken px-3 py-2">
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
-      <span>{label}</span>
-    </Label>
   );
 }

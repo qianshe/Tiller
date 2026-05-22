@@ -25,6 +25,7 @@ type MissionDisplaySectionProps = {
   overviewItems: string[];
   runtimeOverviewItems: RuntimeOverviewItem[];
   currentModelSummary?: string | null;
+  openedDiffFilePaths: string[];
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
@@ -46,6 +47,9 @@ type MissionDisplaySectionProps = {
   onRenamePage: (pageId: string, title: string) => void;
   onMovePage: (pageId: string, direction: -1 | 1) => void;
   onDeletePage: (pageId: string) => void;
+  onOpenDiffDetail: (path: string) => void;
+  onCloseDiffFile: (path: string) => void;
+  onCollapse: () => void;
 };
 
 /**
@@ -58,6 +62,7 @@ export function MissionDisplaySection({
   overviewItems,
   runtimeOverviewItems,
   currentModelSummary,
+  openedDiffFilePaths,
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
@@ -79,6 +84,9 @@ export function MissionDisplaySection({
   onRenamePage,
   onMovePage,
   onDeletePage,
+  onOpenDiffDetail,
+  onCloseDiffFile,
+  onCollapse,
 }: MissionDisplaySectionProps) {
   return (
     <MissionDisplayPanel
@@ -88,6 +96,7 @@ export function MissionDisplaySection({
       overviewItems={overviewItems}
       runtimeOverviewItems={runtimeOverviewItems}
       currentModelSummary={currentModelSummary}
+      openedDiffFilePaths={openedDiffFilePaths}
       selectedDiffFilePath={selectedDiffFilePath}
       diffs={diffs}
       noDiffSummary={noDiffSummary}
@@ -113,6 +122,9 @@ export function MissionDisplaySection({
       onRenamePage={onRenamePage}
       onMovePage={onMovePage}
       onDeletePage={onDeletePage}
+      onOpenDiffDetail={onOpenDiffDetail}
+      onCloseDiffFile={onCloseDiffFile}
+      onCollapse={onCollapse}
     />
   );
 }

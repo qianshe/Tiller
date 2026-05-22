@@ -15,7 +15,10 @@
       "Bash(pnpm typecheck *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git tag *)"
+      "Bash(git tag *)",
+      "Bash(pnpm --filter @tiller/deck typecheck)",
+      "Bash(pnpm --filter @tiller/deck test)",
+      "Bash(pnpm --filter @tiller/deck lint)"
     ],
     "defaultMode": "bypassPermissions"
   }

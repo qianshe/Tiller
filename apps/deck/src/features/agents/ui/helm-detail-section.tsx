@@ -148,8 +148,8 @@ export function HelmDetailSection({
             <Icon name="chevronLeft" size={12} />
           </Button>
         )}
-        <Icon name="server" size={13} className="text-muted-foreground" />
-        <span className="text-section font-medium text-foreground">{selectedHelm.name}</span>
+        <Icon name="server" size={12} className="text-muted-foreground" />
+        <span className="font-mono text-2xs tabular text-foreground">{selectedHelm.name}</span>
         <StatusDot
           tone={selectedHelmIsConnected ? "active" : selectedHelmConnection === "connecting" ? "primary" : "idle"}
           pulse={selectedHelmIsConnected || selectedHelmConnection === "connecting"}

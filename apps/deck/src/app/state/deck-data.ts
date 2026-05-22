@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
+  AgentMessage,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -62,6 +63,8 @@ export function useDeckData(missionVisualFixture: any) {
   const setStatuses = useDeckStore((state) => state.setStatuses);
 
   const setMessages = useDeckStore((state) => state.setMessages);
+  const storedMessages = useDeckStore((state) => state.messages);
+  const messages = (missionVisualFixture?.messages ?? storedMessages) as Record<string, AgentMessage[]>;
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
@@ -167,6 +170,7 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionHistoryState,
     statuses,
     setStatuses,
+    messages,
     setMessages,
     messageHistoryState,
     setMessageHistoryState,

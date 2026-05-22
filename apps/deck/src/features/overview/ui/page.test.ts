@@ -28,6 +28,8 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.doesNotMatch(pageSource, /buildOverviewMetrics/);
   assert.doesNotMatch(pageSource, /landing-hero-mobile/);
   assert.doesNotMatch(pageSource, /landing-copy-mobile/);
+  assert.doesNotMatch(stylesSource, /\.landing-hero-mobile/);
+  assert.doesNotMatch(stylesSource, /\.landing-copy-mobile/);
   assert.doesNotMatch(pageSource, /recent\.length === 0/);
   assert.doesNotMatch(pageSource, /wb-pane[\s\S]*最近任务/);
 
@@ -41,8 +43,16 @@ test("overview page uses the starship landing hero treatment", () => {
   );
   assert.doesNotMatch(stylesSource, /\.shell\.view-overview/);
   assert.match(stylesSource, /\.landing-hero \{/);
-  assert.match(stylesSource, /color: #f5f7fb;/);
-  assert.match(stylesSource, /background: linear-gradient\(180deg, rgb\(11 18 38 \/ 0\.32\)/);
+  assert.match(stylesSource, /color: #080d18;/);
+  assert.match(stylesSource, /background: linear-gradient\(180deg, rgb\(248 250 252 \/ 0\)/);
+  assert.match(stylesSource, /body\[data-theme="light"\] \.landing-hero::before/);
+  assert.match(stylesSource, /body\[data-theme="light"\] \.landing-eyebrow/);
+  assert.match(stylesSource, /body\[data-theme="light"\] \.landing-hero h1/);
+  assert.match(stylesSource, /body\[data-theme="light"\] \.landing-copy/);
+  assert.match(stylesSource, /body\[data-theme="dark"\] \.landing-hero::before/);
+  assert.match(stylesSource, /rgb\(7 11 24 \/ 0\.42\)/);
+  assert.match(stylesSource, /body\[data-theme="tiller"\] \.landing-hero::before/);
+  assert.match(stylesSource, /rgb\(11 18 38 \/ 0\.32\)/);
   assert.doesNotMatch(stylesSource, /\.shell\.theme-light \.landing-hero h1/);
   assert.doesNotMatch(stylesSource, /\.shell\.theme-light \.landing-copy/);
   assert.match(stylesSource, /align-items: start;/);
@@ -60,4 +70,5 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(stylesSource, /@media \(max-width: 720px\)/);
   assert.match(stylesSource, /\.landing-hero\s*{[^}]*align-content:\s*center;[^}]*padding:\s*20px 16px 24px;/s);
   assert.match(stylesSource, /\.landing-hero-content\s*{[^}]*padding-top:\s*0;[^}]*transform:\s*translateY\(-4vh\);/s);
+  assert.match(stylesSource, /\.landing-github-link-mobile\s*{[^}]*position:\s*absolute;[^}]*top:\s*24px;[^}]*left:\s*16px;[^}]*z-index:\s*4;/s);
 });

@@ -1,16 +1,9 @@
 import type { RefObject } from "react";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Input,
-  Label,
-} from "@/shared/ui";
+import { Button, Input } from "@/shared/ui";
 import { cn } from "@/shared/utils/cn";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import type { DeckPreferences } from "../../preferences";
+import { SettingsRow } from "./settings-section-frame";
 
 type PromptEnhancerCardProps = {
   deckPreferences: DeckPreferences;
@@ -51,51 +44,42 @@ export function PromptEnhancerCard({
   testSelectedModel,
 }: PromptEnhancerCardProps) {
   return (
-    <Card className="grid content-start gap-[18px] overflow-visible p-4 shadow-card lg:col-span-3">
-      <CardHeader className="p-0">
-        <p className="eyebrow">提示词增强</p>
-        <CardTitle>LLM 增强器</CardTitle>
-      </CardHeader>
-      <CardContent className="grid items-start gap-4 p-0 min-[980px]:grid-cols-2">
-        <Label className="grid gap-2">
-          <span>OpenAI-compatible Base URL</span>
-          <Input
-            value={deckPreferences.promptEnhancer.llm.baseUrl}
-            onChange={(event) =>
-              updateLlmPreference("baseUrl", event.target.value)
-            }
-            placeholder="http://localhost:8317"
-          />
-        </Label>
-        <Label className="grid gap-2">
-          <span>增强模型</span>
-          <PromptModelPicker
-            busy={busy}
-            currentModel={deckPreferences.promptEnhancer.llm.model}
-            filter={modelFilter}
-            models={models}
-            open={modelPickerOpen}
-            pickerRef={pickerRef}
-            refreshModels={refreshModels}
-            selectModel={selectModel}
-            setFilter={setModelFilter}
-            setOpen={setModelPickerOpen}
-            updateModelInput={updateModelInput}
-          />
-        </Label>
-        <Label className="grid gap-2 md:col-span-2">
-          <span>API Key</span>
-          <Input
-            type="password"
-            value={deckPreferences.promptEnhancer.llm.apiKey}
-            onChange={(event) =>
-              updateLlmPreference("apiKey", event.target.value)
-            }
-            placeholder="sk-..."
-            autoComplete="off"
-          />
-        </Label>
-        <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+    <div className="grid max-w-[640px] gap-0">
+      <SettingsRow label="OpenAI-compatible Base URL" desc="发送前用 LLM 改写 / 补全你的 prompt">
+        <Input
+          className="min-w-0 max-w-[320px]"
+          value={deckPreferences.promptEnhancer.llm.baseUrl}
+          onChange={(event) => updateLlmPreference("baseUrl", event.target.value)}
+          placeholder="http://localhost:8317"
+        />
+      </SettingsRow>
+      <SettingsRow label="增强模型" desc="从已知模型选择或手动输入">
+        <PromptModelPicker
+          busy={busy}
+          currentModel={deckPreferences.promptEnhancer.llm.model}
+          filter={modelFilter}
+          models={models}
+          open={modelPickerOpen}
+          pickerRef={pickerRef}
+          refreshModels={refreshModels}
+          selectModel={selectModel}
+          setFilter={setModelFilter}
+          setOpen={setModelPickerOpen}
+          updateModelInput={updateModelInput}
+        />
+      </SettingsRow>
+      <SettingsRow label="API Key" desc="OpenAI / Anthropic / 自定义 base URL">
+        <Input
+          className="min-w-0 max-w-[320px]"
+          type="password"
+          value={deckPreferences.promptEnhancer.llm.apiKey}
+          onChange={(event) => updateLlmPreference("apiKey", event.target.value)}
+          placeholder="sk-..."
+          autoComplete="off"
+        />
+      </SettingsRow>
+      <SettingsRow label="测试连接" desc="发送一次 ping 验证密钥与配额">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="secondary"
             type="button"
@@ -108,8 +92,8 @@ export function PromptEnhancerCard({
             <span className="text-sm font-medium text-success">{status}</span>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+      </SettingsRow>
+    </div>
   );
 }
 

@@ -1,10 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall } from "@tiller/shared";
-import { Button } from "../../../shared/ui";
+import { Badge, Button, Icon, type TillerIconName } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
-import { coalesceDisplayMessages, sortAgentMessagesByTimeline } from "../../logbook";
+import { coalesceDisplayMessages, groupToolCalls, sortAgentMessagesByTimeline, type ConversationToolCallItem } from "../../logbook";
+import { resolveToolCallTone } from "../../logbook/tool-call-tone";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -14,6 +15,7 @@ type PlainMessagesProps = {
   sessionId: string | null;
   items: AgentMessage[];
   thinkingToolCalls?: AgentToolCall[];
+  toolCalls?: AgentToolCall[];
   emptyText: string;
   assistantLabel: string;
   roleLabels: Record<AgentMessage["role"], string>;
@@ -28,6 +30,7 @@ export function PlainMessages({
   sessionId,
   items,
   thinkingToolCalls = [],
+  toolCalls = [],
   emptyText,
   assistantLabel,
   roleLabels,
@@ -52,8 +55,8 @@ export function PlainMessages({
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
-    () => buildPlainConversationItems(displayMessages, thinkingToolCalls),
-    [displayMessages, thinkingToolCalls],
+    () => buildPlainConversationItems(displayMessages, thinkingToolCalls, toolCalls),
+    [displayMessages, thinkingToolCalls, toolCalls],
   );
   const visibleItems = useMemo(
     () => displayItems.slice(-visibleMessageCount),
@@ -105,7 +108,7 @@ export function PlainMessages({
   }
 
   return (
-    <div ref={listRef} className="plain-message-list conversation-timeline grid gap-4">
+    <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_32px))] gap-4">
       {canLoadMoreMessages ? (
         <button
           className="secondary load-more-history rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:opacity-60"
@@ -119,6 +122,9 @@ export function PlainMessages({
       {visibleRenderMessages.map((renderItem) => {
         if (renderItem.kind === "thinking") {
           return <PlainThinkingItem key={renderItem.renderKey} item={renderItem.toolCall} />;
+        }
+        if (renderItem.kind === "tool-group") {
+          return <PlainToolGroupItem key={renderItem.renderKey} group={renderItem.group} />;
         }
 
         const isExpanded = expandedMessageIds.has(renderItem.message.id);
@@ -181,8 +187,8 @@ const PlainMessageItem = memo(function PlainMessageItem({
         `plain-${message.role}`,
         isStreaming && "plain-message-streaming",
         isAssistant
-          ? "mr-auto grid max-w-[min(820px,100%)] grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3"
-          : "ml-auto grid max-w-[min(720px,88%)] gap-2 rounded-2xl border border-border-ghost bg-surface-elevated p-3 shadow-ambient",
+          ? "mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3"
+          : "ml-auto grid max-w-[min(620px,72%)] justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
     >
@@ -208,8 +214,30 @@ const PlainMessageItem = memo(function PlainMessageItem({
             {roleLabel}
           </span>
         )}
+        {message.role === "user" && message.attachments?.length ? (
+          <div className="mission-message-attachments ml-auto grid w-fit max-w-full justify-self-end justify-items-end gap-2 sm:grid-cols-2">
+            {message.attachments.map((image, index) => (
+              <figure
+                key={`${message.id}-image-${index}`}
+                className="mission-message-image max-w-full overflow-hidden rounded-[12px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
+              >
+                <img
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt={image.name ?? `粘贴图片 ${index + 1}`}
+                  className="w-full object-contain"
+                />
+                <figcaption className="px-2 py-1 text-xs text-muted-foreground">
+                  {image.name ?? `粘贴图片 ${index + 1}`}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : null}
         <div
-          className={`${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`}
+          className={cn(
+            `${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`,
+            message.role === "user" && "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
+          )}
         >
           {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
         </div>
@@ -223,7 +251,7 @@ const PlainMessageItem = memo(function PlainMessageItem({
             {isExpanded ? "收起消息" : "展开完整消息"}
           </Button>
         ) : null}
-        {message.attachments?.length ? (
+        {message.role !== "user" && message.attachments?.length ? (
           <div className="mission-message-attachments grid gap-2 sm:grid-cols-2">
             {message.attachments.map((image, index) => (
               <figure
@@ -282,7 +310,7 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
   }, [isRunning]);
 
   return (
-    <div className="plain-thinking-row mr-auto grid w-full max-w-[min(820px,100%)] grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
+    <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
       <span aria-hidden="true" className="mt-1.5 inline-flex size-3 items-center justify-center text-muted-foreground/60">
         <PlainThinkingIcon />
       </span>
@@ -308,6 +336,157 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
       </details>
     </div>
   );
+}
+
+function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
+  const isRunning = group.some((item) => isActiveToolStatus(item.status));
+  const [open, setOpen] = useState(isRunning);
+  const summaryTitle = summarizeToolGroupTitle(group);
+  const groupBadgeLabel = resolveToolGroupBadgeLabel(group);
+  const groupIconName = resolveToolGroupIconName(group);
+
+  useEffect(() => {
+    setOpen(isRunning);
+  }, [isRunning]);
+
+  return (
+    <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
+      <span aria-hidden="true" className="mt-0.5 inline-flex size-3 items-center justify-center text-muted-foreground/60">
+        <Icon name={groupIconName} size={10} />
+      </span>
+      <details
+        className="plain-tool-group min-w-0 w-full text-muted-foreground"
+        data-tool-group-kind={groupBadgeLabel.toLowerCase()}
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary
+          className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 pr-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          aria-label={open ? "收起工具调用" : "展开工具调用"}
+        >
+          <span className="whitespace-nowrap font-medium text-muted-foreground">
+            工具调用 · {group.length} 项
+          </span>
+          <span className="min-w-0 truncate text-muted-foreground/70">
+            {summaryTitle}
+          </span>
+          {isRunning ? (
+            <span className="ml-auto shrink-0 rounded-sm bg-accent/10 px-1.5 py-0.5 text-2xs font-semibold text-accent">
+              运行中
+            </span>
+          ) : null}
+          <span aria-hidden="true" className="ml-auto shrink-0 text-2xs text-muted-foreground/50">
+            {open ? "⌃" : "⌄"}
+          </span>
+        </summary>
+        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-border-ghost pl-3.5 pr-1 text-sm text-muted-foreground" data-mission-swipe-lock="true">
+          {group.map((item) => (
+            <PlainToolCallItem key={item.id} item={item} />
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
+  const tone = resolveToolCallTone(item.toolKind, item.title);
+  const preview = item.text.trim() || formatToolInputPreview(item.input);
+  return (
+    <details
+      className="plain-tool-call grid gap-0.5 py-0.5 text-muted-foreground"
+      data-tool-kind={tone.label.toLowerCase()}
+    >
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className={cn("grid size-3 place-items-center rounded-sm", tone.className)}>
+          <Icon name={resolveToolCallIconName(tone.label)} size={9} />
+        </span>
+        <Badge
+          variant="secondary"
+          className={cn("h-4 shrink-0 rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+        >
+          {tone.label}
+        </Badge>
+        <strong className="min-w-0 truncate font-medium text-foreground">
+          {item.title}
+        </strong>
+        <span className="ml-auto shrink-0 text-2xs text-muted-foreground/60">
+          {resolveToolStatusLabel(item.status)}
+        </span>
+      </summary>
+      {preview ? (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+          {preview}
+        </pre>
+      ) : null}
+    </details>
+  );
+}
+
+function resolveToolCallIconName(label: string): TillerIconName {
+  if (label === "Read" || label === "Write" || label === "File") return "fileText";
+  if (label === "Search") return "search";
+  if (label === "Shell") return "terminal";
+  if (label === "Fetch") return "globe";
+  if (label === "MCP") return "server";
+  if (label === "Skill") return "sparkle";
+  if (label === "Todo") return "check";
+  if (label === "Subagent") return "message";
+  if (label === "Built-in") return "panel";
+  if (label === "Think") return "activity";
+  return "inspect";
+}
+
+function resolveToolGroupIconName(group: ConversationToolCallItem[]): TillerIconName {
+  const labels = resolveToolGroupLabels(group);
+  const firstLabel = labels[0] ?? "Tool";
+  if (labels.length === 1) {
+    return resolveToolCallIconName(firstLabel);
+  }
+  return "panel";
+}
+
+function resolveToolGroupBadgeLabel(group: ConversationToolCallItem[]): string {
+  const labels = resolveToolGroupLabels(group);
+  return labels[0] ?? "Tool";
+}
+
+function resolveToolGroupLabels(group: ConversationToolCallItem[]) {
+  const labels = group.map((item) => resolveToolCallTone(item.toolKind, item.title).label);
+  return Array.from(new Set(labels));
+}
+
+function summarizeToolGroupTitle(group: ConversationToolCallItem[]) {
+  return resolveToolGroupLabels(group).slice(0, 3).join(" / ");
+}
+
+function isActiveToolStatus(status: AgentToolCall["status"]) {
+  return status === "pending" || status === "running" || status === "waiting_for_permission";
+}
+
+function resolveToolStatusLabel(status: AgentToolCall["status"]) {
+  if (status === "completed") {
+    return "完成";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  if (status === "waiting_for_permission") {
+    return "等待授权";
+  }
+  return "运行中";
+}
+
+function formatToolInputPreview(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return trimmed;
+  }
 }
 
 function renderPlainMessageContent(
@@ -449,7 +628,8 @@ export function resolveVisiblePlainMessages(
 
 type PlainConversationItem =
   | { kind: "message"; timestamp: string; message: AgentMessage }
-  | { kind: "thinking"; timestamp: string; toolCall: AgentToolCall };
+  | { kind: "thinking"; timestamp: string; toolCall: AgentToolCall }
+  | { kind: "tool-group"; timestamp: string; group: ConversationToolCallItem[] };
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
@@ -464,6 +644,11 @@ type PlainMessageRenderItem =
       kind: "thinking";
       renderKey: string;
       toolCall: AgentToolCall;
+    }
+  | {
+      group: ConversationToolCallItem[];
+      kind: "tool-group";
+      renderKey: string;
     };
 
 export function resolvePlainMessageRenderItems(
@@ -480,6 +665,16 @@ export function resolvePlainMessageRenderItems(
         kind: "thinking",
         renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
         toolCall: item.toolCall,
+      };
+    }
+    if (item.kind === "tool-group") {
+      const baseKey = `tool-group-${item.group.map((tool) => tool.id).join("-")}`;
+      const seenCount = seenKeys.get(baseKey) ?? 0;
+      seenKeys.set(baseKey, seenCount + 1);
+      return {
+        group: item.group,
+        kind: "tool-group",
+        renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
       };
     }
 
@@ -526,7 +721,9 @@ function normalizePlainMessageRenderSource(
 function buildPlainConversationItems(
   messages: AgentMessage[],
   thinkingToolCalls: AgentToolCall[],
+  toolCalls: AgentToolCall[],
 ): PlainConversationItem[] {
+  const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
   const sorted = [
     ...messages.flatMap((message) => {
       const text = normalizeLocalCommandMessageText(message.text);
@@ -539,8 +736,31 @@ function buildPlainConversationItems(
       timestamp: toolCall.timestamp,
       toolCall,
     })),
+    ...groupToolCalls(visibleToolCalls).map((toolCall) => ({
+      kind: "tool-group" as const,
+      timestamp: toolCall.timestamp,
+      group: [toolCall],
+    })),
   ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-  return mergeAdjacentThinkingItems(sorted);
+  return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
+}
+
+function mergeAdjacentToolItems(
+  items: PlainConversationItem[],
+): PlainConversationItem[] {
+  return items.reduce<PlainConversationItem[]>((merged, item) => {
+    const last = merged.at(-1);
+    if (last?.kind !== "tool-group" || item.kind !== "tool-group") {
+      merged.push(item);
+      return merged;
+    }
+    merged[merged.length - 1] = {
+      kind: "tool-group",
+      timestamp: last.timestamp,
+      group: [...last.group, ...item.group],
+    };
+    return merged;
+  }, []);
 }
 
 function mergeAdjacentThinkingItems(

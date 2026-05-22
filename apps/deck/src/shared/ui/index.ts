@@ -57,6 +57,7 @@ export {
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./tooltip";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 export { ScrollArea, ScrollBar } from "./scroll-area";
+export { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "./resizable";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
 export { Icon, AgentIcon, StatusDot, type TillerIconName } from "./icon";

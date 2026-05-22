@@ -2,14 +2,14 @@
    Shell width / height / padding 由 .shell.v6-radial-shell 接管。 */
 .landing-hero {
   position: relative;
-  min-height: 100vh;
+  min-height: 100%;
   display: grid;
   grid-template-columns: 1fr;
   align-items: start;
   padding: clamp(72px, 9vh, 120px) clamp(24px, 4.2vw, 72px) clamp(40px, 8vh, 88px);
   overflow: hidden;
   background: url("/landing/command-deck-bg.png") center / cover no-repeat;
-  color: #f5f7fb;
+  color: #080d18;
   isolation: isolate;
 }
 
@@ -19,7 +19,43 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, rgb(11 18 38 / 0.32) 0%, rgb(11 18 38 / 0.5) 70%, rgb(11 18 38 / 0.72) 100%);
+  background: linear-gradient(180deg, rgb(248 250 252 / 0) 0%, rgb(248 250 252 / 0.18) 64%, rgb(248 250 252 / 0.36) 100%);
+}
+
+body[data-theme="light"] .landing-hero {
+  color: #080d18;
+}
+
+body[data-theme="light"] .landing-hero::before {
+  background: linear-gradient(
+    180deg,
+    rgb(248 250 252 / 0) 0%,
+    rgb(248 250 252 / 0.18) 64%,
+    rgb(248 250 252 / 0.36) 100%
+  );
+}
+
+body[data-theme="dark"] .landing-hero,
+body[data-theme="tiller"] .landing-hero {
+  color: #f5f7fb;
+}
+
+body[data-theme="dark"] .landing-hero::before {
+  background: linear-gradient(
+    180deg,
+    rgb(7 11 24 / 0.42) 0%,
+    rgb(7 11 24 / 0.58) 70%,
+    rgb(7 11 24 / 0.78) 100%
+  );
+}
+
+body[data-theme="tiller"] .landing-hero::before {
+  background: linear-gradient(
+    180deg,
+    rgb(11 18 38 / 0.32) 0%,
+    rgb(11 18 38 / 0.5) 70%,
+    rgb(11 18 38 / 0.72) 100%
+  );
 }
 
 .landing-hero-content {
@@ -51,6 +87,10 @@
   box-shadow: 0 0 16px rgb(96 165 250 / 0.72);
 }
 
+body[data-theme="light"] .landing-eyebrow {
+  color: #111827;
+}
+
 .landing-hero h1 {
   margin: 0;
   font-size: clamp(2.6rem, 4.6vw, 4.2rem);
@@ -59,12 +99,21 @@
   font-weight: 700;
 }
 
+body[data-theme="light"] .landing-hero h1 {
+  color: #050914;
+}
+
 .landing-copy {
   max-width: 620px;
   margin: 22px 0 0;
   font-size: clamp(0.94rem, 1.05vw, 1.05rem);
   line-height: 1.7;
   opacity: 0.86;
+}
+
+body[data-theme="light"] .landing-copy {
+  color: #3b4658;
+  opacity: 1;
 }
 
 .landing-actions {
@@ -106,13 +155,35 @@
 }
 
 .landing-secondary {
-  border: 1px solid rgb(226 232 240 / 0.24);
-  background: rgb(15 23 42 / 0.42);
-  color: #f5f7fb;
+  border: 1px solid rgb(100 116 139 / 0.32);
+  background: rgb(248 250 252 / 0.62);
+  color: #111827;
   backdrop-filter: blur(10px);
 }
 
 .landing-secondary:hover {
+  background: rgb(248 250 252 / 0.82);
+}
+
+body[data-theme="light"] .landing-secondary {
+  border-color: rgb(100 116 139 / 0.32);
+  background: rgb(248 250 252 / 0.62);
+  color: #111827;
+}
+
+body[data-theme="light"] .landing-secondary:hover {
+  background: rgb(248 250 252 / 0.82);
+}
+
+body[data-theme="dark"] .landing-secondary,
+body[data-theme="tiller"] .landing-secondary {
+  border-color: rgb(226 232 240 / 0.24);
+  background: rgb(15 23 42 / 0.42);
+  color: #f5f7fb;
+}
+
+body[data-theme="dark"] .landing-secondary:hover,
+body[data-theme="tiller"] .landing-secondary:hover {
   background: rgb(15 23 42 / 0.6);
 }
 
@@ -149,6 +220,10 @@
   line-height: 1;
 }
 
+body[data-theme="light"] .landing-meta-item dd {
+  color: #050914;
+}
+
 .landing-meta-item dd span {
   margin-left: 6px;
   font-size: 12px;
@@ -163,9 +238,9 @@
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  color: #f5f7fb;
-  background: rgb(15 23 42 / 0.55);
-  border: 1px solid rgb(226 232 240 / 0.24);
+  color: inherit;
+  background: rgb(248 250 252 / 0.55);
+  border: 1px solid rgb(100 116 139 / 0.32);
   backdrop-filter: blur(12px);
   transition: transform 140ms ease, background 160ms ease, box-shadow 160ms ease;
   text-decoration: none;
@@ -173,7 +248,7 @@
 
 .landing-github-link:hover {
   transform: translateY(-1px);
-  background: rgb(15 23 42 / 0.78);
+  background: rgb(248 250 252 / 0.78);
   box-shadow: 0 12px 28px rgb(2 8 23 / 0.22);
 }
 
@@ -187,6 +262,18 @@
   top: clamp(24px, 3.6vh, 40px);
   right: clamp(24px, 4.2vw, 56px);
   z-index: 4;
+}
+
+body[data-theme="dark"] .landing-github-link,
+body[data-theme="tiller"] .landing-github-link {
+  background: rgb(15 23 42 / 0.55);
+  border-color: rgb(226 232 240 / 0.24);
+  color: #f5f7fb;
+}
+
+body[data-theme="dark"] .landing-github-link:hover,
+body[data-theme="tiller"] .landing-github-link:hover {
+  background: rgb(15 23 42 / 0.78);
 }
 
 .landing-ship-hotspots {
@@ -306,6 +393,13 @@
     transform: translateY(-4vh);
   }
 
+  .landing-github-link-mobile {
+    position: absolute;
+    top: 24px;
+    left: 16px;
+    z-index: 4;
+  }
+
   .landing-hero h1 {
     font-size: clamp(2.55rem, 10.5vw, 4rem);
   }
@@ -341,60 +435,4 @@
   background-color: var(--surface-emphasis);
 }
 
-/* V6 Mobile layout helper classes */
-.landing-hero-mobile {
-  padding: 32px 16px;
-  text-align: center;
-  background: var(--canvas);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-ghost);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.landing-hero-mobile-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--foreground);
-  line-height: 1.2;
-}
-
-.landing-copy-mobile {
-  font-size: 0.875rem;
-  color: var(--muted-foreground);
-  line-height: 1.4;
-  max-width: 280px;
-}
-
-.landing-primary-mobile {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--control-h-md);
-  padding: 0 16px;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  border-radius: var(--radius-md);
-  text-decoration: none;
-}
-
-.landing-secondary-mobile {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--control-h-md);
-  padding: 0 16px;
-  background: var(--surface);
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-ghost);
-  text-decoration: none;
-}
 

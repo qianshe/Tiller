@@ -14,6 +14,7 @@ export function buildMissionPanelContext(panelPages: any) {
     customMissionPanelPages: panelPages.customPages,
     selectedMissionPanelPageId: panelPages.selectedPageId,
     setSelectedMissionPanelPageId: panelPages.setSelectedPageId,
+    openedMissionDiffFilePaths: panelPages.openedDiffFilePaths,
     selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
     setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,
     collapsedMissionDiffDirectories: panelPages.collapsedDiffDirectories,
@@ -24,6 +25,8 @@ export function buildMissionPanelContext(panelPages: any) {
     renameMissionPanelPage: panelPages.renamePage,
     moveMissionPanelPage: panelPages.movePage,
     deleteMissionPanelPage: panelPages.deletePage,
+    openMissionDiffFile: panelPages.openDiffFile,
+    closeMissionDiffFile: panelPages.closeDiffFile,
   };
 }
 

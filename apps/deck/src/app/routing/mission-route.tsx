@@ -17,11 +17,14 @@ export function renderMissionRoute(source: any) {
     activeSession,
     diffs,
     outputs,
+    messages,
     toolCalls,
     statuses,
     copy,
     customMissionPanelPages,
     selectedMissionPanelPageId,
+    openedMissionDiffFilePaths,
+    closeMissionDiffFile,
     activeSessionProjectId,
     projectFilesByScope,
     activeSessionProject,
@@ -86,6 +89,7 @@ export function renderMissionRoute(source: any) {
     activePromptQueue,
     expandedMessageIds,
     messageHistoryState,
+    setMessageHistoryState,
     loadOlderMessages,
     toggleExpandedMessage,
     pendingPermission,
@@ -150,6 +154,7 @@ export function renderMissionRoute(source: any) {
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
     activityHistoryState,
+    setActivityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
     loadOlderActivities,
@@ -181,11 +186,14 @@ export function renderMissionRoute(source: any) {
       activeSession={activeSession}
       diffs={diffs}
       outputs={outputs}
+      messages={messages}
       toolCalls={toolCalls}
       statuses={statuses}
       copy={copy}
       customMissionPanelPages={customMissionPanelPages}
       selectedMissionPanelPageId={selectedMissionPanelPageId}
+      openedMissionDiffFilePaths={openedMissionDiffFilePaths}
+      closeMissionDiffFile={closeMissionDiffFile}
       activeSessionProjectId={activeSessionProjectId}
       projectFilesByScope={projectFilesByScope}
       activeSessionProject={activeSessionProject}
@@ -250,6 +258,7 @@ export function renderMissionRoute(source: any) {
       activePromptQueue={activePromptQueue}
       expandedMessageIds={expandedMessageIds}
       messageHistoryState={messageHistoryState}
+      setMessageHistoryState={setMessageHistoryState}
       loadOlderMessages={loadOlderMessages}
       toggleExpandedMessage={toggleExpandedMessage}
       pendingPermission={pendingPermission}
@@ -314,6 +323,7 @@ export function renderMissionRoute(source: any) {
       missionDisplayPaneStyle={missionDisplayPaneStyle}
       selectedMissionDiffFilePath={selectedMissionDiffFilePath}
       activityHistoryState={activityHistoryState}
+      setActivityHistoryState={setActivityHistoryState}
       activityVisibleCounts={activityVisibleCounts}
       setActivityVisibleCounts={setActivityVisibleCounts}
       loadOlderActivities={loadOlderActivities}

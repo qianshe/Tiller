@@ -143,16 +143,17 @@ function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
 
 export function renderDiffPatch(patch: string) {
   return (
-    <pre className="mission-diff-patch max-w-full min-w-0 overflow-x-auto rounded-b-md border-t border-border-ghost bg-surface font-mono text-xs leading-5 text-foreground">
+    <pre className="mission-diff-patch grid max-w-full min-w-0 grid-cols-[max-content] overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
       {patch.split(/\r?\n/u).map((line, index) => (
         <span
           key={`${index}-${line.slice(0, 12)}`}
-          className={`mission-diff-line block min-w-max whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
+          className={`mission-diff-line grid min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
+          style={{ display: "grid" }}
         >
-          <span className="mr-3 inline-block w-10 select-none text-right text-muted-foreground/70">
+          <span className="select-none text-right text-muted-foreground/70">
             {index + 1}
           </span>
-          {line || " "}
+          <span className="pl-3">{line || " "}</span>
         </span>
       ))}
     </pre>

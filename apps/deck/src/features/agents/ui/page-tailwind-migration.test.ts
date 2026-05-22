@@ -34,6 +34,8 @@ test("agents overview layout uses shared UI and Tailwind classes", () => {
   assert.doesNotMatch(page, /wb-pane flex min-h-0 min-w-0 flex-col overflow-hidden/);
   assert.match(agentsTree, /settings-section-nav|agents-helm-tree/);
   assert.match(agentsTree, /StatusDot/);
+  assert.match(agentsTree, /flex h-6 w-full items-center gap-1\.5 rounded px-1\.5/);
+  assert.match(helmDetail, /font-mono text-2xs tabular text-foreground/);
   assert.match(helmDetail, /import \{ AgentIcon, Badge, Button, Icon, StatusDot \} from "@\/shared\/ui"/);
   assert.match(helmDetail, /Agents \(\$\{selectedHelmAgents.length\}\)/);
   assert.match(helmDetail, /h-full min-h-0/);

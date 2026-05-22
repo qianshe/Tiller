@@ -4,6 +4,25 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PlainMessages } from "./plain-messages.js";
 
+function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]> = {}) {
+  return renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+      ...props,
+    }),
+  );
+}
+
 test("plain messages renders thinking tool calls in the conversation timeline", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
@@ -320,6 +339,115 @@ test("plain messages keeps adjacent thinking tool calls separate when ids differ
   assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
   assert.match(html, /第一轮 Thinking/);
   assert.match(html, /第二轮 Thinking/);
+});
+
+test("plain messages groups adjacent normal tool calls between assistant segments", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-before",
+        role: "assistant",
+        text: "先说明。",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+      {
+        id: "assistant-after",
+        role: "assistant",
+        text: "工具后继续输出。",
+        timestamp: "2026-05-17T10:00:04.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-search",
+        kind: "search",
+        title: "Search code",
+        status: "completed",
+        output: "search result",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /工具调用 · 2 项/);
+  assert.match(html, /Read \/ Search/);
+  assert.match(html, /data-tool-group-kind="read"/);
+  assert.doesNotMatch(html, />混合</);
+  assert.match(html, /data-tool-kind="read"/);
+  assert.match(html, /data-tool-kind="search"/);
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
+  assert.doesNotMatch(html, /<details class="plain-tool-group[^"]*" open=""/);
+  assert.equal(html.match(/<details class="plain-tool-call/g)?.length, 2);
+  assert.doesNotMatch(html, /<details class="plain-tool-call[^"]*" open=""/);
+  assert.ok(html.indexOf("先说明。") < html.indexOf("工具调用 · 2 项"));
+  assert.ok(html.indexOf("工具调用 · 2 项") < html.indexOf("工具后继续输出。"));
+  assert.match(html, /file content/);
+  assert.match(html, /search result/);
+});
+
+test("plain messages starts a new tool group after assistant text resumes", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-before",
+        role: "assistant",
+        text: "第一段。",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+      {
+        id: "assistant-middle",
+        role: "assistant",
+        text: "第二段。",
+        timestamp: "2026-05-17T10:00:03.000Z",
+      },
+      {
+        id: "assistant-after",
+        role: "assistant",
+        text: "第三段。",
+        timestamp: "2026-05-17T10:00:05.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-a",
+        kind: "read",
+        title: "Read A",
+        status: "completed",
+        output: "read a output",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-b",
+        kind: "shell",
+        title: "Run B",
+        status: "running",
+        timestamp: "2026-05-17T10:00:04.000Z",
+        updatedAt: "2026-05-17T10:00:04.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 2);
+  assert.match(html, /工具调用 · 1 项/);
+  assert.match(html, /Shell/);
+  assert.match(html, /<details class="plain-tool-group[^>]*open=""/);
+  assert.equal(html.match(/<details class="plain-tool-call/g)?.length, 2);
+  assert.doesNotMatch(html, /<details class="plain-tool-call[^"]*" open=""/);
+  assert.ok(html.indexOf("第一段。") < html.indexOf("read a output"));
+  assert.ok(html.indexOf("read a output") < html.indexOf("第二段。"));
+  assert.ok(html.indexOf("第二段。") < html.indexOf("Run B"));
+  assert.ok(html.indexOf("Run B") < html.indexOf("第三段。"));
 });
 
 test("plain messages hides local command wrappers and model switch stdout", () => {

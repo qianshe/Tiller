@@ -7,6 +7,7 @@ import { MissionComposer } from "./composer.js";
 function baseProps(overrides: Record<string, unknown> = {}) {
   return {
     activeSession: null,
+    contextSession: null,
     worktreePickerRef: { current: null },
     worktreePickerOpen: false,
     setWorktreePickerOpen: () => undefined,
@@ -85,9 +86,23 @@ test("composer enables send for a typed new-session prompt", () => {
 test("composer uses a tighter frame and padded square textarea", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps()));
 
-  assert.doesNotMatch(html, /chat-input-area[^\"]*border-t/);
-  assert.match(html, /rounded-md border border-border-ghost\/70 bg-surface px-3 py-2\.5/);
-  assert.match(html, /rounded-none border-0 bg-transparent px-1 py-0/);
+  assert.match(html, /chat-input-area[^\"]*border-t[^\"]*px-2 py-1\.5/);
+  assert.match(html, /mission-composer[^\"]*px-2 py-1\.5/);
+  assert.match(html, /mission-composer-deck[^\"]*max-w-\[min\(1120px,calc\(100%_-_32px\)\)\]/);
+  assert.match(html, /min-h-\[48px\][^\"]*rounded-none border-0 bg-transparent px-1 py-0/);
+});
+
+test("composer follows the focused session context labels", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "active", title: "活动会话", projectName: "Project A", agentName: "Codex" },
+    contextSession: { id: "focused", title: "聚焦会话", projectName: "Project B", agentName: "ClaudeCode" },
+  })));
+
+  assert.match(html, /Project B/);
+  assert.match(html, /ClaudeCode/);
+  assert.match(html, /→ 聚焦会话/);
+  assert.doesNotMatch(html, /Project A/);
+  assert.doesNotMatch(html, /→ 活动会话/);
 });
 
 test("composer uses compact sidecar and action button sizing", () => {

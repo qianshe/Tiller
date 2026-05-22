@@ -13,15 +13,37 @@ import type {
   SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
-import {
-  daemonProfileKey,
-  formatConnectionStatus,
-} from "../../helm-connection/facade";
+import { daemonProfileKey } from "../../helm-connection/facade";
 import { Badge, Button, Icon, Input, StatusDot } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { MissionMobilePane } from "../hooks/layout";
 import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
+
+type MissionRuntimeOverviewChild = {
+  branchName: string;
+  id: string;
+  model?: string | null;
+  projectName: string;
+  reasoningEffort?: string | null;
+  status: string;
+};
+
+type MissionRuntimeOverviewItem = {
+  agentId?: string | null;
+  canConnect?: boolean;
+  canReconnect?: boolean;
+  children?: MissionRuntimeOverviewChild[];
+  cwd?: string | null;
+  id: string;
+  label: string;
+  meta: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  runtimeSessionId: string;
+  status: string;
+};
+
 type MissionSidebarProps = {
   effectiveSidebarCollapsed: boolean;
   missionSidebarCollapsed: boolean;
@@ -43,6 +65,7 @@ type MissionSidebarProps = {
   currentGitBranch: string | null;
   missionDiffCount: number;
   agents: AcpAgentProvider[];
+  runtimeOverviewItems: MissionRuntimeOverviewItem[];
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
   selectDraftAgent: (agentId: string) => void;
@@ -56,6 +79,8 @@ type MissionSidebarProps = {
   statuses: Record<string, SessionStatus>;
   copy: { status: Record<SessionStatus, string> };
   activeSessionId: string | null;
+  highlightedSessionId: string | null;
+  openSessionIds: ReadonlySet<string>;
   openSession: (sessionId: string) => void;
   renderMissionAgentIcon: (agentName: string) => ReactNode;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
@@ -90,9 +115,8 @@ export function MissionSidebar({
   expandedMissionProjectIds,
   sessions,
   sessionCountsByProject,
-  currentGitBranch,
-  missionDiffCount,
   agents,
+  runtimeOverviewItems,
   selectedAgentId,
   agentPickerOpen,
   selectDraftAgent,
@@ -106,6 +130,8 @@ export function MissionSidebar({
   statuses,
   copy,
   activeSessionId,
+  highlightedSessionId,
+  openSessionIds,
   openSession,
   renderMissionAgentIcon,
   resolveDisplaySessionTitle,
@@ -149,7 +175,7 @@ export function MissionSidebar({
     setActiveSessionId(null);
   };
   const sidebarClassName = [
-    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-r border-border-ghost shadow-none",
+    "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-r border-border-ghost shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
   ]
     .filter(Boolean)
@@ -166,7 +192,7 @@ export function MissionSidebar({
         {!effectiveSidebarCollapsed ? (
           <>
             <div className="wb-pane-head bg-transparent">
-              <span className="wb-pane-head-eyebrow">Helm · 任务</span>
+              <span className="wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务</span>
               <div className="flex-1" />
               <Button
                 type="button"
@@ -260,8 +286,8 @@ export function MissionSidebar({
                     <button
                       type="button"
                       className={cn(
-                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 rounded px-1.5 h-6 text-left text-section text-foreground transition hover:bg-surface-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                        selectedHelm && "active bg-primary-soft text-foreground",
+                        "mission-tree-row mission-tree-row-helm grid w-full grid-cols-[12px_14px_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 h-6 text-left text-section text-foreground transition hover:bg-surface-emphasis/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        selectedHelm && "active bg-surface-emphasis/70 text-foreground",
                       )}
                       onClick={() => toggleMissionHelmNode(helm.id)}
                       role="treeitem"
@@ -292,7 +318,7 @@ export function MissionSidebar({
                     </button>
                     {helmExpanded ? (
                       <div
-                        className="mission-tree-children mission-tree-children-projects ml-3 grid gap-1.5 border-l border-border-ghost pl-2"
+                        className="mission-tree-children mission-tree-children-projects ml-3 grid gap-1.5 pl-0"
                         role="group"
                       >
                         {helmProjects.map((project) => {
@@ -326,6 +352,8 @@ export function MissionSidebar({
                               statuses={statuses}
                               copy={copy}
                               activeSessionId={activeSessionId}
+                              highlightedSessionId={highlightedSessionId}
+                              openSessionIds={openSessionIds}
                               openSession={openSession}
                               renderMissionAgentIcon={renderMissionAgentIcon}
                               resolveDisplaySessionTitle={
@@ -365,13 +393,68 @@ export function MissionSidebar({
             </div>
           </div>
         )}
-        <div className="border-t border-border-ghost px-2 py-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
-          <Icon name="branch" size={10} />
-          <span className="font-mono tabular truncate">
-            {currentGitBranch || "未检测"}
-          </span>
-          <div className="flex-1" />
-          <span className="font-mono tabular">{missionDiffCount} dirty</span>
+        <div className="border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
+          <details className="group rounded border border-border-ghost bg-surface-sunken/60 px-2 py-1">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-foreground/80 outline-none [&::-webkit-details-marker]:hidden">
+              <Icon name="server" size={10} />
+              <span className="font-medium">ACP</span>
+              <span className="font-mono tabular text-muted-foreground">{runtimeOverviewItems.length}</span>
+              <span aria-hidden="true" className="ml-auto text-2xs text-muted-foreground/50">
+                ▾
+              </span>
+            </summary>
+            <div className="mt-1 grid max-h-40 gap-1 overflow-auto pr-0.5">
+              {runtimeOverviewItems.length ? (
+                runtimeOverviewItems.map((item) => (
+                  <details
+                    key={item.id}
+                    className="rounded border border-border-ghost/70 bg-surface px-2 py-1"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 outline-none [&::-webkit-details-marker]:hidden">
+                      <Icon
+                        name={item.canReconnect ? "server" : item.canConnect ? "plus" : "inspect"}
+                        size={10}
+                      />
+                      <span className="min-w-0 truncate font-medium text-foreground">
+                        {item.label}
+                      </span>
+                      <span className="ml-auto shrink-0 rounded-sm bg-surface-emphasis px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">
+                        {item.status}
+                      </span>
+                    </summary>
+                    <div className="mt-1 grid gap-0.5 pl-4 text-[10px] leading-snug text-muted-foreground">
+                      <div className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{item.meta}</span>
+                        <span className="shrink-0 font-mono tabular">{item.runtimeSessionId}</span>
+                      </div>
+                      {item.children?.length ? (
+                        <div className="grid gap-0.5">
+                          {item.children.slice(0, 3).map((child) => (
+                            <div key={child.id} className="flex min-w-0 items-center gap-1.5">
+                              <span className="shrink-0 rounded bg-surface-emphasis px-1 py-0.5 font-mono text-[9px] text-muted-foreground">
+                                {child.status}
+                              </span>
+                              <span className="min-w-0 truncate text-foreground/80">
+                                {child.projectName}
+                              </span>
+                              <span className="shrink-0 text-muted-foreground/60">·</span>
+                              <span className="min-w-0 truncate text-muted-foreground/80">
+                                {child.branchName}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className="rounded border border-dashed border-border-ghost bg-surface px-2 py-1 text-muted-foreground">
+                  暂无 ACP 连接。
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       </aside>
       {resizer}

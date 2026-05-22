@@ -8,11 +8,14 @@ type MissionInspectorProps = {
   style: CSSProperties;
   activeSessionPresent: boolean;
   worktreeCount: number;
+  worktreeSummaryLabel: string;
   loading?: boolean;
   worktreeList: ReactNode;
   diffCount: number;
+  selectedDiffCount: number;
   diffPanel: ReactNode;
   resizer: ReactNode;
+  onCollapse: () => void;
 };
 
 export function MissionInspector({
@@ -20,14 +23,22 @@ export function MissionInspector({
   style,
   activeSessionPresent,
   worktreeCount,
+  worktreeSummaryLabel,
   loading,
   worktreeList,
   diffCount,
+  selectedDiffCount,
   diffPanel,
   resizer,
+  onCollapse,
 }: MissionInspectorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
   const title = resolveInspectorTitle(activeSessionPresent, worktreeCount, diffCount);
+  const commitScopeLabel = selectedDiffCount > 0 ? `${selectedDiffCount}/${diffCount} Diff` : `${diffCount} Diff`;
+  const generateCommitMessage = () => {
+    setCommitMessage(selectedDiffCount > 0 ? `chore：更新 ${selectedDiffCount} 个选中文件` : `chore：更新 ${diffCount} 个文件`);
+  };
 
   return (
     <>
@@ -35,7 +46,7 @@ export function MissionInspector({
 
       {!collapsed ? (
         <aside
-          className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-l border-border-ghost shadow-none"
+          className="mission-inspector mission-pane mission-pane-inspector col-start-7 col-end-8 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-l border-border-ghost shadow-none"
           style={style}
           aria-label="任务检视器"
           data-mission-mobile-pane="inspector"
@@ -52,21 +63,22 @@ export function MissionInspector({
               className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis"
               title="收起检视器"
               aria-label="收起检视器"
+              onClick={onCollapse}
             >
               <Icon name="x" size={11} />
             </button>
           </div>
-          <div className="mission-worktree-picker relative border-b border-border-ghost px-2 py-1.5">
+          <div className="mission-worktree-picker relative border-b border-border-ghost px-2 py-1">
             <button
               type="button"
               onClick={() => setPickerOpen((current) => !current)}
-              className="wb-focus-ring flex h-7 w-full items-center gap-1.5 rounded bg-surface px-2 text-left hover:bg-surface-emphasis"
+              className="wb-focus-ring flex h-5 w-full items-center gap-1.5 rounded-none bg-transparent px-2 text-left hover:bg-surface-emphasis/60"
               title="选择 Worktree"
               aria-expanded={pickerOpen}
             >
               <Icon name="branch" size={11} className="text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs tabular">
-                {activeSessionPresent ? `${worktreeCount} Worktrees · ${diffCount} Diff` : "未选择任务"}
+                {activeSessionPresent ? `${worktreeSummaryLabel} · ${diffCount} Diff` : "未选择任务"}
               </span>
               <Icon name="chevronDown" size={10} className="text-muted-foreground" />
             </button>
@@ -84,33 +96,49 @@ export function MissionInspector({
               </div>
             ) : null}
           </div>
-          <div className="flex-1 overflow-auto">
-            <section className="grid gap-2 p-2">{diffPanel}</section>
+          <div
+            className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
+          >
+            <section className="grid gap-2 px-1 py-2">{diffPanel}</section>
           </div>
           <div className="mission-inspector-commit border-t border-border-ghost bg-surface p-2">
+            <div className="mb-1 flex items-center justify-between gap-2 text-2xs text-muted-foreground">
+              <span>{commitScopeLabel}</span>
+              <button
+                type="button"
+                className="flex h-5 items-center gap-1 rounded-none bg-transparent px-1.5 hover:bg-surface-emphasis/60"
+                onClick={generateCommitMessage}
+                disabled={diffCount === 0}
+              >
+                <Icon name="activity" size={10} /> 生成描述
+              </button>
+            </div>
             <textarea
               rows={2}
-              className="mb-2 w-full resize-none rounded bg-surface-sunken p-2 text-section shadow-[inset_0_0_0_1px_var(--border-ghost)] placeholder:text-muted-foreground focus:outline-none"
+              value={commitMessage}
+              onChange={(event) => setCommitMessage(event.currentTarget.value)}
+              className="mb-2 w-full resize-none rounded-none bg-transparent p-2 text-section shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
               placeholder="提交信息(必填) · 描述本次变更"
               aria-label="提交信息"
             />
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="flex h-ctl-md flex-1 items-center justify-center gap-1.5 rounded bg-surface-sunken px-3 text-section font-medium text-muted-foreground"
+                className="flex h-ctl-md flex-1 items-center justify-center gap-1.5 rounded-none bg-transparent px-3 text-section font-medium text-muted-foreground"
                 disabled
               >
                 <Icon name="shield" size={12} /> Commit
               </button>
               <button
                 type="button"
-                className="flex h-ctl-md items-center gap-1.5 rounded bg-surface-sunken px-3 text-section hover:bg-surface-emphasis"
+                className="flex h-ctl-md items-center gap-1.5 rounded-none bg-transparent px-3 text-section hover:bg-surface-emphasis/60"
               >
                 <Icon name="branch" size={11} /> Push
               </button>
               <button
                 type="button"
-                className="grid h-ctl-md w-7 place-items-center rounded bg-surface-sunken text-muted-foreground hover:bg-surface-emphasis"
+                className="grid h-ctl-md w-7 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60"
                 title="更多操作"
               >
                 <Icon name="more" size={11} />

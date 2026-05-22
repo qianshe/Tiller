@@ -91,6 +91,18 @@ test("mission message timeline keeps chat list props stable for unchanged messag
 });
 
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
+  assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\]/);
+  assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
+  assert.match(plainMessagesSource, /max-w-\[min\(620px,72%\)\]/);
+  assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
+  assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
+  assert.match(plainMessagesSource, /message\.role === "user" && "rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
+  assert.doesNotMatch(plainMessagesSource, /rounded-2xl border border-border-ghost bg-surface-elevated/);
+  assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
+  assert.doesNotMatch(plainMessagesSource, /rounded-md bg-surface-emphasis\/45/);
+  assert.match(plainMessagesSource, /message\.role === "user" && message\.attachments\?\.length \?/);
+  assert.match(plainMessagesSource, /mission-message-attachments[\s\S]*?\) : null\}\s*<div\s*className=\{cn\(/);
+  assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-x-auto/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-y-hidden/);
   assert.doesNotMatch(plainMessagesSource, /plain-assistant[^\n]+overflow-x-visible/);
@@ -204,10 +216,40 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /wb-pane-head-eyebrow">工作台/);
   assert.doesNotMatch(chatPaneSource, /min-h-9/);
   assert.match(chatPaneSource, /aria-label="展开任务导航"/);
-  assert.match(chatPaneSource, /chat-main flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative/);
+  assert.match(chatPaneSource, /chat-main flex-1 w-full overflow-x-hidden min-h-0 relative/);
+  assert.match(chatPaneSource, /shouldLockChatMainScroll = openSessions\.length > 0 && parallelGridCompact/);
+  assert.match(chatPaneSource, /shouldLockChatMainScroll \? "overflow-y-clip" : "overflow-y-auto"/);
+  assert.match(worktreeSource, /mission-pane-chat[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
+  assert.match(sidebarSource, /mission-pane-sidebar[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
+  assert.match(displayPanelSource, /mission-pane-display[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
+  assert.match(inspectorSource, /mission-pane-inspector[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(chatPaneSource, /SessionCard/);
-  assert.match(chatPaneSource, /gridTemplateColumns: "repeat\(auto-fill, minmax\(420px, 1fr\)\)"/);
-  assert.match(chatPaneSource, /flat \? "h-full bg-surface" : "bg-surface rounded-\[8px\] transition-all cursor-default"/);
+  assert.match(chatPaneSource, /parallelGridCompact = openSessions\.length <= 2/);
+  assert.match(chatPaneSource, /shouldAnchorActiveParallelCard = openSessions\.length > 2/);
+  assert.match(chatPaneSource, /\[contain:layout_paint\]/);
+  assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSession\?\.id/);
+  assert.match(chatPaneSource, /gridAutoRows: parallelGridCompact \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
+  assert.match(chatPaneSource, /parallelGridCompact \? "h-full min-h-0 overflow-hidden" : "min-h-full"/);
+  assert.match(chatPaneSource, /mission-session-grid grid box-border gap-2 p-2/);
+  assert.match(chatPaneSource, /gridTemplateColumns: "repeat\(auto-fit, minmax\(min\(100%, 360px\), 1fr\)\)"/);
+  assert.match(chatPaneSource, /flat \? "h-full bg-surface" : "h-full min-h-0 bg-surface rounded-\[8px\] transition-all cursor-default"/);
+  assert.match(chatPaneSource, /sessionMessagesById\[session\.id\]/);
+  assert.match(chatPaneSource, /sessionToolCallsById\[session\.id\]/);
+  assert.match(chatPaneSource, /renderSessionStream\(session\)/);
+  assert.match(chatPaneSource, /data-session-card-body=\{session\.id\}/);
+  assert.match(chatPaneSource, /changedSessionIds\.forEach/);
+  assert.match(chatPaneSource, /if \(messageCount > 0 \|\| toolCallCount > 0\)/);
+  assert.match(chatPaneSource, /sessionBodyScrollPositionRef/);
+  assert.match(chatPaneSource, /body\.scrollTop = body\.scrollHeight/);
+  assert.match(chatPaneSource, /onBodyScroll=\{\(event\) => \{/);
+  assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
+  assert.match(chatPaneSource, /selectedSessionId: string \| null/);
+  assert.match(chatPaneSource, /active=\{session\.id === selectedSessionId\}/);
+  assert.match(chatPaneSource, /data-active-session-card=\{active \? "true" : undefined\}/);
+  assert.match(chatPaneSource, /chatMain\.scrollTop \+= activeCardTop - chatMainTop/);
+  assert.match(chatPaneSource, /requestAnimationFrame\(anchorActiveCard\)/);
+  assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 160\)/);
+  assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 800\)/);
   assert.match(chatPaneSource, /AgentIcon name=\{session\.agentName\}/);
   assert.match(chatPaneSource, /StatusDot tone=\{statusTone\}/);
   assert.match(chatPaneSource, /title="关闭此 session"/);
@@ -219,6 +261,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
 test("mission chat pane exposes the v6 session grid and more menu actions", () => {
   assert.match(chatPaneSource, /mission-session-grid/);
   assert.match(chatPaneSource, /openSessions/);
+  assert.match(chatPaneSource, /onCloseSessionView/);
   assert.match(chatPaneSource, /role="menu"/);
   assert.match(chatPaneSource, /w-\[200px\]/);
   assert.match(chatPaneSource, /Icon name="check"/);
@@ -239,13 +282,38 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
 test("mission sidebar exposes search and new-task actions in the header", () => {
   assert.match(sidebarSource, /aria-label="搜索任务"/);
   assert.match(sidebarSource, /aria-label="新建任务"/);
-  assert.match(sidebarSource, /wb-pane-head-eyebrow">Helm · 任务/);
-  assert.match(sidebarSource, /currentGitBranch/);
-  assert.match(sidebarSource, /missionDiffCount/);
-  assert.match(sidebarSource, /dirty/);
+  assert.match(sidebarSource, /wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务/);
+  assert.match(sidebarSource, /setAgentPickerOpen\(true\)/);
+  assert.match(sidebarSource, /runtimeOverviewItems\.length/);
+  assert.match(sidebarSource, /暂无 ACP 连接。/);
+  assert.match(sidebarSource, /<span className="font-medium">ACP<\/span>/);
+  assert.doesNotMatch(sidebarSource, /formatConnectionStatus\(connection\)/);
+  assert.doesNotMatch(sidebarSource, /Icon name="branch"/);
+  assert.doesNotMatch(sidebarSource, /dirty<\/span>/);
 });
 
 test("mission workspace wires session grid toggles into the chat pane", () => {
+  assert.match(worktreeSource, /openChatSessionIds/);
+  assert.match(worktreeSource, /const openChatSession = \(sessionId: string\) =>/);
+  assert.match(worktreeSource, /const closeChatSession = \(session: SessionSummary\) =>/);
+  assert.match(worktreeSource, /openSession=\{openChatSession\}/);
+  assert.match(worktreeSource, /focusedChatSessionId/);
+  assert.match(worktreeSource, /const selectChatSession = \(sessionId: string\) =>/);
+  assert.match(worktreeSource, /setFocusedChatSessionId\(sessionId\)/);
+  assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
+  assert.match(worktreeSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
+  assert.match(worktreeSource, /dispatch\(client, "session\/list_messages"/);
+  assert.match(worktreeSource, /dispatch\(client, "session\/get_artifacts"/);
+  assert.match(worktreeSource, /setMessageHistoryState\(\(current: any\) =>/);
+  assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
+  assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
+  assert.match(worktreeSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
+  assert.match(worktreeSource, /selectedComposerSession = sessionById\.get\(focusedChatSessionId/);
+  assert.match(worktreeSource, /contextSession=\{selectedComposerSession\}/);
+  assert.match(worktreeSource, /highlightedSessionId=\{focusedChatSessionId \?\? activeSessionId\}/);
+  assert.match(worktreeSource, /onFocusSession=\{openChatSession\}/);
+  assert.match(worktreeSource, /onSelectSessionView=\{selectChatSession\}/);
+  assert.match(worktreeSource, /onCloseSessionView=\{closeChatSession\}/);
   assert.match(worktreeSource, /openSessions=/);
   assert.match(worktreeSource, /sidebarCollapsed=\{effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
@@ -253,13 +321,25 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /onToggleInspector=/);
   assert.match(worktreeSource, /setMissionDisplayCollapsed/);
   assert.match(worktreeSource, /setMissionInspectorCollapsed/);
+  assert.match(missionLayoutHookSource, /sidebar: \{ min: 0 \}/);
+  assert.match(missionLayoutHookSource, /chat: \{ min: MISSION_MIN_CHAT_WIDTH \}/);
+  assert.match(missionLayoutHookSource, /display: \{ min: 0 \}/);
+  assert.match(missionLayoutHookSource, /inspector: \{ min: 0 \}/);
+  assert.match(worktreeSource, /ResizablePanelGroup/);
+  assert.match(worktreeSource, /resizeTargetMinimumSize=\{\{ fine: 4, coarse: 16 \}\}/);
+  assert.match(worktreeSource, /resizer=\{null\}/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-resizable-group,[\s\S]*display:\s*contents !important;/);
 });
 
 test("mission composer mirrors the v6 sunken command deck", () => {
-  assert.match(composerSource, /border-t border-border-ghost p-2 bg-surface/);
-  assert.match(composerSource, /wb-pane-sunken p-2 max-w-\[1080px\] mx-auto/);
-  assert.match(composerSource, /rows=\{3\}/);
-  assert.match(composerSource, /esc 取消 · ↑ 历史/);
+  assert.match(composerSource, /border-t border-border-ghost px-2 py-1\.5 bg-surface/);
+  assert.match(composerSource, /wb-pane-sunken px-2 py-1\.5 w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\] mx-auto/);
+  assert.match(composerSource, /rows=\{2\}/);
+  assert.match(composerSource, /const composerSession = contextSession \?\? activeSession/);
+  assert.match(composerSource, /composerSession\?\.agentName/);
+  assert.match(composerSource, /composerSession\?\.title/);
+  assert.match(composerSource, /MissionStatusBar[\s\S]*col-start-2 justify-self-center/);
+  assert.doesNotMatch(composerSource, /esc 取消 · ↑ 历史/);
   assert.match(composerSource, /Icon name="send"/);
   assert.doesNotMatch(composerSource, /mission-order-editor grid gap-3 rounded-md border/);
 });
@@ -280,14 +360,15 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.match(sidebarProjectNodeSource, /Button/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
-  assert.match(sessionRowSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
 });
 
 test("mission sidebar rows stay compact and session actions open below rows", () => {
   assert.match(sidebarSource, /sidebar-section mission-tree-switcher flex-1 overflow-auto p-1/);
   assert.match(sidebarSource, /mission-tree grid gap-1/);
   assert.match(sidebarProjectNodeSource, /px-1\.5 h-5/);
-  assert.match(sidebarProjectNodeSource, /ml-3 grid gap-1 border-l border-border-ghost pl-1\.5/);
+  assert.match(sidebarProjectNodeSource, /ml-1 grid gap-1 pl-0/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /border-l border-border-ghost pl-1\.5/);
   assert.doesNotMatch(sidebarProjectNodeSource, /ml-4 grid gap-1 border-l border-border-ghost pl-2/);
   assert.match(sessionRowSource, /px-1\.5 h-5/);
   assert.match(sessionRowSource, /DropdownMenuContent/);
@@ -295,17 +376,76 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 });
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
-  assert.match(sessionRowSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /highlightedSessionId: string \| null/);
+  assert.match(sessionRowSource, /const isOpenSession = openSessionIds\.has\(session\.id\)/);
+  assert.match(sessionRowSource, /const isHighlighted = isFocused \|\| isOpenSession/);
+  assert.match(sessionRowSource, /before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0\.5 before:rounded-full before:bg-primary/);
+  assert.doesNotMatch(sessionRowSource, /mission-tree-caret/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
   assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
   assert.match(sessionRowSource, /mission-tree-cleanup/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
+  assert.doesNotMatch(sessionRowSource, /border-l border-transparent/);
+  assert.doesNotMatch(sessionRowSource, /border-l border-current/);
+});
+
+test("mission pane resizing keeps only chat width constrained", () => {
+  assert.match(missionLayoutHookSource, /const MISSION_MIN_CHAT_WIDTH = 360/);
+  assert.match(missionLayoutHookSource, /sidebar: \{ min: 0 \}/);
+  assert.match(missionLayoutHookSource, /display: \{ min: 0 \}/);
+  assert.match(missionLayoutHookSource, /inspector: \{ min: 0 \}/);
+  assert.doesNotMatch(missionLayoutHookSource, /max: 360/);
+  assert.doesNotMatch(missionLayoutHookSource, /max: 560/);
+  assert.doesNotMatch(missionLayoutHookSource, /max: 440/);
+  assert.match(worktreeSource, /minSize=\"0px\"/);
+  assert.match(worktreeSource, /minSize=\"360px\"/);
+});
+
+test("mission compact chrome avoids wrapping and over-indentation", () => {
+  assert.match(sidebarSource, /wb-pane-head-eyebrow[^\n]+whitespace-nowrap/);
+  assert.match(sidebarProjectNodeSource, /mission-tree-children-sessions ml-1/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-children-sessions ml-3/);
+  assert.match(composerSource, /composerProjectLabel/);
+  assert.match(composerSource, /composerAgentLabel/);
+  assert.match(composerSource, /composerSession\?\.projectName/);
+  assert.match(composerSource, /composerSession\?\.agentName/);
+});
+
+test("mission diff and inspector commit controls support full-row review", () => {
+  assert.match(diffTreeSource, /mission-diff-patch grid max-w-full min-w-0 grid-cols-\[max-content\]/);
+  assert.match(diffTreeSource, /mission-diff-line grid min-w-full/);
+  assert.match(diffTreeSource, /grid-cols-\[2\.5rem_max-content\]/);
+  assert.match(diffTreeSource, /style=\{\{ display: "grid" \}\}/);
+  assert.match(diffPanelSource, /selectedCommitDiffPaths/);
+  assert.match(diffPanelSource, /onToggleCommitDiffDirectory/);
+  assert.match(diffPanelSource, /collectDiffFilePaths/);
+  assert.match(diffPanelSource, /\[scrollbar-width:none\]/);
+  assert.match(inspectorSource, /\[scrollbar-width:none\]/);
+  assert.match(inspectorSource, /msOverflowStyle: \"none\"/);
+  assert.match(shellStylesSource, /\.mission-inspector-diff\s*\{[^}]*scrollbar-width:\s*none;/s);
+  assert.match(inspectorSource, /生成描述/);
+  assert.match(inspectorSource, /selectedDiffCount/);
+});
+
+test("mission tool call rows stay compact", () => {
+  assert.match(plainMessagesSource, /plain-tool-call grid gap-0\.5 py-0\.5/);
+  assert.match(plainMessagesSource, /resolveToolCallIconName/);
+  assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
+  assert.doesNotMatch(plainMessagesSource, />混合</);
+  assert.doesNotMatch(plainMessagesSource, /BUILT-IN/);
+  assert.match(plainMessagesSource, /mission-message-attachments ml-auto grid w-fit max-w-full justify-self-end justify-items-end gap-2 sm:grid-cols-2/);
 });
 
 test("mission display keeps v6 diff viewer chrome as the primary display surface", () => {
-  assert.match(displayPanelSource, /mission-diff-detail grid min-h-0 gap-2 overflow-hidden/);
-  assert.match(displayPanelSource, /mission-diff-file min-w-0 overflow-hidden rounded-\[8px\]/);
+  assert.match(displayPanelSource, /mission-diff-detail grid min-h-0 overflow-hidden/);
+  assert.doesNotMatch(displayPanelSource, /mission-diff-detail grid min-h-0 gap-2 overflow-hidden/);
+  assert.match(displayPanelSource, /mission-diff-file min-w-0 overflow-hidden bg-transparent/);
+  assert.doesNotMatch(displayPanelSource, /mission-diff-file min-w-0 overflow-hidden rounded-\[8px\]/);
+  assert.doesNotMatch(displayPanelSource, /mission-diff-file min-w-0 overflow-hidden border-l border-border-ghost/);
+  assert.doesNotMatch(displayPanelSource, /mission-file-row mission-diff-file-summary[^\n]+border-b border-border-ghost/);
+  assert.doesNotMatch(diffTreeSource, /mission-diff-patch[^\n]+rounded-b-md border-t border-border-ghost/);
   assert.doesNotMatch(displayPanelSource, /mission-logbook-page/);
   assert.match(logbookPanelSource, /mission-logbook-layout grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\]/);
   assert.match(logbookPanelSource, /mission-logbook-scroll min-h-0 overflow-auto/);
@@ -313,14 +453,15 @@ test("mission display keeps v6 diff viewer chrome as the primary display surface
 
 test("mission display page navigation is placed above the content", () => {
   assert.match(displayPanelSource, /mission-display-tab-strip/);
-  assert.match(displayPanelSource, /mission-panel-content min-h-0 flex-1 overflow-auto p-3/);
+  assert.match(displayPanelSource, /mission-panel-content min-h-0 flex-1 overflow-auto p-0/);
   assert.doesNotMatch(displayPanelSource, /MissionPanelNav/);
   assert.doesNotMatch(displayPanelSource, /mission-panel-body grid min-h-0 flex-1 grid-rows-\[auto_minmax\(0,1fr\)\]/);
 });
 
 test("mission display pane mirrors the v6 viewer chrome", () => {
-  assert.match(displayPanelSource, /wb-pane-head/);
-  assert.match(displayPanelSource, /展示栏/);
+  assert.match(displayPanelSource, /wb-pane-head-eyebrow">展示栏/);
+  assert.match(displayPanelSource, /aria-label="收起展示栏"/);
+  assert.match(displayPanelSource, /onClick=\{onCollapse\}/);
   assert.match(displayPanelSource, /mission-display-tab-strip/);
   assert.match(displayPanelSource, /rounded\b/);
   assert.match(displayPanelSource, /mission-display-status-bar/);
@@ -331,6 +472,8 @@ test("mission display pane mirrors the v6 viewer chrome", () => {
 test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /wb-pane-head/);
   assert.match(inspectorSource, /工作区/);
+  assert.match(inspectorSource, /aria-label="收起检视器"/);
+  assert.match(inspectorSource, /onClick=\{onCollapse\}/);
   assert.match(inspectorSource, /mission-worktree-picker/);
   assert.match(inspectorSource, /mission-inspector-commit/);
   assert.doesNotMatch(inspectorSource, /TabsList/);
@@ -383,7 +526,7 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /display: 320/);
   assert.match(missionLayoutHookSource, /inspector: 280/);
   assert.match(missionLayoutHookSource, /MISSION_RESIZER_WIDTH = 4/);
-  assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 460/);
+  assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 360/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 16/);
@@ -394,21 +537,23 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /--mission-display-resizer-width/);
   assert.match(missionLayoutHookSource, /--mission-inspector-resizer-width/);
   assert.match(missionLayoutHookSource, /effectiveDisplayCollapsed/);
-  assert.match(worktreeSource, /effectiveDisplayCollapsed && "mission-display-collapsed"/);
+  assert.match(worktreeSource, /displayPaneCollapsed && "mission-display-collapsed"/);
   assert.match(worktreeSource, /<MissionDisplaySection/);
   assert.doesNotMatch(worktreeSource, /!effectiveDisplayCollapsed \? \(\s*<MissionDisplaySection/s);
-  assert.match(worktreeSource, /!effectiveDisplayCollapsed \? \(\s*<MissionPaneResizer\s*handle="display"/s);
+  assert.match(worktreeSource, /<ResizablePanelGroup[\s\S]*direction="horizontal"/);
+  assert.match(worktreeSource, /!displayPaneCollapsed \? \(\s*<ResizableHandle[\s\S]*调整任务展示宽度/s);
   assert.match(worktreeSource, /mission-pane-chat[^\"]*col-start-3 col-end-4/);
   assert.doesNotMatch(worktreeSource, /max-\[860px\]:h-auto/);
   assert.doesNotMatch(worktreeSource, /max-\[860px\]:flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar col-start-1 col-end-2/);
   assert.match(displayPanelSource, /mission-pane-display col-start-5 col-end-6/);
   assert.match(inspectorSource, /mission-pane-inspector col-start-7 col-end-8/);
-  assert.match(paneResizerSource, /w-full/);
-  assert.doesNotMatch(paneResizerSource, /-mx-\[/);
-  assert.match(paneResizerSource, /col-start-2 col-end-3/);
-  assert.match(paneResizerSource, /col-start-4 col-end-5/);
-  assert.match(paneResizerSource, /col-start-6 col-end-7/);
+  assert.match(worktreeSource, /ResizablePanel/);
+  assert.match(worktreeSource, /ResizableHandle/);
+  assert.match(worktreeSource, /id="mission-sidebar"/);
+  assert.match(worktreeSource, /id="mission-chat"/);
+  assert.match(worktreeSource, /id="mission-display"/);
+  assert.match(worktreeSource, /id="mission-inspector"/);
 });
 
 test("mission layout hook exposes mobile pane state and intelligent defaults", () => {
@@ -476,8 +621,8 @@ test("mission worktree renders mobile pager and hides desktop resizers in mobile
   assert.match(worktreeSource, /isMissionMobile/);
   assert.match(worktreeSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
   assert.match(worktreeSource, /<MissionDisplaySection/);
-  assert.doesNotMatch(worktreeSource, /isMissionMobile \|\| !effectiveDisplayCollapsed \? \(/);
-  assert.match(worktreeSource, /!isMissionMobile \? \(\s*<MissionPaneResizer\s*handle="inspector"/s);
+  assert.match(worktreeSource, /isMissionMobile \|\| !displayPaneCollapsed \? \(/);
+  assert.match(worktreeSource, /!isMissionMobile && !effectiveInspectorCollapsed \? \(\s*<ResizableHandle[\s\S]*调整检视器宽度/s);
 });
 
 test("mission mobile mode marks panes with identities and shows one selected pane", () => {
@@ -518,7 +663,7 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
   assert.match(shellStylesSource, /\.shell\.view-sessions\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode\s*{[^}]*height:\s*100%;/s);
   assert.match(shellStylesSource, /overflow-y:\s*auto/);
-  assert.match(shellStylesSource, /\.chat-main,\s*\.mission-responsive-mode \[data-mission-mobile-pane="chat"\]\s*{[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.doesNotMatch(shellStylesSource, /scrollbar-gutter:\s*stable/);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
@@ -527,7 +672,7 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
-  assert.match(composerSource, /rows=\{3\}/);
+  assert.match(composerSource, /rows=\{2\}/);
   assert.match(composerSource, /mission-image-upload-input/);
   assert.match(composerSource, /accept="image\/\*"/);
   assert.match(composerSource, /onAddPromptImages\(event\.currentTarget\.files\)/);
@@ -569,9 +714,15 @@ test("mission display and logbook headers stay compact on mobile", () => {
 
 test("mission inspector diff rows stay compact on mobile", () => {
   assert.match(diffPanelSource, /mission-change-tree grid min-h-0 gap-0\.5/);
-  assert.match(diffPanelSource, /mission-file-row-compact[^\"]*grid w-full grid-cols-\[auto_minmax\(0,1fr\)_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
-  assert.match(diffPanelSource, /mission-file-status[^\"]*px-1[^\"]*py-0\.5[^\"]*text-2xs/);
-  assert.match(diffPanelSource, /mission-change-group-title[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
+  assert.match(diffPanelSource, /mission-file-row-compact[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
+  assert.match(diffPanelSource, /mission-file-status[^\"]*grid size-3 place-items-center/);
+  assert.match(diffPanelSource, /mission-change-group-title[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
   assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
-  assert.doesNotMatch(diffPanelSource, /<strong className="min-w-0 truncate">\{node\.name\}<\/strong>/);
+});
+
+test("mission worktree uses default-closed display pane behavior", () => {
+  assert.match(worktreeSource, /const hasSelectedDisplayDiff = Boolean/);
+  assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed \|\| !hasSelectedDisplayDiff/);
+  assert.match(worktreeSource, /displayCollapsed=\{displayPaneCollapsed\}/);
+  assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);
 });

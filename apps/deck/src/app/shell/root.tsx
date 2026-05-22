@@ -501,8 +501,7 @@ export function App() {
     });
   }
   function openDiffDetail(path: string) {
-    panelPages.setSelectedDiffFilePath(path);
-    panelPages.setSelectedPageId("diff-detail");
+    panelPages.openDiffFile(path);
     layout.setSelectedMissionMobilePane("display");
   }
   function toggleExpandedMessage(messageId: string) {

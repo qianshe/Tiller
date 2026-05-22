@@ -1,3 +1,4 @@
+import type { SessionSummary } from "@tiller/shared";
 import { useEffect, useState } from "react";
 import { MissionChatPane } from "./chat-pane";
 import { MissionComposer } from "./composer";
@@ -6,7 +7,12 @@ import { MissionDisplaySection } from "./display-section";
 import { MissionInspector } from "./inspector";
 import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
-import { MissionPaneResizer } from "./pane-resizer";
+import {
+  Icon,
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "../../../shared/ui";
 import { MissionSidebar } from "./sidebar";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
@@ -17,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "../../../shared/ui";
 import { joinClassNames } from "../utils/session-render-state";
+import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
 
 const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "display", "inspector"] as const;
 
@@ -34,11 +41,14 @@ export function MissionWorktree(props: any) {
     activeSession,
     diffs,
     outputs,
+    messages,
     toolCalls,
     statuses,
     copy,
     customMissionPanelPages,
     selectedMissionPanelPageId,
+    openedMissionDiffFilePaths,
+    closeMissionDiffFile,
     activeSessionProjectId,
     projectFilesByScope,
     activeSessionProject,
@@ -103,6 +113,7 @@ export function MissionWorktree(props: any) {
     activePromptQueue,
     expandedMessageIds,
     messageHistoryState,
+    setMessageHistoryState,
     loadOlderMessages,
     toggleExpandedMessage,
     pendingPermission,
@@ -169,6 +180,7 @@ export function MissionWorktree(props: any) {
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
     activityHistoryState,
+    setActivityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
     loadOlderActivities,
@@ -189,6 +201,7 @@ export function MissionWorktree(props: any) {
     agentModelOptions = {},
   } = props;
   const [pendingAcpReconnects, setPendingAcpReconnects] = useState<Record<string, string | null>>({});
+  const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const {
     canSend,
     activeSessionRestoreGate,
@@ -218,7 +231,133 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
-  const openSessions = activeSession ? [...(sessions as any[])] : [];
+  const [openChatSessionIds, setOpenChatSessionIds] = useState<string[]>(() =>
+    activeSession?.id ? [activeSession.id] : [],
+  );
+  const [focusedChatSessionId, setFocusedChatSessionId] = useState<string | null>(() => activeSession?.id ?? null);
+  const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
+  const visibleChatSessionIds = activeSession?.id && !openChatSessionIds.includes(activeSession.id)
+    ? [...openChatSessionIds, activeSession.id]
+    : openChatSessionIds;
+  const openSessions = visibleChatSessionIds
+    .map((sessionId) => sessionById.get(sessionId))
+    .filter((session): session is SessionSummary => Boolean(session));
+  const openSessionIdSet = new Set(visibleChatSessionIds);
+  const selectedComposerSession = sessionById.get(focusedChatSessionId ?? activeSession?.id ?? "") ?? activeSession;
+  const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
+  const hydrateOpenSessionStreams = (sessionIds: string[]) => {
+    const client = rpcClientRef.current;
+    if (
+      pairingState !== "paired" ||
+      !client ||
+      client.socket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+    const uniqueSessionIds = [...new Set(sessionIds)];
+    const messageSessionIds = uniqueSessionIds.filter((sessionId) => (
+      !messageHistoryState[sessionId] && !messages?.[sessionId]?.length
+    ));
+    const activitySessionIds = uniqueSessionIds.filter((sessionId) => (
+      !activityHistoryState[sessionId] &&
+      !outputs?.[sessionId]?.length &&
+      !toolCalls?.[sessionId]?.length
+    ));
+
+    if (messageSessionIds.length > 0) {
+      setMessageHistoryState((current: any) => {
+        const next = { ...current };
+        messageSessionIds.forEach((sessionId) => {
+          if (!next[sessionId]) {
+            next[sessionId] = { hasMore: false, loading: true };
+          }
+        });
+        return next;
+      });
+      messageSessionIds.forEach((sessionId) => {
+        void dispatch(client, "session/list_messages", {
+          sessionId,
+          limit: DEFAULT_MESSAGE_PAGE_LIMIT,
+        });
+      });
+    }
+
+    if (activitySessionIds.length > 0) {
+      setActivityHistoryState((current: any) => {
+        const next = { ...current };
+        activitySessionIds.forEach((sessionId) => {
+          if (!next[sessionId]) {
+            next[sessionId] = { hasMore: false, loading: true };
+          }
+        });
+        return next;
+      });
+      activitySessionIds.forEach((sessionId) => {
+        void dispatch(client, "session/get_artifacts", {
+          sessionId,
+          limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
+        });
+      });
+    }
+  };
+  useEffect(() => {
+    hydrateOpenSessionStreams(openSessions.map((session) => session.id));
+  }, [
+    openSessionStreamKey,
+    pairingState,
+    messageHistoryState,
+    activityHistoryState,
+    messages,
+    outputs,
+    toolCalls,
+  ]);
+  useEffect(() => {
+    setOpenChatSessionIds((current) => {
+      const existingSessionIds = new Set((sessions as SessionSummary[]).map((session) => session.id));
+      const retained = current.filter((sessionId) => existingSessionIds.has(sessionId));
+      if (!activeSession?.id || retained.includes(activeSession.id)) {
+        return retained.length === current.length ? current : retained;
+      }
+      return [...retained, activeSession.id];
+    });
+  }, [activeSession?.id, sessions]);
+  useEffect(() => {
+    if (activeSession?.id) {
+      setFocusedChatSessionId(activeSession.id);
+    }
+  }, [activeSession?.id]);
+  const openChatSession = (sessionId: string) => {
+    setOpenChatSessionIds((current) => (current.includes(sessionId) ? current : [...current, sessionId]));
+    setFocusedChatSessionId(sessionId);
+    hydrateOpenSessionStreams([sessionId]);
+    if (sessionId !== activeSessionId) {
+      openSession(sessionId);
+    }
+  };
+  const selectChatSession = (sessionId: string) => {
+    setOpenChatSessionIds((current) => (current.includes(sessionId) ? current : [...current, sessionId]));
+    setFocusedChatSessionId(sessionId);
+    if (sessionId !== activeSessionId) {
+      openSession(sessionId);
+    }
+  };
+  const closeChatSession = (session: SessionSummary) => {
+    setOpenChatSessionIds((current) => {
+      const next = current.filter((sessionId) => sessionId !== session.id);
+      if (focusedChatSessionId === session.id) {
+        setFocusedChatSessionId(next.at(-1) ?? activeSession?.id ?? null);
+      }
+      if (activeSessionId === session.id) {
+        const nextActiveSessionId = next.at(-1) ?? null;
+        if (nextActiveSessionId) {
+          openSession(nextActiveSessionId);
+        } else {
+          setActiveSessionId(null);
+        }
+      }
+      return next;
+    });
+  };
   const onToggleDisplay = () => {
     setMissionDisplayCollapsed((current: boolean) => !current);
   };
@@ -233,40 +372,99 @@ export function MissionWorktree(props: any) {
         : []
     : [];
   const worktreeOptions = rawWorktreeOptions.filter(isManagedWorktreeWorktree);
+  const selectedSessionWorktreeItems = (() => {
+    const sourceSessions = openSessions.length ? openSessions : activeSession ? [activeSession] : [];
+    const byCwd = new Map<
+      string,
+      {
+        branchName: string;
+        cwd: string;
+        sessionCount: number;
+        sessionTitles: string[];
+      }
+    >();
+
+    for (const session of sourceSessions) {
+      if (!session.cwd) {
+        continue;
+      }
+      const cwdKey = normalizeWorktreePath(session.cwd) ?? session.cwd;
+      const activeCwd = activeSession?.cwd ? normalizeWorktreePath(activeSession.cwd) : null;
+      const branchName =
+        session.worktreeName ??
+        (activeCwd && cwdKey === activeCwd ? currentGitBranch : null) ??
+        session.projectName ??
+        "未检测分支";
+      const existing = byCwd.get(cwdKey);
+      if (existing) {
+        existing.sessionCount += 1;
+        continue;
+      }
+      byCwd.set(cwdKey, {
+        branchName,
+        cwd: session.cwd,
+        sessionCount: 1,
+        sessionTitles: [],
+      });
+    }
+
+    return Array.from(byCwd.values());
+  })();
+  const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
+  const inspectorWorktreeSummaryLabel = selectedSessionWorktreeItems.length
+    ? `${selectedSessionWorktreeItems
+        .slice(0, 2)
+        .map((item) => item.branchName)
+        .join(" / ")}${selectedSessionWorktreeItems.length > 2 ? ` +${selectedSessionWorktreeItems.length - 2}` : ""}`
+    : `${worktreeOptions.length} Worktrees`;
   const renderWorktreeList = () => (
-    <div className="mission-worktree-list grid gap-2">
-      {worktreeOptions.length ? (
+    <div className="mission-worktree-list grid gap-1">
+      {selectedSessionWorktreeItems.length ? (
+        selectedSessionWorktreeItems.map((item) => (
+          <div
+            key={normalizeWorktreePath(item.cwd)}
+            className="rounded border border-border-ghost bg-surface px-3 py-2 text-sm"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon name="branch" size={11} className="text-muted-foreground" />
+              <strong className="min-w-0 truncate text-foreground">{item.branchName}</strong>
+            </div>
+            <p className="mt-1 break-all font-mono text-[10px] leading-snug text-muted-foreground">
+              {item.cwd}
+            </p>
+          </div>
+        ))
+      ) : worktreeOptions.length ? (
         worktreeOptions.map((worktree: any) => {
           const selected = normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSession?.cwd ?? selectedCwd);
           return (
             <div
               key={worktree.path}
               className={joinClassNames([
-                "rounded-lg border border-border-ghost bg-surface-sunken p-3 text-sm",
-                selected ? "border-primary/50 bg-primary-soft/30" : "",
+                "bg-transparent px-3 py-2 text-sm",
+                selected ? "bg-surface-emphasis/50" : "hover:bg-surface-emphasis/40",
               ])}
             >
-              <div className="flex items-center justify-between gap-3">
-                <strong className="min-w-0 truncate text-foreground">{worktree.name}</strong>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <strong className="block truncate text-foreground">{worktree.name ?? worktree.path}</strong>
+                </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="grid h-[var(--control-h-md)] w-[var(--control-h-md)] shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-surface-emphasis hover:text-foreground"
-                      aria-label={`${worktree.name} 的 Worktree 操作`}
-                      title="Worktree 操作"
+                      className="rounded border border-border-ghost px-2 py-1 text-xs text-muted-foreground hover:bg-surface-emphasis"
                     >
-                      ⋯
+                      连接
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-48">
-                    {filteredAgents.length ? (
-                      filteredAgents.map((agent: any) => (
+                  <DropdownMenuContent align="end">
+                    {agents.length ? (
+                      agents.map((agent: any) => (
                         <DropdownMenuItem
-                          key={`${worktree.path}:${agent.id}`}
+                          key={agent.id}
                           onSelect={() => {
-                            setActiveSessionId(null);
-                            selectDraftWorktree(worktree.path);
+                            setSelectedCwd(worktree.path);
                             selectDraftAgent(agent.id);
                           }}
                         >
@@ -285,23 +483,47 @@ export function MissionWorktree(props: any) {
         })
       ) : (
         <p className="subtle compact text-sm leading-relaxed text-muted-foreground">
-当前项目暂无 Tiller Worktree 记录。
+          当前选中会话暂无 cwd / 分支记录。
         </p>
       )}
     </div>
   );
+  const toggleCommitDiffPath = (path: string) => {
+    setSelectedCommitDiffPaths((current) => {
+      const next = new Set(current);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  };
+  const toggleCommitDiffDirectory = (paths: string[]) => {
+    setSelectedCommitDiffPaths((current) => {
+      const next = new Set(current);
+      const allSelected = paths.every((path) => next.has(path));
+      paths.forEach((path) => {
+        if (allSelected) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+      });
+      return next;
+    });
+  };
   const renderInspectorDiffPanel = () => (
     <MissionDiffPanel
       selectedDiffFilePath={selectedMissionDiffFilePath}
       diffs={activeDiffs}
       noDiffSummary={copy.noDiffSummary}
       collapsedDiffDirectories={collapsedMissionDiffDirectories}
+      selectedCommitDiffPaths={selectedCommitDiffPaths}
+      onToggleCommitDiff={toggleCommitDiffPath}
+      onToggleCommitDiffDirectory={toggleCommitDiffDirectory}
       onOpenDiffDetail={openDiffDetail}
       onToggleDiffDirectory={toggleMissionDiffDirectory}
     />
   );
   const chatPaneClassName = joinClassNames([
-    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
+    "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
@@ -313,12 +535,16 @@ export function MissionWorktree(props: any) {
     );
     setSelectedMissionMobilePane(MISSION_MOBILE_PANE_ORDER[nextIndex]);
   }
+  const hasSelectedDisplayDiff = Boolean(
+    selectedMissionDiffFilePath || (openedMissionDiffFilePaths?.length ?? 0) > 0,
+  );
+  const displayPaneCollapsed = effectiveDisplayCollapsed || !hasSelectedDisplayDiff;
   const missionLayoutClassName = joinClassNames([
     "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveSidebarCollapsed && "sidebar-collapsed",
-    effectiveDisplayCollapsed && "mission-display-collapsed",
-    effectiveDisplayCollapsed && "display-collapsed",
+    displayPaneCollapsed && "mission-display-collapsed",
+    displayPaneCollapsed && "display-collapsed",
     effectiveInspectorCollapsed && "mission-inspector-collapsed",
     effectiveInspectorCollapsed && "inspector-collapsed",
     isMissionMobile && "mission-mobile-mode",
@@ -343,7 +569,7 @@ export function MissionWorktree(props: any) {
     });
   }, [agentConnectionInventory]);
   const runtimeOverviewItems = (() => {
-    const sessionById = new Map((sessions as any[]).map((session) => [session.id, session]));
+    const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
     const items: any[] = (agentConnectionInventory as any[]).map((connection) => {
       const agent = (agents as any[]).find((item) => item.id === connection.providerId);
       const worktree = (worktrees ?? []).find(
@@ -533,9 +759,21 @@ export function MissionWorktree(props: any) {
       style={missionLayoutStyle}
     >
       {" "}
-      <>
+      <ResizablePanelGroup
+        id="mission-workbench-resizable"
+        direction="horizontal"
+        className="mission-resizable-group h-full min-h-0 w-full [grid-column:1/-1]"
+        resizeTargetMinimumSize={{ fine: 4, coarse: 16 }}
+      >
         {" "}
-        <MissionSidebar
+        {isMissionMobile || !effectiveSidebarCollapsed ? (
+          <ResizablePanel
+            id="mission-sidebar"
+            defaultSize="248px"
+            minSize="0px"
+            className="h-full min-w-0"
+          >
+            <MissionSidebar
           effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
           missionSidebarCollapsed={missionSidebarCollapsed}
           missionSidebarPaneStyle={missionSidebarPaneStyle}
@@ -556,6 +794,7 @@ export function MissionWorktree(props: any) {
           currentGitBranch={currentGitBranch}
           missionDiffCount={missionDiffCount}
           agents={agents}
+          runtimeOverviewItems={runtimeOverviewItems}
           selectedAgentId={selectedAgentId}
           agentPickerOpen={agentPickerOpen}
           selectDraftAgent={selectDraftAgent}
@@ -569,7 +808,9 @@ export function MissionWorktree(props: any) {
           statuses={statuses}
           copy={copy}
           activeSessionId={activeSessionId}
-          openSession={openSession}
+          highlightedSessionId={focusedChatSessionId ?? activeSessionId}
+          openSessionIds={openSessionIdSet}
+          openSession={openChatSession}
           renderMissionAgentIcon={renderMissionAgentIcon}
           resolveDisplaySessionTitle={resolveDisplaySessionTitle}
           regenerateSessionTitle={regenerateSessionTitle}
@@ -579,17 +820,22 @@ export function MissionWorktree(props: any) {
           sessionHistoryState={sessionHistoryState}
           toggleMissionProjectNode={toggleMissionProjectNode}
           setSelectedMissionMobilePane={setSelectedMissionMobilePane}
-          resizer={
-            !isMissionMobile && !effectiveSidebarCollapsed ? (
-              <MissionPaneResizer
-                handle="sidebar"
-                label="调整任务列表宽度"
-                onResizeStart={startMissionPaneResize}
-                onNudge={nudgeMissionPane}
-              />
-            ) : null
-          }
+          resizer={null}
         />{" "}
+          </ResizablePanel>
+        ) : null}
+        {!isMissionMobile && !effectiveSidebarCollapsed ? (
+          <ResizableHandle
+            className="mission-pane-resizer mission-pane-resizer-sidebar w-px bg-transparent hover:bg-primary-soft/20"
+            aria-label="调整任务列表宽度"
+          />
+        ) : null}
+        <ResizablePanel
+          id="mission-chat"
+          defaultSize="100%"
+          minSize="360px"
+          className="h-full min-w-0"
+        >
         <MissionChatPane
           className={chatPaneClassName}
           style={missionChatPaneStyle}
@@ -598,8 +844,11 @@ export function MissionWorktree(props: any) {
           helmConnected={helmConnected}
           activeSession={activeSession}
           openSessions={openSessions}
+          selectedSessionId={focusedChatSessionId ?? activeSession?.id ?? null}
           activeSessionMessages={activeSessionMessages}
+          sessionMessagesById={messages ?? {}}
           activeSessionToolCalls={activeToolCalls}
+          sessionToolCallsById={toolCalls ?? {}}
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
@@ -611,14 +860,16 @@ export function MissionWorktree(props: any) {
           pendingApprovals={pendingApprovals}
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
-          displayCollapsed={effectiveDisplayCollapsed}
+          displayCollapsed={displayPaneCollapsed}
           inspectorCollapsed={effectiveInspectorCollapsed}
           sidebarCollapsed={effectiveSidebarCollapsed}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
           onToggleInspector={onToggleInspector}
-          onFocusSession={openSession}
+          onFocusSession={openChatSession}
+          onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}
+          onCloseSessionView={closeChatSession}
           onClearSession={setPendingSessionCleanup}
           onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
@@ -646,6 +897,7 @@ export function MissionWorktree(props: any) {
           {shouldShowComposer ? (
             <MissionComposer
               activeSession={activeSession}
+              contextSession={selectedComposerSession}
               worktreePickerRef={worktreePickerRef}
               worktreePickerOpen={worktreePickerOpen}
               setWorktreePickerOpen={setWorktreePickerOpen}
@@ -713,14 +965,20 @@ export function MissionWorktree(props: any) {
             />
           ) : null}{" "}
         </MissionChatPane>{" "}
-        {!isMissionMobile && !effectiveDisplayCollapsed ? (
-          <MissionPaneResizer
-            handle="display"
-            label="调整任务展示宽度"
-            onResizeStart={startMissionPaneResize}
-            onNudge={nudgeMissionPane}
+        </ResizablePanel>
+        {!isMissionMobile && !displayPaneCollapsed ? (
+          <ResizableHandle
+            className="mission-pane-resizer mission-pane-resizer-display w-px bg-transparent hover:bg-primary-soft/20"
+            aria-label="调整任务展示宽度"
           />
-        ) : null}{" "}
+        ) : null}
+        {isMissionMobile || !displayPaneCollapsed ? (
+          <ResizablePanel
+            id="mission-display"
+            defaultSize="320px"
+            minSize="0px"
+            className="h-full min-w-0"
+          >
         <MissionDisplaySection
             style={missionDisplayPaneStyle}
             pages={missionPanelPages}
@@ -728,6 +986,7 @@ export function MissionWorktree(props: any) {
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
             currentModelSummary={`当前模型：${draftModelPickerLabel} · 推理：${resolveReasoningLabel(effectiveDraftReasoningEffort)}`}
+            openedDiffFilePaths={openedMissionDiffFilePaths ?? []}
             selectedDiffFilePath={selectedMissionDiffFilePath}
             diffs={activeDiffs}
             noDiffSummary={copy.noDiffSummary}
@@ -761,26 +1020,40 @@ export function MissionWorktree(props: any) {
             onRenamePage={renameMissionPanelPage}
             onMovePage={moveMissionPanelPage}
             onDeletePage={deleteMissionPanelPage}
+            onOpenDiffDetail={openDiffDetail}
+            onCloseDiffFile={closeMissionDiffFile}
+            onCollapse={onToggleDisplay}
         />{" "}
+          </ResizablePanel>
+        ) : null}
+        {!isMissionMobile && !effectiveInspectorCollapsed ? (
+          <ResizableHandle
+            className="mission-pane-resizer mission-pane-resizer-inspector w-px bg-transparent hover:bg-primary-soft/20"
+            aria-label="调整检视器宽度"
+          />
+        ) : null}
+        {isMissionMobile || !effectiveInspectorCollapsed ? (
+          <ResizablePanel
+            id="mission-inspector"
+            defaultSize="280px"
+            minSize="0px"
+            className="h-full min-w-0"
+          >
         <MissionInspector
           collapsed={isMissionMobile ? false : effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
           activeSessionPresent={Boolean(activeSession)}
-          worktreeCount={worktreeOptions.length}
+          worktreeCount={inspectorWorktreeCount}
+          worktreeSummaryLabel={inspectorWorktreeSummaryLabel}
           worktreeList={renderWorktreeList()}
           diffCount={missionDiffCount}
+          selectedDiffCount={selectedCommitDiffPaths.size}
           diffPanel={renderInspectorDiffPanel()}
-          resizer={
-            !isMissionMobile ? (
-              <MissionPaneResizer
-                handle="inspector"
-                label="调整检视器宽度"
-                onResizeStart={startMissionPaneResize}
-                onNudge={nudgeMissionPane}
-              />
-            ) : null
-          }
+          onCollapse={onToggleInspector}
+          resizer={null}
         />{" "}
+          </ResizablePanel>
+        ) : null}
         {isMissionMobile ? (
           <nav className="mission-mobile-edge-pager" aria-label="移动端左右翻页热区">
             <button
@@ -804,7 +1077,7 @@ export function MissionWorktree(props: any) {
           selectedPane={resolvedMissionMobilePane}
           onSelectPane={setSelectedMissionMobilePane}
         />
-      </>{" "}
+      </ResizablePanelGroup>{" "}
     </MissionPage>
   );
 }

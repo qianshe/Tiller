@@ -331,7 +331,7 @@ export function DashboardPage({
             ))}
           </ul>
           <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5">
-            <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">24H</span>
+            <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">24h</span>
             <Sparkline />
             <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{localMessageCount} msg · {toolCallCount} tool</span>
           </div>

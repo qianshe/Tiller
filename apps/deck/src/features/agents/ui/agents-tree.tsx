@@ -155,18 +155,17 @@ export function AgentsTree({
           const active = selectedHelm.key === helm.key;
           const counts = countsForHelm(helm, selectedHelm, selectedHelmCounts, helmInventories);
           return (
-            <button
-              key={helm.key}
-              type="button"
-              role="listitem"
-              className={`w-full rounded px-1.5 py-1 text-left transition-colors ${
-                active ? "bg-surface-emphasis text-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
-              }`}
-              onClick={() => setSelectedHelmKey(helm.key)}
-              aria-pressed={active}
-              title={`${helm.name} · ${helm.host}:${helm.port}`}
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
+            <div key={helm.key}>
+              <button
+                type="button"
+                role="listitem"
+                className={`flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left transition-colors ${
+                  active ? "bg-surface-emphasis text-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
+                }`}
+                onClick={() => setSelectedHelmKey(helm.key)}
+                aria-pressed={active}
+                title={`${helm.name} · ${helm.host}:${helm.port}`}
+              >
                 <Icon
                   name="chevronDown"
                   size={12}
@@ -176,9 +175,9 @@ export function AgentsTree({
                 <Icon name="server" size={12} className="text-muted-foreground" />
                 <strong className="flex-1 truncate text-section font-medium">{helm.name}</strong>
                 <span className="font-mono text-meta tabular text-muted-foreground">{counts.agents}A</span>
-              </span>
+              </button>
               {active ? (
-                <span className="ml-10 mt-px grid gap-px">
+                <div className="ml-4 mt-px mb-1 grid gap-px">
                   {(helmInventories[helm.key]?.agents ?? []).map((a) => (
                     <span
                       key={a.id}
@@ -197,9 +196,9 @@ export function AgentsTree({
                     <Icon name="board" size={11} />
                     {counts.worktrees} 工作区
                   </span>
-                </span>
+                </div>
               ) : null}
-            </button>
+            </div>
           );
         })}
       </div>
