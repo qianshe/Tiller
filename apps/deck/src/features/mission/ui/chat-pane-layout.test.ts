@@ -41,6 +41,10 @@ const cleanupDialogSource = readFileSync(
 const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
 const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
 const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
+const sessionCommandActionsSource = readFileSync(
+  resolve(currentDir, "../actions/session-command-actions.ts"),
+  "utf8",
+);
 const messageTimelineSource = readFileSync(
   resolve(currentDir, "message-timeline.tsx"),
   "utf8",
@@ -240,7 +244,9 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /changedSessionIds\.forEach/);
   assert.match(chatPaneSource, /if \(messageCount > 0 \|\| toolCallCount > 0\)/);
   assert.match(chatPaneSource, /sessionBodyScrollPositionRef/);
-  assert.match(chatPaneSource, /body\.scrollTop = body\.scrollHeight/);
+  assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
+  assert.doesNotMatch(chatPaneSource, /scrollBottom/);
+  assert.doesNotMatch(chatPaneSource, /ResizeObserver/);
   assert.match(chatPaneSource, /onBodyScroll=\{\(event\) => \{/);
   assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
   assert.match(chatPaneSource, /selectedSessionId: string \| null/);
@@ -251,7 +257,13 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 160\)/);
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 800\)/);
   assert.match(chatPaneSource, /AgentIcon name=\{session\.agentName\}/);
-  assert.match(chatPaneSource, /StatusDot tone=\{statusTone\}/);
+  assert.match(chatPaneSource, /<div className="flex-1" \/>\s*<StatusDot tone=\{statusTone\} pulse=\{isStreaming\} \/>/);
+  assert.match(chatPaneSource, /onRename=\{onRenameSession\}/);
+  assert.match(chatPaneSource, /onClear=\{onClearSession\}/);
+  assert.match(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
+  assert.match(chatPaneSource, /<MissionToolLoading/);
+  assert.match(chatPaneSource, /聚焦会话/);
+  assert.match(chatPaneSource, /关闭窗口/);
   assert.match(chatPaneSource, /title="关闭此 session"/);
   assert.match(chatPaneSource, /Icon name="more"/);
   assert.doesNotMatch(chatPaneSource, /rounded-md bg-surface-sunken\/70 p-3/);
@@ -302,8 +314,18 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /setFocusedChatSessionId\(sessionId\)/);
   assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
   assert.match(worktreeSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
+  assert.match(worktreeSource, /openSessionTopicSubscriptionsRef/);
+  assert.match(worktreeSource, /subscribeToSessionTopic\(client, sessionId, dispatch\)/);
+  assert.match(worktreeSource, /unsubscribeFromSessionTopic\(client, sessionId, dispatch\)/);
   assert.match(worktreeSource, /dispatch\(client, "session\/list_messages"/);
   assert.match(worktreeSource, /dispatch\(client, "session\/get_artifacts"/);
+  assert.match(worktreeSource, /openSessionResumeCheckRef/);
+  assert.match(worktreeSource, /resumeCheckSessionIds/);
+  assert.match(worktreeSource, /openSessionResumeCheckRef\.current\.add\(sessionId\)/);
+  assert.match(worktreeSource, /dispatch\(client, "session\/check_resume", \{ sessionId \}\)/);
+  assert.match(worktreeSource, /session\.status !== "running"/);
+  assert.match(worktreeSource, /session\.resume\?\.state !== "resume-unavailable"/);
+  assert.match(worktreeSource, /sessions,/);
   assert.match(worktreeSource, /setMessageHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
@@ -338,7 +360,11 @@ test("mission composer mirrors the v6 sunken command deck", () => {
   assert.match(composerSource, /const composerSession = contextSession \?\? activeSession/);
   assert.match(composerSource, /composerSession\?\.agentName/);
   assert.match(composerSource, /composerSession\?\.title/);
-  assert.match(composerSource, /MissionStatusBar[\s\S]*col-start-2 justify-self-center/);
+  assert.match(composerSource, /onSubmit=\{\(event\) => submitPrompt\(event, composerSession\)\}/);
+  assert.match(sessionCommandActionsSource, /function submitPrompt\(event: FormEvent<HTMLFormElement>, targetSession\?: SessionSummary \| null\)/);
+  assert.match(sessionCommandActionsSource, /const promptSession = targetSession \?\? activeSession/);
+  assert.match(sessionCommandActionsSource, /activeSessionId: promptSessionId/);
+  assert.match(composerSource, /MissionStatusBar[\s\S]*col-start-2 self-center justify-self-center/);
   assert.doesNotMatch(composerSource, /esc 取消 · ↑ 历史/);
   assert.match(composerSource, /Icon name="send"/);
   assert.doesNotMatch(composerSource, /mission-order-editor grid gap-3 rounded-md border/);
@@ -418,6 +444,8 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(diffTreeSource, /mission-diff-line grid min-w-full/);
   assert.match(diffTreeSource, /grid-cols-\[2\.5rem_max-content\]/);
   assert.match(diffTreeSource, /style=\{\{ display: "grid" \}\}/);
+  assert.match(diffTreeSource, /visibleLines = patch\.split/);
+  assert.match(diffTreeSource, /isDiffHeaderLine/);
   assert.match(diffPanelSource, /selectedCommitDiffPaths/);
   assert.match(diffPanelSource, /onToggleCommitDiffDirectory/);
   assert.match(diffPanelSource, /collectDiffFilePaths/);
@@ -430,12 +458,18 @@ test("mission diff and inspector commit controls support full-row review", () =>
 });
 
 test("mission tool call rows stay compact", () => {
+  assert.match(plainMessagesSource, /plain-assistant-segment-dot size-1\.5 rounded-full ring-2/);
+  assert.match(plainMessagesSource, /plain-thinking[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
+  assert.match(plainMessagesSource, /plain-tool-group[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
   assert.match(plainMessagesSource, /plain-tool-call grid gap-0\.5 py-0\.5/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
   assert.doesNotMatch(plainMessagesSource, />混合</);
   assert.doesNotMatch(plainMessagesSource, /BUILT-IN/);
-  assert.match(plainMessagesSource, /mission-message-attachments ml-auto grid w-fit max-w-full justify-self-end justify-items-end gap-2 sm:grid-cols-2/);
+  assert.match(plainMessagesSource, /mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end/);
+  assert.match(plainMessagesSource, /mission-message-image w-28 max-w-\[30vw\]/);
+  assert.match(plainMessagesSource, /className="h-16 w-full object-cover"/);
+  assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?[\s\S]*mission-message-attachments flex max-w-full flex-wrap gap-2/);
 });
 
 test("mission display keeps v6 diff viewer chrome as the primary display surface", () => {

@@ -40,15 +40,7 @@ test("opening an old session requests only the latest message and activity pages
   );
 });
 
-test("mission effects subscribes only to the active session topic and cleans up the previous topic", () => {
-  assert.match(missionEffectsSourceText, /subscribeToSessionTopic/);
-  assert.match(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
-  assert.match(
-    missionEffectsSourceText,
-    /subscribeToSessionTopic\(rpcClientRef\.current,\s*activeSessionId,\s*dispatch\)/s,
-  );
-  assert.match(
-    missionEffectsSourceText,
-    /return \(\) => \{[\s\S]*unsubscribeFromSessionTopic\(client,\s*activeSessionId,\s*dispatch\)/s,
-  );
+test("mission effects leaves session topic subscriptions to the open session grid", () => {
+  assert.doesNotMatch(missionEffectsSourceText, /subscribeToSessionTopic/);
+  assert.doesNotMatch(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
 });

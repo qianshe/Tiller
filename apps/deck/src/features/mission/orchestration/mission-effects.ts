@@ -2,10 +2,6 @@
 import { useEffect } from "react";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
-import {
-  subscribeToSessionTopic,
-  unsubscribeFromSessionTopic,
-} from "../../helm-connection/facade";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
 import { useSnapshotCache } from "../hooks/snapshot-cache";
 import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
@@ -124,24 +120,6 @@ useEffect(() => {
   messageHistoryState,
   sessionOpenScrollTick,
 ]);
-useEffect(() => {
-  if (
-    !activeSessionId ||
-    pairingState !== "paired" ||
-    !rpcClientRef.current ||
-    rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-  const client = rpcClientRef.current;
-  void subscribeToSessionTopic(rpcClientRef.current, activeSessionId, dispatch);
-  return () => {
-    if (client.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    void unsubscribeFromSessionTopic(client, activeSessionId, dispatch);
-  };
-}, [activeSessionId, pairingState]);
 // Opening an old session is windowed: Deck asks Helm for the latest message/artifact
 // page, then starts ACP resume separately. Restore replay is handled inside Helm and
 // must not be treated as a replacement for these paged history requests.

@@ -154,7 +154,7 @@ export function MissionChatPane({
         ) : (
           <SessionPreviewMessages session={session} restoring={isActiveSession} />
         )}
-        {isActiveSession && activityLoading ? (
+        {isSingleSession && isActiveSession && activityLoading ? (
           <MissionToolLoading
             activity={activityLoading}
             pendingToolPresent={pendingToolPresent}
@@ -469,6 +469,8 @@ export function MissionChatPane({
                 };
               }}
               onFocus={onSelectSessionView}
+              onRename={onRenameSession}
+              onClear={onClearSession}
               onClose={onCloseSessionView}
             >
               {renderSessionStream(singleSession)}
@@ -494,6 +496,8 @@ export function MissionChatPane({
                     };
                   }}
                   onFocus={onSelectSessionView}
+                  onRename={onRenameSession}
+                  onClear={onClearSession}
                   onClose={onCloseSessionView}
                 >
                   {renderSessionStream(session)}
@@ -536,6 +540,8 @@ function SessionCard({
   bodyScrollSnapshot,
   onBodyScroll,
   onFocus,
+  onRename,
+  onClear,
   onClose,
   flat = false,
   children,
@@ -545,6 +551,8 @@ function SessionCard({
   bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
   onBodyScroll: UIEventHandler<HTMLDivElement>;
   onFocus: (sessionId: string) => void;
+  onRename: (session: SessionSummary) => void;
+  onClear: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
   flat?: boolean;
   children: ReactNode;
@@ -552,6 +560,7 @@ function SessionCard({
   const isStreaming = session.status === "running";
   const statusTone = resolveSessionStatusTone(session.status);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [cardMenuOpen, setCardMenuOpen] = useState(false);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -596,15 +605,76 @@ function SessionCard({
           {session.projectName}
           {session.worktreeName ? ` / ${session.worktreeName}` : ""}
         </span>
-        <StatusDot tone={statusTone} pulse={isStreaming} />
         <div className="flex-1" />
-        <button
-          className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-sunken"
-          title="session 菜单"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <Icon name="more" size={11} />
-        </button>
+        <StatusDot tone={statusTone} pulse={isStreaming} />
+        <div className="relative">
+          <button
+            type="button"
+            className={cn(
+              "grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground",
+              cardMenuOpen && "bg-surface-sunken text-foreground",
+            )}
+            title="session 菜单"
+            aria-haspopup="menu"
+            aria-expanded={cardMenuOpen}
+            onClick={(event) => {
+              event.stopPropagation();
+              setCardMenuOpen((current) => !current);
+            }}
+          >
+            <Icon name="more" size={11} />
+          </button>
+          {cardMenuOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[160px] overflow-hidden rounded-[8px] py-1"
+              style={{
+                background: "var(--popover-glass)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MenuItem
+                checked={active}
+                icon="check"
+                onClick={() => {
+                  onFocus(session.id);
+                  setCardMenuOpen(false);
+                }}
+              >
+                聚焦会话
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  onRename(session);
+                  setCardMenuOpen(false);
+                }}
+              >
+                重命名
+              </MenuItem>
+              <div className="mx-1 my-1 h-px bg-border-ghost" />
+              <MenuItem
+                tone="destructive"
+                onClick={() => {
+                  onClear(session);
+                  setCardMenuOpen(false);
+                }}
+              >
+                清理会话
+              </MenuItem>
+              <MenuItem
+                tone="destructive"
+                onClick={() => {
+                  onClose(session);
+                  setCardMenuOpen(false);
+                }}
+              >
+                关闭窗口
+              </MenuItem>
+            </div>
+          ) : null}
+        </div>
         <button
           className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
           title="关闭此 session"

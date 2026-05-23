@@ -187,7 +187,7 @@ const PlainMessageItem = memo(function PlainMessageItem({
         `plain-${message.role}`,
         isStreaming && "plain-message-streaming",
         isAssistant
-          ? "mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3"
+          ? "mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5"
           : "ml-auto grid max-w-[min(620px,72%)] justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
@@ -195,15 +195,20 @@ const PlainMessageItem = memo(function PlainMessageItem({
       {isAssistant ? (
         <span
           aria-hidden="true"
-          className="plain-assistant-segment-marker flex min-h-6 justify-center pt-2"
+          className="plain-assistant-segment-marker flex min-h-5 justify-center pt-2"
         >
           <span className={cn(
-            "plain-assistant-segment-dot size-2 rounded-full ring-4 ring-surface-sunken",
+            "plain-assistant-segment-dot size-1.5 rounded-full ring-2 ring-surface-sunken",
             isStreaming ? "animate-pulse bg-accent" : "bg-success",
           )} />
         </span>
       ) : null}
-      <div className="grid min-w-0 gap-2">
+      <div
+        className={cn(
+          "grid min-w-0 gap-2",
+          message.role === "user" && "w-full justify-items-end",
+        )}
+      >
         {message.role === "user" ? null : (
           <span
             className={cn(
@@ -215,18 +220,18 @@ const PlainMessageItem = memo(function PlainMessageItem({
           </span>
         )}
         {message.role === "user" && message.attachments?.length ? (
-          <div className="mission-message-attachments ml-auto grid w-fit max-w-full justify-self-end justify-items-end gap-2 sm:grid-cols-2">
+          <div className="mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end">
             {message.attachments.map((image, index) => (
               <figure
                 key={`${message.id}-image-${index}`}
-                className="mission-message-image max-w-full overflow-hidden rounded-[12px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
+                className="mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
               >
                 <img
                   src={`data:${image.mimeType};base64,${image.data}`}
                   alt={image.name ?? `粘贴图片 ${index + 1}`}
-                  className="w-full object-contain"
+                  className="h-16 w-full object-cover"
                 />
-                <figcaption className="px-2 py-1 text-xs text-muted-foreground">
+                <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
                   {image.name ?? `粘贴图片 ${index + 1}`}
                 </figcaption>
               </figure>
@@ -252,18 +257,18 @@ const PlainMessageItem = memo(function PlainMessageItem({
           </Button>
         ) : null}
         {message.role !== "user" && message.attachments?.length ? (
-          <div className="mission-message-attachments grid gap-2 sm:grid-cols-2">
+          <div className="mission-message-attachments flex max-w-full flex-wrap gap-2">
             {message.attachments.map((image, index) => (
               <figure
                 key={`${message.id}-image-${index}`}
-                className="mission-message-image overflow-hidden rounded-md border border-border-ghost bg-surface-sunken"
+                className="mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.08)]"
               >
                 <img
                   src={`data:${image.mimeType};base64,${image.data}`}
                   alt={image.name ?? `粘贴图片 ${index + 1}`}
-                  className="w-full object-contain"
+                  className="h-16 w-full object-cover"
                 />
-                <figcaption className="px-2 py-1 text-xs text-muted-foreground">
+                <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
                   {image.name ?? `粘贴图片 ${index + 1}`}
                 </figcaption>
               </figure>
@@ -310,17 +315,17 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
   }, [isRunning]);
 
   return (
-    <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
-      <span aria-hidden="true" className="mt-1.5 inline-flex size-3 items-center justify-center text-muted-foreground/60">
+    <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+      <span aria-hidden="true" className="mt-1.5 inline-flex size-3 items-center justify-center rounded-full bg-primary-soft text-primary">
         <PlainThinkingIcon />
       </span>
       <details
-        className="plain-thinking min-w-0 w-full text-muted-foreground"
+        className="plain-thinking min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-sm py-1 pr-1 text-xs text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-sm py-0.5 text-xs text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
           <span className="min-w-0 truncate font-medium">
@@ -330,7 +335,7 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
             {open ? "⌃" : "⌄"}
           </span>
         </summary>
-        <div className="plain-thinking-content ml-1.5 border-l border-border-ghost pl-3.5 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+        <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
           <MarkdownMessage text={text} />
         </div>
       </details>
@@ -350,18 +355,18 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
   }, [isRunning]);
 
   return (
-    <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 text-muted-foreground">
-      <span aria-hidden="true" className="mt-0.5 inline-flex size-3 items-center justify-center text-muted-foreground/60">
+    <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+      <span aria-hidden="true" className="mt-1 inline-flex size-3 items-center justify-center rounded-full bg-primary-soft text-primary">
         <Icon name={groupIconName} size={10} />
       </span>
       <details
-        className="plain-tool-group min-w-0 w-full text-muted-foreground"
+        className="plain-tool-group min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
         data-tool-group-kind={groupBadgeLabel.toLowerCase()}
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 pr-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
           <span className="whitespace-nowrap font-medium text-muted-foreground">
@@ -379,7 +384,7 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
             {open ? "⌃" : "⌄"}
           </span>
         </summary>
-        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-border-ghost pl-3.5 pr-1 text-sm text-muted-foreground" data-mission-swipe-lock="true">
+        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-sm text-muted-foreground" data-mission-swipe-lock="true">
           {group.map((item) => (
             <PlainToolCallItem key={item.id} item={item} />
           ))}

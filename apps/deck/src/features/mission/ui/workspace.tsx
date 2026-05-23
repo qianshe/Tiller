@@ -1,5 +1,9 @@
 import type { SessionSummary } from "@tiller/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  subscribeToSessionTopic,
+  unsubscribeFromSessionTopic,
+} from "../../helm-connection/facade";
 import { MissionChatPane } from "./chat-pane";
 import { MissionComposer } from "./composer";
 import { MissionDiffPanel } from "./diff-panel";
@@ -235,6 +239,8 @@ export function MissionWorktree(props: any) {
     activeSession?.id ? [activeSession.id] : [],
   );
   const [focusedChatSessionId, setFocusedChatSessionId] = useState<string | null>(() => activeSession?.id ?? null);
+  const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
+  const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
   const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
   const visibleChatSessionIds = activeSession?.id && !openChatSessionIds.includes(activeSession.id)
     ? [...openChatSessionIds, activeSession.id]
@@ -245,6 +251,40 @@ export function MissionWorktree(props: any) {
   const openSessionIdSet = new Set(visibleChatSessionIds);
   const selectedComposerSession = sessionById.get(focusedChatSessionId ?? activeSession?.id ?? "") ?? activeSession;
   const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
+  useEffect(() => {
+    const client = rpcClientRef.current;
+    if (
+      pairingState !== "paired" ||
+      !client ||
+      client.socket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+    const nextSessionIds = new Set(openSessions.map((session) => session.id));
+    const subscribedSessionIds = openSessionTopicSubscriptionsRef.current;
+
+    subscribedSessionIds.forEach((sessionId) => {
+      if (!nextSessionIds.has(sessionId)) {
+        subscribedSessionIds.delete(sessionId);
+        void unsubscribeFromSessionTopic(client, sessionId, dispatch);
+      }
+    });
+    nextSessionIds.forEach((sessionId) => {
+      if (!subscribedSessionIds.has(sessionId)) {
+        subscribedSessionIds.add(sessionId);
+        void subscribeToSessionTopic(client, sessionId, dispatch);
+      }
+    });
+
+    return () => {
+      nextSessionIds.forEach((sessionId) => {
+        if (client.socket.readyState === WebSocket.OPEN) {
+          void unsubscribeFromSessionTopic(client, sessionId, dispatch);
+        }
+        subscribedSessionIds.delete(sessionId);
+      });
+    };
+  }, [openSessionStreamKey, pairingState]);
   const hydrateOpenSessionStreams = (sessionIds: string[]) => {
     const client = rpcClientRef.current;
     if (
@@ -263,6 +303,15 @@ export function MissionWorktree(props: any) {
       !outputs?.[sessionId]?.length &&
       !toolCalls?.[sessionId]?.length
     ));
+    const resumeCheckSessionIds = uniqueSessionIds.filter((sessionId) => {
+      const session = sessionById.get(sessionId);
+      return Boolean(
+        session &&
+          session.status !== "running" &&
+          session.resume?.state !== "resume-unavailable" &&
+          !openSessionResumeCheckRef.current.has(sessionId),
+      );
+    });
 
     if (messageSessionIds.length > 0) {
       setMessageHistoryState((current: any) => {
@@ -299,6 +348,11 @@ export function MissionWorktree(props: any) {
         });
       });
     }
+
+    resumeCheckSessionIds.forEach((sessionId) => {
+      openSessionResumeCheckRef.current.add(sessionId);
+      void dispatch(client, "session/check_resume", { sessionId });
+    });
   };
   useEffect(() => {
     hydrateOpenSessionStreams(openSessions.map((session) => session.id));
@@ -310,6 +364,7 @@ export function MissionWorktree(props: any) {
     messages,
     outputs,
     toolCalls,
+    sessions,
   ]);
   useEffect(() => {
     setOpenChatSessionIds((current) => {

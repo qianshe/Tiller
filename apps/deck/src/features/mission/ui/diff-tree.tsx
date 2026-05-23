@@ -142,9 +142,11 @@ function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
 }
 
 export function renderDiffPatch(patch: string) {
+  const visibleLines = patch.split(/\r?\n/u).filter((line) => !isDiffHeaderLine(line));
+
   return (
     <pre className="mission-diff-patch grid max-w-full min-w-0 grid-cols-[max-content] overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
-      {patch.split(/\r?\n/u).map((line, index) => (
+      {visibleLines.map((line, index) => (
         <span
           key={`${index}-${line.slice(0, 12)}`}
           className={`mission-diff-line grid min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
@@ -157,6 +159,15 @@ export function renderDiffPatch(patch: string) {
         </span>
       ))}
     </pre>
+  );
+}
+
+function isDiffHeaderLine(line: string) {
+  return (
+    line.startsWith("diff --git") ||
+    line.startsWith("index ") ||
+    line.startsWith("--- ") ||
+    line.startsWith("+++ ")
   );
 }
 

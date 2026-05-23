@@ -53,7 +53,10 @@ type MissionComposerProps = {
   filteredAgents: AcpAgentProvider[];
   selectedAgentId: string | null;
   selectDraftAgent: (agentId: string) => void;
-  submitPrompt: (event: FormEvent<HTMLFormElement>) => void;
+  submitPrompt: (
+    event: FormEvent<HTMLFormElement>,
+    targetSession?: SessionSummary | null,
+  ) => void;
   slashWrapperRef: MutableRefObject<HTMLDivElement | null>;
   promptImages: AgentPromptImageContent[];
   removePromptImage: (index: number) => void;
@@ -207,7 +210,7 @@ export function MissionComposer({
     >
       <form
         className="chat-input-form mission-composer-deck wb-pane-sunken px-2 py-1.5 w-full max-w-[min(1120px,calc(100%_-_32px))] mx-auto grid gap-1.5"
-        onSubmit={submitPrompt}
+        onSubmit={(event) => submitPrompt(event, composerSession)}
         data-testid="composer-form"
       >
         <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
@@ -355,7 +358,7 @@ export function MissionComposer({
             ) : null}
           </div>
           <MissionStatusBar
-            className="col-start-2 justify-self-center pointer-events-none w-fit max-w-[min(18rem,50%)] rounded bg-surface-sunken/80 px-2 py-0.5 text-center shadow-sm"
+            className="col-start-2 self-center justify-self-center pointer-events-none flex h-6 w-fit max-w-[min(18rem,50%)] items-center rounded bg-surface-sunken/80 px-2 py-0 text-center shadow-sm"
             modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
           />
