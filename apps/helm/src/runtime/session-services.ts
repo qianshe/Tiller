@@ -1,5 +1,4 @@
 import {
-  createAcpRuntime,
   loadAdapterAuthoritativeHistory,
   type AcpConnectionLifecycleEvent,
   type SessionRuntimeEvent,
@@ -39,8 +38,8 @@ import {
   shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
 } from "../sessions/provider-history-sync.js";
-import { broadcastSessionUpdate } from "../rpc/notifications";
-import { cleanupDraftProviderRuntime } from "../providers/draft-cleanup";
+import { createSessionEventPublisher } from "./session-event-publisher";
+import { createProviderLifecycle, type HelmRuntimeHandle } from "./provider-lifecycle";
 import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
 import {
@@ -105,7 +104,7 @@ export type SessionRecord = {
   summary: SessionSummary;
   agent: AcpAgentProvider;
   worktree: WorktreeSummary;
-  runtime: Awaited<ReturnType<typeof createAcpRuntime>>;
+  runtime: HelmRuntimeHandle;
 };
 
 type SessionServicesOptions = {
@@ -198,6 +197,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
   }
 
+  const providerLifecycle = createProviderLifecycle();
   const runtimeDrafts = new Map<string, RuntimeDraft>();
   const runtimeDraftsById = new Map<string, RuntimeDraft>();
   const pendingRuntimeDrafts = new Map<string, PendingRuntimeDraft>();
@@ -769,7 +769,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     clearTimeout(draft.expiresTimer);
     runtimeDrafts.delete(draft.scopeKey);
     runtimeDraftsById.delete(draft.draftId);
-    const cleanup = await cleanupDraftProviderRuntime(draft.runtime, draft.agent);
+    const cleanup = await providerLifecycle.cleanupDraftRuntime(draft.runtime, draft.agent);
     options.logInfo(
       `[tiller] draft.discard draft=${draft.draftId} deck=${draft.deckClientId} reason=${reason} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} cleanup=${cleanup.kind} activeDrafts=${runtimeDraftsById.size}`,
     );
@@ -833,7 +833,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       deckClientId: params.deckClientId,
       scopeKey,
       obsolete: false,
-      promise: createAcpRuntime({
+      promise: providerLifecycle.createRuntime({
         sessionId: draftId,
         worktree: params.worktree,
         agent: params.agent,
@@ -1158,7 +1158,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       options.logInfo(
         `[tiller] 阶段=恢复重放缓存打开 session=${sessionId}`,
       );
-      const runtime = await createAcpRuntime({
+      const runtime = await providerLifecycle.createRuntime({
         sessionId,
         worktree: restoreWorktree,
         agent: restoreAgent,
@@ -1308,7 +1308,7 @@ export function createSessionServices(options: SessionServicesOptions) {
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
     const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorktreeGit(sessionId, files));
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
-    broadcastSessionUpdate(options.createHandlerContext(), sessionId, {
+    createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
       kind: "diff_update",
       files: diffs,
     });

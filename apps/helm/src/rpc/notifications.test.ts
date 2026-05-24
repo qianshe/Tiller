@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { broadcastSessionUpdate } from "./notifications.js";
+import { createSessionEventPublisher } from "../runtime/session-event-publisher";
 
 const detailUpdates = [
   {
@@ -62,4 +63,28 @@ test("session detail updates are sent through the session topic broadcaster", ()
       },
     ]);
   }
+});
+
+test("session event publisher preserves notification payloads", () => {
+  const update = { kind: "status_change", status: "running" };
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const publisher = createSessionEventPublisher({
+    broadcastNotification: (method: string, params: unknown) => {
+      calls.push({ method, params });
+    },
+  } as any);
+
+  publisher.sessionUpdate("session-1", update);
+  publisher.errorRaised({ sessionId: "session-1", message: "failed" });
+
+  assert.deepEqual(calls, [
+    {
+      method: "session/update",
+      params: { sessionId: "session-1", update },
+    },
+    {
+      method: "error/raised",
+      params: { sessionId: "session-1", message: "failed" },
+    },
+  ]);
 });

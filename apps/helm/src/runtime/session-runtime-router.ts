@@ -1,10 +1,11 @@
 import type { AgentPromptContent, AvailableCommand, SessionConfigOptionValue, SessionQueuedPrompt, SessionReasoningEffort } from "@tiller/shared";
+import { SendPromptUseCase } from "@tiller/core";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
 } from "@tiller/shared";
 import { applyUserPromptToSummary } from "../sessions/facade";
-import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
+import { createSessionEventPublisher } from "./session-event-publisher";
 import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
@@ -73,7 +74,7 @@ async function resolvePromptRuntime(
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
-  broadcastSessionUpdate(context, sessionId, {
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "prompt_queue",
     queue: context.promptQueue.snapshot(sessionId),
   });
@@ -86,8 +87,8 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     updatedAt: new Date().toISOString(),
     lastMessagePreview: "Prompt failed",
   }));
-  broadcastErrorRaised(context, { sessionId, message });
-  broadcastSessionUpdate(context, sessionId, {
+  createSessionEventPublisher(context).errorRaised({ sessionId, message });
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "status_change",
     status: "error",
     message,
@@ -119,7 +120,7 @@ export async function sendPromptImmediately(
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
   context.persistSessionMessage(item.sessionId, userMessage);
-  broadcastSessionUpdate(context, item.sessionId, {
+  createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
     kind: "user_message",
     message: userMessage,
   });
@@ -127,7 +128,7 @@ export async function sendPromptImmediately(
     applyUserPromptToSummary(current, item.text, timestamp),
   );
   if (updated) {
-    broadcastSessionUpdate(context, item.sessionId, {
+    createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
       kind: "session_updated",
       session: updated,
     });
@@ -140,6 +141,40 @@ export async function sendPromptImmediately(
     );
   }
   return "end_turn" as const;
+}
+
+function createUserPromptMessage(
+  item: Pick<SessionQueuedPrompt, "sessionId" | "text" | "content" | "clientMessageId"> & { timestamp: string },
+) {
+  const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
+  return {
+    id: item.clientMessageId,
+    role: "user" as const,
+    text: item.text,
+    timestamp: item.timestamp,
+    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
+  };
+}
+
+async function appendUserPromptMessage(
+  sessionId: string,
+  userMessage: ReturnType<typeof createUserPromptMessage>,
+  context: HelmHandlerContext,
+) {
+  context.persistSessionMessage(sessionId, userMessage);
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
+    kind: "user_message",
+    message: userMessage,
+  });
+  const updated = context.updateSessionSummary(sessionId, (current) =>
+    applyUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
+  );
+  if (updated) {
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
 }
 
 async function runInFlightPrompt(
@@ -213,27 +248,50 @@ export async function sendPromptToSession(
     record.summary?.agentName ?? record.agent?.name ?? record.agent?.id ?? "ACP agent",
   );
 
-  const clientMessageId = params.clientMessageId || `${params.sessionId}-user-${Date.now()}`;
-  if (context.promptQueue.hasInFlight(params.sessionId)) {
-    const queueItem = context.promptQueue.enqueue({
-      sessionId: params.sessionId,
-      text: params.text,
-      content: params.content,
-      clientMessageId,
-    });
-    broadcastPromptQueue(context, params.sessionId);
-    return { accepted: "queued" as const, queueItem };
-  }
-
-  const inFlight = context.promptQueue.markInFlight({
-    sessionId: params.sessionId,
-    text: params.text,
-    content: params.content,
-    clientMessageId,
+  const useCase = new SendPromptUseCase<SessionQueuedPrompt, ReturnType<typeof context.promptQueue.snapshot>, ReturnType<typeof createUserPromptMessage>, AgentPromptContent>({
+    runtime: {
+      prompt: async (input) => {
+        const promptContent = input.content as AgentPromptContent[] | undefined;
+        const activeRecord = await resolvePromptRuntime(input, context);
+        if (!activeRecord) {
+          context.logError(
+            `[tiller] 阶段=发送失败 session=${input.sessionId} reason=Session runtime not available`,
+          );
+          throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
+        }
+        context.logInfo(
+          `[tiller] 阶段=发送Prompt session=${input.sessionId} chars=${input.text.length} images=${promptContent?.filter((content) => content.type === "image").length ?? 0}`,
+        );
+        await activeRecord.runtime.prompt(input.text, promptContent);
+        if (flushLiveAssistantMessage(input.sessionId, context)) {
+          context.logInfo(
+            `[tiller] 阶段=Prompt完成兜底落盘 session=${input.sessionId} reason=assistant_buffer_after_prompt_completion`,
+          );
+        }
+        return { accepted: true, runtimeSessionId: activeRecord.runtime.runtimeSessionId };
+      },
+    },
+    promptQueue: context.promptQueue,
+    projector: {
+      appendUserMessage: async (sessionId, message) => {
+        await appendUserPromptMessage(sessionId, message, context);
+      },
+    },
+    createUserMessage: createUserPromptMessage,
+    onQueueChanged: (sessionId) => broadcastPromptQueue(context, sessionId),
+    onPromptFailed: (sessionId, error) => {
+      const message = error instanceof Error ? error.message : "Prompt failed.";
+      context.logError(`[tiller] prompt.inflight failed session=${sessionId} message=${message}`);
+      broadcastPromptFailure(context, sessionId, message);
+    },
+    onPromptSettled: (sessionId, queueItem) => {
+      context.promptQueue.clearInFlight(sessionId, queueItem.id);
+      broadcastPromptQueue(context, sessionId);
+      void context.drainPromptQueue(sessionId);
+    },
   });
-  broadcastPromptQueue(context, params.sessionId);
-  void runInFlightPrompt(inFlight, context);
-  return { accepted: "sent" as const };
+
+  return useCase.execute(params);
 }
 
 export async function configureSessionRuntime(
@@ -281,7 +339,7 @@ export async function configureSessionRuntime(
     updatedAt,
   });
   context.updateSessionSummary(params.sessionId, () => next);
-  broadcastSessionUpdate(context, params.sessionId, { kind: "session_updated", session: next });
+  createSessionEventPublisher(context).sessionUpdate(params.sessionId, { kind: "session_updated", session: next });
   return {
     sessionId: params.sessionId,
     ok: true,
@@ -301,7 +359,7 @@ export async function cancelSessionRuntime(
 ): Promise<boolean> {
   const record = context.sessions.get(sessionId);
   if (!record) {
-    broadcastErrorRaised(context, { sessionId, message: "Session not found" });
+    createSessionEventPublisher(context).errorRaised({ sessionId, message: "Session not found" });
     return true;
   }
 

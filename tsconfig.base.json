@@ -11,6 +11,8 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "paths": {
+      "@tiller/domain-contracts": ["./packages/domain-contracts/src/index.ts"],
+      "@tiller/core": ["./packages/core/src/index.ts"],
       "@tiller/shared": ["./packages/shared/src/index.ts"],
       "@tiller/sync-protocol": ["./packages/sync-protocol/src/index.ts"],
       "@tiller/agent-registry": ["./packages/agent-registry/src/index.ts"],

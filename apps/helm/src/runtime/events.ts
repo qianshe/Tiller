@@ -3,7 +3,7 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentToolCall, PermissionDecision, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { resolveApprovalPolicyDecision } from "../handlers/approvals/permission-policy";
-import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
+import { createSessionEventPublisher } from "./session-event-publisher";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
 import {
   resolveConfigOptionsForSelection,
@@ -164,7 +164,7 @@ function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerCo
     toolCall,
     artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
   );
-  broadcastSessionUpdate(context, sessionId, {
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "tool_call",
     toolCall: mergedToolCall,
   });
@@ -265,7 +265,7 @@ export function flushLiveAssistantMessage(sessionId: string, context: HelmHandle
   }
   context.persistSessionMessage(sessionId, message);
   context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, message));
-  broadcastSessionUpdate(context, sessionId, {
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "agent_message",
     message,
     streaming: false,
@@ -309,7 +309,7 @@ export function handleRuntimeEvent(
         status: event.status,
         updatedAt: new Date().toISOString(),
       }));
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "status_change",
         status: event.status,
         message: event.message,
@@ -336,7 +336,7 @@ export function handleRuntimeEvent(
       ensureAssistantStreamLogStarted(sessionId, message, context);
       writeAssistantStreamText(sessionId, message.text);
       const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "agent_message",
         message: bufferedMessage,
         streaming: true,
@@ -399,7 +399,7 @@ export function handleRuntimeEvent(
           toolCall,
           artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
         );
-        broadcastSessionUpdate(context, sessionId, {
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
           kind: "tool_call",
           toolCall: mergedToolCall,
         });
@@ -419,7 +419,7 @@ export function handleRuntimeEvent(
         orderedToolCall,
         artifacts?.toolCalls?.find((item) => item.id === orderedToolCall.id),
       );
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "tool_call",
         toolCall: mergedToolCall,
       });
@@ -436,7 +436,7 @@ export function handleRuntimeEvent(
         timelineSequence: nextLiveEventSequence(sessionId),
       };
       context.sessionArtifactStore.appendOutput(sessionId, orderedChunk);
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "command_output",
         commandId: orderedChunk.commandId,
         chunk: orderedChunk,
@@ -447,7 +447,7 @@ export function handleRuntimeEvent(
           timelineSequence: orderedChunk.timelineSequence,
         };
         context.sessionArtifactStore.appendToolCall(sessionId, orderedToolCall);
-        broadcastSessionUpdate(context, sessionId, {
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
           kind: "tool_call",
           toolCall: orderedToolCall,
         });
@@ -493,13 +493,13 @@ export function handleRuntimeEvent(
         reasoningEffort: resolvedReasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "config_options",
         state: resolvedState,
         options: resolvedOptions,
       });
       if (updated) {
-        broadcastSessionUpdate(context, sessionId, {
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
           kind: "session_updated",
           session: context.hydrateSessionSummary(updated),
         });
@@ -518,13 +518,13 @@ export function handleRuntimeEvent(
         modelOptions: event.state.options,
         updatedAt: new Date().toISOString(),
       }));
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "model_options",
         currentModelId: event.state.currentModelId,
         options: event.state.options,
       });
       if (updated) {
-        broadcastSessionUpdate(context, sessionId, {
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
           kind: "session_updated",
           session: context.hydrateSessionSummary(updated),
         });
@@ -542,12 +542,12 @@ export function handleRuntimeEvent(
         availableCommands: event.commands,
         updatedAt: new Date().toISOString(),
       }));
-      broadcastSessionUpdate(context, sessionId, {
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "commands_available",
         commands: event.commands,
       });
       if (updated) {
-        broadcastSessionUpdate(context, sessionId, {
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
           kind: "session_updated",
           session: context.hydrateSessionSummary(updated),
         });
@@ -578,7 +578,7 @@ export function handleRuntimeEvent(
           `[tiller] 阶段=运行时已标记为可恢复 ${runtimeLogScope(sessionId, context)} code=${event.code}`,
         );
       }
-      broadcastErrorRaised(context, {
+      createSessionEventPublisher(context).errorRaised({
         sessionId,
         message: event.message,
         code: event.code,
