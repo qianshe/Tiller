@@ -1,5 +1,6 @@
 export * from "./helpers";
 export * from "./session-update-contracts";
+export * from "./prompt-trace-events";
 export * from "./device-events";
 export * from "./inventory-events";
 export * from "./session-events";

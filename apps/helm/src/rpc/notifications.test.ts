@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { broadcastSessionUpdate } from "./notifications.js";
+import { broadcastPromptTrace, broadcastSessionUpdate } from "./notifications.js";
 import { createSessionEventPublisher } from "../runtime/session-event-publisher";
 
 const detailUpdates = [
@@ -63,6 +63,33 @@ test("session detail updates are sent through the session topic broadcaster", ()
       },
     ]);
   }
+});
+
+test("prompt trace debug events use global notification broadcast", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const event = {
+    traceId: "trace-1",
+    sessionId: "session-1",
+    phase: "helm.prompt.ack",
+    timestamp: "2026-05-24T00:00:00.000Z",
+    source: "helm",
+  } as const;
+
+  broadcastPromptTrace(
+    {
+      broadcastNotification: (method: string, params: unknown) => {
+        calls.push({ method, params });
+      },
+    },
+    event,
+  );
+
+  assert.deepEqual(calls, [
+    {
+      method: "debug/prompt_trace",
+      params: event,
+    },
+  ]);
 });
 
 test("session event publisher preserves notification payloads", () => {

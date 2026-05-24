@@ -8,6 +8,7 @@ import { applyUserPromptToSummary } from "../sessions/facade";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
+import { emitHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -111,6 +112,12 @@ export async function sendPromptImmediately(
   context.logInfo(
     `[tiller] 阶段=发送Prompt session=${item.sessionId} chars=${item.text.length} images=${imageAttachments.length}`,
   );
+  emitHelmPromptTrace(context, {
+    traceId: item.clientMessageId,
+    sessionId: item.sessionId,
+    phase: "helm.prompt.send_start",
+    meta: { queued: true, chars: item.text.length, images: imageAttachments.length },
+  });
   const timestamp = new Date().toISOString();
   const userMessage = {
     id: item.clientMessageId,
@@ -135,6 +142,12 @@ export async function sendPromptImmediately(
   }
 
   await record.runtime.prompt(item.text, item.content);
+  emitHelmPromptTrace(context, {
+    traceId: item.clientMessageId,
+    sessionId: item.sessionId,
+    phase: "helm.prompt.runtime_accepted",
+    meta: { queued: true },
+  });
   if (flushLiveAssistantMessage(item.sessionId, context)) {
     context.logInfo(
       `[tiller] 阶段=Prompt完成兜底落盘 session=${item.sessionId} reason=assistant_buffer_after_prompt_completion`,
@@ -262,7 +275,23 @@ export async function sendPromptToSession(
         context.logInfo(
           `[tiller] 阶段=发送Prompt session=${input.sessionId} chars=${input.text.length} images=${promptContent?.filter((content) => content.type === "image").length ?? 0}`,
         );
+        emitHelmPromptTrace(context, {
+          traceId: input.clientMessageId,
+          sessionId: input.sessionId,
+          phase: "helm.prompt.send_start",
+          meta: {
+            queued: false,
+            chars: input.text.length,
+            images: promptContent?.filter((content) => content.type === "image").length ?? 0,
+          },
+        });
         await activeRecord.runtime.prompt(input.text, promptContent);
+        emitHelmPromptTrace(context, {
+          traceId: input.clientMessageId,
+          sessionId: input.sessionId,
+          phase: "helm.prompt.runtime_accepted",
+          meta: { queued: false },
+        });
         if (flushLiveAssistantMessage(input.sessionId, context)) {
           context.logInfo(
             `[tiller] 阶段=Prompt完成兜底落盘 session=${input.sessionId} reason=assistant_buffer_after_prompt_completion`,
@@ -291,7 +320,14 @@ export async function sendPromptToSession(
     },
   });
 
-  return useCase.execute(params);
+  const result = await useCase.execute(params);
+  emitHelmPromptTrace(context, {
+    traceId: params.clientMessageId,
+    sessionId: params.sessionId,
+    phase: result.accepted === "queued" ? "helm.prompt.queued" : "helm.prompt.ack",
+    meta: { accepted: result.accepted },
+  });
+  return result;
 }
 
 export async function configureSessionRuntime(

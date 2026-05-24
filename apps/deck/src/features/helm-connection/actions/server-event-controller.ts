@@ -1,4 +1,4 @@
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, PromptTraceEvent } from "@tiller/shared";
 import { daemonProfileKey } from "../daemon-profiles";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
 import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
@@ -18,6 +18,8 @@ import {
   applyInventoryResult,
   applySessionResult,
   applySessionUpdate,
+  applyPromptTraceEvent,
+  createDeckSessionUpdateTraceEvent,
 } from "../../server-events";
 import type { SessionUpdateParams } from "../../server-events";
 import {
@@ -199,11 +201,17 @@ export function createServerEventController(source: any, helpers: any) {
       applyApprovalResolved(params as any);
       return;
     }
+    if (method === "debug/prompt_trace") {
+      applyPromptTraceEvent(params as PromptTraceEvent);
+      return;
+    }
     if (method === "session/update") {
       const sessionUpdateParams = params as SessionUpdateParams;
+      applyPromptTraceEvent(createDeckSessionUpdateTraceEvent(sessionUpdateParams, "deck.session_update.received"));
       const handledBySession = applySessionUpdate(sessionUpdateParams, sessionContext());
-      if (!handledBySession) {
-        applyActivityUpdate(sessionUpdateParams, activityContext());
+      const handled = handledBySession || applyActivityUpdate(sessionUpdateParams, activityContext());
+      if (handled) {
+        applyPromptTraceEvent(createDeckSessionUpdateTraceEvent(sessionUpdateParams, "deck.session_update.applied"));
       }
       return;
     }

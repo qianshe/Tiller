@@ -52,11 +52,13 @@ import { createTrustedDeviceStore } from "./auth/beacon-store";
 import { createSocketAuthenticator } from "./auth/socket-auth";
 import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
 import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
+import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
+import { createPromptTraceEmitter } from "./runtime/prompt-trace";
 import { createSessionServices, type SessionRecord } from "./runtime/session-services";
 import { createSessionPromptQueueManager } from "./runtime/session-prompt-queue";
 import { drainPromptQueue } from "./runtime/session-runtime-router";
@@ -87,6 +89,7 @@ const {
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 const LOGS_DIR = resolve(dirname(configPath), "logs");
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
+const PROMPT_TRACE_ENABLED = process.env.TILLER_PROMPT_TRACE === "1";
 
 const logger = createTillerLogger({ logsDir: LOGS_DIR });
 const { logInfo, logDebug, logWarn, logError } = logger;
@@ -328,6 +331,10 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     notify,
     broadcastNotification,
     broadcastSessionTopic,
+    promptTrace: createPromptTraceEmitter({
+      enabled: PROMPT_TRACE_ENABLED,
+      publish: (event) => broadcastPromptTrace({ broadcastNotification }, event),
+    }),
     subscribeSessionTopic: sessionTopics.subscribe,
     unsubscribeSessionTopic: sessionTopics.unsubscribe,
     removeSocketSessionTopics: sessionTopics.removeSocket,

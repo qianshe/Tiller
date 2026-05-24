@@ -1,3 +1,4 @@
+import type { PromptTraceEvent } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
 export function broadcastSessionUpdate(
@@ -18,6 +19,13 @@ export function broadcastErrorRaised(
   input: { sessionId?: string; code?: string; message: string; data?: unknown },
 ): void {
   context.broadcastNotification("error/raised", input);
+}
+
+export function broadcastPromptTrace(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  event: PromptTraceEvent,
+): void {
+  context.broadcastNotification("debug/prompt_trace", event);
 }
 
 function isSessionDetailUpdate(update: unknown): boolean {

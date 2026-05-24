@@ -5,6 +5,7 @@ import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
+import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -239,6 +240,11 @@ export function handleRuntimeEvent(
 
   switch (event.type) {
     case "status":
+      emitFirstHelmPromptTrace(context, {
+        sessionId,
+        phase: "helm.runtime.first_status",
+        meta: { status: event.status },
+      });
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       if (event.status === "running") {
@@ -274,6 +280,11 @@ export function handleRuntimeEvent(
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
         timelineSequence: nextLiveEventSequence(sessionId),
       };
+      emitFirstHelmPromptTrace(context, {
+        sessionId,
+        phase: "helm.runtime.first_message",
+        meta: { chars: message.text.length },
+      });
       activeAssistantRuntimeThinkingBySession.delete(sessionId);
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
@@ -303,6 +314,11 @@ export function handleRuntimeEvent(
       );
       return;
     case "tool-call":
+      emitFirstHelmPromptTrace(context, {
+        sessionId,
+        phase: "helm.runtime.first_tool_call",
+        meta: { kind: event.toolCall.kind },
+      });
       if (event.toolCall.kind === "think") {
         const toolCall = normalizeRuntimeThinkingToolCall(sessionId, {
           ...event.toolCall,
@@ -341,6 +357,11 @@ export function handleRuntimeEvent(
       });
       return;
     case "command-output":
+      emitFirstHelmPromptTrace(context, {
+        sessionId,
+        phase: "helm.runtime.first_command_output",
+        meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
+      });
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);

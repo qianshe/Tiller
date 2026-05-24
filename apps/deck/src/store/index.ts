@@ -23,6 +23,10 @@ import {
   type ProjectsSlice,
 } from "./slices/projects-slice";
 import {
+  createPromptTraceSlice,
+  type PromptTraceSlice,
+} from "./slices/prompt-trace-slice";
+import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./slices/sessions-slice";
@@ -36,6 +40,7 @@ export type DeckStore = ActivitiesSlice &
   PairingSlice &
   PreferencesSlice &
   ProjectsSlice &
+  PromptTraceSlice &
   SessionsSlice;
 
 export const useDeckStore = create<DeckStore>()(
@@ -51,6 +56,7 @@ export const useDeckStore = create<DeckStore>()(
         ...createPairingSlice(...args),
         ...createPreferencesSlice(...args),
         ...createProjectsSlice(...args),
+        ...createPromptTraceSlice(...args),
         ...createSessionsSlice(...args),
       }),
       createDeckStorePersistOptions(),

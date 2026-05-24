@@ -13,6 +13,7 @@ import type {
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
+  PromptTraceEvent,
   SessionConfigOption,
   SessionConfigOptionValue,
   SessionHistoryReimportResult,
@@ -70,6 +71,9 @@ export type HelmHandlerContext = {
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
   logError: (message: string) => void;
+  promptTrace?: {
+    emit(event: PromptTraceEvent): void;
+  };
   requestShutdown?: (reason: "rpc") => void;
 
   getHelms: () => HelmSummary[];

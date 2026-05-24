@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, PromptTraceEvent, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { sendPromptToSession, drainPromptQueue } from "./session-runtime-router";
 import { createSessionPromptQueueManager } from "./session-prompt-queue";
@@ -53,6 +53,7 @@ function createContext(options: {
   const summary = createSummary(options.summary);
   const persisted: AgentMessage[] = [];
   const broadcasts: Array<{ method: string; params: any }> = [];
+  const traceEvents: PromptTraceEvent[] = [];
   let currentSummary = summary;
   const sessions = new Map<string, any>();
   if (options.activeRuntime) {
@@ -72,6 +73,7 @@ function createContext(options: {
     },
     logInfo: () => undefined,
     logError: () => undefined,
+    promptTrace: { emit: (event: PromptTraceEvent) => traceEvents.push(event) },
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => persisted.push(message),
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
       currentSummary = mutate(currentSummary);
@@ -101,12 +103,12 @@ function createContext(options: {
       };
     },
   } as unknown as HelmHandlerContext;
-  return { context, persisted, broadcasts, sessions };
+  return { context, persisted, broadcasts, sessions, traceEvents };
 }
 
 test("sendPromptToSession dispatches through an active runtime", async () => {
   const prompted: string[] = [];
-  const { context, persisted } = createContext({
+  const { context, persisted, traceEvents } = createContext({
     activeRuntime: {
       prompt: async (text) => {
         prompted.push(text);
@@ -125,6 +127,11 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   assert.equal(result.accepted, "sent");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
+  assert.deepEqual(traceEvents.map((event) => event.phase).filter((phase) => phase.startsWith("helm.prompt.")), [
+    "helm.prompt.ack",
+    "helm.prompt.send_start",
+    "helm.prompt.runtime_accepted",
+  ]);
 });
 
 test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {

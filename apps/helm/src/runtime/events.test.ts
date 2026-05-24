@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, CommandChunk, PromptTraceEvent, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimeEvent } from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
@@ -11,6 +11,7 @@ type TestContextCapture = {
   detailBroadcasts: unknown[];
   persisted: AgentMessage[];
   summaryUpdates?: SessionSummary[];
+  traceEvents?: PromptTraceEvent[];
 };
 
 function createTestContext(
@@ -51,6 +52,9 @@ function createTestContext(
     logDebug: () => undefined,
     logWarn: (message: string) => logs.push(message),
     logError: (message: string) => logs.push(message),
+    promptTrace: capture.traceEvents
+      ? { emit: (event: PromptTraceEvent) => capture.traceEvents?.push(event) }
+      : undefined,
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => {
       capture.persisted.push(message);
     },
@@ -81,6 +85,40 @@ function createTestContext(
     hydrateSessionSummary: (item: SessionSummary) => item,
   } as unknown as HelmHandlerContext;
 }
+
+test("runtime events emit first runtime and broadcast prompt trace markers", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    traceEvents: [],
+  };
+  const context = createTestContext(logs, capture, "trace-session");
+
+  handleRuntimeEvent(
+    "trace-session",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "hello",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(
+    capture.traceEvents?.some((event) => event.phase === "helm.runtime.first_message"),
+    true,
+  );
+  assert.equal(
+    capture.traceEvents?.some((event) => event.phase === "helm.session_update.broadcast"),
+    true,
+  );
+});
 
 test("runtime session.message persists and broadcasts streaming chunks with debug text", () => {
   const logs: string[] = [];
