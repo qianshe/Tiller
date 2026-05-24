@@ -1,14 +1,11 @@
-import { basename } from "node:path";
 import { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   type AgentPromptContent,
   type AgentToolCall,
   type PermissionDecision,
-  type ProjectSummary,
   type SessionConfigOptionValue,
   type SessionReasoningEffort,
   type SessionSummary,
-  type WorktreeSummary,
 } from "@tiller/shared";
 import {
   isProjectRootBranchWorktree,
@@ -24,31 +21,13 @@ import {
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session-config-options";
 import type { HelmHandlerContext } from "../context";
+import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
 import { promptSession } from "./prompt-rpc";
+import { resolveProjectSessionWorktree } from "./session-worktree";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 import { pageSessionSummaries } from "./session-list-page";
 
-export function resolveProjectSessionWorktree(
-  project: ProjectSummary,
-  worktrees: WorktreeSummary[],
-  params: { cwd: string },
-) {
-  const requestedCwd = params.cwd.trim();
-  const normalizedCwd = normalizeWorktreePath(requestedCwd);
-  const worktree = worktrees.find(
-    (item) => normalizeWorktreePath(item.path) === normalizedCwd,
-  );
-  return {
-    name: worktree?.name ?? basename(normalizedCwd) ?? project.name,
-    path: requestedCwd,
-    summary: worktree?.summary,
-  } satisfies WorktreeSummary;
-}
-
-function normalizeWorktreePath(path: string) {
-  return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
-}
-
+export { resolveProjectSessionWorktree } from "./session-worktree";
 
 export async function handleSessionRpcRequest(
   method: string,
@@ -395,64 +374,6 @@ async function resumeSession(params: { sessionId: string }, context: HelmHandler
     resume: result.resume,
     message: result.message,
   };
-}
-
-async function createSessionDraft(
-  params: {
-    deckClientId: string;
-    projectId: string;
-    cwd: string;
-    agentId: string;
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  },
-  context: HelmHandlerContext,
-) {
-  const helms = context.loadAvailableHelms();
-  const worktrees = context.loadAvailableWorktrees();
-  const agents = context.loadAvailableAgents();
-  context.setHelms(helms);
-  context.setWorktrees(worktrees);
-  context.setAgents(agents);
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  context.setProjects(projects);
-
-  const project = context.resolveProjectById(params.projectId, projects);
-  const worktree = project
-    ? resolveProjectSessionWorktree(project, worktrees, params)
-    : undefined;
-  const agent = context.resolveProviderById(params.agentId, agents);
-  const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
-
-  if (!project || !worktree || !agent || !helm) {
-    throw new Error("Project, helm, worktree, or agent not found");
-  }
-
-  return context.createRuntimeDraft({
-    deckClientId: params.deckClientId,
-    project,
-    helm,
-    worktree,
-    agent,
-    sessionConfig: {
-      agentMode: params.agentMode,
-      model: params.model,
-      reasoningEffort: params.reasoningEffort,
-    },
-  });
-}
-
-async function discardSessionDraft(
-  params: {
-    deckClientId: string;
-    draftId?: string;
-    scopeKey?: string;
-    reason: "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user";
-  },
-  context: HelmHandlerContext,
-) {
-  return context.discardRuntimeDraft(params);
 }
 
 async function createSession(
