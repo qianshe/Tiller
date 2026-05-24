@@ -2,16 +2,12 @@ import type { MutableRefObject } from "react";
 import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
 import { commandChunkToToolCall, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
+import type { SessionUpdateParams } from "./session-update-contracts";
 
 export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   appendSystemMessage: (sessionId: string, text: string) => void;
-};
-
-type SessionUpdateParams = {
-  sessionId: string;
-  update: { kind: string } & Record<string, unknown>;
 };
 
 type ErrorRaisedParams = {
@@ -32,7 +28,7 @@ export function applyActivityUpdate(
   switch (update.kind) {
     case "agent_message": {
       const message = withStreamingState(
-        update.message as AgentMessage,
+        update.message,
         update.streaming,
       );
       const toolBoundaryTimes = (toolCallsRef.current[sessionId] ?? [])
@@ -58,7 +54,7 @@ export function applyActivityUpdate(
       return true;
     }
     case "command_output": {
-      const chunk = update.chunk as Parameters<typeof commandChunkToToolCall>[0];
+      const chunk = update.chunk;
       store.setOutputs((current) => ({
         ...current,
         [sessionId]: [
@@ -70,12 +66,12 @@ export function applyActivityUpdate(
       return true;
     }
     case "tool_call":
-      mergeSessionToolCalls(sessionId, [update.toolCall as AgentToolCall]);
+      mergeSessionToolCalls(sessionId, [update.toolCall]);
       return true;
     case "diff_update":
       store.setDiffs((current) => ({
         ...current,
-        [sessionId]: update.files as never,
+        [sessionId]: update.files,
       }));
       return true;
     default:

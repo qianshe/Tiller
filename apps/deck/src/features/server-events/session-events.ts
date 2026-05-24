@@ -24,6 +24,7 @@ import {
   removeSessionRecord,
   upsertSessionSummary,
 } from "./helpers";
+import type { SessionUpdateParams } from "./session-update-contracts";
 
 function deriveAvailableCommandMapsFromSessions(sessions: SessionSummary[]) {
   const bySession: Record<string, AvailableCommand[]> = {};
@@ -142,10 +143,6 @@ function applySessionConfigSelection(
       : { ...option, currentValue: selectedValue };
   });
 }
-type SessionUpdateParams = {
-  sessionId: string;
-  update: { kind: string } & Record<string, any>;
-};
 
 function pendingInitialPromptMessageId(sessionId: string) {
   return `${sessionId}-user-pending`;

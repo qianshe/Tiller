@@ -36,3 +36,87 @@ export type SessionSummary = {
   model?: string;
   resume?: SessionResumeInfo;
 };
+
+export type SessionStatusUpdate = {
+  kind: "status_change";
+  status: SessionStatus;
+  message?: string;
+};
+
+export type SessionUserMessageUpdate<Message = unknown> = {
+  kind: "user_message";
+  message: Message;
+};
+
+export type SessionAgentMessageUpdate<Message = unknown> = {
+  kind: "agent_message";
+  message: Message;
+  streaming: boolean;
+};
+
+export type SessionToolCallUpdate<ToolCall = unknown> = {
+  kind: "tool_call";
+  toolCall: ToolCall;
+};
+
+export type SessionCommandOutputUpdate<CommandOutput = unknown> = {
+  kind: "command_output";
+  commandId: string;
+  chunk: CommandOutput;
+};
+
+export type SessionDiffUpdate<Diff = unknown> = {
+  kind: "diff_update";
+  files: Diff[];
+};
+
+export type SessionConfigOptionsUpdate<ConfigState = unknown, ConfigOption = unknown> = {
+  kind: "config_options";
+  state: ConfigState;
+  options: ConfigOption[];
+};
+
+export type SessionModelOptionsUpdate<ModelOption = unknown> = {
+  kind: "model_options";
+  currentModelId?: string;
+  options: ModelOption[];
+};
+
+export type SessionCommandsAvailableUpdate<Command = unknown> = {
+  kind: "commands_available";
+  commands: Command[];
+};
+
+export type SessionUpdatedUpdate<Summary = SessionSummary> = {
+  kind: "session_updated";
+  session: Summary;
+};
+
+export type SessionPromptQueueUpdate<Queue = unknown> = {
+  kind: "prompt_queue";
+  queue: Queue;
+};
+
+export type SessionRealtimeUpdate<
+  Message = unknown,
+  ToolCall = unknown,
+  CommandOutput = unknown,
+  Diff = unknown,
+  ConfigState = unknown,
+  ConfigOption = unknown,
+  ModelOption = unknown,
+  Command = unknown,
+  Summary = SessionSummary,
+  Queue = unknown,
+> =
+  | SessionStatusUpdate
+  | SessionUserMessageUpdate<Message>
+  | SessionAgentMessageUpdate<Message>
+  | SessionToolCallUpdate<ToolCall>
+  | SessionCommandOutputUpdate<CommandOutput>
+  | SessionDiffUpdate<Diff>
+  | SessionConfigOptionsUpdate<ConfigState, ConfigOption>
+  | SessionModelOptionsUpdate<ModelOption>
+  | SessionCommandsAvailableUpdate<Command>
+  | SessionUpdatedUpdate<Summary>
+  | SessionPromptQueueUpdate<Queue>;

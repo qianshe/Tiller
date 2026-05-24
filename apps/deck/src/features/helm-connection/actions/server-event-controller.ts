@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { AgentToolCall } from "@tiller/shared";
 import { daemonProfileKey } from "../daemon-profiles";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
@@ -20,6 +19,7 @@ import {
   applySessionResult,
   applySessionUpdate,
 } from "../../server-events";
+import type { SessionUpdateParams } from "../../server-events";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
@@ -71,7 +71,7 @@ export function createServerEventController(source: any, helpers: any) {
   } = helpers;
 
   function mergeSessionToolCalls(sessionId: string, incoming: AgentToolCall[]) {
-    setToolCalls((current) => {
+    setToolCalls((current: Record<string, AgentToolCall[]>) => {
       const next = {
         ...current,
         [sessionId]: mergeToolCallHistory(current[sessionId] ?? [], incoming),
@@ -200,9 +200,10 @@ export function createServerEventController(source: any, helpers: any) {
       return;
     }
     if (method === "session/update") {
-      const handledBySession = applySessionUpdate(params as any, sessionContext());
+      const sessionUpdateParams = params as SessionUpdateParams;
+      const handledBySession = applySessionUpdate(sessionUpdateParams, sessionContext());
       if (!handledBySession) {
-        applyActivityUpdate(params as any, activityContext());
+        applyActivityUpdate(sessionUpdateParams, activityContext());
       }
       return;
     }

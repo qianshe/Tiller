@@ -9,6 +9,13 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./session-config-options";
+import {
+  formatLogValue,
+  isRuntimeGeneratedMessageId,
+  mergeAssistantStreamText,
+  resolveBroadcastToolCall,
+  shouldStartNewRuntimeAssistantSegment,
+} from "./session-event-normalizer";
 
 const liveEventSequenceBySession = new Map<string, number>();
 const messageSegmentIds = createMessageSegmentIdAllocator();
@@ -125,22 +132,6 @@ function normalizeRuntimeThinkingToolCall(
   };
 }
 
-function resolveBroadcastToolCall(
-  incoming: AgentToolCall,
-  persisted: AgentToolCall | undefined,
-): AgentToolCall {
-  if (!persisted) {
-    return incoming;
-  }
-  return {
-    ...persisted,
-    status: incoming.status,
-    updatedAt: incoming.updatedAt,
-    ...(incoming.output !== undefined ? { output: incoming.output } : {}),
-    ...(incoming.input !== undefined ? { input: incoming.input } : {}),
-  };
-}
-
 function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerContext) {
   const active = activeAssistantRuntimeThinkingBySession.get(sessionId);
   if (!active) {
@@ -169,52 +160,6 @@ function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerCo
     toolCall: mergedToolCall,
   });
   activeAssistantRuntimeThinkingBySession.delete(sessionId);
-}
-
-function shouldStartNewRuntimeAssistantSegment(currentText: string, incomingText: string) {
-  if (!currentText || !incomingText) {
-    return false;
-  }
-  if (incomingText.startsWith(currentText) || currentText.endsWith(incomingText)) {
-    return false;
-  }
-  if (isProviderDiagnosticAssistantText(currentText) !== isProviderDiagnosticAssistantText(incomingText)) {
-    return true;
-  }
-  return false;
-}
-
-function isProviderDiagnosticAssistantText(text: string) {
-  return /^Model metadata for\b/u.test(text.trim());
-}
-
-function mergeAssistantStreamText(currentText: string, incomingText: string) {
-  if (!currentText || incomingText.startsWith(currentText)) {
-    return incomingText || currentText;
-  }
-  if (currentText.endsWith(incomingText)) {
-    return currentText;
-  }
-  return `${currentText}${incomingText}`;
-}
-
-function isRuntimeGeneratedMessageId(id: string) {
-  return /^(?:session-[\w-]+|[0-9a-f]{8,}(?:-[0-9a-f]{4,}){2,})-msg-(?:[a-z0-9]+|\d{6}-\d{6}-[pc][a-z0-9]{1,32})$/iu.test(id);
-}
-
-function oneLine(value: string, maxLength = 220) {
-  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
-}
-
-function formatLogValue(value: unknown, maxLength = 220) {
-  if (typeof value === "string") {
-    return oneLine(value, maxLength);
-  }
-  try {
-    return oneLine(JSON.stringify(value), maxLength);
-  } catch {
-    return String(value).slice(0, maxLength);
-  }
 }
 
 function closeAssistantStreamLog(sessionId: string) {

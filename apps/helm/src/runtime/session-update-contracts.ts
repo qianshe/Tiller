@@ -7,83 +7,63 @@ import type {
   FileDiffSummary,
   SessionConfigOption,
   SessionPromptQueueSnapshot,
-  SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
+import type {
+  SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
+  SessionCommandOutputUpdate as DomainSessionCommandOutputUpdate,
+  SessionCommandsAvailableUpdate as DomainSessionCommandsAvailableUpdate,
+  SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
+  SessionDiffUpdate as DomainSessionDiffUpdate,
+  SessionModelOptionsUpdate as DomainSessionModelOptionsUpdate,
+  SessionPromptQueueUpdate as DomainSessionPromptQueueUpdate,
+  SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
+  SessionStatusUpdate,
+  SessionToolCallUpdate as DomainSessionToolCallUpdate,
+  SessionUpdatedUpdate as DomainSessionUpdatedUpdate,
+  SessionUserMessageUpdate as DomainSessionUserMessageUpdate,
+} from "@tiller/domain-contracts";
 
-export type SessionStatusUpdate = {
-  kind: "status_change";
-  status: SessionStatus;
-  message?: string;
+export type HelmSessionConfigState = {
+  agentMode?: string;
+  model?: string;
+  reasoningEffort?: string;
 };
 
-export type SessionUserMessageUpdate = {
-  kind: "user_message";
-  message: AgentMessage;
-};
+export type { SessionStatusUpdate };
 
-export type SessionAgentMessageUpdate = {
-  kind: "agent_message";
-  message: AgentMessage;
-  streaming: boolean;
-};
+export type SessionUserMessageUpdate = DomainSessionUserMessageUpdate<AgentMessage>;
 
-export type SessionToolCallUpdate = {
-  kind: "tool_call";
-  toolCall: AgentToolCall;
-};
+export type SessionAgentMessageUpdate = DomainSessionAgentMessageUpdate<AgentMessage>;
 
-export type SessionCommandOutputUpdate = {
-  kind: "command_output";
-  commandId: string;
-  chunk: CommandChunk;
-};
+export type SessionToolCallUpdate = DomainSessionToolCallUpdate<AgentToolCall>;
 
-export type SessionDiffUpdate = {
-  kind: "diff_update";
-  files: FileDiffSummary[];
-};
+export type SessionCommandOutputUpdate = DomainSessionCommandOutputUpdate<CommandChunk>;
 
-export type SessionConfigOptionsUpdate = {
-  kind: "config_options";
-  state: {
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: string;
-  };
-  options: SessionConfigOption[];
-};
+export type SessionDiffUpdate = DomainSessionDiffUpdate<FileDiffSummary>;
 
-export type SessionModelOptionsUpdate = {
-  kind: "model_options";
-  currentModelId?: string;
-  options: AcpModelOption[];
-};
+export type SessionConfigOptionsUpdate = DomainSessionConfigOptionsUpdate<
+  HelmSessionConfigState,
+  SessionConfigOption
+>;
 
-export type SessionCommandsAvailableUpdate = {
-  kind: "commands_available";
-  commands: AvailableCommand[];
-};
+export type SessionModelOptionsUpdate = DomainSessionModelOptionsUpdate<AcpModelOption>;
 
-export type SessionUpdatedUpdate = {
-  kind: "session_updated";
-  session: SessionSummary;
-};
+export type SessionCommandsAvailableUpdate = DomainSessionCommandsAvailableUpdate<AvailableCommand>;
 
-export type SessionPromptQueueUpdate = {
-  kind: "prompt_queue";
-  queue: SessionPromptQueueSnapshot;
-};
+export type SessionUpdatedUpdate = DomainSessionUpdatedUpdate<SessionSummary>;
 
-export type SessionRealtimeUpdate =
-  | SessionStatusUpdate
-  | SessionUserMessageUpdate
-  | SessionAgentMessageUpdate
-  | SessionToolCallUpdate
-  | SessionCommandOutputUpdate
-  | SessionDiffUpdate
-  | SessionConfigOptionsUpdate
-  | SessionModelOptionsUpdate
-  | SessionCommandsAvailableUpdate
-  | SessionUpdatedUpdate
-  | SessionPromptQueueUpdate;
+export type SessionPromptQueueUpdate = DomainSessionPromptQueueUpdate<SessionPromptQueueSnapshot>;
+
+export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  HelmSessionConfigState,
+  SessionConfigOption,
+  AcpModelOption,
+  AvailableCommand,
+  SessionSummary,
+  SessionPromptQueueSnapshot
+>;

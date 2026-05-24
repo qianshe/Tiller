@@ -73,7 +73,7 @@ test("activity RPC notifications append assistant messages without changing sess
   };
 
   const handled = applyActivityUpdate(
-    { sessionId: "s1", update: { kind: "agent_message", message } },
+    { sessionId: "s1", update: { kind: "agent_message", message, streaming: false } },
     {
       toolCallsRef: { current: {} },
       mergeSessionToolCalls: () => undefined,
