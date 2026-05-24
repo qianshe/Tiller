@@ -7,6 +7,7 @@ import { WebSocket } from "ws";
 
 const HOST = "127.0.0.1";
 const ROOT = resolve(import.meta.dirname, "..");
+const ENABLE_PROMPT_TRACE = process.argv.includes("--prompt-trace") || process.env.TILLER_PROMPT_TRACE === "1";
 const STARTUP_TIMEOUT_MS = Number(process.env.TILLER_SMOKE_STARTUP_TIMEOUT_MS ?? 15_000);
 const RPC_TIMEOUT_MS = Number(process.env.TILLER_SMOKE_RPC_TIMEOUT_MS ?? 10_000);
 
@@ -24,6 +25,7 @@ try {
         ...process.env,
         TILLER_HOST: HOST,
         TILLER_PORT: String(port),
+        ...(ENABLE_PROMPT_TRACE ? { TILLER_PROMPT_TRACE: "1" } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -51,6 +53,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       port,
+      promptTrace: ENABLE_PROMPT_TRACE,
       http: { status: httpResponse.status, hasRoot: true },
       rpc: {
         helms: Array.isArray(helmList?.helms) ? helmList.helms.length : null,

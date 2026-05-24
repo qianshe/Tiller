@@ -24,6 +24,7 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format:write": "prettier --write \"src/**/*.ts\"",
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
+    "smoke:runtime:trace": "node scripts/smoke-runtime.mjs --prompt-trace",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
     "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
