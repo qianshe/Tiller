@@ -66,7 +66,7 @@ test("session detail updates are sent through the session topic broadcaster", ()
 });
 
 test("session event publisher preserves notification payloads", () => {
-  const update = { kind: "status_change", status: "running" };
+  const update = { kind: "status_change", status: "running" } as const;
   const calls: Array<{ method: string; params: unknown }> = [];
   const publisher = createSessionEventPublisher({
     broadcastNotification: (method: string, params: unknown) => {

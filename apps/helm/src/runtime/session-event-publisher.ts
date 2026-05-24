@@ -1,8 +1,9 @@
 import type { HelmHandlerContext } from "../handlers/context";
+import type { SessionRealtimeUpdate } from "./session-update-contracts";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../rpc/notifications";
 
 export type SessionEventPublisher = {
-  sessionUpdate(sessionId: string, update: unknown): void;
+  sessionUpdate(sessionId: string, update: SessionRealtimeUpdate): void;
   errorRaised(input: { sessionId?: string; code?: string; message: string; data?: unknown }): void;
 };
 

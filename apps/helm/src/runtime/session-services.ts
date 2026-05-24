@@ -57,48 +57,14 @@ import {
   type ProviderHistorySnapshotContent,
 } from "./provider-history-source";
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
+import { createProviderHistoryService } from "./provider-history-service";
+import { createSessionPersistenceService } from "./session-persistence-service";
+import { createRuntimeDraftRegistry } from "./runtime-draft-registry";
+import { createSessionResumeService } from "./session-resume-service";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
-type SessionRuntimeConfig = {
-  agentMode?: string;
-  model?: string;
-  reasoningEffort?: SessionReasoningEffort;
-};
 
-type ResumePreconditionInput = {
-  agent: AcpAgentProvider | undefined;
-  worktree: WorktreeSummary | undefined;
-  runtimeSessionId?: string;
-  restoreMethod?: SessionResumeInfo["restoreMethod"];
-  agentId: string;
-  cwd?: string;
-};
-
-function resolveResumeUnavailableReason({
-  agent,
-  worktree,
-  runtimeSessionId,
-  restoreMethod,
-  agentId,
-  cwd,
-}: ResumePreconditionInput): string | null {
-  if (!agent) {
-    return `Agent provider ${agentId} is not configured.`;
-  }
-  if (!worktree) {
-    return cwd
-      ? `Worktree path ${cwd} is not configured or does not exist.`
-      : "Worktree cwd is not configured.";
-  }
-  if (!runtimeSessionId) {
-    return "ACP runtime session id is missing.";
-  }
-  if (restoreMethod !== "session/load" && restoreMethod !== "session/resume") {
-    return `ACP restore method ${restoreMethod ?? "none"} is unsupported.`;
-  }
-  return null;
-}
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -125,39 +91,8 @@ type SessionServicesOptions = {
 
 type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
-type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
-
-type RuntimeDraft = {
-  draftId: string;
-  deckClientId: string;
-  scopeKey: string;
-  logicalScopeKey: string;
-  project: ProjectSummary;
-  helm: HelmSummary;
-  worktree: WorktreeSummary;
-  agent: AcpAgentProvider;
-  runtime: SessionRecord["runtime"];
-  attach: (sessionId: string) => void;
-  expiresTimer: ReturnType<typeof setTimeout>;
-  createdAt: string;
-  expiresAt: string;
-  modelState?: AcpModelState;
-  configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"];
-  configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"];
-  availableCommands: AvailableCommand[];
-};
-
-type PendingRuntimeDraft = {
-  deckClientId: string;
-  scopeKey: string;
-  obsolete: boolean;
-  promise: Promise<RuntimeDraft>;
-};
-
-const RUNTIME_DRAFT_TTL_MS = 10 * 60_000;
 
 export function createSessionServices(options: SessionServicesOptions) {
-  const providerHistoryRefreshes = new Map<string, number>();
 
   function resolveStoredSessionWorktree(summary: SessionSummary) {
     const worktrees = options.getWorktrees();
@@ -198,14 +133,54 @@ export function createSessionServices(options: SessionServicesOptions) {
   }
 
   const providerLifecycle = createProviderLifecycle();
-  const runtimeDrafts = new Map<string, RuntimeDraft>();
-  const runtimeDraftsById = new Map<string, RuntimeDraft>();
-  const pendingRuntimeDrafts = new Map<string, PendingRuntimeDraft>();
-  const deckDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
+  const sessionPersistence = createSessionPersistenceService({
+    sessionStore: options.sessionStore,
+    sessionMessageStore: options.sessionMessageStore,
+    sessionArtifactStore: options.sessionArtifactStore,
+    sessionRuntimeStore: options.sessionRuntimeStore,
+  });
+  const providerHistory = createProviderHistoryService({
+    sessions: options.sessions,
+    sessionStore: options.sessionStore,
+    sessionMessageStore: options.sessionMessageStore,
+    sessionArtifactStore: options.sessionArtifactStore,
+    sessionRuntimeStore: options.sessionRuntimeStore,
+    getAgents: options.getAgents,
+    getWorktrees: options.getWorktrees,
+    logInfo: options.logInfo,
+    logError: options.logError,
+  });
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
   }
+
+  const runtimeDraftRegistry = createRuntimeDraftRegistry({
+    providerLifecycle,
+    handleRuntimeEvent,
+    logConnectionLifecycle,
+    logInfo: options.logInfo,
+    logError: options.logError,
+  });
+  const sessionResume = createSessionResumeService({
+    sessions: options.sessions,
+    sessionStore: options.sessionStore,
+    sessionMessageStore: options.sessionMessageStore,
+    sessionArtifactStore: options.sessionArtifactStore,
+    sessionRuntimeStore: options.sessionRuntimeStore,
+    providerLifecycle,
+    providerHistory,
+    getAgents: options.getAgents,
+    getProjects: options.getProjects,
+    createHandlerContext: options.createHandlerContext,
+    resolveStoredSessionWorktree,
+    buildResumeInfo,
+    hydrateSessionSummary,
+    persistRuntimeDescriptor,
+    handleRuntimeEvent,
+    logConnectionLifecycle,
+    logInfo: options.logInfo,
+    logError: options.logError,
+  });
 
   function clearPermissionRequestsForSession(sessionId: string) {
     for (const [requestId, permission] of options.permissionIndex.entries()) {
@@ -215,16 +190,6 @@ export function createSessionServices(options: SessionServicesOptions) {
     }
   }
 
-  function deleteLocalSessionData(sessionId: string) {
-    options.sessionStore.remove(sessionId);
-    options.sessionMessageStore.remove(sessionId);
-    options.sessionArtifactStore.remove(sessionId);
-    options.sessionRuntimeStore.remove(sessionId);
-  }
-
-  function persistSessionMessage(sessionId: string, message: AgentMessage) {
-    options.sessionMessageStore.append(sessionId, message);
-  }
 
   async function reimportSessionHistory(
     sessionId: string,
@@ -252,15 +217,15 @@ export function createSessionServices(options: SessionServicesOptions) {
 
     options.sessionMessageStore.replace(sessionId, []);
     options.sessionArtifactStore.remove(sessionId);
-    providerHistoryRefreshes.delete(sessionId);
+    providerHistory.resetRefresh(sessionId);
 
     try {
-      const resume = await startSessionResume(sessionId, { forceReloadActive: true });
+      const resume = await sessionResume.startSessionResume(sessionId, { forceReloadActive: true });
       if (!resume.ok) {
         if (!activeRecord) {
           throw new Error(resume.message);
         }
-        const imported = await importAuthoritativeProviderHistory(
+        const imported = await providerHistory.importAuthoritativeProviderHistory(
           sessionId,
           activeRecord.agent,
           activeRecord.runtime.runtimeSessionId,
@@ -486,789 +451,6 @@ export function createSessionServices(options: SessionServicesOptions) {
     );
   }
 
-  async function importAuthoritativeProviderHistory(
-    sessionId: string,
-    agent: AcpAgentProvider,
-    runtimeSessionId: string,
-    cwd: string,
-  ) {
-    try {
-      const historySnapshot = await resolveProviderHistorySnapshot([
-        {
-          source: "adapter-authoritative-history",
-          load: () => loadAdapterHistoryContent(agent, runtimeSessionId, cwd),
-        },
-      ]);
-      if (!historySnapshot) {
-        return false;
-      }
-      applyAuthoritativeProviderHistory(sessionId, agent, runtimeSessionId, historySnapshot);
-      return true;
-    } catch (error) {
-      options.logError(
-        `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
-      );
-      return false;
-    }
-  }
-
-  async function loadAdapterHistoryContent(
-    agent: AcpAgentProvider,
-    runtimeSessionId: string,
-    cwd: string,
-  ): Promise<ProviderHistorySnapshotContent | null> {
-    const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
-    if (!history) {
-      return null;
-    }
-    return {
-      messages: history.messages,
-      toolCalls: history.toolCalls,
-      outputs: [],
-      diffs: [],
-    };
-  }
-
-  function mergeAuthoritativeToolCalls(
-    localToolCalls: AgentToolCall[],
-    authoritativeToolCalls: AgentToolCall[],
-  ) {
-    const authoritativeIds = new Set(authoritativeToolCalls.map((toolCall) => toolCall.id));
-    return [
-      ...authoritativeToolCalls,
-      ...localToolCalls.filter(
-        (toolCall) => toolCall.kind === "think" && !authoritativeIds.has(toolCall.id),
-      ),
-    ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-  }
-
-  function applyAuthoritativeProviderHistory(
-    sessionId: string,
-    agent: AcpAgentProvider,
-    runtimeSessionId: string,
-    history: ProviderHistorySnapshot,
-  ) {
-    const descriptor = options.sessionRuntimeStore.get(sessionId);
-    const localMessages = options.sessionMessageStore.list(sessionId);
-    if (
-      !shouldImportAuthoritativeProviderHistory({
-        currentState: descriptor?.providerHistory,
-        localMessages,
-      })
-    ) {
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_local_source providerMessages=${history.messages.length} localMessages=${localMessages.length} toolCalls=${history.toolCalls.length}`,
-      );
-      return;
-    }
-
-    if (!history.messages.length) {
-      if (history.toolCalls.length) {
-        options.sessionArtifactStore.replaceToolCalls(
-          sessionId,
-          mergeAuthoritativeToolCalls(
-            options.sessionArtifactStore.get(sessionId).toolCalls,
-            history.toolCalls,
-          ),
-        );
-      }
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
-      );
-      return;
-    }
-
-    const syncDecision = planProviderHistorySync({
-      currentState: descriptor?.providerHistory,
-      providerMessages: history.messages,
-      syncedAt: history.syncedAt,
-    });
-
-    let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
-    let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
-    if (syncDecision.action === "replace") {
-      if (syncDecision.messages.length) {
-        options.sessionMessageStore.replace(
-          sessionId,
-          mergeAuthoritativeMessagesWithLocalUserPrompts(localMessages, syncDecision.messages),
-        );
-      }
-    } else if (syncDecision.action === "append") {
-      const appendMessages = filterNewProviderHistoryMessages(
-        localMessages,
-        syncDecision.messages,
-      );
-      for (const message of appendMessages) {
-        options.sessionMessageStore.append(sessionId, message);
-      }
-      localMessageCount = appendMessages.length;
-      const messagesAfterAppend = appendMessages.length
-        ? [...localMessages, ...appendMessages]
-        : localMessages;
-      if (shouldRepairProviderHistorySnapshot(messagesAfterAppend, history.messages)) {
-        const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
-          messagesAfterAppend,
-          toParagraphMessages(history.messages),
-        );
-        options.sessionMessageStore.replace(sessionId, repairedMessages);
-        localMessageCount = repairedMessages.length;
-        logAction = "repair";
-      }
-    } else {
-      if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
-        const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
-          localMessages,
-          toParagraphMessages(history.messages),
-        );
-        options.sessionMessageStore.replace(sessionId, repairedMessages);
-        localMessageCount = repairedMessages.length;
-        logAction = "repair";
-      }
-    }
-
-    persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
-    if (history.toolCalls.length) {
-      options.sessionArtifactStore.replaceToolCalls(
-        sessionId,
-        mergeAuthoritativeToolCalls(
-          options.sessionArtifactStore.get(sessionId).toolCalls,
-          history.toolCalls,
-        ),
-      );
-    }
-    options.logInfo(
-      `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
-    );
-  }
-
-  function hasHistoryContent(history: ProviderHistorySnapshotContent) {
-    return Boolean(
-      history.messages.length || history.toolCalls.length || history.outputs.length || history.diffs.length,
-    );
-  }
-
-  function readLocalProviderHistory(sessionId: string): ProviderHistorySnapshotContent {
-    const artifacts = options.sessionArtifactStore.get(sessionId);
-    return {
-      messages: options.sessionMessageStore.list(sessionId),
-      toolCalls: artifacts.toolCalls,
-      outputs: artifacts.outputs,
-      diffs: artifacts.diffs,
-    };
-  }
-
-  function persistProviderHistoryState(
-    sessionId: string,
-    agent: AcpAgentProvider,
-    runtimeSessionId: string,
-    providerHistory: StoredSessionRuntimeDescriptor["providerHistory"],
-  ) {
-    if (!providerHistory) {
-      return;
-    }
-
-    const descriptor = options.sessionRuntimeStore.get(sessionId);
-    if (descriptor) {
-      options.sessionRuntimeStore.upsert({
-        ...descriptor,
-        providerHistory,
-        lastSeenAt: providerHistory.syncedAt,
-      });
-      return;
-    }
-
-    const summary =
-      options.sessions.get(sessionId)?.summary ??
-      options.sessionStore.list().find((item) => item.id === sessionId);
-    if (!summary) {
-      return;
-    }
-
-    options.sessionRuntimeStore.upsert({
-      sessionId,
-      projectId: summary.projectId,
-      helmId: summary.helmId,
-      providerId: summary.agentId,
-      runtimeSessionId,
-      capabilities: resolveSessionRestoreCapabilities(agent, null),
-      providerHistory,
-      lastSeenAt: providerHistory.syncedAt,
-      state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
-    });
-  }
-
-  async function refreshAuthoritativeSessionHistory(sessionId: string) {
-    const lastRefresh = providerHistoryRefreshes.get(sessionId);
-    if (lastRefresh && Date.now() - lastRefresh < 30_000) {
-      return;
-    }
-
-    const activeRecord = options.sessions.get(sessionId);
-    const summary =
-      activeRecord?.summary ?? options.sessionStore.list().find((item) => item.id === sessionId);
-    if (!summary) {
-      return;
-    }
-    const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
-    const worktree =
-      activeRecord?.worktree ?? options.getWorktrees().find((item) => normalizeWorktreePath(item.path) === normalizeWorktreePath(summary.cwd));
-    const runtimeSessionId =
-      activeRecord?.runtime.runtimeSessionId ??
-      summary.runtimeSessionId ??
-      options.sessionRuntimeStore.get(sessionId)?.runtimeSessionId;
-    if (!agent || !worktree || !runtimeSessionId) {
-      return;
-    }
-
-    const refreshed = await importAuthoritativeProviderHistory(
-      sessionId,
-      agent,
-      runtimeSessionId,
-      worktree.path,
-    );
-    if (refreshed) {
-      providerHistoryRefreshes.set(sessionId, Date.now());
-    }
-  }
-
-  function resolveRuntimeDraftKeys(params: {
-    deckClientId: string;
-    worktree: WorktreeSummary;
-    agent: AcpAgentProvider;
-  }) {
-    const logicalScopeKey = `${params.worktree.path}:${params.agent.id}`;
-    return {
-      logicalScopeKey,
-      scopeKey: `${params.deckClientId}:${logicalScopeKey}`,
-    };
-  }
-
-  function runtimeDraftPayload(draft: RuntimeDraft, reused: boolean, message: string) {
-    return {
-      ok: true,
-      draftId: draft.draftId,
-      deckClientId: draft.deckClientId,
-      projectId: draft.project.id,
-      cwd: draft.worktree.path,
-      providerId: draft.agent.id,
-      scopeKey: draft.scopeKey,
-      logicalScopeKey: draft.logicalScopeKey,
-      runtimeSessionId: draft.runtime.runtimeSessionId,
-      state: draft.configState,
-      modelOptions: draft.modelState?.options ?? [],
-      configOptions: draft.configOptions,
-      availableCommands: draft.availableCommands,
-      createdAt: draft.createdAt,
-      expiresAt: draft.expiresAt,
-      reused,
-      message,
-    };
-  }
-
-  async function cleanupDraftRuntime(draft: RuntimeDraft, reason: RuntimeDraftReason) {
-    clearTimeout(draft.expiresTimer);
-    runtimeDrafts.delete(draft.scopeKey);
-    runtimeDraftsById.delete(draft.draftId);
-    const cleanup = await providerLifecycle.cleanupDraftRuntime(draft.runtime, draft.agent);
-    options.logInfo(
-      `[tiller] draft.discard draft=${draft.draftId} deck=${draft.deckClientId} reason=${reason} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} cleanup=${cleanup.kind} activeDrafts=${runtimeDraftsById.size}`,
-    );
-    return cleanup;
-  }
-
-  async function discardExistingDraftsForDeck(deckClientId: string, keepScopeKey?: string) {
-    const staleDrafts = Array.from(runtimeDrafts.values()).filter(
-      (draft) => draft.deckClientId === deckClientId && draft.scopeKey !== keepScopeKey,
-    );
-    await Promise.all(staleDrafts.map((draft) => cleanupDraftRuntime(draft, "scope-change")));
-    for (const pending of pendingRuntimeDrafts.values()) {
-      if (pending.deckClientId === deckClientId && pending.scopeKey !== keepScopeKey) {
-        pending.obsolete = true;
-      }
-    }
-  }
-
-  async function createRuntimeDraft(params: {
-    deckClientId: string;
-    project: ProjectSummary;
-    helm: HelmSummary;
-    worktree: WorktreeSummary;
-    agent: AcpAgentProvider;
-    sessionConfig?: SessionRuntimeConfig;
-  }) {
-    const { scopeKey, logicalScopeKey } = resolveRuntimeDraftKeys(params);
-    const reconnectTimer = deckDisconnectTimers.get(params.deckClientId);
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      deckDisconnectTimers.delete(params.deckClientId);
-    }
-    await discardExistingDraftsForDeck(params.deckClientId, scopeKey);
-
-    const existing = runtimeDrafts.get(scopeKey);
-    if (existing) {
-      options.logInfo(
-        `[tiller] draft.reuse draft=${existing.draftId} deck=${params.deckClientId} scope=${scopeKey} runtime=${existing.runtime.runtimeSessionId} activeDrafts=${runtimeDraftsById.size}`,
-      );
-      return runtimeDraftPayload(existing, true, "ACP runtime draft is already ready.");
-    }
-
-    const pending = pendingRuntimeDrafts.get(scopeKey);
-    if (pending) {
-      const draft = await pending.promise;
-      return runtimeDraftPayload(draft, true, "ACP runtime draft creation is already in progress.");
-    }
-
-    const draftId = `draft-${params.agent.id}-${Date.now()}`;
-    let attachedSessionId: string | null = null;
-    let modelState: AcpModelState | undefined;
-    let configState: Extract<SessionRuntimeEvent, { type: "config-options" }>["state"] = {};
-    let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
-    let availableCommands: AvailableCommand[] = [];
-    let readyDraft: RuntimeDraft | undefined;
-    options.logInfo(
-      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.worktree.path}`,
-    );
-
-    const pendingDraft: PendingRuntimeDraft = {
-      deckClientId: params.deckClientId,
-      scopeKey,
-      obsolete: false,
-      promise: providerLifecycle.createRuntime({
-        sessionId: draftId,
-        worktree: params.worktree,
-        agent: params.agent,
-        sessionConfig: params.sessionConfig,
-        onConnectionLifecycleEvent: logConnectionLifecycle,
-        onEvent: (event) => {
-          if (attachedSessionId) {
-            handleRuntimeEvent(attachedSessionId, event);
-            return;
-          }
-          if (event.type === "model-options") {
-            modelState = event.state;
-            if (readyDraft) {
-              readyDraft.modelState = event.state;
-            }
-            return;
-          }
-          if (event.type === "config-options") {
-            const previousState = readyDraft?.configState ?? configState;
-            const nextModel = previousState.model ?? event.state.model;
-            const resolvedConfigOptions = resolveConfigOptionsForSelection({
-              incomingOptions: event.options,
-              previousOptions: readyDraft?.configOptions ?? configOptions,
-              selectedModel: nextModel,
-            });
-            const nextOptions = resolvedConfigOptions.options ?? [];
-            const nextReasoning = resolveConfigReasoningEffortForOptions(
-              previousState.reasoningEffort ?? event.state.reasoningEffort,
-              resolvedConfigOptions,
-            );
-            configState = {
-              ...event.state,
-              model: nextModel,
-              reasoningEffort: nextReasoning,
-            };
-            configOptions = nextOptions;
-            if (readyDraft) {
-              readyDraft.configState = configState;
-              readyDraft.configOptions = configOptions;
-            }
-            return;
-          }
-          if (event.type === "available-commands") {
-            availableCommands = event.commands;
-            if (readyDraft) {
-              readyDraft.availableCommands = event.commands;
-            }
-            return;
-          }
-          if (event.type === "error") {
-            options.logError(
-              `[tiller] draft.error draft=${draftId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
-            );
-          }
-        },
-      }).then(async (runtime) => {
-        const createdAt = new Date().toISOString();
-        const expiresAt = new Date(Date.now() + RUNTIME_DRAFT_TTL_MS).toISOString();
-        const expiresTimer = setTimeout(() => {
-          const expired = runtimeDraftsById.get(draftId);
-          if (expired) {
-            void cleanupDraftRuntime(expired, "ttl");
-          }
-        }, RUNTIME_DRAFT_TTL_MS);
-        expiresTimer.unref?.();
-        const draft: RuntimeDraft = {
-          draftId,
-          deckClientId: params.deckClientId,
-          scopeKey,
-          logicalScopeKey,
-          project: params.project,
-          helm: params.helm,
-          worktree: params.worktree,
-          agent: params.agent,
-          runtime,
-          attach: (sessionId: string) => {
-            runtime.attachTillerSession(sessionId);
-            attachedSessionId = sessionId;
-          },
-          expiresTimer,
-          createdAt,
-          expiresAt,
-          modelState: modelState ?? runtime.sessionModelState,
-          configState: Object.keys(configState).length ? configState : runtime.sessionConfigState,
-          configOptions: configOptions.length ? configOptions : runtime.sessionConfigOptions,
-          availableCommands,
-        };
-        readyDraft = draft;
-        if (pendingDraft.obsolete) {
-          await cleanupDraftRuntime(draft, "obsolete");
-          throw new Error("Draft became obsolete before creation completed.");
-        }
-        runtimeDrafts.set(scopeKey, draft);
-        runtimeDraftsById.set(draftId, draft);
-        options.logInfo(
-          `[tiller] draft.create.done draft=${draftId} deck=${params.deckClientId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} activeDrafts=${runtimeDraftsById.size}`,
-        );
-        return draft;
-      }),
-    };
-    pendingRuntimeDrafts.set(scopeKey, pendingDraft);
-
-    try {
-      const draft = await pendingDraft.promise;
-      return runtimeDraftPayload(draft, false, "ACP runtime draft ready.");
-    } catch (error) {
-      options.logError(
-        `[tiller] draft.create.failed draft=${draftId} deck=${params.deckClientId} provider=${params.agent.id} message=${error instanceof Error ? error.message : "Failed to create ACP draft."}`,
-      );
-      throw error;
-    } finally {
-      pendingRuntimeDrafts.delete(scopeKey);
-    }
-  }
-
-  async function discardRuntimeDraft(params: {
-    deckClientId: string;
-    draftId?: string;
-    scopeKey?: string;
-    reason: RuntimeDraftReason;
-  }) {
-    const draft = params.draftId
-      ? runtimeDraftsById.get(params.draftId)
-      : params.scopeKey
-        ? runtimeDrafts.get(params.scopeKey)
-        : undefined;
-    if (!params.draftId && !params.scopeKey) {
-      await discardRuntimeDraftsForDeckClient(params.deckClientId, params.reason);
-      return {
-        ok: true,
-        discarded: true,
-        message: "Runtime drafts for deck client discarded.",
-      };
-    }
-    if (!draft || draft.deckClientId !== params.deckClientId) {
-      return {
-        ok: true,
-        discarded: false,
-        draftId: params.draftId,
-        message: "Runtime draft was not found or was already discarded.",
-      };
-    }
-    const cleanup = await cleanupDraftRuntime(draft, params.reason);
-    return {
-      ok: true,
-      discarded: true,
-      draftId: draft.draftId,
-      cleanup,
-      message: "Runtime draft discarded.",
-    };
-  }
-
-  async function discardRuntimeDraftsForDeckClient(deckClientId: string, reason: RuntimeDraftReason) {
-    const drafts = Array.from(runtimeDrafts.values()).filter((draft) => draft.deckClientId === deckClientId);
-    await Promise.all(drafts.map((draft) => cleanupDraftRuntime(draft, reason)));
-    for (const pending of pendingRuntimeDrafts.values()) {
-      if (pending.deckClientId === deckClientId) {
-        pending.obsolete = true;
-      }
-    }
-  }
-
-  function scheduleDeckClientDraftDiscard(deckClientId: string, delayMs = 30_000) {
-    const existing = deckDisconnectTimers.get(deckClientId);
-    if (existing) {
-      clearTimeout(existing);
-    }
-    const timer = setTimeout(() => {
-      void discardRuntimeDraftsForDeckClient(deckClientId, "tab-disconnect");
-      deckDisconnectTimers.delete(deckClientId);
-    }, delayMs);
-    timer.unref?.();
-    deckDisconnectTimers.set(deckClientId, timer);
-  }
-
-  function takeRuntimeDraft(draftId: string) {
-    const draft = runtimeDraftsById.get(draftId);
-    if (!draft) {
-      return undefined;
-    }
-    clearTimeout(draft.expiresTimer);
-    runtimeDrafts.delete(draft.scopeKey);
-    runtimeDraftsById.delete(draft.draftId);
-    options.logInfo(
-      `[tiller] draft.take draft=${draft.draftId} deck=${draft.deckClientId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} activeDrafts=${runtimeDraftsById.size}`,
-    );
-    return draft;
-  }
-
-  async function configureRuntimeDraft(params: {
-    draftId: string;
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-    configId?: string;
-    value?: SessionConfigOptionValue;
-  }) {
-    const draft = runtimeDraftsById.get(params.draftId);
-    if (!draft) {
-      throw new Error("Runtime draft not found");
-    }
-    const result = await draft.runtime.configure({
-      agentMode: params.agentMode,
-      model: params.model,
-      reasoningEffort: params.reasoningEffort,
-      configId: params.configId,
-      value: params.value,
-    });
-    const nextModel = params.model ?? draft.configState.model ?? result.state.model;
-    const resolvedConfigOptions = resolveConfigOptionsForSelection({
-      incomingOptions: result.options ?? draft.runtime.sessionConfigOptions,
-      previousOptions: draft.configOptions,
-      selectedModel: nextModel,
-    });
-    const nextConfigOptions = resolvedConfigOptions.options ?? [];
-    const nextReasoning = resolveConfigReasoningEffortForOptions(
-      params.reasoningEffort ?? result.state.reasoningEffort ?? draft.configState.reasoningEffort,
-      resolvedConfigOptions,
-    );
-    draft.configState = {
-      ...draft.configState,
-      ...result.state,
-      agentMode: params.agentMode ?? result.state.agentMode ?? draft.configState.agentMode,
-      model: nextModel,
-      reasoningEffort: nextReasoning,
-    };
-    draft.modelState = result.modelState ?? draft.modelState;
-    draft.configOptions = nextConfigOptions;
-    options.logInfo(
-      `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
-    );
-    return {
-      draftId: draft.draftId,
-      ok: true,
-      state: draft.configState,
-      options: draft.configOptions,
-      message: result.runtimeApplied ? "Runtime draft config updated." : "Runtime draft config saved.",
-    };
-  }
-
-  async function startSessionResume(
-    sessionId: string,
-    resumeOptions: { forceReloadActive?: boolean } = {},
-  ) {
-    const activeRecord = options.sessions.get(sessionId);
-    if (activeRecord && !resumeOptions.forceReloadActive) {
-      await refreshAuthoritativeSessionHistory(sessionId);
-      const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
-      options.logInfo(
-        `[tiller] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`,
-      );
-      return {
-        ok: true,
-        resume,
-        message: "Client reconnected to the still-running Helm session; no ACP restore was needed.",
-      };
-    }
-
-    const summary = activeRecord?.summary ?? options.sessionStore.list().find((item) => item.id === sessionId);
-    if (!summary) {
-      const now = new Date().toISOString();
-      return {
-        ok: false,
-        resume: {
-          mode: "none" as const,
-          state: "resume-unavailable" as const,
-          reason: "Session not found.",
-          checkedAt: now,
-        },
-        message: "Session not found.",
-      };
-    }
-
-    const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
-    const worktree = activeRecord?.worktree ?? resolveStoredSessionWorktree(summary);
-    const resume = activeRecord && resumeOptions.forceReloadActive
-      ? buildSessionResumeInfo(
-          summary,
-          agent,
-          undefined,
-          {
-            ...(options.sessionRuntimeStore.get(sessionId) ?? {}),
-            sessionId,
-            providerId: summary.agentId,
-            runtimeSessionId: activeRecord.runtime.runtimeSessionId,
-            capabilities: activeRecord.runtime.sessionCapabilities,
-            lastSeenAt: summary.updatedAt,
-            state: "resumeable",
-          },
-        )
-      : buildResumeInfo(summary, agent);
-    const unavailableReason = resolveResumeUnavailableReason({
-      agent,
-      worktree,
-      runtimeSessionId: resume.runtimeSessionId,
-      restoreMethod: resume.restoreMethod,
-      agentId: summary.agentId,
-      cwd: summary.cwd ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
-    });
-    if (unavailableReason) {
-      return {
-        ok: false,
-        resume: markSessionResumeUnavailable(resume, unavailableReason),
-        message: unavailableReason,
-      };
-    }
-    const restoreAgent = agent as AcpAgentProvider;
-    const restoreWorktree = worktree as WorktreeSummary;
-    const restoreRuntimeSessionId = resume.runtimeSessionId as string;
-    const restoreMethod = resume.restoreMethod as "session/load" | "session/resume";
-
-    try {
-      options.logInfo(
-        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${restoreRuntimeSessionId} method=${restoreMethod}`,
-      );
-      // ACP transcript is provider-owned. Helm stores metadata and a disposable view cache.
-      // Restore replay is cache repair only; live events still use handleRuntimeEvent.
-      const restoreReplayBuffer = createRestoreReplayBuffer(
-        sessionId,
-        options.createHandlerContext(),
-      );
-      options.logInfo(
-        `[tiller] 阶段=恢复重放缓存打开 session=${sessionId}`,
-      );
-      const runtime = await providerLifecycle.createRuntime({
-        sessionId,
-        worktree: restoreWorktree,
-        agent: restoreAgent,
-        sessionConfig: {
-          model: summary.model,
-          reasoningEffort: summary.reasoningEffort,
-        },
-        restore: {
-          runtimeSessionId: restoreRuntimeSessionId,
-          strategy: restoreMethod === "session/load" ? "load" : "resume",
-          replayBaselineMessages: options.sessionMessageStore.list(sessionId),
-        },
-        onEvent: (event) => handleRuntimeEvent(sessionId, event),
-        onRestoreReplayEvent: (event) => {
-          restoreReplayBuffer.add(event);
-        },
-        onConnectionLifecycleEvent: logConnectionLifecycle,
-      });
-      const replaySnapshot = restoreReplayBuffer.snapshot();
-      if (replaySnapshot.messages.length) {
-        options.sessionMessageStore.replace(sessionId, []);
-      }
-      if (replaySnapshot.toolCalls.length || replaySnapshot.outputs.length || replaySnapshot.diffs.length) {
-        options.sessionArtifactStore.remove(sessionId);
-      }
-      const replayCounts = restoreReplayBuffer.flush();
-      options.logInfo(
-        `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
-      );
-      const historySnapshot = await resolveProviderHistorySnapshot([
-        {
-          source: "acp-session-load",
-          load: async () => (hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
-        },
-        {
-          source: "adapter-authoritative-history",
-          load: async () => {
-            try {
-              return await loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorktree.path);
-            } catch (error) {
-              options.logError(
-                `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
-              );
-              return null;
-            }
-          },
-        },
-        {
-          source: "local-cache",
-          load: async () => readLocalProviderHistory(sessionId),
-        },
-      ]);
-      if (historySnapshot?.source === "acp-session-load") {
-        options.logInfo(
-          `[tiller] history.cache source=acp-session-load session=${sessionId} messages=${historySnapshot.messages.length} toolCalls=${historySnapshot.toolCalls.length} outputs=${historySnapshot.outputs.length} diffs=${historySnapshot.diffs.length}`,
-        );
-      } else if (historySnapshot?.source === "adapter-authoritative-history") {
-        applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
-      }
-      if (activeRecord && resumeOptions.forceReloadActive) {
-        activeRecord.runtime.cancel();
-      }
-      const restoredModel = summary.model ?? runtime.sessionConfigState?.model;
-      const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
-        incomingOptions: runtime.sessionConfigOptions,
-        previousOptions: summary.configOptions,
-        selectedModel: restoredModel,
-      });
-      const restoredConfigOptions = resolvedRestoredConfigOptions.options;
-      const restoredSummary = hydrateSessionSummary({
-        ...summary,
-        model: restoredModel,
-        modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-        configOptions: restoredConfigOptions,
-        reasoningEffort: resolveConfigReasoningEffortForOptions(
-          summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
-          resolvedRestoredConfigOptions,
-        ),
-        runtimeSessionId: runtime.runtimeSessionId,
-        status: "idle",
-        updatedAt: new Date().toISOString(),
-      });
-      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
-      options.sessionStore.upsert(restoredSummary);
-      persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
-      options.logInfo(
-        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${restoreMethod}`,
-      );
-      return {
-        ok: true,
-        resume: buildResumeInfo(restoredSummary, restoreAgent),
-        message: `ACP ${restoreMethod} completed for this session.`,
-      };
-    } catch (error) {
-      options.logError(
-        `[tiller] 阶段=恢复旧会话失败 session=${sessionId} message=${error instanceof Error ? error.message : "ACP restore failed."}`,
-      );
-      return {
-        ok: false,
-        resume: {
-          ...resume,
-          state: "resume-unavailable" as const,
-          reason: error instanceof Error ? error.message : "ACP restore failed.",
-          checkedAt: new Date().toISOString(),
-        },
-        message: error instanceof Error ? error.message : "ACP restore failed.",
-      };
-    }
-  }
-
   function persistRuntimeDescriptor(
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
@@ -1358,23 +540,23 @@ export function createSessionServices(options: SessionServicesOptions) {
   return {
     buildResumeInfo,
     clearPermissionRequestsForSession,
-    deleteLocalSessionData,
+    deleteLocalSessionData: sessionPersistence.deleteLocalSessionData,
     handleRuntimeEvent,
     hydrateDiffsFromWorktreeGit,
     hydrateSessionSummary,
     migrateStoredSessionSummary,
-    configureRuntimeDraft,
-    createRuntimeDraft,
-    discardRuntimeDraft,
-    discardRuntimeDraftsForDeckClient,
+    configureRuntimeDraft: runtimeDraftRegistry.configureRuntimeDraft,
+    createRuntimeDraft: runtimeDraftRegistry.createRuntimeDraft,
+    discardRuntimeDraft: runtimeDraftRegistry.discardRuntimeDraft,
+    discardRuntimeDraftsForDeckClient: runtimeDraftRegistry.discardRuntimeDraftsForDeckClient,
     persistRuntimeDescriptor,
-    persistSessionMessage,
+    persistSessionMessage: sessionPersistence.persistSessionMessage,
     publishDiffUpdate,
     reimportSessionHistory,
-    refreshAuthoritativeSessionHistory,
-    scheduleDeckClientDraftDiscard,
-    startSessionResume,
-    takeRuntimeDraft,
+    refreshAuthoritativeSessionHistory: providerHistory.refreshAuthoritativeSessionHistory,
+    scheduleDeckClientDraftDiscard: runtimeDraftRegistry.scheduleDeckClientDraftDiscard,
+    startSessionResume: sessionResume.startSessionResume,
+    takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,
     updateSessionSummary,
   };
 }
