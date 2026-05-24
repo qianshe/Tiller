@@ -7,6 +7,34 @@ export function applyPromptTraceEvent(event: PromptTraceEvent) {
   return true;
 }
 
+export function traceDeckPromptSubmit(input: {
+  traceId: string;
+  sessionId: string;
+  text: string;
+  imageCount: number;
+}): void {
+  applyPromptTraceEvent(createDeckPromptSubmitTraceEvent(input));
+}
+
+export function createDeckPromptSubmitTraceEvent(input: {
+  traceId: string;
+  sessionId: string;
+  text: string;
+  imageCount: number;
+}): PromptTraceEvent {
+  return {
+    traceId: input.traceId,
+    sessionId: input.sessionId,
+    phase: "deck.prompt.submit",
+    timestamp: new Date().toISOString(),
+    source: "deck",
+    meta: {
+      chars: input.text.length,
+      images: input.imageCount,
+    },
+  };
+}
+
 export function createDeckSessionUpdateTraceEvent(
   params: SessionUpdateParams,
   phase: "deck.session_update.received" | "deck.session_update.applied",

@@ -9,6 +9,10 @@ import type {
 } from "@tiller/shared";
 import { agentModelOptionsKey, type AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import { traceDeckPromptSubmit } from "../../server-events";
+import {
+  submitPromptRequest,
+} from "../orchestration/prompt-submission";
 import { resolveNewSessionIdentity } from "../utils/session-identity";
 
 type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
@@ -64,15 +68,7 @@ function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
   return Boolean(client && client.socket.readyState === WebSocket.OPEN);
 }
 
-export function buildPromptContent(
-  text: string,
-  images: AgentPromptImageContent[],
-): AgentPromptContent[] | undefined {
-  if (!images.length) {
-    return undefined;
-  }
-  return [...(text ? [{ type: "text" as const, text }] : []), ...images];
-}
+export { buildPromptContent } from "../orchestration/prompt-submission";
 
 export function createSession(
   initialPrompt: string | undefined,
@@ -173,10 +169,10 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     prompt,
     promptImages,
     rpcClientRef,
-    setImagePasteNotice,
     activeSessionId,
     activeSessionCanChat = true,
     createSession,
+    setImagePasteNotice,
     setPrompt,
     setPromptImages,
     createClientUserMessageId,
@@ -184,36 +180,29 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
   } = context;
 
   event.preventDefault();
-  const nextPrompt = prompt.trim();
   const client = rpcClientRef.current;
-  if ((!nextPrompt && !promptImages.length) || !isClientOpen(client)) {
-    return;
-  }
-  const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
-  const content = buildPromptContent(nextPrompt, promptImages);
-  setImagePasteNotice("");
-
-  if (!activeSessionId) {
-    if (createSession(messageText, content)) {
-      setPrompt("");
-      setPromptImages([]);
-    }
+  if (!isClientOpen(client)) {
     return;
   }
 
-  if (!activeSessionCanChat) {
-    return;
-  }
-
-  const clientMessageId = createClientUserMessageId(activeSessionId);
-  setPrompt("");
-  setPromptImages([]);
-  void dispatch(client, "session/prompt", {
-    sessionId: activeSessionId,
-    text: messageText,
-    content,
-    clientMessageId,
-  });
+  submitPromptRequest(
+    {
+      prompt,
+      promptImages,
+      activeSessionId,
+      activeSessionCanChat,
+    },
+    {
+      client,
+      createSession,
+      setImagePasteNotice,
+      setPrompt,
+      setPromptImages,
+      createClientUserMessageId,
+      dispatch,
+      tracePromptSubmit: traceDeckPromptSubmit,
+    },
+  );
 }
 
 export function startResume(context: StartResumeContext) {
