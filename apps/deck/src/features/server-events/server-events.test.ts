@@ -48,6 +48,7 @@ function resetStore() {
     outputs: {},
     toolCalls: {},
     diffs: {},
+    activityHistoryState: {},
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
@@ -115,6 +116,201 @@ test("session creation results refresh ACP connection inventory when runtime is 
 
   assert.equal(handled, true);
   assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("session/reimport_history replaces local session history caches", () => {
+  resetStore();
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: {
+      "session-1": [
+        {
+          id: "local-tool",
+          kind: "think",
+          title: "Local thinking",
+          status: "running",
+          timestamp: "2026-05-24T09:59:00.000Z",
+          updatedAt: "2026-05-24T09:59:00.000Z",
+        },
+      ],
+    },
+  };
+  useDeckStore.setState({
+    messages: {
+      "session-1": [
+        {
+          id: "local-message",
+          role: "assistant",
+          text: "本地错乱历史",
+          timestamp: "2026-05-24T09:59:00.000Z",
+        },
+      ],
+    },
+    outputs: { "session-1": [{ id: "local-output", commandId: "cmd", text: "old", stream: "stdout", timestamp: "2026-05-24T09:59:01.000Z" }] },
+    diffs: { "session-1": [{ path: "old.ts", status: "modified", additions: 1, deletions: 1 }] },
+    toolCalls: toolCallsRef.current,
+    messageHistoryState: { "session-1": { nextCursor: "old", hasMore: true, loading: true } },
+    activityHistoryState: { "session-1": { nextCursor: "old-artifact", hasMore: true, loading: true } },
+  });
+
+  const handled = applySessionResult(
+    "session/reimport_history",
+    {
+      sessionId: "session-1",
+      messages: [
+        {
+          id: "provider-user",
+          role: "user",
+          text: "真实用户消息",
+          timestamp: "2026-05-24T10:00:00.000Z",
+        },
+        {
+          id: "provider-assistant",
+          role: "assistant",
+          text: "真实助手消息",
+          timestamp: "2026-05-24T10:00:02.000Z",
+        },
+      ],
+      outputs: [{ id: "provider-output", commandId: "cmd", text: "new", stream: "stdout", timestamp: "2026-05-24T10:00:01.000Z" }],
+      diffs: [{ path: "new.ts", status: "modified", additions: 2, deletions: 0 }],
+      toolCalls: [
+        {
+          id: "provider-tool",
+          kind: "shell",
+          title: "npm test",
+          status: "completed",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          updatedAt: "2026-05-24T10:00:03.000Z",
+        },
+      ],
+      nextCursor: "older-message",
+      hasMore: true,
+      activityNextCursor: "older-activity",
+      activityHasMore: false,
+      message: "历史已从 ACP 重新导入。",
+    },
+    "helm-1",
+    true,
+    createSessionEventContext({ toolCallsRef }),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.messages["session-1"]?.map((item) => item.text), ["真实用户消息", "真实助手消息"]);
+  assert.deepEqual(state.outputs["session-1"]?.map((item) => item.id), ["provider-output"]);
+  assert.deepEqual(state.diffs["session-1"]?.map((item) => item.path), ["new.ts"]);
+  assert.deepEqual(state.toolCalls["session-1"]?.map((item) => item.id), ["provider-tool"]);
+  assert.deepEqual(toolCallsRef.current["session-1"]?.map((item) => item.id), ["provider-tool"]);
+  assert.deepEqual(state.messageHistoryState["session-1"], { nextCursor: "older-message", hasMore: true, loading: false });
+  assert.deepEqual(state.activityHistoryState["session-1"], { nextCursor: "older-activity", hasMore: false, loading: false });
+});
+
+test("session/list_messages replaces initial loaded history instead of mixing with local fragments", () => {
+  resetStore();
+  const localFragment: AgentMessage = {
+    id: "session-1-msg-s0",
+    role: "assistant",
+    text: "本地 thinking replay 片段",
+    timestamp: "2026-05-17T10:00:00.000Z",
+  };
+  const loadedHistory: AgentMessage = {
+    id: "provider-1#p0",
+    role: "assistant",
+    text: "服务端历史消息",
+    timestamp: "2026-05-17T10:01:00.000Z",
+  };
+  useDeckStore.setState({
+    messages: { "session-1": [localFragment] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [loadedHistory],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], [loadedHistory]);
+});
+
+test("session/list_messages preserves local user prompts when loaded history omits users", () => {
+  resetStore();
+  const localUser: AgentMessage = {
+    id: "client-user-1",
+    role: "user",
+    text: "为什么 session 里看不到用户消息？",
+    timestamp: "2026-05-24T10:00:00.000Z",
+  };
+  const loadedAssistant: AgentMessage = {
+    id: "provider-assistant-1#p0",
+    role: "assistant",
+    text: "我来定位原因。",
+    timestamp: "2026-05-24T10:01:00.000Z",
+  };
+  useDeckStore.setState({
+    messages: { "session-1": [localUser] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [loadedAssistant],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
+    localUser,
+    loadedAssistant,
+  ]);
+});
+
+test("session/list_messages preserves live streaming messages when initial history returns late", () => {
+  resetStore();
+  const loadedHistory: AgentMessage = {
+    id: "provider-1#p0",
+    role: "assistant",
+    text: "服务端历史消息",
+    timestamp: "2026-05-17T10:01:00.000Z",
+  };
+  const liveStreaming: AgentMessage = {
+    id: "session-1-msg-s1",
+    role: "assistant",
+    text: "实时流式消息",
+    timestamp: "2026-05-17T10:02:00.000Z",
+    streaming: true,
+  };
+  useDeckStore.setState({
+    messages: { "session-1": [liveStreaming] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [loadedHistory],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
+    loadedHistory,
+    liveStreaming,
+  ]);
 });
 
 test("session prompt creation clears consumed draft metadata from model options", () => {

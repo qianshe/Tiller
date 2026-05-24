@@ -85,6 +85,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   }>({ name: "", command: "", args: [""] });
   const [pendingHelmDeleteProfile, setPendingHelmDeleteProfile] = useState<DaemonProfile | null>(null);
   const [pendingSessionCleanup, setPendingSessionCleanup] = useState<SessionSummary | null>(null);
+  const [pendingSessionHistoryReimport, setPendingSessionHistoryReimport] = useState<SessionSummary | null>(null);
   const [daemonProfileName, setDaemonProfileName] = useState<string>("");
   const [daemonProfileMessage, setDaemonProfileMessage] = useState<string>("");
 
@@ -112,6 +113,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
     fleetProjectDraft, setFleetProjectDraft, fleetProjectSaveMessage, setFleetProjectSaveMessage,
     fleetAgentFormOpen, setFleetAgentFormOpen, fleetAgentDraft, setFleetAgentDraft,
     pendingHelmDeleteProfile, setPendingHelmDeleteProfile, pendingSessionCleanup, setPendingSessionCleanup,
+    pendingSessionHistoryReimport, setPendingSessionHistoryReimport,
     daemonProfileName, setDaemonProfileName, daemonProfileMessage, setDaemonProfileMessage,
   };
 }

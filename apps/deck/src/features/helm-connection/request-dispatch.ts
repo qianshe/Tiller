@@ -12,6 +12,7 @@ const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
   "session/new": 180_000,
   "session/draft": 180_000,
   "session/resume": 180_000,
+  "session/reimport_history": 180_000,
 };
 
 export async function dispatchWithTrace(

@@ -28,11 +28,28 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
     ...incoming,
     kind: resolveToolCallKind(current.kind, incoming.kind),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
-    output: `${current.output ?? ""}${incoming.output ?? ""}`,
+    output: mergeToolCallOutput(current.output, incoming.output),
     input: incoming.input ?? current.input,
     timestamp: current.timestamp,
+    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
     updatedAt: incoming.updatedAt,
   };
+}
+
+function mergeToolCallOutput(currentOutput: string | undefined, incomingOutput: string | undefined) {
+  if (!incomingOutput) {
+    return currentOutput;
+  }
+  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
+    return incomingOutput;
+  }
+  if (currentOutput.startsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  if (currentOutput.endsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  return `${currentOutput}${incomingOutput}`;
 }
 
 export function sortCommandChunks(items: CommandChunk[]) {
@@ -96,6 +113,7 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
     ...incoming,
     id: current.id,
     text: collapseRepeatedAssistantText(nextText),
+    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
     timestamp:
       isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp)
         ? incoming.timestamp

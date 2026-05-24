@@ -101,6 +101,7 @@ export function mergeAgentMessages(
           ...incoming,
           id: last.id,
           text: collapseRepeatedAssistantText(nextText),
+          timelineSequence: last.timelineSequence ?? incoming.timelineSequence,
           timestamp: incoming.timestamp,
         },
       ];

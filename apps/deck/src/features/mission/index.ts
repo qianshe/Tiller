@@ -27,7 +27,10 @@ export {
 export { projectFilesKey } from "./utils/project-files-key";
 export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
 export { MissionAgentIcon } from "./ui/agent-icon";
-export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";
+export {
+  SessionCleanupConfirmDialog,
+  SessionHistoryReimportConfirmDialog,
+} from "./ui/session-cleanup-confirm-dialog";
 export { MissionWorktree } from "./ui/workspace";
 export type { MissionConfigPicker } from "./ui/composer-config-controls";
 export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";

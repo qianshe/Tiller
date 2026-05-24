@@ -79,6 +79,21 @@ function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
   });
 }
 
+function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, message: string) {
+  context.updateSessionSummary(sessionId, (current) => ({
+    ...current,
+    status: "error",
+    updatedAt: new Date().toISOString(),
+    lastMessagePreview: "Prompt failed",
+  }));
+  broadcastErrorRaised(context, { sessionId, message });
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "status_change",
+    status: "error",
+    message,
+  });
+}
+
 export async function sendPromptImmediately(
   item: SessionQueuedPrompt,
   context: HelmHandlerContext,
@@ -136,7 +151,7 @@ async function runInFlightPrompt(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Prompt failed.";
     context.logError(`[tiller] prompt.inflight failed session=${item.sessionId} message=${message}`);
-    broadcastErrorRaised(context, { sessionId: item.sessionId, message });
+    broadcastPromptFailure(context, item.sessionId, message);
   } finally {
     context.promptQueue.clearInFlight(item.sessionId, item.id);
     broadcastPromptQueue(context, item.sessionId);

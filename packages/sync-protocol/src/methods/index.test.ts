@@ -41,6 +41,7 @@ const expectedRequests = [
   "session/set_config_option",
   "session/rename",
   "session/cleanup",
+  "session/reimport_history",
   "permission/list_pending",
   "permission/respond",
   "approval/list_pending",

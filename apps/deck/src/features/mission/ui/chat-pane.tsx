@@ -73,6 +73,7 @@ type MissionChatPaneProps = {
   onRenameSession: (session: SessionSummary) => void;
   onCloseSessionView: (session: SessionSummary) => void;
   onClearSession: (session: SessionSummary) => void;
+  onReimportSessionHistory: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
@@ -118,6 +119,7 @@ export function MissionChatPane({
   onRenameSession,
   onCloseSessionView,
   onClearSession,
+  onReimportSessionHistory,
   onRespondToPermission,
   promptQueue,
   onUpdateQueuedPrompt,
@@ -471,6 +473,7 @@ export function MissionChatPane({
               onFocus={onSelectSessionView}
               onRename={onRenameSession}
               onClear={onClearSession}
+              onReimportHistory={onReimportSessionHistory}
               onClose={onCloseSessionView}
             >
               {renderSessionStream(singleSession)}
@@ -498,6 +501,7 @@ export function MissionChatPane({
                   onFocus={onSelectSessionView}
                   onRename={onRenameSession}
                   onClear={onClearSession}
+                  onReimportHistory={onReimportSessionHistory}
                   onClose={onCloseSessionView}
                 >
                   {renderSessionStream(session)}
@@ -542,6 +546,7 @@ function SessionCard({
   onFocus,
   onRename,
   onClear,
+  onReimportHistory,
   onClose,
   flat = false,
   children,
@@ -553,6 +558,7 @@ function SessionCard({
   onFocus: (sessionId: string) => void;
   onRename: (session: SessionSummary) => void;
   onClear: (session: SessionSummary) => void;
+  onReimportHistory: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
   flat?: boolean;
   children: ReactNode;
@@ -652,6 +658,14 @@ function SessionCard({
                 }}
               >
                 重命名
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  onReimportHistory(session);
+                  setCardMenuOpen(false);
+                }}
+              >
+                重新导入历史
               </MenuItem>
               <div className="mx-1 my-1 h-px bg-border-ghost" />
               <MenuItem

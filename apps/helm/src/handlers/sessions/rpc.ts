@@ -72,6 +72,11 @@ export async function handleSessionRpcRequest(
         params as { sessionId: string; limit?: number; before?: string },
         context,
       );
+    case "session/reimport_history":
+      return reimportHistory(
+        params as { sessionId: string; limit?: number },
+        context,
+      );
     case "session/check_resume":
       return checkResume(params as { sessionId: string }, context);
     case "session/resume":
@@ -269,6 +274,13 @@ async function getArtifacts(
     nextCursor: artifacts.nextCursor,
     hasMore: artifacts.hasMore,
   };
+}
+
+async function reimportHistory(
+  params: { sessionId: string; limit?: number },
+  context: HelmHandlerContext,
+) {
+  return context.reimportSessionHistory(params.sessionId, { limit: params.limit });
 }
 
 function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
@@ -592,15 +604,20 @@ async function promptSession(
   context: HelmHandlerContext,
 ) {
   if (params.sessionId) {
-    return sendPromptToSession(
-      {
-        sessionId: params.sessionId,
-        text: params.text,
-        content: params.content,
-        clientMessageId: params.clientMessageId,
-      },
-      context,
-    );
+    try {
+      return await sendPromptToSession(
+        {
+          sessionId: params.sessionId,
+          text: params.text,
+          content: params.content,
+          clientMessageId: params.clientMessageId,
+        },
+        context,
+      );
+    } catch (error) {
+      broadcastPromptFailure(context, params.sessionId, error);
+      throw error;
+    }
   }
   if (!params.draftId) {
     throw new Error("sessionId or draftId is required");
@@ -717,14 +734,25 @@ async function promptRuntimeDraft(
     });
     return { ...result, session: sanitizedSummary };
   } catch (error) {
-    context.updateSessionSummary(sessionId, (current) => ({
-      ...current,
-      status: "error",
-      updatedAt: new Date().toISOString(),
-      lastMessagePreview: "Prompt failed",
-    }));
+    broadcastPromptFailure(context, sessionId, error);
     throw error;
   }
+}
+
+function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, error: unknown) {
+  const message = error instanceof Error ? error.message : "Prompt failed.";
+  context.updateSessionSummary(sessionId, (current) => ({
+    ...current,
+    status: "error",
+    updatedAt: new Date().toISOString(),
+    lastMessagePreview: "Prompt failed",
+  }));
+  broadcastErrorRaised(context, { sessionId, message });
+  broadcastSessionUpdate(context, sessionId, {
+    kind: "status_change",
+    status: "error",
+    message,
+  });
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {

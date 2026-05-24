@@ -103,13 +103,13 @@ export function mapSessionUpdateNotification(
     return null;
   }
 
-  const sessionId = payload?.params?.sessionId;
+  const sessionId = payload?.params?.sessionId ?? payload?.params?.session_id;
   const update = payload?.params?.update;
   if (!sessionId || !update) {
     return null;
   }
 
-  const updateType = update.sessionUpdate ?? update.type;
+  const updateType = resolveSessionUpdateType(update);
   const text = extractTextContent(update.content) ?? extractTextContent(update.delta) ?? extractTextContent(update.message);
 
   const thinkingToolCall = extractThinkingToolCall(sessionId, updateType, update);
@@ -299,9 +299,9 @@ export function summarizeSessionUpdateNotification(
   mappedEventType?: SessionRuntimeEvent["type"],
 ) {
   const update = params?.update;
-  const updateType = update?.sessionUpdate ?? update?.type;
+  const updateType = resolveSessionUpdateType(update);
   return {
-    sessionId: stringFrom(params?.sessionId),
+    sessionId: stringFrom(params?.sessionId ?? params?.session_id),
     updateType: typeof updateType === "string" ? updateType : undefined,
     updateKeys: objectKeys(update),
     contentShape: describeContentShape(update?.content ?? update?.delta ?? update?.message),
@@ -483,6 +483,10 @@ export function findSessionConfigOptionId(configOptions: AcpSessionConfigOption[
   return configOptions.find((item) => item.category?.toLowerCase() === category)?.id;
 }
 
+function resolveSessionUpdateType(update: any) {
+  return update?.sessionUpdate ?? update?.session_update ?? update?.type;
+}
+
 function resolveMessageId(sessionId: string, update: any) {
   return (
     stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
@@ -491,7 +495,7 @@ function resolveMessageId(sessionId: string, update: any) {
 }
 
 function hashStableMessageSeed(sessionId: string, update: any) {
-  const updateType = update.sessionUpdate ?? update.type ?? "message";
+  const updateType = resolveSessionUpdateType(update) ?? "message";
   const text =
     extractTextContent(update.content) ??
     extractTextContent(update.delta) ??

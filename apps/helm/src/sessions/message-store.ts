@@ -253,6 +253,7 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
     ...incoming,
     id: current.id,
     text: collapseRepeatedAssistantText(nextText),
+    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
     timestamp:
       isDuplicateText && Date.parse(incoming.timestamp) > Date.parse(current.timestamp)
         ? incoming.timestamp

@@ -16,20 +16,21 @@ export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
 }
 
 export type ConversationTimelineItem =
-  | { kind: "message"; timestamp: string; message: AgentMessage }
+  | { kind: "message"; timestamp: string; timelineSequence?: number; message: AgentMessage }
   | ConversationToolCallItem;
 
 export type ConversationToolCallItem = {
   kind: "tool";
   id: string;
   commandId: string;
-  timestamp: string;
   title: string;
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
+  timestamp: string;
+  timelineSequence?: number;
   text: string;
   input: string;
-  streams: Array<CommandChunk["stream"]>;
+  streams: Array<"stdout" | "stderr">;
 };
 
 export function buildConversationTimeline(
@@ -47,11 +48,10 @@ export function buildConversationTimeline(
   ).map((message) => ({
     kind: "message",
     timestamp: message.timestamp,
+    timelineSequence: message.timelineSequence,
     message,
   }));
-  return [...messageItems, ...toolItems].sort(
-    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
-  );
+  return [...messageItems, ...toolItems].sort(compareTimelineItems);
 }
 
 export function resolvePendingToolActivity(calls: AgentToolCall[]) {
@@ -92,6 +92,7 @@ export function groupToolCalls(
         status: call.status,
         toolKind: call.kind,
         timestamp: call.timestamp,
+        timelineSequence: call.timelineSequence,
         text: call.output ?? "",
         input: call.input ?? "",
         streams: call.stream ? [call.stream] : [],
@@ -104,6 +105,7 @@ export function groupToolCalls(
     if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
       current.timestamp = call.timestamp;
     }
+    current.timelineSequence = minTimelineSequence(current.timelineSequence, call.timelineSequence);
     current.status = call.status;
     current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
     current.title = resolveMergedToolTitle(
@@ -129,6 +131,7 @@ export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
     stream: chunk.stream,
     timestamp: chunk.timestamp,
     updatedAt: chunk.timestamp,
+    timelineSequence: chunk.timelineSequence,
   };
 }
 
@@ -154,12 +157,13 @@ export function mergeToolCallHistory(
       ...next,
       kind: resolveToolCallKind(existing.kind, next.kind),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
-      output: `${existing.output ?? ""}${next.output ?? ""}`,
+      output: mergeToolCallOutput(existing.output, next.output),
       input: next.input ?? existing.input,
       timestamp:
         Date.parse(next.timestamp) < Date.parse(existing.timestamp)
           ? next.timestamp
           : existing.timestamp,
+      timelineSequence: existing.timelineSequence ?? next.timelineSequence,
       updatedAt: next.updatedAt,
       status: next.status,
     };
@@ -174,6 +178,22 @@ function resolveToolCallKind(
   incomingKind: AgentToolCall["kind"],
 ) {
   return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function mergeToolCallOutput(
+  currentOutput: string | undefined,
+  incomingOutput: string | undefined,
+) {
+  if (!incomingOutput) {
+    return currentOutput;
+  }
+  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
+    return incomingOutput;
+  }
+  if (currentOutput.startsWith(incomingOutput) || currentOutput.endsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  return `${currentOutput}${incomingOutput}`;
 }
 
 function isHigherConfidenceToolKind(
@@ -195,6 +215,37 @@ function isHigherConfidenceToolKind(
     mcp: 4,
   };
   return rank[incomingKind] > rank[currentKind];
+}
+
+function minTimelineSequence(current: number | undefined, incoming: number | undefined) {
+  if (current === undefined) {
+    return incoming;
+  }
+  if (incoming === undefined) {
+    return current;
+  }
+  return Math.min(current, incoming);
+}
+
+function compareTimelineItems(left: ConversationTimelineItem, right: ConversationTimelineItem) {
+  if (left.timelineSequence !== undefined && right.timelineSequence !== undefined) {
+    const sequenceDelta = left.timelineSequence - right.timelineSequence;
+    if (sequenceDelta !== 0) {
+      return sequenceDelta;
+    }
+  }
+  const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return timelineKindRank(left) - timelineKindRank(right);
+}
+
+function timelineKindRank(item: ConversationTimelineItem) {
+  if (item.kind === "message") {
+    return 2;
+  }
+  return item.toolKind === "think" ? 0 : 1;
 }
 
 export {

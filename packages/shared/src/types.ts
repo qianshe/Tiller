@@ -282,6 +282,7 @@ export type AgentMessage = {
   role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
+  timelineSequence?: number;
   attachments?: AgentPromptImageContent[];
   streaming?: boolean;
 };
@@ -366,6 +367,7 @@ export type CommandChunk = {
   text: string;
   stream: "stdout" | "stderr";
   timestamp: string;
+  timelineSequence?: number;
 };
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
@@ -395,6 +397,7 @@ export type AgentToolCall = {
   stream?: "stdout" | "stderr";
   timestamp: string;
   updatedAt: string;
+  timelineSequence?: number;
 };
 
 export type FileDiffSummary = {
@@ -406,6 +409,19 @@ export type FileDiffSummary = {
   patch?: string;
 };
 
+export type SessionHistoryReimportResult = {
+  sessionId: string;
+  messages: AgentMessage[];
+  outputs: CommandChunk[];
+  diffs: FileDiffSummary[];
+  toolCalls: AgentToolCall[];
+  nextCursor?: string;
+  hasMore: boolean;
+  activityNextCursor?: string;
+  activityHasMore: boolean;
+  message: string;
+};
+
 export function isWildcardHost(host: string) {
   const normalized = host.trim().toLowerCase();
   return normalized === "0.0.0.0" || normalized === "::" || normalized === "[::]";
@@ -413,6 +429,5 @@ export function isWildcardHost(host: string) {
 
 export const ACP_IMAGE_INPUT_UNSUPPORTED_CODE = "ACP_IMAGE_INPUT_UNSUPPORTED";
 export const ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE = "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~";
-
 
 

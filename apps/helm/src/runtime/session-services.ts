@@ -17,6 +17,7 @@ import type {
   PermissionRequest,
   SessionReasoningEffort,
   SessionResumeInfo,
+  SessionHistoryReimportResult,
   SessionSummary,
   WorktreeSummary,
   SessionConfigOptionValue,
@@ -32,7 +33,9 @@ import {
 } from "../sessions/facade";
 import {
   filterNewProviderHistoryMessages,
+  mergeAuthoritativeMessagesWithLocalUserPrompts,
   planProviderHistorySync,
+  shouldImportAuthoritativeProviderHistory,
   shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
 } from "../sessions/provider-history-sync.js";
@@ -223,6 +226,180 @@ export function createSessionServices(options: SessionServicesOptions) {
     options.sessionMessageStore.append(sessionId, message);
   }
 
+  async function reimportSessionHistory(
+    sessionId: string,
+    reimportOptions: { limit?: number } = {},
+  ): Promise<SessionHistoryReimportResult> {
+    const activeRecord = options.sessions.get(sessionId);
+    const storedSummary = options.sessionStore.list().find((item) => item.id === sessionId);
+    const summary = activeRecord?.summary ?? storedSummary;
+    if (!summary) {
+      throw new Error("Session not found");
+    }
+    const recoverySummary = chooseRecoverySummary(summary, storedSummary);
+
+    const previousMessages = options.sessionMessageStore.list(sessionId);
+    const previousArtifacts = options.sessionArtifactStore.get(sessionId);
+    const restorePreviousLocalHistory = () => {
+      options.sessionMessageStore.replace(sessionId, previousMessages);
+      options.sessionArtifactStore.remove(sessionId);
+      for (const output of previousArtifacts.outputs) {
+        options.sessionArtifactStore.appendOutput(sessionId, output);
+      }
+      options.sessionArtifactStore.replaceDiffs(sessionId, previousArtifacts.diffs);
+      options.sessionArtifactStore.replaceToolCalls(sessionId, previousArtifacts.toolCalls);
+    };
+
+    options.sessionMessageStore.replace(sessionId, []);
+    options.sessionArtifactStore.remove(sessionId);
+    providerHistoryRefreshes.delete(sessionId);
+
+    try {
+      const resume = await startSessionResume(sessionId, { forceReloadActive: true });
+      if (!resume.ok) {
+        if (!activeRecord) {
+          throw new Error(resume.message);
+        }
+        const imported = await importAuthoritativeProviderHistory(
+          sessionId,
+          activeRecord.agent,
+          activeRecord.runtime.runtimeSessionId,
+          activeRecord.worktree.path,
+        );
+        if (!imported) {
+          throw new Error(resume.message);
+        }
+      }
+      preservePreviousUserPromptsAfterReimport(sessionId, previousMessages);
+      recoverUserPromptFromSessionSummary(sessionId, recoverySummary);
+
+      const messages = options.sessionMessageStore.list(sessionId);
+      const artifacts = options.sessionArtifactStore.get(sessionId);
+      if (
+        !messages.length &&
+        !artifacts.outputs.length &&
+        !artifacts.toolCalls.length &&
+        !artifacts.diffs.length
+      ) {
+        throw new Error("ACP did not return any history content for this session.");
+      }
+
+      return readReimportedHistoryPage(
+        sessionId,
+        reimportOptions.limit,
+        "历史已从 ACP 重新导入。",
+      );
+    } catch (error) {
+      restorePreviousLocalHistory();
+      recoverUserPromptFromSessionSummary(sessionId, recoverySummary);
+      const restoredMessages = options.sessionMessageStore.list(sessionId);
+      const restoredArtifacts = options.sessionArtifactStore.get(sessionId);
+      if (
+        restoredMessages.length ||
+        restoredArtifacts.outputs.length ||
+        restoredArtifacts.toolCalls.length ||
+        restoredArtifacts.diffs.length
+      ) {
+        return readReimportedHistoryPage(
+          sessionId,
+          reimportOptions.limit,
+          `ACP 历史重导入失败，已保留本地历史并恢复用户提示：${error instanceof Error ? error.message : "未知错误"}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+
+  function chooseRecoverySummary(
+    summary: SessionSummary,
+    storedSummary: SessionSummary | undefined,
+  ): SessionSummary {
+    if (!storedSummary) {
+      return summary;
+    }
+    const summaryText = summary.lastMessagePreview?.trim() || summary.title?.trim();
+    const storedText = storedSummary.lastMessagePreview?.trim() || storedSummary.title?.trim();
+    if (summaryText || !storedText) {
+      return summary;
+    }
+    return storedSummary;
+  }
+
+
+  function readReimportedHistoryPage(
+    sessionId: string,
+    limit: number | undefined,
+    message: string,
+  ): SessionHistoryReimportResult {
+    const messagePage = options.sessionMessageStore.listPage(sessionId, { limit });
+    const artifactPage = options.sessionArtifactStore.getPage(sessionId, { limit });
+    return {
+      sessionId,
+      messages: messagePage.messages,
+      outputs: artifactPage.outputs,
+      diffs: artifactPage.diffs,
+      toolCalls: artifactPage.toolCalls,
+      nextCursor: messagePage.nextCursor,
+      hasMore: messagePage.hasMore,
+      activityNextCursor: artifactPage.nextCursor,
+      activityHasMore: artifactPage.hasMore,
+      message,
+    };
+  }
+
+
+  function preservePreviousUserPromptsAfterReimport(
+    sessionId: string,
+    previousMessages: AgentMessage[],
+  ) {
+    const previousUserPrompts = previousMessages.filter(
+      (message) => message.role === "user",
+    );
+    if (!previousUserPrompts.length) {
+      return;
+    }
+    const currentMessages = options.sessionMessageStore.list(sessionId);
+    const mergedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
+      previousUserPrompts,
+      currentMessages,
+    );
+    if (mergedMessages.length !== currentMessages.length) {
+      options.sessionMessageStore.replace(sessionId, mergedMessages);
+    }
+  }
+
+
+  function recoverUserPromptFromSessionSummary(
+    sessionId: string,
+    summary: SessionSummary,
+  ) {
+    const currentMessages = options.sessionMessageStore.list(sessionId);
+    if (currentMessages.some((message) => message.role === "user")) {
+      return;
+    }
+    const recoveredText = summary.lastMessagePreview?.trim() || summary.title?.trim();
+    if (!recoveredText) {
+      return;
+    }
+    const firstMessageTimestamp = currentMessages
+      .map((message) => Date.parse(message.timestamp))
+      .filter(Number.isFinite)
+      .sort((left, right) => left - right)[0];
+    const timestamp = Number.isFinite(firstMessageTimestamp)
+      ? new Date(firstMessageTimestamp - 1).toISOString()
+      : summary.createdAt;
+    options.sessionMessageStore.replace(sessionId, [
+      {
+        id: `${sessionId}-recovered-user-prompt`,
+        role: "user",
+        text: recoveredText,
+        timestamp,
+      },
+      ...currentMessages,
+    ]);
+  }
+
   function updateSessionSummary(
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,
@@ -371,6 +548,20 @@ export function createSessionServices(options: SessionServicesOptions) {
     runtimeSessionId: string,
     history: ProviderHistorySnapshot,
   ) {
+    const descriptor = options.sessionRuntimeStore.get(sessionId);
+    const localMessages = options.sessionMessageStore.list(sessionId);
+    if (
+      !shouldImportAuthoritativeProviderHistory({
+        currentState: descriptor?.providerHistory,
+        localMessages,
+      })
+    ) {
+      options.logInfo(
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_local_source providerMessages=${history.messages.length} localMessages=${localMessages.length} toolCalls=${history.toolCalls.length}`,
+      );
+      return;
+    }
+
     if (!history.messages.length) {
       if (history.toolCalls.length) {
         options.sessionArtifactStore.replaceToolCalls(
@@ -387,7 +578,6 @@ export function createSessionServices(options: SessionServicesOptions) {
       return;
     }
 
-    const descriptor = options.sessionRuntimeStore.get(sessionId);
     const syncDecision = planProviderHistorySync({
       currentState: descriptor?.providerHistory,
       providerMessages: history.messages,
@@ -398,10 +588,12 @@ export function createSessionServices(options: SessionServicesOptions) {
     let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;
     if (syncDecision.action === "replace") {
       if (syncDecision.messages.length) {
-        options.sessionMessageStore.replace(sessionId, syncDecision.messages);
+        options.sessionMessageStore.replace(
+          sessionId,
+          mergeAuthoritativeMessagesWithLocalUserPrompts(localMessages, syncDecision.messages),
+        );
       }
     } else if (syncDecision.action === "append") {
-      const localMessages = options.sessionMessageStore.list(sessionId);
       const appendMessages = filterNewProviderHistoryMessages(
         localMessages,
         syncDecision.messages,
@@ -414,15 +606,20 @@ export function createSessionServices(options: SessionServicesOptions) {
         ? [...localMessages, ...appendMessages]
         : localMessages;
       if (shouldRepairProviderHistorySnapshot(messagesAfterAppend, history.messages)) {
-        const repairedMessages = toParagraphMessages(history.messages);
+        const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
+          messagesAfterAppend,
+          toParagraphMessages(history.messages),
+        );
         options.sessionMessageStore.replace(sessionId, repairedMessages);
         localMessageCount = repairedMessages.length;
         logAction = "repair";
       }
     } else {
-      const localMessages = options.sessionMessageStore.list(sessionId);
       if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
-        const repairedMessages = toParagraphMessages(history.messages);
+        const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
+          localMessages,
+          toParagraphMessages(history.messages),
+        );
         options.sessionMessageStore.replace(sessionId, repairedMessages);
         localMessageCount = repairedMessages.length;
         logAction = "repair";
@@ -877,9 +1074,12 @@ export function createSessionServices(options: SessionServicesOptions) {
     };
   }
 
-  async function startSessionResume(sessionId: string) {
+  async function startSessionResume(
+    sessionId: string,
+    resumeOptions: { forceReloadActive?: boolean } = {},
+  ) {
     const activeRecord = options.sessions.get(sessionId);
-    if (activeRecord) {
+    if (activeRecord && !resumeOptions.forceReloadActive) {
       await refreshAuthoritativeSessionHistory(sessionId);
       const resume = buildResumeInfo(activeRecord.summary, activeRecord.agent);
       options.logInfo(
@@ -892,7 +1092,7 @@ export function createSessionServices(options: SessionServicesOptions) {
       };
     }
 
-    const summary = options.sessionStore.list().find((item) => item.id === sessionId);
+    const summary = activeRecord?.summary ?? options.sessionStore.list().find((item) => item.id === sessionId);
     if (!summary) {
       const now = new Date().toISOString();
       return {
@@ -907,9 +1107,24 @@ export function createSessionServices(options: SessionServicesOptions) {
       };
     }
 
-    const agent = resolveProviderById(summary.agentId, options.getAgents());
-    const worktree = resolveStoredSessionWorktree(summary);
-    const resume = buildResumeInfo(summary, agent);
+    const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
+    const worktree = activeRecord?.worktree ?? resolveStoredSessionWorktree(summary);
+    const resume = activeRecord && resumeOptions.forceReloadActive
+      ? buildSessionResumeInfo(
+          summary,
+          agent,
+          undefined,
+          {
+            ...(options.sessionRuntimeStore.get(sessionId) ?? {}),
+            sessionId,
+            providerId: summary.agentId,
+            runtimeSessionId: activeRecord.runtime.runtimeSessionId,
+            capabilities: activeRecord.runtime.sessionCapabilities,
+            lastSeenAt: summary.updatedAt,
+            state: "resumeable",
+          },
+        )
+      : buildResumeInfo(summary, agent);
     const unavailableReason = resolveResumeUnavailableReason({
       agent,
       worktree,
@@ -963,6 +1178,12 @@ export function createSessionServices(options: SessionServicesOptions) {
         onConnectionLifecycleEvent: logConnectionLifecycle,
       });
       const replaySnapshot = restoreReplayBuffer.snapshot();
+      if (replaySnapshot.messages.length) {
+        options.sessionMessageStore.replace(sessionId, []);
+      }
+      if (replaySnapshot.toolCalls.length || replaySnapshot.outputs.length || replaySnapshot.diffs.length) {
+        options.sessionArtifactStore.remove(sessionId);
+      }
       const replayCounts = restoreReplayBuffer.flush();
       options.logInfo(
         `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
@@ -996,6 +1217,9 @@ export function createSessionServices(options: SessionServicesOptions) {
         );
       } else if (historySnapshot?.source === "adapter-authoritative-history") {
         applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
+      }
+      if (activeRecord && resumeOptions.forceReloadActive) {
+        activeRecord.runtime.cancel();
       }
       const restoredModel = summary.model ?? runtime.sessionConfigState?.model;
       const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
@@ -1146,6 +1370,7 @@ export function createSessionServices(options: SessionServicesOptions) {
     persistRuntimeDescriptor,
     persistSessionMessage,
     publishDiffUpdate,
+    reimportSessionHistory,
     refreshAuthoritativeSessionHistory,
     scheduleDeckClientDraftDiscard,
     startSessionResume,

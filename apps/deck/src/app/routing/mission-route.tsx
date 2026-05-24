@@ -77,6 +77,7 @@ export function renderMissionRoute(source: any) {
     regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
+    setPendingSessionHistoryReimport,
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
@@ -246,6 +247,7 @@ export function renderMissionRoute(source: any) {
       regeneratingIds={regeneratingIds}
       formatRelativeTime={formatRelativeTime}
       setPendingSessionCleanup={setPendingSessionCleanup}
+      setPendingSessionHistoryReimport={setPendingSessionHistoryReimport}
       sessionHistoryState={sessionHistoryState}
       toggleMissionProjectNode={toggleMissionProjectNode}
       startMissionPaneResize={startMissionPaneResize}

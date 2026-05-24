@@ -12,6 +12,18 @@ export type ProviderHistorySyncOptions = {
   syncedAt?: string;
 };
 
+export type AuthoritativeProviderHistoryImportOptions = {
+  currentState?: StoredProviderHistoryState;
+  localMessages: AgentMessage[];
+};
+
+export function shouldImportAuthoritativeProviderHistory({
+  currentState,
+  localMessages,
+}: AuthoritativeProviderHistoryImportOptions): boolean {
+  return Boolean(currentState) || localMessages.length === 0;
+}
+
 export function planProviderHistorySync({
   currentState,
   providerMessages,
@@ -68,11 +80,33 @@ export function filterNewProviderHistoryMessages(
   return incomingMessages.filter((message) => !existingIds.has(message.id));
 }
 
+export function mergeAuthoritativeMessagesWithLocalUserPrompts(
+  localMessages: AgentMessage[],
+  authoritativeMessages: AgentMessage[],
+): AgentMessage[] {
+  const missingLocalUsers = localMessages.filter(
+    (message) => message.role === "user" && !hasRepresentedUserPrompt(authoritativeMessages, message),
+  );
+  if (!missingLocalUsers.length) {
+    return authoritativeMessages;
+  }
+  return [...authoritativeMessages, ...missingLocalUsers]
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const timeDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+      return timeDelta === 0 ? left.index - right.index : timeDelta;
+    })
+    .map((entry) => entry.message);
+}
+
 export function shouldRepairProviderHistorySnapshot(
   localMessages: AgentMessage[],
   providerMessages: AgentMessage[],
 ): boolean {
-  const authoritativeMessages = toParagraphMessages(providerMessages);
+  const authoritativeMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
+    localMessages,
+    toParagraphMessages(providerMessages),
+  );
   if (localMessages.length !== authoritativeMessages.length) {
     return true;
   }
@@ -81,6 +115,18 @@ export function shouldRepairProviderHistorySnapshot(
     const localMessage = localMessages[index];
     return !localMessage || !isSameStoredMessage(localMessage, message);
   });
+}
+
+function hasRepresentedUserPrompt(
+  authoritativeMessages: AgentMessage[],
+  localUserMessage: AgentMessage,
+) {
+  const localText = localUserMessage.text.trim();
+  return authoritativeMessages.some(
+    (message) =>
+      message.role === "user" &&
+      (message.id === localUserMessage.id || message.text.trim() === localText),
+  );
 }
 
 function isSameStoredMessage(left: AgentMessage, right: AgentMessage) {

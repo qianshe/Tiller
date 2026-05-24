@@ -62,6 +62,55 @@ test("session/get_artifacts repairs stale running thinking for idle sessions", a
   assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
 });
 
+test("session/reimport_history delegates to the history reimport service", async () => {
+  let delegated: unknown;
+  const result = await handleSessionRpcRequest(
+    "session/reimport_history",
+    { sessionId: "s1", limit: 40 },
+    {
+      reimportSessionHistory: (sessionId: string, options: unknown) => {
+        delegated = { sessionId, options };
+        return {
+          sessionId,
+          messages: [
+            {
+              id: "m1",
+              role: "user" as const,
+              text: "hello",
+              timestamp: "2026-05-24T10:00:00.000Z",
+            },
+          ],
+          outputs: [],
+          diffs: [],
+          toolCalls: [],
+          hasMore: false,
+          activityHasMore: false,
+          message: "历史已从 ACP 重新导入。"
+        };
+      },
+    } as any,
+  );
+
+  assert.deepEqual(delegated, { sessionId: "s1", options: { limit: 40 } });
+  assert.deepEqual(result, {
+    sessionId: "s1",
+    messages: [
+      {
+        id: "m1",
+        role: "user",
+        text: "hello",
+        timestamp: "2026-05-24T10:00:00.000Z",
+      },
+    ],
+    outputs: [],
+    diffs: [],
+    toolCalls: [],
+    hasMore: false,
+    activityHasMore: false,
+    message: "历史已从 ACP 重新导入。",
+  });
+});
+
 test("session RPC lists paged sessions", async () => {
   const sessions = [{ id: "s1", updatedAt: "2026-05-06T00:00:00.000Z" }];
   const result = await handleSessionRpcRequest("session/list", { limit: 20 }, {
@@ -152,6 +201,56 @@ test("session/prompt acknowledges before runtime prompt failures are reported", 
   assert.equal(result.accepted, "sent");
   await flushPromises();
   assert.equal(broadcasts.some((item) => item.method === "error/raised"), true);
+});
+
+test("session/prompt broadcasts synchronous prompt failures to connected decks", async () => {
+  const sessionId = "s1";
+  const broadcasts: any[] = [];
+  let status = "idle";
+  const context = {
+    sessions: new Map([
+      [
+        sessionId,
+        {
+          summary: {
+            id: sessionId,
+            status,
+            availableCommands: [{ name: "review" }],
+          },
+          runtime: {
+            sessionCapabilities: {},
+            prompt: async () => {
+              throw new Error("should not reach ACP prompt");
+            },
+          },
+        },
+      ],
+    ]),
+    ...createPromptQueueContextExtras(),
+    logInfo: () => undefined,
+    logError: () => undefined,
+    persistSessionMessage: () => undefined,
+    updateSessionSummary: (_sessionId: string, mutate: (current: any) => any) => {
+      const next = mutate({ id: sessionId, status });
+      status = next.status;
+      return next;
+    },
+    broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+  };
+
+  await assert.rejects(
+    handleSessionRpcRequest("session/prompt", { sessionId, text: "/unknown" }, context as any),
+    /command is not supported/u,
+  );
+
+  assert.equal(status, "error");
+  assert.deepEqual(
+    broadcasts.map((item) => [item.method, item.params?.sessionId, item.params?.update?.kind ?? item.params?.message]),
+    [
+      ["error/raised", sessionId, "/unknown command is not supported by ACP agent. Available commands: /review"],
+      ["session/update", sessionId, "status_change"],
+    ],
+  );
 });
 
 test("session/rename persists and broadcasts the next title", async () => {

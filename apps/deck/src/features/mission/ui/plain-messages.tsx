@@ -632,9 +632,9 @@ export function resolveVisiblePlainMessages(
 }
 
 type PlainConversationItem =
-  | { kind: "message"; timestamp: string; message: AgentMessage }
-  | { kind: "thinking"; timestamp: string; toolCall: AgentToolCall }
-  | { kind: "tool-group"; timestamp: string; group: ConversationToolCallItem[] };
+  | { kind: "message"; timestamp: string; timelineSequence?: number; message: AgentMessage }
+  | { kind: "thinking"; timestamp: string; timelineSequence?: number; toolCall: AgentToolCall }
+  | { kind: "tool-group"; timestamp: string; timelineSequence?: number; group: ConversationToolCallItem[] };
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
@@ -733,20 +733,22 @@ function buildPlainConversationItems(
     ...messages.flatMap((message) => {
       const text = normalizeLocalCommandMessageText(message.text);
       return text
-        ? [{ kind: "message" as const, timestamp: message.timestamp, message: text === message.text ? message : { ...message, text } }]
+        ? [{ kind: "message" as const, timestamp: message.timestamp, timelineSequence: message.timelineSequence, message: text === message.text ? message : { ...message, text } }]
         : [];
     }),
     ...thinkingToolCalls.map((toolCall) => ({
       kind: "thinking" as const,
       timestamp: toolCall.timestamp,
+      timelineSequence: toolCall.timelineSequence,
       toolCall,
     })),
     ...groupToolCalls(visibleToolCalls).map((toolCall) => ({
       kind: "tool-group" as const,
       timestamp: toolCall.timestamp,
+      timelineSequence: toolCall.timelineSequence,
       group: [toolCall],
     })),
-  ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  ].sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
 }
 
@@ -762,6 +764,7 @@ function mergeAdjacentToolItems(
     merged[merged.length - 1] = {
       kind: "tool-group",
       timestamp: last.timestamp,
+      timelineSequence: last.timelineSequence ?? item.timelineSequence,
       group: [...last.group, ...item.group],
     };
     return merged;
@@ -881,4 +884,28 @@ function resolveMessageRoleLabel(
   return message.role === "assistant"
     ? assistantLabel
     : roleLabels[message.role];
+}
+
+function comparePlainConversationItems(left: PlainConversationItem, right: PlainConversationItem) {
+  if (left.timelineSequence !== undefined && right.timelineSequence !== undefined) {
+    const sequenceDelta = left.timelineSequence - right.timelineSequence;
+    if (sequenceDelta !== 0) {
+      return sequenceDelta;
+    }
+  }
+  const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return plainConversationKindRank(left) - plainConversationKindRank(right);
+}
+
+function plainConversationKindRank(item: PlainConversationItem) {
+  if (item.kind === "thinking") {
+    return 0;
+  }
+  if (item.kind === "tool-group") {
+    return 1;
+  }
+  return 2;
 }

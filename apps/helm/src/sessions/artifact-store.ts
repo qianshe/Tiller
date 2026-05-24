@@ -60,9 +60,10 @@ export function createSessionArtifactStore(rootDir: string) {
                     ...toolCall,
                     kind: resolveToolCallKind(item.kind, toolCall.kind),
                     title: resolveToolCallTitle(item.title, toolCall.title, toolCall.id),
-                    output: `${item.output ?? ""}${toolCall.output ?? ""}`,
+                    output: mergeToolCallOutput(item.output, toolCall.output),
                     input: resolveToolCallInput(item.input, toolCall.input),
                     timestamp: item.timestamp,
+                    timelineSequence: item.timelineSequence ?? toolCall.timelineSequence,
                     updatedAt: toolCall.updatedAt,
                   }
                 : item,
@@ -129,6 +130,22 @@ function isHigherConfidenceToolKind(
 
 function resolveToolCallInput(currentInput: string | undefined, incomingInput: string | undefined) {
   return incomingInput ?? currentInput;
+}
+
+function mergeToolCallOutput(currentOutput: string | undefined, incomingOutput: string | undefined) {
+  if (!incomingOutput) {
+    return currentOutput;
+  }
+  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
+    return incomingOutput;
+  }
+  if (currentOutput.startsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  if (currentOutput.endsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  return `${currentOutput}${incomingOutput}`;
 }
 
 function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {

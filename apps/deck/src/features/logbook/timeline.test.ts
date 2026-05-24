@@ -66,6 +66,44 @@ test("buildConversationTimeline interleaves messages and tool calls by timestamp
   assert.equal(timeline[1]?.kind, "message");
 });
 
+test("buildConversationTimeline preserves runtime event order when timestamps collide", () => {
+  const timestamp = "2026-05-24T08:00:00.000Z";
+  const message = {
+    ...baseMessage,
+    id: "msg-seq-3",
+    text: "具体回复",
+    timestamp,
+    timelineSequence: 3,
+  } as AgentMessage;
+  const thinking = {
+    id: "think-seq-1",
+    kind: "think" as const,
+    title: "Thinking",
+    status: "completed" as const,
+    output: "先思考",
+    timestamp,
+    updatedAt: timestamp,
+    timelineSequence: 1,
+  } as AgentToolCall;
+  const toolCall = {
+    id: "tool-seq-2",
+    kind: "shell" as const,
+    title: "Run tests",
+    status: "completed" as const,
+    output: "PASS",
+    timestamp,
+    updatedAt: timestamp,
+    timelineSequence: 2,
+  } as AgentToolCall;
+
+  const timeline = buildConversationTimeline([message], [], [toolCall, thinking]);
+
+  assert.deepEqual(
+    timeline.map((item) => item.kind === "message" ? item.message.text : item.toolKind),
+    ["think", "shell", "具体回复"],
+  );
+});
+
 test("groupToolCalls merges chunks for the same command id", () => {
   const calls: AgentToolCall[] = [
     {

@@ -931,6 +931,9 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   assert.deepEqual(logs, []);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, []);
+  const toolCallBroadcast = capture.detailBroadcasts[0] as any;
+  assert.equal(typeof toolCallBroadcast.params.update.toolCall.timelineSequence, "number");
+  delete toolCallBroadcast.params.update.toolCall.timelineSequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1147,6 +1150,9 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
     context,
   );
 
+  const classifiedToolCallBroadcast = capture.detailBroadcasts[0] as any;
+  assert.equal(typeof classifiedToolCallBroadcast.params.update.toolCall.timelineSequence, "number");
+  delete classifiedToolCallBroadcast.params.update.toolCall.timelineSequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1167,6 +1173,75 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
       },
     },
   ]);
+});
+
+test("runtime timeline events carry arrival order when timestamps collide", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-timeline-order");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current ? { ...current, ...toolCall } : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  const timestamp = "2026-04-30T00:00:01.000Z";
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-timeline-order-msg-a:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "先思考",
+        timestamp,
+        updatedAt: timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-shell",
+        kind: "shell",
+        title: "pnpm test",
+        status: "completed",
+        timestamp,
+        updatedAt: timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "message",
+      message: {
+        id: "message-final",
+        role: "assistant",
+        text: "最后回复",
+        timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineUpdates = capture.detailBroadcasts
+    .map((item: any) => item.params.update)
+    .filter((update: any) => update.kind === "tool_call" || update.kind === "agent_message");
+  assert.deepEqual(
+    timelineUpdates.map((update: any) =>
+      update.kind === "tool_call" ? update.toolCall.timelineSequence : update.message.timelineSequence,
+    ),
+    [1, 2, 3],
+  );
 });
 
 test("runtime non-streaming event logs keep existing tiller prefix", () => {

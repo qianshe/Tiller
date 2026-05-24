@@ -32,6 +32,7 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
+import * as sessionReimportHistory from "./session/reimport-history";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
@@ -86,6 +87,7 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
+  [sessionReimportHistory.method]: sessionReimportHistory.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
@@ -141,6 +143,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
+  sessionReimportHistory.method,
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,

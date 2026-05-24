@@ -15,6 +15,7 @@ import type {
   ProjectSummary,
   SessionConfigOption,
   SessionConfigOptionValue,
+  SessionHistoryReimportResult,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
@@ -201,6 +202,10 @@ export type HelmHandlerContext = {
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) => void;
   refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
+  reimportSessionHistory: (
+    sessionId: string,
+    options?: { limit?: number },
+  ) => Promise<SessionHistoryReimportResult>;
   updateSessionSummary: (
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,

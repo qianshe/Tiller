@@ -1,5 +1,6 @@
 import type { MutableRefObject } from "react";
 import type {
+  AgentMessage,
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
@@ -8,7 +9,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import { toast } from "../toast";
-import { commandChunkToToolCall, mergeMessageHistory } from "../logbook";
+import { commandChunkToToolCall, mergeMessageHistory, sortAgentMessagesByTimeline } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
@@ -154,6 +155,42 @@ function pendingPromptImages(content: AgentPromptContent[] | undefined) {
   return content?.filter(
     (item): item is AgentPromptImageContent => item.type === "image",
   ) ?? [];
+}
+
+function replaceInitialMessageHistory(
+  currentMessages: AgentMessage[],
+  loadedMessages: AgentMessage[],
+): AgentMessage[] {
+  const loadedIds = new Set(loadedMessages.map((message) => message.id));
+  const latestLoadedTime = Math.max(
+    ...loadedMessages.map((message) => Date.parse(message.timestamp)).filter(Number.isFinite),
+  );
+  const liveMessages = currentMessages.filter((message) => {
+    if (loadedIds.has(message.id)) {
+      return false;
+    }
+    if (message.role === "user" && !hasRepresentedUserPrompt(loadedMessages, message)) {
+      return true;
+    }
+    if (message.streaming === true) {
+      return true;
+    }
+    const messageTime = Date.parse(message.timestamp);
+    return Number.isFinite(messageTime) && messageTime > latestLoadedTime;
+  });
+  return sortAgentMessagesByTimeline(mergeMessageHistory(loadedMessages, liveMessages));
+}
+
+function hasRepresentedUserPrompt(
+  loadedMessages: AgentMessage[],
+  localUserMessage: AgentMessage,
+) {
+  const localText = localUserMessage.text.trim();
+  return loadedMessages.some(
+    (message) =>
+      message.role === "user" &&
+      (message.id === localUserMessage.id || message.text.trim() === localText),
+  );
 }
 
 function requestAgentConnectionsRefresh(context: SessionServerEventContext) {
@@ -378,11 +415,11 @@ export function applySessionResult(
     case "session/list_messages":
       store.setMessages((current) => ({
         ...current,
-        [payload.sessionId]: mergeMessageHistory(
-          current[payload.sessionId] ?? [],
-          payload.messages,
-          { mode: payload.before ? "prepend" : "append" },
-        ),
+        [payload.sessionId]: payload.before
+          ? mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, {
+              mode: "prepend",
+            })
+          : replaceInitialMessageHistory(current[payload.sessionId] ?? [], payload.messages),
       }));
       store.setMessageHistoryState((current) => ({
         ...current,
@@ -417,6 +454,49 @@ export function applySessionResult(
           loading: false,
         },
       }));
+      return true;
+    case "session/reimport_history":
+      store.setMessages((current) => ({
+        ...current,
+        [payload.sessionId]: sortAgentMessagesByTimeline(payload.messages ?? []),
+      }));
+      store.setMessageHistoryState((current) => ({
+        ...current,
+        [payload.sessionId]: {
+          nextCursor: payload.nextCursor,
+          hasMore: Boolean(payload.hasMore),
+          loading: false,
+        },
+      }));
+      store.setOutputs((current) => ({
+        ...current,
+        [payload.sessionId]: payload.outputs ?? [],
+      }));
+      store.setToolCalls((current) => {
+        const next = {
+          ...current,
+          [payload.sessionId]: payload.toolCalls ?? [],
+        };
+        toolCallsRef.current = next;
+        return next;
+      });
+      store.setDiffs((current) => ({
+        ...current,
+        [payload.sessionId]: payload.diffs ?? [],
+      }));
+      store.setActivityHistoryState((current) => ({
+        ...current,
+        [payload.sessionId]: {
+          nextCursor: payload.activityNextCursor,
+          hasMore: Boolean(payload.activityHasMore),
+          loading: false,
+        },
+      }));
+      if (typeof payload.message === "string" && payload.message.includes("失败")) {
+        toast.warning(payload.message);
+      } else {
+        toast.success(payload.message ?? "历史已从 ACP 重新导入。");
+      }
       return true;
     case "session/check_resume":
       store.setSessions((current) =>

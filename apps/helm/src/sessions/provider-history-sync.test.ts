@@ -7,6 +7,8 @@ import {
   planProviderHistorySync,
   shouldRepairProviderHistorySnapshot,
   toParagraphMessages,
+  shouldImportAuthoritativeProviderHistory,
+  mergeAuthoritativeMessagesWithLocalUserPrompts,
 } from "./provider-history-sync.js";
 import type { StoredProviderHistoryState } from "./runtime-store.js";
 
@@ -68,6 +70,38 @@ test("planProviderHistorySync skips unchanged empty provider history", () => {
 
   assert.equal(decision.action, "skip");
   assert.equal(decision.nextState.messageCount, 0);
+});
+
+test("shouldImportAuthoritativeProviderHistory keeps local history as the source once local messages exist", () => {
+  const localMessages = [baseMessage("session-1-msg-s0", "本地流式消息")];
+
+  assert.equal(
+    shouldImportAuthoritativeProviderHistory({
+      localMessages,
+      currentState: undefined,
+    }),
+    false,
+  );
+});
+
+test("shouldImportAuthoritativeProviderHistory allows provider history for empty local cache or existing provider source", () => {
+  const providerMessages = [baseMessage("provider-1", "真实历史")];
+  const currentState = buildProviderHistoryState(providerMessages);
+
+  assert.equal(
+    shouldImportAuthoritativeProviderHistory({
+      localMessages: [],
+      currentState: undefined,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldImportAuthoritativeProviderHistory({
+      localMessages: [baseMessage("provider-1#p0", "真实历史")],
+      currentState,
+    }),
+    true,
+  );
 });
 
 test("planProviderHistorySync appends messages after known latest provider id", () => {
@@ -174,6 +208,51 @@ test("toParagraphMessages keeps provider user prompts as one message", () => {
   const messages = toParagraphMessages([{ ...message, role: "user" }]);
 
   assert.deepEqual(messages, [{ ...message, role: "user" }]);
+});
+
+test("mergeAuthoritativeMessagesWithLocalUserPrompts keeps local user prompts omitted by provider history", () => {
+  const localUser: AgentMessage = {
+    id: "client-user-1",
+    role: "user",
+    text: "请检查这个 session 的消息显示。",
+    timestamp: "2026-05-24T10:00:00.000Z",
+  };
+  const providerAssistant = baseMessage(
+    "provider-assistant-1#p0",
+    "已经完成检查。",
+    "2026-05-24T10:01:00.000Z",
+  );
+
+  assert.deepEqual(
+    mergeAuthoritativeMessagesWithLocalUserPrompts(
+      [localUser],
+      [providerAssistant],
+    ),
+    [localUser, providerAssistant],
+  );
+});
+
+test("mergeAuthoritativeMessagesWithLocalUserPrompts does not duplicate provider user prompts", () => {
+  const localUser: AgentMessage = {
+    id: "client-user-1",
+    role: "user",
+    text: "同一个用户问题",
+    timestamp: "2026-05-24T10:00:00.000Z",
+  };
+  const providerUser: AgentMessage = {
+    id: "provider-user-1",
+    role: "user",
+    text: "同一个用户问题",
+    timestamp: "2026-05-24T10:00:01.000Z",
+  };
+
+  assert.deepEqual(
+    mergeAuthoritativeMessagesWithLocalUserPrompts(
+      [localUser],
+      [providerUser],
+    ),
+    [providerUser],
+  );
 });
 
 test("filterNewProviderHistoryMessages skips already stored paragraph ids", () => {

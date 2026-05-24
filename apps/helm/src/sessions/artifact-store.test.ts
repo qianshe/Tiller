@@ -191,6 +191,49 @@ test("session artifact store keeps the first timestamp for tool call updates", a
   }
 });
 
+test("session artifact store replaces cumulative thinking output instead of appending duplicates", async () => {
+  const mod = await import("./artifact-store.js");
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-thinking-output-"));
+
+  try {
+    const store = mod.createSessionArtifactStore(tempRoot);
+    store.appendToolCall("session-1", {
+      id: "session-1-msg-s0:thinking",
+      commandId: "session-1-msg-s0:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: "分析 A",
+      timestamp: "2026-05-23T10:00:00.000Z",
+      updatedAt: "2026-05-23T10:00:01.000Z",
+    });
+    store.appendToolCall("session-1", {
+      id: "session-1-msg-s0:thinking",
+      commandId: "session-1-msg-s0:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: "分析 A\n分析 B",
+      timestamp: "2026-05-23T10:00:00.000Z",
+      updatedAt: "2026-05-23T10:00:02.000Z",
+    });
+    store.appendToolCall("session-1", {
+      id: "session-1-msg-s0:thinking",
+      commandId: "session-1-msg-s0:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: "分析 A",
+      timestamp: "2026-05-23T10:00:00.000Z",
+      updatedAt: "2026-05-23T10:00:03.000Z",
+    });
+
+    assert.equal(store.get("session-1").toolCalls[0]?.output, "分析 A\n分析 B");
+  } finally {
+    rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("session artifact store keeps informative tool title when later updates only carry call id", async () => {
   const mod = await import("./artifact-store.js");
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-artifact-store-tool-title-"));

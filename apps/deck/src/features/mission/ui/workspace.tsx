@@ -105,6 +105,7 @@ export function MissionWorktree(props: any) {
     regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
+    setPendingSessionHistoryReimport,
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
@@ -926,6 +927,7 @@ export function MissionWorktree(props: any) {
           onRenameSession={regenerateSessionTitle}
           onCloseSessionView={closeChatSession}
           onClearSession={setPendingSessionCleanup}
+          onReimportSessionHistory={setPendingSessionHistoryReimport}
           onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
           onUpdateQueuedPrompt={updateQueuedPrompt}

@@ -22,7 +22,7 @@ const activeAssistantRuntimeMessageBySession = new Map<
 >();
 const activeAssistantRuntimeThinkingBySession = new Map<
   string,
-  { sourceId: string; segmentId: string; text: string; timestamp: string }
+  { sourceId: string; segmentId: string; text: string; timestamp: string; timelineSequence?: number }
 >();
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
@@ -99,6 +99,7 @@ function normalizeRuntimeThinkingToolCall(
       ...toolCall,
       id: active.segmentId,
       commandId: active.segmentId,
+      timelineSequence: active.timelineSequence ?? toolCall.timelineSequence,
     };
   }
 
@@ -115,6 +116,7 @@ function normalizeRuntimeThinkingToolCall(
     segmentId,
     text,
     timestamp: toolCall.timestamp,
+    timelineSequence: toolCall.timelineSequence,
   });
   return {
     ...toolCall,
@@ -153,6 +155,7 @@ function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerCo
     status: "completed",
     timestamp: active.timestamp,
     updatedAt: now,
+    timelineSequence: active.timelineSequence,
   };
   const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
     | { toolCalls?: AgentToolCall[] }
@@ -324,6 +327,7 @@ export function handleRuntimeEvent(
       const message = {
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
+        timelineSequence: nextLiveEventSequence(sessionId),
       };
       activeAssistantRuntimeThinkingBySession.delete(sessionId);
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
@@ -384,7 +388,10 @@ export function handleRuntimeEvent(
       return;
     case "tool-call":
       if (event.toolCall.kind === "think") {
-        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, event.toolCall);
+        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, {
+          ...event.toolCall,
+          timelineSequence: nextLiveEventSequence(sessionId),
+        });
         const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
           | { toolCalls?: AgentToolCall[] }
           | undefined;
@@ -401,12 +408,16 @@ export function handleRuntimeEvent(
       flushLiveAssistantMessage(sessionId, context);
       closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
-      const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall) as
+      const orderedToolCall = {
+        ...event.toolCall,
+        timelineSequence: nextLiveEventSequence(sessionId),
+      };
+      const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, orderedToolCall) as
         | { toolCalls?: AgentToolCall[] }
         | undefined;
       const mergedToolCall = resolveBroadcastToolCall(
-        event.toolCall,
-        artifacts?.toolCalls?.find((item) => item.id === event.toolCall.id),
+        orderedToolCall,
+        artifacts?.toolCalls?.find((item) => item.id === orderedToolCall.id),
       );
       broadcastSessionUpdate(context, sessionId, {
         kind: "tool_call",
@@ -420,17 +431,25 @@ export function handleRuntimeEvent(
       context.logInfo(
         `[tiller] 阶段=命令输出流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} text=${formatLogValue(event.chunk.text, 520)}`,
       );
-      context.sessionArtifactStore.appendOutput(sessionId, event.chunk);
+      const orderedChunk = {
+        ...event.chunk,
+        timelineSequence: nextLiveEventSequence(sessionId),
+      };
+      context.sessionArtifactStore.appendOutput(sessionId, orderedChunk);
       broadcastSessionUpdate(context, sessionId, {
         kind: "command_output",
-        commandId: event.chunk.commandId,
-        chunk: event.chunk,
+        commandId: orderedChunk.commandId,
+        chunk: orderedChunk,
       });
       if (event.toolCall) {
-        context.sessionArtifactStore.appendToolCall(sessionId, event.toolCall);
+        const orderedToolCall = {
+          ...event.toolCall,
+          timelineSequence: orderedChunk.timelineSequence,
+        };
+        context.sessionArtifactStore.appendToolCall(sessionId, orderedToolCall);
         broadcastSessionUpdate(context, sessionId, {
           kind: "tool_call",
-          toolCall: event.toolCall,
+          toolCall: orderedToolCall,
         });
       }
       return;
