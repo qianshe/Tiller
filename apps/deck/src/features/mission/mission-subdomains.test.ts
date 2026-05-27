@@ -29,3 +29,15 @@ test("mission root re-exports subdomain public APIs", () => {
     assert.match(indexSource, new RegExp(`export \\* from "\\./${subdomain}";`));
   }
 });
+
+test("mission workspace composes panes through subdomain entrypoints", () => {
+  const workspaceSource = readFileSync(join(missionRoot, "ui", "workspace.tsx"), "utf8");
+
+  for (const subdomain of ["conversation", "composer", "display", "inspector", "navigation"] as const) {
+    assert.match(workspaceSource, new RegExp(`from "\\.\\./${subdomain}"`));
+  }
+
+  for (const internalImport of ["./chat-pane", "./composer", "./diff-panel", "./display-section", "./inspector", "./sidebar"] as const) {
+    assert.doesNotMatch(workspaceSource, new RegExp(`from "${internalImport.replace(".", "\\\\.")}"`));
+  }
+});

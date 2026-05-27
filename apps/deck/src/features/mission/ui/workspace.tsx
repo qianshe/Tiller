@@ -5,11 +5,10 @@ import {
   subscribeToSessionTopic,
   unsubscribeFromSessionTopic,
 } from "../../helm-connection/facade";
-import { MissionChatPane } from "./chat-pane";
-import { MissionComposer } from "./composer";
-import { MissionDiffPanel } from "./diff-panel";
-import { MissionDisplaySection } from "./display-section";
-import { MissionInspector } from "./inspector";
+import { MissionChatPane } from "../conversation";
+import { MissionComposer } from "../composer";
+import { MissionDiffPanel, MissionDisplaySection } from "../display";
+import { MissionInspector } from "../inspector";
 import { MissionMobilePager } from "./mobile-pager";
 import { MissionPage } from "./page";
 import {
@@ -18,7 +17,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "../../../shared/ui";
-import { MissionSidebar } from "./sidebar";
+import { MissionSidebar } from "../navigation";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
