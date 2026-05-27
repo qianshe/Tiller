@@ -2,132 +2,95 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prove that a future non-TypeScript Helm can satisfy Tiller's public transport contract by building a provider-free adapter stub first.
+**Goal:** Prove the language migration seam with the smallest provider-free adapter stub before any real ACP provider migration starts.
 
-**Architecture:** Start with an isolated adapter proof that implements only JSON-RPC transport and provider-free inventory methods. Do not migrate real ACP providers until the stub passes the same contract smoke expectations as the TypeScript Helm reference.
+**Architecture:** Keep Deck and `packages/sync-protocol` as the compatibility boundary. Build a provider-free Helm-compatible adapter stub that speaks the same HTTP + JSON-RPC over WebSocket contract for inventory methods only. The current TypeScript Helm remains the reference implementation.
 
-**Tech Stack:** JSON-RPC 2.0 over WebSocket, HTTP static root, `packages/sync-protocol` method contracts, provider-free smoke tests.
+**Tech Stack:** Existing TypeScript contract tests, JSON-RPC 2.0 over WebSocket, provider-free test fixtures. The proof may choose another language later, but this plan first freezes observable behavior and smoke expectations.
 
 ---
 
 ## Non-Goals
 
-- No real ACP provider process integration.
-- No session prompt streaming.
-- No replacement of the TypeScript Helm runtime.
-- No Deck UI changes.
+- Do not migrate real Helm runtime logic yet.
+- Do not integrate real ACP providers in this phase.
+- Do not replace SQLite/JSON persistence yet.
+- Do not change public method names or response envelopes.
+- Do not introduce a production control plane or remote SaaS dependency.
 
-## Task 1: Choose Proof Runtime Boundary
+## Success Criteria
 
-**Files:**
+1. A provider-free adapter stub can serve an HTTP health/static root.
+2. The stub can accept JSON-RPC 2.0 over WebSocket.
+3. The stub returns compatible envelopes for:
+   - `helm/list`
+   - `project/list`
+   - `agent/list`
+   - `session/list`
+4. The proof has an automated smoke command that does not require ACP credentials.
+5. Real ACP provider integration is explicitly deferred until provider-free smoke passes.
 
-- Create: `docs/architecture/language-adapter-proof.md`
-
-- [ ] **Step 1: Document the proof boundary**
-
-Create the file with this content:
-
-```markdown
-# Language Adapter Proof
-
-The first language-adapter proof implements only the provider-free contract.
-
-## Required Methods
-
-- `helm/list`
-- `project/list`
-- `agent/list`
-- `session/list`
-
-## Required Runtime Behavior
-
-- Starts an HTTP server.
-- Opens a JSON-RPC WebSocket endpoint.
-- Validates request envelopes and unknown methods.
-- Returns stable inventory result envelopes.
-- Does not require ACP credentials or provider binaries.
-
-## Exit Criteria
-
-The proof is acceptable only when a smoke script can confirm HTTP readiness, WebSocket readiness, first RPC latency, and all four inventory method result shapes.
-```
-
-- [ ] **Step 2: Verify no provider migration is implied**
-
-Run:
-
-```bash
-Select-String -Path docs/architecture/language-adapter-proof.md -Pattern 'real ACP|prompt streaming|replacement'
-```
-
-Expected: matches only appear under `Non-Goals` or wording that explicitly defers the work.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/architecture/language-adapter-proof.md
-git commit -m "docs：定义语言适配验证边界"
-```
-
-## Task 2: Add Provider-Free Smoke Spec
+## Task 1: Choose The Proof Location
 
 **Files:**
 
-- Modify: `docs/architecture/language-adapter-proof.md`
+- Inspect: `docs/architecture/language-adapter-checklist.md`
+- Create only after decision: `experiments/language-adapter-proof/` or another explicitly approved location.
 
-- [ ] **Step 1: Append smoke expectations**
+- [ ] Decide whether the proof lives under `experiments/` or an external repository.
+- [ ] Keep it isolated from `apps/helm` so the reference implementation is not polluted.
+- [ ] Document how to run it.
 
-Append this section:
+## Task 2: Define Provider-Free Fixtures
 
-```markdown
-## Provider-Free Smoke Expectations
+**Files:**
 
-A compatible adapter smoke result must include:
+- Create: proof-local fixture file or test helper.
 
-```json
-{
-  "ok": true,
-  "timings": {
-    "httpReadyMs": 0,
-    "webSocketOpenMs": 0,
-    "firstRpcMs": 0
-  },
-  "rpc": {
-    "helms": 0,
-    "projects": 0,
-    "agents": 0,
-    "sessions": 0
-  }
-}
-```
+- [ ] Define empty-compatible responses for inventory methods.
+- [ ] Define populated fixture responses with one Helm, one project, one agent, and one idle session.
+- [ ] Ensure fixtures use only public contract shapes from `@tiller/sync-protocol` and `@tiller/domain-contracts` where applicable.
 
-The numeric values may differ; the field names and success semantics must remain stable.
-```
+## Task 3: Implement Minimal Adapter Stub
 
-- [ ] **Step 2: Verify expected fields exist**
+**Files:**
 
-Run:
+- Create proof-local server entrypoint.
 
-```bash
-Select-String -Path docs/architecture/language-adapter-proof.md -Pattern 'httpReadyMs|webSocketOpenMs|firstRpcMs|sessions'
-```
+- [ ] Serve HTTP root with a simple HTML shell or health response.
+- [ ] Accept WebSocket JSON-RPC envelopes.
+- [ ] Route only the four provider-free inventory methods.
+- [ ] Return MethodNotFound for unsupported methods using stable JSON-RPC error shape.
 
-Expected: all four field names are present.
+## Task 4: Add Provider-Free Smoke
 
-- [ ] **Step 3: Commit**
+**Files:**
 
-```bash
-git add docs/architecture/language-adapter-proof.md
-git commit -m "docs：补充适配器冒烟输出契约"
-```
+- Create proof-local smoke script or test.
+
+- [ ] Validate HTTP readiness.
+- [ ] Validate WebSocket connection.
+- [ ] Validate first RPC timing.
+- [ ] Validate the four inventory result envelopes.
+- [ ] Do not require real ACP credentials, local agent binaries, or production config.
+
+## Task 5: Gate Real ACP Migration
+
+**Files:**
+
+- Modify: proof README or checklist.
+
+- [ ] State that real ACP provider migration starts only after provider-free smoke passes.
+- [ ] List the next real-provider checks: draft/session creation, prompt streaming, tool calls, command output, approvals, resume, cancel, and trace ordering.
 
 ## Verification
 
-Run after all tasks:
+Run the reference implementation checks first:
 
 ```bash
 pnpm --filter @tiller/sync-protocol test
 pnpm --filter @tiller/helm smoke:runtime
-pnpm --filter @tiller/helm smoke:runtime:trace
 pnpm typecheck
 ```
+
+Then run the proof-local provider-free smoke command once implemented.
