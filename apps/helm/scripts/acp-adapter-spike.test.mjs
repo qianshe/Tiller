@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertSpikeEnvelope,
+  buildRpcRequest,
   redactSpikeText,
+  resolveSpikePrompt,
   resolveSpikeTarget,
 } from "./acp-adapter-spike.mjs";
 
@@ -48,4 +50,18 @@ test("assertSpikeEnvelope accepts skipped and connected results", () => {
     connected: true,
     prompted: false,
   });
+});
+
+test("buildRpcRequest produces JSON-RPC 2.0 requests", () => {
+  assert.deepEqual(buildRpcRequest(7, "agent/list", {}), {
+    jsonrpc: "2.0",
+    id: 7,
+    method: "agent/list",
+    params: {},
+  });
+});
+
+test("resolveSpikePrompt defaults to a harmless short prompt", () => {
+  assert.equal(resolveSpikePrompt({}), "Reply with exactly: Tiller ACP spike ok");
+  assert.equal(resolveSpikePrompt({ prompt: "ping" }), "ping");
 });

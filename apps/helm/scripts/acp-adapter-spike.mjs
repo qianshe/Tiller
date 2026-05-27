@@ -29,6 +29,14 @@ export function resolveSpikeTarget({ providerId, projectId, agents, projects }) 
   return { skipped: false, provider, project, cwd };
 }
 
+export function buildRpcRequest(id, method, params) {
+  return { jsonrpc: "2.0", id, method, params };
+}
+
+export function resolveSpikePrompt({ prompt }) {
+  return prompt || "Reply with exactly: Tiller ACP spike ok";
+}
+
 export function assertSpikeEnvelope(result) {
   assert.equal(typeof result.ok, "boolean", "spike result must include ok boolean");
   assert.equal(typeof result.skipped, "boolean", "spike result must include skipped boolean");
@@ -41,6 +49,34 @@ export function assertSpikeEnvelope(result) {
   assert.equal(typeof result.cwd, "string", "connected spike must include cwd");
   assert.equal(typeof result.connected, "boolean", "connected spike must include connected");
   assert.equal(typeof result.prompted, "boolean", "connected spike must include prompted");
+}
+
+async function createRpcClient(wsUrl) {
+  const socket = new WebSocket(wsUrl);
+  let nextId = 1;
+  const pending = new Map();
+  socket.addEventListener("message", (event) => {
+    const payload = JSON.parse(String(event.data));
+    if (!payload.id || !pending.has(payload.id)) return;
+    const { resolve, reject } = pending.get(payload.id);
+    pending.delete(payload.id);
+    if (payload.error) reject(new Error(payload.error.message || "RPC error"));
+    else resolve(payload.result);
+  });
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  return {
+    call(method, params = {}) {
+      const id = nextId++;
+      socket.send(JSON.stringify(buildRpcRequest(id, method, params)));
+      return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+    },
+    close() {
+      socket.close();
+    },
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {

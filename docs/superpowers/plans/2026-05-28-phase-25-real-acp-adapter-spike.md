@@ -189,7 +189,7 @@ git commit -m "test：添加真实 ACP 适配 Spike 选择器"
 - Modify: `apps/helm/scripts/acp-adapter-spike.mjs`
 - Test: `apps/helm/scripts/acp-adapter-spike.test.mjs`
 
-- [ ] **Step 1: Add failing tests for RPC payload shape**
+- [x] **Step 1: Add failing tests for RPC payload shape**
 
 Append to `apps/helm/scripts/acp-adapter-spike.test.mjs`:
 
@@ -211,7 +211,7 @@ test("resolveSpikePrompt defaults to a harmless short prompt", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -221,7 +221,7 @@ pnpm --filter @tiller/helm exec tsx --test scripts/acp-adapter-spike.test.mjs
 
 Expected: FAIL because `buildRpcRequest` and `resolveSpikePrompt` are not exported yet.
 
-- [ ] **Step 3: Implement RPC helpers and runtime skeleton**
+- [x] **Step 3: Implement RPC helpers and runtime skeleton**
 
 Add these exports to `apps/helm/scripts/acp-adapter-spike.mjs`:
 
@@ -267,7 +267,7 @@ async function createRpcClient(wsUrl) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -417,7 +417,7 @@ test("shouldSendSpikePrompt requires explicit opt-in", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
