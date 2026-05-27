@@ -31,7 +31,7 @@ test("mission root re-exports subdomain public APIs", () => {
 });
 
 test("mission workspace composes panes through subdomain entrypoints", () => {
-  const workspaceSource = readFileSync(join(missionRoot, "ui", "workspace.tsx"), "utf8");
+  const workspaceSource = readFileSync(join(missionRoot, "workspace", "workspace.tsx"), "utf8");
 
   for (const subdomain of ["conversation", "composer", "display", "inspector", "navigation"] as const) {
     assert.match(workspaceSource, new RegExp(`from "\\.\\./${subdomain}"`));
@@ -39,5 +39,12 @@ test("mission workspace composes panes through subdomain entrypoints", () => {
 
   for (const internalImport of ["./chat-pane", "./composer", "./diff-panel", "./display-section", "./inspector", "./sidebar"] as const) {
     assert.doesNotMatch(workspaceSource, new RegExp(`from "${internalImport.replace(".", "\\\\.")}"`));
+  }
+});
+
+test("mission workspace implementation lives in the workspace subdomain", () => {
+  for (const filename of ["workspace.tsx", "workspace-model.ts", "workspace-runtime-overview.ts"] as const) {
+    assert.equal(existsSync(join(missionRoot, "workspace", filename)), true, `workspace/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }
 });

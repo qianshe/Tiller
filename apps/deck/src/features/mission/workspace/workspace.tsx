@@ -18,7 +18,7 @@ import {
   ResizablePanelGroup,
 } from "../../../shared/ui";
 import { MissionSidebar } from "../navigation";
-import { buildChatWindowModel } from "../workspace/chat-window-model";
+import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {

@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const worktreeSource = readFileSync(resolve(currentDir, "workspace.tsx"), "utf8");
+const worktreeSource = readFileSync(resolve(currentDir, "../workspace/workspace.tsx"), "utf8");
 const shellStylesSource = readFileSync(
   resolve(currentDir, "../../../app/shell/styles.css"),
   "utf8",
@@ -17,7 +17,10 @@ const sidebarProjectNodeSource = readFileSync(
 );
 const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
-const worktreeModelSource = readFileSync(resolve(currentDir, "workspace-model.ts"), "utf8");
+const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
+const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
+const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
+const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/workspace-model.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
   "utf8",
@@ -697,8 +700,6 @@ test("mission composer tools trigger advertises disabled affordance", () => {
   assert.match(shellStylesSource, /\.mission-tools-trigger:disabled\s*{[^}]*opacity:\s*0\.6;/s);
 });
 
-const mobilePagerSource = readFileSync(resolve(currentDir, "mobile-pager.tsx"), "utf8");
-
 test("mission mobile pager is compact and exposes four pane destinations", () => {
   assert.match(mobilePagerSource, /MissionMobilePager/);
   assert.match(mobilePagerSource, /项目/);
@@ -742,8 +743,6 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(shellStylesSource, /@keyframes mission-mobile-card-switch/);
 });
 
-const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
-const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
 const composerAttachmentsSource = readFileSync(
   resolve(currentDir, "composer-attachments.tsx"),
   "utf8",

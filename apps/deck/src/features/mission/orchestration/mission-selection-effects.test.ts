@@ -15,11 +15,11 @@ const composerShellSourceText = readFileSync(
   "utf8",
 );
 const worktreeSourceText = readFileSync(
-  new URL("../ui/workspace.tsx", import.meta.url),
+  new URL("../workspace/workspace.tsx", import.meta.url),
   "utf8",
 );
 const worktreeModelSourceText = readFileSync(
-  new URL("../ui/workspace-model.ts", import.meta.url),
+  new URL("../workspace/workspace-model.ts", import.meta.url),
   "utf8",
 );
 const selectionSourceText = readFileSync(
