@@ -18,6 +18,7 @@ import {
   ResizablePanelGroup,
 } from "../../../shared/ui";
 import { MissionSidebar } from "../navigation";
+import { buildChatWindowModel } from "../workspace/chat-window-model";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
@@ -242,22 +243,26 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
-  const focusedRealSessionId = focusedChatWindowId?.startsWith("session:")
-    ? focusedChatWindowId.slice("session:".length)
-    : null;
-  const persistedOpenChatSessionIds = openChatSessionIds as string[];
+  const {
+    focusedRealSessionId,
+    persistedOpenChatSessionIds,
+    visibleChatSessionIds,
+    openSessions,
+    openSessionIdSet,
+    focusedDraftWindow,
+    selectedComposerSession,
+  } = buildChatWindowModel({
+    sessions: sessions as SessionSummary[],
+    activeSessionId,
+    activeSession,
+    openChatSessionIds: openChatSessionIds as string[],
+    focusedChatWindowId,
+    draftChatWindow,
+  });
   const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
   const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
   const pendingDraftWindowRef = useRef<typeof draftChatWindow>(null);
   const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
-  const visibleChatSessionIds: string[] = activeSession?.id && !persistedOpenChatSessionIds.includes(activeSession.id)
-    ? [...persistedOpenChatSessionIds, activeSession.id]
-    : persistedOpenChatSessionIds;
-  const openSessions = visibleChatSessionIds
-    .map((sessionId) => sessionById.get(sessionId))
-    .filter((session): session is SessionSummary => Boolean(session));
-  const openSessionIdSet = new Set(visibleChatSessionIds);
-  const focusedDraftWindow = draftChatWindow && focusedChatWindowId === draftChatWindow.id;
   const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
   const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
   const effectiveSelectedDraftAgent = (agents as any[]).find((agent) => agent.id === effectiveSelectedAgentId) ?? selectedDraftAgent;
@@ -265,9 +270,6 @@ export function MissionWorktree(props: any) {
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(effectiveSelectedCwd ?? undefined),
   ) ?? selectedWorktree;
   const effectiveSelectedWorktreeName = effectiveSelectedWorktree?.name ?? selectedWorktreeName;
-  const selectedComposerSession = focusedDraftWindow
-    ? null
-    : sessionById.get(focusedRealSessionId ?? activeSession?.id ?? "") ?? activeSession;
   const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
   useEffect(() => {
     const client = rpcClientRef.current;

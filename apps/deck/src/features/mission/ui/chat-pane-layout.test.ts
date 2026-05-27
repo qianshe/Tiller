@@ -330,7 +330,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /const closeChatSession = \(session: SessionSummary\) =>/);
   assert.match(worktreeSource, /openSession=\{openChatSession\}/);
   assert.match(worktreeSource, /focusedChatWindowId/);
-  assert.match(worktreeSource, /const focusedRealSessionId = focusedChatWindowId/);
+  assert.match(worktreeSource, /buildChatWindowModel\(\{/);
+  assert.match(worktreeSource, /focusedRealSessionId,/);
   assert.match(worktreeSource, /const selectChatSession = \(sessionId: string\) =>/);
   assert.match(worktreeSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
   assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
@@ -351,8 +352,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
-  assert.match(worktreeSource, /const focusedDraftWindow = draftChatWindow && focusedChatWindowId === draftChatWindow\.id/);
-  assert.match(worktreeSource, /const selectedComposerSession = focusedDraftWindow/);
+  assert.match(worktreeSource, /focusedDraftWindow,/);
+  assert.match(worktreeSource, /selectedComposerSession,/);
   assert.match(worktreeSource, /contextSession=\{selectedComposerSession\}/);
   assert.match(worktreeSource, /highlightedSessionId=\{focusedRealSessionId \?\? activeSessionId\}/);
   assert.match(worktreeSource, /onFocusSession=\{openChatSession\}/);
