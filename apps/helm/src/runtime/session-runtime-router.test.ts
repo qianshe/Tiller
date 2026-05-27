@@ -127,6 +127,7 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   assert.equal(result.accepted, "sent");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
+  assert.equal(typeof persisted[0]?.timelineSequence, "number");
   assert.deepEqual(traceEvents.map((event) => event.phase).filter((phase) => phase.startsWith("helm.prompt.")), [
     "helm.prompt.ack",
     "helm.prompt.send_start",

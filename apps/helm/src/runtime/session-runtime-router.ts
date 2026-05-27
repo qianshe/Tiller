@@ -6,7 +6,7 @@ import {
 } from "@tiller/shared";
 import { applyUserPromptToSummary } from "../sessions/facade";
 import { createSessionEventPublisher } from "./session-event-publisher";
-import { flushLiveAssistantMessage } from "./events";
+import { allocateLiveEventSequence, flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
 import { emitHelmPromptTrace } from "./prompt-trace";
 import {
@@ -124,6 +124,7 @@ export async function sendPromptImmediately(
     role: "user" as const,
     text: item.text,
     timestamp,
+    timelineSequence: allocateLiveEventSequence(item.sessionId),
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
   context.persistSessionMessage(item.sessionId, userMessage);
@@ -165,6 +166,7 @@ function createUserPromptMessage(
     role: "user" as const,
     text: item.text,
     timestamp: item.timestamp,
+    timelineSequence: allocateLiveEventSequence(item.sessionId),
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
 }
