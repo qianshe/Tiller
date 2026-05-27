@@ -5,20 +5,19 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1694
+- Total lines: 1760
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 700
-- Top-level selectors: 140
+- Lines: 728
+- Top-level selectors: 148
 - Hard-coded color tokens: 1
 
 Selectors:
 
 - `:root`
-- `.chat-main`
 - `.compact`
 - `.device-mono`
 - `.h-ctl-lg`
@@ -26,6 +25,8 @@ Selectors:
 - `.h-ctl-sm`
 - `.h-ctl-xs`
 - `.min-h-ctl-md`
+- `.mission-display-tab-strip`
+- `.mission-display-tab-strip::-webkit-scrollbar`
 - `.mission-grid`
 - `.mission-grid.display-collapsed`
 - `.mission-grid.display-collapsed > :nth-child(4)`
@@ -35,6 +36,8 @@ Selectors:
 - `.mission-grid.inspector-collapsed > :nth-child(7)`
 - `.mission-grid.sidebar-collapsed`
 - `.mission-grid.sidebar-collapsed > :nth-child(2)`
+- `.mission-inspector-diff`
+- `.mission-inspector-diff::-webkit-scrollbar`
 - `.mission-inspector-section-head > div`
 - `.mission-inspector-section-head h3`
 - `.mission-mobile-edge-pager`
@@ -68,6 +71,7 @@ Selectors:
 - `.mission-responsive-mode .mission-panel-head h3`
 - `.mission-responsive-mode .mission-panel-tree`
 - `.mission-responsive-mode .mission-permission-drawer`
+- `.mission-responsive-mode .mission-resizable-group`
 - `.mission-responsive-mode .mission-session-meta`
 - `.mission-responsive-mode .mission-session-overview`
 - `.mission-responsive-mode .mission-session-overview-content`
@@ -79,7 +83,9 @@ Selectors:
 - `.mission-responsive-mode [data-mission-mobile-pane] input`
 - `.mission-responsive-mode [data-mission-mobile-pane] select`
 - `.mission-responsive-mode [data-mission-mobile-pane] textarea`
-- `.mission-responsive-mode [data-mission-mobile-pane="chat"]`
+- `.mission-responsive-mode [data-panel]`
+- `.mission-responsive-mode [data-panel] > div`
+- `.mission-responsive-mode [data-separator]`
 - `.mission-responsive-mode #mission-prompt-input`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager-label`
@@ -148,6 +154,8 @@ Selectors:
 - `40%`
 - `50%`
 - `body`
+- `body.mission-pane-resizing`
+- `body.mission-pane-resizing *`
 - `body[data-density="compact"]`
 - `body[data-density="cozy"]`
 - `button`
@@ -353,26 +361,24 @@ Hard-coded colors:
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 401
-- Top-level selectors: 44
-- Hard-coded color tokens: 6
+- Lines: 439
+- Top-level selectors: 60
+- Hard-coded color tokens: 9
 
 Selectors:
 
 - `.landing-actions`
 - `.landing-copy`
-- `.landing-copy-mobile`
 - `.landing-eyebrow`
 - `.landing-eyebrow span`
 - `.landing-github-link`
 - `.landing-github-link-desktop`
+- `.landing-github-link-mobile`
 - `.landing-github-link:focus-visible`
 - `.landing-github-link:hover`
 - `.landing-hero`
 - `.landing-hero h1`
 - `.landing-hero-content`
-- `.landing-hero-mobile`
-- `.landing-hero-mobile-title`
 - `.landing-hero::before`
 - `.landing-meta`
 - `.landing-meta-item`
@@ -381,10 +387,8 @@ Selectors:
 - `.landing-meta-item dt`
 - `.landing-primary`
 - `.landing-primary span`
-- `.landing-primary-mobile`
 - `.landing-primary:hover`
 - `.landing-secondary`
-- `.landing-secondary-mobile`
 - `.landing-secondary:hover`
 - `.landing-ship-hotspot`
 - `.landing-ship-hotspot-agents`
@@ -403,10 +407,33 @@ Selectors:
 - `} .overview-session-item-btn`
 - `} @media (max-width: 720px)`
 - `@media (max-width: 1180px)`
+- `body[data-theme="dark"] .landing-github-link`
+- `body[data-theme="dark"] .landing-github-link:hover`
+- `body[data-theme="dark"] .landing-hero`
+- `body[data-theme="dark"] .landing-hero::before`
+- `body[data-theme="dark"] .landing-secondary`
+- `body[data-theme="dark"] .landing-secondary:hover`
+- `body[data-theme="light"] .landing-copy`
+- `body[data-theme="light"] .landing-eyebrow`
+- `body[data-theme="light"] .landing-hero`
+- `body[data-theme="light"] .landing-hero h1`
+- `body[data-theme="light"] .landing-hero::before`
+- `body[data-theme="light"] .landing-meta-item dd`
+- `body[data-theme="light"] .landing-secondary`
+- `body[data-theme="light"] .landing-secondary:hover`
+- `body[data-theme="tiller"] .landing-github-link`
+- `body[data-theme="tiller"] .landing-github-link:hover`
+- `body[data-theme="tiller"] .landing-hero`
+- `body[data-theme="tiller"] .landing-hero::before`
+- `body[data-theme="tiller"] .landing-secondary`
+- `body[data-theme="tiller"] .landing-secondary:hover`
 
 Hard-coded colors:
 
 - `#050914`
+- `#080d18`
+- `#111827`
+- `#3b4658`
 - `#9bc7ff`
 - `#f5f7fb`
 - `#f8fbff`

@@ -5,6 +5,7 @@ import {
   DEFAULT_PROMPT_LLM_SYSTEM_PROMPT,
 } from "../features/preferences/facade.js";
 import {
+  createDeckStorePersistOptions,
   createDeckStorePersistStorage,
   DECK_STORE_STORAGE_KEY,
 } from "./middleware.js";
@@ -70,4 +71,31 @@ test("deck store persistence strips hidden prompt enhancer template fields at re
     hydratedLlm?.instructionTemplate,
     DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   );
+});
+
+test("deck persistence includes compact chat workbench state", () => {
+  const options = createDeckStorePersistOptions();
+  assert.ok(options.partialize);
+  const partial = options.partialize({
+    preferences: {} as never,
+    daemonProfiles: [],
+    selectedHelmKey: "local",
+    openChatSessionIds: ["s1", "s2"],
+    focusedChatWindowId: "session:s2",
+    draftChatWindow: {
+      id: "draft:project-1",
+      projectId: "project-1",
+      cwd: "D:/repo",
+      agentId: null,
+    },
+  } as never);
+
+  assert.deepEqual(partial.openChatSessionIds, ["s1", "s2"]);
+  assert.equal(partial.focusedChatWindowId, "session:s2");
+  assert.deepEqual(partial.draftChatWindow, {
+    id: "draft:project-1",
+    projectId: "project-1",
+    cwd: "D:/repo",
+    agentId: null,
+  });
 });

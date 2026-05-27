@@ -47,6 +47,38 @@ test("session metadata actions update status title and active id", () => {
   assert.equal(store.getState().activeSessionId, "s1");
 });
 
+test("chat workbench state tracks opened sessions and focus", () => {
+  const store = createTestStore();
+
+  store.getState().setOpenChatSessionIds(["s1", "s2"]);
+  store.getState().setFocusedChatWindowId("session:s2");
+
+  assert.deepEqual(store.getState().openChatSessionIds, ["s1", "s2"]);
+  assert.equal(store.getState().focusedChatWindowId, "session:s2");
+});
+
+test("chat draft window stores project worktree and agent selection", () => {
+  const store = createTestStore();
+
+  store.getState().setDraftChatWindow({
+    id: "draft:project-1",
+    projectId: "project-1",
+    cwd: "D:/repo",
+    agentId: null,
+  });
+  store.getState().setDraftChatWindow((current) => current ? {
+    ...current,
+    agentId: "opencode",
+  } : current);
+
+  assert.deepEqual(store.getState().draftChatWindow, {
+    id: "draft:project-1",
+    projectId: "project-1",
+    cwd: "D:/repo",
+    agentId: "opencode",
+  });
+});
+
 test("config and command maps support updater forms", () => {
   const store = createTestStore();
 

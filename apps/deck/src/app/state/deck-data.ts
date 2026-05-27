@@ -130,6 +130,12 @@ export function useDeckData(missionVisualFixture: any) {
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId = missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
   const setActiveSessionId = useDeckStore((state) => state.setActiveSessionId);
+  const openChatSessionIds = useDeckStore((state) => state.openChatSessionIds);
+  const setOpenChatSessionIds = useDeckStore((state) => state.setOpenChatSessionIds);
+  const focusedChatWindowId = useDeckStore((state) => state.focusedChatWindowId);
+  const setFocusedChatWindowId = useDeckStore((state) => state.setFocusedChatWindowId);
+  const draftChatWindow = useDeckStore((state) => state.draftChatWindow);
+  const setDraftChatWindow = useDeckStore((state) => state.setDraftChatWindow);
 
   const worktreeGitByProject = useDeckStore((state) => state.worktreeGitByProject);
   const setWorktreeGitByProject = useDeckStore((state) => state.setWorktreeGitByProject);
@@ -206,6 +212,12 @@ export function useDeckData(missionVisualFixture: any) {
     updatePreferences,
     activeSessionId,
     setActiveSessionId,
+    openChatSessionIds,
+    setOpenChatSessionIds,
+    focusedChatWindowId,
+    setFocusedChatWindowId,
+    draftChatWindow,
+    setDraftChatWindow,
     worktreeGitByProject,
     setWorktreeGitByProject,
     daemonProfiles,

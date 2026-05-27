@@ -10,7 +10,12 @@ export const DECK_STORE_STORAGE_KEY = "tiller.deck.store";
 
 type PersistedDeckStore = Pick<
   DeckStore,
-  "preferences" | "daemonProfiles" | "selectedHelmKey"
+  | "preferences"
+  | "daemonProfiles"
+  | "selectedHelmKey"
+  | "openChatSessionIds"
+  | "focusedChatWindowId"
+  | "draftChatWindow"
 >;
 
 export function createDeckStorePersistOptions(): PersistOptions<
@@ -26,6 +31,9 @@ export function createDeckStorePersistOptions(): PersistOptions<
       preferences: state.preferences,
       daemonProfiles: state.daemonProfiles,
       selectedHelmKey: state.selectedHelmKey,
+      openChatSessionIds: state.openChatSessionIds,
+      focusedChatWindowId: state.focusedChatWindowId,
+      draftChatWindow: state.draftChatWindow,
     }),
     merge: (persistedState, currentState) => {
       const persisted = persistedState as PersistedDeckStore | undefined;
@@ -33,6 +41,16 @@ export function createDeckStorePersistOptions(): PersistOptions<
       return {
         ...currentState,
         ...persisted,
+        openChatSessionIds: Array.isArray(persisted.openChatSessionIds)
+          ? persisted.openChatSessionIds.filter((id): id is string => typeof id === "string")
+          : currentState.openChatSessionIds,
+        focusedChatWindowId:
+          typeof persisted.focusedChatWindowId === "string" || persisted.focusedChatWindowId === null
+            ? persisted.focusedChatWindowId
+            : currentState.focusedChatWindowId,
+        draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
+          ? persisted.draftChatWindow
+          : currentState.draftChatWindow,
         preferences: persisted.preferences
           ? {
               ...currentState.preferences,
@@ -109,4 +127,14 @@ function readPersistedPromptEnhancerLlm(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isDraftChatWindow(value: unknown): value is PersistedDeckStore["draftChatWindow"] {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.projectId === "string" &&
+    (typeof value.cwd === "string" || value.cwd === null) &&
+    (typeof value.agentId === "string" || value.agentId === null)
+  );
 }

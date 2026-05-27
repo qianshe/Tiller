@@ -52,6 +52,23 @@ export type ActiveSessionIdUpdater =
   | string
   | null
   | ((current: string | null) => string | null);
+export type DraftChatWindow = {
+  id: string;
+  projectId: string;
+  cwd: string | null;
+  agentId: string | null;
+};
+export type OpenChatSessionIdsUpdater =
+  | string[]
+  | ((current: string[]) => string[]);
+export type FocusedChatWindowIdUpdater =
+  | string
+  | null
+  | ((current: string | null) => string | null);
+export type DraftChatWindowUpdater =
+  | DraftChatWindow
+  | null
+  | ((current: DraftChatWindow | null) => DraftChatWindow | null);
 
 export type SessionsSlice = {
   sessions: SessionSummary[];
@@ -63,6 +80,9 @@ export type SessionsSlice = {
   promptQueues: Record<string, SessionPromptQueueSnapshot>;
   agentAvailableCommands: Record<string, AvailableCommand[]>;
   activeSessionId: string | null;
+  openChatSessionIds: string[];
+  focusedChatWindowId: string | null;
+  draftChatWindow: DraftChatWindow | null;
   setSessions: (updater: SessionsUpdater) => void;
   setStatuses: (updater: StatusesUpdater) => void;
   setSessionStatus: (sessionId: string, status: SessionStatus) => void;
@@ -80,6 +100,9 @@ export type SessionsSlice = {
   refreshAgentAvailableCommands: () => void;
   setSessionHistoryState: (updater: SessionHistoryStateUpdater) => void;
   setActiveSessionId: (updater: ActiveSessionIdUpdater) => void;
+  setOpenChatSessionIds: (updater: OpenChatSessionIdsUpdater) => void;
+  setFocusedChatWindowId: (updater: FocusedChatWindowIdUpdater) => void;
+  setDraftChatWindow: (updater: DraftChatWindowUpdater) => void;
 };
 
 function readSessionTitles(): Record<string, string> {
@@ -176,6 +199,9 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   promptQueues: {},
   agentAvailableCommands: readAgentAvailableCommands(),
   activeSessionId: null,
+  openChatSessionIds: [],
+  focusedChatWindowId: null,
+  draftChatWindow: null,
   setSessions: (updater) =>
     set((state) => ({
       sessions: typeof updater === "function" ? updater(state.sessions) : updater,
@@ -246,5 +272,20 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
     set((state) => ({
       activeSessionId:
         typeof updater === "function" ? updater(state.activeSessionId) : updater,
+    })),
+  setOpenChatSessionIds: (updater) =>
+    set((state) => ({
+      openChatSessionIds:
+        typeof updater === "function" ? updater(state.openChatSessionIds) : updater,
+    })),
+  setFocusedChatWindowId: (updater) =>
+    set((state) => ({
+      focusedChatWindowId:
+        typeof updater === "function" ? updater(state.focusedChatWindowId) : updater,
+    })),
+  setDraftChatWindow: (updater) =>
+    set((state) => ({
+      draftChatWindow:
+        typeof updater === "function" ? updater(state.draftChatWindow) : updater,
     })),
 });

@@ -27,6 +27,10 @@ const missionSelectionEffectsSource = readFileSync(
   "utf8",
 );
 const appRootSource = readFileSync(resolve(currentDir, "../../../app/shell/root.tsx"), "utf8");
+const missionRouteSource = readFileSync(
+  resolve(currentDir, "../../../app/routing/mission-route.tsx"),
+  "utf8",
+);
 const projectFileListSource = readFileSync(
   resolve(currentDir, "project-file-list.tsx"),
   "utf8",
@@ -165,10 +169,18 @@ test("mission loading gates omit model-loading hint while ACP is still connectin
 
 test("mission chat hides restore and composer controls while Helm is disconnected", () => {
   assert.match(worktreeSource, /const helmConnected = pairingState === "paired"/);
-  assert.match(worktreeSource, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| selectedDraftConnection\)\)/);
+  assert.match(worktreeSource, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| draftChatWindow\)\)/);
   assert.match(worktreeSource, /const shouldShowDraftPreparing = Boolean\(helmConnected && !activeSession/);
   assert.match(worktreeSource, /helmConnected && activeSession && !activeSessionRestoreGate\.canChat/);
   assert.match(worktreeSource, /helmConnected=\{helmConnected\}/);
+});
+
+test("mission restore gate is rendered inside the active session card", () => {
+  assert.match(chatPaneSource, /restoreNotice\?: SessionRestoreNotice/);
+  assert.match(chatPaneSource, /restoreNotice=\{session\.id === selectedSessionId \? restoreNotice : undefined\}/);
+  assert.match(chatPaneSource, /function SessionRestoreNotice/);
+  assert.match(chatPaneSource, /data-session-restore-notice/);
+  assert.doesNotMatch(worktreeSource, /mission-restore-gate m-3[\s\S]*<MissionComposer/);
 });
 
 test("mission composer requires active-session config readiness before settings can open", () => {
@@ -221,15 +233,21 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.doesNotMatch(chatPaneSource, /min-h-9/);
   assert.match(chatPaneSource, /aria-label="展开任务导航"/);
   assert.match(chatPaneSource, /chat-main flex-1 w-full overflow-x-hidden min-h-0 relative/);
-  assert.match(chatPaneSource, /shouldLockChatMainScroll = openSessions\.length > 0 && parallelGridCompact/);
+  assert.match(chatPaneSource, /shouldLockChatMainScroll = \(openSessions\.length > 0 \|\| Boolean\(draftWindow\)\) && parallelGridCompact/);
   assert.match(chatPaneSource, /shouldLockChatMainScroll \? "overflow-y-clip" : "overflow-y-auto"/);
   assert.match(worktreeSource, /mission-pane-chat[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(displayPanelSource, /mission-pane-display[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(inspectorSource, /mission-pane-inspector[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(chatPaneSource, /SessionCard/);
-  assert.match(chatPaneSource, /parallelGridCompact = openSessions\.length <= 2/);
-  assert.match(chatPaneSource, /shouldAnchorActiveParallelCard = openSessions\.length > 2/);
+  assert.match(
+  chatPaneSource,
+  /parallelGridCompact = openSessions\.length \+ \(draftWindow \? 1 : 0\) <= 2/,
+);
+  assert.match(
+  chatPaneSource,
+  /shouldAnchorActiveParallelCard = openSessions\.length \+ \(draftWindow \? 1 : 0\) > 2/,
+);
   assert.match(chatPaneSource, /\[contain:layout_paint\]/);
   assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSession\?\.id/);
   assert.match(chatPaneSource, /gridAutoRows: parallelGridCompact \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
@@ -296,6 +314,8 @@ test("mission sidebar exposes search and new-task actions in the header", () => 
   assert.match(sidebarSource, /aria-label="新建任务"/);
   assert.match(sidebarSource, /wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务/);
   assert.match(sidebarSource, /setAgentPickerOpen\(true\)/);
+  assert.match(sidebarSource, /openDraftChatWindow\(\{/);
+  assert.match(sidebarProjectNodeSource, /openDraftChatWindow\(\{/);
   assert.match(sidebarSource, /runtimeOverviewItems\.length/);
   assert.match(sidebarSource, /暂无 ACP 连接。/);
   assert.match(sidebarSource, /<span className="font-medium">ACP<\/span>/);
@@ -309,9 +329,10 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /const openChatSession = \(sessionId: string\) =>/);
   assert.match(worktreeSource, /const closeChatSession = \(session: SessionSummary\) =>/);
   assert.match(worktreeSource, /openSession=\{openChatSession\}/);
-  assert.match(worktreeSource, /focusedChatSessionId/);
+  assert.match(worktreeSource, /focusedChatWindowId/);
+  assert.match(worktreeSource, /const focusedRealSessionId = focusedChatWindowId/);
   assert.match(worktreeSource, /const selectChatSession = \(sessionId: string\) =>/);
-  assert.match(worktreeSource, /setFocusedChatSessionId\(sessionId\)/);
+  assert.match(worktreeSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
   assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
   assert.match(worktreeSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
   assert.match(worktreeSource, /openSessionTopicSubscriptionsRef/);
@@ -330,9 +351,10 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
-  assert.match(worktreeSource, /selectedComposerSession = sessionById\.get\(focusedChatSessionId/);
+  assert.match(worktreeSource, /const focusedDraftWindow = draftChatWindow && focusedChatWindowId === draftChatWindow\.id/);
+  assert.match(worktreeSource, /const selectedComposerSession = focusedDraftWindow/);
   assert.match(worktreeSource, /contextSession=\{selectedComposerSession\}/);
-  assert.match(worktreeSource, /highlightedSessionId=\{focusedChatSessionId \?\? activeSessionId\}/);
+  assert.match(worktreeSource, /highlightedSessionId=\{focusedRealSessionId \?\? activeSessionId\}/);
   assert.match(worktreeSource, /onFocusSession=\{openChatSession\}/);
   assert.match(worktreeSource, /onSelectSessionView=\{selectChatSession\}/);
   assert.match(worktreeSource, /onCloseSessionView=\{closeChatSession\}/);
@@ -353,6 +375,45 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-resizable-group,[\s\S]*display:\s*contents !important;/);
 });
 
+test("mission chat window state is provided by deck store instead of local useState", () => {
+  assert.match(missionRouteSource, /draftChatWindow=\{draftChatWindow\}/);
+  assert.match(missionRouteSource, /setDraftChatWindow=\{setDraftChatWindow\}/);
+  assert.match(missionRouteSource, /openChatSessionIds=\{openChatSessionIds\}/);
+  assert.match(missionRouteSource, /setOpenChatSessionIds=\{setOpenChatSessionIds\}/);
+  assert.match(missionRouteSource, /focusedChatWindowId=\{focusedChatWindowId\}/);
+  assert.match(missionRouteSource, /setFocusedChatWindowId=\{setFocusedChatWindowId\}/);
+  assert.doesNotMatch(worktreeSource, /const \[openChatSessionIds, setOpenChatSessionIds\] = useState/);
+  assert.doesNotMatch(worktreeSource, /const \[focusedChatSessionId, setFocusedChatSessionId\] = useState/);
+});
+
+test("mission chat pane renders draft windows as first-class cards", () => {
+  assert.match(chatPaneSource, /type MissionDraftChatWindow/);
+  assert.match(chatPaneSource, /draftWindow\?: MissionDraftChatWindow \| null/);
+  assert.match(chatPaneSource, /function DraftSessionCard/);
+  assert.match(chatPaneSource, /data-draft-session-card/);
+  assert.match(chatPaneSource, /data-draft-agent-options/);
+  assert.match(chatPaneSource, /onSelectAgent\?\.\(agent\.id\)/);
+  assert.match(worktreeSource, /draftWindow=\{visibleDraftChatWindow\}/);
+  assert.match(worktreeSource, /draftAgentOptions=\{visibleDraftAgentOptions\}/);
+  assert.match(worktreeSource, /onSelectDraftAgent=\{selectAgentForDraftWindow\}/);
+  assert.match(worktreeSource, /const openDraftChatWindow = \(\{/);
+  assert.match(worktreeSource, /setFocusedChatWindowId\(draftWindow\.id\)/);
+  assert.match(worktreeSource, /setActiveSessionId\(null\)/);
+  assert.match(worktreeSource, /selectedSessionId=\{focusedDraftWindow \? null : focusedRealSessionId \?\? activeSession\?\.id \?\? null\}/);
+  assert.match(worktreeSource, /onSelectDraftWindow=\{\(draftWindowId\) => \{[\s\S]*?setActiveSessionId\(null\);/);
+  assert.match(worktreeSource, /selectDraftAgent=\{selectAgentForDraftWindow\}/);
+  assert.match(worktreeSource, /submitPrompt=\{submitPromptFromFocusedWindow\}/);
+  assert.match(worktreeSource, /const effectiveSelectedAgentId = focusedDraftWindow\?\.agentId \?\? selectedAgentId/);
+  assert.match(worktreeSource, /const effectiveSelectedCwd = focusedDraftWindow\?\.cwd \?\? selectedCwd/);
+  assert.match(worktreeSource, /selectedWorktreeName=\{effectiveSelectedWorktreeName\}/);
+  assert.match(worktreeSource, /selectedCwd=\{effectiveSelectedCwd\}/);
+  assert.match(worktreeSource, /selectedDraftAgent=\{effectiveSelectedDraftAgent\}/);
+  assert.match(worktreeSource, /selectedAgentId=\{effectiveSelectedAgentId\}/);
+  assert.match(worktreeSource, /setSelectedAgentId\(focusedDraftWindow\.agentId\)/);
+  assert.match(worktreeSource, /pendingDraftWindowRef/);
+  assert.match(worktreeSource, /setDraftChatWindow\?\.\(null\)/);
+});
+
 test("mission composer mirrors the v6 sunken command deck", () => {
   assert.match(composerSource, /border-t border-border-ghost px-2 py-1\.5 bg-surface/);
   assert.match(composerSource, /wb-pane-sunken px-2 py-1\.5 w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\] mx-auto/);
@@ -361,8 +422,12 @@ test("mission composer mirrors the v6 sunken command deck", () => {
   assert.match(composerSource, /composerSession\?\.agentName/);
   assert.match(composerSource, /composerSession\?\.title/);
   assert.match(composerSource, /onSubmit=\{\(event\) => submitPrompt\(event, composerSession\)\}/);
+  assert.match(composerSource, /aria-label="选择 Worktree"/);
+  assert.match(composerSource, /draftWorktreeOptions\.map\(\(worktree\) =>/);
+  assert.match(composerSource, /selectDraftWorktree\(worktree\.path\)/);
   assert.match(sessionCommandActionsSource, /function submitPrompt\(event: FormEvent<HTMLFormElement>, targetSession\?: SessionSummary \| null\)/);
-  assert.match(sessionCommandActionsSource, /const promptSession = targetSession \?\? activeSession/);
+  assert.match(sessionCommandActionsSource, /const promptSession = targetSession === undefined \? activeSession : targetSession/);
+  assert.match(sessionCommandActionsSource, /targetSession === undefined[\s\S]*\? promptSession\?\.id \?\? activeSessionId[\s\S]*: promptSession\?\.id \?\? null/);
   assert.match(sessionCommandActionsSource, /activeSessionId: promptSessionId/);
   assert.match(composerSource, /MissionStatusBar[\s\S]*col-start-2 self-center justify-self-center/);
   assert.doesNotMatch(composerSource, /esc 取消 · ↑ 历史/);

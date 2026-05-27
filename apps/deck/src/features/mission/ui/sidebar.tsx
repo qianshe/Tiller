@@ -69,6 +69,7 @@ type MissionSidebarProps = {
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
   selectDraftAgent: (agentId: string) => void;
+  openDraftChatWindow: (input: { projectId: string; cwd: string | null; agentId?: string | null }) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedCwd: Dispatch<SetStateAction<string | null>>;
@@ -120,6 +121,7 @@ export function MissionSidebar({
   selectedAgentId,
   agentPickerOpen,
   selectDraftAgent,
+  openDraftChatWindow,
   setSelectedMissionHelmId,
   setSelectedProjectId,
   setSelectedCwd,
@@ -165,6 +167,11 @@ export function MissionSidebar({
       return;
     }
     setSelectedMissionHelmId(targetProject.helmId);
+    openDraftChatWindow({
+      projectId: targetProject.id,
+      cwd: targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null,
+      agentId: null,
+    });
     setSelectedProjectId(targetProject.id);
     setSelectedCwd(targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null);
     setSelectedAgentId(null);
@@ -340,6 +347,7 @@ export function MissionSidebar({
                               selectedAgentId={selectedAgentId}
                               agentPickerOpen={agentPickerOpen}
                               selectDraftAgent={selectDraftAgent}
+                              openDraftChatWindow={openDraftChatWindow}
                               setSelectedMissionHelmId={setSelectedMissionHelmId}
                               setSelectedProjectId={setSelectedProjectId}
                               setSelectedCwd={setSelectedCwd}

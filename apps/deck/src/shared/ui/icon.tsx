@@ -35,7 +35,8 @@ export type TillerIconName =
   | "fileText"
   | "inspect"
   | "panel"
-  | "message";
+  | "message"
+  | "hammer";
 
 const ICONS: Record<TillerIconName, ReactNode> = {
   helm: (
@@ -169,6 +170,13 @@ const ICONS: Record<TillerIconName, ReactNode> = {
     </>
   ),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />,
+  hammer: (
+    <>
+      <path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9" />
+      <path d="m17.64 15 3.86-3.86a2 2 0 0 0 0-2.83l-5.06-5.06a2 2 0 0 0-2.83 0L9.75 6.11" />
+      <path d="m21.5 11.5-1.91-1.91" />
+    </>
+  ),
 };
 
 type IconProps = {

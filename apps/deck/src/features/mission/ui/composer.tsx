@@ -214,10 +214,46 @@ export function MissionComposer({
         data-testid="composer-form"
       >
         <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
-          <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
-            <Icon name="folder" size={10} />
-            <span className="truncate">{composerProjectLabel}</span>
-          </button>
+          <div ref={worktreePickerRef} className="relative min-w-0">
+            <button
+              type="button"
+              className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0"
+              onClick={() => {
+                if (composerSession || draftWorktreeOptions.length === 0) {
+                  return;
+                }
+                setAgentPickerOpen(false);
+                setWorktreePickerOpen((current) => !current);
+              }}
+              aria-haspopup={composerSession || draftWorktreeOptions.length === 0 ? undefined : "listbox"}
+              aria-expanded={composerSession || draftWorktreeOptions.length === 0 ? undefined : worktreePickerOpen}
+              title={composerSession ? composerProjectLabel : "选择 Worktree"}
+            >
+              <Icon name="folder" size={10} />
+              <span className="truncate">{composerProjectLabel}</span>
+            </button>
+            {!composerSession && worktreePickerOpen ? (
+              <div
+                className="absolute bottom-full left-0 z-50 mb-2 grid max-h-64 min-w-48 gap-1 overflow-auto rounded-lg border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+                role="listbox"
+                aria-label="选择 Worktree"
+              >
+                {draftWorktreeOptions.map((worktree) => (
+                  <button
+                    key={worktree.path}
+                    type="button"
+                    role="option"
+                    aria-selected={worktree.path === selectedCwd}
+                    className={`rounded-md px-2.5 py-1.5 text-left text-section transition hover:bg-primary-soft hover:text-primary ${worktree.path === selectedCwd ? "bg-primary-soft text-primary" : "text-foreground"}`}
+                    onClick={() => selectDraftWorktree(worktree.path)}
+                  >
+                    <strong className="block truncate">{worktree.name ?? worktree.path}</strong>
+                    <span className="block truncate font-mono text-2xs text-muted-foreground">{worktree.path}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           {currentGitBranch ? (
             <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
               <Icon name="branch" size={10} />

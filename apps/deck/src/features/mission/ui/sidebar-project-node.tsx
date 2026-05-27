@@ -22,6 +22,7 @@ type SidebarProjectNodeProps = {
   selectedAgentId: string | null;
   agentPickerOpen: boolean;
   selectDraftAgent: (agentId: string) => void;
+  openDraftChatWindow: (input: { projectId: string; cwd: string | null; agentId?: string | null }) => void;
   setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
   setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
   setSelectedCwd: Dispatch<SetStateAction<string | null>>;
@@ -59,6 +60,7 @@ export function SidebarProjectNode({
   selectedAgentId,
   agentPickerOpen,
   selectDraftAgent,
+  openDraftChatWindow,
   setSelectedMissionHelmId,
   setSelectedProjectId,
   setSelectedCwd,
@@ -124,6 +126,11 @@ export function SidebarProjectNode({
           onMouseDown={(event) => event.stopPropagation()}
           onClick={() => {
             setSelectedMissionHelmId(project.helmId);
+            openDraftChatWindow({
+              projectId: project.id,
+              cwd: project.path ?? project.worktrees?.[0]?.path ?? null,
+              agentId: null,
+            });
             setSelectedProjectId(project.id);
             setSelectedCwd(project.path ?? project.worktrees?.[0]?.path ?? null);
             setSelectedAgentId(null);

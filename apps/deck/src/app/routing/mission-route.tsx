@@ -11,6 +11,8 @@ export function renderMissionRoute(source: any) {
     dispatch,
     socketRef,
     activeSessionId,
+    draftChatWindow,
+    setDraftChatWindow,
     selectedProjectId,
     selectedCwd,
     selectedAgentId,
@@ -172,6 +174,10 @@ export function renderMissionRoute(source: any) {
     missionInspectorPaneStyle,
     setProjectFileFilter,
     toggleProjectFileDirectory,
+    openChatSessionIds,
+    setOpenChatSessionIds,
+    focusedChatWindowId,
+    setFocusedChatWindowId,
   } = source;
   return (
     <MissionWorktree
@@ -181,6 +187,12 @@ export function renderMissionRoute(source: any) {
       dispatch={dispatch}
       socketRef={socketRef}
       activeSessionId={activeSessionId}
+      draftChatWindow={draftChatWindow}
+      setDraftChatWindow={setDraftChatWindow}
+      openChatSessionIds={openChatSessionIds}
+      setOpenChatSessionIds={setOpenChatSessionIds}
+      focusedChatWindowId={focusedChatWindowId}
+      setFocusedChatWindowId={setFocusedChatWindowId}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}

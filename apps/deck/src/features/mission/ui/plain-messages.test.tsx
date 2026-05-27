@@ -133,10 +133,8 @@ test("plain messages auto-expands running thinking and collapses completed think
   assert.doesNotMatch(completedHtml, /<details[^>]*open=""/);
   assert.match(runningHtml, /aria-label="收起 Thinking"/);
   assert.match(completedHtml, /aria-label="展开 Thinking"/);
-  assert.match(runningHtml, /⌃/);
-  assert.doesNotMatch(runningHtml, /⌄/);
-  assert.match(completedHtml, /⌄/);
-  assert.doesNotMatch(completedHtml, /⌃/);
+  assert.match(runningHtml, /class="[^"]*rotate-180/);
+  assert.doesNotMatch(completedHtml, /class="[^"]*rotate-180/);
 });
 
 test("plain messages collapses merged thinking when the latest chunk completes", () => {

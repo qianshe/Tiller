@@ -40,9 +40,9 @@ const rootSourceText = readFileSync(
 );
 
 test("mission draft composer waits for ACP connection before creating a session", () => {
-  assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && selectedAgentId && selectedCwd/);
+  assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd/);
   assert.match(worktreeSourceText, /const helmConnected = pairingState === "paired"/);
-  assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| selectedDraftConnection\)\)/);
+  assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| draftChatWindow\)\)/);
   assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean\(\s*helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection/s);
   assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
   assert.doesNotMatch(selectionSourceText, /const selectedCwd = selectedWorktree/);

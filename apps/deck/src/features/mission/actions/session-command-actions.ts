@@ -168,8 +168,10 @@ export function useSessionCommandActions({
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>, targetSession?: SessionSummary | null) {
-    const promptSession = targetSession ?? activeSession;
-    const promptSessionId = promptSession?.id ?? activeSessionId;
+    const promptSession = targetSession === undefined ? activeSession : targetSession;
+    const promptSessionId = targetSession === undefined
+      ? promptSession?.id ?? activeSessionId
+      : promptSession?.id ?? null;
     const promptSessionStatus = promptSession
       ? (statuses[promptSession.id] ?? promptSession.status)
       : "idle";

@@ -316,24 +316,30 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
 
   return (
     <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
-      <span aria-hidden="true" className="mt-1.5 inline-flex size-3 items-center justify-center rounded-full bg-primary-soft text-primary">
-        <PlainThinkingIcon />
-      </span>
+      <span aria-hidden="true" />
       <details
         className="plain-thinking min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-sm py-0.5 text-xs text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
+          <span aria-hidden="true" className="inline-flex size-3 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+            <PlainThinkingIcon />
+          </span>
           <span className="min-w-0 truncate font-medium">
             Thinking
           </span>
-          <span aria-hidden="true" className="ml-auto shrink-0 text-2xs text-muted-foreground/50">
-            {open ? "⌃" : "⌄"}
-          </span>
+          <Icon
+            name="chevronDown"
+            size={12}
+            className={cn(
+              "ml-auto text-muted-foreground/60 transition-transform duration-150",
+              open && "rotate-180",
+            )}
+          />
         </summary>
         <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
           <MarkdownMessage text={text} />
@@ -348,7 +354,6 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
   const [open, setOpen] = useState(isRunning);
   const summaryTitle = summarizeToolGroupTitle(group);
   const groupBadgeLabel = resolveToolGroupBadgeLabel(group);
-  const groupIconName = resolveToolGroupIconName(group);
 
   useEffect(() => {
     setOpen(isRunning);
@@ -356,9 +361,7 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
 
   return (
     <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
-      <span aria-hidden="true" className="mt-1 inline-flex size-3 items-center justify-center rounded-full bg-primary-soft text-primary">
-        <Icon name={groupIconName} size={10} />
-      </span>
+      <span aria-hidden="true" />
       <details
         className="plain-tool-group min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
         data-tool-group-kind={groupBadgeLabel.toLowerCase()}
@@ -369,6 +372,9 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
           className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
+          <span aria-hidden="true" className="inline-flex size-3 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+            <Icon name="hammer" size={10} />
+          </span>
           <span className="whitespace-nowrap font-medium text-muted-foreground">
             工具调用 · {group.length} 项
           </span>
@@ -380,9 +386,15 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
               运行中
             </span>
           ) : null}
-          <span aria-hidden="true" className="ml-auto shrink-0 text-2xs text-muted-foreground/50">
-            {open ? "⌃" : "⌄"}
-          </span>
+          <Icon
+            name="chevronDown"
+            size={12}
+            className={cn(
+              "text-muted-foreground/60 transition-transform duration-150",
+              isRunning ? "ml-1.5" : "ml-auto",
+              open && "rotate-180",
+            )}
+          />
         </summary>
         <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-sm text-muted-foreground" data-mission-swipe-lock="true">
           {group.map((item) => (
@@ -440,15 +452,6 @@ function resolveToolCallIconName(label: string): TillerIconName {
   if (label === "Built-in") return "panel";
   if (label === "Think") return "activity";
   return "inspect";
-}
-
-function resolveToolGroupIconName(group: ConversationToolCallItem[]): TillerIconName {
-  const labels = resolveToolGroupLabels(group);
-  const firstLabel = labels[0] ?? "Tool";
-  if (labels.length === 1) {
-    return resolveToolCallIconName(firstLabel);
-  }
-  return "panel";
 }
 
 function resolveToolGroupBadgeLabel(group: ConversationToolCallItem[]): string {

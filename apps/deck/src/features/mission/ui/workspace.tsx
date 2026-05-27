@@ -1,4 +1,5 @@
 import type { SessionSummary } from "@tiller/shared";
+import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   subscribeToSessionTopic,
@@ -39,6 +40,12 @@ export function MissionWorktree(props: any) {
     dispatch,
     socketRef,
     activeSessionId,
+    draftChatWindow = null,
+    setDraftChatWindow,
+    openChatSessionIds = [],
+    setOpenChatSessionIds,
+    focusedChatWindowId,
+    setFocusedChatWindowId,
     selectedProjectId,
     selectedCwd,
     selectedAgentId,
@@ -236,21 +243,32 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
-  const [openChatSessionIds, setOpenChatSessionIds] = useState<string[]>(() =>
-    activeSession?.id ? [activeSession.id] : [],
-  );
-  const [focusedChatSessionId, setFocusedChatSessionId] = useState<string | null>(() => activeSession?.id ?? null);
+  const focusedRealSessionId = focusedChatWindowId?.startsWith("session:")
+    ? focusedChatWindowId.slice("session:".length)
+    : null;
+  const persistedOpenChatSessionIds = openChatSessionIds as string[];
   const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
   const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
+  const pendingDraftWindowRef = useRef<typeof draftChatWindow>(null);
   const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
-  const visibleChatSessionIds = activeSession?.id && !openChatSessionIds.includes(activeSession.id)
-    ? [...openChatSessionIds, activeSession.id]
-    : openChatSessionIds;
+  const visibleChatSessionIds: string[] = activeSession?.id && !persistedOpenChatSessionIds.includes(activeSession.id)
+    ? [...persistedOpenChatSessionIds, activeSession.id]
+    : persistedOpenChatSessionIds;
   const openSessions = visibleChatSessionIds
     .map((sessionId) => sessionById.get(sessionId))
     .filter((session): session is SessionSummary => Boolean(session));
   const openSessionIdSet = new Set(visibleChatSessionIds);
-  const selectedComposerSession = sessionById.get(focusedChatSessionId ?? activeSession?.id ?? "") ?? activeSession;
+  const focusedDraftWindow = draftChatWindow && focusedChatWindowId === draftChatWindow.id;
+  const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
+  const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
+  const effectiveSelectedDraftAgent = (agents as any[]).find((agent) => agent.id === effectiveSelectedAgentId) ?? selectedDraftAgent;
+  const effectiveSelectedWorktree = (draftWorktreeOptions as any[]).find(
+    (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(effectiveSelectedCwd ?? undefined),
+  ) ?? selectedWorktree;
+  const effectiveSelectedWorktreeName = effectiveSelectedWorktree?.name ?? selectedWorktreeName;
+  const selectedComposerSession = focusedDraftWindow
+    ? null
+    : sessionById.get(focusedRealSessionId ?? activeSession?.id ?? "") ?? activeSession;
   const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
   useEffect(() => {
     const client = rpcClientRef.current;
@@ -368,7 +386,7 @@ export function MissionWorktree(props: any) {
     sessions,
   ]);
   useEffect(() => {
-    setOpenChatSessionIds((current) => {
+    setOpenChatSessionIds((current: string[]) => {
       const existingSessionIds = new Set((sessions as SessionSummary[]).map((session) => session.id));
       const retained = current.filter((sessionId) => existingSessionIds.has(sessionId));
       if (!activeSession?.id || retained.includes(activeSession.id)) {
@@ -378,30 +396,44 @@ export function MissionWorktree(props: any) {
     });
   }, [activeSession?.id, sessions]);
   useEffect(() => {
-    if (activeSession?.id) {
-      setFocusedChatSessionId(activeSession.id);
+    if (activeSession?.id && !focusedChatWindowId) {
+      setFocusedChatWindowId(`session:${activeSession.id}`);
     }
-  }, [activeSession?.id]);
+  }, [activeSession?.id, focusedChatWindowId]);
+  useEffect(() => {
+    if (!focusedDraftWindow) {
+      return;
+    }
+    if (focusedDraftWindow.projectId !== selectedProjectId) {
+      setSelectedProjectId(focusedDraftWindow.projectId);
+    }
+    if (focusedDraftWindow.cwd !== selectedCwd) {
+      setSelectedCwd(focusedDraftWindow.cwd);
+    }
+    if (focusedDraftWindow.agentId && focusedDraftWindow.agentId !== selectedAgentId) {
+      setSelectedAgentId(focusedDraftWindow.agentId);
+    }
+  }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
   const openChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatSessionId(sessionId);
+    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
+    setFocusedChatWindowId(`session:${sessionId}`);
     hydrateOpenSessionStreams([sessionId]);
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
   };
   const selectChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatSessionId(sessionId);
+    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
+    setFocusedChatWindowId(`session:${sessionId}`);
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
   };
   const closeChatSession = (session: SessionSummary) => {
-    setOpenChatSessionIds((current) => {
+    setOpenChatSessionIds((current: string[]) => {
       const next = current.filter((sessionId) => sessionId !== session.id);
-      if (focusedChatSessionId === session.id) {
-        setFocusedChatSessionId(next.at(-1) ?? activeSession?.id ?? null);
+      if (focusedRealSessionId === session.id) {
+        setFocusedChatWindowId(next.at(-1) ? `session:${next.at(-1)}` : null);
       }
       if (activeSessionId === session.id) {
         const nextActiveSessionId = next.at(-1) ?? null;
@@ -414,6 +446,65 @@ export function MissionWorktree(props: any) {
       return next;
     });
   };
+  const openDraftChatWindow = ({
+    projectId,
+    cwd,
+    agentId = null,
+  }: {
+    projectId: string;
+    cwd: string | null;
+    agentId?: string | null;
+  }) => {
+    const project = projects.find((item: any) => item.id === projectId);
+    const draftWindow = {
+      id: `draft:${projectId}`,
+      projectId,
+      cwd,
+      agentId,
+    };
+    setDraftChatWindow?.(draftWindow);
+    setFocusedChatWindowId(draftWindow.id);
+    setActiveSessionId(null);
+    setSelectedMissionHelmId(project?.helmId ?? null);
+    setSelectedProjectId(projectId);
+    setSelectedCwd(cwd);
+    setSelectedAgentId(agentId);
+    setActiveSessionId(null);
+    setSelectedMissionMobilePane("chat");
+  };
+  const selectAgentForDraftWindow = (agentId: string) => {
+    const focusedDraftWindowId = draftChatWindow?.id ?? (selectedProjectId ? `draft:${selectedProjectId}` : null);
+    setDraftChatWindow?.((current: any) => (current ? { ...current, agentId } : current));
+    if (focusedDraftWindowId) {
+      setFocusedChatWindowId(focusedDraftWindowId);
+    }
+    setActiveSessionId(null);
+    selectDraftAgent(agentId);
+  };
+  const submitPromptFromFocusedWindow = (event: FormEvent<HTMLFormElement>, targetSession?: SessionSummary | null) => {
+    if (focusedDraftWindow) {
+      pendingDraftWindowRef.current = draftChatWindow;
+    }
+    submitPrompt(event, targetSession);
+  };
+  useEffect(() => {
+    const pendingDraftWindow = pendingDraftWindowRef.current;
+    if (!pendingDraftWindow || !activeSession?.id) {
+      return;
+    }
+    const sameProject = activeSession.projectId === pendingDraftWindow.projectId;
+    const sameCwd = normalizeWorktreePath(activeSession.cwd) === normalizeWorktreePath(pendingDraftWindow.cwd ?? undefined);
+    const sameAgent = !pendingDraftWindow.agentId || activeSession.agentId === pendingDraftWindow.agentId;
+    if (!sameProject || !sameCwd || !sameAgent) {
+      return;
+    }
+    pendingDraftWindowRef.current = null;
+    setDraftChatWindow?.(null);
+    setOpenChatSessionIds((current: string[]) => (
+      current.includes(activeSession.id) ? current : [...current, activeSession.id]
+    ));
+    setFocusedChatWindowId(`session:${activeSession.id}`);
+  }, [activeSession?.id, activeSession?.projectId, activeSession?.cwd, activeSession?.agentId, draftChatWindow]);
   const onToggleDisplay = () => {
     setMissionDisplayCollapsed((current: boolean) => !current);
   };
@@ -783,24 +874,47 @@ export function MissionWorktree(props: any) {
       cwd: runtime.cwd ?? selectedCwd ?? undefined,
     });
   };
-  const selectedDraftConnection = !activeSession && selectedAgentId && selectedCwd
+  const selectedDraftConnection = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd
     ? (agentConnectionInventory as any[]).find(
         (connection) =>
-          connection.providerId === selectedAgentId &&
-          normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(selectedCwd) &&
+          connection.providerId === effectiveSelectedAgentId &&
+          normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(effectiveSelectedCwd) &&
           connection.initialized &&
           connection.status !== "closed" &&
           connection.status !== "error",
       )
     : null;
-  const draftConnectionEntry = !activeSession && selectedAgentId && selectedCwd
-    ? (agentModelOptions as Record<string, any>)[`${selectedAgentId}::${selectedCwd}::${selectedProjectId ?? "global"}`] ??
+  const draftConnectionEntry = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd
+    ? (agentModelOptions as Record<string, any>)[`${effectiveSelectedAgentId}::${effectiveSelectedCwd}::${selectedProjectId ?? "global"}`] ??
       Object.entries(agentModelOptions as Record<string, any>).find(
-        ([key, entry]) => key.startsWith(`${selectedAgentId}::${selectedCwd}`) && entry?.loading,
+        ([key, entry]) => key.startsWith(`${effectiveSelectedAgentId}::${effectiveSelectedCwd}`) && entry?.loading,
       )?.[1]
     : null;
+  const visibleDraftChatWindow = draftChatWindow
+    ? {
+        id: draftChatWindow.id,
+        title: "新建会话",
+        projectName: projects.find((project: any) => project.id === draftChatWindow.projectId)?.name ?? "未选项目",
+        worktreeName: worktrees.find((worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(draftChatWindow.cwd ?? undefined))?.name ?? "",
+        agentName: agents.find((agent: any) => agent.id === draftChatWindow.agentId)?.name ?? null,
+        status: draftChatWindow.agentId
+          ? selectedDraftConnection
+            ? "ready" as const
+            : "connecting" as const
+          : "select-agent" as const,
+        message: draftChatWindow.agentId
+          ? selectedDraftConnection
+            ? "ACP 已就绪，输入第一条消息后会创建真正的 session。"
+            : draftConnectionEntry?.message ?? "正在连接 ACP，连接成功后即可发送第一条消息。"
+          : "请选择下方 ACP Agent，或使用输入框中的 Agent 选择器。",
+      }
+    : null;
+  const visibleDraftAgentOptions = (filteredAgents as any[]).map((agent) => ({
+    id: agent.id,
+    name: agent.name ?? agent.id,
+  }));
   const helmConnected = pairingState === "paired";
-  const shouldShowComposer = Boolean(helmConnected && (activeSession || selectedDraftConnection));
+  const shouldShowComposer = Boolean(helmConnected && (activeSession || draftChatWindow));
   const shouldShowDraftPreparing = Boolean(helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection);
   const shouldShowRestoreGateNotice = Boolean(
     helmConnected && activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
@@ -853,7 +967,8 @@ export function MissionWorktree(props: any) {
           runtimeOverviewItems={runtimeOverviewItems}
           selectedAgentId={selectedAgentId}
           agentPickerOpen={agentPickerOpen}
-          selectDraftAgent={selectDraftAgent}
+          selectDraftAgent={selectAgentForDraftWindow}
+          openDraftChatWindow={openDraftChatWindow}
           setSelectedMissionHelmId={setSelectedMissionHelmId}
           setSelectedProjectId={setSelectedProjectId}
           setSelectedCwd={setSelectedCwd}
@@ -864,7 +979,7 @@ export function MissionWorktree(props: any) {
           statuses={statuses}
           copy={copy}
           activeSessionId={activeSessionId}
-          highlightedSessionId={focusedChatSessionId ?? activeSessionId}
+          highlightedSessionId={focusedRealSessionId ?? activeSessionId}
           openSessionIds={openSessionIdSet}
           openSession={openChatSession}
           renderMissionAgentIcon={renderMissionAgentIcon}
@@ -900,7 +1015,19 @@ export function MissionWorktree(props: any) {
           helmConnected={helmConnected}
           activeSession={activeSession}
           openSessions={openSessions}
-          selectedSessionId={focusedChatSessionId ?? activeSession?.id ?? null}
+          draftWindow={visibleDraftChatWindow}
+          draftAgentOptions={visibleDraftAgentOptions}
+          selectedWindowId={focusedChatWindowId}
+          onSelectDraftWindow={(draftWindowId) => {
+            setFocusedChatWindowId(draftWindowId);
+            setActiveSessionId(null);
+          }}
+          onSelectDraftAgent={selectAgentForDraftWindow}
+          onCloseDraftWindow={() => {
+            setDraftChatWindow?.(null);
+            setFocusedChatWindowId(persistedOpenChatSessionIds.at(-1) ? `session:${persistedOpenChatSessionIds.at(-1)}` : null);
+          }}
+          selectedSessionId={focusedDraftWindow ? null : focusedRealSessionId ?? activeSession?.id ?? null}
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
           activeSessionToolCalls={activeToolCalls}
@@ -930,6 +1057,12 @@ export function MissionWorktree(props: any) {
           onReimportSessionHistory={setPendingSessionHistoryReimport}
           onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
+          restoreNotice={shouldShowRestoreGateNotice ? {
+            title: activeSessionRestoreGate.state === "history-only" || activeSessionRestoreGate.state === "failed"
+              ? "ACP 会话未恢复"
+              : "正在恢复 ACP",
+            message: activeSessionRestoreGate.message,
+          } : undefined}
           onUpdateQueuedPrompt={updateQueuedPrompt}
           onDeleteQueuedPrompt={deleteQueuedPrompt}
         >
@@ -937,18 +1070,8 @@ export function MissionWorktree(props: any) {
             <div className="mission-draft-preparing m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
               <strong className="block text-foreground">正在连接 ACP</strong>
               <span>
-                {selectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
+                {effectiveSelectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
               </span>
-            </div>
-          ) : null}
-          {shouldShowRestoreGateNotice ? (
-            <div className="mission-restore-gate m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
-              <strong className="block text-foreground">
-                {activeSessionRestoreGate.state === "history-only" || activeSessionRestoreGate.state === "failed"
-                  ? "ACP 会话未恢复"
-                  : "正在恢复 ACP"}
-              </strong>
-              <span>{activeSessionRestoreGate.message}</span>
             </div>
           ) : null}
           {shouldShowComposer ? (
@@ -961,18 +1084,18 @@ export function MissionWorktree(props: any) {
               agentPickerRef={agentPickerRef}
               agentPickerOpen={agentPickerOpen}
               setAgentPickerOpen={setAgentPickerOpen}
-              selectedWorktreeName={selectedWorktreeName}
+              selectedWorktreeName={effectiveSelectedWorktreeName}
               draftWorktreeOptions={draftWorktreeOptions}
-              selectedCwd={selectedCwd}
+              selectedCwd={effectiveSelectedCwd}
               selectDraftWorktree={selectDraftWorktree}
               currentGitBranch={currentGitBranch}
               copy={copy}
               agentLocked={agentLocked}
-              selectedDraftAgent={selectedDraftAgent}
+              selectedDraftAgent={effectiveSelectedDraftAgent}
               filteredAgents={filteredAgents}
-              selectedAgentId={selectedAgentId}
+              selectedAgentId={effectiveSelectedAgentId}
               selectDraftAgent={selectDraftAgent}
-              submitPrompt={submitPrompt}
+              submitPrompt={submitPromptFromFocusedWindow}
               slashWrapperRef={slashWrapperRef}
               promptImages={promptImages}
               removePromptImage={removePromptImage}

@@ -35,6 +35,26 @@ type HistoryState = {
   loading: boolean;
 };
 
+type SessionRestoreNotice = {
+  title: string;
+  message: string;
+};
+
+type MissionDraftChatWindow = {
+  id: string;
+  title: string;
+  projectName: string;
+  worktreeName: string;
+  agentName: string | null;
+  status: "select-agent" | "connecting" | "ready";
+  message: string;
+};
+
+type MissionDraftAgentOption = {
+  id: string;
+  name: string;
+};
+
 type MissionChatPaneProps = {
   className: string;
   style: CSSProperties;
@@ -43,6 +63,9 @@ type MissionChatPaneProps = {
   helmConnected: boolean;
   activeSession: SessionSummary | null;
   openSessions: SessionSummary[];
+  draftWindow?: MissionDraftChatWindow | null;
+  draftAgentOptions?: MissionDraftAgentOption[];
+  selectedWindowId?: string | null;
   selectedSessionId: string | null;
   activeSessionMessages: AgentMessage[];
   sessionMessagesById: Record<string, AgentMessage[] | undefined>;
@@ -69,6 +92,9 @@ type MissionChatPaneProps = {
   onToggleDisplay: () => void;
   onToggleInspector: () => void;
   onFocusSession: (sessionId: string) => void;
+  onSelectDraftWindow?: (draftWindowId: string) => void;
+  onSelectDraftAgent?: (agentId: string) => void;
+  onCloseDraftWindow?: (draftWindowId: string) => void;
   onSelectSessionView: (sessionId: string) => void;
   onRenameSession: (session: SessionSummary) => void;
   onCloseSessionView: (session: SessionSummary) => void;
@@ -76,6 +102,7 @@ type MissionChatPaneProps = {
   onReimportSessionHistory: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
+  restoreNotice?: SessionRestoreNotice;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
   onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
   children: ReactNode;
@@ -91,6 +118,9 @@ export function MissionChatPane({
   onChatMainScroll,
   helmConnected,
   activeSession,
+  draftWindow,
+  draftAgentOptions = [],
+  selectedWindowId,
   selectedSessionId,
   activeSessionMessages,
   sessionMessagesById,
@@ -115,6 +145,9 @@ export function MissionChatPane({
   onToggleDisplay,
   onToggleInspector,
   onFocusSession,
+  onSelectDraftWindow,
+  onSelectDraftAgent,
+  onCloseDraftWindow,
   onSelectSessionView,
   onRenameSession,
   onCloseSessionView,
@@ -122,6 +155,7 @@ export function MissionChatPane({
   onReimportSessionHistory,
   onRespondToPermission,
   promptQueue,
+  restoreNotice,
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
   children,
@@ -167,9 +201,9 @@ export function MissionChatPane({
   };
   const isSingleSession = openSessions.length <= 1;
   const singleSession = openSessions[0];
-  const parallelGridCompact = openSessions.length <= 2;
-  const shouldLockChatMainScroll = openSessions.length > 0 && parallelGridCompact;
-  const shouldAnchorActiveParallelCard = openSessions.length > 2;
+  const parallelGridCompact = openSessions.length + (draftWindow ? 1 : 0) <= 2;
+  const shouldLockChatMainScroll = (openSessions.length > 0 || Boolean(draftWindow)) && parallelGridCompact;
+  const shouldAnchorActiveParallelCard = openSessions.length + (draftWindow ? 1 : 0) > 2;
   const parallelGridStyle = {
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
     gridAutoRows: parallelGridCompact ? "minmax(0, 1fr)" : "minmax(360px, min(52vh, 560px))",
@@ -253,6 +287,16 @@ export function MissionChatPane({
 
   const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
+  const draftCard = draftWindow ? (
+    <DraftSessionCard
+      draftWindow={draftWindow}
+      active={selectedWindowId === draftWindow.id}
+      agentOptions={draftAgentOptions}
+      onFocus={onSelectDraftWindow}
+      onSelectAgent={onSelectDraftAgent}
+      onClose={onCloseDraftWindow}
+    />
+  ) : null;
 
   useEffect(() => {
     const chatMain = chatMainRef.current;
@@ -457,8 +501,8 @@ export function MissionChatPane({
             </p>{" "}
           </div>
         ) : null}{" "}
-        {openSessions.length ? (
-          isSingleSession && singleSession ? (
+        {openSessions.length || draftCard ? (
+          isSingleSession && singleSession && !draftCard ? (
             <SessionCard
               session={singleSession}
               active={singleSession.id === selectedSessionId}
@@ -475,6 +519,7 @@ export function MissionChatPane({
               onClear={onClearSession}
               onReimportHistory={onReimportSessionHistory}
               onClose={onCloseSessionView}
+              restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
             >
               {renderSessionStream(singleSession)}
             </SessionCard>
@@ -486,6 +531,7 @@ export function MissionChatPane({
               )}
               style={parallelGridStyle}
             >
+              {draftCard}
               {openSessions.map((session) => (
                 <SessionCard
                   key={session.id}
@@ -503,6 +549,7 @@ export function MissionChatPane({
                   onClear={onClearSession}
                   onReimportHistory={onReimportSessionHistory}
                   onClose={onCloseSessionView}
+                  restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
                 >
                   {renderSessionStream(session)}
                 </SessionCard>
@@ -548,6 +595,7 @@ function SessionCard({
   onClear,
   onReimportHistory,
   onClose,
+  restoreNotice,
   flat = false,
   children,
 }: {
@@ -560,6 +608,7 @@ function SessionCard({
   onClear: (session: SessionSummary) => void;
   onReimportHistory: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  restoreNotice?: SessionRestoreNotice;
   flat?: boolean;
   children: ReactNode;
 }) {
@@ -611,6 +660,7 @@ function SessionCard({
           {session.projectName}
           {session.worktreeName ? ` / ${session.worktreeName}` : ""}
         </span>
+        {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
         <div className="flex-1" />
         <StatusDot tone={statusTone} pulse={isStreaming} />
         <div className="relative">
@@ -707,6 +757,97 @@ function SessionCard({
         data-session-card-body={session.id}
       >
         <div className="space-y-3">{children}</div>
+      </div>
+    </article>
+  );
+}
+
+function SessionRestoreNotice({ notice }: { notice: SessionRestoreNotice }) {
+  return (
+    <span
+      className="min-w-0 max-w-[min(34vw,360px)] truncate rounded-md border border-primary/30 bg-primary-soft/20 px-2 py-0.5 text-2xs font-medium text-foreground"
+      data-session-restore-notice
+      title={`${notice.title}：${notice.message}`}
+    >
+      {notice.title} · {notice.message}
+    </span>
+  );
+}
+
+function DraftSessionCard({
+  draftWindow,
+  active,
+  agentOptions,
+  onFocus,
+  onSelectAgent,
+  onClose,
+}: {
+  draftWindow: MissionDraftChatWindow;
+  active: boolean;
+  agentOptions: MissionDraftAgentOption[];
+  onFocus?: (draftWindowId: string) => void;
+  onSelectAgent?: (agentId: string) => void;
+  onClose?: (draftWindowId: string) => void;
+}) {
+  const statusTone = draftWindow.status === "ready" ? "active" : "primary";
+  return (
+    <article
+      onClick={() => onFocus?.(draftWindow.id)}
+      data-draft-session-card={draftWindow.id}
+      data-active-session-card={active ? "true" : undefined}
+      className="flex h-full min-h-0 cursor-default flex-col overflow-hidden rounded-[8px] bg-surface transition-all [contain:layout_paint]"
+      style={{
+        boxShadow: active
+          ? "inset 0 0 0 1px var(--primary), 0 8px 20px rgb(0 0 0 / 0.18)"
+          : "inset 0 0 0 1px var(--border-ghost)",
+      }}
+      aria-current={active ? "true" : undefined}
+    >
+      <div className="wb-pane-head">
+        <AgentIcon name={draftWindow.agentName ?? "ACP"} size={14} />
+        <span className="truncate text-section font-medium text-foreground">{draftWindow.title}</span>
+        <span className="shrink-0 font-mono text-2xs tabular text-muted-foreground">
+          {draftWindow.projectName}{draftWindow.worktreeName ? ` / ${draftWindow.worktreeName}` : ""}
+        </span>
+        <div className="flex-1" />
+        <StatusDot tone={statusTone} pulse={draftWindow.status !== "ready"} />
+        <button
+          className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+          title="关闭此草稿窗口"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose?.(draftWindow.id);
+          }}
+        >
+          <Icon name="x" size={11} />
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 py-3">
+        <div className="space-y-2 rounded-lg border border-border-ghost bg-surface-sunken p-3 text-section text-muted-foreground">
+          <strong className="block text-foreground">{draftWindow.agentName ? "准备创建会话" : "选择 ACP Agent"}</strong>
+          <span>{draftWindow.message}</span>
+          {!draftWindow.agentName ? (
+            <div className="flex flex-wrap gap-2 pt-2" data-draft-agent-options>
+              {agentOptions.length ? (
+                agentOptions.map((agent) => (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    className="rounded-md border border-border-ghost bg-surface px-2.5 py-1 text-action font-medium text-foreground transition hover:border-primary/50 hover:bg-primary-soft/20 hover:text-primary"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectAgent?.(agent.id);
+                    }}
+                  >
+                    {agent.name}
+                  </button>
+                ))
+              ) : (
+                <span className="text-meta text-muted-foreground">暂无可用 ACP Agent。</span>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
     </article>
   );
