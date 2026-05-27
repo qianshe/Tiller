@@ -17,18 +17,16 @@ export {
 } from "./pagination";
 export {
   createHelmSessionStores,
-  resolveSessionStoreBackend,
   type HelmSessionStoreFactoryOptions,
   type HelmSessionStores,
   type SessionArtifactStore,
   type SessionMessageStore,
   type SessionRuntimeStore,
-  type SessionStoreBackend,
   type SessionSummaryStore,
   type StoredSessionArtifacts,
 } from "./store-factory";
 export {
-  createSessionRuntimeStore,
+  type StoredProviderHistoryState,
   type StoredSessionRuntimeDescriptor,
 } from "./runtime-store";
 export {

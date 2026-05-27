@@ -1,80 +1,9 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import type {
   RuntimeResumeMode,
   SessionResumeInfo,
   SessionResumeState,
   SessionSummary,
 } from "@tiller/shared";
-
-export function createSessionStore(filePath: string) {
-  let summaries = loadSessionSummaries(filePath);
-
-  return {
-    list() {
-      return [...summaries];
-    },
-    upsert(summary: SessionSummary) {
-      summaries = upsertSessionSummary(summaries, summary);
-      persistSessionSummaries(filePath, summaries);
-      return [...summaries];
-    },
-    remove(sessionId: string) {
-      summaries = summaries.filter((item) => item.id !== sessionId);
-      persistOrDeleteSessionSummaries(filePath, summaries);
-      return [...summaries];
-    },
-  };
-}
-
-function loadSessionSummaries(filePath: string) {
-  try {
-    const raw = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? sortSessionSummaries(
-          parsed
-            .map(normalizeSessionSummary)
-            .filter((item): item is SessionSummary => item !== null),
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistSessionSummaries(filePath: string, summaries: SessionSummary[]) {
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(summaries, null, 2), "utf8");
-}
-
-function persistOrDeleteSessionSummaries(filePath: string, summaries: SessionSummary[]) {
-  if (!summaries.length) {
-    try {
-      unlinkSync(filePath);
-    } catch {
-      // ignore missing file
-    }
-    return;
-  }
-  persistSessionSummaries(filePath, summaries);
-}
-
-function upsertSessionSummary(current: SessionSummary[], summary: SessionSummary) {
-  const next = [summary, ...current.filter((item) => item.id !== summary.id)];
-  return sortSessionSummaries(next);
-}
-
-function sortSessionSummaries(summaries: SessionSummary[]) {
-  return [...summaries].sort((left, right) => {
-    const rightTime = Date.parse(right.updatedAt);
-    const leftTime = Date.parse(left.updatedAt);
-    if (rightTime !== leftTime) {
-      return rightTime - leftTime;
-    }
-    return right.createdAt.localeCompare(left.createdAt);
-  });
-}
 
 export function isSessionSummary(value: unknown): value is SessionSummary {
   if (!value || typeof value !== "object") {
@@ -108,7 +37,7 @@ export function normalizeSessionSummary(value: unknown): SessionSummary | null {
   return isSessionSummary(value) ? value : null;
 }
 
-function isSessionResumeInfo(value: unknown): value is SessionResumeInfo {
+export function isSessionResumeInfo(value: unknown): value is SessionResumeInfo {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -124,23 +53,6 @@ function isSessionResumeInfo(value: unknown): value is SessionResumeInfo {
       typeof candidate.runtimeSessionId === "undefined") &&
     (typeof candidate.lastSeenAt === "string" || typeof candidate.lastSeenAt === "undefined")
   );
-}
-
-function normalizeResumeInfo(value: unknown): SessionResumeInfo | undefined {
-  if (!isSessionResumeInfo(value)) {
-    return undefined;
-  }
-
-  return {
-    mode: value.mode,
-    state: value.state,
-    reason: value.reason,
-    checkedAt: value.checkedAt,
-    providerId: value.providerId,
-    runtimeSessionId: value.runtimeSessionId,
-    restoreMethod: value.restoreMethod,
-    lastSeenAt: value.lastSeenAt,
-  };
 }
 
 function isResumeMode(value: unknown): value is RuntimeResumeMode {

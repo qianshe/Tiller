@@ -1,8 +1,5 @@
 import { createTrustedDeviceStore } from "../auth/beacon-store";
-import {
-  createHelmSessionStores,
-  resolveSessionStoreBackend,
-} from "../sessions/facade";
+import { createHelmSessionStores } from "../sessions/facade";
 import type { HelmServerEnvironment } from "./server-environment";
 
 type CreateHelmServerStoresOptions = {
@@ -14,7 +11,6 @@ type CreateHelmServerStoresOptions = {
 export function createHelmServerStores(options: CreateHelmServerStoresOptions) {
   const { environment, logInfo, logError } = options;
   const sessionStores = createHelmSessionStores({
-    backend: resolveSessionStoreBackend(),
     sqlitePath: environment.sessionsSqlitePath,
     jsonPaths: {
       sessionHistoryPath: environment.sessionHistoryPath,

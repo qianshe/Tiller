@@ -1,5 +1,3 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 export type StoredProviderHistoryState = {
   latestMessageId?: string;
   latestMessageHash?: string;
@@ -29,69 +27,9 @@ export type StoredSessionRuntimeDescriptor = {
   state: "resumeable" | "stale" | "lost";
 };
 
-export function createSessionRuntimeStore(filePath: string) {
-  let descriptors = loadRuntimeDescriptors(filePath);
-
-  return {
-    list() {
-      return [...descriptors];
-    },
-    get(sessionId: string) {
-      return descriptors.find((item) => item.sessionId === sessionId) ?? null;
-    },
-    upsert(descriptor: StoredSessionRuntimeDescriptor) {
-      descriptors = upsertRuntimeDescriptor(descriptors, descriptor);
-      persistRuntimeDescriptors(filePath, descriptors);
-      return descriptor;
-    },
-    remove(sessionId: string) {
-      descriptors = descriptors.filter((item) => item.sessionId !== sessionId);
-      persistOrDeleteRuntimeDescriptors(filePath, descriptors);
-    },
-  };
-}
-
-function loadRuntimeDescriptors(filePath: string) {
-  try {
-    const raw = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isStoredSessionRuntimeDescriptor) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistRuntimeDescriptors(
-  filePath: string,
-  descriptors: StoredSessionRuntimeDescriptor[],
-) {
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(descriptors, null, 2), "utf8");
-}
-
-function persistOrDeleteRuntimeDescriptors(
-  filePath: string,
-  descriptors: StoredSessionRuntimeDescriptor[],
-) {
-  if (!descriptors.length) {
-    try {
-      unlinkSync(filePath);
-    } catch {
-      // ignore missing file
-    }
-    return;
-  }
-  persistRuntimeDescriptors(filePath, descriptors);
-}
-
-function upsertRuntimeDescriptor(
-  current: StoredSessionRuntimeDescriptor[],
-  descriptor: StoredSessionRuntimeDescriptor,
-) {
-  return [descriptor, ...current.filter((item) => item.sessionId !== descriptor.sessionId)];
-}
-
-function isStoredSessionRuntimeDescriptor(value: unknown): value is StoredSessionRuntimeDescriptor {
+export function isStoredSessionRuntimeDescriptor(
+  value: unknown,
+): value is StoredSessionRuntimeDescriptor {
   if (!value || typeof value !== "object") {
     return false;
   }

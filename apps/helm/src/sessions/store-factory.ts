@@ -5,10 +5,9 @@ import type {
   FileDiffSummary,
   SessionSummary,
 } from "@tiller/shared";
-import { createSessionArtifactStore, type SessionArtifactPageOptions } from "./artifact-store.js";
-import { createSessionMessageStore, type SessionMessagePageOptions } from "./message-store.js";
-import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "./runtime-store.js";
-import { createSessionStore } from "./summary/store.js";
+import type { SessionArtifactPageOptions } from "./artifact-store.js";
+import type { SessionMessagePageOptions } from "./message-store.js";
+import type { StoredSessionRuntimeDescriptor } from "./runtime-store.js";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -17,8 +16,6 @@ import {
   migrateJsonSessionDataToSqlite,
   type JsonSessionStorePaths,
 } from "./sqlite/store.js";
-
-export type SessionStoreBackend = "sqlite" | "json";
 
 export type StoredSessionArtifacts = {
   outputs: CommandChunk[];
@@ -64,7 +61,6 @@ export type SessionRuntimeStore = {
 };
 
 export type HelmSessionStores = {
-  backend: SessionStoreBackend;
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
@@ -74,56 +70,29 @@ export type HelmSessionStores = {
 type StoreFactoryLogger = (message: string) => void;
 
 export type HelmSessionStoreFactoryOptions = {
-  backend?: SessionStoreBackend;
   sqlitePath: string;
+  /**
+   * Legacy JSON paths used only for the one-shot SQLite migration. Once the
+   * migration version is recorded (`hasMigrationVersion(db, 2)`), these paths
+   * are no longer read on subsequent boots.
+   */
   jsonPaths: JsonSessionStorePaths;
   logInfo?: StoreFactoryLogger;
   logError?: StoreFactoryLogger;
 };
 
-export function resolveSessionStoreBackend(
-  env: NodeJS.ProcessEnv = process.env,
-): SessionStoreBackend {
-  return env.TILLER_SESSION_STORE?.toLowerCase() === "json" ? "json" : "sqlite";
-}
-
 export function createHelmSessionStores(
   options: HelmSessionStoreFactoryOptions,
 ): HelmSessionStores {
-  const requestedBackend = options.backend ?? resolveSessionStoreBackend();
-  if (requestedBackend === "json") {
-    options.logInfo?.("[tiller] session.store backend=json reason=env");
-    return createJsonHelmSessionStores(options.jsonPaths);
-  }
-
-  try {
-    migrateJsonSessionDataToSqlite({
-      sqlitePath: options.sqlitePath,
-      jsonPaths: options.jsonPaths,
-    });
-    options.logInfo?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
-    return {
-      backend: "sqlite",
-      sessionStore: createSqliteSessionStore(options.sqlitePath),
-      sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
-      sessionArtifactStore: createSqliteSessionArtifactStore(options.sqlitePath),
-      sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
-    };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    options.logError?.(
-      `[tiller] session.store backend=json reason=sqlite-fallback detail=${reason}`,
-    );
-    return createJsonHelmSessionStores(options.jsonPaths);
-  }
-}
-
-function createJsonHelmSessionStores(jsonPaths: JsonSessionStorePaths): HelmSessionStores {
+  migrateJsonSessionDataToSqlite({
+    sqlitePath: options.sqlitePath,
+    jsonPaths: options.jsonPaths,
+  });
+  options.logInfo?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
   return {
-    backend: "json",
-    sessionStore: createSessionStore(jsonPaths.sessionHistoryPath),
-    sessionMessageStore: createSessionMessageStore(jsonPaths.sessionMessagesPath),
-    sessionArtifactStore: createSessionArtifactStore(jsonPaths.sessionArtifactsPath),
-    sessionRuntimeStore: createSessionRuntimeStore(jsonPaths.sessionRuntimesPath),
+    sessionStore: createSqliteSessionStore(options.sqlitePath),
+    sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
+    sessionArtifactStore: createSqliteSessionArtifactStore(options.sqlitePath),
+    sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
   };
 }

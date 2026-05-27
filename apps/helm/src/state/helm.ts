@@ -22,7 +22,6 @@ import type {
 import { resolveTillerRuntimeOptions, type TillerRuntimeOptions } from "../runtime/options";
 import {
   createHelmSessionStores,
-  resolveSessionStoreBackend,
   type HelmSessionStores,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
@@ -127,7 +126,6 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
   });
 
   const sessionStores = createHelmSessionStores({
-    backend: resolveSessionStoreBackend(),
     sqlitePath: paths.sessionsSqlite,
     jsonPaths: {
       sessionHistoryPath: paths.sessions,

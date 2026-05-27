@@ -9,16 +9,21 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import {
-  createSessionArtifactStore,
   pageSessionArtifacts,
   type SessionArtifactPageOptions,
 } from "../artifact-store.js";
 import {
-  createSessionMessageStore,
   pageSessionMessages,
   type SessionMessagePageOptions,
 } from "../message-store.js";
-import { createSessionRuntimeStore, type StoredSessionRuntimeDescriptor } from "../runtime-store.js";
+import {
+  listLegacyJsonSessionIds,
+  loadLegacyJsonRuntimeDescriptors,
+  loadLegacyJsonSessionArtifacts,
+  loadLegacyJsonSessionMessages,
+  loadLegacyJsonSessionSummaries,
+} from "../legacy-json-loader.js";
+import type { StoredSessionRuntimeDescriptor } from "../runtime-store.js";
 import {
   hasMigrationVersion,
   openSessionDatabase,
@@ -33,7 +38,7 @@ import {
   sortCommandChunks,
   sortToolCalls,
 } from "./merge.js";
-import { createSessionStore, normalizeSessionSummary } from "../summary/store.js";
+import { normalizeSessionSummary } from "../summary/store.js";
 
 
 type SessionArtifacts = {
@@ -182,28 +187,30 @@ export function migrateJsonSessionDataToSqlite(options: JsonToSqliteMigrationOpt
 
     backupJsonSessionData(options.jsonPaths);
 
-    const summaryStore = createSessionStore(options.jsonPaths.sessionHistoryPath);
-    const messageStore = createSessionMessageStore(options.jsonPaths.sessionMessagesPath);
-    const artifactStore = createSessionArtifactStore(options.jsonPaths.sessionArtifactsPath);
-    const runtimeStore = createSessionRuntimeStore(options.jsonPaths.sessionRuntimesPath);
-
     runTransaction(db, () => {
-      for (const summary of summaryStore.list()) {
+      for (const summary of loadLegacyJsonSessionSummaries(options.jsonPaths.sessionHistoryPath)) {
         upsertSessionSummary(db, summary);
       }
 
-      for (const sessionId of listJsonSessionIds(options.jsonPaths.sessionMessagesPath)) {
-        replaceSessionMessages(db, sessionId, messageStore.list(sessionId));
+      for (const sessionId of listLegacyJsonSessionIds(options.jsonPaths.sessionMessagesPath)) {
+        replaceSessionMessages(
+          db,
+          sessionId,
+          loadLegacyJsonSessionMessages(options.jsonPaths.sessionMessagesPath, sessionId),
+        );
       }
 
-      for (const sessionId of listJsonSessionIds(options.jsonPaths.sessionArtifactsPath)) {
-        const artifacts = artifactStore.get(sessionId);
+      for (const sessionId of listLegacyJsonSessionIds(options.jsonPaths.sessionArtifactsPath)) {
+        const artifacts = loadLegacyJsonSessionArtifacts(
+          options.jsonPaths.sessionArtifactsPath,
+          sessionId,
+        );
         replaceSessionOutputs(db, sessionId, artifacts.outputs);
         replaceSessionDiffs(db, sessionId, artifacts.diffs);
         replaceSessionToolCalls(db, sessionId, artifacts.toolCalls);
       }
 
-      for (const descriptor of runtimeStore.list()) {
+      for (const descriptor of loadLegacyJsonRuntimeDescriptors(options.jsonPaths.sessionRuntimesPath)) {
         upsertRuntimeDescriptor(db, descriptor);
       }
       recordMigrationVersion(db, 2);
