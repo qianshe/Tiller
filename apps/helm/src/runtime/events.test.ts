@@ -3,7 +3,11 @@ import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, AgentToolCall, CommandChunk, PromptTraceEvent, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import { handleRuntimeEvent } from "./events.js";
+import {
+  handleRuntimeEvent,
+  nextLiveEventSequenceForTest,
+  seedLiveEventSequenceForSession,
+} from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
 
 type TestContextCapture = {
@@ -85,6 +89,19 @@ function createTestContext(
     hydrateSessionSummary: (item: SessionSummary) => item,
   } as unknown as HelmHandlerContext;
 }
+
+test("live event sequence resumes above persisted timeline sequences", () => {
+  seedLiveEventSequenceForSession("session-seed", [3, 12, undefined, 7]);
+
+  assert.equal(nextLiveEventSequenceForTest("session-seed"), 13);
+  assert.equal(nextLiveEventSequenceForTest("session-seed"), 14);
+});
+
+test("live event sequence ignores invalid persisted values", () => {
+  seedLiveEventSequenceForSession("session-invalid", [undefined, Number.NaN, -1, 0, 2]);
+
+  assert.equal(nextLiveEventSequenceForTest("session-invalid"), 3);
+});
 
 test("runtime events emit first runtime and broadcast prompt trace markers", () => {
   const logs: string[] = [];

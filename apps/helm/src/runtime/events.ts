@@ -38,10 +38,34 @@ function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.worktree.path ?? "<stored>"}`;
 }
 
-function nextLiveEventSequence(sessionId: string) {
+export function seedLiveEventSequenceForSession(
+  sessionId: string,
+  sequences: ReadonlyArray<number | undefined>,
+) {
+  const maxSequence = sequences.reduce((max, value) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 0);
+  liveEventSequenceBySession.set(
+    sessionId,
+    Math.max(liveEventSequenceBySession.get(sessionId) ?? 0, maxSequence),
+  );
+}
+
+export function allocateLiveEventSequence(sessionId: string) {
   const next = (liveEventSequenceBySession.get(sessionId) ?? 0) + 1;
   liveEventSequenceBySession.set(sessionId, next);
   return next;
+}
+
+function nextLiveEventSequence(sessionId: string) {
+  return allocateLiveEventSequence(sessionId);
+}
+
+export function nextLiveEventSequenceForTest(sessionId: string) {
+  return allocateLiveEventSequence(sessionId);
 }
 
 function bumpAssistantStreamSegment(sessionId: string) {
