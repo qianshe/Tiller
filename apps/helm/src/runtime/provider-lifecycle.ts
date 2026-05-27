@@ -27,6 +27,8 @@ type CreateRuntimeInput = {
 
 export type HelmRuntimeHandle = Awaited<ReturnType<typeof createAcpRuntime>>;
 
+// Owns the ACP runtime adapter boundary: creating/reusing provider runtimes and
+// delegating provider-specific draft cleanup behind a small testable port.
 export type ProviderLifecyclePort = {
   createRuntime(input: CreateRuntimeInput): Promise<HelmRuntimeHandle>;
   cleanupDraftRuntime(runtime: HelmRuntimeHandle, agent: AcpAgentProvider): ReturnType<typeof cleanupDraftProviderRuntime>;

@@ -9,6 +9,7 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { performDraftRuntimeCleanup } from "./draft-runtime-lifecycle";
 import type { ProviderLifecyclePort } from "./provider-lifecycle";
 import {
   resolveConfigOptionsForSelection,
@@ -25,6 +26,8 @@ export type SessionRuntimeConfig = {
 
 export type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
 
+// Owns draft runtime bookkeeping: per Deck client scope, pending draft creation,
+// TTL/disconnect timers, and handoff from draft runtime to real session.
 export type RuntimeDraft = {
   draftId: string;
   deckClientId: string;
@@ -108,11 +111,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     clearTimeout(draft.expiresTimer);
     runtimeDrafts.delete(draft.scopeKey);
     runtimeDraftsById.delete(draft.draftId);
-    const cleanup = await options.providerLifecycle.cleanupDraftRuntime(draft.runtime, draft.agent);
-    options.logInfo(
-      `[tiller] draft.discard draft=${draft.draftId} deck=${draft.deckClientId} reason=${reason} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} cleanup=${cleanup.kind} activeDrafts=${runtimeDraftsById.size}`,
-    );
-    return cleanup;
+    return performDraftRuntimeCleanup({
+      draft,
+      reason,
+      activeDrafts: runtimeDraftsById.size,
+      cleanupDraftRuntime: options.providerLifecycle.cleanupDraftRuntime,
+      logInfo: options.logInfo,
+    });
   }
 
   async function discardExistingDraftsForDeck(deckClientId: string, keepScopeKey?: string) {
