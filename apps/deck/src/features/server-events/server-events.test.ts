@@ -275,6 +275,57 @@ test("session/list_messages preserves local user prompts when loaded history omi
   ]);
 });
 
+test("session/list_messages preserves local user attachments represented by provider history", () => {
+  resetStore();
+  const localUser: AgentMessage = {
+    id: "client-user-with-image",
+    role: "user",
+    text: "请看这张图",
+    timestamp: "2026-05-24T10:00:00.000Z",
+    timelineSequence: 1,
+    attachments: [
+      {
+        type: "image",
+        data: "aW1hZ2U=",
+        mimeType: "image/png",
+        name: "screenshot.png",
+      },
+    ],
+  };
+  const providerUser: AgentMessage = {
+    id: "provider-user-1",
+    role: "user",
+    text: "请看这张图",
+    timestamp: "2026-05-24T10:00:01.000Z",
+    timelineSequence: 1,
+  };
+  useDeckStore.setState({
+    messages: { "session-1": [localUser] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [providerUser],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
+    {
+      ...providerUser,
+      id: localUser.id,
+      timestamp: localUser.timestamp,
+      attachments: localUser.attachments,
+    },
+  ]);
+});
+
 test("session/list_messages preserves live streaming messages when initial history returns late", () => {
   resetStore();
   const loadedHistory: AgentMessage = {

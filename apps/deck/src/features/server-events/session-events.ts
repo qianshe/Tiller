@@ -158,15 +158,19 @@ function replaceInitialMessageHistory(
   currentMessages: AgentMessage[],
   loadedMessages: AgentMessage[],
 ): AgentMessage[] {
-  const loadedIds = new Set(loadedMessages.map((message) => message.id));
+  const mergedLoadedMessages = mergeLoadedMessagesWithLocalUserAttachments(
+    currentMessages,
+    loadedMessages,
+  );
+  const loadedIds = new Set(mergedLoadedMessages.map((message) => message.id));
   const latestLoadedTime = Math.max(
-    ...loadedMessages.map((message) => Date.parse(message.timestamp)).filter(Number.isFinite),
+    ...mergedLoadedMessages.map((message) => Date.parse(message.timestamp)).filter(Number.isFinite),
   );
   const liveMessages = currentMessages.filter((message) => {
     if (loadedIds.has(message.id)) {
       return false;
     }
-    if (message.role === "user" && !hasRepresentedUserPrompt(loadedMessages, message)) {
+    if (message.role === "user" && !hasRepresentedUserPrompt(mergedLoadedMessages, message)) {
       return true;
     }
     if (message.streaming === true) {
@@ -175,7 +179,43 @@ function replaceInitialMessageHistory(
     const messageTime = Date.parse(message.timestamp);
     return Number.isFinite(messageTime) && messageTime > latestLoadedTime;
   });
-  return sortAgentMessagesByTimeline(mergeMessageHistory(loadedMessages, liveMessages));
+  return sortAgentMessagesByTimeline(mergeMessageHistory(mergedLoadedMessages, liveMessages));
+}
+
+function mergeLoadedMessagesWithLocalUserAttachments(
+  currentMessages: AgentMessage[],
+  loadedMessages: AgentMessage[],
+): AgentMessage[] {
+  return loadedMessages.map((message) => {
+    if (message.role !== "user") {
+      return message;
+    }
+    const localUser = findRepresentedLocalUserWithAttachments(currentMessages, message);
+    return localUser ? mergeRepresentedLoadedUser(localUser, message) : message;
+  });
+}
+
+function findRepresentedLocalUserWithAttachments(
+  currentMessages: AgentMessage[],
+  loadedUserMessage: AgentMessage,
+) {
+  const loadedText = loadedUserMessage.text.trim();
+  return currentMessages.find(
+    (message) =>
+      message.role === "user" &&
+      Boolean(message.attachments?.length) &&
+      (message.id === loadedUserMessage.id || message.text.trim() === loadedText),
+  );
+}
+
+function mergeRepresentedLoadedUser(local: AgentMessage, loaded: AgentMessage): AgentMessage {
+  return {
+    ...loaded,
+    id: local.id,
+    timestamp: local.timestamp,
+    timelineSequence: local.timelineSequence ?? loaded.timelineSequence,
+    ...(local.attachments?.length ? { attachments: local.attachments } : {}),
+  };
 }
 
 function hasRepresentedUserPrompt(
