@@ -84,6 +84,54 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
   ]);
 });
 
+test("plain message timeline preserves mixed sequence source order across tool calls", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "legacy-user",
+          role: "user",
+          text: "旧用户提问",
+          timestamp: "2026-05-06T01:00:03.000Z",
+        },
+        {
+          id: "provider-assistant",
+          role: "assistant",
+          text: "Provider 回复",
+          timestamp: "2026-05-06T01:00:01.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      toolCalls: [
+        {
+          id: "tool-seq-3",
+          kind: "shell",
+          title: "Run tests",
+          status: "completed",
+          commandId: "cmd-seq-3",
+          output: "PASS",
+          stream: "stdout",
+          timestamp: "2026-05-06T01:00:02.000Z",
+          updatedAt: "2026-05-06T01:00:02.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  const userIndex = html.indexOf("旧用户提问");
+  const assistantIndex = html.indexOf("Provider 回复");
+  const toolIndex = html.indexOf("Run tests");
+  assert.ok(userIndex >= 0 && assistantIndex > userIndex && toolIndex > assistantIndex);
+});
+
 test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
   const messages: AgentMessage[] = [
     {

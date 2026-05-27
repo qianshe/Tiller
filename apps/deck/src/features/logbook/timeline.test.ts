@@ -47,6 +47,29 @@ test("sortAgentMessagesByTimeline orders messages by timestamp and preserves sou
   );
 });
 
+test("sortAgentMessagesByTimeline preserves source order for mixed timeline sequences", () => {
+  const messages: AgentMessage[] = [
+    {
+      id: "legacy-user",
+      role: "user",
+      text: "旧用户提问",
+      timestamp: "2026-04-28T10:00:03.000Z",
+    },
+    {
+      ...baseMessage,
+      id: "provider-assistant",
+      text: "Provider 回复",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+  ];
+
+  assert.deepEqual(
+    sortAgentMessagesByTimeline(messages).map((message) => message.id),
+    ["legacy-user", "provider-assistant"],
+  );
+});
+
 test("buildConversationTimeline interleaves messages and tool calls by timestamp", () => {
   const toolCall: AgentToolCall = {
     id: "tool-1",
@@ -101,6 +124,34 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
   assert.deepEqual(
     timeline.map((item) => item.kind === "message" ? item.message.text : item.toolKind),
     ["think", "shell", "具体回复"],
+  );
+});
+
+test("buildConversationTimeline preserves mixed sequence source order for legacy user prompts", () => {
+  const userMessage: AgentMessage = {
+    id: "legacy-user",
+    role: "user",
+    text: "旧用户提问",
+    timestamp: "2026-04-28T10:00:03.000Z",
+  };
+  const toolCall: AgentToolCall = {
+    id: "tool-seq-2",
+    kind: "shell",
+    title: "Run tests",
+    status: "completed",
+    commandId: "cmd-seq-2",
+    output: "PASS",
+    stream: "stdout",
+    timestamp: "2026-04-28T10:00:02.000Z",
+    updatedAt: "2026-04-28T10:00:02.000Z",
+    timelineSequence: 2,
+  };
+
+  const timeline = buildConversationTimeline([userMessage], [], [toolCall]);
+
+  assert.deepEqual(
+    timeline.map((item) => item.kind === "message" ? item.message.id : item.id),
+    ["legacy-user", "tool-seq-2"],
   );
 });
 

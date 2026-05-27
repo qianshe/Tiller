@@ -6,22 +6,23 @@ import { resolveDisplayToolTitle, resolveMergedToolTitle } from "./tool-title";
 export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
   return items
     .map((message, index) => ({ message, index }))
-    .sort((left, right) => {
-      const timestampDelta =
-        Date.parse(left.message.timestamp) -
-        Date.parse(right.message.timestamp);
-      return timestampDelta === 0 ? left.index - right.index : timestampDelta;
-    })
+    .sort((left, right) => compareMessageTimelineEntries(left, right))
     .map((entry) => entry.message);
 }
 
+type MessageTimelineEntry = {
+  index: number;
+  message: AgentMessage;
+};
+
 export type ConversationTimelineItem =
-  | { kind: "message"; timestamp: string; timelineSequence?: number; message: AgentMessage }
+  | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
   | ConversationToolCallItem;
 
 export type ConversationToolCallItem = {
   kind: "tool";
   id: string;
+  sourceIndex?: number;
   commandId: string;
   title: string;
   status: AgentToolCall["status"];
@@ -45,13 +46,18 @@ export function buildConversationTimeline(
   const messageItems: ConversationTimelineItem[] = coalesceDisplayMessages(
     messages,
     toolItems.map((item) => item.timestamp),
-  ).map((message) => ({
+  ).map((message, index) => ({
     kind: "message",
+    sourceIndex: index,
     timestamp: message.timestamp,
     timelineSequence: message.timelineSequence,
     message,
   }));
-  return [...messageItems, ...toolItems].sort(compareTimelineItems);
+  const indexedToolItems = toolItems.map((item, index) => ({
+    ...item,
+    sourceIndex: messageItems.length + index,
+  }));
+  return [...messageItems, ...indexedToolItems].sort(compareTimelineItems);
 }
 
 export function resolvePendingToolActivity(calls: AgentToolCall[]) {
@@ -227,18 +233,55 @@ function minTimelineSequence(current: number | undefined, incoming: number | und
   return Math.min(current, incoming);
 }
 
+function compareMessageTimelineEntries(left: MessageTimelineEntry, right: MessageTimelineEntry) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.message.timelineSequence,
+    right.message.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  if (hasMixedTimelineSequence(left.message, right.message)) {
+    return left.index - right.index;
+  }
+  const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+  return timestampDelta === 0 ? left.index - right.index : timestampDelta;
+}
+
 function compareTimelineItems(left: ConversationTimelineItem, right: ConversationTimelineItem) {
-  if (left.timelineSequence !== undefined && right.timelineSequence !== undefined) {
-    const sequenceDelta = left.timelineSequence - right.timelineSequence;
-    if (sequenceDelta !== 0) {
-      return sequenceDelta;
-    }
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.timelineSequence,
+    right.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  if (hasMixedTimelineSequence(left, right) && left.sourceIndex !== undefined && right.sourceIndex !== undefined) {
+    return left.sourceIndex - right.sourceIndex;
   }
   const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;
   }
   return timelineKindRank(left) - timelineKindRank(right);
+}
+
+function compareOptionalTimelineSequence(
+  left: number | undefined,
+  right: number | undefined,
+) {
+  if (left === undefined || right === undefined) {
+    return null;
+  }
+  const sequenceDelta = left - right;
+  return sequenceDelta === 0 ? null : sequenceDelta;
+}
+
+function hasMixedTimelineSequence(
+  left: { timelineSequence?: number },
+  right: { timelineSequence?: number },
+) {
+  return (left.timelineSequence === undefined) !== (right.timelineSequence === undefined);
 }
 
 function timelineKindRank(item: ConversationTimelineItem) {

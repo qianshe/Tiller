@@ -633,9 +633,9 @@ export function resolveVisiblePlainMessages(
 }
 
 type PlainConversationItem =
-  | { kind: "message"; timestamp: string; timelineSequence?: number; message: AgentMessage }
-  | { kind: "thinking"; timestamp: string; timelineSequence?: number; toolCall: AgentToolCall }
-  | { kind: "tool-group"; timestamp: string; timelineSequence?: number; group: ConversationToolCallItem[] };
+  | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
+  | { kind: "thinking"; sourceIndex?: number; timestamp: string; timelineSequence?: number; toolCall: AgentToolCall }
+  | { kind: "tool-group"; sourceIndex?: number; timestamp: string; timelineSequence?: number; group: ConversationToolCallItem[] };
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
@@ -708,6 +708,7 @@ function normalizePlainMessageRenderSource(
     return {
       kind: "message",
       timestamp: item.timestamp,
+      timelineSequence: item.timelineSequence,
       message: text === item.text ? item : { ...item, text },
     };
   }
@@ -730,26 +731,27 @@ function buildPlainConversationItems(
   toolCalls: AgentToolCall[],
 ): PlainConversationItem[] {
   const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
-  const sorted = [
-    ...messages.flatMap((message) => {
-      const text = normalizeLocalCommandMessageText(message.text);
-      return text
-        ? [{ kind: "message" as const, timestamp: message.timestamp, timelineSequence: message.timelineSequence, message: text === message.text ? message : { ...message, text } }]
-        : [];
-    }),
-    ...thinkingToolCalls.map((toolCall) => ({
-      kind: "thinking" as const,
-      timestamp: toolCall.timestamp,
-      timelineSequence: toolCall.timelineSequence,
-      toolCall,
-    })),
-    ...groupToolCalls(visibleToolCalls).map((toolCall) => ({
-      kind: "tool-group" as const,
-      timestamp: toolCall.timestamp,
-      timelineSequence: toolCall.timelineSequence,
-      group: [toolCall],
-    })),
-  ].sort(comparePlainConversationItems);
+  const messageItems = messages.flatMap((message, index) => {
+    const text = normalizeLocalCommandMessageText(message.text);
+    return text
+      ? [{ kind: "message" as const, sourceIndex: index, timestamp: message.timestamp, timelineSequence: message.timelineSequence, message: text === message.text ? message : { ...message, text } }]
+      : [];
+  });
+  const thinkingItems = thinkingToolCalls.map((toolCall, index) => ({
+    kind: "thinking" as const,
+    sourceIndex: messageItems.length + index,
+    timestamp: toolCall.timestamp,
+    timelineSequence: toolCall.timelineSequence,
+    toolCall,
+  }));
+  const toolItems = groupToolCalls(visibleToolCalls).map((toolCall, index) => ({
+    kind: "tool-group" as const,
+    sourceIndex: messageItems.length + thinkingItems.length + index,
+    timestamp: toolCall.timestamp,
+    timelineSequence: toolCall.timelineSequence,
+    group: [toolCall],
+  }));
+  const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
 }
 
@@ -764,6 +766,7 @@ function mergeAdjacentToolItems(
     }
     merged[merged.length - 1] = {
       kind: "tool-group",
+      sourceIndex: last.sourceIndex,
       timestamp: last.timestamp,
       timelineSequence: last.timelineSequence ?? item.timelineSequence,
       group: [...last.group, ...item.group],
@@ -788,7 +791,9 @@ function mergeAdjacentThinkingItems(
 
     merged[merged.length - 1] = {
       kind: "thinking",
+      sourceIndex: last.sourceIndex,
       timestamp: last.timestamp,
+      timelineSequence: last.timelineSequence ?? item.timelineSequence,
       toolCall: mergeThinkingToolCalls(last.toolCall, item.toolCall),
     };
     return merged;
@@ -888,17 +893,39 @@ function resolveMessageRoleLabel(
 }
 
 function comparePlainConversationItems(left: PlainConversationItem, right: PlainConversationItem) {
-  if (left.timelineSequence !== undefined && right.timelineSequence !== undefined) {
-    const sequenceDelta = left.timelineSequence - right.timelineSequence;
-    if (sequenceDelta !== 0) {
-      return sequenceDelta;
-    }
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.timelineSequence,
+    right.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  if (hasMixedTimelineSequence(left, right) && left.sourceIndex !== undefined && right.sourceIndex !== undefined) {
+    return left.sourceIndex - right.sourceIndex;
   }
   const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;
   }
   return plainConversationKindRank(left) - plainConversationKindRank(right);
+}
+
+function compareOptionalTimelineSequence(
+  left: number | undefined,
+  right: number | undefined,
+) {
+  if (left === undefined || right === undefined) {
+    return null;
+  }
+  const sequenceDelta = left - right;
+  return sequenceDelta === 0 ? null : sequenceDelta;
+}
+
+function hasMixedTimelineSequence(
+  left: { timelineSequence?: number },
+  right: { timelineSequence?: number },
+) {
+  return (left.timelineSequence === undefined) !== (right.timelineSequence === undefined);
 }
 
 function plainConversationKindRank(item: PlainConversationItem) {
