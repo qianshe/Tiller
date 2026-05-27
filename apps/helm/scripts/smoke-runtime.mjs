@@ -13,6 +13,8 @@ const RPC_TIMEOUT_MS = Number(process.env.TILLER_SMOKE_RPC_TIMEOUT_MS ?? 10_000)
 
 const port = Number(process.env.TILLER_SMOKE_PORT ?? await findFreePort());
 const logs = [];
+const timings = {};
+const smokeStartedAt = Date.now();
 let child;
 
 try {
@@ -39,26 +41,32 @@ try {
   });
 
   await waitForHttpReady(`http://${HOST}:${port}/`, STARTUP_TIMEOUT_MS);
+  markTiming("httpReadyMs");
   const httpResponse = await fetch(`http://${HOST}:${port}/`);
   const html = await httpResponse.text();
   assert(httpResponse.ok, `Deck HTTP status expected ok, got ${httpResponse.status}`);
   assert(html.includes('<div id="root"'), "Deck HTML root not found");
 
   const rpc = await createRpcClient(`ws://${HOST}:${port}`);
+  markTiming("webSocketOpenMs");
   try {
     const helmList = await rpc.request("helm/list", {});
+    markTiming("firstRpcMs");
     const projectList = await rpc.request("project/list", {});
     const agentList = await rpc.request("agent/list", {});
+    const sessionList = await rpc.request("session/list", {});
 
     console.log(JSON.stringify({
       ok: true,
       port,
       promptTrace: ENABLE_PROMPT_TRACE,
+      timings,
       http: { status: httpResponse.status, hasRoot: true },
       rpc: {
         helms: Array.isArray(helmList?.helms) ? helmList.helms.length : null,
         projects: Array.isArray(projectList?.projects) ? projectList.projects.length : null,
         agents: Array.isArray(agentList?.agents) ? agentList.agents.length : null,
+        sessions: Array.isArray(sessionList?.sessions) ? sessionList.sessions.length : null,
       },
     }));
   } finally {
@@ -87,6 +95,10 @@ async function findFreePort() {
     throw new Error("Unable to allocate a smoke test port.");
   }
   return selectedPort;
+}
+
+function markTiming(name) {
+  timings[name] = Date.now() - smokeStartedAt;
 }
 
 async function waitForHttpReady(url, timeoutMs) {
