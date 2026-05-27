@@ -84,13 +84,21 @@ export function mergeAuthoritativeMessagesWithLocalUserPrompts(
   localMessages: AgentMessage[],
   authoritativeMessages: AgentMessage[],
 ): AgentMessage[] {
+  const mergedAuthoritativeMessages = authoritativeMessages.map((message) => {
+    if (message.role !== "user") {
+      return message;
+    }
+    const localUser = findRepresentedLocalUserWithAttachments(localMessages, message);
+    return localUser ? mergeRepresentedUserMessage(localUser, message) : message;
+  });
   const missingLocalUsers = localMessages.filter(
-    (message) => message.role === "user" && !hasRepresentedUserPrompt(authoritativeMessages, message),
+    (message) =>
+      message.role === "user" && !hasRepresentedUserPrompt(mergedAuthoritativeMessages, message),
   );
   if (!missingLocalUsers.length) {
-    return authoritativeMessages;
+    return mergedAuthoritativeMessages;
   }
-  return [...authoritativeMessages, ...missingLocalUsers]
+  return [...mergedAuthoritativeMessages, ...missingLocalUsers]
     .map((message, index) => ({ message, index }))
     .sort((left, right) => {
       const timeDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
@@ -115,6 +123,29 @@ export function shouldRepairProviderHistorySnapshot(
     const localMessage = localMessages[index];
     return !localMessage || !isSameStoredMessage(localMessage, message);
   });
+}
+
+function findRepresentedLocalUserWithAttachments(
+  localMessages: AgentMessage[],
+  providerUserMessage: AgentMessage,
+) {
+  const providerText = providerUserMessage.text.trim();
+  return localMessages.find(
+    (message) =>
+      message.role === "user" &&
+      Boolean(message.attachments?.length) &&
+      (message.id === providerUserMessage.id || message.text.trim() === providerText),
+  );
+}
+
+function mergeRepresentedUserMessage(local: AgentMessage, provider: AgentMessage): AgentMessage {
+  return {
+    ...provider,
+    id: local.id,
+    timestamp: local.timestamp,
+    timelineSequence: local.timelineSequence ?? provider.timelineSequence,
+    ...(local.attachments?.length ? { attachments: local.attachments } : {}),
+  };
 }
 
 function hasRepresentedUserPrompt(

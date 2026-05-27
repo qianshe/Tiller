@@ -232,6 +232,38 @@ test("mergeAuthoritativeMessagesWithLocalUserPrompts keeps local user prompts om
   );
 });
 
+test("mergeAuthoritativeMessagesWithLocalUserPrompts preserves local user attachments", () => {
+  const localUser: AgentMessage = {
+    id: "local-user-1",
+    role: "user",
+    text: "describe this image",
+    timestamp: "2026-05-28T00:00:00.000Z",
+    timelineSequence: 1,
+    attachments: [
+      {
+        type: "image",
+        mimeType: "image/png",
+        name: "image.png",
+        data: "data:image/png;base64,AAA",
+      },
+    ],
+  };
+  const providerUser: AgentMessage = {
+    id: "provider-user-1",
+    role: "user",
+    text: "describe this image",
+    timestamp: "2026-05-28T00:00:01.000Z",
+    timelineSequence: 2,
+  };
+
+  const merged = mergeAuthoritativeMessagesWithLocalUserPrompts([localUser], [providerUser]);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.id, "local-user-1");
+  assert.deepEqual(merged[0]?.attachments, localUser.attachments);
+  assert.equal(merged[0]?.timelineSequence, 1);
+});
+
 test("mergeAuthoritativeMessagesWithLocalUserPrompts does not duplicate provider user prompts", () => {
   const localUser: AgentMessage = {
     id: "client-user-1",
