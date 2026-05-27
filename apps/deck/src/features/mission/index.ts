@@ -1,3 +1,9 @@
+export * from "./workspace";
+export * from "./composer";
+export * from "./conversation";
+export * from "./display";
+export * from "./inspector";
+export * from "./navigation";
 export { useMissionViewModel } from "./orchestration/mission-view-model";
 export { useMissionEffects } from "./orchestration/mission-effects";
 export { useSessionCommandActions } from "./actions/session-command-actions";
@@ -31,6 +37,5 @@ export {
   SessionCleanupConfirmDialog,
   SessionHistoryReimportConfirmDialog,
 } from "./ui/session-cleanup-confirm-dialog";
-export { MissionWorktree } from "./ui/workspace";
 export type { MissionConfigPicker } from "./ui/composer-config-controls";
 export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";
