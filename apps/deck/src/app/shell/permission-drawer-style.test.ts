@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const deckRoot = resolve(currentDir, "../../..");
 const permissionDrawerSource = readFileSync(
-  resolve(deckRoot, "src/features/mission/ui/permission-drawer.tsx"),
+  resolve(deckRoot, "src/features/mission/conversation/permission-drawer.tsx"),
   "utf8",
 );
 const shellStylesSource = readFileSync(resolve(currentDir, "styles.css"), "utf8");
@@ -54,7 +54,7 @@ test("permission drawer detail block keeps raw approval payload readable", () =>
 test("mission light theme critical surfaces use semantic Tailwind tokens", () => {
   const files = [
     "src/features/mission/workspace/workspace.tsx",
-    "src/features/mission/ui/chat-pane.tsx",
+    "src/features/mission/conversation/chat-pane.tsx",
     "src/features/mission/ui/inspector.tsx",
     "src/features/mission/composer/composer.tsx",
     "src/features/mission/ui/display-panel.tsx",

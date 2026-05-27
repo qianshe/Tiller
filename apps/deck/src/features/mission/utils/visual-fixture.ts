@@ -121,7 +121,7 @@ export function createMissionVisualFixture({
 
 | 项目 | 内容 |
 | --- | --- |
-| 产物 | apps/deck/src/features/mission/ui/plain-messages.tsx |
+| 产物 | apps/deck/src/features/mission/conversation/plain-messages.tsx |
 | 根因 | 结构化渲染抢占了源 Markdown |
 
 - 普通列表保持列表

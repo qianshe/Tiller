@@ -1,12 +1,12 @@
-export { MissionChatPane } from "../ui/chat-pane";
+export { MissionChatPane } from "./chat-pane";
 export {
   MissionPermissionDrawer,
   dedupePermissionOptions,
   resolvePermissionActionLabel,
   resolvePermissionCommandDisplay,
-} from "../ui/permission-drawer";
+} from "./permission-drawer";
 export type {
   MissionPermissionCommandDisplay,
   MissionPermissionDrawerCopy,
-} from "../ui/permission-drawer";
-export { MissionQueuedPrompts } from "../ui/queued-prompts";
+} from "./permission-drawer";
+export { MissionQueuedPrompts } from "./queued-prompts";

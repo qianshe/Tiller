@@ -63,3 +63,23 @@ test("mission composer implementation lives in the composer subdomain", () => {
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }
 });
+
+test("mission conversation implementation lives in the conversation subdomain", () => {
+  for (const filename of [
+    "chat-pane.tsx",
+    "message-timeline.tsx",
+    "plain-messages.test.ts",
+    "plain-messages.tsx",
+    "plain-messages.test.tsx",
+    "permission-drawer.tsx",
+    "permission-drawer.test.tsx",
+    "queued-prompts.tsx",
+    "queued-prompts.test.tsx",
+    "session-approval-list.test.tsx",
+    "tool-loading.tsx",
+    "tool-loading.test.tsx",
+  ] as const) {
+    assert.equal(existsSync(join(missionRoot, "conversation", filename)), true, `conversation/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});

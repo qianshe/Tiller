@@ -10,7 +10,7 @@ import {
   resolvePermissionActionLabel,
   resolvePermissionCommandDisplay,
   type MissionPermissionDrawerCopy,
-} from "../../mission/ui/permission-drawer";
+} from "../../mission/conversation";
 
 const PANEL_COPY: MissionPermissionDrawerCopy = {
   permissionRequest: "待审核任务",
