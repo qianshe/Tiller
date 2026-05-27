@@ -5,6 +5,7 @@ import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { createMessageSegmentIdAllocator } from "./message-segment-id";
+import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session-event-effects";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
@@ -14,7 +15,6 @@ import {
   formatLogValue,
   isRuntimeGeneratedMessageId,
   mergeAssistantStreamText,
-  resolveBroadcastToolCall,
   shouldStartNewRuntimeAssistantSegment,
 } from "./session-event-normalizer";
 
@@ -149,17 +149,7 @@ function finalizeActiveRuntimeThinking(sessionId: string, context: HelmHandlerCo
     updatedAt: now,
     timelineSequence: active.timelineSequence,
   };
-  const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
-    | { toolCalls?: AgentToolCall[] }
-    | undefined;
-  const mergedToolCall = resolveBroadcastToolCall(
-    toolCall,
-    artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
-  );
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "tool_call",
-    toolCall: mergedToolCall,
-  });
+  publishRuntimeToolCall(context, sessionId, toolCall);
   activeAssistantRuntimeThinkingBySession.delete(sessionId);
 }
 
@@ -324,17 +314,7 @@ export function handleRuntimeEvent(
           ...event.toolCall,
           timelineSequence: nextLiveEventSequence(sessionId),
         });
-        const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, toolCall) as
-          | { toolCalls?: AgentToolCall[] }
-          | undefined;
-        const mergedToolCall = resolveBroadcastToolCall(
-          toolCall,
-          artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
-        );
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "tool_call",
-          toolCall: mergedToolCall,
-        });
+        publishRuntimeToolCall(context, sessionId, toolCall);
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
@@ -344,17 +324,7 @@ export function handleRuntimeEvent(
         ...event.toolCall,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
-      const artifacts = context.sessionArtifactStore.appendToolCall(sessionId, orderedToolCall) as
-        | { toolCalls?: AgentToolCall[] }
-        | undefined;
-      const mergedToolCall = resolveBroadcastToolCall(
-        orderedToolCall,
-        artifacts?.toolCalls?.find((item) => item.id === orderedToolCall.id),
-      );
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "tool_call",
-        toolCall: mergedToolCall,
-      });
+      publishRuntimeToolCall(context, sessionId, orderedToolCall);
       return;
     case "command-output":
       emitFirstHelmPromptTrace(context, {
@@ -372,23 +342,17 @@ export function handleRuntimeEvent(
         ...event.chunk,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
-      context.sessionArtifactStore.appendOutput(sessionId, orderedChunk);
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "command_output",
-        commandId: orderedChunk.commandId,
-        chunk: orderedChunk,
-      });
-      if (event.toolCall) {
-        const orderedToolCall = {
-          ...event.toolCall,
-          timelineSequence: orderedChunk.timelineSequence,
-        };
-        context.sessionArtifactStore.appendToolCall(sessionId, orderedToolCall);
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "tool_call",
-          toolCall: orderedToolCall,
-        });
-      }
+      publishRuntimeCommandOutput(
+        context,
+        sessionId,
+        orderedChunk,
+        event.toolCall
+          ? {
+              ...event.toolCall,
+              timelineSequence: orderedChunk.timelineSequence,
+            }
+          : undefined,
+      );
       return;
     case "diff-update":
       flushLiveAssistantMessage(sessionId, context);
