@@ -262,7 +262,7 @@ function extractThinkingToolCall(
     return null;
   }
   const now = timestamp();
-  const messageId = resolveMessageId(sessionId, update);
+  const messageId = resolveThinkingMessageId(sessionId, update);
   return {
     id: `${messageId}:thinking`,
     commandId: `${messageId}:thinking`,
@@ -491,6 +491,13 @@ function resolveMessageId(sessionId: string, update: any) {
   return (
     stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
     `${sessionId}-msg-${hashStableMessageSeed(sessionId, update)}`
+  );
+}
+
+function resolveThinkingMessageId(sessionId: string, update: any) {
+  return (
+    stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
+    `${sessionId}-thinking`
   );
 }
 

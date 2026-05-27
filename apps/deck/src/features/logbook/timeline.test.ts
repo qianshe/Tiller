@@ -294,6 +294,38 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   assert.equal(merged[0]?.status, "completed");
 });
 
+test("mergeToolCallHistory replaces duplicate completed tool snapshots", () => {
+  const current: AgentToolCall[] = [
+    {
+      id: "tool-1",
+      kind: "shell",
+      title: "cmd",
+      status: "completed",
+      commandId: "cmd",
+      output: "old result",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      updatedAt: "2026-04-28T10:00:01.000Z",
+    },
+  ];
+  const incoming: AgentToolCall[] = [
+    {
+      id: "tool-1",
+      kind: "shell",
+      title: "cmd",
+      status: "completed",
+      commandId: "cmd",
+      output: "new result",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      updatedAt: "2026-04-28T10:00:02.000Z",
+    },
+  ];
+
+  const merged = mergeToolCallHistory(current, incoming);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.output, "new result");
+});
+
 test("mergeToolCallHistory keeps the earliest start timestamp across replay merges", () => {
   const current: AgentToolCall[] = [
     {

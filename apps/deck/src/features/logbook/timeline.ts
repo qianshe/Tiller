@@ -163,7 +163,7 @@ export function mergeToolCallHistory(
       ...next,
       kind: resolveToolCallKind(existing.kind, next.kind),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
-      output: mergeToolCallOutput(existing.output, next.output),
+      output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
       timestamp:
         Date.parse(next.timestamp) < Date.parse(existing.timestamp)
@@ -184,6 +184,16 @@ function resolveToolCallKind(
   incomingKind: AgentToolCall["kind"],
 ) {
   return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function mergeToolCallHistoryOutput(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  if (current.status === "completed" && incoming.status === "completed" && incoming.output) {
+    return incoming.output;
+  }
+  return mergeToolCallOutput(current.output, incoming.output);
 }
 
 function mergeToolCallOutput(

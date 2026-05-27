@@ -236,6 +236,39 @@ test("mapSessionUpdateNotification maps standard ACP thought chunks to think too
   assert.equal(mapped.event.toolCall.status, "running");
 });
 
+test("mapSessionUpdateNotification keeps generated thought chunk ids stable across deltas", () => {
+  const first = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_acp_thought_stable",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "第一段思考" },
+      },
+    },
+  });
+  const second = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_acp_thought_stable",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "第二段思考" },
+      },
+    },
+  });
+
+  assert.equal(first?.event.type, "tool-call");
+  assert.equal(second?.event.type, "tool-call");
+  if (first?.event.type !== "tool-call" || second?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call events");
+  }
+  assert.equal(first.event.toolCall.id, second.event.toolCall.id);
+  assert.equal(first.event.toolCall.commandId, second.event.toolCall.commandId);
+});
+
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
