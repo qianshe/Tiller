@@ -7,11 +7,11 @@ const sourceText = readFileSync(
   "utf8",
 );
 const composerSourceText = readFileSync(
-  new URL("../ui/composer-config-controls.tsx", import.meta.url),
+  new URL("../composer/composer-config-controls.tsx", import.meta.url),
   "utf8",
 );
 const composerShellSourceText = readFileSync(
-  new URL("../ui/composer.tsx", import.meta.url),
+  new URL("../composer/composer.tsx", import.meta.url),
   "utf8",
 );
 const worktreeSourceText = readFileSync(

@@ -1,3 +1,3 @@
-export { MissionComposer } from "../ui/composer";
-export { SlashCommandPopup } from "../ui/slash-command-popup";
-export type { MissionConfigPicker } from "../ui/composer-config-controls";
+export { MissionComposer } from "./composer";
+export { SlashCommandPopup } from "./slash-command-popup";
+export type { MissionConfigPicker } from "./composer-config-controls";

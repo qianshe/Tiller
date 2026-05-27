@@ -48,3 +48,18 @@ test("mission workspace implementation lives in the workspace subdomain", () => 
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }
 });
+
+test("mission composer implementation lives in the composer subdomain", () => {
+  for (const filename of [
+    "composer.tsx",
+    "composer.test.tsx",
+    "composer-attachments.tsx",
+    "composer-config-controls.tsx",
+    "composer-draft-selectors.tsx",
+    "slash-command-popup.tsx",
+    "slash-command-popup.test.tsx",
+  ] as const) {
+    assert.equal(existsSync(join(missionRoot, "composer", filename)), true, `composer/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});

@@ -37,5 +37,5 @@ export {
   SessionCleanupConfirmDialog,
   SessionHistoryReimportConfirmDialog,
 } from "./ui/session-cleanup-confirm-dialog";
-export type { MissionConfigPicker } from "./ui/composer-config-controls";
+export type { MissionConfigPicker } from "./composer";
 export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";

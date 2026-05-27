@@ -47,7 +47,7 @@ const cleanupDialogSource = readFileSync(
 );
 const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
 const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
-const composerSource = readFileSync(resolve(currentDir, "composer.tsx"), "utf8");
+const composerSource = readFileSync(resolve(currentDir, "../composer/composer.tsx"), "utf8");
 const sessionCommandActionsSource = readFileSync(
   resolve(currentDir, "../actions/session-command-actions.ts"),
   "utf8",
@@ -744,7 +744,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 });
 
 const composerAttachmentsSource = readFileSync(
-  resolve(currentDir, "composer-attachments.tsx"),
+  resolve(currentDir, "../composer/composer-attachments.tsx"),
   "utf8",
 );
 const sessionOverviewCardSource = readFileSync(

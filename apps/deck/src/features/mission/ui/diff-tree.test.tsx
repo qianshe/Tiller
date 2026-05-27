@@ -49,7 +49,7 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
 test("diff tree compacts single-directory chains", () => {
   const tree = buildMissionDiffTree([
     diff("apps/deck/src/features/mission/hooks/slash-commands.ts"),
-    diff("apps/deck/src/features/mission/ui/slash-command-popup.tsx"),
+    diff("apps/deck/src/features/mission/composer/slash-command-popup.tsx"),
     diff("apps/helm/src/runtime/events.ts"),
   ]);
 

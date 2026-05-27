@@ -180,12 +180,12 @@ export function createMissionVisualFixture({
           ].join("\n"),
         },
         {
-          path: "apps/deck/src/features/mission/ui/slash-command-popup.tsx",
+          path: "apps/deck/src/features/mission/composer/slash-command-popup.tsx",
           status: "modified",
           additions: 12,
           deletions: 4,
           patch: [
-            "diff --git a/apps/deck/src/features/mission/ui/slash-command-popup.tsx b/apps/deck/src/features/mission/ui/slash-command-popup.tsx",
+            "diff --git a/apps/deck/src/features/mission/composer/slash-command-popup.tsx b/apps/deck/src/features/mission/composer/slash-command-popup.tsx",
             "@@ -8,2 +8,2 @@",
             "-const tone = 'raw';",
             "+const tone = 'polished';",
