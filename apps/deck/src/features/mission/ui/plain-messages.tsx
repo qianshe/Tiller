@@ -326,7 +326,7 @@ function PlainThinkingItem({ item }: { item: AgentToolCall }) {
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
-          <span aria-hidden="true" className="inline-flex size-3 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+          <span aria-hidden="true" className="shrink-0 text-primary">
             <PlainThinkingIcon />
           </span>
           <span className="min-w-0 truncate font-medium">
@@ -372,9 +372,7 @@ function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
           className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
-          <span aria-hidden="true" className="inline-flex size-3 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-            <Icon name="hammer" size={10} />
-          </span>
+          <Icon name="hammer" size={12} className="text-primary" />
           <span className="whitespace-nowrap font-medium text-muted-foreground">
             工具调用 · {group.length} 项
           </span>
