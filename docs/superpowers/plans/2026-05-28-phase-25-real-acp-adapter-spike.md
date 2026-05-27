@@ -39,7 +39,7 @@
 - Create: `apps/helm/scripts/acp-adapter-spike.mjs`
 - Create: `apps/helm/scripts/acp-adapter-spike.test.mjs`
 
-- [ ] **Step 1: Write failing tests for selection and redaction**
+- [x] **Step 1: Write failing tests for selection and redaction**
 
 Add this test content to `apps/helm/scripts/acp-adapter-spike.test.mjs`:
 
@@ -97,7 +97,7 @@ test("assertSpikeEnvelope accepts skipped and connected results", () => {
 });
 ```
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -107,7 +107,7 @@ pnpm --filter @tiller/helm exec tsx --test scripts/acp-adapter-spike.test.mjs
 
 Expected: FAIL because `apps/helm/scripts/acp-adapter-spike.mjs` does not exist yet.
 
-- [ ] **Step 3: Implement minimal pure helpers**
+- [x] **Step 3: Implement minimal pure helpers**
 
 Create `apps/helm/scripts/acp-adapter-spike.mjs` with this initial content:
 
@@ -164,7 +164,7 @@ if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify helpers pass**
+- [x] **Step 4: Run tests to verify helpers pass**
 
 Run:
 
