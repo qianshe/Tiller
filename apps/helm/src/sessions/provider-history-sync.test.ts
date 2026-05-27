@@ -190,6 +190,24 @@ test("toParagraphMessages keeps stable assistant paragraph ids and trims blank p
   );
 });
 
+test("toParagraphMessages assigns strictly increasing paragraph sequences", () => {
+  const paragraphs = toParagraphMessages([
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "first paragraph\n\nsecond paragraph",
+      timestamp: "2026-05-28T00:00:00.000Z",
+      timelineSequence: 10,
+    },
+  ]);
+
+  assert.equal(paragraphs.length, 2);
+  assert.deepEqual(
+    paragraphs.map((message) => message.timelineSequence),
+    [10, 11],
+  );
+});
+
 test("toParagraphMessages keeps provider user prompts as one message", () => {
   const message = baseMessage(
     "provider-user",

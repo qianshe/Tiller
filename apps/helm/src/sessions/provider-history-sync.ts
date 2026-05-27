@@ -184,6 +184,9 @@ function splitMessageIntoParagraphs(message: AgentMessage): AgentMessage[] {
     ...message,
     id: `${message.id}#p${index}`,
     text,
+    ...(typeof message.timelineSequence === "number"
+      ? { timelineSequence: message.timelineSequence + index }
+      : {}),
   }));
 }
 
