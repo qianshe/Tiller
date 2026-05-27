@@ -403,7 +403,7 @@ git commit -m "feat：添加真实 ACP 连接 Spike"
 - Modify: `apps/helm/scripts/acp-adapter-spike.mjs`
 - Test: `apps/helm/scripts/acp-adapter-spike.test.mjs`
 
-- [ ] **Step 1: Add failing test for prompt opt-in**
+- [x] **Step 1: Add failing test for prompt opt-in**
 
 Append to `apps/helm/scripts/acp-adapter-spike.test.mjs`:
 
@@ -427,7 +427,7 @@ pnpm --filter @tiller/helm exec tsx --test scripts/acp-adapter-spike.test.mjs
 
 Expected: FAIL because `shouldSendSpikePrompt` is missing.
 
-- [ ] **Step 3: Implement opt-in prompt send**
+- [x] **Step 3: Implement opt-in prompt send**
 
 Add helper:
 
@@ -453,7 +453,7 @@ if (connected.ok && shouldSendSpikePrompt(options)) {
 
 If current RPC requires a different session creation shape, inspect `apps/helm/src/handlers/sessions/rpc.ts` and adjust the params to the existing public method; do not add a new RPC method for the spike.
 
-- [ ] **Step 4: Run no-prompt and helper tests**
+- [x] **Step 4: Run no-prompt and helper tests**
 
 Run:
 

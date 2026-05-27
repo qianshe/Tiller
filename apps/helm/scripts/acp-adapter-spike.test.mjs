@@ -6,6 +6,7 @@ import {
   redactSpikeText,
   resolveSpikePrompt,
   resolveSpikeTarget,
+  shouldSendSpikePrompt,
 } from "./acp-adapter-spike.mjs";
 
 test("resolveSpikeTarget picks explicit provider and project", () => {
@@ -64,4 +65,10 @@ test("buildRpcRequest produces JSON-RPC 2.0 requests", () => {
 test("resolveSpikePrompt defaults to a harmless short prompt", () => {
   assert.equal(resolveSpikePrompt({}), "Reply with exactly: Tiller ACP spike ok");
   assert.equal(resolveSpikePrompt({ prompt: "ping" }), "ping");
+});
+
+test("shouldSendSpikePrompt requires explicit opt-in", () => {
+  assert.equal(shouldSendSpikePrompt({}), false);
+  assert.equal(shouldSendSpikePrompt({ sendPrompt: "1" }), true);
+  assert.equal(shouldSendSpikePrompt({ sendPrompt: "true" }), true);
 });

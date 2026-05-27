@@ -39,6 +39,10 @@ export function resolveSpikePrompt({ prompt }) {
   return prompt || "Reply with exactly: Tiller ACP spike ok";
 }
 
+export function shouldSendSpikePrompt({ sendPrompt }) {
+  return sendPrompt === "1" || /^true$/iu.test(String(sendPrompt ?? ""));
+}
+
 export function assertSpikeEnvelope(result) {
   assert.equal(typeof result.ok, "boolean", "spike result must include ok boolean");
   assert.equal(typeof result.skipped, "boolean", "spike result must include skipped boolean");
@@ -76,6 +80,25 @@ export async function runSpike(options) {
       cwd: target.cwd,
     });
 
+    let prompted = false;
+    let sessionId;
+    if (connected.ok && shouldSendSpikePrompt(options)) {
+      const created = await client.call("session/new", {
+        projectId: target.project.id,
+        cwd: target.cwd,
+        agentId: target.provider.id,
+      });
+      sessionId = created.session?.id;
+      if (!sessionId) {
+        throw new Error("session/new did not return a session id");
+      }
+      await client.call("session/prompt", {
+        sessionId,
+        text: resolveSpikePrompt(options),
+      });
+      prompted = true;
+    }
+
     return {
       ok: Boolean(connected.ok),
       skipped: false,
@@ -83,8 +106,9 @@ export async function runSpike(options) {
       projectId: target.project.id,
       cwd: target.cwd,
       connected: Boolean(connected.ok),
-      prompted: false,
+      prompted,
       runtimeConnectionId: connected.runtimeConnectionId,
+      sessionId,
       message: connected.message,
     };
   } finally {
@@ -143,6 +167,7 @@ if (isMainModule()) {
       providerId: process.env.TILLER_SPIKE_PROVIDER_ID,
       projectId: process.env.TILLER_SPIKE_PROJECT_ID,
       prompt: process.env.TILLER_SPIKE_PROMPT,
+      sendPrompt: process.env.TILLER_SPIKE_SEND_PROMPT,
     });
     assertSpikeEnvelope(result);
     console.log(JSON.stringify(result));
