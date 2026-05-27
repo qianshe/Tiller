@@ -1,7 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
@@ -44,11 +43,10 @@ import {
 import {
   applyAgentMessageToSummary,
   applyUserPromptToSummary,
-  createHelmSessionStores,
   resolveSessionCleanupOutcome,
-  resolveSessionStoreBackend,
 } from "./sessions/facade";
-import { createTrustedDeviceStore } from "./auth/beacon-store";
+import { createHelmServerStores } from "./app/server-composition";
+import { createHelmServerEnvironment } from "./app/server-environment";
 import { createSocketAuthenticator } from "./auth/socket-auth";
 import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
 import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
@@ -78,6 +76,7 @@ import {
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
+const serverEnvironment = createHelmServerEnvironment(configPath);
 ensureTillerConfigDefaults(configPath);
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
@@ -87,7 +86,7 @@ const {
   authMode: AUTH_MODE,
 } = resolveTillerRuntimeOptions({ config: tillerConfig });
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
-const LOGS_DIR = resolve(dirname(configPath), "logs");
+const LOGS_DIR = serverEnvironment.logsDir;
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
 const PROMPT_TRACE_ENABLED = process.env.TILLER_PROMPT_TRACE === "1";
 
@@ -95,26 +94,17 @@ const logger = createTillerLogger({ logsDir: LOGS_DIR });
 const { logInfo, logDebug, logWarn, logError } = logger;
 const TILLER_LOG_FILE = logger.logFile;
 
-const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
-const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
-const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
-const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
-const sessionsSqlitePath = resolve(dirname(configPath), "sessions.sqlite");
-const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
-const { sessionStore, sessionMessageStore, sessionArtifactStore, sessionRuntimeStore } =
-  createHelmSessionStores({
-    backend: resolveSessionStoreBackend(),
-    sqlitePath: sessionsSqlitePath,
-    jsonPaths: {
-      sessionHistoryPath,
-      sessionMessagesPath,
-      sessionArtifactsPath,
-      sessionRuntimesPath,
-    },
-    logInfo,
-    logError,
-  });
-const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
+const {
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionRuntimeStore,
+  trustedDeviceStore,
+} = createHelmServerStores({
+  environment: serverEnvironment,
+  logInfo,
+  logError,
+});
 const projectCatalog = createProjectCatalog({
   configPath,
   host: HOST,
