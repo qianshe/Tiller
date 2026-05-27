@@ -42,7 +42,7 @@ export function seedLiveEventSequenceForSession(
   sessionId: string,
   sequences: ReadonlyArray<number | undefined>,
 ) {
-  const maxSequence = sequences.reduce((max, value) => {
+  const maxSequence = sequences.reduce<number>((max, value) => {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
       return max;
     }
