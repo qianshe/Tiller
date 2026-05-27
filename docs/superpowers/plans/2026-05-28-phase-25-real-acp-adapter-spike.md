@@ -479,7 +479,7 @@ git commit -m "feat：为 ACP Spike 添加 Prompt 选项"
 - Modify: `docs/superpowers/plans/2026-05-28-phase-25-real-acp-adapter-spike.md`
 - Optional modify: `docs/bug/thinking-and-tool-call-disorder-and-duplication.md`
 
-- [ ] **Step 1: Run automated verification**
+- [x] **Step 1: Run automated verification**
 
 Run:
 
@@ -492,7 +492,8 @@ pnpm typecheck
 
 Expected: all pass. If `pnpm --filter @tiller/helm test -- scripts/acp-adapter-spike.test.mjs` runs the full Helm test suite due package script behavior, accept that as stronger verification.
 
-- [ ] **Step 2: Run optional real provider spike manually if an endpoint is available**
+- [ ] **Step 2: Run optional real provider spike manually if an endpoint is available**  
+  _Not run in this session: no explicit existing Helm WebSocket endpoint/provider opt-in was provided._
 
 Start Helm in another terminal or use an existing endpoint, then run:
 
