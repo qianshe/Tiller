@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format:write": "prettier --write \"src/**/*.ts\"",
+    "spike:acp-adapter": "node scripts/acp-adapter-spike.mjs",
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
     "smoke:runtime:trace": "node scripts/smoke-runtime.mjs --prompt-trace",
     "smoke:contract": "node scripts/contract-smoke.mjs",

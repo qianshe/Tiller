@@ -292,7 +292,7 @@ git commit -m "feat：添加 ACP Spike RPC 客户端骨架"
 - Modify: `apps/helm/scripts/acp-adapter-spike.mjs`
 - Modify: `apps/helm/package.json`
 
-- [ ] **Step 1: Add package script**
+- [x] **Step 1: Add package script**
 
 Modify `apps/helm/package.json` scripts to include:
 
@@ -300,7 +300,7 @@ Modify `apps/helm/package.json` scripts to include:
 "spike:acp-adapter": "node scripts/acp-adapter-spike.mjs"
 ```
 
-- [ ] **Step 2: Implement `runSpike` using public JSON-RPC methods**
+- [x] **Step 2: Implement `runSpike` using public JSON-RPC methods**
 
 Add this function to `apps/helm/scripts/acp-adapter-spike.mjs`:
 
@@ -367,7 +367,7 @@ if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
 }
 ```
 
-- [ ] **Step 3: Run provider-free no-env smoke**
+- [x] **Step 3: Run provider-free no-env smoke**
 
 Run:
 
@@ -377,7 +377,7 @@ pnpm --filter @tiller/helm spike:acp-adapter
 
 Expected: exits 0 and prints JSON with `skipped:true` and reason mentioning `TILLER_SPIKE_WS_URL`.
 
-- [ ] **Step 4: Run tests and typecheck**
+- [x] **Step 4: Run tests and typecheck**
 
 Run:
 

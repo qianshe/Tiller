@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function redactSpikeText(value) {
   if (!value) return "";
@@ -51,6 +53,45 @@ export function assertSpikeEnvelope(result) {
   assert.equal(typeof result.prompted, "boolean", "connected spike must include prompted");
 }
 
+export async function runSpike(options) {
+  const client = await createRpcClient(options.wsUrl);
+  try {
+    const [agentList, projectList] = await Promise.all([
+      client.call("agent/list", {}),
+      client.call("project/list", {}),
+    ]);
+    const target = resolveSpikeTarget({
+      providerId: options.providerId,
+      projectId: options.projectId,
+      agents: agentList.agents ?? [],
+      projects: projectList.projects ?? [],
+    });
+    if (target.skipped) {
+      return { ok: false, skipped: true, reason: target.reason };
+    }
+
+    const connected = await client.call("agent/connect", {
+      providerId: target.provider.id,
+      projectId: target.project.id,
+      cwd: target.cwd,
+    });
+
+    return {
+      ok: Boolean(connected.ok),
+      skipped: false,
+      providerId: target.provider.id,
+      projectId: target.project.id,
+      cwd: target.cwd,
+      connected: Boolean(connected.ok),
+      prompted: false,
+      runtimeConnectionId: connected.runtimeConnectionId,
+      message: connected.message,
+    };
+  } finally {
+    client.close();
+  }
+}
+
 async function createRpcClient(wsUrl) {
   const socket = new WebSocket(wsUrl);
   let nextId = 1;
@@ -79,8 +120,31 @@ async function createRpcClient(wsUrl) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
-  const result = { ok: false, skipped: true, reason: "Harness runtime not implemented yet." };
-  assertSpikeEnvelope(result);
-  console.log(JSON.stringify(result));
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+      path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]),
+  );
+}
+
+if (isMainModule()) {
+  const wsUrl = process.env.TILLER_SPIKE_WS_URL;
+  if (!wsUrl) {
+    const result = {
+      ok: false,
+      skipped: true,
+      reason: "Set TILLER_SPIKE_WS_URL to an existing Helm WebSocket URL.",
+    };
+    assertSpikeEnvelope(result);
+    console.log(JSON.stringify(result));
+  } else {
+    const result = await runSpike({
+      wsUrl,
+      providerId: process.env.TILLER_SPIKE_PROVIDER_ID,
+      projectId: process.env.TILLER_SPIKE_PROJECT_ID,
+      prompt: process.env.TILLER_SPIKE_PROMPT,
+    });
+    assertSpikeEnvelope(result);
+    console.log(JSON.stringify(result));
+  }
 }
