@@ -22,26 +22,13 @@ import type {
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
-  alignSessionProjectBinding,
-  alignSessionWorktreeBinding,
   createHelmSessionStores,
-  normalizeDiffPath,
-  readWorktreeGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { createProviderLifecycle, type HelmRuntimeHandle } from "./provider-lifecycle";
-import { summarizeLargeDiffs } from "./diff-limits";
 import { handleRuntimeEvent as dispatchRuntimeEvent } from "./events";
-import {
-  resolveConfigOptionsForSelection,
-  resolveConfigReasoningEffortForOptions,
-} from "./session-config-options";
-import {
-  buildSessionResumeInfo,
-  markSessionResumeUnavailable,
-  resolveSessionRestoreCapabilities,
-} from "./resume-info";
+import { markSessionResumeUnavailable, } from "./resume-info";
 import {
   resolveProviderHistorySnapshot,
   type ProviderHistorySnapshot,
@@ -52,16 +39,16 @@ import { createProviderHistoryService } from "./provider-history-service";
 import { createSessionPersistenceService } from "./session-persistence-service";
 import { createRuntimeDraftRegistry } from "./runtime-draft-registry";
 import { createSessionResumeService } from "./session-resume-service";
+import { createSessionDiffHydrationService } from "./session-diff-hydration";
+import { createSessionSummaryHydrationService } from "./session-summary-hydration";
+import { createRuntimeDescriptorService } from "./runtime-descriptor-service";
 import {
   chooseRecoverySummary,
   preservePreviousUserPromptsAfterReimport,
   readReimportedHistoryPage,
   recoverUserPromptFromSessionSummary,
 } from "./session-history-reimport-helpers";
-import {
-  normalizeWorktreePath,
-  resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary,
-} from "./session-worktree-resolution";
+import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./session-worktree-resolution";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -133,6 +120,25 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     getWorktrees: options.getWorktrees,
     logInfo: options.logInfo,
     logError: options.logError,
+  });
+  const diffHydration = createSessionDiffHydrationService({
+    sessions: options.sessions,
+    sessionStore: options.sessionStore,
+    sessionArtifactStore: options.sessionArtifactStore,
+    getProjects: options.getProjects,
+    getWorktrees: options.getWorktrees,
+    createHandlerContext: options.createHandlerContext,
+  });
+  const sessionSummaryHydration = createSessionSummaryHydrationService({
+    sessions: options.sessions,
+    getProjects: options.getProjects,
+    getWorktrees: options.getWorktrees,
+    getAgents: options.getAgents,
+    sessionRuntimeStore: options.sessionRuntimeStore,
+  });
+  const runtimeDescriptorService = createRuntimeDescriptorService({
+    sessionRuntimeStore: options.sessionRuntimeStore,
+    getAgents: options.getAgents,
   });
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -302,41 +308,11 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
   }
 
   function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
-    const aligned = alignSessionWorktreeBinding(
-      alignSessionProjectBinding(summary, options.getProjects()),
-      options.getWorktrees(),
-    );
-    const record = options.sessions.get(summary.id);
-    const agent = record?.agent ?? resolveProviderById(aligned.agentId, options.getAgents());
-    const descriptor = options.sessionRuntimeStore.get(summary.id);
-    const capabilities = resolveSessionRestoreCapabilities(
-      agent,
-      descriptor,
-      record?.runtime.sessionCapabilities,
-    );
-    const hydratedModel = aligned.model ?? record?.runtime.sessionConfigState?.model;
-    const resolvedHydratedConfigOptions = resolveConfigOptionsForSelection({
-      incomingOptions: record?.runtime.sessionConfigOptions,
-      previousOptions: aligned.configOptions,
-      selectedModel: hydratedModel,
-    });
-    const hydratedConfigOptions = resolvedHydratedConfigOptions.options;
-    const hydratedReasoningEffort = resolveConfigReasoningEffortForOptions(
-      aligned.reasoningEffort ?? record?.runtime.sessionConfigState?.reasoningEffort,
-      resolvedHydratedConfigOptions,
-    );
-    return {
-      ...aligned,
-      model: hydratedModel,
-      reasoningEffort: hydratedReasoningEffort,
-      configOptions: hydratedConfigOptions,
-      imageInput: capabilities.imageInput,
-      resume: buildResumeInfo(aligned, agent),
-    };
+    return sessionSummaryHydration.hydrateSessionSummary(summary);
   }
 
   function migrateStoredSessionSummary(summary: SessionSummary) {
-    const hydrated = hydrateSessionSummary(summary);
+    const hydrated = sessionSummaryHydration.migrateStoredSessionSummary(summary);
     if (
       hydrated.projectId !== summary.projectId ||
       hydrated.projectName !== summary.projectName ||
@@ -354,12 +330,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
   ): SessionResumeInfo {
-    return buildSessionResumeInfo(
-      summary,
-      agent,
-      options.sessions.get(summary.id),
-      options.sessionRuntimeStore.get(summary.id),
-    );
+    return sessionSummaryHydration.buildResumeInfo(summary, agent);
   }
 
   function persistRuntimeDescriptor(
@@ -367,85 +338,15 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) {
-    const existingDescriptor = options.sessionRuntimeStore.get(summary.id);
-    const resolvedCapabilities = resolveSessionRestoreCapabilities(
-      agent,
-      existingDescriptor,
-      capabilities,
-    );
-    if (
-      !summary.runtimeSessionId &&
-      !resolvedCapabilities.sessionLoad &&
-      !resolvedCapabilities.sessionResume &&
-      !resolvedCapabilities.sessionList &&
-      !resolvedCapabilities.sessionClose &&
-      !resolvedCapabilities.sessionDelete &&
-      !resolvedCapabilities.imageInput
-    ) {
-      return;
-    }
-
-    options.sessionRuntimeStore.upsert({
-      sessionId: summary.id,
-      projectId: summary.projectId,
-      helmId: summary.helmId,
-      providerId: summary.agentId,
-      runtimeSessionId: summary.runtimeSessionId,
-      capabilities: resolvedCapabilities,
-      providerHistory: existingDescriptor?.providerHistory,
-      lastSeenAt: summary.updatedAt,
-      state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
-    });
+    runtimeDescriptorService.persistRuntimeDescriptor(summary, agent, capabilities);
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
-    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorktreeGit(sessionId, files));
-    options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
-    createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
-      kind: "diff_update",
-      files: diffs,
-    });
+    await diffHydration.publishDiffUpdate(sessionId, files);
   }
 
   async function hydrateDiffsFromWorktreeGit(sessionId: string, files: FileDiffSummary[]) {
-    const worktree = resolveSessionWorktree(sessionId);
-    if (!worktree) {
-      return files;
-    }
-
-    const gitDiffs = await readWorktreeGitDiffs(worktree.path);
-    if (!gitDiffs.length) {
-      return files;
-    }
-
-    if (!files.length) {
-      return gitDiffs;
-    }
-
-    const gitByPath = new Map(gitDiffs.map((file) => [normalizeDiffPath(file.path), file]));
-    return files.map((file) => {
-      const fromGit = gitByPath.get(normalizeDiffPath(file.path));
-      return fromGit
-        ? {
-            ...file,
-            additions: fromGit.additions,
-            deletions: fromGit.deletions,
-            patch: file.patch ?? fromGit.patch,
-          }
-        : file;
-    });
-  }
-
-  function resolveSessionWorktree(sessionId: string) {
-    const liveWorktree = options.sessions.get(sessionId)?.worktree;
-    if (liveWorktree) {
-      return liveWorktree;
-    }
-
-    const summary = options.sessionStore.list().find((item) => item.id === sessionId);
-    return summary
-      ? (options.getWorktrees().find((worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(summary.cwd)) ?? null)
-      : null;
+    return diffHydration.hydrateDiffsFromWorktreeGit(sessionId, files);
   }
 
   return {
