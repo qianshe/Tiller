@@ -24,6 +24,7 @@ export type TechnicalPanelPreferences = {
   diffDefaultOpen: boolean;
   showSessionRuntimeMeta: boolean;
   showPermissionWorktree: boolean;
+  showMissionThinking: boolean;
   showConnectionDebug: boolean;
 };
 
@@ -54,6 +55,7 @@ export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
     diffDefaultOpen: false,
     showSessionRuntimeMeta: true,
     showPermissionWorktree: true,
+    showMissionThinking: true,
     showConnectionDebug: false,
   },
   promptEnhancer: {
@@ -116,6 +118,10 @@ export function readDeckPreferences(): DeckPreferences {
           typeof technicalPanels.showPermissionWorktree === "boolean"
             ? technicalPanels.showPermissionWorktree
             : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorktree,
+        showMissionThinking:
+          typeof technicalPanels.showMissionThinking === "boolean"
+            ? technicalPanels.showMissionThinking
+            : DEFAULT_DECK_PREFERENCES.technicalPanels.showMissionThinking,
         showConnectionDebug:
           typeof technicalPanels.showConnectionDebug === "boolean"
             ? technicalPanels.showConnectionDebug

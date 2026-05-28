@@ -18,6 +18,7 @@ const technicalPanels: TechnicalPanelPreferences = {
   diffDefaultOpen: true,
   showSessionRuntimeMeta: true,
   showPermissionWorktree: true,
+  showMissionThinking: true,
   showConnectionDebug: false,
 };
 
@@ -95,6 +96,7 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(pageSource, /<SettingsRow label=\{settingsCopy\.languageLabel\} desc="切换会即时生效">/);
   assert.match(pageSource, /<SettingsRow label="时间格式" desc="影响 mission 时间戳 \/ activity timeline">/);
   assert.match(pageSource, /<SettingsRow label="减少动效" desc="禁用 streaming pulse \/ drawer slide \/ fade transitions">/);
+  assert.match(pageSource, /<SettingsRow label="Mission Thinking" desc="只控制会话小窗口中的 Thinking 展示">/);
   assert.match(pageSource, /<SettingsRow label=\{settingsCopy\.connectionDebug\} desc="WebSocket \/ RPC raw 帧">/);
   assert.match(pageSource, /className="flex h-12 w-full items-center gap-2\.5 rounded px-2 text-left transition-colors hover:bg-surface-sunken active:bg-surface-emphasis"/);
   assert.doesNotMatch(pageSource, /wb-pane-sunken flex items-center gap-3 p-3/);

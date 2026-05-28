@@ -43,6 +43,7 @@ test("default technical panel preferences keep approval worktree visible", () =>
     DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorktree,
     true,
   );
+  assert.equal(DEFAULT_DECK_PREFERENCES.technicalPanels.showMissionThinking, true);
 });
 
 test("readDeckPreferences preserves stored technical panel preferences", () => {
@@ -53,6 +54,7 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
         showPermissionWorktree: false,
+        showMissionThinking: false,
         showConnectionDebug: true,
       },
     }),
@@ -64,6 +66,7 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
         showPermissionWorktree: false,
+        showMissionThinking: false,
         showConnectionDebug: true,
       });
     },

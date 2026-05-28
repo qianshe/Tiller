@@ -88,9 +88,11 @@ type MissionChatPaneProps = {
   displayCollapsed: boolean;
   inspectorCollapsed: boolean;
   sidebarCollapsed: boolean;
+  showThinking: boolean;
   onExpandSidebar: () => void;
   onToggleDisplay: () => void;
   onToggleInspector: () => void;
+  onToggleThinking: () => void;
   onFocusSession: (sessionId: string) => void;
   onSelectDraftWindow?: (draftWindowId: string) => void;
   onSelectDraftAgent?: (agentId: string) => void;
@@ -141,9 +143,11 @@ export function MissionChatPane({
   displayCollapsed,
   inspectorCollapsed,
   sidebarCollapsed,
+  showThinking,
   onExpandSidebar,
   onToggleDisplay,
   onToggleInspector,
+  onToggleThinking,
   onFocusSession,
   onSelectDraftWindow,
   onSelectDraftAgent,
@@ -177,6 +181,7 @@ export function MissionChatPane({
             items={sessionMessages}
             thinkingToolCalls={sessionTimeline.thinkingToolCalls}
             toolCalls={sessionTimeline.timelineToolCalls}
+            showThinking={showThinking}
             boundaryTimestamps={sessionTimeline.boundaryTimestamps}
             sessionId={session.id}
             assistantLabel={session.agentName}
@@ -458,6 +463,16 @@ export function MissionChatPane({
                 }}
               >
                 Inspector 面板
+              </MenuItem>
+              <MenuItem
+                checked={showThinking}
+                icon="activity"
+                onClick={() => {
+                  onToggleThinking();
+                  setMenuOpen(false);
+                }}
+              >
+                Thinking
               </MenuItem>
               <div className="mx-1 my-1 h-px bg-border-ghost" />
               <MenuItem onClick={() => setMenuOpen(false)} kbd="⌘E">

@@ -69,6 +69,35 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
 });
 
+test("plain messages can hide thinking cards without dropping normal messages", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text: "最终回答",
+        timestamp: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+    thinkingToolCalls: [
+      {
+        id: "think-1",
+        kind: "think",
+        title: "Thinking",
+        status: "completed",
+        output: "不应显示的 Thinking 内容",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+    showThinking: false,
+  });
+
+  assert.match(html, /最终回答/);
+  assert.doesNotMatch(html, /不应显示的 Thinking 内容/);
+  assert.doesNotMatch(html, /plain-thinking/);
+});
+
 test("plain messages avoids duplicated generic thinking titles", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {

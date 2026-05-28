@@ -16,6 +16,7 @@ type MissionMessageTimelineProps = {
   items: AgentMessage[];
   thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
+  showThinking?: boolean;
   sessionId?: string;
   assistantLabel?: string;
   copy: MissionMessageTimelineCopy;
@@ -34,6 +35,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   items,
   thinkingToolCalls = [],
   toolCalls = [],
+  showThinking = true,
   sessionId,
   assistantLabel,
   copy,
@@ -61,6 +63,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       items={items}
       thinkingToolCalls={thinkingToolCalls}
       toolCalls={toolCalls}
+      showThinking={showThinking}
       emptyText={copy.waitingForAgent}
       assistantLabel={assistantLabel ?? copy.role.assistant}
       roleLabels={copy.role}

@@ -1,3 +1,4 @@
+import { createSessionLifecycle } from "@tiller/core";
 import type { SessionReasoningEffort, SessionSummary } from "@tiller/shared";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import {
@@ -74,52 +75,68 @@ export async function createSession(
       model: summary.model,
       reasoningEffort: summary.reasoningEffort,
     };
-    const runtime = await context.createRuntime({
-      sessionId,
-      worktree,
-      agent,
-      sessionConfig,
-      onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
-      onConnectionLifecycleEvent: (event) => {
-        const phaseMap = {
-          "connection-open": "ACP连接新建",
-          "connection-reuse": "ACP连接复用",
-          "connection-pending": "ACP连接等待",
-          "connection-replace": "ACP连接替换",
-          "connection-reconnect": "ACP连接重连",
-        } as const;
-        context.logInfo(
-          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
-        );
+    const lifecycle = createSessionLifecycle({
+      resolveProject: async () => project,
+      resolveAgent: async () => agent,
+      createRuntime: async () =>
+        context.createRuntime({
+          sessionId,
+          worktree,
+          agent,
+          sessionConfig,
+          onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
+          onConnectionLifecycleEvent: (event) => {
+            const phaseMap = {
+              "connection-open": "ACP连接新建",
+              "connection-reuse": "ACP连接复用",
+              "connection-pending": "ACP连接等待",
+              "connection-replace": "ACP连接替换",
+              "connection-reconnect": "ACP连接重连",
+            } as const;
+            context.logInfo(
+              `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
+            );
+          },
+        }),
+      buildSession: ({ runtime, timestamp }) => {
+        const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
+        const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
+          incomingOptions: runtime.sessionConfigOptions,
+          previousOptions: summary.configOptions,
+          selectedModel: summaryRuntimeModel,
+        });
+        const summaryWithRuntimeBase = {
+          ...summary,
+          status: "idle" as const,
+          updatedAt: timestamp,
+          agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
+          model: summaryRuntimeModel,
+          modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
+          configOptions: resolvedRuntimeConfigOptions.options,
+          reasoningEffort: resolveConfigReasoningEffortForOptions(
+            summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+            resolvedRuntimeConfigOptions,
+          ),
+          runtimeSessionId: runtime.runtimeSessionId,
+        };
+        context.sessions.set(sessionId, { summary: summaryWithRuntimeBase, agent, worktree, runtime });
+        return context.hydrateSessionSummary(summaryWithRuntimeBase);
+      },
+      persistSession: async (nextSummary) => {
+        context.sessionStore.upsert(nextSummary);
       },
     });
-    const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
-    const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
-      incomingOptions: runtime.sessionConfigOptions,
-      previousOptions: summary.configOptions,
-      selectedModel: summaryRuntimeModel,
+    const { session: summaryWithRuntime, runtime } = await lifecycle.createSession({
+      sessionId,
+      projectId: project.id,
+      agentId: agent.id,
+      cwd: worktree.path,
+      status: "idle",
     });
-    const summaryWithRuntimeBase = {
-      ...summary,
-      status: "idle" as const,
-      updatedAt: new Date().toISOString(),
-      agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
-      model: summaryRuntimeModel,
-      modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-      configOptions: resolvedRuntimeConfigOptions.options,
-      reasoningEffort: resolveConfigReasoningEffortForOptions(
-        summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
-        resolvedRuntimeConfigOptions,
-      ),
-      runtimeSessionId: runtime.runtimeSessionId,
-    };
-    context.sessions.set(sessionId, { summary: summaryWithRuntimeBase, agent, worktree, runtime });
-    const summaryWithRuntime = context.hydrateSessionSummary(summaryWithRuntimeBase);
     context.logInfo(
       `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
     );
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
-    context.sessionStore.upsert(summaryWithRuntime);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
     broadcastSessionUpdate(context, sessionId, {
       kind: "session_updated",

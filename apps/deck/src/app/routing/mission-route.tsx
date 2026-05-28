@@ -98,6 +98,7 @@ export function renderMissionRoute(source: any) {
     pendingPermission,
     pendingApprovals,
     technicalPanels,
+    updateTechnicalPanelPreference,
     respondToPermission,
     updateQueuedPrompt,
     deleteQueuedPrompt,
@@ -278,6 +279,7 @@ export function renderMissionRoute(source: any) {
       pendingPermission={pendingPermission}
       pendingApprovals={pendingApprovals}
       technicalPanels={technicalPanels}
+      updateTechnicalPanelPreference={updateTechnicalPanelPreference}
       respondToPermission={respondToPermission}
       updateQueuedPrompt={updateQueuedPrompt}
       deleteQueuedPrompt={deleteQueuedPrompt}

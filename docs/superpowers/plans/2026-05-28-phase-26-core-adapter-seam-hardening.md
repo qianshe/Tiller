@@ -41,7 +41,7 @@
 - Create: `packages/core/src/session/session-lifecycle.ts`
 - Create: `packages/core/src/session/session-lifecycle.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import assert from "node:assert/strict";
@@ -74,7 +74,7 @@ test("createSessionLifecycle persists the created session through ports", async 
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run:
 
@@ -84,7 +84,7 @@ pnpm --filter @tiller/core exec tsx --test src/session/session-lifecycle.test.ts
 
 Expected: FAIL because `session-lifecycle.ts` does not exist yet.
 
-- [ ] **Step 3: Implement the minimal use case**
+- [x] **Step 3: Implement the minimal use case**
 
 Create `packages/core/src/session/session-lifecycle.ts` with a small pure orchestration layer that depends only on ports:
 
@@ -103,7 +103,7 @@ export function createSessionLifecycle(deps) {
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run:
 
@@ -131,11 +131,11 @@ git commit -m "feat：抽出会话生命周期核心用例"
 - Modify: `apps/helm/src/runtime/provider-history-service.ts`
 - Test: `apps/helm/src/handlers/sessions/rpc.test.ts`
 
-- [ ] **Step 1: Add a delegation test**
+- [x] **Step 1: Add a delegation test**
 
 Add a test that proves `createSession` and `promptSession` route through the new core lifecycle boundary and no longer own orchestration details.
 
-- [ ] **Step 2: Run it and confirm the current code fails or is incomplete**
+- [x] **Step 2: Run it and confirm the current code fails or is incomplete**
 
 Run:
 
@@ -143,7 +143,7 @@ Run:
 pnpm --filter @tiller/helm exec tsx --test src/handlers/sessions/rpc.test.ts
 ```
 
-- [ ] **Step 3: Move orchestration out of handlers**
+- [x] **Step 3: Move orchestration out of handlers**
 
 Keep the handlers responsible only for:
 
@@ -264,3 +264,13 @@ git commit -m "docs：规划 Core 与 Adapter 收敛"
 Plan complete and saved to `docs/superpowers/plans/2026-05-28-phase-26-core-adapter-seam-hardening.md`.
 
 Recommended execution: **Inline Execution** in this session, because the changes are boundary extraction and test-first refactors with frequent verification checkpoints.
+
+### Progress Update - 2026-05-28
+
+- Task 1 implemented `packages/core/src/session/session-lifecycle.ts` and test coverage.
+- Task 2 started: `apps/helm/src/handlers/sessions/session-create-rpc.ts` now routes runtime-backed final session creation through `createSessionLifecycle` while preserving the existing starting-session broadcast.
+- Added `session/new` characterization coverage in `apps/helm/src/handlers/sessions/rpc.test.ts`.
+- Verified:
+  - `pnpm --filter @tiller/core test`
+  - `pnpm --filter @tiller/helm test -- src/handlers/sessions/rpc.test.ts`
+  - `pnpm typecheck`

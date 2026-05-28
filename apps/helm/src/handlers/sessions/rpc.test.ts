@@ -111,6 +111,54 @@ test("session/reimport_history delegates to the history reimport service", async
   });
 });
 
+test("session/new creates a runtime-backed session and broadcasts updates", async () => {
+  const broadcasts: any[] = [];
+  const persisted: any[] = [];
+  const runtimeDescriptors: any[] = [];
+  const sessions = new Map<string, any>();
+  const result = await handleSessionRpcRequest(
+    "session/new",
+    { projectId: "project-1", cwd: "D:/repo", agentId: "codex", model: "gpt-5" },
+    {
+      loadAvailableHelms: () => [{ id: "helm-1", name: "Local", host: "127.0.0.1", port: 47631 }],
+      loadAvailableWorktrees: () => [{ name: "main", path: "D:/repo" }],
+      loadAvailableAgents: () => [{ id: "codex", name: "Codex", command: "codex", transport: "stdio", protocol: "acp" }],
+      loadAvailableProjectsWithSemanticSummaries: async () => [{ id: "project-1", name: "Project", helmId: "helm-1", worktrees: [{ name: "main", path: "D:/repo" }] }],
+      setHelms: () => undefined,
+      setWorktrees: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: (id: string, projects: any[]) => projects.find((project) => project.id === id),
+      resolveProviderById: (id: string, agents: any[]) => agents.find((agent) => agent.id === id),
+      resolveHelmById: (id: string, helms: any[]) => helms.find((helm) => helm.id === id),
+      buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "new", checkedAt: "2026-05-28T00:00:00.000Z" }),
+      sessionStore: { upsert: (session: any) => persisted.push(session) },
+      persistRuntimeDescriptor: (...args: any[]) => runtimeDescriptors.push(args),
+      broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+      createRuntime: async () => ({
+        runtimeSessionId: "runtime-1",
+        sessionConfigState: { model: "gpt-5" },
+        sessionConfigOptions: [],
+        sessionModelState: { options: [] },
+        sessionCapabilities: { cancellation: true },
+      }),
+      handleRuntimeEvent: () => undefined,
+      hydrateSessionSummary: (session: any) => ({ ...session, imageInput: false }),
+      sessions,
+      logInfo: () => undefined,
+      logError: () => undefined,
+      updateSessionSummary: () => undefined,
+    } as any,
+  ) as { session: any };
+
+  assert.equal(result.session.runtimeSessionId, "runtime-1");
+  assert.equal(result.session.status, "idle");
+  assert.equal(sessions.get(result.session.id)?.runtime.runtimeSessionId, "runtime-1");
+  assert.equal(persisted.length, 2);
+  assert.equal(runtimeDescriptors.length, 2);
+  assert.equal(broadcasts.filter((item) => item.method === "session/update").length, 2);
+});
+
 test("session RPC lists paged sessions", async () => {
   const sessions = [{ id: "s1", updatedAt: "2026-05-06T00:00:00.000Z" }];
   const result = await handleSessionRpcRequest("session/list", { limit: 20 }, {

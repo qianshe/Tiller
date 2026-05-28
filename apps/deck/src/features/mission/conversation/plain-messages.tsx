@@ -16,6 +16,7 @@ type PlainMessagesProps = {
   items: AgentMessage[];
   thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
+  showThinking?: boolean;
   emptyText: string;
   assistantLabel: string;
   roleLabels: Record<AgentMessage["role"], string>;
@@ -31,6 +32,7 @@ export function PlainMessages({
   items,
   thinkingToolCalls = [],
   toolCalls = [],
+  showThinking = true,
   emptyText,
   assistantLabel,
   roleLabels,
@@ -55,8 +57,12 @@ export function PlainMessages({
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
-    () => buildPlainConversationItems(displayMessages, thinkingToolCalls, toolCalls),
-    [displayMessages, thinkingToolCalls, toolCalls],
+    () => buildPlainConversationItems(
+      displayMessages,
+      showThinking ? thinkingToolCalls : [],
+      toolCalls,
+    ),
+    [displayMessages, showThinking, thinkingToolCalls, toolCalls],
   );
   const visibleItems = useMemo(
     () => displayItems.slice(-visibleMessageCount),

@@ -243,6 +243,12 @@ export function MissionWorktree(props: any) {
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
+  const toggleMissionThinking = () => {
+    props.updateTechnicalPanelPreference?.(
+      "showMissionThinking",
+      !technicalPanels.showMissionThinking,
+    );
+  };
   const {
     focusedRealSessionId,
     persistedOpenChatSessionIds,
@@ -1047,9 +1053,11 @@ export function MissionWorktree(props: any) {
           displayCollapsed={displayPaneCollapsed}
           inspectorCollapsed={effectiveInspectorCollapsed}
           sidebarCollapsed={effectiveSidebarCollapsed}
+          showThinking={technicalPanels.showMissionThinking}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
           onToggleInspector={onToggleInspector}
+          onToggleThinking={toggleMissionThinking}
           onFocusSession={openChatSession}
           onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}

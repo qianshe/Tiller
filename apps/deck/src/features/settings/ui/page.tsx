@@ -260,6 +260,12 @@ export function SettingsPage({
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("showPermissionWorktree", checked)}
               />
             </SettingsRow>
+            <SettingsRow label="Mission Thinking" desc="只控制会话小窗口中的 Thinking 展示">
+              <Switch
+                checked={technicalPanels.showMissionThinking}
+                onCheckedChange={(checked) => updateTechnicalPanelPreference("showMissionThinking", checked)}
+              />
+            </SettingsRow>
             <SettingsRow label={settingsCopy.connectionDebug} desc="WebSocket / RPC raw 帧">
               <Switch
                 checked={technicalPanels.showConnectionDebug}
