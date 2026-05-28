@@ -7,7 +7,6 @@ import { resolveProviderById } from "@tiller/agent-registry";
 import type {
   AcpAgentProvider,
   AcpModelState,
-  AgentMessage,
   AgentToolCall,
   AvailableCommand,
   AgentPromptContent,
@@ -30,14 +29,6 @@ import {
   readWorktreeGitDiffs,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
-import {
-  filterNewProviderHistoryMessages,
-  mergeAuthoritativeMessagesWithLocalUserPrompts,
-  planProviderHistorySync,
-  shouldImportAuthoritativeProviderHistory,
-  shouldRepairProviderHistorySnapshot,
-  toParagraphMessages,
-} from "../sessions/provider-history-sync.js";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { createProviderLifecycle, type HelmRuntimeHandle } from "./provider-lifecycle";
 import { summarizeLargeDiffs } from "./diff-limits";
@@ -61,6 +52,16 @@ import { createProviderHistoryService } from "./provider-history-service";
 import { createSessionPersistenceService } from "./session-persistence-service";
 import { createRuntimeDraftRegistry } from "./runtime-draft-registry";
 import { createSessionResumeService } from "./session-resume-service";
+import {
+  chooseRecoverySummary,
+  preservePreviousUserPromptsAfterReimport,
+  readReimportedHistoryPage,
+  recoverUserPromptFromSessionSummary,
+} from "./session-history-reimport-helpers";
+import {
+  normalizeWorktreePath,
+  resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary,
+} from "./session-worktree-resolution";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -95,28 +96,11 @@ type ProjectSummary = import("@tiller/shared").ProjectSummary;
 export function createSessionServiceGraph(options: SessionServicesOptions) {
 
   function resolveStoredSessionWorktree(summary: SessionSummary) {
-    const worktrees = options.getWorktrees();
-    const normalizedSummaryPath = normalizeWorktreePath(summary.cwd);
-    const pathWorktree = normalizedSummaryPath
-      ? worktrees.find((item) => normalizeWorktreePath(item.path) === normalizedSummaryPath)
-      : undefined;
-    if (pathWorktree) {
-      return { ...pathWorktree, path: summary.cwd ?? pathWorktree.path };
-    }
-
-    const project = options.getProjects().find((item) => item.id === summary.projectId);
-    if (project?.path) {
-      return {
-        name: summary.worktreeName || project.name,
-        path: summary.cwd || project.path,
-      } satisfies WorktreeSummary;
-    }
-
-    return undefined;
-  }
-
-  function normalizeWorktreePath(path: string | undefined) {
-    return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+    return resolveStoredSessionWorktreeFromSummary({
+      summary,
+      projects: options.getProjects(),
+      worktrees: options.getWorktrees(),
+    });
   }
 
   function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
@@ -235,8 +219,16 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
           throw new Error(resume.message);
         }
       }
-      preservePreviousUserPromptsAfterReimport(sessionId, previousMessages);
-      recoverUserPromptFromSessionSummary(sessionId, recoverySummary);
+      preservePreviousUserPromptsAfterReimport({
+        sessionId,
+        previousMessages,
+        sessionMessageStore: options.sessionMessageStore,
+      });
+      recoverUserPromptFromSessionSummary({
+        sessionId,
+        summary: recoverySummary,
+        sessionMessageStore: options.sessionMessageStore,
+      });
 
       const messages = options.sessionMessageStore.list(sessionId);
       const artifacts = options.sessionArtifactStore.get(sessionId);
@@ -249,14 +241,20 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         throw new Error("ACP did not return any history content for this session.");
       }
 
-      return readReimportedHistoryPage(
+      return readReimportedHistoryPage({
         sessionId,
-        reimportOptions.limit,
-        "历史已从 ACP 重新导入。",
-      );
+        limit: reimportOptions.limit,
+        message: "历史已从 ACP 重新导入。",
+        sessionMessageStore: options.sessionMessageStore,
+        sessionArtifactStore: options.sessionArtifactStore,
+      });
     } catch (error) {
       restorePreviousLocalHistory();
-      recoverUserPromptFromSessionSummary(sessionId, recoverySummary);
+      recoverUserPromptFromSessionSummary({
+        sessionId,
+        summary: recoverySummary,
+        sessionMessageStore: options.sessionMessageStore,
+      });
       const restoredMessages = options.sessionMessageStore.list(sessionId);
       const restoredArtifacts = options.sessionArtifactStore.get(sessionId);
       if (
@@ -265,105 +263,18 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         restoredArtifacts.toolCalls.length ||
         restoredArtifacts.diffs.length
       ) {
-        return readReimportedHistoryPage(
+        return readReimportedHistoryPage({
           sessionId,
-          reimportOptions.limit,
-          `ACP 历史重导入失败，已保留本地历史并恢复用户提示：${error instanceof Error ? error.message : "未知错误"}`,
-        );
+          limit: reimportOptions.limit,
+          message: `ACP 历史重导入失败，已保留本地历史并恢复用户提示：${error instanceof Error ? error.message : "未知错误"}`,
+          sessionMessageStore: options.sessionMessageStore,
+          sessionArtifactStore: options.sessionArtifactStore,
+        });
       }
       throw error;
     }
   }
 
-
-  function chooseRecoverySummary(
-    summary: SessionSummary,
-    storedSummary: SessionSummary | undefined,
-  ): SessionSummary {
-    if (!storedSummary) {
-      return summary;
-    }
-    const summaryText = summary.lastMessagePreview?.trim() || summary.title?.trim();
-    const storedText = storedSummary.lastMessagePreview?.trim() || storedSummary.title?.trim();
-    if (summaryText || !storedText) {
-      return summary;
-    }
-    return storedSummary;
-  }
-
-
-  function readReimportedHistoryPage(
-    sessionId: string,
-    limit: number | undefined,
-    message: string,
-  ): SessionHistoryReimportResult {
-    const messagePage = options.sessionMessageStore.listPage(sessionId, { limit });
-    const artifactPage = options.sessionArtifactStore.getPage(sessionId, { limit });
-    return {
-      sessionId,
-      messages: messagePage.messages,
-      outputs: artifactPage.outputs,
-      diffs: artifactPage.diffs,
-      toolCalls: artifactPage.toolCalls,
-      nextCursor: messagePage.nextCursor,
-      hasMore: messagePage.hasMore,
-      activityNextCursor: artifactPage.nextCursor,
-      activityHasMore: artifactPage.hasMore,
-      message,
-    };
-  }
-
-
-  function preservePreviousUserPromptsAfterReimport(
-    sessionId: string,
-    previousMessages: AgentMessage[],
-  ) {
-    const previousUserPrompts = previousMessages.filter(
-      (message) => message.role === "user",
-    );
-    if (!previousUserPrompts.length) {
-      return;
-    }
-    const currentMessages = options.sessionMessageStore.list(sessionId);
-    const mergedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
-      previousUserPrompts,
-      currentMessages,
-    );
-    if (mergedMessages.length !== currentMessages.length) {
-      options.sessionMessageStore.replace(sessionId, mergedMessages);
-    }
-  }
-
-
-  function recoverUserPromptFromSessionSummary(
-    sessionId: string,
-    summary: SessionSummary,
-  ) {
-    const currentMessages = options.sessionMessageStore.list(sessionId);
-    if (currentMessages.some((message) => message.role === "user")) {
-      return;
-    }
-    const recoveredText = summary.lastMessagePreview?.trim() || summary.title?.trim();
-    if (!recoveredText) {
-      return;
-    }
-    const firstMessageTimestamp = currentMessages
-      .map((message) => Date.parse(message.timestamp))
-      .filter(Number.isFinite)
-      .sort((left, right) => left - right)[0];
-    const timestamp = Number.isFinite(firstMessageTimestamp)
-      ? new Date(firstMessageTimestamp - 1).toISOString()
-      : summary.createdAt;
-    options.sessionMessageStore.replace(sessionId, [
-      {
-        id: `${sessionId}-recovered-user-prompt`,
-        role: "user",
-        text: recoveredText,
-        timestamp,
-      },
-      ...currentMessages,
-    ]);
-  }
 
   function updateSessionSummary(
     sessionId: string,

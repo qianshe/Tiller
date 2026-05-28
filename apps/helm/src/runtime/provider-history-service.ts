@@ -25,6 +25,7 @@ import {
   type ProviderHistorySnapshotContent,
 } from "./provider-history-source";
 import { resolveSessionRestoreCapabilities } from "./resume-info";
+import { normalizeWorktreePath } from "./session-worktree-resolution";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -317,8 +318,4 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     refreshAuthoritativeSessionHistory,
     resetRefresh,
   };
-}
-
-function normalizeWorktreePath(path: string | undefined) {
-  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }
