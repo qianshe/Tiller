@@ -245,7 +245,7 @@ export function resolveSessionConfigSupport(provider?: Pick<AcpAgentProvider, "c
   return { model: "none", reasoningEffort: "none" };
 }
 
-export type SessionSummary = {
+export type SessionSummaryCore = {
   id: string;
   projectId: string;
   projectName: string;
@@ -256,13 +256,6 @@ export type SessionSummary = {
   worktreeName?: string;
   agentId: string;
   agentName: string;
-  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
-  agentMode?: string;
-  model?: string;
-  modelOptions?: AcpModelOption[];
-  /** Latest ACP session config options exposed by the active/restored runtime. */
-  configOptions?: SessionConfigOption[];
-  reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;
@@ -271,11 +264,30 @@ export type SessionSummary = {
   title?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
+};
+
+export type RuntimeSessionSummaryExtensions = {
+  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
+  agentMode?: string;
+  model?: string;
+  modelOptions?: AcpModelOption[];
+  /** Latest ACP session config options exposed by the active/restored runtime. */
+  configOptions?: SessionConfigOption[];
+  reasoningEffort?: SessionReasoningEffort;
   /** Whether the underlying ACP agent supports image content in prompts. */
   imageInput?: boolean;
   /** Last ACP slash commands reported for this session, persisted for later Deck sync. */
   availableCommands?: AvailableCommand[];
 };
+
+export type RuntimeSessionSummary = SessionSummaryCore & RuntimeSessionSummaryExtensions;
+
+/**
+ * Compatibility alias for the current Deck/Helm session summary payload.
+ * New cross-package boundaries should prefer `SessionSummaryCore` or
+ * `RuntimeSessionSummary` to make the chosen projection explicit.
+ */
+export type SessionSummary = RuntimeSessionSummary;
 
 export type AgentMessage = {
   id: string;

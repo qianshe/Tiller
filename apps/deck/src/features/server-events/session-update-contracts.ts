@@ -5,14 +5,14 @@ import type {
   AvailableCommand,
   CommandChunk,
   FileDiffSummary,
+  RuntimeSessionSummary,
   SessionConfigOption,
   SessionPromptQueueSnapshot,
-  SessionSummary,
 } from "@tiller/shared";
 import type { SessionRealtimeUpdate as DomainSessionRealtimeUpdate } from "@tiller/domain-contracts";
 
 export type DeckSessionConfigState = Partial<
-  Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">
+  Pick<RuntimeSessionSummary, "agentMode" | "model" | "reasoningEffort">
 >;
 
 export type DeckSessionRealtimeUpdate =
@@ -25,7 +25,7 @@ export type DeckSessionRealtimeUpdate =
       SessionConfigOption,
       AcpModelOption,
       AvailableCommand,
-      SessionSummary,
+      RuntimeSessionSummary,
       SessionPromptQueueSnapshot
     >
   | { kind: "restore_replay_cached" };

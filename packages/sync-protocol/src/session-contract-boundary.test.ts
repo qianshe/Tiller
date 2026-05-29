@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-const canonicalSessionTypes = new Set(["SessionResumeInfo", "SessionStatus", "SessionSummary"]);
+const canonicalSessionTypes = new Set([
+  "RuntimeSessionSummary",
+  "SessionResumeInfo",
+  "SessionStatus",
+  "SessionSummary",
+]);
 
 const files = [
   "methods/approval/created.ts",

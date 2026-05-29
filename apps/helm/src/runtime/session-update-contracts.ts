@@ -5,9 +5,9 @@ import type {
   AvailableCommand,
   CommandChunk,
   FileDiffSummary,
+  RuntimeSessionSummary,
   SessionConfigOption,
   SessionPromptQueueSnapshot,
-  SessionSummary,
 } from "@tiller/shared";
 import type {
   SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
@@ -51,7 +51,7 @@ export type SessionModelOptionsUpdate = DomainSessionModelOptionsUpdate<AcpModel
 
 export type SessionCommandsAvailableUpdate = DomainSessionCommandsAvailableUpdate<AvailableCommand>;
 
-export type SessionUpdatedUpdate = DomainSessionUpdatedUpdate<SessionSummary>;
+export type SessionUpdatedUpdate = DomainSessionUpdatedUpdate<RuntimeSessionSummary>;
 
 export type SessionPromptQueueUpdate = DomainSessionPromptQueueUpdate<SessionPromptQueueSnapshot>;
 
@@ -64,6 +64,6 @@ export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   SessionConfigOption,
   AcpModelOption,
   AvailableCommand,
-  SessionSummary,
+  RuntimeSessionSummary,
   SessionPromptQueueSnapshot
 >;
