@@ -1,6 +1,5 @@
 import type { MutableRefObject } from "react";
 import type {
-  AgentMessage,
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
@@ -31,6 +30,11 @@ import {
   resolveSessionConfigSelection,
   type SessionConfigSelection,
 } from "./session-config-selection";
+import {
+  pendingInitialPromptMessageId,
+  pendingPromptImages,
+  replaceInitialMessageHistory,
+} from "./session-message-history";
 
 
 
@@ -56,92 +60,6 @@ function clearConsumedDraftMetadata(runtimeSessionId: string) {
     );
     return changed ? next : current;
   });
-}
-
-function pendingInitialPromptMessageId(sessionId: string) {
-  return `${sessionId}-user-pending`;
-}
-
-function pendingPromptImages(content: AgentPromptContent[] | undefined) {
-  return content?.filter(
-    (item): item is AgentPromptImageContent => item.type === "image",
-  ) ?? [];
-}
-
-function replaceInitialMessageHistory(
-  currentMessages: AgentMessage[],
-  loadedMessages: AgentMessage[],
-): AgentMessage[] {
-  const mergedLoadedMessages = mergeLoadedMessagesWithLocalUserAttachments(
-    currentMessages,
-    loadedMessages,
-  );
-  const loadedIds = new Set(mergedLoadedMessages.map((message) => message.id));
-  const latestLoadedTime = Math.max(
-    ...mergedLoadedMessages.map((message) => Date.parse(message.timestamp)).filter(Number.isFinite),
-  );
-  const liveMessages = currentMessages.filter((message) => {
-    if (loadedIds.has(message.id)) {
-      return false;
-    }
-    if (message.role === "user" && !hasRepresentedUserPrompt(mergedLoadedMessages, message)) {
-      return true;
-    }
-    if (message.streaming === true) {
-      return true;
-    }
-    const messageTime = Date.parse(message.timestamp);
-    return Number.isFinite(messageTime) && messageTime > latestLoadedTime;
-  });
-  return sortAgentMessagesByTimeline(mergeMessageHistory(mergedLoadedMessages, liveMessages));
-}
-
-function mergeLoadedMessagesWithLocalUserAttachments(
-  currentMessages: AgentMessage[],
-  loadedMessages: AgentMessage[],
-): AgentMessage[] {
-  return loadedMessages.map((message) => {
-    if (message.role !== "user") {
-      return message;
-    }
-    const localUser = findRepresentedLocalUserWithAttachments(currentMessages, message);
-    return localUser ? mergeRepresentedLoadedUser(localUser, message) : message;
-  });
-}
-
-function findRepresentedLocalUserWithAttachments(
-  currentMessages: AgentMessage[],
-  loadedUserMessage: AgentMessage,
-) {
-  const loadedText = loadedUserMessage.text.trim();
-  return currentMessages.find(
-    (message) =>
-      message.role === "user" &&
-      Boolean(message.attachments?.length) &&
-      (message.id === loadedUserMessage.id || message.text.trim() === loadedText),
-  );
-}
-
-function mergeRepresentedLoadedUser(local: AgentMessage, loaded: AgentMessage): AgentMessage {
-  return {
-    ...loaded,
-    id: local.id,
-    timestamp: local.timestamp,
-    timelineSequence: local.timelineSequence ?? loaded.timelineSequence,
-    ...(local.attachments?.length ? { attachments: local.attachments } : {}),
-  };
-}
-
-function hasRepresentedUserPrompt(
-  loadedMessages: AgentMessage[],
-  localUserMessage: AgentMessage,
-) {
-  const localText = localUserMessage.text.trim();
-  return loadedMessages.some(
-    (message) =>
-      message.role === "user" &&
-      (message.id === localUserMessage.id || message.text.trim() === localText),
-  );
 }
 
 function requestAgentConnectionsRefresh(context: SessionServerEventContext) {
