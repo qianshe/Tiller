@@ -1,6 +1,7 @@
 import type { AcpModelOption, AcpModelState, AgentToolCall, AvailableCommand, AvailableCommandKind, CommandChunk, FileDiffSummary, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime-types";
 import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
+import { extractThinkingToolCall } from "./thinking-events";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 
 type AcpProtocolModelInfo = {
@@ -240,58 +241,6 @@ export function mapSessionUpdateNotification(
   }
 
   return null;
-}
-
-function extractThinkingToolCall(
-  sessionId: string,
-  updateType: string | undefined,
-  update: any,
-): AgentToolCall | null {
-  const acpThoughtText = updateType === "agent_thought_chunk"
-    ? extractTextContent(update.content) ??
-      extractTextContent(update.delta) ??
-      extractTextContent(update.message)
-    : undefined;
-  const thinking =
-    acpThoughtText ??
-    extractThinkingContent(update.content) ??
-    extractThinkingContent(update.delta) ??
-    extractThinkingContent(update.message) ??
-    stringFrom(update.thinking ?? update.reasoning);
-  if (!thinking?.trim()) {
-    return null;
-  }
-  const now = timestamp();
-  const messageId = resolveThinkingMessageId(sessionId, update);
-  return {
-    id: `${messageId}:thinking`,
-    commandId: `${messageId}:thinking`,
-    kind: "think",
-    title: "Thinking",
-    status: /complete|done|finished|end/iu.test(updateType ?? "") ? "completed" : "running",
-    output: thinking,
-    timestamp: stringFrom(update.timestamp) ?? now,
-    updatedAt: stringFrom(update.updatedAt ?? update.updated_at ?? update.timestamp) ?? now,
-  };
-}
-
-function extractThinkingContent(content: any): string | null {
-  if (!content) {
-    return null;
-  }
-  if (Array.isArray(content)) {
-    return content.map((item) => extractThinkingContent(item)).filter(Boolean).join("") || null;
-  }
-  if (content.type === "thinking" && typeof content.thinking === "string") {
-    return content.thinking;
-  }
-  if (content.type === "reasoning" && typeof content.text === "string") {
-    return content.text;
-  }
-  if (typeof content.thinking === "string") {
-    return content.thinking;
-  }
-  return extractThinkingContent(content.content);
 }
 
 export function summarizeSessionUpdateNotification(
