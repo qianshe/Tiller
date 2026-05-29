@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall } from "@tiller/shared";
 import {
   pageSessionMessages,
   type SessionMessagePageOptions,
 } from "./message-store.js";
-import { mergeSessionMessage, normalizeSessionMessages } from "./normalize.js";
+import { mergeSessionMessage, normalizeSessionMessages, sortToolCalls } from "./normalize.js";
 
 type InMemoryMessageStore = {
   append: (sessionId: string, message: AgentMessage) => AgentMessage[];
@@ -61,6 +61,32 @@ test("session message normalize preserves append order instead of sorting by tim
   assert.deepEqual(
     store.list("session-1").map((message) => message.id),
     ["msg-late", "msg-early"],
+  );
+});
+
+test("sortToolCalls orders by tool start time instead of update time", () => {
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "tool-started-first",
+      kind: "read",
+      title: "Read early",
+      status: "completed",
+      timestamp: "2026-05-29T10:00:00.000Z",
+      updatedAt: "2026-05-29T10:00:10.000Z",
+    },
+    {
+      id: "tool-started-second",
+      kind: "shell",
+      title: "Run later",
+      status: "completed",
+      timestamp: "2026-05-29T10:00:05.000Z",
+      updatedAt: "2026-05-29T10:00:06.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    sortToolCalls(toolCalls).map((toolCall) => toolCall.id),
+    ["tool-started-first", "tool-started-second"],
   );
 });
 

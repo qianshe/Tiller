@@ -121,12 +121,18 @@ export function PlainMessages({
           {loadMoreLabel}
         </button>
       ) : null}
-      {visibleRenderMessages.map((renderItem) => {
+      {visibleRenderMessages.map((renderItem, index) => {
         if (renderItem.kind === "thinking") {
           return <PlainThinkingItem key={renderItem.renderKey} item={renderItem.toolCall} />;
         }
         if (renderItem.kind === "tool-group") {
-          return <PlainToolGroupItem key={renderItem.renderKey} group={renderItem.group} />;
+          return (
+            <PlainToolGroupItem
+              key={renderItem.renderKey}
+              group={renderItem.group}
+              hasNewerContent={index < visibleRenderMessages.length - 1}
+            />
+          );
         }
 
         const isExpanded = expandedMessageIds.has(renderItem.message.id);

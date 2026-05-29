@@ -213,7 +213,7 @@ export function dedupePermissionOptions(
 }
 
 /**
- * Permission request drawer pinned below the active mission conversation.
+ * Permission request drawer pinned inside the active mission conversation.
  */
 export function MissionPermissionDrawer({
   request,
@@ -238,7 +238,7 @@ export function MissionPermissionDrawer({
 
   return (
     <section
-      className="mission-permission-drawer sticky bottom-2 z-30 grid grid-rows-[auto_auto] gap-3 rounded-[8px] border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient"
+      className="mission-permission-drawer sticky top-2 z-30 grid grid-rows-[auto_auto] gap-3 rounded-[8px] border border-warning/40 bg-surface-elevated p-3 text-foreground shadow-ambient"
       role="region"
       aria-live="polite"
       aria-label={copy.permissionRequest}

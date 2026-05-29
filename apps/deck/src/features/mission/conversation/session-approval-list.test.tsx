@@ -135,6 +135,40 @@ test("chat pane renders approvals inside their matching session windows", () => 
   assert.ok(secondBodyIndex < secondApprovalIndex);
 });
 
+test("chat pane keeps approvals in the upper area of the session window", () => {
+  const session = buildSession("s1", "Session One");
+  const html = renderToStaticMarkup(
+    createElement(MissionChatPane, {
+      ...baseProps,
+      activeSession: session,
+      openSessions: [session],
+      selectedSessionId: "s1",
+      sessionMessagesById: {
+        s1: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            text: "审批下方的会话正文",
+            timestamp: "2026-05-29T10:00:00.000Z",
+          },
+        ],
+      },
+      pendingApprovals: [
+        buildApproval("s1", "approval-1", "Run A", "审核 A"),
+      ],
+      onRespondToPermission: () => undefined,
+    } as any),
+  );
+
+  const bodyIndex = html.indexOf('data-session-card-body="s1"');
+  const approvalIndex = html.indexOf("Run A");
+  const messageIndex = html.indexOf("审批下方的会话正文");
+
+  assert.ok(bodyIndex >= 0);
+  assert.ok(bodyIndex < approvalIndex);
+  assert.ok(approvalIndex < messageIndex);
+});
+
 test("chat pane disables actions for a resolving approval", () => {
   const session = buildSession("s1", "Session One");
   const html = renderToStaticMarkup(

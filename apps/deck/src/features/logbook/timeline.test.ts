@@ -356,6 +356,36 @@ test("mergeToolCallHistory keeps the earliest start timestamp across replay merg
   assert.equal(merged[0]?.updatedAt, "2026-04-30T13:22:46.678Z");
 });
 
+test("mergeToolCallHistory orders tools by start timestamp instead of latest update time", () => {
+  const merged = mergeToolCallHistory(
+    [
+      {
+        id: "tool-started-first",
+        kind: "read",
+        title: "Read early",
+        status: "completed",
+        timestamp: "2026-05-29T10:00:00.000Z",
+        updatedAt: "2026-05-29T10:00:10.000Z",
+      },
+    ],
+    [
+      {
+        id: "tool-started-second",
+        kind: "shell",
+        title: "Run later",
+        status: "completed",
+        timestamp: "2026-05-29T10:00:05.000Z",
+        updatedAt: "2026-05-29T10:00:06.000Z",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    merged.map((toolCall) => toolCall.id),
+    ["tool-started-first", "tool-started-second"],
+  );
+});
+
 test("mergeToolCallHistory preserves strong metadata when sparse updates arrive", () => {
   const current: AgentToolCall[] = [
     {

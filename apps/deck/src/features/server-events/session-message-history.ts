@@ -23,6 +23,10 @@ export function replaceInitialMessageHistory(
     currentMessages,
     loadedMessages,
   );
+  const representedLocalUserIds = resolveRepresentedLocalUserIds(
+    currentMessages,
+    mergedLoadedMessages,
+  );
   const loadedIds = new Set(mergedLoadedMessages.map((message) => message.id));
   const latestLoadedTime = Math.max(
     ...mergedLoadedMessages.map((message) => Date.parse(message.timestamp)).filter(Number.isFinite),
@@ -31,7 +35,7 @@ export function replaceInitialMessageHistory(
     if (loadedIds.has(message.id)) {
       return false;
     }
-    if (message.role === "user" && !hasRepresentedUserPrompt(mergedLoadedMessages, message)) {
+    if (message.role === "user" && !representedLocalUserIds.has(message.id)) {
       return true;
     }
     if (message.streaming === true) {
@@ -47,26 +51,14 @@ function mergeLoadedMessagesWithLocalUserAttachments(
   currentMessages: AgentMessage[],
   loadedMessages: AgentMessage[],
 ): AgentMessage[] {
+  const matchLocalUserPrompt = createLocalUserPromptMatcher(currentMessages);
   return loadedMessages.map((message) => {
     if (message.role !== "user") {
       return message;
     }
-    const localUser = findRepresentedLocalUserWithAttachments(currentMessages, message);
-    return localUser ? mergeRepresentedLoadedUser(localUser, message) : message;
+    const localUser = matchLocalUserPrompt(message);
+    return localUser?.attachments?.length ? mergeRepresentedLoadedUser(localUser, message) : message;
   });
-}
-
-function findRepresentedLocalUserWithAttachments(
-  currentMessages: AgentMessage[],
-  loadedUserMessage: AgentMessage,
-) {
-  const loadedText = loadedUserMessage.text.trim();
-  return currentMessages.find(
-    (message) =>
-      message.role === "user" &&
-      Boolean(message.attachments?.length) &&
-      (message.id === loadedUserMessage.id || message.text.trim() === loadedText),
-  );
 }
 
 function mergeRepresentedLoadedUser(local: AgentMessage, loaded: AgentMessage): AgentMessage {
@@ -79,14 +71,64 @@ function mergeRepresentedLoadedUser(local: AgentMessage, loaded: AgentMessage): 
   };
 }
 
-function hasRepresentedUserPrompt(
+function resolveRepresentedLocalUserIds(
+  currentMessages: AgentMessage[],
   loadedMessages: AgentMessage[],
-  localUserMessage: AgentMessage,
 ) {
-  const localText = localUserMessage.text.trim();
-  return loadedMessages.some(
-    (message) =>
-      message.role === "user" &&
-      (message.id === localUserMessage.id || message.text.trim() === localText),
-  );
+  const matchLocalUserPrompt = createLocalUserPromptMatcher(currentMessages);
+  const represented = new Set<string>();
+  for (const message of loadedMessages) {
+    if (message.role !== "user") {
+      continue;
+    }
+    const localUser = matchLocalUserPrompt(message);
+    if (localUser) {
+      represented.add(localUser.id);
+    }
+  }
+  return represented;
+}
+
+function createLocalUserPromptMatcher(currentMessages: AgentMessage[]) {
+  const candidates = currentMessages.filter((message) => message.role === "user");
+  return (loadedUserMessage: AgentMessage) => {
+    const matchIndex = findRepresentedLocalUserIndex(candidates, loadedUserMessage);
+    if (matchIndex === -1) {
+      return null;
+    }
+    const [match] = candidates.splice(matchIndex, 1);
+    return match ?? null;
+  };
+}
+
+function findRepresentedLocalUserIndex(
+  candidates: AgentMessage[],
+  loadedUserMessage: AgentMessage,
+) {
+  const idMatchIndex = candidates.findIndex((message) => message.id === loadedUserMessage.id);
+  if (idMatchIndex !== -1) {
+    return idMatchIndex;
+  }
+
+  const loadedText = loadedUserMessage.text.trim();
+  let nearestIndex = -1;
+  let nearestDelta = Number.POSITIVE_INFINITY;
+  let textFallbackIndex = -1;
+  const loadedTime = Date.parse(loadedUserMessage.timestamp);
+  for (const [index, message] of candidates.entries()) {
+    if (message.text.trim() !== loadedText) {
+      continue;
+    }
+    if (textFallbackIndex === -1) {
+      textFallbackIndex = index;
+    }
+    const localTime = Date.parse(message.timestamp);
+    const delta = Math.abs(localTime - loadedTime);
+    if (Number.isFinite(delta) && delta < nearestDelta) {
+      nearestDelta = delta;
+      nearestIndex = index;
+    }
+  }
+
+  return nearestIndex === -1 ? textFallbackIndex : nearestIndex;
 }

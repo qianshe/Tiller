@@ -95,7 +95,8 @@ test("mission chat renders permission drawers inside matching session cards", ()
   assert.match(chatPaneSource, /approval\.sessionId === session\.id/);
   assert.match(chatPaneSource, /<MissionPermissionDrawer/);
   assert.match(permissionDrawerSource, /sticky/);
-  assert.match(permissionDrawerSource, /bottom-2/);
+  assert.match(permissionDrawerSource, /top-2/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-2/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
   assert.doesNotMatch(shellStylesSource, /mission-responsive-mode \.mission-permission-drawer/);
   assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);

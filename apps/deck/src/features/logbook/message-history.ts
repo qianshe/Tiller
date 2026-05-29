@@ -185,6 +185,9 @@ function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
   if (left.role !== right.role || left.text !== right.text) {
     return false;
   }
+  if (left.role === "user") {
+    return false;
+  }
 
   const delta = Math.abs(
     Date.parse(left.timestamp) - Date.parse(right.timestamp),

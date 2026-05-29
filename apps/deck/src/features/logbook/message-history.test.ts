@@ -652,6 +652,32 @@ test("mergeMessageHistory preserves server order even when timestamps are out of
   );
 });
 
+test("mergeMessageHistory keeps repeated user prompts with identical text separate", () => {
+  const merged = mergeMessageHistory(
+    [
+      {
+        id: "user-first",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-29T10:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "user-second",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-29T10:00:03.000Z",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["user-first", "user-second"],
+  );
+});
+
 test("mergeMessageHistory skips assistant history composites already represented by recent messages", () => {
   const current: AgentMessage[] = [
     {

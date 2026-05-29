@@ -217,15 +217,27 @@ export function PlainThinkingItem({ item }: { item: AgentToolCall }) {
   );
 }
 
-export function PlainToolGroupItem({ group }: { group: ConversationToolCallItem[] }) {
+export function PlainToolGroupItem({
+  group,
+  hasNewerContent = false,
+}: {
+  group: ConversationToolCallItem[];
+  hasNewerContent?: boolean;
+}) {
   const isRunning = group.some((item) => isActiveToolStatus(item.status));
-  const [open, setOpen] = useState(isRunning);
+  const [open, setOpen] = useState(() => isRunning || !hasNewerContent);
   const summaryTitle = summarizeToolGroupTitle(group);
   const groupBadgeLabel = resolveToolGroupBadgeLabel(group);
 
   useEffect(() => {
-    setOpen(isRunning);
-  }, [isRunning]);
+    if (isRunning) {
+      setOpen(true);
+      return;
+    }
+    if (hasNewerContent) {
+      setOpen(false);
+    }
+  }, [hasNewerContent, isRunning]);
 
   return (
     <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">

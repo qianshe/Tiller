@@ -169,14 +169,15 @@ export function mergeToolCallHistory(
         Date.parse(next.timestamp) < Date.parse(existing.timestamp)
           ? next.timestamp
           : existing.timestamp,
-      timelineSequence: existing.timelineSequence ?? next.timelineSequence,
+      timelineSequence: minTimelineSequence(existing.timelineSequence, next.timelineSequence),
       updatedAt: next.updatedAt,
       status: next.status,
     };
   }
-  return merged.sort(
-    (left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
-  );
+  return merged
+    .map((toolCall, index) => ({ toolCall, index }))
+    .sort(compareToolCallTimelineEntries)
+    .map((entry) => entry.toolCall);
 }
 
 export function dropActiveThinkingToolCalls(toolCalls: AgentToolCall[]) {
@@ -252,6 +253,39 @@ function minTimelineSequence(current: number | undefined, incoming: number | und
     return current;
   }
   return Math.min(current, incoming);
+}
+
+type ToolCallTimelineEntry = {
+  index: number;
+  toolCall: AgentToolCall;
+};
+
+function compareToolCallTimelineEntries(
+  left: ToolCallTimelineEntry,
+  right: ToolCallTimelineEntry,
+) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.toolCall.timelineSequence,
+    right.toolCall.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  const timestampDelta = compareIsoTimestamps(left.toolCall.timestamp, right.toolCall.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  const updatedAtDelta = compareIsoTimestamps(left.toolCall.updatedAt, right.toolCall.updatedAt);
+  return updatedAtDelta === 0 ? left.index - right.index : updatedAtDelta;
+}
+
+function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
+  const leftTime = Date.parse(leftTimestamp);
+  const rightTime = Date.parse(rightTimestamp);
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
+    return 0;
+  }
+  return leftTime - rightTime;
 }
 
 function compareMessageTimelineEntries(left: MessageTimelineEntry, right: MessageTimelineEntry) {

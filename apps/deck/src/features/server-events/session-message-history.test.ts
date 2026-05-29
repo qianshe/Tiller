@@ -107,3 +107,35 @@ test("replaceInitialMessageHistory keeps live streaming and newer local messages
     "local-newer",
   ]);
 });
+
+test("replaceInitialMessageHistory keeps earlier repeated local user prompts when loaded history represents one copy", () => {
+  const current = [
+    message({
+      id: "local-user-1",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-29T10:00:00.000Z",
+    }),
+    message({
+      id: "local-user-2",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-29T10:00:03.000Z",
+    }),
+  ];
+  const loaded = [
+    message({
+      id: "provider-user-2",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-29T10:00:03.000Z",
+    }),
+  ];
+
+  const merged = replaceInitialMessageHistory(current, loaded);
+
+  assert.deepEqual(
+    merged.map((item) => item.id),
+    ["local-user-1", "provider-user-2"],
+  );
+});

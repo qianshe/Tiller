@@ -423,6 +423,35 @@ test("plain messages groups adjacent normal tool calls between assistant segment
   assert.match(html, /search result/);
 });
 
+test("plain messages keeps the latest completed tool group expanded by default", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-before",
+        role: "assistant",
+        text: "先说明。",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /工具调用 · 1 项/);
+  assert.match(html, /<details class="plain-tool-group[^>]*open=""/);
+  assert.match(html, /aria-label="收起工具调用"/);
+  assert.ok(html.indexOf("先说明。") < html.indexOf("工具调用 · 1 项"));
+});
+
 test("plain messages starts a new tool group after assistant text resumes", () => {
   const html = renderPlainMessages({
     items: [

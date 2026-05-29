@@ -59,14 +59,33 @@ export function sortCommandChunks(items: CommandChunk[]) {
 }
 
 export function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort((left, right) =>
-    compareHistoryPosition(
-      left.updatedAt || left.timestamp,
-      left.id,
-      right.updatedAt || right.timestamp,
-      right.id,
-    ),
+  return [...items].sort(compareToolCallPosition);
+}
+
+function compareToolCallPosition(left: AgentToolCall, right: AgentToolCall) {
+  const sequenceDelta = compareOptionalTimelineSequence(
+    left.timelineSequence,
+    right.timelineSequence,
   );
+  if (sequenceDelta !== 0) {
+    return sequenceDelta;
+  }
+  return compareHistoryPosition(
+    left.timestamp || left.updatedAt,
+    left.id,
+    right.timestamp || right.updatedAt,
+    right.id,
+  );
+}
+
+function compareOptionalTimelineSequence(
+  left: number | undefined,
+  right: number | undefined,
+) {
+  if (left === undefined || right === undefined) {
+    return 0;
+  }
+  return left - right;
 }
 
 export function resolveToolCallKind(
