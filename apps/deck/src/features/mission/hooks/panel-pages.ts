@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MissionPanelPage } from "../ui/panels";
+import type { MissionPanelPage } from "../display/panels";
 import {
   moveMissionPanelPageInList,
   readMissionPanelPages,

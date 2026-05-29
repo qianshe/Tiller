@@ -6,7 +6,7 @@ import type {
   SessionStatus,
 } from "@tiller/shared";
 import { resolvePendingToolActivity } from "../../logbook";
-import type { MissionPanelPage } from "../ui/panels";
+import type { MissionPanelPage } from "../display/panels";
 import { isSessionExecutionPending } from "./session-state";
 
 export function buildMissionPanelPages(

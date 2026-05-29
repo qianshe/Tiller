@@ -10,15 +10,15 @@ const shellStylesSource = readFileSync(
   resolve(currentDir, "../../../app/shell/styles.css"),
   "utf8",
 );
-const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
+const sidebarSource = readFileSync(resolve(currentDir, "../navigation/sidebar.tsx"), "utf8");
 const sidebarProjectNodeSource = readFileSync(
-  resolve(currentDir, "sidebar-project-node.tsx"),
+  resolve(currentDir, "../navigation/sidebar-project-node.tsx"),
   "utf8",
 );
-const sessionRowSource = readFileSync(resolve(currentDir, "session-row.tsx"), "utf8");
-const displayPanelSource = readFileSync(resolve(currentDir, "display-panel.tsx"), "utf8");
-const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf8");
-const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
+const sessionRowSource = readFileSync(resolve(currentDir, "../navigation/session-row.tsx"), "utf8");
+const displayPanelSource = readFileSync(resolve(currentDir, "../display/display-panel.tsx"), "utf8");
+const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
+const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/workspace-model.ts"), "utf8");
 const workspaceChatCompositionSource = readFileSync(
@@ -39,18 +39,13 @@ const missionRouteSource = readFileSync(
   resolve(currentDir, "../../../app/routing/mission-route.tsx"),
   "utf8",
 );
-const projectFileListSource = readFileSync(
-  resolve(currentDir, "project-file-list.tsx"),
-  "utf8",
-);
-const inspectorSource = readFileSync(resolve(currentDir, "inspector.tsx"), "utf8");
-const panelHeaderSource = readFileSync(resolve(currentDir, "panel-header.tsx"), "utf8");
-const logbookPanelSource = readFileSync(resolve(currentDir, "logbook-panel.tsx"), "utf8");
+const inspectorSource = readFileSync(resolve(currentDir, "../inspector/inspector.tsx"), "utf8");
+const panelHeaderSource = readFileSync(resolve(currentDir, "../inspector/panel-header.tsx"), "utf8");
+const logbookPanelSource = readFileSync(resolve(currentDir, "../display/logbook-panel.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
   resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
   "utf8",
 );
-const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
 const chatPaneSource = [
   readFileSync(resolve(currentDir, "../conversation/chat-pane.tsx"), "utf8"),
   readFileSync(resolve(currentDir, "../conversation/session-cards.tsx"), "utf8"),
@@ -628,7 +623,6 @@ test("mission avoids fetching or rendering every project file by default", () =>
   assert.doesNotMatch(missionSelectionEffectsSource, /project\/list_files/);
   assert.match(worktreeModelSource, /const projectFiles = \[\]/);
   assert.match(worktreeModelSource, /const visibleProjectFiles = \[\]/);
-  assert.match(projectFileListSource, /暂不加载全量 Git 文件/);
   assert.match(inspectorSource, /mission-worktree-picker/);
   assert.match(inspectorSource, /mission-inspector-commit/);
   assert.doesNotMatch(inspectorSource, /TabsList/);
@@ -765,7 +759,7 @@ const composerAttachmentsSource = readFileSync(
   "utf8",
 );
 const sessionOverviewCardSource = readFileSync(
-  resolve(currentDir, "session-overview-card.tsx"),
+  resolve(currentDir, "../display/session-overview-card.tsx"),
   "utf8",
 );
 

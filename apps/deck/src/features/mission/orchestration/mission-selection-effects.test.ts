@@ -31,7 +31,7 @@ const selectionSourceText = readFileSync(
   "utf8",
 );
 const sidebarSourceText = readFileSync(
-  new URL("../ui/sidebar-project-node.tsx", import.meta.url),
+  new URL("../navigation/sidebar-project-node.tsx", import.meta.url),
   "utf8",
 );
 const viewModelSourceText = readFileSync(

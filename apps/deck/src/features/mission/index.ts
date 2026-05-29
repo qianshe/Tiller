@@ -32,7 +32,7 @@ export {
 } from "./utils/composer-options";
 export { projectFilesKey } from "./utils/project-files-key";
 export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
-export { MissionAgentIcon } from "./ui/agent-icon";
+export { MissionAgentIcon } from "./navigation";
 export {
   SessionCleanupConfirmDialog,
   SessionHistoryReimportConfirmDialog,

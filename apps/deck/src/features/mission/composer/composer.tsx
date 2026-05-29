@@ -31,7 +31,7 @@ import {
   type MissionConfigPicker,
 } from "./composer-config-controls";
 import { ComposerAttachments } from "./composer-attachments";
-import { MissionStatusBar } from "../ui/mission-status-bar";
+import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;

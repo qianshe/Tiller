@@ -1,5 +1,5 @@
 import { isRecord } from "../../preferences";
-import type { MissionPanelPage } from "../ui/panels";
+import type { MissionPanelPage } from "../display/panels";
 
 const MISSION_PANEL_PAGES_STORAGE_KEY = "tiller.mission-panel-pages";
 

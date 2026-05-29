@@ -56,6 +56,8 @@ test("mission composer implementation lives in the composer subdomain", () => {
     "composer-attachments.tsx",
     "composer-config-controls.tsx",
     "composer-draft-selectors.tsx",
+    "mission-status-bar.tsx",
+    "mission-status-bar.test.tsx",
     "slash-command-popup.tsx",
     "slash-command-popup.test.tsx",
   ] as const) {
@@ -81,5 +83,53 @@ test("mission conversation implementation lives in the conversation subdomain", 
   ] as const) {
     assert.equal(existsSync(join(missionRoot, "conversation", filename)), true, `conversation/${filename} should exist`);
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});
+
+test("mission display implementation lives in the display subdomain", () => {
+  for (const filename of [
+    "diff-panel.tsx",
+    "diff-tree.tsx",
+    "diff-tree.test.tsx",
+    "display-panel.tsx",
+    "display-panel.test.tsx",
+    "display-section.tsx",
+    "logbook-panel.tsx",
+    "panels.ts",
+    "session-overview-card.tsx",
+    "session-overview-card.test.tsx",
+  ] as const) {
+    assert.equal(existsSync(join(missionRoot, "display", filename)), true, `display/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});
+
+test("mission inspector implementation lives in the inspector subdomain", () => {
+  for (const filename of ["inspector.tsx", "panel-header.tsx"] as const) {
+    assert.equal(existsSync(join(missionRoot, "inspector", filename)), true, `inspector/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});
+
+test("mission navigation implementation lives in the navigation subdomain", () => {
+  for (const filename of [
+    "agent-icon.tsx",
+    "session-row.tsx",
+    "sidebar-project-node.tsx",
+    "sidebar.tsx",
+  ] as const) {
+    assert.equal(existsSync(join(missionRoot, "navigation", filename)), true, `navigation/${filename} should exist`);
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
+  }
+});
+
+test("mission ui folder keeps only shared shell/dialog primitives", () => {
+  for (const filename of [
+    "pane-resizer.tsx",
+    "panels.tsx",
+    "project-file-list.tsx",
+    "session-cleanup-dialog.tsx",
+  ] as const) {
+    assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `obsolete ui/${filename} should not exist`);
   }
 });

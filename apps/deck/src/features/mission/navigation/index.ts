@@ -1,1 +1,2 @@
-export { MissionSidebar } from "../ui/sidebar";
+export { MissionAgentIcon } from "./agent-icon";
+export { MissionSidebar } from "./sidebar";

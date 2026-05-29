@@ -55,10 +55,10 @@ test("mission light theme critical surfaces use semantic Tailwind tokens", () =>
   const files = [
     "src/features/mission/workspace/workspace.tsx",
     "src/features/mission/conversation/chat-pane.tsx",
-    "src/features/mission/ui/inspector.tsx",
+    "src/features/mission/inspector/inspector.tsx",
     "src/features/mission/composer/composer.tsx",
-    "src/features/mission/ui/display-panel.tsx",
-    "src/features/mission/ui/session-overview-card.tsx",
+    "src/features/mission/display/display-panel.tsx",
+    "src/features/mission/display/session-overview-card.tsx",
     "src/features/logbook/ui/activity-log-panel.tsx",
   ].map((relativePath) => readFileSync(resolve(deckRoot, relativePath), "utf8"));
   const combined = files.join("\n");
