@@ -16,6 +16,11 @@ import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent
 import { resolveAcpConnectionKey } from "./connection-key";
 import { createConnectionClientMethods } from "./connection-client-methods";
 import { withConnectionRequest } from "./connection-request";
+import {
+  resolveRequestedRuntimeSessionId,
+  updateSessionConfigOptionValue,
+  updateSessionConfigOptionValueById,
+} from "./connection-session-config";
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./connection-types";
 import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
 
@@ -805,42 +810,4 @@ export class AcpConnection {
       terminateChildProcess(this.state.child.pid);
     }
   }
-}
-
-function resolveRequestedRuntimeSessionId(request: OpenAcpSessionRequest) {
-  return request.kind === "load" ? request.runtimeSessionId : request.tillerSessionId;
-}
-
-function updateSessionConfigOptionValueById(
-  options: AcpSessionConfigOption[],
-  configId: string,
-  value: SessionConfigOptionValue,
-) {
-  return options.map((option) =>
-    option.id === configId
-      ? {
-          ...option,
-          currentValue: value,
-          selectedValue: value,
-          value,
-        }
-      : option,
-  );
-}
-
-function updateSessionConfigOptionValue(
-  options: AcpSessionConfigOption[],
-  category: string,
-  value: string,
-) {
-  return options.map((option) =>
-    option.category?.toLowerCase() === category
-      ? {
-          ...option,
-          currentValue: value,
-          selectedValue: value,
-          value,
-        }
-      : option,
-  );
 }

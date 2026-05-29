@@ -31,6 +31,7 @@ import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { buildSessionStreamHydrationPlan } from "./workspace-session-streams";
 import { buildRuntimeOverviewItems } from "./runtime-overview";
+import { shouldAttachDraftWindowToSession } from "./workspace-draft-window";
 import {
   acpReconnectKey,
   formatAcpConnectionStatus,
@@ -505,13 +506,7 @@ export function MissionWorktree(props: any) {
   };
   useEffect(() => {
     const pendingDraftWindow = pendingDraftWindowRef.current;
-    if (!pendingDraftWindow || !activeSession?.id) {
-      return;
-    }
-    const sameProject = activeSession.projectId === pendingDraftWindow.projectId;
-    const sameCwd = normalizeWorktreePath(activeSession.cwd) === normalizeWorktreePath(pendingDraftWindow.cwd ?? undefined);
-    const sameAgent = !pendingDraftWindow.agentId || activeSession.agentId === pendingDraftWindow.agentId;
-    if (!sameProject || !sameCwd || !sameAgent) {
+    if (!shouldAttachDraftWindowToSession(pendingDraftWindow, activeSession)) {
       return;
     }
     pendingDraftWindowRef.current = null;
