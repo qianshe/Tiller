@@ -26,6 +26,10 @@ import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./workspace-model";
 import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
 import {
+  buildSelectedSessionWorktreeItems,
+  formatInspectorWorktreeSummaryLabel,
+} from "./worktree-summary";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -528,51 +532,16 @@ export function MissionWorktree(props: any) {
         : []
     : [];
   const worktreeOptions = rawWorktreeOptions.filter(isManagedWorktreeWorktree);
-  const selectedSessionWorktreeItems = (() => {
-    const sourceSessions = openSessions.length ? openSessions : activeSession ? [activeSession] : [];
-    const byCwd = new Map<
-      string,
-      {
-        branchName: string;
-        cwd: string;
-        sessionCount: number;
-        sessionTitles: string[];
-      }
-    >();
-
-    for (const session of sourceSessions) {
-      if (!session.cwd) {
-        continue;
-      }
-      const cwdKey = normalizeWorktreePath(session.cwd) ?? session.cwd;
-      const activeCwd = activeSession?.cwd ? normalizeWorktreePath(activeSession.cwd) : null;
-      const branchName =
-        session.worktreeName ??
-        (activeCwd && cwdKey === activeCwd ? currentGitBranch : null) ??
-        session.projectName ??
-        "未检测分支";
-      const existing = byCwd.get(cwdKey);
-      if (existing) {
-        existing.sessionCount += 1;
-        continue;
-      }
-      byCwd.set(cwdKey, {
-        branchName,
-        cwd: session.cwd,
-        sessionCount: 1,
-        sessionTitles: [],
-      });
-    }
-
-    return Array.from(byCwd.values());
-  })();
+  const selectedSessionWorktreeItems = buildSelectedSessionWorktreeItems({
+    sessions: openSessions,
+    activeSession,
+    currentGitBranch,
+  });
   const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
-  const inspectorWorktreeSummaryLabel = selectedSessionWorktreeItems.length
-    ? `${selectedSessionWorktreeItems
-        .slice(0, 2)
-        .map((item) => item.branchName)
-        .join(" / ")}${selectedSessionWorktreeItems.length > 2 ? ` +${selectedSessionWorktreeItems.length - 2}` : ""}`
-    : `${worktreeOptions.length} Worktrees`;
+  const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
+    selectedSessionWorktreeItems,
+    worktreeOptions.length,
+  );
   const renderWorktreeList = () => (
     <div className="mission-worktree-list grid gap-1">
       {selectedSessionWorktreeItems.length ? (
