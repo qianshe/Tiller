@@ -11,6 +11,10 @@ import {
   formatSessionPreviewTime,
   resolveSessionStatusTone,
 } from "./chat-pane-model";
+import {
+  MissionToolLoadingTitle,
+  type MissionToolLoadingState,
+} from "./tool-loading";
 
 export type SessionRestoreNotice = {
   title: string;
@@ -48,6 +52,7 @@ export function SessionCard({
   onReimportHistory,
   onClose,
   restoreNotice,
+  toolLoading,
   flat = false,
   children,
 }: {
@@ -61,6 +66,7 @@ export function SessionCard({
   onReimportHistory: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
   restoreNotice?: SessionRestoreNotice;
+  toolLoading?: MissionToolLoadingState;
   flat?: boolean;
   children: ReactNode;
 }) {
@@ -105,7 +111,7 @@ export function SessionCard({
     >
       <div className="wb-pane-head">
         <AgentIcon name={session.agentName} size={14} />
-        <span className="text-section font-medium truncate text-foreground">
+        <span className="min-w-0 truncate text-section font-medium text-foreground">
           {session.title?.trim() || session.agentName}
         </span>
         <span className="font-mono text-2xs text-muted-foreground tabular shrink-0">
@@ -113,7 +119,9 @@ export function SessionCard({
           {session.worktreeName ? ` / ${session.worktreeName}` : ""}
         </span>
         {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
-        <div className="flex-1" />
+        <div className="min-w-0 flex-1">
+          {toolLoading ? <MissionToolLoadingTitle {...toolLoading} /> : null}
+        </div>
         <StatusDot tone={statusTone} pulse={isStreaming} />
         <div className="relative">
           <button

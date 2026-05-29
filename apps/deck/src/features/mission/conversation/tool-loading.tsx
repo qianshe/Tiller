@@ -1,11 +1,27 @@
-type MissionToolLoadingActivity = {
+export type MissionToolLoadingActivity = {
   title: string;
 };
 
-type MissionToolLoadingProps = {
+export type MissionToolLoadingState = {
   activity: MissionToolLoadingActivity;
   pendingToolPresent: boolean;
 };
+
+function formatMissionToolLoadingDetail({
+  activity,
+  pendingToolPresent,
+}: MissionToolLoadingState) {
+  return pendingToolPresent
+    ? `等待 ${activity.title.replace(/^Tool:\s*/u, "")} 返回结果…`
+    : "等待下一次状态更新…";
+}
+
+function resolveMissionToolLoadingLabel({
+  activity,
+  pendingToolPresent,
+}: MissionToolLoadingState) {
+  return pendingToolPresent ? "正在执行工具" : activity.title;
+}
 
 /**
  * Inline status shown while the active mission is still producing tool output.
@@ -13,10 +29,8 @@ type MissionToolLoadingProps = {
 export function MissionToolLoading({
   activity,
   pendingToolPresent,
-}: MissionToolLoadingProps) {
-  const detail = pendingToolPresent
-    ? `等待 ${activity.title.replace(/^Tool:\s*/u, "")} 返回结果…`
-    : "等待下一次状态更新…";
+}: MissionToolLoadingState) {
+  const detail = formatMissionToolLoadingDetail({ activity, pendingToolPresent });
 
   return (
     <div
@@ -30,12 +44,39 @@ export function MissionToolLoading({
       />
       <div className="grid min-w-0 gap-0.5">
         <strong className="text-sm font-semibold">
-          {pendingToolPresent ? "正在执行工具" : activity.title}
+          {resolveMissionToolLoadingLabel({ activity, pendingToolPresent })}
         </strong>
         <p className="truncate text-xs text-muted-foreground">
           {detail}
         </p>
       </div>
+    </div>
+  );
+}
+
+export function MissionToolLoadingTitle({
+  activity,
+  pendingToolPresent,
+}: MissionToolLoadingState) {
+  const detail = formatMissionToolLoadingDetail({ activity, pendingToolPresent });
+
+  return (
+    <div
+      className="mission-tool-loading-title flex min-w-0 items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-primary"
+      role="status"
+      aria-live="polite"
+      title={detail}
+    >
+      <span
+        className="size-1.5 shrink-0 rounded-full bg-primary wb-pulse"
+        aria-hidden="true"
+      />
+      <strong className="shrink-0 text-2xs font-semibold">
+        {resolveMissionToolLoadingLabel({ activity, pendingToolPresent })}
+      </strong>
+      <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground">
+        {detail}
+      </span>
     </div>
   );
 }

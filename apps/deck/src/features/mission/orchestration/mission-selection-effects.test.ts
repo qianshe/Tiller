@@ -161,8 +161,8 @@ test("mission config changes dispatch through embedded Helm clients", () => {
   assert.match(rootSourceText, /runtimeState\.helmRpcClientRefs\.current\.get\(helmId\)/);
   assert.match(rootSourceText, /runtimeState\.selectedMissionHelmId/);
   assert.match(rootSourceText, /runtimeState\.primaryHelmKeyRef\.current/);
-  assert.match(rootSourceText, /function readConfigSelectionState/);
-  assert.match(rootSourceText, /function toConfigPatchState/);
+  assert.match(rootSourceText, /readConfigSelectionState\(draftConfigOptions\)/);
+  assert.match(rootSourceText, /toConfigPatchState\(next\)/);
   assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.activeConfigState \}/);
   assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.draftConfigPatchState \}/);
   assert.doesNotMatch(rootSourceText, /function omitReasoningOnModelChange/);

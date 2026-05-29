@@ -7,7 +7,6 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import type {
-  ComponentProps,
   CSSProperties,
   DragEvent,
   ReactNode,
@@ -19,11 +18,12 @@ import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionQueuedPrompts } from "./queued-prompts";
-import { MissionToolLoading } from "./tool-loading";
+import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import { splitMissionToolCalls } from "./chat-pane-model";
+import { resolveMissionActivityLoading } from "../utils/session-render-state";
 import {
   DraftSessionCard,
   MenuItem,
@@ -35,7 +35,7 @@ import {
 } from "./session-cards";
 
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
-type MissionToolActivity = ComponentProps<typeof MissionToolLoading>["activity"];
+type MissionToolActivity = MissionToolLoadingState["activity"];
 
 type HistoryState = {
   hasMore: boolean;
@@ -154,11 +154,38 @@ export function MissionChatPane({
 }: MissionChatPaneProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const renderSessionStream = (session: SessionSummary) => {
-    const sessionMessages = sessionMessagesById[session.id]
+  const resolveSessionMessages = (session: SessionSummary) =>
+    sessionMessagesById[session.id]
       ?? (session.id === activeSession?.id ? activeSessionMessages : []);
-    const sessionToolCalls = sessionToolCallsById[session.id]
+  const resolveSessionToolCalls = (session: SessionSummary) =>
+    sessionToolCallsById[session.id]
       ?? (session.id === activeSession?.id ? activeSessionToolCalls : []);
+  const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined => {
+    const sessionMessages = resolveSessionMessages(session);
+    const sessionToolCalls = resolveSessionToolCalls(session);
+    if (session.id === activeSession?.id && activityLoading) {
+      return { activity: activityLoading, pendingToolPresent };
+    }
+
+    const sessionActivityLoading = resolveMissionActivityLoading({
+      status: session.status,
+      messages: sessionMessages,
+      toolCalls: sessionToolCalls,
+      pendingPermission: pendingApprovals.find(
+        (approval) => approval.sessionId === session.id,
+      )?.request ?? null,
+    });
+
+    return sessionActivityLoading
+      ? {
+          activity: sessionActivityLoading,
+          pendingToolPresent: sessionActivityLoading.title.startsWith("Tool:"),
+        }
+      : undefined;
+  };
+  const renderSessionStream = (session: SessionSummary) => {
+    const sessionMessages = resolveSessionMessages(session);
+    const sessionToolCalls = resolveSessionToolCalls(session);
     const sessionTimeline = splitMissionToolCalls(sessionToolCalls);
     const sessionPendingApprovals = pendingApprovals.filter(
       (approval) => approval.sessionId === session.id,
@@ -202,12 +229,6 @@ export function MissionChatPane({
         ) : (
           <SessionPreviewMessages session={session} restoring={isActiveSession} />
         )}
-        {isSingleSession && isActiveSession && activityLoading ? (
-          <MissionToolLoading
-            activity={activityLoading}
-            pendingToolPresent={pendingToolPresent}
-          />
-        ) : null}
       </>
     );
   };
@@ -544,6 +565,7 @@ export function MissionChatPane({
               onReimportHistory={onReimportSessionHistory}
               onClose={onCloseSessionView}
               restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
+              toolLoading={resolveSessionToolLoading(singleSession)}
             >
               {renderSessionStream(singleSession)}
             </SessionCard>
@@ -574,6 +596,7 @@ export function MissionChatPane({
                   onReimportHistory={onReimportSessionHistory}
                   onClose={onCloseSessionView}
                   restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
+                  toolLoading={resolveSessionToolLoading(session)}
                 >
                   {renderSessionStream(session)}
                 </SessionCard>

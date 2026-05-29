@@ -292,11 +292,15 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 160\)/);
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 800\)/);
   assert.match(chatPaneSource, /AgentIcon name=\{session\.agentName\}/);
-  assert.match(chatPaneSource, /<div className="flex-1" \/>\s*<StatusDot tone=\{statusTone\} pulse=\{isStreaming\} \/>/);
+  assert.match(chatPaneSource, /MissionToolLoadingTitle/);
+  assert.match(chatPaneSource, /<MissionToolLoadingTitle \{\.\.\.toolLoading\} \/>/);
+  assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(singleSession\)\}/);
+  assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(session\)\}/);
+  assert.match(chatPaneSource, /<StatusDot tone=\{statusTone\} pulse=\{isStreaming\} \/>/);
   assert.match(chatPaneSource, /onRename=\{onRenameSession\}/);
   assert.match(chatPaneSource, /onClear=\{onClearSession\}/);
-  assert.match(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
-  assert.match(chatPaneSource, /<MissionToolLoading/);
+  assert.doesNotMatch(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
+  assert.doesNotMatch(chatPaneSource, /<MissionToolLoading\s/);
   assert.match(chatPaneSource, /聚焦会话/);
   assert.match(chatPaneSource, /关闭窗口/);
   assert.match(chatPaneSource, /title="关闭此 session"/);

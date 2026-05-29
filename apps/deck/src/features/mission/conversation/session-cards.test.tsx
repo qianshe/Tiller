@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { SessionSummary } from "@tiller/shared";
 import {
   DraftSessionCard,
+  SessionCard,
   SessionPreviewMessages,
   SessionRestoreNotice,
   type MissionDraftChatWindow,
@@ -65,4 +66,29 @@ test("DraftSessionCard renders selectable agent options", () => {
 
   assert.match(html, /选择 ACP Agent/);
   assert.match(html, /Codex/);
+});
+
+test("SessionCard renders running tool status in the title bar", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      toolLoading={{
+        activity: { title: "Tool: find -type d" },
+        pendingToolPresent: true,
+      }}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /mission-tool-loading-title/);
+  assert.match(html, /正在执行工具/);
+  assert.match(html, /等待 find -type d 返回结果…/);
 });
