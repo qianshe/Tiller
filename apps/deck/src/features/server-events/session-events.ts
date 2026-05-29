@@ -7,7 +7,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import { toast } from "../toast";
-import { commandChunkToToolCall, mergeMessageHistory, sortAgentMessagesByTimeline } from "../logbook";
+import { commandChunkToToolCall, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
@@ -27,6 +27,10 @@ import {
   type SessionConfigSelection,
 } from "./session-config-selection";
 import { deriveSessionListResult } from "./session-list-result";
+import {
+  deriveSessionReimportState,
+  resolveSessionCleanupToast,
+} from "./session-result-effects";
 import {
   pendingInitialPromptMessageId,
   pendingPromptImages,
@@ -320,49 +324,43 @@ export function applySessionResult(
         },
       }));
       return true;
-    case "session/reimport_history":
+    case "session/reimport_history": {
+      const reimportState = deriveSessionReimportState(payload as any);
       store.setMessages((current) => ({
         ...current,
-        [payload.sessionId]: sortAgentMessagesByTimeline(payload.messages ?? []),
+        [payload.sessionId]: reimportState.messages,
       }));
       store.setMessageHistoryState((current) => ({
         ...current,
-        [payload.sessionId]: {
-          nextCursor: payload.nextCursor,
-          hasMore: Boolean(payload.hasMore),
-          loading: false,
-        },
+        [payload.sessionId]: reimportState.messageHistoryState,
       }));
       store.setOutputs((current) => ({
         ...current,
-        [payload.sessionId]: payload.outputs ?? [],
+        [payload.sessionId]: reimportState.outputs,
       }));
       store.setToolCalls((current) => {
         const next = {
           ...current,
-          [payload.sessionId]: payload.toolCalls ?? [],
+          [payload.sessionId]: reimportState.toolCalls,
         };
         toolCallsRef.current = next;
         return next;
       });
       store.setDiffs((current) => ({
         ...current,
-        [payload.sessionId]: payload.diffs ?? [],
+        [payload.sessionId]: reimportState.diffs,
       }));
       store.setActivityHistoryState((current) => ({
         ...current,
-        [payload.sessionId]: {
-          nextCursor: payload.activityNextCursor,
-          hasMore: Boolean(payload.activityHasMore),
-          loading: false,
-        },
+        [payload.sessionId]: reimportState.activityHistoryState,
       }));
-      if (typeof payload.message === "string" && payload.message.includes("失败")) {
-        toast.warning(payload.message);
+      if (reimportState.toast.tone === "warning") {
+        toast.warning(reimportState.toast.message);
       } else {
-        toast.success(payload.message ?? "历史已从 ACP 重新导入。");
+        toast.success(reimportState.toast.message);
       }
       return true;
+    }
     case "session/check_resume":
       store.setSessions((current) =>
         current.map((session) =>
@@ -420,13 +418,14 @@ export function applySessionResult(
       }
       return true;
     }
-    case "session/cleanup":
-      if (payload.result.remoteDeleted) {
-        toast.success("会话已删除");
-      } else if (payload.result.remoteDeletionAttempted) {
-        toast.warning(payload.result.message);
+    case "session/cleanup": {
+      const cleanupToast = resolveSessionCleanupToast(payload.result);
+      if (cleanupToast.tone === "success") {
+        toast.success(cleanupToast.message);
+      } else if (cleanupToast.tone === "warning") {
+        toast.warning(cleanupToast.message);
       } else {
-        toast.info(payload.result.message);
+        toast.info(cleanupToast.message);
       }
       setResumeFeedback("");
       store.setSessions((current) =>
@@ -457,6 +456,7 @@ export function applySessionResult(
         current === payload.result.sessionId ? null : current,
       );
       return true;
+    }
     case "permission/respond":
     case "approval/respond":
     case "approval/list_pending":

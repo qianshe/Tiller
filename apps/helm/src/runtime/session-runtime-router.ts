@@ -1,4 +1,4 @@
-import type { AgentPromptContent, AvailableCommand, SessionConfigOptionValue, SessionQueuedPrompt, SessionReasoningEffort } from "@tiller/shared";
+import type { AgentPromptContent, SessionConfigOptionValue, SessionQueuedPrompt, SessionReasoningEffort } from "@tiller/shared";
 import { SendPromptUseCase } from "@tiller/core";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
@@ -13,6 +13,8 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./session-config-options";
+import { assertSupportedSlashCommand } from "./session-command-support";
+import { createUserPromptMessage as createProjectedUserPromptMessage } from "./session-user-message";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -29,30 +31,6 @@ export type SessionConfigureRequest = {
   configId?: string;
   value?: SessionConfigOptionValue;
 };
-
-function parseSlashCommandName(text: string) {
-  const match = /^\s*\/(\S+)/u.exec(text);
-  return match?.[1]?.replace(/^\/+/, "") ?? null;
-}
-
-function availableCommandInvocations(command: AvailableCommand) {
-  const name = command.name.replace(/^\/+/, "");
-  const scope = command.scope?.trim();
-  return scope ? [name, `${scope}:${name}`] : [name];
-}
-
-function assertSupportedSlashCommand(text: string, commands: AvailableCommand[] | undefined, agentName: string) {
-  const commandName = parseSlashCommandName(text);
-  if (!commandName || !commands?.length) {
-    return;
-  }
-  const supported = commands.some((command) => availableCommandInvocations(command).includes(commandName));
-  if (supported) {
-    return;
-  }
-  const available = commands.map((command) => `/${availableCommandInvocations(command).at(-1)}`).join(", ");
-  throw new Error(`/${commandName} command is not supported by ${agentName}. Available commands: ${available}`);
-}
 
 async function resolvePromptRuntime(
   params: Pick<SessionPromptRequest, "sessionId" | "text">,
@@ -160,15 +138,7 @@ export async function sendPromptImmediately(
 function createUserPromptMessage(
   item: Pick<SessionQueuedPrompt, "sessionId" | "text" | "content" | "clientMessageId"> & { timestamp: string },
 ) {
-  const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
-  return {
-    id: item.clientMessageId,
-    role: "user" as const,
-    text: item.text,
-    timestamp: item.timestamp,
-    timelineSequence: allocateLiveEventSequence(item.sessionId),
-    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
-  };
+  return createProjectedUserPromptMessage(item, allocateLiveEventSequence);
 }
 
 async function appendUserPromptMessage(
