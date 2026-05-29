@@ -4,7 +4,6 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
-  AvailableCommand,
   SessionConfigOption,
   SessionSummary,
 } from "@tiller/shared";
@@ -25,33 +24,15 @@ import {
   upsertSessionSummary,
 } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
+import { deriveAvailableCommandMapsFromSessions } from "./session-available-commands";
+import {
+  applySessionConfigSelection,
+  deriveConfigOptionMapsFromSessions,
+  resolveSessionConfigSelection,
+  type SessionConfigSelection,
+} from "./session-config-selection";
 
-function deriveAvailableCommandMapsFromSessions(sessions: SessionSummary[]) {
-  const bySession: Record<string, AvailableCommand[]> = {};
-  const byAgent: Record<string, AvailableCommand[]> = {};
-  for (const session of sessions) {
-    const commands = session.availableCommands ?? [];
-    if (commands.length === 0) {
-      continue;
-    }
-    bySession[session.id] = commands;
-    byAgent[session.agentId] = commands;
-  }
-  return { bySession, byAgent };
-}
 
-function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
-  return Object.fromEntries(
-    sessions
-      .filter((session) => (session.configOptions?.length ?? 0) > 0)
-      .map((session) => [
-        session.id,
-        applySessionConfigSelection(session.configOptions ?? [], session),
-      ] as const),
-  );
-}
-
-type SessionConfigSelection = Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">;
 
 function clearConsumedDraftMetadata(runtimeSessionId: string) {
   const store = useDeckStore.getState();
@@ -74,73 +55,6 @@ function clearConsumedDraftMetadata(runtimeSessionId: string) {
       }),
     );
     return changed ? next : current;
-  });
-}
-
-function configOptionCategory(option: SessionConfigOption) {
-  return option.category?.toLowerCase() ?? option.id.toLowerCase();
-}
-
-function isReasoningConfigOption(option: SessionConfigOption) {
-  const category = configOptionCategory(option);
-  return category === "reasoning" ||
-    category === "reasoning_effort" ||
-    category === "thought_level";
-}
-
-function hasReasoningConfigOption(options: SessionConfigOption[]) {
-  return options.some((option) => isReasoningConfigOption(option));
-}
-
-function readConfigSelectionFromOptions(options: SessionConfigOption[]) {
-  return options.reduce<SessionConfigSelection>((selection, option) => {
-    const category = configOptionCategory(option);
-    const currentValue = option.currentValue ?? option.selectedValue ?? option.value;
-    if (category === "mode" && typeof currentValue === "string") {
-      selection.agentMode = currentValue;
-    } else if (category === "model" && typeof currentValue === "string") {
-      selection.model = currentValue;
-    } else if (isReasoningConfigOption(option) && typeof currentValue === "string") {
-      selection.reasoningEffort = currentValue as SessionConfigSelection["reasoningEffort"];
-    }
-    return selection;
-  }, {});
-}
-
-function resolveSessionConfigSelection(
-  current: SessionConfigSelection | undefined,
-  state: Partial<SessionConfigSelection> | undefined,
-  options?: SessionConfigOption[],
-): SessionConfigSelection {
-  const selection: SessionConfigSelection = {
-    ...(current ?? {}),
-    ...(options ? readConfigSelectionFromOptions(options) : {}),
-    ...(state ?? {}),
-  };
-  if (options && !hasReasoningConfigOption(options)) {
-    const { reasoningEffort: _reasoningEffort, ...withoutReasoning } = selection;
-    return withoutReasoning as SessionConfigSelection;
-  }
-  return selection;
-}
-
-function applySessionConfigSelection(
-  options: SessionConfigOption[],
-  selection: SessionConfigSelection,
-) {
-  return options.map((option) => {
-    const category = configOptionCategory(option);
-    let selectedValue: SessionConfigOption["currentValue"] | undefined;
-    if (category === "model") {
-      selectedValue = selection.model;
-    } else if (category === "mode") {
-      selectedValue = selection.agentMode;
-    } else if (isReasoningConfigOption(option)) {
-      selectedValue = selection.reasoningEffort;
-    }
-    return selectedValue === undefined
-      ? option
-      : { ...option, currentValue: selectedValue };
   });
 }
 
