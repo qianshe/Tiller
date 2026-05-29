@@ -1,11 +1,18 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall } from "@tiller/shared";
-import { Badge, Button, Icon, type TillerIconName } from "../../../shared/ui";
+import { Badge, Button, Icon } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import { coalesceDisplayMessages, groupToolCalls, sortAgentMessagesByTimeline, type ConversationToolCallItem } from "../../logbook";
 import { resolveToolCallTone } from "../../logbook/tool-call-tone";
+import {
+  formatToolInputPreview,
+  isActiveToolStatus,
+  resolveToolCallIconName,
+  resolveToolStatusLabel,
+} from "./plain-tool-model";
+import { splitStreamingMarkdown } from "./streaming-markdown";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
@@ -444,20 +451,6 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
   );
 }
 
-function resolveToolCallIconName(label: string): TillerIconName {
-  if (label === "Read" || label === "Write" || label === "File") return "fileText";
-  if (label === "Search") return "search";
-  if (label === "Shell") return "terminal";
-  if (label === "Fetch") return "globe";
-  if (label === "MCP") return "server";
-  if (label === "Skill") return "sparkle";
-  if (label === "Todo") return "check";
-  if (label === "Subagent") return "message";
-  if (label === "Built-in") return "panel";
-  if (label === "Think") return "activity";
-  return "inspect";
-}
-
 function resolveToolGroupBadgeLabel(group: ConversationToolCallItem[]): string {
   const labels = resolveToolGroupLabels(group);
   return labels[0] ?? "Tool";
@@ -470,35 +463,6 @@ function resolveToolGroupLabels(group: ConversationToolCallItem[]) {
 
 function summarizeToolGroupTitle(group: ConversationToolCallItem[]) {
   return resolveToolGroupLabels(group).slice(0, 3).join(" / ");
-}
-
-function isActiveToolStatus(status: AgentToolCall["status"]) {
-  return status === "pending" || status === "running" || status === "waiting_for_permission";
-}
-
-function resolveToolStatusLabel(status: AgentToolCall["status"]) {
-  if (status === "completed") {
-    return "完成";
-  }
-  if (status === "failed") {
-    return "失败";
-  }
-  if (status === "waiting_for_permission") {
-    return "等待授权";
-  }
-  return "运行中";
-}
-
-function formatToolInputPreview(input: string) {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return "";
-  }
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return trimmed;
-  }
 }
 
 function renderPlainMessageContent(
@@ -563,62 +527,6 @@ function PlainStreamingText({ tail = false, text }: PlainStreamingTextProps) {
     </div>
   );
 }
-
-type StreamingMarkdownSegment = {
-  markdown: string;
-  tail: string;
-};
-
-function splitStreamingMarkdown(text: string): StreamingMarkdownSegment | null {
-  const splitIndex = findStreamingMarkdownSplitIndex(text);
-  if (splitIndex === null) {
-    return null;
-  }
-  const markdown = text.slice(0, splitIndex).trimEnd();
-  if (!markdown.trim()) {
-    return null;
-  }
-  return {
-    markdown,
-    tail: text.slice(splitIndex).replace(/^\r?\n/u, ""),
-  };
-}
-
-function findStreamingMarkdownSplitIndex(text: string) {
-  let splitIndex: number | null = null;
-  let fence: MarkdownFenceState | null = null;
-  const linePattern = /.*(?:\r?\n|$)/gu;
-  let match: RegExpExecArray | null;
-  while ((match = linePattern.exec(text))) {
-    const line = match[0];
-    if (!line) {
-      break;
-    }
-    const lineEnd = match.index + line.length;
-    const marker = /^[ \t]*(`{3,}|~{3,})/u.exec(line)?.[1];
-    if (marker) {
-      const markerKind = marker[0] as "`" | "~";
-      if (fence && fence.marker === markerKind && marker.length >= fence.length) {
-        fence = null;
-        splitIndex = lineEnd;
-      } else if (!fence) {
-        fence = { marker: markerKind, length: marker.length };
-      }
-    }
-    if (!fence && /^\s*$/u.test(line) && match.index > 0) {
-      splitIndex = lineEnd;
-    }
-    if (lineEnd >= text.length) {
-      break;
-    }
-  }
-  return splitIndex;
-}
-
-type MarkdownFenceState = {
-  marker: "`" | "~";
-  length: number;
-};
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   const sortedMessages = sortAgentMessagesByTimeline(items);
