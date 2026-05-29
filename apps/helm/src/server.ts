@@ -24,7 +24,6 @@ import {
   reconnectAcpConnection,
   testAcpConnection,
 } from "@tiller/acp-runtime";
-import { encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
   type AcpAgentProvider,
@@ -52,6 +51,9 @@ import { createHelmRuntimeComposition } from "./app/runtime-composition";
 import { attachHelmRpcConnection } from "./app/transport-composition";
 import { createStaticDeckHandler } from "./app/static-deck-handler";
 import { createHelmAuthComposition } from "./app/auth-composition";
+import { createHandlerCatalogContext } from "./app/handler-catalog-context";
+import { createHandlerNotificationContext } from "./app/handler-notification-context";
+import { createHandlerSessionContextFactory } from "./app/handler-session-context";
 import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
@@ -119,12 +121,27 @@ const {
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
+const handlerNotificationContext = createHandlerNotificationContext({
+  authenticatedSockets,
+  sessionTopics,
+});
+const { broadcastNotification } = handlerNotificationContext;
 const liveMessageBuffer = createLiveMessageBuffer();
 const contextState = createHelmContextState({
   helms: loadAvailableHelms(),
   worktrees: loadAvailableWorktrees(),
   agents: listAvailableProviders(configPath),
   projects: loadAvailableProjects(),
+});
+const handlerCatalogContext = createHandlerCatalogContext({
+  configPath,
+  contextState,
+  loadAvailableHelms,
+  loadAvailableWorktrees,
+  listAvailableProviders,
+  loadAvailableProjectsWithSemanticSummaries,
+  readApprovalPolicy,
+  saveApprovalPolicyRule,
 });
 const runtimeComposition = createHelmRuntimeComposition({
   sessionStore,
@@ -162,6 +179,46 @@ const {
   takeRuntimeDraft,
   updateSessionSummary,
 } = sessionServices;
+const handlerSessionContextFactory = createHandlerSessionContextFactory({
+  sessions,
+  permissionIndex,
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionRuntimeStore,
+  liveMessageBuffer,
+  promptQueue,
+  createHandlerContext,
+  drainPromptQueue,
+  createRuntime: createAcpRuntime,
+  connectAcpConnection,
+  reconnectAcpConnection,
+  listAcpConnectionInventory,
+  createRuntimeDraft,
+  discardRuntimeDraft,
+  discardRuntimeDraftsForDeckClient,
+  scheduleDeckClientDraftDiscard,
+  takeRuntimeDraft,
+  configureRuntimeDraft,
+  testAcpConnection,
+  resolveHelmById,
+  resolveProjectById,
+  resolveProviderById,
+  startSessionResume,
+  handleRuntimeEvent,
+  hydrateSessionSummary,
+  migrateStoredSessionSummary,
+  buildResumeInfo,
+  persistRuntimeDescriptor,
+  refreshAuthoritativeSessionHistory,
+  updateSessionSummary,
+  persistSessionMessage,
+  publishDiffUpdate,
+  reimportSessionHistory,
+  hydrateDiffsFromWorktreeGit,
+  clearPermissionRequestsForSession,
+  deleteLocalSessionData,
+});
 
 // --- Device pairing state ---
 const authComposition = createHelmAuthComposition({
@@ -305,17 +362,11 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
   return {
     configPath,
     socketId,
-    notify,
-    broadcastNotification,
-    broadcastSessionTopic,
+    ...handlerNotificationContext,
     promptTrace: createPromptTraceEmitter({
       enabled: PROMPT_TRACE_ENABLED,
       publish: (event) => broadcastPromptTrace({ broadcastNotification }, event),
     }),
-    subscribeSessionTopic: sessionTopics.subscribe,
-    unsubscribeSessionTopic: sessionTopics.unsubscribe,
-    removeSocketSessionTopics: sessionTopics.removeSocket,
-    approvalIndex: permissionIndex,
     logInfo,
     logDebug,
     logWarn,
@@ -325,69 +376,12 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
         void shutdownHelm(reason);
       }, 0);
     },
-    getHelms: contextState.getHelms,
-    setHelms: contextState.setHelms,
-    loadAvailableHelms,
-    getWorktrees: contextState.getWorktrees,
-    setWorktrees: contextState.setWorktrees,
-    loadAvailableWorktrees,
-    getAgents: contextState.getAgents,
-    setAgents: contextState.setAgents,
-    loadAvailableAgents: () => listAvailableProviders(configPath),
-    getProjects: contextState.getProjects,
-    setProjects: contextState.setProjects,
-    loadAvailableProjectsWithSemanticSummaries,
-    readApprovalPolicy: () => readApprovalPolicy(configPath),
-    saveApprovalPolicyRule: (rule) => {
-      saveApprovalPolicyRule(rule, configPath);
-    },
+    ...handlerCatalogContext,
     trustedDeviceStore,
     authenticatedSockets,
     toTrustedDeviceSummary,
-    sessions,
-    permissionIndex,
-    sessionStore,
-    sessionMessageStore,
-    sessionArtifactStore,
-    sessionRuntimeStore,
-    liveMessageBuffer,
-    promptQueue,
-    drainPromptQueue: (sessionId) => drainPromptQueue(sessionId, createHandlerContext(socketId)),
-    createRuntime: createAcpRuntime,
-    connectAcpConnection,
-    reconnectAcpConnection,
-    listAcpConnectionInventory,
-    createRuntimeDraft,
-    discardRuntimeDraft,
-    discardRuntimeDraftsForDeckClient,
-    scheduleDeckClientDraftDiscard,
-    takeRuntimeDraft,
-    configureRuntimeDraft,
-    testAcpConnection,
-    resolveHelmById,
-    resolveProjectById,
-    resolveProviderById,
-    startSessionResume,
-    handleRuntimeEvent,
-    hydrateSessionSummary,
-    migrateStoredSessionSummary,
-    buildResumeInfo,
-    persistRuntimeDescriptor,
-    refreshAuthoritativeSessionHistory,
-    updateSessionSummary,
-    persistSessionMessage,
-    publishDiffUpdate,
-    reimportSessionHistory,
-    hydrateDiffsFromWorktreeGit,
-    clearPermissionRequestsForSession,
-    deleteLocalSessionData,
+    ...handlerSessionContextFactory.forSocket(socketId),
   };
-}
-function notify(socket: WebSocket, method: string, params: unknown) {
-  if (socket.readyState !== 1) {
-    return;
-  }
-  socket.send(encodeMessage({ jsonrpc: "2.0", method, params }));
 }
 
 function toTrustedDeviceSummary(
@@ -401,24 +395,6 @@ function toTrustedDeviceSummary(
     lastSeenAt: record.lastSeenAt,
     expiresAt: record.expiresAt,
   };
-}
-
-function broadcastNotification(method: string, params: unknown) {
-  for (const record of authenticatedSockets.listAll()) {
-    notify(record.socket, method, params);
-  }
-}
-
-function broadcastSessionTopic(sessionId: string, method: string, params: unknown) {
-  const subscriberIds = new Set(sessionTopics.listSubscribers(sessionId));
-  if (!subscriberIds.size) {
-    return;
-  }
-  for (const record of authenticatedSockets.listAll()) {
-    if (subscriberIds.has(record.socketId)) {
-      notify(record.socket, method, params);
-    }
-  }
 }
 
 function resolveDisplayUrls() {
