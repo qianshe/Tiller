@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AcpAgentProvider } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
@@ -7,7 +7,7 @@ export const method = "agent/save" as const;
 export const ParamsSchema = z.object({
   provider: typedUnknown<
     Pick<
-      AcpAgentProvider,
+      AcpRuntimeProviderConfig,
       | "id"
       | "name"
       | "kind"

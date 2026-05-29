@@ -1,4 +1,4 @@
-import type { AcpAgentProvider, AgentCapabilities } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentCapabilities } from "@tiller/shared";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
@@ -14,28 +14,32 @@ const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createGenericAcpAdapter(),
 ];
 
-export function resolveAcpAgentAdapter(provider: AcpAgentProvider) {
+export function resolveAcpAgentAdapter(provider: AcpRuntimeProviderConfig) {
   return ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ?? ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!;
 }
 
-export function resolveAcpLaunchConfig(provider: AcpAgentProvider, context: AcpLaunchContext) {
+export function resolveAcpLaunchConfig(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext) {
   return resolveAcpAgentAdapter(provider).resolveLaunch(provider, context);
 }
 
-export function resolveAdapterCapabilities(provider: AcpAgentProvider, initializeResult: unknown, detected: AgentCapabilities) {
+export function resolveAdapterCapabilities(
+  provider: AcpRuntimeProviderConfig,
+  initializeResult: unknown,
+  detected: AgentCapabilities,
+) {
   return resolveAcpAgentAdapter(provider).resolveCapabilities(provider, initializeResult, detected);
 }
 
-export function resolveAdapterCleanupPlan(provider: AcpAgentProvider, runtimeSessionId: string) {
+export function resolveAdapterCleanupPlan(provider: AcpRuntimeProviderConfig, runtimeSessionId: string) {
   return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
 }
 
-export function resolveAdapterRequestTimeout(provider: AcpAgentProvider, method: string) {
+export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig, method: string) {
   return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
 }
 
 export function loadAdapterAuthoritativeHistory(
-  provider: AcpAgentProvider,
+  provider: AcpRuntimeProviderConfig,
   runtimeSessionId: string,
   cwd: string,
 ) {

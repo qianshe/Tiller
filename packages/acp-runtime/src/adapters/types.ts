@@ -1,4 +1,10 @@
-import type { AcpAgentProvider, AgentCapabilities, AgentMessage, AgentToolCall, SessionReasoningEffort } from "@tiller/shared";
+import type {
+  AcpRuntimeProviderConfig,
+  AgentCapabilities,
+  AgentMessage,
+  AgentToolCall,
+  SessionReasoningEffort,
+} from "@tiller/shared";
 
 export type AcpLaunchContext = {
   fallbackCwd: string;
@@ -21,7 +27,7 @@ export type AcpAuthoritativeHistory = {
 };
 
 export type AcpHistoryContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   runtimeSessionId: string;
   cwd: string;
 };
@@ -31,12 +37,12 @@ export type ProviderCleanupPlan =
   | { kind: "unsupported"; providerId: string; message: string };
 
 export type AcpCleanupContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   runtimeSessionId: string;
 };
 
 export type AcpRequestTimeoutContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   method: string;
 };
 
@@ -48,9 +54,13 @@ export type ProviderAdapterPluginManifest = {
 
 export type AcpAgentAdapter = {
   id: string;
-  isMatch(provider: AcpAgentProvider): boolean;
-  resolveLaunch(provider: AcpAgentProvider, context: AcpLaunchContext): AcpLaunchSpec;
-  resolveCapabilities(provider: AcpAgentProvider, initializeResult: unknown, detected: AgentCapabilities): AgentCapabilities;
+  isMatch(provider: AcpRuntimeProviderConfig): boolean;
+  resolveLaunch(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext): AcpLaunchSpec;
+  resolveCapabilities(
+    provider: AcpRuntimeProviderConfig,
+    initializeResult: unknown,
+    detected: AgentCapabilities,
+  ): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
   loadAuthoritativeHistory?(context: AcpHistoryContext): Promise<AcpAuthoritativeHistory | null>;

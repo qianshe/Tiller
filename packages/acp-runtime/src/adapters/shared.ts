@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
-import type { AcpAgentProvider } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig } from "@tiller/shared";
 import type { AcpLaunchContext, AcpLaunchSpec } from "./types";
 
-export function resolveDefaultLaunch(provider: AcpAgentProvider, context: AcpLaunchContext): AcpLaunchSpec {
+export function resolveDefaultLaunch(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpLaunchContext,
+): AcpLaunchSpec {
   return {
     command: provider.command,
     args: provider.args ?? [],
@@ -11,7 +14,7 @@ export function resolveDefaultLaunch(provider: AcpAgentProvider, context: AcpLau
   };
 }
 
-export function resolveUnsupportedCleanup(provider: AcpAgentProvider) {
+export function resolveUnsupportedCleanup(provider: AcpRuntimeProviderConfig) {
   return {
     kind: "unsupported" as const,
     providerId: provider.id,
@@ -24,7 +27,7 @@ export function isCommandNamed(command: string, expected: string) {
   return normalized === expected || normalized === `${expected}.exe` || normalized === `${expected}.cmd` || normalized === `${expected}.ps1`;
 }
 
-function resolveLaunchCwd(provider: AcpAgentProvider, fallbackCwd: string) {
+function resolveLaunchCwd(provider: AcpRuntimeProviderConfig, fallbackCwd: string) {
   if (existsSync(provider.cwd ?? "")) {
     return provider.cwd!;
   }

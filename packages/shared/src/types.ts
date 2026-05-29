@@ -69,6 +69,12 @@ export type AcpAgentProvider = {
   capabilities?: Partial<AgentCapabilities>;
 };
 
+/**
+ * Explicit name for the provider projection needed to launch ACP runtimes.
+ * Kept as an alias while config persistence and UI inventory still use AcpAgentProvider.
+ */
+export type AcpRuntimeProviderConfig = AcpAgentProvider;
+
 export type WorktreeSummary = {
   name: string;
   path: string;
