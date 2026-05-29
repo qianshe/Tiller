@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SessionSummary } from "@tiller/shared";
+import type { PermissionDecision, SessionSummary } from "@tiller/shared";
 import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
 
 type DashboardHelm = {
@@ -16,7 +16,10 @@ type DashboardApproval = {
   id: string;
   kind: string;
   target: string;
+  allowDecision: PermissionDecision;
   agentName?: string;
+  sessionName?: string;
+  resolving?: boolean;
 };
 
 type DashboardActivity = {
@@ -41,11 +44,12 @@ export type DashboardPageProps = {
   helms?: DashboardHelm[];
   approvals?: DashboardApproval[];
   onNavigateAgents: () => void;
+  onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
   isMobile?: boolean;
 };
 
 const FALLBACK_APPROVALS: DashboardApproval[] = [
-  { id: "file.write", kind: "file.write", target: "等待权限请求", agentName: "codex" },
+  { id: "file.write", kind: "file.write", target: "等待权限请求", allowDecision: "allow", agentName: "codex" },
 ];
 
 function formatActivityTime(value?: string) {
@@ -137,6 +141,7 @@ export function DashboardPage({
   helms = [],
   approvals = [],
   onNavigateAgents,
+  onRespondApproval,
   isMobile = false,
 }: DashboardPageProps) {
   const [activeTab, setActiveTab] = useState<"全部" | "会话" | "权限" | "系统">("全部");
@@ -201,13 +206,21 @@ export function DashboardPage({
                 <Icon name="shield" size={15} className="text-warning shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-mono text-section tabular text-foreground">{p.kind}</span>
+                    <span className="font-mono text-section tabular text-foreground truncate">{p.sessionName ?? p.kind}</span>
                     <AgentIcon name={p.agentName} size={11} />
                   </div>
-                  <div className="font-mono text-meta text-muted-foreground tabular truncate mt-0.5">{p.target}</div>
+                  <div className="font-mono text-meta text-muted-foreground tabular truncate mt-0.5">
+                    {p.sessionName ? `${p.kind} · ${p.target}` : p.target}
+                  </div>
                 </div>
-                <button className="h-8 px-3 rounded text-section font-medium bg-primary text-on-primary active:opacity-90 shrink-0 dashboard-allow-btn">
-                  Allow
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded text-section font-medium bg-primary text-on-primary active:opacity-90 shrink-0 dashboard-allow-btn disabled:opacity-50"
+                  disabled={p.resolving || !onRespondApproval}
+                  aria-busy={p.resolving || undefined}
+                  onClick={() => onRespondApproval?.(p.id, p.allowDecision)}
+                >
+                  {p.resolving ? "..." : "Allow"}
                 </button>
               </li>
             ))}
@@ -372,12 +385,22 @@ export function DashboardPage({
                   <Icon name="shield" size={14} className="shrink-0 text-warning" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="font-mono text-action tabular text-foreground">{approval.kind}</span>
+                      <span className="font-mono text-action tabular text-foreground truncate">{approval.sessionName ?? approval.kind}</span>
                       <AgentIcon name={approval.agentName} size={10} />
                     </div>
-                    <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">{approval.target}</p>
+                    <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">
+                      {approval.sessionName ? `${approval.kind} · ${approval.target}` : approval.target}
+                    </p>
                   </div>
-                  <button type="button" className="h-7 shrink-0 rounded bg-primary px-3 text-action font-medium text-on-primary hover:opacity-90">Allow</button>
+                  <button
+                    type="button"
+                    className="h-7 shrink-0 rounded bg-primary px-3 text-action font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+                    disabled={approval.resolving || !onRespondApproval}
+                    aria-busy={approval.resolving || undefined}
+                    onClick={() => onRespondApproval?.(approval.id, approval.allowDecision)}
+                  >
+                    {approval.resolving ? "..." : "Allow"}
+                  </button>
                 </li>
               ))}
             </ul>

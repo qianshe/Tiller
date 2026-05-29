@@ -192,6 +192,126 @@ test("live thinking tool calls update the chat tool-call store immediately", () 
   assert.deepEqual(toolCallsRef.current.s1, [thinkingToolCall]);
 });
 
+test("assistant message chunks clear active live thinking from the chat store", () => {
+  resetStore();
+  const liveThinking: AgentToolCall = {
+    id: "think-live",
+    kind: "think",
+    title: "Thinking",
+    status: "running",
+    output: "实时 Thinking",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    updatedAt: "2026-05-04T01:00:00.000Z",
+  };
+  const completedTool: AgentToolCall = {
+    id: "tool-read",
+    kind: "read",
+    title: "Read",
+    status: "completed",
+    output: "file content",
+    timestamp: "2026-05-04T01:00:01.000Z",
+    updatedAt: "2026-05-04T01:00:01.000Z",
+  };
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: { s1: [liveThinking, completedTool] },
+  };
+  useDeckStore.setState({
+    toolCalls: { s1: [liveThinking, completedTool] },
+  });
+
+  const handled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "agent_message",
+        message: {
+          id: "m1",
+          role: "assistant",
+          text: "最终结论开始输出",
+          timestamp: "2026-05-04T01:00:02.000Z",
+        },
+        streaming: true,
+      },
+    },
+    {
+      toolCallsRef,
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [completedTool]);
+  assert.deepEqual(toolCallsRef.current.s1, [completedTool]);
+});
+
+test("session artifact refresh prunes active live thinking that is absent from the payload", () => {
+  resetStore();
+  const staleThinking: AgentToolCall = {
+    id: "runtime-thinking:thinking",
+    kind: "think",
+    title: "Thinking",
+    status: "running",
+    output: "旧实时 Thinking",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    updatedAt: "2026-05-04T01:00:00.000Z",
+  };
+  const authoritativeTool: AgentToolCall = {
+    id: "tool-read",
+    kind: "read",
+    title: "Read",
+    status: "completed",
+    output: "file content",
+    timestamp: "2026-05-04T01:00:01.000Z",
+    updatedAt: "2026-05-04T01:00:01.000Z",
+  };
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: { s1: [staleThinking] },
+  };
+  useDeckStore.setState({
+    toolCalls: { s1: [staleThinking] },
+  });
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "s1",
+      outputs: [],
+      diffs: [],
+      toolCalls: [authoritativeTool],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    {
+      toolCallsRef,
+      mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => {
+        useDeckStore.getState().setToolCalls((current) => {
+          const existing = current[sessionId] ?? [];
+          const nextSessionToolCalls = [
+            ...existing,
+            ...incoming.filter((toolCall: AgentToolCall) => !existing.some((item) => item.id === toolCall.id)),
+          ];
+          const next = {
+            ...current,
+            [sessionId]: nextSessionToolCalls,
+          };
+          toolCallsRef.current = next;
+          return next;
+        });
+      },
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set() },
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [authoritativeTool]);
+  assert.deepEqual(toolCallsRef.current.s1, [authoritativeTool]);
+});
+
 test("device RPC results sync trusted device inventory for the current helm", () => {
   resetStore();
   const device: TrustedDeviceSummary = {

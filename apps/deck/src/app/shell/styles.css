@@ -555,12 +555,6 @@ body[data-density="cozy"] {
     scroll-padding-block: 10px;
   }
 
-  .mission-responsive-mode .mission-permission-drawer {
-    bottom: calc(var(--mission-permission-composer-offset, 190px) + 68px + env(safe-area-inset-bottom));
-    max-height: calc(100% - var(--mission-permission-composer-offset, 190px) - 92px);
-    overflow: auto;
-  }
-
   .mission-mobile-mode .mission-sidebar-toggle {
     display: none;
   }

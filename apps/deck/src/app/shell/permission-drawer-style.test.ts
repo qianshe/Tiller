@@ -14,14 +14,16 @@ const shellStylesSource = readFileSync(resolve(currentDir, "styles.css"), "utf8"
 
 test("mission permission drawer uses an in-pane solid elevated review card", () => {
   assert.match(permissionDrawerSource, /grid-rows-\[auto_auto\]/);
-  assert.match(permissionDrawerSource, /absolute/);
-  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
-  assert.match(permissionDrawerSource, /left-3/);
-  assert.match(permissionDrawerSource, /right-3/);
-  assert.match(permissionDrawerSource, /sm:right-auto/);
-  assert.match(permissionDrawerSource, /sm:w-\[min\(560px,calc\(100%-1\.5rem\)\)\]/);
-  assert.match(permissionDrawerSource, /z-40/);
+  assert.match(permissionDrawerSource, /sticky/);
+  assert.match(permissionDrawerSource, /bottom-2/);
+  assert.match(permissionDrawerSource, /z-30/);
+  assert.doesNotMatch(permissionDrawerSource, /absolute/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
+  assert.doesNotMatch(permissionDrawerSource, /left-3/);
+  assert.doesNotMatch(permissionDrawerSource, /right-3/);
+  assert.doesNotMatch(permissionDrawerSource, /sm:right-auto/);
+  assert.doesNotMatch(permissionDrawerSource, /sm:w-\[min\(560px,calc\(100%-1\.5rem\)\)\]/);
   assert.match(permissionDrawerSource, /border-warning\/40/);
   assert.match(permissionDrawerSource, /bg-surface-elevated/);
   assert.match(permissionDrawerSource, /shadow-ambient/);

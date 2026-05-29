@@ -7,7 +7,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import { toast } from "../toast";
-import { commandChunkToToolCall, mergeMessageHistory } from "../logbook";
+import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
@@ -307,6 +307,7 @@ export function applySessionResult(
           payload.outputs,
         ),
       }));
+      pruneActiveThinkingToolCalls(payload.sessionId, toolCallsRef, store);
       mergeSessionToolCalls(payload.sessionId, [
         ...payload.outputs.map(commandChunkToToolCall),
         ...(payload.toolCalls ?? []),
@@ -466,6 +467,29 @@ export function applySessionResult(
     default:
       return false;
   }
+}
+
+type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function pruneActiveThinkingToolCalls(
+  sessionId: string,
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
+  store: DeckStore,
+) {
+  const currentSessionToolCalls = toolCallsRef.current[sessionId] ?? [];
+  const nextSessionToolCalls = dropActiveThinkingToolCalls(currentSessionToolCalls);
+  if (nextSessionToolCalls.length === currentSessionToolCalls.length) {
+    return;
+  }
+
+  store.setToolCalls((current) => {
+    const next = {
+      ...current,
+      [sessionId]: nextSessionToolCalls,
+    };
+    toolCallsRef.current = next;
+    return next;
+  });
 }
 
 export function applySessionUpdate(

@@ -1,10 +1,27 @@
 import { lazy, Suspense } from "react";
+import type { PermissionDecision, PermissionRequestOption, SessionSummary } from "@tiller/shared";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
+import { resolvePermissionCommandDisplay } from "../../features/mission";
+
+function resolveDashboardApprovalDecision(
+  options: PermissionRequestOption[] | undefined,
+): PermissionDecision {
+  if (!Array.isArray(options)) {
+    return "allow";
+  }
+  return options.find((option) => option.decision === "allow")?.decision
+    ?? options.find((option) => option.decision.startsWith("allow"))?.decision
+    ?? "allow";
+}
+
+function resolveDashboardApprovalText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -57,6 +74,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     approvalItemsById,
     toolCalls,
     navigateToView,
+    respondToPermission,
     openSession,
     resolveDisplaySessionTitle,
     formatRelativeTime,
@@ -167,12 +185,37 @@ function renderDashboard() {
     sessionCount: helm.sessionCount ?? helm.sessions ?? sessions.length,
     status: helm.status === "connected" || helm.status === "active" ? "active" : "idle",
   }));
-  const approvalRows = Object.values(approvalItemsById ?? {}).map((item: any) => ({
-    id: item.id ?? item.request?.id ?? item.requestId ?? item.createdAt,
-    kind: item.request?.kind ?? item.request?.toolName ?? item.request?.type ?? "permission",
-    target: item.request?.path ?? item.request?.command ?? item.request?.url ?? item.request?.description ?? "权限请求",
-    agentName: item.request?.agentName ?? item.request?.agentId,
-  }));
+  const sessionsById = new Map<string, SessionSummary>(
+    (sessions ?? []).map((session: SessionSummary) => [session.id, session]),
+  );
+  const approvalRows = Object.values(approvalItemsById ?? {}).map((item: any) => {
+    const request = item.request ?? {};
+    const sessionId = item.sessionId ?? request.sessionId;
+    const session = sessionId ? sessionsById.get(sessionId) : undefined;
+    const command = resolveDashboardApprovalText(request.command)
+      ?? resolveDashboardApprovalText(request.toolName)
+      ?? resolveDashboardApprovalText(request.kind)
+      ?? resolveDashboardApprovalText(request.type)
+      ?? "权限请求";
+    const commandDisplay = resolvePermissionCommandDisplay(command);
+    const sessionName = session
+      ? resolveDisplaySessionTitle(session)
+      : resolveDashboardApprovalText(sessionId) ?? "未知会话";
+    return {
+      id: item.id ?? request.id ?? item.requestId ?? item.createdAt,
+      kind: commandDisplay.title,
+      target: resolveDashboardApprovalText(request.reason)
+        ?? commandDisplay.detail
+        ?? resolveDashboardApprovalText(request.description)
+        ?? resolveDashboardApprovalText(request.path)
+        ?? resolveDashboardApprovalText(request.url)
+        ?? "权限请求",
+      allowDecision: resolveDashboardApprovalDecision(request.options),
+      agentName: session?.agentName ?? request.agentName ?? request.agentId,
+      sessionName,
+      resolving: Boolean(item.resolving),
+    };
+  });
   const toolCallCount = Object.values(toolCalls ?? {}).reduce(
     (total: number, calls: any) => total + (Array.isArray(calls) ? calls.length : 0),
     0,
@@ -192,6 +235,9 @@ function renderDashboard() {
       helms={helmRows}
       approvals={approvalRows}
       onNavigateAgents={() => navigateToView("agents")}
+      onRespondApproval={(approvalRequestId, decision) =>
+        respondToPermission(approvalRequestId, decision)
+      }
     />
   );
 }

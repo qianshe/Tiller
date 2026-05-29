@@ -179,6 +179,17 @@ export function mergeToolCallHistory(
   );
 }
 
+export function dropActiveThinkingToolCalls(toolCalls: AgentToolCall[]) {
+  return toolCalls.filter((toolCall) => !isActiveThinkingToolCall(toolCall));
+}
+
+export function isActiveThinkingToolCall(toolCall: AgentToolCall) {
+  return (
+    toolCall.kind === "think" &&
+    (toolCall.status === "pending" || toolCall.status === "running")
+  );
+}
+
 function resolveToolCallKind(
   currentKind: AgentToolCall["kind"],
   incomingKind: AgentToolCall["kind"],

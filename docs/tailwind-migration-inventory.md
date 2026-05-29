@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1760
+- Total lines: 1754
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 728
-- Top-level selectors: 148
+- Lines: 722
+- Top-level selectors: 147
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -70,7 +70,6 @@ Selectors:
 - `.mission-responsive-mode .mission-panel-head .eyebrow`
 - `.mission-responsive-mode .mission-panel-head h3`
 - `.mission-responsive-mode .mission-panel-tree`
-- `.mission-responsive-mode .mission-permission-drawer`
 - `.mission-responsive-mode .mission-resizable-group`
 - `.mission-responsive-mode .mission-session-meta`
 - `.mission-responsive-mode .mission-session-overview`

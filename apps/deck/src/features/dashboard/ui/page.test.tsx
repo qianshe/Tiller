@@ -32,6 +32,32 @@ test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals lay
   assert.match(html, /Allow/);
 });
 
+test("DashboardPage renders approval session name and tool name", () => {
+  const html = renderToStaticMarkup(
+    createElement(DashboardPage, {
+      ...commonProps,
+      approvals: [
+        {
+          id: "approval-1",
+          kind: "MCP · sanshu/zhi",
+          target: "Approve MCP tool call",
+          agentName: "Codex",
+          sessionName: "你好",
+          allowDecision: "allow",
+        },
+      ],
+    } as any),
+  );
+
+  assert.match(html, /你好/);
+  assert.match(html, /MCP · sanshu\/zhi/);
+});
+
+test("DashboardPage wires Allow buttons to approval responses", () => {
+  assert.match(pageSource, /onRespondApproval\?\.\(approval\.id, approval\.allowDecision\)/);
+  assert.match(pageSource, /disabled=\{approval\.resolving \|\| !onRespondApproval\}/);
+});
+
 test("DashboardPage mobile keeps v6 priority order", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 

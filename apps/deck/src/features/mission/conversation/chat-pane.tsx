@@ -67,6 +67,7 @@ type MissionChatPaneProps = {
   activityLoading: MissionToolActivity | null;
   pendingToolPresent: boolean;
   pendingApprovals: ReadonlyArray<{
+    sessionId: string;
     request: PermissionRequest;
     resolving: boolean;
   }>;
@@ -159,6 +160,9 @@ export function MissionChatPane({
     const sessionToolCalls = sessionToolCallsById[session.id]
       ?? (session.id === activeSession?.id ? activeSessionToolCalls : []);
     const sessionTimeline = splitMissionToolCalls(sessionToolCalls);
+    const sessionPendingApprovals = pendingApprovals.filter(
+      (approval) => approval.sessionId === session.id,
+    );
     const isActiveSession = session.id === activeSession?.id;
 
     return (
@@ -187,6 +191,21 @@ export function MissionChatPane({
             activity={activityLoading}
             pendingToolPresent={pendingToolPresent}
           />
+        ) : null}
+        {sessionPendingApprovals.length > 0 ? (
+          <div className="mission-approval-stack grid gap-2">
+            {sessionPendingApprovals.map((approval) => (
+              <MissionPermissionDrawer
+                key={approval.request.id}
+                request={approval.request}
+                copy={copy}
+                showWorktree={showPermissionWorktree}
+                fallbackToolTitle={pendingToolTitle}
+                resolving={approval.resolving}
+                onRespond={(decision) => onRespondToPermission(approval.request.id, decision)}
+              />
+            ))}
+          </div>
         ) : null}
       </>
     );
@@ -562,21 +581,6 @@ export function MissionChatPane({
           )
         ) : null}{" "}
       </div>{" "}
-      {activeSession && pendingApprovals.length > 0 ? (
-        <div className="mission-approval-stack grid gap-2">
-          {pendingApprovals.map((approval) => (
-            <MissionPermissionDrawer
-              key={approval.request.id}
-              request={approval.request}
-              copy={copy}
-              showWorktree={showPermissionWorktree}
-              fallbackToolTitle={pendingToolTitle}
-              resolving={approval.resolving}
-              onRespond={(decision) => onRespondToPermission(approval.request.id, decision)}
-            />
-          ))}
-        </div>
-      ) : null}
       {activeSession ? (
         <MissionQueuedPrompts
           queue={promptQueue}

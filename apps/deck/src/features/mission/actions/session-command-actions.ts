@@ -216,7 +216,7 @@ export function useSessionCommandActions({
 
   function respondToPermission(approvalRequestId: string, decision: PermissionDecision) {
     const client = rpcClientRef.current;
-    if (!activeSessionId || !isClientOpen(client)) {
+    if (!isClientOpen(client)) {
       return;
     }
     const store = useDeckStore.getState();

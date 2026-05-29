@@ -88,14 +88,16 @@ test("mission chat history state includes activity history for thinking-only pag
   assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\| activityHistoryState\?\.hasMore/);
 });
 
-test("mission chat reserves permission drawer space through localized drawer positioning", () => {
+test("mission chat renders permission drawers inside matching session cards", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "../conversation/permission-drawer.tsx"), "utf8");
 
-  assert.match(worktreeSource, /mission-pane-chat relative/);
-  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
-  assert.match(shellStylesSource, /bottom:\s*calc\(var\(--mission-permission-composer-offset, 190px\) \+ 68px \+ env\(safe-area-inset-bottom\)\)/);
-  assert.match(permissionDrawerSource, /left-3/);
-  assert.match(permissionDrawerSource, /right-3/);
+  assert.match(chatPaneSource, /sessionPendingApprovals/);
+  assert.match(chatPaneSource, /approval\.sessionId === session\.id/);
+  assert.match(chatPaneSource, /<MissionPermissionDrawer/);
+  assert.match(permissionDrawerSource, /sticky/);
+  assert.match(permissionDrawerSource, /bottom-2/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.doesNotMatch(shellStylesSource, /mission-responsive-mode \.mission-permission-drawer/);
   assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);
   assert.doesNotMatch(permissionDrawerSource, /-translate-x-1\/2/);
   assert.doesNotMatch(permissionDrawerSource, /w-\[min\(720px/);
@@ -800,7 +802,7 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*padding:\s*8px;/s);
   assert.match(composerSource, /mission-composer-deck[^\n]+wb-pane-sunken/);
   assert.doesNotMatch(composerSource, /mission-order-editor[^\n]+bg-surface-sunken/);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
   assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
 });
 

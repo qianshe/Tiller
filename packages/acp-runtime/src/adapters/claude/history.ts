@@ -41,6 +41,9 @@ export function parseClaudeCodeJsonlHistory(raw: string): AcpAuthoritativeHistor
 
     for (const [index, part] of asArray(content).entries()) {
       if (part?.type === "thinking") {
+        if (text) {
+          continue;
+        }
         const thinking = stringFrom(part.thinking);
         if (!thinking) {
           continue;

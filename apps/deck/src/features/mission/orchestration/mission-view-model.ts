@@ -173,13 +173,17 @@ const pendingPermission = activeSession
   ? (permissionRequests[activeSession.id] ?? null)
   : null;
 const pendingApprovals = useMemo(() => {
-  if (!activeSession) return [];
-  const ids = pendingApprovalIdsBySession[activeSession.id] ?? [];
-  return ids
-    .map((id) => approvalItemsById[id])
-    .filter((item) => Boolean(item))
-    .map((item) => ({ request: item.request, resolving: item.resolving }));
-}, [activeSession, approvalItemsById, pendingApprovalIdsBySession]);
+  return Object.entries(pendingApprovalIdsBySession ?? {}).flatMap(
+    ([sessionId, ids]) => (Array.isArray(ids) ? ids : [])
+      .map((id) => approvalItemsById[id])
+      .filter((item) => Boolean(item))
+      .map((item) => ({
+        sessionId,
+        request: item.request,
+        resolving: item.resolving,
+      })),
+  );
+}, [approvalItemsById, pendingApprovalIdsBySession]);
 const selectedDraftAgent =
   filteredAgents.find((agent) => agent.id === selectedAgentId) ?? null;
 const draftAgent =

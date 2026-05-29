@@ -108,14 +108,27 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
   function mergeAuthoritativeToolCalls(
     localToolCalls: AgentToolCall[],
     authoritativeToolCalls: AgentToolCall[],
+    options: { preserveLocalThinking: boolean },
   ) {
+    if (!authoritativeToolCalls.length) {
+      return options.preserveLocalThinking
+        ? localToolCalls
+        : localToolCalls.filter((toolCall) => toolCall.kind !== "think");
+    }
+
     const authoritativeIds = new Set(authoritativeToolCalls.map((toolCall) => toolCall.id));
     return [
       ...authoritativeToolCalls,
-      ...localToolCalls.filter(
-        (toolCall) => toolCall.kind === "think" && !authoritativeIds.has(toolCall.id),
-      ),
+      ...(options.preserveLocalThinking
+        ? localToolCalls.filter(
+            (toolCall) => toolCall.kind === "think" && !authoritativeIds.has(toolCall.id),
+          )
+        : []),
     ].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  }
+
+  function hasThinkingToolCalls(toolCalls: AgentToolCall[]) {
+    return toolCalls.some((toolCall) => toolCall.kind === "think");
   }
 
   function applyAuthoritativeProviderHistory(
@@ -145,6 +158,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
           mergeAuthoritativeToolCalls(
             options.sessionArtifactStore.get(sessionId).toolCalls,
             history.toolCalls,
+            { preserveLocalThinking: true },
           ),
         );
       }
@@ -201,12 +215,14 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     }
 
     persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
-    if (history.toolCalls.length) {
+    const localToolCalls = options.sessionArtifactStore.get(sessionId).toolCalls;
+    if (history.toolCalls.length || hasThinkingToolCalls(localToolCalls)) {
       options.sessionArtifactStore.replaceToolCalls(
         sessionId,
         mergeAuthoritativeToolCalls(
-          options.sessionArtifactStore.get(sessionId).toolCalls,
+          localToolCalls,
           history.toolCalls,
+          { preserveLocalThinking: false },
         ),
       );
     }

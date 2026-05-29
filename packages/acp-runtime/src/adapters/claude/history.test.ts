@@ -154,6 +154,33 @@ test("parseClaudeCodeJsonlHistory preserves thinking as collapsible think items"
   ]);
 });
 
+test("parseClaudeCodeJsonlHistory skips thinking blocks from final text answers", () => {
+  const history = parseClaudeCodeJsonlHistory(
+    JSON.stringify({
+      uuid: "msg-final",
+      timestamp: "2026-05-17T09:34:40.000Z",
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "这段思考不应作为历史 Thinking 展示" },
+          { type: "text", text: "最终结论" },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-final",
+      role: "assistant",
+      text: "最终结论",
+      timestamp: "2026-05-17T09:34:40.000Z",
+    },
+  ]);
+  assert.deepEqual(history.toolCalls, []);
+});
+
 test("parseClaudeCodeJsonlHistory classifies common Claude Code tools", () => {
   const history = parseClaudeCodeJsonlHistory(
     [

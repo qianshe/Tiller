@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
-import { commandChunkToToolCall, mergeAgentMessages } from "../logbook";
+import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 import type { SessionUpdateParams } from "./session-update-contracts";
 
@@ -31,7 +31,12 @@ export function applyActivityUpdate(
         update.message,
         update.streaming,
       );
-      const toolBoundaryTimes = (toolCallsRef.current[sessionId] ?? [])
+      const sessionToolCalls = clearActiveThinkingToolCalls(
+        sessionId,
+        toolCallsRef,
+        store,
+      );
+      const toolBoundaryTimes = sessionToolCalls
         .map((call) => Date.parse(call.timestamp))
         .filter(Number.isFinite);
       store.setMessages((current) => ({
@@ -77,6 +82,30 @@ export function applyActivityUpdate(
     default:
       return false;
   }
+}
+
+type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function clearActiveThinkingToolCalls(
+  sessionId: string,
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
+  store: DeckStore,
+) {
+  const currentSessionToolCalls = toolCallsRef.current[sessionId] ?? [];
+  const nextSessionToolCalls = dropActiveThinkingToolCalls(currentSessionToolCalls);
+  if (nextSessionToolCalls.length === currentSessionToolCalls.length) {
+    return currentSessionToolCalls;
+  }
+
+  store.setToolCalls((current) => {
+    const next = {
+      ...current,
+      [sessionId]: nextSessionToolCalls,
+    };
+    toolCallsRef.current = next;
+    return next;
+  });
+  return nextSessionToolCalls;
 }
 
 function withStreamingState(
