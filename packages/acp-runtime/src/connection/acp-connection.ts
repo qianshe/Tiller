@@ -14,6 +14,7 @@ import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServe
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
 import { resolveAcpConnectionKey } from "./connection-key";
+import { createConnectionClientMethods } from "./connection-client-methods";
 import { withConnectionRequest } from "./connection-request";
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./connection-types";
 import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
@@ -842,47 +843,4 @@ function updateSessionConfigOptionValue(
         }
       : option,
   );
-}
-
-function createConnectionClientMethods(options: {
-  onSessionUpdate: (params: unknown) => void;
-  onRequestPermission: (params: acp.RequestPermissionRequest) => Promise<acp.RequestPermissionResponse>;
-  readTextFile: (params: any) => Promise<{ content: string }>;
-  writeTextFile: (params: any) => Promise<Record<string, never>>;
-  createTerminal: (params: any) => Promise<{ terminalId: string }>;
-  terminalOutput: (params: any) => Promise<{ output: string; truncated: boolean; exitStatus?: { exitCode: number | null; signal: string | null } }>;
-  waitForTerminalExit: (params: any) => Promise<{ exitCode: number | null; signal: string | null }>;
-  killTerminal: (params: any) => Promise<Record<string, never>>;
-  releaseTerminal: (params: any) => Promise<Record<string, never>>;
-}) {
-  return {
-    async sessionUpdate(params: unknown) {
-      options.onSessionUpdate(params);
-      return undefined;
-    },
-    async requestPermission(params: acp.RequestPermissionRequest) {
-      return await options.onRequestPermission(params);
-    },
-    async readTextFile(params: any) {
-      return await options.readTextFile(params);
-    },
-    async writeTextFile(params: any) {
-      return await options.writeTextFile(params);
-    },
-    async createTerminal(params: any) {
-      return await options.createTerminal(params);
-    },
-    async terminalOutput(params: any) {
-      return await options.terminalOutput(params);
-    },
-    async waitForTerminalExit(params: any) {
-      return await options.waitForTerminalExit(params);
-    },
-    async killTerminal(params: any) {
-      return await options.killTerminal(params);
-    },
-    async releaseTerminal(params: any) {
-      return await options.releaseTerminal(params);
-    },
-  };
 }

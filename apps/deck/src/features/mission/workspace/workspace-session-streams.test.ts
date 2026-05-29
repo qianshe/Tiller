@@ -1,0 +1,71 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
+import { buildSessionStreamHydrationPlan } from "./workspace-session-streams";
+
+const idleSession = {
+  id: "idle-session",
+  status: "idle",
+} as SessionSummary;
+const runningSession = {
+  id: "running-session",
+  status: "running",
+} as SessionSummary;
+const resumeUnavailableSession = {
+  id: "resume-unavailable-session",
+  status: "idle",
+  resume: { state: "resume-unavailable" },
+} as SessionSummary;
+
+test("buildSessionStreamHydrationPlan skips cached streams and deduplicates ids", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [
+      idleSession.id,
+      idleSession.id,
+      runningSession.id,
+      resumeUnavailableSession.id,
+    ],
+    sessionById: new Map([
+      [idleSession.id, idleSession],
+      [runningSession.id, runningSession],
+      [resumeUnavailableSession.id, resumeUnavailableSession],
+    ]),
+    messageHistoryState: {
+      [runningSession.id]: { hasMore: false, loading: false },
+    },
+    activityHistoryState: {},
+    messagesBySession: {},
+    outputsBySession: {
+      [runningSession.id]: [{ id: "output-1" }],
+    },
+    toolCallsBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, [
+    idleSession.id,
+    resumeUnavailableSession.id,
+  ]);
+  assert.deepEqual(plan.activitySessionIds, [
+    idleSession.id,
+    resumeUnavailableSession.id,
+  ]);
+  assert.deepEqual(plan.resumeCheckSessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {},
+    messagesBySession: { [idleSession.id]: [{ id: "message-1" }] as AgentMessage[] },
+    outputsBySession: {},
+    toolCallsBySession: { [idleSession.id]: [{ id: "tool-1" }] as AgentToolCall[] },
+    checkedResumeSessionIds: new Set([idleSession.id]),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.activitySessionIds, []);
+  assert.deepEqual(plan.resumeCheckSessionIds, []);
+});

@@ -29,6 +29,7 @@ import {
 import { MissionSidebar } from "../navigation";
 import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./workspace-model";
+import { buildSessionStreamHydrationPlan } from "./workspace-session-streams";
 import { buildRuntimeOverviewItems } from "./runtime-overview";
 import {
   acpReconnectKey,
@@ -332,23 +333,19 @@ export function MissionWorktree(props: any) {
     ) {
       return;
     }
-    const uniqueSessionIds = [...new Set(sessionIds)];
-    const messageSessionIds = uniqueSessionIds.filter((sessionId) => (
-      !messageHistoryState[sessionId] && !messages?.[sessionId]?.length
-    ));
-    const activitySessionIds = uniqueSessionIds.filter((sessionId) => (
-      !activityHistoryState[sessionId] &&
-      !outputs?.[sessionId]?.length &&
-      !toolCalls?.[sessionId]?.length
-    ));
-    const resumeCheckSessionIds = uniqueSessionIds.filter((sessionId) => {
-      const session = sessionById.get(sessionId);
-      return Boolean(
-        session &&
-          session.status !== "running" &&
-          session.resume?.state !== "resume-unavailable" &&
-          !openSessionResumeCheckRef.current.has(sessionId),
-      );
+    const {
+      messageSessionIds,
+      activitySessionIds,
+      resumeCheckSessionIds,
+    } = buildSessionStreamHydrationPlan({
+      sessionIds,
+      sessionById,
+      messageHistoryState,
+      activityHistoryState,
+      messagesBySession: messages,
+      outputsBySession: outputs,
+      toolCallsBySession: toolCalls,
+      checkedResumeSessionIds: openSessionResumeCheckRef.current,
     });
 
     if (messageSessionIds.length > 0) {
