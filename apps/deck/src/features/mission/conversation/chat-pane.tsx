@@ -26,6 +26,12 @@ import {
   StatusDot,
 } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
+import {
+  formatSessionPreviewTime,
+  resolveSessionStatusTone,
+  splitMissionToolCalls,
+} from "./chat-pane-model";
 
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
 type MissionToolActivity = ComponentProps<typeof MissionToolLoading>["activity"];
@@ -204,15 +210,17 @@ export function MissionChatPane({
       </>
     );
   };
-  const isSingleSession = openSessions.length <= 1;
+  const {
+    isSingleSession,
+    parallelGridCompact,
+    shouldLockChatMainScroll,
+    shouldAnchorActiveParallelCard,
+    parallelGridStyle,
+  } = buildParallelChatLayoutModel({
+    sessionCount: openSessions.length,
+    hasDraftWindow: Boolean(draftWindow),
+  });
   const singleSession = openSessions[0];
-  const parallelGridCompact = openSessions.length + (draftWindow ? 1 : 0) <= 2;
-  const shouldLockChatMainScroll = (openSessions.length > 0 || Boolean(draftWindow)) && parallelGridCompact;
-  const shouldAnchorActiveParallelCard = openSessions.length + (draftWindow ? 1 : 0) > 2;
-  const parallelGridStyle = {
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
-    gridAutoRows: parallelGridCompact ? "minmax(0, 1fr)" : "minmax(360px, min(52vh, 560px))",
-  };
   const visibleSessionStreamCounts = openSessions
     .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
     .join("|");
@@ -868,14 +876,6 @@ function DraftSessionCard({
   );
 }
 
-function splitMissionToolCalls(toolCalls: AgentToolCall[]) {
-  return {
-    thinkingToolCalls: toolCalls.filter((toolCall) => toolCall.kind === "think"),
-    timelineToolCalls: toolCalls.filter((toolCall) => toolCall.kind !== "think"),
-    boundaryTimestamps: toolCalls.map((toolCall) => toolCall.timestamp),
-  };
-}
-
 function SessionPreviewMessages({ session, restoring = false }: { session: SessionSummary; restoring?: boolean }) {
   return (
     <div className="space-y-3 text-section leading-relaxed">
@@ -941,33 +941,4 @@ function MenuItem({
       {kbd ? <span className="font-mono text-2xs text-muted-foreground tabular">{kbd}</span> : null}
     </button>
   );
-}
-
-function resolveSessionStatusTone(status: SessionSummary["status"]): "active" | "idle" | "warning" | "danger" | "primary" {
-  switch (status) {
-    case "running":
-      return "primary";
-    case "waiting_for_permission":
-      return "warning";
-    case "error":
-      return "danger";
-    default:
-      return "idle";
-  }
-}
-
-function formatSessionPreviewTime(value: string | undefined) {
-  if (!value) {
-    return "--:--";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "--:--";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
 }
