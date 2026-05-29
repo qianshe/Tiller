@@ -11,25 +11,22 @@ import { commandChunkToToolCall, mergeMessageHistory, sortAgentMessagesByTimelin
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
-  createSessionStatusMap,
   pruneSessionScopedMap,
   resolveActiveSessionId,
 } from "../mission/utils/session-derivations";
 import {
   availableCommandListsEqual,
   mergeCommandHistory,
-  mergeSessionSummaries,
   removeSessionRecord,
   upsertSessionSummary,
 } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
-import { deriveAvailableCommandMapsFromSessions } from "./session-available-commands";
 import {
   applySessionConfigSelection,
-  deriveConfigOptionMapsFromSessions,
   resolveSessionConfigSelection,
   type SessionConfigSelection,
 } from "./session-config-selection";
+import { deriveSessionListResult } from "./session-list-result";
 import {
   pendingInitialPromptMessageId,
   pendingPromptImages,
@@ -189,21 +186,23 @@ export function applySessionResult(
       }
       return true;
     case "session/list": {
-      const nextSessions = payload.before
-        ? mergeSessionSummaries(currentSessions, payload.sessions)
-        : payload.sessions;
-      const nextStatuses = createSessionStatusMap(nextSessions);
+      const listResult = deriveSessionListResult({
+        currentSessions,
+        payload: {
+          sessions: payload.sessions,
+          before: payload.before,
+          nextCursor: payload.nextCursor,
+          hasMore: payload.hasMore,
+        },
+      });
+      const { nextSessions, nextStatuses } = listResult;
       store.applyHelmInventory(sourceHelmKey, {
         sessions: nextSessions,
         statuses: nextStatuses,
       });
       if (sourceIsCurrentHelm) {
         store.setSessions(nextSessions);
-        store.setSessionHistoryState({
-          nextCursor: payload.nextCursor,
-          hasMore: Boolean(payload.hasMore),
-          loading: false,
-        });
+        store.setSessionHistoryState(listResult.historyState);
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
         store.setMessageHistoryState((current) =>
@@ -224,19 +223,16 @@ export function applySessionResult(
         store.setDiffs((current) => pruneSessionScopedMap(current, nextSessions));
         store.setSessionConfigOptions((current) => ({
           ...pruneSessionScopedMap(current, nextSessions),
-          ...deriveConfigOptionMapsFromSessions(nextSessions),
+          ...listResult.configOptionsBySession,
         }));
-        {
-          const commandMaps = deriveAvailableCommandMapsFromSessions(nextSessions);
-          store.setSessionAvailableCommands((current) => ({
-            ...pruneSessionScopedMap(current, nextSessions),
-            ...commandMaps.bySession,
-          }));
-          store.setAgentAvailableCommands((current) => ({
-            ...current,
-            ...commandMaps.byAgent,
-          }));
-        }
+        store.setSessionAvailableCommands((current) => ({
+          ...pruneSessionScopedMap(current, nextSessions),
+          ...listResult.availableCommands.bySession,
+        }));
+        store.setAgentAvailableCommands((current) => ({
+          ...current,
+          ...listResult.availableCommands.byAgent,
+        }));
         store.setActiveSessionId((current: string | null) =>
           resolveActiveSessionId(current, nextSessions),
         );

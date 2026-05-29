@@ -15,6 +15,11 @@ import {
   selectAdjacentMissionMobilePane as resolveAdjacentMissionMobilePane,
 } from "./mobile-pane";
 import { MissionPage } from "./page";
+import {
+  buildDraftPreparingMessage,
+  buildMissionChatRestoreNotice,
+  resolveMissionChatSelectedSessionId,
+} from "./workspace-chat-composition";
 import { MissionWorktreeList } from "./worktree-list";
 import {
   ResizableHandle,
@@ -721,6 +726,20 @@ export function MissionWorktree(props: any) {
   const composerPromptPlaceholder = shouldShowRestoreGateNotice
     ? activeSessionRestoreGate.message
     : draftPromptPlaceholder;
+  const missionChatSelectedSessionId = resolveMissionChatSelectedSessionId({
+    focusedDraftWindow: Boolean(focusedDraftWindow),
+    focusedRealSessionId,
+    activeSessionId: activeSession?.id,
+  });
+  const missionChatRestoreNotice = buildMissionChatRestoreNotice({
+    show: shouldShowRestoreGateNotice,
+    state: activeSessionRestoreGate.state,
+    message: activeSessionRestoreGate.message,
+  });
+  const draftPreparingMessage = buildDraftPreparingMessage({
+    agentName: effectiveSelectedDraftAgent?.name,
+    connectionMessage: draftConnectionEntry?.message,
+  });
   return (
     <MissionPage
       layoutRef={missionLayoutRef}
@@ -826,7 +845,7 @@ export function MissionWorktree(props: any) {
             setDraftChatWindow?.(null);
             setFocusedChatWindowId(persistedOpenChatSessionIds.at(-1) ? `session:${persistedOpenChatSessionIds.at(-1)}` : null);
           }}
-          selectedSessionId={focusedDraftWindow ? null : focusedRealSessionId ?? activeSession?.id ?? null}
+          selectedSessionId={missionChatSelectedSessionId}
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
           activeSessionToolCalls={activeToolCalls}
@@ -858,12 +877,7 @@ export function MissionWorktree(props: any) {
           onReimportSessionHistory={setPendingSessionHistoryReimport}
           onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
-          restoreNotice={shouldShowRestoreGateNotice ? {
-            title: activeSessionRestoreGate.state === "history-only" || activeSessionRestoreGate.state === "failed"
-              ? "ACP 会话未恢复"
-              : "正在恢复 ACP",
-            message: activeSessionRestoreGate.message,
-          } : undefined}
+          restoreNotice={missionChatRestoreNotice}
           onUpdateQueuedPrompt={updateQueuedPrompt}
           onDeleteQueuedPrompt={deleteQueuedPrompt}
         >
@@ -871,7 +885,7 @@ export function MissionWorktree(props: any) {
             <div className="mission-draft-preparing m-3 rounded-xl border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
               <strong className="block text-foreground">正在连接 ACP</strong>
               <span>
-                {effectiveSelectedDraftAgent?.name ?? "ACP Agent"} {draftConnectionEntry?.message ?? "正在启动连接，连接成功后将显示输入框。"}
+                {draftPreparingMessage}
               </span>
             </div>
           ) : null}
