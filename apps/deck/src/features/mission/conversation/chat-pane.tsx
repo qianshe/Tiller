@@ -23,7 +23,11 @@ import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import { splitMissionToolCalls } from "./chat-pane-model";
-import { resolveMissionActivityLoading } from "../utils/session-render-state";
+import {
+  resolveChatSessionMessages,
+  resolveChatSessionToolCalls,
+  resolveChatSessionToolLoading,
+} from "./chat-session-state";
 import {
   DraftSessionCard,
   MenuItem,
@@ -154,35 +158,22 @@ export function MissionChatPane({
 }: MissionChatPaneProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const resolveSessionMessages = (session: SessionSummary) =>
-    sessionMessagesById[session.id]
-      ?? (session.id === activeSession?.id ? activeSessionMessages : []);
-  const resolveSessionToolCalls = (session: SessionSummary) =>
-    sessionToolCallsById[session.id]
-      ?? (session.id === activeSession?.id ? activeSessionToolCalls : []);
-  const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined => {
-    const sessionMessages = resolveSessionMessages(session);
-    const sessionToolCalls = resolveSessionToolCalls(session);
-    if (session.id === activeSession?.id && activityLoading) {
-      return { activity: activityLoading, pendingToolPresent };
-    }
-
-    const sessionActivityLoading = resolveMissionActivityLoading({
-      status: session.status,
-      messages: sessionMessages,
-      toolCalls: sessionToolCalls,
-      pendingPermission: pendingApprovals.find(
-        (approval) => approval.sessionId === session.id,
-      )?.request ?? null,
-    });
-
-    return sessionActivityLoading
-      ? {
-          activity: sessionActivityLoading,
-          pendingToolPresent: sessionActivityLoading.title.startsWith("Tool:"),
-        }
-      : undefined;
+  const sessionStateSources = {
+    activeSessionId: activeSession?.id ?? null,
+    activeSessionMessages,
+    activeSessionToolCalls,
+    sessionMessagesById,
+    sessionToolCallsById,
+    activityLoading,
+    pendingToolPresent,
+    pendingApprovals,
   };
+  const resolveSessionMessages = (session: SessionSummary) =>
+    resolveChatSessionMessages(session, sessionStateSources);
+  const resolveSessionToolCalls = (session: SessionSummary) =>
+    resolveChatSessionToolCalls(session, sessionStateSources);
+  const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined =>
+    resolveChatSessionToolLoading(session, sessionStateSources);
   const renderSessionStream = (session: SessionSummary) => {
     const sessionMessages = resolveSessionMessages(session);
     const sessionToolCalls = resolveSessionToolCalls(session);

@@ -7,7 +7,6 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
-import { resolveAcpRequestTimeout } from "../constants";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
@@ -15,6 +14,7 @@ import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServe
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
 import { resolveAcpConnectionKey } from "./connection-key";
+import { withConnectionRequest } from "./connection-request";
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./connection-types";
 import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
 
@@ -885,45 +885,4 @@ function createConnectionClientMethods(options: {
       return await options.releaseTerminal(params);
     },
   };
-}
-
-async function withConnectionRequest<T>(
-  method: string,
-  operation: Promise<T>,
-  child: ChildProcess,
-  stderrBuffer: string,
-  logFile: string,
-  provider: AcpAgentProvider,
-): Promise<T> {
-  const timeoutMs = resolveAcpRequestTimeout(provider, method);
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let exitHandler: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined;
-  const exited = new Promise<never>((_resolve, reject) => {
-    exitHandler = (code, signal) => {
-      reject(new Error(`ACP process exited before ${method}: code=${code ?? "none"} signal=${signal ?? "none"}`));
-    };
-    child.once("exit", exitHandler);
-  });
-  const timedOut = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => {
-      reject(new Error(stderrBuffer.trim() || `Timed out waiting for ACP response: ${method}`));
-    }, timeoutMs);
-  });
-
-  try {
-    writeLogLine(logFile, "sdk-request", method);
-    return await Promise.race([operation, exited, timedOut]);
-  } catch (error) {
-    if (stderrBuffer.trim() && error instanceof Error && !error.message.includes(stderrBuffer.trim())) {
-      throw new Error(`${error.message}: ${stderrBuffer.trim()}`);
-    }
-    throw error;
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    if (exitHandler) {
-      child.off("exit", exitHandler);
-    }
-  }
 }
