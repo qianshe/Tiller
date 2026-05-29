@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall } from "@tiller/shared";
 import {
+  mergeSessionMessage,
+  normalizeSessionMessages,
   pageSessionMessages,
+  sortToolCalls,
   type SessionMessagePageOptions,
-} from "./message-store.js";
-import { mergeSessionMessage, normalizeSessionMessages, sortToolCalls } from "./normalize.js";
+} from "@tiller/persistence";
 
 type InMemoryMessageStore = {
   append: (sessionId: string, message: AgentMessage) => AgentMessage[];

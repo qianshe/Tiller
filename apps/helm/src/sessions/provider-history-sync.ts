@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@tiller/shared";
-import type { StoredProviderHistoryState } from "./runtime-store.js";
+import type { StoredProviderHistoryState } from "@tiller/persistence";
 
 export type ProviderHistorySyncDecision =
   | { action: "skip"; nextState: StoredProviderHistoryState }

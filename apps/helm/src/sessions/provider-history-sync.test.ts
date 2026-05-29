@@ -10,7 +10,7 @@ import {
   shouldImportAuthoritativeProviderHistory,
   mergeAuthoritativeMessagesWithLocalUserPrompts,
 } from "./provider-history-sync.js";
-import type { StoredProviderHistoryState } from "./runtime-store.js";
+import type { StoredProviderHistoryState } from "@tiller/persistence";
 
 const baseMessage = (
   id: string,
