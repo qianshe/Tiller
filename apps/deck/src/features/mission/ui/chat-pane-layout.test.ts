@@ -21,6 +21,11 @@ const diffPanelSource = readFileSync(resolve(currentDir, "diff-panel.tsx"), "utf
 const diffTreeSource = readFileSync(resolve(currentDir, "diff-tree.tsx"), "utf8");
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/workspace-model.ts"), "utf8");
+const workspaceChatCompositionSource = readFileSync(
+  resolve(currentDir, "../workspace/workspace-chat-composition.ts"),
+  "utf8",
+);
+const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
   "utf8",
@@ -46,17 +51,24 @@ const cleanupDialogSource = readFileSync(
   "utf8",
 );
 const paneResizerSource = readFileSync(resolve(currentDir, "pane-resizer.tsx"), "utf8");
-const chatPaneSource = readFileSync(resolve(currentDir, "chat-pane.tsx"), "utf8");
+const chatPaneSource = [
+  readFileSync(resolve(currentDir, "../conversation/chat-pane.tsx"), "utf8"),
+  readFileSync(resolve(currentDir, "../conversation/session-cards.tsx"), "utf8"),
+  readFileSync(resolve(currentDir, "../conversation/chat-pane-layout-model.ts"), "utf8"),
+].join("\n");
 const composerSource = readFileSync(resolve(currentDir, "../composer/composer.tsx"), "utf8");
 const sessionCommandActionsSource = readFileSync(
   resolve(currentDir, "../actions/session-command-actions.ts"),
   "utf8",
 );
 const messageTimelineSource = readFileSync(
-  resolve(currentDir, "message-timeline.tsx"),
+  resolve(currentDir, "../conversation/message-timeline.tsx"),
   "utf8",
 );
-const plainMessagesSource = readFileSync(resolve(currentDir, "plain-messages.tsx"), "utf8");
+const plainMessagesSource = [
+  readFileSync(resolve(currentDir, "../conversation/plain-messages.tsx"), "utf8"),
+  readFileSync(resolve(currentDir, "../conversation/plain-message-items.tsx"), "utf8"),
+].join("\n");
 const missionLayoutHookSource = readFileSync(resolve(currentDir, "../hooks/layout.ts"), "utf8");
 const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash-commands.ts"), "utf8");
 const sessionEventsSource = readFileSync(resolve(currentDir, "../../server-events/session-events.ts"), "utf8");
@@ -82,7 +94,7 @@ test("mission chat history state includes activity history for thinking-only pag
 });
 
 test("mission chat reserves permission drawer space through localized drawer positioning", () => {
-  const permissionDrawerSource = readFileSync(resolve(currentDir, "permission-drawer.tsx"), "utf8");
+  const permissionDrawerSource = readFileSync(resolve(currentDir, "../conversation/permission-drawer.tsx"), "utf8");
 
   assert.match(worktreeSource, /mission-pane-chat relative/);
   assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
@@ -210,11 +222,11 @@ test("mission composer falls back to active session available commands", () => {
 test("ACP runtime overview refreshes after restore and does not stay connected during reconnect", () => {
   assert.match(sessionEventsSource, /"agent\/connections"/);
   assert.match(worktreeSource, /pendingAcpReconnects/);
-  assert.match(worktreeSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
-  assert.match(worktreeSource, /canReconnect: !reconnectPending/);
-  assert.match(worktreeSource, /canConnect: reconnectPending/);
-  assert.match(worktreeSource, /agentOrder/);
-  assert.match(worktreeSource, /return dedupeRuntimeOverviewItems\(items\)\.sort/);
+  assert.match(runtimeOverviewSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
+  assert.match(runtimeOverviewSource, /canReconnect: !reconnectPending/);
+  assert.match(runtimeOverviewSource, /canConnect: reconnectPending/);
+  assert.match(runtimeOverviewSource, /agentOrder/);
+  assert.match(runtimeOverviewSource, /return dedupeRuntimeOverviewItems\(items\)\.sort/);
 });
 
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {
@@ -236,7 +248,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.doesNotMatch(chatPaneSource, /min-h-9/);
   assert.match(chatPaneSource, /aria-label="展开任务导航"/);
   assert.match(chatPaneSource, /chat-main flex-1 w-full overflow-x-hidden min-h-0 relative/);
-  assert.match(chatPaneSource, /shouldLockChatMainScroll = \(openSessions\.length > 0 \|\| Boolean\(draftWindow\)\) && parallelGridCompact/);
+  assert.match(chatPaneSource, /shouldLockChatMainScroll: \(sessionCount > 0 \|\| hasDraftWindow\) && parallelGridCompact/);
   assert.match(chatPaneSource, /shouldLockChatMainScroll \? "overflow-y-clip" : "overflow-y-auto"/);
   assert.match(worktreeSource, /mission-pane-chat[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
@@ -244,13 +256,17 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(inspectorSource, /mission-pane-inspector[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(chatPaneSource, /SessionCard/);
   assert.match(
-  chatPaneSource,
-  /parallelGridCompact = openSessions\.length \+ \(draftWindow \? 1 : 0\) <= 2/,
-);
+    chatPaneSource,
+    /const cardCount = sessionCount \+ \(hasDraftWindow \? 1 : 0\)/,
+  );
   assert.match(
-  chatPaneSource,
-  /shouldAnchorActiveParallelCard = openSessions\.length \+ \(draftWindow \? 1 : 0\) > 2/,
-);
+    chatPaneSource,
+    /const parallelGridCompact = cardCount <= 2/,
+  );
+  assert.match(
+    chatPaneSource,
+    /shouldAnchorActiveParallelCard: cardCount > 2/,
+  );
   assert.match(chatPaneSource, /\[contain:layout_paint\]/);
   assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSession\?\.id/);
   assert.match(chatPaneSource, /gridAutoRows: parallelGridCompact \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
@@ -403,7 +419,8 @@ test("mission chat pane renders draft windows as first-class cards", () => {
   assert.match(worktreeSource, /const openDraftChatWindow = \(\{/);
   assert.match(worktreeSource, /setFocusedChatWindowId\(draftWindow\.id\)/);
   assert.match(worktreeSource, /setActiveSessionId\(null\)/);
-  assert.match(worktreeSource, /selectedSessionId=\{focusedDraftWindow \? null : focusedRealSessionId \?\? activeSession\?\.id \?\? null\}/);
+  assert.match(worktreeSource, /selectedSessionId=\{missionChatSelectedSessionId\}/);
+  assert.match(workspaceChatCompositionSource, /return focusedDraftWindow \? null : focusedRealSessionId \?\? activeSessionId \?\? null/);
   assert.match(worktreeSource, /onSelectDraftWindow=\{\(draftWindowId\) => \{[\s\S]*?setActiveSessionId\(null\);/);
   assert.match(worktreeSource, /selectDraftAgent=\{selectAgentForDraftWindow\}/);
   assert.match(worktreeSource, /submitPrompt=\{submitPromptFromFocusedWindow\}/);

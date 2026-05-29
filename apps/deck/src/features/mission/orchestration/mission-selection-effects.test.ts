@@ -22,6 +22,10 @@ const worktreeModelSourceText = readFileSync(
   new URL("../workspace/workspace-model.ts", import.meta.url),
   "utf8",
 );
+const runtimeOverviewSourceText = readFileSync(
+  new URL("../workspace/runtime-overview.ts", import.meta.url),
+  "utf8",
+);
 const selectionSourceText = readFileSync(
   new URL("../hooks/selection.ts", import.meta.url),
   "utf8",
@@ -76,18 +80,18 @@ test("mission mobile jumps to chat after selecting an ACP agent from project new
 });
 
 test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {
-  assert.match(worktreeSourceText, /agentConnectionInventory as any\[\]/);
-  assert.match(worktreeSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
-  assert.match(worktreeSourceText, /canReconnect: true/);
-  assert.match(worktreeSourceText, /canConnect: Boolean/);
-  assert.match(worktreeSourceText, /canReconnect: false/);
-  assert.doesNotMatch(worktreeSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
+  assert.match(runtimeOverviewSourceText, /agentConnectionInventory: any\[\]/);
+  assert.match(runtimeOverviewSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
+  assert.match(runtimeOverviewSourceText, /canReconnect: true/);
+  assert.match(runtimeOverviewSourceText, /canConnect: Boolean/);
+  assert.match(runtimeOverviewSourceText, /canReconnect: false/);
+  assert.doesNotMatch(runtimeOverviewSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
 });
 
 test("mission ACP overview can connect inactive agents while a session is active", () => {
-  assert.match(worktreeSourceText, /const overviewConnectCwd = selectedCwd \?\? activeSession\?\.cwd/);
-  assert.match(worktreeSourceText, /cwd: overviewConnectCwd \?\? undefined/);
-  assert.match(worktreeSourceText, /canConnect: Boolean\(agent\.id && overviewConnectCwd\)/);
+  assert.match(runtimeOverviewSourceText, /const overviewConnectCwd = selectedCwd \?\? activeSession\?\.cwd/);
+  assert.match(runtimeOverviewSourceText, /cwd: overviewConnectCwd \?\? undefined/);
+  assert.match(runtimeOverviewSourceText, /canConnect: Boolean\(agent\.id && overviewConnectCwd\)/);
 });
 
 test("mission starting sessions disable send without showing cancel", () => {
