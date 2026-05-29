@@ -12,6 +12,7 @@
     "build:openrpc": "tsx src/openrpc.ts"
   },
   "dependencies": {
+    "@tiller/domain-contracts": "workspace:*",
     "@tiller/shared": "workspace:*",
     "zod": "^4.4.1"
   },

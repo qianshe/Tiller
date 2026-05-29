@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { PermissionRequest, SessionSummary } from "@tiller/shared";
+import type { SessionSummary } from "@tiller/domain-contracts";
+import type { PermissionRequest } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { notificationDescriptor } from "../descriptor";
 

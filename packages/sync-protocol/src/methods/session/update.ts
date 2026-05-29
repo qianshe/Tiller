@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SessionStatus, SessionSummary } from "@tiller/domain-contracts";
 import type {
   AcpModelOption,
   AgentMessage,
@@ -11,8 +12,6 @@ import type {
   SessionConfigOption,
   SessionPromptQueueSnapshot,
   SessionReasoningEffort,
-  SessionStatus,
-  SessionSummary,
 } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { notificationDescriptor } from "../descriptor";

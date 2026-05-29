@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SessionResumeInfo } from "@tiller/shared";
+import type { SessionResumeInfo } from "@tiller/domain-contracts";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 

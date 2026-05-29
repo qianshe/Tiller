@@ -244,6 +244,9 @@ importers:
 
   packages/sync-protocol:
     dependencies:
+      '@tiller/domain-contracts':
+        specifier: workspace:*
+        version: link:../domain-contracts
       '@tiller/shared':
         specifier: workspace:*
         version: link:../shared
