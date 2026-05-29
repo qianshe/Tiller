@@ -1,27 +1,12 @@
 import { lazy, Suspense } from "react";
-import type { PermissionDecision, PermissionRequestOption, SessionSummary } from "@tiller/shared";
+import { buildDashboardViewModel } from "../../features/dashboard";
+import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
-import { resolvePermissionCommandDisplay } from "../../features/mission";
-
-function resolveDashboardApprovalDecision(
-  options: PermissionRequestOption[] | undefined,
-): PermissionDecision {
-  if (!Array.isArray(options)) {
-    return "allow";
-  }
-  return options.find((option) => option.decision === "allow")?.decision
-    ?? options.find((option) => option.decision.startsWith("allow"))?.decision
-    ?? "allow";
-}
-
-function resolveDashboardApprovalText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -45,10 +30,10 @@ const SettingsPage = lazy(() =>
 );
 const MissionRoute = lazy(() =>
   import("./mission-route").then((module) => ({
-    default: ({ source }: { source: any }) => module.renderMissionRoute(source),
+    default: ({ source }: { source: MissionRouteSource }) => module.renderMissionRoute(source),
   })),
 );
-export function AppRoutes({ ctx }: { ctx: any }) {
+export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   const viewport = useEffectiveViewport();
   const isMobile = viewport === "mobile";
 
@@ -58,7 +43,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     ...ctx.controllers, ...ctx.panelPages, ...ctx.selection, ...ctx.layout,
     ...ctx.history, ...ctx.preferenceActions, ...ctx.promptEnhancerSettings,
     ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx, ...ctx.route,
-  };
+  } as MissionRouteSource;
   const {
     activeView,
     copy,
@@ -173,67 +158,26 @@ function renderOverview() {
 }
 
 function renderDashboard() {
-  const activeHelmLabel = activeHelm
-    ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}`
-    : `${daemonHost || DEFAULT_DAEMON_HOST}:${daemonPort || DEFAULT_DAEMON_PORT}`;
-  const helmRows = (helms ?? []).map((helm: any) => ({
-    id: helm.id ?? `${helm.host}:${helm.port}`,
-    name: helm.name ?? "Local Helm",
-    endpoint: `${helm.host ?? DEFAULT_DAEMON_HOST}:${helm.port ?? DEFAULT_DAEMON_PORT}`,
-    agentCount: helm.agentCount ?? helm.agentsCount ?? agents.length,
-    projectCount: helm.projectCount ?? helm.projectsCount ?? projects.length,
-    sessionCount: helm.sessionCount ?? helm.sessions ?? sessions.length,
-    status: helm.status === "connected" || helm.status === "active" ? "active" : "idle",
-  }));
-  const sessionsById = new Map<string, SessionSummary>(
-    (sessions ?? []).map((session: SessionSummary) => [session.id, session]),
-  );
-  const approvalRows = Object.values(approvalItemsById ?? {}).map((item: any) => {
-    const request = item.request ?? {};
-    const sessionId = item.sessionId ?? request.sessionId;
-    const session = sessionId ? sessionsById.get(sessionId) : undefined;
-    const command = resolveDashboardApprovalText(request.command)
-      ?? resolveDashboardApprovalText(request.toolName)
-      ?? resolveDashboardApprovalText(request.kind)
-      ?? resolveDashboardApprovalText(request.type)
-      ?? "权限请求";
-    const commandDisplay = resolvePermissionCommandDisplay(command);
-    const sessionName = session
-      ? resolveDisplaySessionTitle(session)
-      : resolveDashboardApprovalText(sessionId) ?? "未知会话";
-    return {
-      id: item.id ?? request.id ?? item.requestId ?? item.createdAt,
-      kind: commandDisplay.title,
-      target: resolveDashboardApprovalText(request.reason)
-        ?? commandDisplay.detail
-        ?? resolveDashboardApprovalText(request.description)
-        ?? resolveDashboardApprovalText(request.path)
-        ?? resolveDashboardApprovalText(request.url)
-        ?? "权限请求",
-      allowDecision: resolveDashboardApprovalDecision(request.options),
-      agentName: session?.agentName ?? request.agentName ?? request.agentId,
-      sessionName,
-      resolving: Boolean(item.resolving),
-    };
+  const dashboard = buildDashboardViewModel({
+    connection,
+    daemonHost,
+    daemonPort,
+    defaultDaemonHost: DEFAULT_DAEMON_HOST,
+    defaultDaemonPort: DEFAULT_DAEMON_PORT,
+    activeHelm,
+    helms,
+    agents,
+    projects,
+    sessions,
+    toolCalls,
+    approvalItemsById,
+    resolveDisplaySessionTitle,
   });
-  const toolCallCount = Object.values(toolCalls ?? {}).reduce(
-    (total: number, calls: any) => total + (Array.isArray(calls) ? calls.length : 0),
-    0,
-  );
 
   return (
     <DashboardPage
       isMobile={isMobile}
-      activeHelmLabel={activeHelmLabel}
-      onlineHelmCount={connection === "connected" ? 1 : 0}
-      totalHelmCount={Math.max(helmRows.length, 1)}
-      activeSessionCount={sessions.length}
-      pendingApprovalCount={approvalRows.length}
-      localMessageCount={sessions.length}
-      toolCallCount={toolCallCount}
-      sessions={sessions}
-      helms={helmRows}
-      approvals={approvalRows}
+      {...dashboard}
       onNavigateAgents={() => navigateToView("agents")}
       onRespondApproval={(approvalRequestId, decision) =>
         respondToPermission(approvalRequestId, decision)

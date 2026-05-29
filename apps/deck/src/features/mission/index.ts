@@ -6,6 +6,11 @@ export * from "./inspector";
 export * from "./navigation";
 export { useMissionViewModel } from "./orchestration/mission-view-model";
 export { useMissionEffects } from "./orchestration/mission-effects";
+export {
+  applyConfigOptionValue,
+  readConfigSelectionState,
+  toConfigPatchState,
+} from "./orchestration/session-config-preferences";
 export { useSessionCommandActions } from "./actions/session-command-actions";
 export { useSessionMessageActions } from "./actions/session-message-actions";
 export { useHistoryPagination } from "./hooks/history-pagination";

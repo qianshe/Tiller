@@ -47,6 +47,7 @@ import {
 } from "./sessions/facade";
 import { createHelmServerStores } from "./app/server-composition";
 import { createHelmServerEnvironment } from "./app/server-environment";
+import { createHelmContextState } from "./app/server-context";
 import { createSocketAuthenticator } from "./auth/socket-auth";
 import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
 import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
@@ -121,10 +122,12 @@ const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
 const liveMessageBuffer = createLiveMessageBuffer();
-let helms = loadAvailableHelms();
-let worktrees = loadAvailableWorktrees();
-let agents = listAvailableProviders(configPath);
-let projects = loadAvailableProjects();
+const contextState = createHelmContextState({
+  helms: loadAvailableHelms(),
+  worktrees: loadAvailableWorktrees(),
+  agents: listAvailableProviders(configPath),
+  projects: loadAvailableProjects(),
+});
 const sessions = new Map<string, SessionRecord>();
 const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
 const promptQueue = createSessionPromptQueueManager();
@@ -135,9 +138,9 @@ const sessionServices = createSessionServices({
   sessionMessageStore,
   sessionArtifactStore,
   sessionRuntimeStore,
-  getAgents: () => agents,
-  getProjects: () => projects,
-  getWorktrees: () => worktrees,
+  getAgents: contextState.getAgents,
+  getProjects: contextState.getProjects,
+  getWorktrees: contextState.getWorktrees,
   createHandlerContext,
   broadcastNotification,
   logInfo,
@@ -338,25 +341,17 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
         void shutdownHelm(reason);
       }, 0);
     },
-    getHelms: () => helms,
-    setHelms: (items) => {
-      helms = items;
-    },
+    getHelms: contextState.getHelms,
+    setHelms: contextState.setHelms,
     loadAvailableHelms,
-    getWorktrees: () => worktrees,
-    setWorktrees: (items) => {
-      worktrees = items;
-    },
+    getWorktrees: contextState.getWorktrees,
+    setWorktrees: contextState.setWorktrees,
     loadAvailableWorktrees,
-    getAgents: () => agents,
-    setAgents: (items) => {
-      agents = items;
-    },
+    getAgents: contextState.getAgents,
+    setAgents: contextState.setAgents,
     loadAvailableAgents: () => listAvailableProviders(configPath),
-    getProjects: () => projects,
-    setProjects: (items) => {
-      projects = items;
-    },
+    getProjects: contextState.getProjects,
+    setProjects: contextState.setProjects,
     loadAvailableProjectsWithSemanticSummaries,
     readApprovalPolicy: () => readApprovalPolicy(configPath),
     saveApprovalPolicyRule: (rule) => {

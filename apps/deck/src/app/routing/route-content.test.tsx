@@ -7,13 +7,19 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const routeContentSource = readFileSync(resolve(currentDir, "route-content.tsx"), "utf8");
 
-test("dashboard route maps approvals with session labels, tool labels, and response handler", () => {
-  assert.match(routeContentSource, /resolvePermissionCommandDisplay/);
-  assert.match(routeContentSource, /sessionName/);
-  assert.match(routeContentSource, /allowDecision:/);
-  assert.match(routeContentSource, /respondToPermission,/);
+test("dashboard route delegates view-model derivation and keeps response handler", () => {
+  assert.match(routeContentSource, /buildDashboardViewModel/);
+  assert.match(routeContentSource, /\.\.\/\.\.\/features\/dashboard/);
+  assert.doesNotMatch(routeContentSource, /function resolveDashboardApprovalDecision/);
+  assert.doesNotMatch(routeContentSource, /function resolveDashboardApprovalText/);
   assert.match(
     routeContentSource,
     /onRespondApproval=\{\(approvalRequestId, decision\) =>\s*respondToPermission\(approvalRequestId, decision\)\s*\}/,
   );
+});
+
+test("route content uses typed route context bridge", () => {
+  assert.match(routeContentSource, /import type \{ AppRouteContext, MissionRouteSource \} from "\.\/route-context"/);
+  assert.doesNotMatch(routeContentSource, /ctx\s*}: \{ ctx: any \}/);
+  assert.doesNotMatch(routeContentSource, /source }: \{ source: any \}/);
 });

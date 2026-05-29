@@ -2,8 +2,9 @@ import {
   DEFAULT_LOGBOOK_VISIBLE_LIMIT,
   MissionWorktree,
 } from "../../features/mission";
+import type { MissionRouteSource } from "./route-context";
 
-export function renderMissionRoute(source: any) {
+export function renderMissionRoute(source: MissionRouteSource) {
   const {
     prompt,
     promptImages,
