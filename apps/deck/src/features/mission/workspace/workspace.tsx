@@ -10,6 +10,10 @@ import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
 import { MissionInspector } from "../inspector";
 import { MissionMobilePager } from "./mobile-pager";
+import {
+  MISSION_MOBILE_PANE_ORDER,
+  selectAdjacentMissionMobilePane as resolveAdjacentMissionMobilePane,
+} from "./mobile-pane";
 import { MissionPage } from "./page";
 import {
   Icon,
@@ -29,8 +33,6 @@ import {
 } from "../../../shared/ui";
 import { joinClassNames } from "../utils/session-render-state";
 import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
-
-const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "display", "inspector"] as const;
 
 export function MissionWorktree(props: any) {
   const {
@@ -683,11 +685,7 @@ export function MissionWorktree(props: any) {
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
   function selectAdjacentMissionMobilePane(direction: -1 | 1) {
-    const nextIndex = Math.min(
-      MISSION_MOBILE_PANE_ORDER.length - 1,
-      Math.max(0, currentMobilePaneIndex + direction),
-    );
-    setSelectedMissionMobilePane(MISSION_MOBILE_PANE_ORDER[nextIndex]);
+    setSelectedMissionMobilePane(resolveAdjacentMissionMobilePane(resolvedMissionMobilePane, direction));
   }
   const hasSelectedDisplayDiff = Boolean(
     selectedMissionDiffFilePath || (openedMissionDiffFilePaths?.length ?? 0) > 0,
