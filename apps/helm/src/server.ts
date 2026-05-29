@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
@@ -24,7 +24,7 @@ import {
   reconnectAcpConnection,
   testAcpConnection,
 } from "@tiller/acp-runtime";
-import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
+import { encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
   type AcpAgentProvider,
@@ -48,9 +48,10 @@ import {
 import { createHelmServerStores } from "./app/server-composition";
 import { createHelmServerEnvironment } from "./app/server-environment";
 import { createHelmContextState } from "./app/server-context";
+import { createHelmRuntimeComposition } from "./app/runtime-composition";
+import { attachHelmRpcConnection } from "./app/transport-composition";
+import { createStaticDeckHandler } from "./app/static-deck-handler";
 import { createSocketAuthenticator } from "./auth/socket-auth";
-import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
-import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
 import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
@@ -58,11 +59,9 @@ import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createPromptTraceEmitter } from "./runtime/prompt-trace";
-import { createSessionServices, type SessionRecord } from "./runtime/session-services";
-import { createSessionPromptQueueManager } from "./runtime/session-prompt-queue";
 import { drainPromptQueue } from "./runtime/session-runtime-router";
 import { createSessionTopicRegistry } from "./runtime/session-topics";
-import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
+import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
 import { createPairingState } from "./state/pairing";
@@ -128,12 +127,7 @@ const contextState = createHelmContextState({
   agents: listAvailableProviders(configPath),
   projects: loadAvailableProjects(),
 });
-const sessions = new Map<string, SessionRecord>();
-const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
-const promptQueue = createSessionPromptQueueManager();
-const sessionServices = createSessionServices({
-  sessions,
-  permissionIndex,
+const runtimeComposition = createHelmRuntimeComposition({
   sessionStore,
   sessionMessageStore,
   sessionArtifactStore,
@@ -146,6 +140,7 @@ const sessionServices = createSessionServices({
   logInfo,
   logError,
 });
+const { sessions, permissionIndex, promptQueue, sessionServices } = runtimeComposition;
 const {
   buildResumeInfo,
   clearPermissionRequestsForSession,
@@ -191,6 +186,10 @@ const beginAuthenticationFlow = createSocketAuthenticator({
   showPairingCode,
   attachRpcConnection,
   logInfo,
+  logError,
+});
+const handleHttpRequest = createStaticDeckHandler({
+  deckStaticDir: DECK_STATIC_DIR,
   logError,
 });
 
@@ -296,24 +295,11 @@ process.on("unhandledRejection", (reason) => {
 });
 
 function attachRpcConnection(socket: WebSocket) {
-  const stream = createWebSocketJsonRpcStream(socket, (error) => {
-    logError(
-      `[tiller] json-rpc decode failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  });
-  const connection = new JsonRpcConnection(stream, {
-    onRequest: (method, params) =>
-      handleHelmRpcRequest(method, params, createHandlerContext(getSocketId(socket))),
-    onNotification: (method, params) =>
-      handleHelmRpcNotification(method, params, createHandlerContext(getSocketId(socket))),
-    onError: (error) => {
-      logError(
-        `[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
-  });
-  socket.once("close", () => {
-    connection.close();
+  attachHelmRpcConnection({
+    socket,
+    getSocketId,
+    createHandlerContext,
+    logError,
   });
 }
 
@@ -434,33 +420,6 @@ function broadcastSessionTopic(sessionId: string, method: string, params: unknow
     if (subscriberIds.has(record.socketId)) {
       notify(record.socket, method, params);
     }
-  }
-}
-
-async function handleHttpRequest(request: IncomingMessage, response: ServerResponse) {
-  const asset = await loadStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
-  if (!asset.ok) {
-    response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
-    response.end(
-      asset.statusCode === 404
-        ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build."
-        : "Forbidden",
-    );
-    return;
-  }
-
-  try {
-    response.writeHead(200, {
-      "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
-      "content-type": asset.contentType,
-    });
-    response.end(asset.body);
-  } catch (error) {
-    logError(
-      `[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-    response.end("Failed to serve Tiller Deck asset.");
   }
 }
 
