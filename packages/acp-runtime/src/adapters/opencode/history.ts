@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { AcpAgentProvider, AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentMessage, AgentToolCall } from "@tiller/shared";
 import type { AcpAuthoritativeHistory } from "../types";
 import { inferOpenCodeToolKind } from "./tool-calls";
 
@@ -13,7 +13,7 @@ const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
 const OPENCODE_EXPORT_MAX_BUFFER = 16 * 1024 * 1024;
 
 export async function loadOpenCodeExportHistory(
-  agent: AcpAgentProvider,
+  agent: AcpRuntimeProviderConfig,
   runtimeSessionId: string,
   cwd: string,
 ): Promise<AcpAuthoritativeHistory | null> {
@@ -33,7 +33,7 @@ export async function loadOpenCodeExportHistory(
   }
 }
 
-async function runOpenCodeExport(agent: AcpAgentProvider, runtimeSessionId: string, cwd: string) {
+async function runOpenCodeExport(agent: AcpRuntimeProviderConfig, runtimeSessionId: string, cwd: string) {
   const options = {
     cwd,
     env: { ...process.env, ...agent.env },
