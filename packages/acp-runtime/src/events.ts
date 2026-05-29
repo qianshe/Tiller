@@ -1,6 +1,7 @@
-import type { AcpModelOption, AcpModelState, AgentToolCall, AvailableCommand, AvailableCommandKind, CommandChunk, PermissionRequest, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
+import type { AcpModelOption, AcpModelState, AgentToolCall, AvailableCommand, AvailableCommandKind, SessionReasoningEffort, SessionStatus } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState, ProviderCleanupResult, SessionRuntimeEvent } from "./runtime-types";
 import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
+import { extractCommandChunk, extractPermissionRequest } from "./command-events";
 import { extractDiffFiles } from "./diff-events";
 import { extractThinkingToolCall } from "./thinking-events";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
@@ -485,60 +486,6 @@ function stringFrom(value: unknown): string | undefined {
     }
   }
   return undefined;
-}
-
-function extractPermissionRequest(sessionId: string, updateType: string | undefined, update: any): PermissionRequest | null {
-  if (!/permission/iu.test(updateType ?? "")) {
-    return null;
-  }
-
-  const command = typeof update.command === "string" ? update.command : typeof update.permission?.command === "string" ? update.permission.command : null;
-  if (!command) {
-    return null;
-  }
-
-  return {
-    id: update.permissionId ?? update.id ?? `${sessionId}-perm-${Date.now()}`,
-    command,
-    reason:
-      typeof update.reason === "string"
-        ? update.reason
-        : typeof update.permission?.reason === "string"
-          ? update.permission.reason
-          : "Agent requested permission.",
-    cwd:
-      typeof update.cwd === "string"
-        ? update.cwd
-        : typeof update.cwd === "string"
-          ? update.cwd
-          : typeof update.permission?.cwd === "string"
-            ? update.permission.cwd
-            : process.cwd(),
-  };
-}
-
-function extractCommandChunk(sessionId: string, updateType: string | undefined, update: any): CommandChunk | null {
-  if (!/command/iu.test(updateType ?? "")) {
-    return null;
-  }
-
-  const text =
-    typeof update.output === "string"
-      ? update.output
-      : typeof update.text === "string"
-        ? update.text
-        : extractTextContent(update.content);
-  if (!text) {
-    return null;
-  }
-
-  return {
-    id: update.id ?? `${sessionId}-cmd-${Date.now()}`,
-    commandId: update.commandId ?? update.id ?? `${sessionId}-command`,
-    text,
-    stream: update.stream === "stderr" ? "stderr" : "stdout",
-    timestamp: timestamp(),
-  };
 }
 
 
