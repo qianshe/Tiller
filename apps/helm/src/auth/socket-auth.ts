@@ -10,7 +10,7 @@ import {
   type JsonRpcSuccess,
 } from "@tiller/sync-protocol";
 
-type AuthenticatedSocketRegistry = {
+export type AuthenticatedSocketRegistry = {
   add(record: {
     socketId: string;
     socket: WebSocket;
@@ -20,12 +20,12 @@ type AuthenticatedSocketRegistry = {
   }): void;
 };
 
-type PairingState = {
+export type PairingCodeState = {
   getCode(): string | null | undefined;
   reset(): void;
 };
 
-type TrustedDeviceStore = {
+export type SocketTrustedDeviceStore = {
   authenticate(input: { deviceId: string; token: string }): {
     ok: boolean;
     requiresPairing?: boolean;
@@ -41,12 +41,12 @@ type TrustedDeviceStore = {
   };
 };
 
-type SocketAuthenticatorOptions = {
+export type SocketAuthenticatorOptions = {
   authMode: string;
   authenticatedSockets: AuthenticatedSocketRegistry;
   getSocketId: (socket: WebSocket) => string;
-  trustedDeviceStore: TrustedDeviceStore;
-  pairingState: PairingState;
+  trustedDeviceStore: SocketTrustedDeviceStore;
+  pairingState: PairingCodeState;
   showPairingCode: () => void;
   attachRpcConnection: (socket: WebSocket) => void;
   logInfo: (message: string) => void;

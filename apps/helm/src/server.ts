@@ -51,7 +51,7 @@ import { createHelmContextState } from "./app/server-context";
 import { createHelmRuntimeComposition } from "./app/runtime-composition";
 import { attachHelmRpcConnection } from "./app/transport-composition";
 import { createStaticDeckHandler } from "./app/static-deck-handler";
-import { createSocketAuthenticator } from "./auth/socket-auth";
+import { createHelmAuthComposition } from "./app/auth-composition";
 import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
@@ -64,7 +64,6 @@ import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
-import { createPairingState } from "./state/pairing";
 import { createSocketState } from "./state/socket";
 import { TILLER_VERSION } from "./cli";
 import {
@@ -165,7 +164,17 @@ const {
 } = sessionServices;
 
 // --- Device pairing state ---
-const pairingState = createPairingState();
+const authComposition = createHelmAuthComposition({
+  authMode: AUTH_MODE,
+  authenticatedSockets,
+  getSocketId,
+  trustedDeviceStore,
+  showPairingCode,
+  attachRpcConnection,
+  logInfo,
+  logError,
+});
+const { pairingState, beginAuthenticationFlow } = authComposition;
 
 function showPairingCode() {
   const code = pairingState.ensureCode();
@@ -177,17 +186,6 @@ function showPairingCode() {
   });
 }
 
-const beginAuthenticationFlow = createSocketAuthenticator({
-  authMode: AUTH_MODE,
-  authenticatedSockets,
-  getSocketId,
-  trustedDeviceStore,
-  pairingState,
-  showPairingCode,
-  attachRpcConnection,
-  logInfo,
-  logError,
-});
 const handleHttpRequest = createStaticDeckHandler({
   deckStaticDir: DECK_STATIC_DIR,
   logError,
