@@ -26,6 +26,7 @@ const workspaceChatCompositionSource = readFileSync(
   "utf8",
 );
 const sessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/session-streams.ts"), "utf8");
+const openSessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/open-session-streams.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
@@ -357,23 +358,24 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /const selectChatSession = \(sessionId: string\) =>/);
   assert.match(worktreeSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
   assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
-  assert.match(worktreeSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
-  assert.match(worktreeSource, /openSessionTopicSubscriptionsRef/);
-  assert.match(worktreeSource, /subscribeToSessionTopic\(client, sessionId, dispatch\)/);
-  assert.match(worktreeSource, /unsubscribeFromSessionTopic\(client, sessionId, dispatch\)/);
-  assert.match(worktreeSource, /dispatch\(client, "session\/list_messages"/);
-  assert.match(worktreeSource, /dispatch\(client, "session\/get_artifacts"/);
-  assert.match(worktreeSource, /openSessionResumeCheckRef/);
-  assert.match(worktreeSource, /resumeCheckSessionIds/);
-  assert.match(worktreeSource, /openSessionResumeCheckRef\.current\.add\(sessionId\)/);
-  assert.match(worktreeSource, /dispatch\(client, "session\/check_resume", \{ sessionId \}\)/);
+  assert.match(worktreeSource, /useOpenSessionStreams\(\{/);
+  assert.match(openSessionStreamsSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
+  assert.match(openSessionStreamsSource, /openSessionTopicSubscriptionsRef/);
+  assert.match(openSessionStreamsSource, /subscribeToSessionTopic\(client, sessionId, dispatch\)/);
+  assert.match(openSessionStreamsSource, /unsubscribeFromSessionTopic\(client, sessionId, dispatch\)/);
+  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/list_messages"/);
+  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/get_artifacts"/);
+  assert.match(openSessionStreamsSource, /openSessionResumeCheckRef/);
+  assert.match(openSessionStreamsSource, /resumeCheckSessionIds/);
+  assert.match(openSessionStreamsSource, /openSessionResumeCheckRef\.current\.add\(sessionId\)/);
+  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/check_resume", \{ sessionId \}\)/);
   assert.match(sessionStreamsSource, /session\.status !== "running"/);
   assert.match(sessionStreamsSource, /session\.resume\?\.state !== "resume-unavailable"/);
-  assert.match(worktreeSource, /sessions,/);
-  assert.match(worktreeSource, /setMessageHistoryState\(\(current: any\) =>/);
-  assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
+  assert.match(worktreeSource, /sessions: sessions as SessionSummary\[\]/);
+  assert.match(openSessionStreamsSource, /setMessageHistoryState\(\(current: any\) =>/);
+  assert.match(openSessionStreamsSource, /setActivityHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
-  assert.match(worktreeSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
+  assert.match(openSessionStreamsSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
   assert.match(worktreeSource, /focusedDraftWindow,/);
   assert.match(worktreeSource, /selectedComposerSession,/);
   assert.match(worktreeSource, /contextSession=\{selectedComposerSession\}/);

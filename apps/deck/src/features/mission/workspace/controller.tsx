@@ -1,10 +1,6 @@
 import type { SessionSummary } from "@tiller/shared";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import {
-  subscribeToSessionTopic,
-  unsubscribeFromSessionTopic,
-} from "../../helm-connection/facade";
 import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
@@ -29,7 +25,7 @@ import {
 import { MissionSidebar } from "../navigation";
 import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./model";
-import { buildSessionStreamHydrationPlan } from "./session-streams";
+import { useOpenSessionStreams } from "./open-session-streams";
 import { buildRuntimeOverviewItems } from "./runtime-overview";
 import { shouldAttachDraftWindowToSession } from "./draft-window";
 import {
@@ -44,7 +40,6 @@ import {
   formatInspectorWorktreeSummaryLabel,
 } from "./worktree-summary";
 import { joinClassNames } from "../utils/session-render-state";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
 
 export function MissionWorktree(props: any) {
   const {
@@ -279,10 +274,21 @@ export function MissionWorktree(props: any) {
     focusedChatWindowId,
     draftChatWindow,
   });
-  const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
-  const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
   const pendingDraftWindowRef = useRef<typeof draftChatWindow>(null);
-  const sessionById = new Map((sessions as SessionSummary[]).map((session) => [session.id, session]));
+  const hydrateOpenSessionStreams = useOpenSessionStreams({
+    pairingState,
+    rpcClientRef,
+    dispatch,
+    openSessions,
+    sessions: sessions as SessionSummary[],
+    messageHistoryState,
+    activityHistoryState,
+    messagesBySession: messages,
+    outputsBySession: outputs,
+    toolCallsBySession: toolCalls,
+    setMessageHistoryState,
+    setActivityHistoryState,
+  });
   const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
   const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
   const effectiveSelectedDraftAgent = (agents as any[]).find((agent) => agent.id === effectiveSelectedAgentId) ?? selectedDraftAgent;
@@ -290,118 +296,6 @@ export function MissionWorktree(props: any) {
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(effectiveSelectedCwd ?? undefined),
   ) ?? selectedWorktree;
   const effectiveSelectedWorktreeName = effectiveSelectedWorktree?.name ?? selectedWorktreeName;
-  const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
-  useEffect(() => {
-    const client = rpcClientRef.current;
-    if (
-      pairingState !== "paired" ||
-      !client ||
-      client.socket.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-    const nextSessionIds = new Set(openSessions.map((session) => session.id));
-    const subscribedSessionIds = openSessionTopicSubscriptionsRef.current;
-
-    subscribedSessionIds.forEach((sessionId) => {
-      if (!nextSessionIds.has(sessionId)) {
-        subscribedSessionIds.delete(sessionId);
-        void unsubscribeFromSessionTopic(client, sessionId, dispatch);
-      }
-    });
-    nextSessionIds.forEach((sessionId) => {
-      if (!subscribedSessionIds.has(sessionId)) {
-        subscribedSessionIds.add(sessionId);
-        void subscribeToSessionTopic(client, sessionId, dispatch);
-      }
-    });
-
-    return () => {
-      nextSessionIds.forEach((sessionId) => {
-        if (client.socket.readyState === WebSocket.OPEN) {
-          void unsubscribeFromSessionTopic(client, sessionId, dispatch);
-        }
-        subscribedSessionIds.delete(sessionId);
-      });
-    };
-  }, [openSessionStreamKey, pairingState]);
-  const hydrateOpenSessionStreams = (sessionIds: string[]) => {
-    const client = rpcClientRef.current;
-    if (
-      pairingState !== "paired" ||
-      !client ||
-      client.socket.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-    const {
-      messageSessionIds,
-      activitySessionIds,
-      resumeCheckSessionIds,
-    } = buildSessionStreamHydrationPlan({
-      sessionIds,
-      sessionById,
-      messageHistoryState,
-      activityHistoryState,
-      messagesBySession: messages,
-      outputsBySession: outputs,
-      toolCallsBySession: toolCalls,
-      checkedResumeSessionIds: openSessionResumeCheckRef.current,
-    });
-
-    if (messageSessionIds.length > 0) {
-      setMessageHistoryState((current: any) => {
-        const next = { ...current };
-        messageSessionIds.forEach((sessionId) => {
-          if (!next[sessionId]) {
-            next[sessionId] = { hasMore: false, loading: true };
-          }
-        });
-        return next;
-      });
-      messageSessionIds.forEach((sessionId) => {
-        void dispatch(client, "session/list_messages", {
-          sessionId,
-          limit: DEFAULT_MESSAGE_PAGE_LIMIT,
-        });
-      });
-    }
-
-    if (activitySessionIds.length > 0) {
-      setActivityHistoryState((current: any) => {
-        const next = { ...current };
-        activitySessionIds.forEach((sessionId) => {
-          if (!next[sessionId]) {
-            next[sessionId] = { hasMore: false, loading: true };
-          }
-        });
-        return next;
-      });
-      activitySessionIds.forEach((sessionId) => {
-        void dispatch(client, "session/get_artifacts", {
-          sessionId,
-          limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
-        });
-      });
-    }
-
-    resumeCheckSessionIds.forEach((sessionId) => {
-      openSessionResumeCheckRef.current.add(sessionId);
-      void dispatch(client, "session/check_resume", { sessionId });
-    });
-  };
-  useEffect(() => {
-    hydrateOpenSessionStreams(openSessions.map((session) => session.id));
-  }, [
-    openSessionStreamKey,
-    pairingState,
-    messageHistoryState,
-    activityHistoryState,
-    messages,
-    outputs,
-    toolCalls,
-    sessions,
-  ]);
   useEffect(() => {
     setOpenChatSessionIds((current: string[]) => {
       const existingSessionIds = new Set((sessions as SessionSummary[]).map((session) => session.id));
