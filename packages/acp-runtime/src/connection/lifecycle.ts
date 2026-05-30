@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
-import { dirname, relative, resolve } from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
@@ -15,6 +14,7 @@ import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
 import { resolveAcpConnectionKey } from "./key";
 import { createConnectionClientMethods } from "./client-methods";
+import { readConnectionTextFile, writeConnectionTextFile } from "./file-client";
 import { withConnectionRequest } from "./request";
 import {
   resolveRequestedRuntimeSessionId,
@@ -22,7 +22,7 @@ import {
   updateSessionConfigOptionValueById,
 } from "./session-config";
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./types";
-import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
+import { ConnectionTerminalClient } from "./terminal-client";
 
 export type AcpConnectionOptions = {
   provider: AcpAgentProvider;
@@ -99,11 +99,14 @@ export class AcpConnection {
     resolve: (response: acp.RequestPermissionResponse) => void;
   } | { kind: "client"; resolve: (allowed: boolean) => void }>();
   private permissionRequestCounter = 0;
-  private terminalCounter = 0;
-  private readonly terminals = new Map<string, ManagedSdkTerminal>();
+  private readonly terminalClient: ConnectionTerminalClient;
   private suppressExitError = false;
 
   private constructor(private readonly state: AcpConnectionState) {
+    this.terminalClient = new ConnectionTerminalClient({
+      resolveSession: (runtimeSessionId) => this.requireSessionByRuntimeId(runtimeSessionId),
+      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
+    });
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
       if (this.suppressExitError) {
@@ -587,130 +590,42 @@ export class AcpConnection {
   }
 
   private async readTextFile(params: any): Promise<{ content: string }> {
-    const filePath = this.resolveSessionPath(params.sessionId, params.path);
-    const content = await readFile(filePath, "utf8");
-    return { content: sliceTextFileContent(content, params.line, params.limit) };
+    return await readConnectionTextFile({
+      session: this.requireSessionByRuntimeId(params.sessionId),
+      path: params.path,
+      line: params.line,
+      limit: params.limit,
+    });
   }
 
   private async writeTextFile(params: any): Promise<Record<string, never>> {
-    const session = this.findSessionByRuntimeId(params.sessionId);
-    const cwd = this.requireSessionByRuntimeId(params.sessionId).worktree.path;
-    const filePath = resolveContainedWorktreePath(cwd, params.path);
-    const relativePath = relative(cwd, filePath) || params.path;
-    const allowed = await this.requestClientPermission(
-      params.sessionId,
-      `Write file: ${relativePath}`,
-      "ACP agent requested worktree file write access.",
-    );
-    if (!allowed) {
-      throw new Error(`Denied ACP file write: ${relativePath}`);
-    }
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, params.content, "utf8");
-    const now = new Date().toISOString();
-    session?.onEvent({
-      type: "tool-call",
-      toolCall: {
-        id: `fs-write-${Date.now()}`,
-        kind: "write",
-        title: `Write file: ${relativePath}`,
-        status: "completed",
-        input: params.path,
-        output: `${String(params.content).length} chars written`,
-        timestamp: now,
-        updatedAt: now,
-      },
+    return await writeConnectionTextFile({
+      sessionId: params.sessionId,
+      session: this.requireSessionByRuntimeId(params.sessionId),
+      path: params.path,
+      content: params.content,
+      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
     });
-    return {};
   }
 
   private async createTerminal(params: any): Promise<{ terminalId: string }> {
-    const session = this.findSessionByRuntimeId(params.sessionId);
-    const sessionCwd = this.requireSessionByRuntimeId(params.sessionId).worktree.path;
-    const cwd = params.cwd ? resolveContainedWorktreePath(sessionCwd, params.cwd) : sessionCwd;
-    const commandLine = formatTerminalCommand(params.command, params.args ?? []);
-    const allowed = await this.requestClientPermission(params.sessionId, commandLine, "ACP agent requested terminal execution.");
-    if (!allowed) {
-      throw new Error(`Denied ACP terminal command: ${commandLine}`);
-    }
-    this.terminalCounter += 1;
-    const terminalId = `sdk-terminal-${this.terminalCounter}`;
-    const terminalProcess = spawn(params.command, params.args ?? [], {
-      cwd,
-      env: mergeTerminalEnv(process.env, params.env ?? []),
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const terminal: ManagedSdkTerminal = {
-      id: terminalId,
-      process: terminalProcess,
-      output: "",
-      truncated: false,
-      outputByteLimit: params.outputByteLimit ?? 64 * 1024,
-      exitPromise: Promise.resolve({ exitCode: null, signal: null }),
-    };
-    terminal.exitPromise = new Promise((resolveExit) => {
-      terminalProcess.once("exit", (code, signal) => {
-        terminal.exitStatus = { exitCode: code, signal };
-        const now = new Date().toISOString();
-        session?.onEvent({
-          type: "tool-call",
-          toolCall: {
-            id: `tool-${terminalId}`,
-            kind: "shell",
-            title: commandLine,
-            status: code === 0 ? "completed" : "failed",
-            commandId: terminalId,
-            output: terminal.output,
-            timestamp: now,
-            updatedAt: now,
-          },
-        });
-        resolveExit(terminal.exitStatus);
-      });
-    });
-    this.terminals.set(terminalId, terminal);
-    const startedAt = new Date().toISOString();
-    session?.onEvent({
-      type: "tool-call",
-      toolCall: {
-        id: `tool-${terminalId}`,
-        kind: "shell",
-        title: commandLine,
-        status: "running",
-        commandId: terminalId,
-        input: commandLine,
-        timestamp: startedAt,
-        updatedAt: startedAt,
-      },
-    });
-    terminalProcess.stdout.on("data", (chunk) => session && emitTerminalChunk(terminal, "stdout", String(chunk), session.onEvent));
-    terminalProcess.stderr.on("data", (chunk) => session && emitTerminalChunk(terminal, "stderr", String(chunk), session.onEvent));
-    terminalProcess.once("error", (error) => session && emitTerminalChunk(terminal, "stderr", error.message, session.onEvent));
-    return { terminalId };
+    return await this.terminalClient.create(params);
   }
 
   private async terminalOutput(params: any) {
-    const terminal = requireTerminal(this.terminals, params.terminalId);
-    return { output: terminal.output, truncated: terminal.truncated, exitStatus: terminal.exitStatus };
+    return await this.terminalClient.output(params);
   }
 
   private async waitForTerminalExit(params: any) {
-    return await requireTerminal(this.terminals, params.terminalId).exitPromise;
+    return await this.terminalClient.waitForExit(params);
   }
 
   private async killTerminal(params: any) {
-    terminateChildProcess(requireTerminal(this.terminals, params.terminalId).process.pid);
-    return {};
+    return await this.terminalClient.kill(params);
   }
 
   private async releaseTerminal(params: any) {
-    const terminal = requireTerminal(this.terminals, params.terminalId);
-    if (!terminal.exitStatus) {
-      terminateChildProcess(terminal.process.pid);
-    }
-    this.terminals.delete(params.terminalId);
-    return {};
+    return await this.terminalClient.release(params);
   }
 
   private async requestClientPermission(sessionId: string, command: string, reason: string): Promise<boolean> {
@@ -741,10 +656,6 @@ export class AcpConnection {
       throw new Error(`ACP client request targeted unknown session ${runtimeSessionId}.`);
     }
     return session;
-  }
-
-  private resolveSessionPath(runtimeSessionId: string, path: string): string {
-    return resolveContainedWorktreePath(this.requireSessionByRuntimeId(runtimeSessionId).worktree.path, path);
   }
 
   private broadcastExitError(message: string): void {

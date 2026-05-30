@@ -148,7 +148,7 @@ test("connection manager reuses an in-flight connection open", async () => {
   assert.equal(manager.listInventory().length, 1);
 });
 
-test("connection manager reuses one provider connection across session worktrees", async () => {
+test("connection manager opens separate provider connections for distinct worktree keys", async () => {
   let openCount = 0;
   const receivedWorktrees: string[] = [];
   const manager = createAcpConnectionManager({
@@ -199,7 +199,7 @@ test("connection manager reuses one provider connection across session worktrees
     onEvent: () => undefined,
   });
 
-  assert.equal(openCount, 1);
+  assert.equal(openCount, 2);
   assert.deepEqual(receivedWorktrees, [worktree.path, "D:/other"]);
 });
 
