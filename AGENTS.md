@@ -146,6 +146,7 @@ pnpm --filter @tiller/helm pack:npm
 
 - TypeScript strict mode，所有类型显式声明
 - 文件名 kebab-case：`my-feature.ts`
+- 文件名不得重复直接父目录语义：`connection/file-client.ts`、`workspace/controller.tsx`；不要写成 `connection/connection-file-client.ts`、`workspace/workspace.tsx`。`index.ts`、`types.ts`、`schema.ts`、`constants.ts` 这类职责名由父目录提供语义，允许使用。
 - 类型/接口 PascalCase：`SessionMessage`
 - 变量/函数 camelCase：`getSessionById`
 - 常量 UPPER_SNAKE_CASE：`MAX_RETRY_COUNT`
