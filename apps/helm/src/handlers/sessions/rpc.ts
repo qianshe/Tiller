@@ -46,7 +46,7 @@ export async function handleSessionRpcRequest(
       return unsubscribeSession(params as { sessionId: string }, context);
     case "session/list_messages":
       return listMessages(
-        params as { sessionId: string; limit?: number; before?: string },
+        params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
         context,
       );
     case "session/get_artifacts":

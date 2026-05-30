@@ -288,32 +288,43 @@ export function applySessionResult(
       }
       return true;
     }
-    case "session/list_messages":
-      store.setMessages((current) => ({
-        ...current,
-        [payload.sessionId]: payload.before
-          ? mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, {
-              mode: "prepend",
-            })
-          : replaceInitialMessageHistory(current[payload.sessionId] ?? [], payload.messages),
-      }));
+    case "session/list_messages": {
+      const isTimelineOnlyPage = Boolean(payload.timelineBefore && !payload.before);
+      if (!isTimelineOnlyPage) {
+        store.setMessages((current) => ({
+          ...current,
+          [payload.sessionId]: payload.before
+            ? mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, {
+                mode: "prepend",
+              })
+            : replaceInitialMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+        }));
+      }
       if (Array.isArray(payload.timeline)) {
         store.setSessionTimeline((current) => ({
           ...current,
-          [payload.sessionId]: payload.before
-            ? mergeTimelineEntries(payload.timeline as SessionTimelineEntry[], current[payload.sessionId] ?? [])
-            : mergeTimelineEntries(payload.timeline as SessionTimelineEntry[], current[payload.sessionId] ?? []),
+          [payload.sessionId]: mergeTimelineEntries(
+            payload.timeline as SessionTimelineEntry[],
+            current[payload.sessionId] ?? [],
+          ),
         }));
       }
       store.setMessageHistoryState((current) => ({
         ...current,
         [payload.sessionId]: {
-          nextCursor: payload.nextCursor,
-          hasMore: Boolean(payload.hasMore),
+          nextCursor: isTimelineOnlyPage
+            ? current[payload.sessionId]?.nextCursor
+            : payload.nextCursor,
+          hasMore: isTimelineOnlyPage
+            ? Boolean(current[payload.sessionId]?.hasMore)
+            : Boolean(payload.hasMore),
+          timelineNextCursor: payload.timelineNextCursor,
+          timelineHasMore: Boolean(payload.timelineHasMore),
           loading: false,
         },
       }));
       return true;
+    }
     case "session/get_artifacts":
       store.setOutputs((current) => ({
         ...current,

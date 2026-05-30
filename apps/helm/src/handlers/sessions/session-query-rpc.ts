@@ -1,6 +1,7 @@
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
-import { buildSessionTimelineFromLegacy } from "@tiller/shared";
-import type { AgentToolCall, SessionSummary } from "@tiller/shared";
+import { pageSessionTimeline } from "@tiller/persistence";
+import { buildSessionTimelineFromLegacy, sortSessionTimelineEntries } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -46,7 +47,7 @@ export function unsubscribeSession(params: { sessionId: string }, context: HelmH
 // Deck consumes old session history through paged windows only. ACP restore replay may
 // repair Helm's local cache, but it must not push a full historical transcript to Deck.
 export async function listMessages(
-  params: { sessionId: string; limit?: number; before?: string },
+  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
   context: HelmHandlerContext,
 ) {
   await context.refreshAuthoritativeSessionHistory(params.sessionId);
@@ -64,6 +65,7 @@ export async function listMessages(
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
     before: params.before,
+    timelineBefore: params.timelineBefore,
   };
 }
 
@@ -146,33 +148,100 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
 }
 
 function listSessionTimelinePage(
-  params: { sessionId: string; limit?: number; before?: string },
+  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
   context: HelmHandlerContext,
 ) {
   if (!context.sessionTimelineStore) {
     return { entries: [], hasMore: false };
   }
   const existing = context.sessionTimelineStore.list(params.sessionId);
-  if (!existing.length) {
-    const messages = context.sessionMessageStore.list?.(params.sessionId) ?? [];
-    const artifacts = context.sessionArtifactStore.get?.(params.sessionId) ?? {
-      outputs: [],
-      diffs: [],
-      toolCalls: [],
-    };
-    const rebuilt = buildSessionTimelineFromLegacy({
-      messages,
-      outputs: artifacts.outputs,
-      toolCalls: artifacts.toolCalls,
-    });
-    if (rebuilt.length) {
-      context.sessionTimelineStore.replace(params.sessionId, rebuilt);
-    }
-  }
-  return context.sessionTimelineStore.listPage(params.sessionId, {
+  const repaired = repairSessionTimelineFromLegacy(params.sessionId, existing, context);
+  return pageSessionTimeline(repaired, {
     limit: params.limit,
-    before: params.before,
+    before: params.timelineBefore ?? params.before,
+    window: "message",
   });
+}
+
+function repairSessionTimelineFromLegacy(
+  sessionId: string,
+  existing: SessionTimelineEntry[],
+  context: HelmHandlerContext,
+) {
+  const messages = context.sessionMessageStore.list?.(sessionId) ?? [];
+  const artifacts = context.sessionArtifactStore?.get?.(sessionId) ?? {
+    outputs: [],
+    diffs: [],
+    toolCalls: [],
+  };
+  const rebuilt = buildSessionTimelineFromLegacy({
+    messages,
+    outputs: artifacts.outputs,
+    toolCalls: artifacts.toolCalls,
+  });
+  if (!rebuilt.length) {
+    return existing;
+  }
+
+  const repaired = mergeRebuiltTimeline(existing, rebuilt);
+  if (timelineSignature(existing) === timelineSignature(repaired)) {
+    return existing;
+  }
+  return context.sessionTimelineStore.replace(sessionId, repaired);
+}
+
+function mergeRebuiltTimeline(
+  existing: SessionTimelineEntry[],
+  rebuilt: SessionTimelineEntry[],
+) {
+  const rebuiltIds = new Set(rebuilt.map((entry) => entry.id));
+  return sortSessionTimelineEntries([
+    ...rebuilt,
+    ...existing.filter((entry) => !rebuiltIds.has(entry.id)),
+  ]);
+}
+
+function timelineSignature(entries: SessionTimelineEntry[]) {
+  return entries.map(timelineEntrySignature).join("|");
+}
+
+function timelineEntrySignature(entry: SessionTimelineEntry) {
+  if (entry.kind === "assistant_message") {
+    return [
+      entry.kind,
+      entry.id,
+      entry.chunks.map((chunk) => [
+        chunk.kind,
+        chunk.id,
+        "text" in chunk ? chunk.text : "",
+        "status" in chunk ? chunk.status : "",
+        "title" in chunk ? chunk.title : "",
+        chunk.timelineSequence ?? "",
+        "streaming" in chunk ? String(Boolean(chunk.streaming)) : "",
+      ].join(":")),
+    ].join(":");
+  }
+  if (entry.kind === "tool_call") {
+    return [
+      entry.kind,
+      entry.id,
+      entry.toolCall.kind,
+      entry.toolCall.title,
+      entry.toolCall.status,
+      entry.toolCall.timelineSequence ?? "",
+      entry.toolCall.timestamp,
+      entry.toolCall.updatedAt,
+    ].join(":");
+  }
+  return [
+    entry.kind,
+    entry.id,
+    entry.message.id,
+    entry.message.role,
+    entry.message.text,
+    entry.message.timelineSequence ?? "",
+    entry.message.timestamp,
+  ].join(":");
 }
 
 function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {

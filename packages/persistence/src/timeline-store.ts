@@ -5,6 +5,7 @@ import { normalizePageLimit } from "./pagination";
 export type SessionTimelinePageOptions = {
   limit?: number;
   before?: string;
+  window?: "entry" | "message";
 };
 
 export type SessionTimelinePage = {
@@ -29,7 +30,7 @@ export function pageSessionTimeline(
   );
   const endIndex = resolvePageEndIndex(normalized, options.before);
   const eligible = normalized.slice(0, endIndex);
-  const startIndex = Math.max(eligible.length - limit, 0);
+  const startIndex = resolvePageStartIndex(eligible, limit, options.window);
   const page = eligible.slice(startIndex);
   const hasMore = startIndex > 0;
   return {
@@ -37,6 +38,61 @@ export function pageSessionTimeline(
     nextCursor: hasMore ? encodeOrderCursor(startIndex, page[0]?.id) : undefined,
     hasMore,
   };
+}
+
+function resolvePageStartIndex(
+  entries: SessionTimelineEntry[],
+  limit: number,
+  window: SessionTimelinePageOptions["window"] = "entry",
+) {
+  if (window !== "message") {
+    return Math.max(entries.length - limit, 0);
+  }
+
+  const messageIndexes = resolveMessageWindowAnchorIndexes(entries);
+  if (!messageIndexes.length) {
+    return Math.max(entries.length - limit, 0);
+  }
+  return messageIndexes[Math.max(messageIndexes.length - limit, 0)] ?? 0;
+}
+
+function resolveMessageWindowAnchorIndexes(entries: SessionTimelineEntry[]) {
+  const indexes: number[] = [];
+  let previousAssistantGroupKey: string | undefined;
+  entries.forEach((entry, index) => {
+    if (entry.kind === "user_message" || entry.kind === "system_message") {
+      indexes.push(index);
+      previousAssistantGroupKey = undefined;
+      return;
+    }
+    if (isAssistantContentWindowAnchor(entry)) {
+      const groupKey = assistantMessageWindowGroupKey(entry);
+      if (groupKey !== previousAssistantGroupKey) {
+        indexes.push(index);
+      }
+      previousAssistantGroupKey = groupKey;
+      return;
+    }
+    previousAssistantGroupKey = undefined;
+  });
+  return indexes;
+}
+
+function isAssistantContentWindowAnchor(
+  entry: SessionTimelineEntry,
+): entry is Extract<SessionTimelineEntry, { kind: "assistant_message" }> {
+  return entry.kind === "assistant_message" &&
+    entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim());
+}
+
+function assistantMessageWindowGroupKey(
+  entry: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
+) {
+  return providerParagraphMessageBase(entry.id) ?? entry.id;
+}
+
+function providerParagraphMessageBase(id: string) {
+  return /^(?<base>.+)#p\d+$/u.exec(id)?.groups?.base;
 }
 
 function encodeOrderCursor(position: number | undefined, id: string | undefined) {

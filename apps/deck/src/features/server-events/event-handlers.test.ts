@@ -307,6 +307,84 @@ test("session/list_messages stores unified timeline entries when provided by Hel
   );
 });
 
+test("session/list_messages applies timeline-only pages without replacing legacy messages", () => {
+  resetStore();
+  const existingMessage: AgentMessage = {
+    id: "message-existing",
+    role: "assistant",
+    text: "当前正文",
+    timestamp: "2026-05-24T10:00:10.000Z",
+  };
+  const unexpectedMessage: AgentMessage = {
+    id: "message-unexpected",
+    role: "assistant",
+    text: "不应替换当前正文",
+    timestamp: "2026-05-24T10:00:20.000Z",
+  };
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "older-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "older-assistant:content",
+          kind: "content",
+          text: "更早的时间线正文",
+          timestamp: "2026-05-24T09:59:00.000Z",
+          timelineSequence: 1,
+        },
+      ],
+      timestamp: "2026-05-24T09:59:00.000Z",
+      updatedAt: "2026-05-24T09:59:00.000Z",
+      timelineSequence: 1,
+    },
+  ];
+  useDeckStore.setState({
+    messages: { "session-1": [existingMessage] },
+    messageHistoryState: {
+      "session-1": {
+        nextCursor: "legacy-message-cursor",
+        hasMore: false,
+        timelineNextCursor: "timeline-cursor-1",
+        timelineHasMore: true,
+        loading: true,
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [unexpectedMessage],
+      timeline,
+      timelineBefore: "timeline-cursor-1",
+      timelineNextCursor: "timeline-cursor-0",
+      timelineHasMore: false,
+      nextCursor: "unexpected-message-cursor",
+      hasMore: true,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.messages["session-1"], [existingMessage]);
+  assert.deepEqual(
+    state.sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["older-assistant"],
+  );
+  assert.deepEqual(state.messageHistoryState["session-1"], {
+    nextCursor: "legacy-message-cursor",
+    hasMore: false,
+    timelineNextCursor: "timeline-cursor-0",
+    timelineHasMore: false,
+    loading: false,
+  });
+});
+
 test("session/list_messages preserves local user prompts when loaded history omits users", () => {
   resetStore();
   const localUser: AgentMessage = {

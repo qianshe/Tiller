@@ -85,12 +85,19 @@ export function useHistoryPagination({
     const client = getOpenClient(rpcClientRef);
     const messageState = messageHistoryState[sessionId];
     const activityState = activityHistoryState[sessionId];
-    const canLoadMessages = Boolean(
+    const canLoadLegacyMessages = Boolean(
       messageState &&
         !messageState.loading &&
         messageState.hasMore &&
         messageState.nextCursor,
     );
+    const canLoadTimelineMessages = Boolean(
+      messageState &&
+        !messageState.loading &&
+        messageState.timelineHasMore &&
+        messageState.timelineNextCursor,
+    );
+    const canLoadMessages = canLoadLegacyMessages || canLoadTimelineMessages;
     const canLoadActivities = Boolean(
       activityState &&
         !activityState.loading &&
@@ -118,7 +125,10 @@ export function useHistoryPagination({
       void dispatch(client, "session/list_messages", {
         sessionId,
         limit: messagePageLimit,
-        before: messageState?.nextCursor,
+        before: canLoadLegacyMessages ? messageState?.nextCursor : undefined,
+        timelineBefore: canLoadTimelineMessages
+          ? messageState?.timelineNextCursor
+          : undefined,
       });
     }
     if (canLoadActivities) {

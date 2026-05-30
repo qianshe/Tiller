@@ -89,7 +89,7 @@ test("mission chat history state includes activity history for thinking-only pag
   assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
   assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryState\}/);
   assert.match(messageTimelineSource, /resolveConversationHistoryState/);
-  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\| activityHistoryState\?\.hasMore/);
+  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\|\s*messageHistoryState\?\.timelineHasMore \|\|\s*activityHistoryState\?\.hasMore/);
 });
 
 test("mission chat renders permission drawers inside matching session cards", () => {

@@ -168,6 +168,13 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       return;
     }
 
+    if (shouldSkipIncompleteProviderSnapshot(localMessages, history.messages)) {
+      options.logInfo(
+        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_incomplete_snapshot providerMessages=${history.messages.length} localMessages=${localMessages.length} toolCalls=${history.toolCalls.length}`,
+      );
+      return;
+    }
+
     const syncDecision = planProviderHistorySync({
       currentState: descriptor?.providerHistory,
       providerMessages: history.messages,
@@ -234,6 +241,17 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
   function hasHistoryContent(history: ProviderHistorySnapshotContent) {
     return Boolean(
       history.messages.length || history.toolCalls.length || history.outputs.length || history.diffs.length,
+    );
+  }
+
+  function shouldSkipIncompleteProviderSnapshot(
+    localMessages: AgentMessage[],
+    providerMessages: AgentMessage[],
+  ) {
+    return Boolean(
+      localMessages.some((message) => message.role === "user") &&
+      !providerMessages.some((message) => message.role === "user") &&
+      providerMessages.length < localMessages.length,
     );
   }
 

@@ -9,7 +9,13 @@ import type { StateCreator } from "zustand";
 
 export type MessageHistoryState = Record<
   string,
-  { nextCursor?: string; hasMore: boolean; loading: boolean }
+  {
+    nextCursor?: string;
+    hasMore: boolean;
+    timelineNextCursor?: string;
+    timelineHasMore?: boolean;
+    loading: boolean;
+  }
 >;
 
 type Updater<T> = T | ((current: T) => T);

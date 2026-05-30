@@ -4,6 +4,7 @@ import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
   hasMore: boolean;
+  timelineHasMore?: boolean;
   loading: boolean;
 };
 
@@ -87,7 +88,11 @@ function resolveConversationHistoryState(
     return undefined;
   }
   return {
-    hasMore: Boolean(messageHistoryState?.hasMore || activityHistoryState?.hasMore),
+    hasMore: Boolean(
+      messageHistoryState?.hasMore ||
+      messageHistoryState?.timelineHasMore ||
+      activityHistoryState?.hasMore,
+    ),
     loading: Boolean(messageHistoryState?.loading || activityHistoryState?.loading),
   };
 }

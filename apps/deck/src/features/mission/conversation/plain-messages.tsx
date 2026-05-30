@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
-import { coalesceDisplayMessages, groupToolCalls, sortAgentMessagesByTimeline, type ConversationToolCallItem } from "../../logbook";
+import {
+  coalesceDisplayMessages,
+  groupToolCalls,
+  mergeAgentMessages,
+  sortAgentMessagesByTimeline,
+  type ConversationToolCallItem,
+} from "../../logbook";
 import { PlainMessageItem, PlainThinkingItem, PlainToolGroupItem } from "./plain-message-items";
-
-export const DEFAULT_VISIBLE_MESSAGE_LIMIT = 20;
 
 type PlainMessagesProps = {
   sessionId: string | null;
@@ -40,18 +44,16 @@ export function PlainMessages({
   onLoadOlderMessages,
   onToggleExpandedMessage,
 }: PlainMessagesProps) {
-  const [visibleMessageCount, setVisibleMessageCount] = useState(
-    DEFAULT_VISIBLE_MESSAGE_LIMIT,
-  );
   const listRef = useRef<HTMLDivElement | null>(null);
   const localScrollSnapshotRef = useRef<ScrollSnapshot | null>(null);
+  const olderLoadRequestedRef = useRef(false);
 
   useEffect(() => {
-    setVisibleMessageCount(DEFAULT_VISIBLE_MESSAGE_LIMIT);
+    olderLoadRequestedRef.current = false;
   }, [sessionId]);
 
   const displayMessages = useMemo(
-    () => sortDisplayMessages(items, boundaryTimestamps),
+    () => resolvePlainDisplayMessages(items, boundaryTimestamps),
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
@@ -64,20 +66,46 @@ export function PlainMessages({
         ),
     [displayMessages, showThinking, thinkingToolCalls, timelineItems, toolCalls],
   );
-  const visibleItems = useMemo(
-    () => displayItems.slice(-visibleMessageCount),
-    [displayItems, visibleMessageCount],
-  );
+  const visibleItems = displayItems;
   const visibleRenderMessages = useMemo(
     () => resolvePlainMessageRenderItems(visibleItems),
     [visibleItems],
   );
-  const hasHiddenLoadedMessages = visibleItems.length < displayItems.length;
-  const canLoadMoreMessages =
-    hasHiddenLoadedMessages || Boolean(historyState?.hasMore);
-  const loadMoreLabel = resolveLoadMoreMessagesLabel(
-    Boolean(historyState?.loading),
-  );
+
+  useEffect(() => {
+    if (!historyState?.loading) {
+      olderLoadRequestedRef.current = false;
+    }
+  }, [historyState?.loading]);
+
+  useEffect(() => {
+    const scrollContainer = listRef.current?.parentElement;
+    if (!scrollContainer || !historyState?.hasMore || historyState.loading) {
+      return;
+    }
+    const container = scrollContainer;
+
+    function loadOlderWhenScrolledToTop() {
+      if (olderLoadRequestedRef.current || container.scrollTop > 48) {
+        return;
+      }
+      localScrollSnapshotRef.current = {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+      };
+      olderLoadRequestedRef.current = true;
+      onLoadOlderMessages();
+    }
+
+    container.addEventListener("scroll", loadOlderWhenScrolledToTop, { passive: true });
+    if (shouldAutoLoadOlderHistory({
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+    })) {
+      loadOlderWhenScrolledToTop();
+    }
+    return () => container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
+  }, [historyState?.hasMore, historyState?.loading, onLoadOlderMessages]);
 
   useEffect(() => {
     const snapshot = localScrollSnapshotRef.current;
@@ -90,41 +118,12 @@ export function PlainMessages({
     localScrollSnapshotRef.current = null;
   }, [visibleRenderMessages.length]);
 
-  function showMoreMessages() {
-    const nextVisibleCount = visibleMessageCount + DEFAULT_VISIBLE_MESSAGE_LIMIT;
-    const scrollContainer = listRef.current?.parentElement;
-    if (scrollContainer) {
-      localScrollSnapshotRef.current = {
-        scrollHeight: scrollContainer.scrollHeight,
-        scrollTop: scrollContainer.scrollTop,
-      };
-    }
-    setVisibleMessageCount(nextVisibleCount);
-    if (
-      displayItems.length <= nextVisibleCount &&
-      historyState?.hasMore &&
-      !historyState.loading
-    ) {
-      onLoadOlderMessages();
-    }
-  }
-
   if (!displayItems.length) {
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
   }
 
   return (
     <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_32px))] gap-4">
-      {canLoadMoreMessages ? (
-        <button
-          className="secondary load-more-history rounded-md border border-border-ghost bg-surface px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-emphasis disabled:opacity-60"
-          type="button"
-          onClick={showMoreMessages}
-          disabled={historyState?.loading}
-        >
-          {loadMoreLabel}
-        </button>
-      ) : null}
       {visibleRenderMessages.map((renderItem, index) => {
         if (renderItem.kind === "thinking") {
           return <PlainThinkingItem key={renderItem.renderKey} item={renderItem.toolCall} />;
@@ -161,31 +160,6 @@ export function PlainMessages({
 
 type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
 
-export function resolveLoadMoreMessagesLabel(loading: boolean) {
-  if (loading) {
-    return "加载中...";
-  }
-  return "查看更多";
-}
-
-function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
-  const sortedMessages = sortAgentMessagesByTimeline(items);
-  return coalesceDisplayMessages(
-    sortedMessages.filter(
-      (message) => !isAcpPromptWrapperEcho(message, sortedMessages),
-    ),
-    boundaryTimestamps,
-  );
-}
-
-export function resolveVisiblePlainMessages(
-  items: AgentMessage[],
-  visibleCount = DEFAULT_VISIBLE_MESSAGE_LIMIT,
-  boundaryTimestamps: string[] = [],
-) {
-  return sortDisplayMessages(items, boundaryTimestamps).slice(-visibleCount);
-}
-
 type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
   | { kind: "thinking"; sourceIndex?: number; timestamp: string; timelineSequence?: number; toolCall: AgentToolCall }
@@ -214,7 +188,9 @@ type PlainMessageRenderItem =
 export function resolvePlainMessageRenderItems(
   items: PlainMessageRenderSource[],
 ): PlainMessageRenderItem[] {
-  const normalizedItems = items.map(normalizePlainMessageRenderSource).filter((item): item is PlainConversationItem => Boolean(item));
+  const normalizedItems = items
+    .map(normalizePlainMessageRenderSource)
+    .filter((item): item is PlainConversationItem => Boolean(item));
   const seenKeys = new Map<string, number>();
   return normalizedItems.map((item, index) => {
     if (item.kind === "thinking") {
@@ -249,6 +225,30 @@ export function resolvePlainMessageRenderItems(
       renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
     };
   });
+}
+
+function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
+  const sortedMessages = sortAgentMessagesByTimeline(items);
+  return coalesceDisplayMessages(
+    sortedMessages.filter(
+      (message) => !isAcpPromptWrapperEcho(message, sortedMessages),
+    ),
+    boundaryTimestamps,
+  );
+}
+
+export function resolvePlainDisplayMessages(
+  items: AgentMessage[],
+  boundaryTimestamps: string[] = [],
+) {
+  return sortDisplayMessages(items, boundaryTimestamps);
+}
+
+export function shouldAutoLoadOlderHistory(
+  metrics: { scrollHeight: number; clientHeight: number },
+  threshold = 48,
+) {
+  return metrics.scrollHeight <= metrics.clientHeight + threshold;
 }
 
 function normalizePlainMessageRenderSource(
@@ -365,7 +365,7 @@ function buildPlainConversationItemsFromTimeline(
             timestamp: chunk.timestamp,
             timelineSequence: chunk.timelineSequence,
             message: {
-              id: chunk.id,
+              id: entry.id,
               role: "assistant",
               text,
               timestamp: chunk.timestamp,
@@ -394,7 +394,9 @@ function buildPlainConversationItemsFromTimeline(
     }
   }
 
-  return mergeAdjacentToolItems(mergeAdjacentThinkingItems(items));
+  return mergeAdjacentToolItems(
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(items)),
+  );
 }
 
 function mergeAdjacentToolItems(
@@ -437,6 +439,36 @@ function mergeAdjacentThinkingItems(
       timestamp: last.timestamp,
       timelineSequence: last.timelineSequence ?? item.timelineSequence,
       toolCall: mergeThinkingToolCalls(last.toolCall, item.toolCall),
+    };
+    return merged;
+  }, []);
+}
+
+function mergeAdjacentMessageItems(
+  items: PlainConversationItem[],
+): PlainConversationItem[] {
+  return items.reduce<PlainConversationItem[]>((merged, item) => {
+    const last = merged.at(-1);
+    if (last?.kind !== "message" || item.kind !== "message") {
+      merged.push(item);
+      return merged;
+    }
+
+    const [mergedMessage, extraMessage] = mergeAgentMessages(
+      [last.message],
+      item.message,
+    );
+    if (!mergedMessage || extraMessage) {
+      merged.push(item);
+      return merged;
+    }
+
+    merged[merged.length - 1] = {
+      kind: "message",
+      sourceIndex: last.sourceIndex,
+      timestamp: mergedMessage.timestamp,
+      timelineSequence: last.timelineSequence ?? item.timelineSequence,
+      message: mergedMessage,
     };
     return merged;
   }, []);

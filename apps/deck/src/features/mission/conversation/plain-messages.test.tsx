@@ -129,6 +129,199 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(answerIndex > thinkingIndex);
 });
 
+test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-intro",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-intro:content",
+          kind: "content",
+          text: "开头说明应当仍然可见",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    ...Array.from({ length: 24 }, (_, index) => {
+      const sequence = index * 2 + 2;
+      return [
+        {
+          id: `tool-${index}`,
+          kind: "tool_call" as const,
+          toolCall: {
+            id: `tool-${index}`,
+            kind: "read" as const,
+            title: `Read ${index}`,
+            status: "completed" as const,
+            timestamp: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
+            updatedAt: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
+            timelineSequence: sequence,
+          },
+          timestamp: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
+          updatedAt: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
+          timelineSequence: sequence,
+        },
+        {
+          id: `thinking-${index}`,
+          kind: "assistant_message" as const,
+          chunks: [
+            {
+              id: `thinking-${index}:chunk`,
+              kind: "thinking" as const,
+              text: `Thinking ${index}`,
+              title: "Thinking",
+              status: "completed" as const,
+              timestamp: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
+              updatedAt: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
+              timelineSequence: sequence + 1,
+            },
+          ],
+          timestamp: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
+          updatedAt: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
+          timelineSequence: sequence + 1,
+        },
+      ];
+    }).flat(),
+    {
+      id: "assistant-final",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-final:content",
+          kind: "content",
+          text: "最终汇总",
+          timestamp: "2026-05-17T10:01:00.000Z",
+          timelineSequence: 99,
+        },
+      ],
+      timestamp: "2026-05-17T10:01:00.000Z",
+      updatedAt: "2026-05-17T10:01:00.000Z",
+      timelineSequence: 99,
+    },
+  ];
+
+  const html = renderPlainMessages({ timelineItems });
+
+  assert.match(html, /开头说明应当仍然可见/);
+  assert.match(html, /最终汇总/);
+});
+
+test("plain messages reveals leading timeline details when all loaded messages fit", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking",
+          text: "开头 Thinking 不应被窗口裁掉",
+          title: "Thinking",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          updatedAt: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "只有一条正文时应展示完整已加载条目",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+  ];
+
+  const html = renderPlainMessages({ timelineItems });
+
+  assert.match(html, /开头 Thinking 不应被窗口裁掉/);
+  assert.match(html, /只有一条正文时应展示完整已加载条目/);
+  assert.doesNotMatch(html, />查看更多<\/button>/);
+});
+
+test("plain messages counts coalesced provider paragraphs as one green-dot message block", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "user-latest",
+      kind: "user_message",
+      message: {
+        id: "user-latest",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: `assistant-final#p${index}`,
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: `assistant-final#p${index}:content`,
+          kind: "content" as const,
+          text: `段落 ${index}`,
+          timestamp: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
+          timelineSequence: index + 2,
+        },
+      ],
+      timestamp: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
+      timelineSequence: index + 2,
+    })),
+  ];
+
+  const html = renderPlainMessages({ timelineItems });
+
+  assert.match(html, /继续/);
+  assert.match(html, /段落 0/);
+  assert.match(html, /段落 29/);
+  assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 1);
+});
+
+test("plain messages renders all loaded timeline message blocks without manual load-more", () => {
+  const timelineItems: SessionTimelineEntry[] = Array.from(
+    { length: 25 },
+    (_, index) => ({
+      id: `assistant-loaded-${index}`,
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: `assistant-loaded-${index}:content`,
+          kind: "content" as const,
+          text: `已加载消息 ${index}`,
+          timestamp: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
+          timelineSequence: index + 1,
+        },
+      ],
+      timestamp: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
+      timelineSequence: index + 1,
+    }),
+  );
+
+  const html = renderPlainMessages({
+    timelineItems,
+    historyState: { hasMore: true, loading: false },
+  });
+
+  assert.match(html, /已加载消息 0/);
+  assert.match(html, /已加载消息 24/);
+  assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 25);
+  assert.doesNotMatch(html, />查看更多<\/button>/);
+});
+
 test("plain messages can hide thinking cards without dropping normal messages", () => {
   const html = renderPlainMessages({
     items: [
@@ -304,7 +497,7 @@ test("plain messages keeps merged thinking open while the latest chunk is runnin
   assert.match(html, /aria-label="收起 Thinking"/);
 });
 
-test("plain messages load-more history button keeps a concise label", () => {
+test("plain messages does not render a manual load-more history button", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -322,8 +515,9 @@ test("plain messages load-more history button keeps a concise label", () => {
     }),
   );
 
-  assert.match(html, />查看更多<\/button>/);
-  assert.doesNotMatch(html, /已显示|继续加载每次最多|（/);
+  assert.match(html, /第一条/);
+  assert.doesNotMatch(html, />查看更多<\/button>/);
+  assert.doesNotMatch(html, /load-more-history/);
 });
 
 test("plain messages merges adjacent thinking tool calls in the conversation timeline", () => {

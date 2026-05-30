@@ -4,11 +4,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AgentMessage } from "@tiller/shared";
 import {
-  DEFAULT_VISIBLE_MESSAGE_LIMIT,
   PlainMessages,
-  resolveLoadMoreMessagesLabel,
+  resolvePlainDisplayMessages,
   resolvePlainMessageRenderItems,
-  resolveVisiblePlainMessages,
+  shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
 
 function message(index: number): AgentMessage {
@@ -33,45 +32,37 @@ test("plain message render keys stay unique for duplicate provider ids", () => {
   );
 });
 
-test("plain message timeline initially renders the latest 20 messages", () => {
+test("plain message display keeps all loaded messages", () => {
   const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
 
   assert.deepEqual(
-    resolveVisiblePlainMessages(messages, DEFAULT_VISIBLE_MESSAGE_LIMIT).map(
-      (item) => item.id,
-    ),
-    messages.slice(-20).map((item) => item.id),
+    resolvePlainDisplayMessages(messages).map((item) => item.id),
+    messages.map((item) => item.id),
   );
 });
 
-test("plain message timeline can reveal older loaded messages", () => {
-  const messages = Array.from({ length: 45 }, (_, index) => message(index + 1));
-
-  assert.deepEqual(
-    resolveVisiblePlainMessages(messages, DEFAULT_VISIBLE_MESSAGE_LIMIT * 2).map(
-      (item) => item.id,
-    ),
-    messages.slice(-40).map((item) => item.id),
+test("plain message history auto-loads older pages when loaded content does not fill the viewport", () => {
+  assert.equal(
+    shouldAutoLoadOlderHistory({ scrollHeight: 720, clientHeight: 760 }),
+    true,
+  );
+  assert.equal(
+    shouldAutoLoadOlderHistory({ scrollHeight: 1200, clientHeight: 760 }),
+    false,
   );
 });
 
-test("plain message load-more label stays concise", () => {
-  assert.equal(resolveLoadMoreMessagesLabel(false), "查看更多");
-});
-
-test("plain message timeline uses chronological latest messages from newest-first pages", () => {
+test("plain message display uses chronological order from newest-first pages", () => {
   const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
   const newestFirstMessages = [...messages].reverse();
 
   assert.deepEqual(
-    resolveVisiblePlainMessages(newestFirstMessages, DEFAULT_VISIBLE_MESSAGE_LIMIT).map(
-      (item) => item.id,
-    ),
-    messages.slice(-20).map((item) => item.id),
+    resolvePlainDisplayMessages(newestFirstMessages).map((item) => item.id),
+    messages.map((item) => item.id),
   );
 });
 
-test("plain message timeline coalesces runtime assistant chunks before windowing", () => {
+test("plain message timeline coalesces runtime assistant chunks before rendering", () => {
   const chunks: AgentMessage[] = "具体消息内容".split("").map((text, index) => ({
     id: `019dfc94-a921-7112-8980-8d57cd537787-msg-${(1000 + index).toString(36)}`,
     role: "assistant",
@@ -79,7 +70,7 @@ test("plain message timeline coalesces runtime assistant chunks before windowing
     timestamp: `2026-05-06T01:00:${String(index).padStart(2, "0")}.000Z`,
   }));
 
-  assert.deepEqual(resolveVisiblePlainMessages(chunks).map((item) => item.text), [
+  assert.deepEqual(resolvePlainDisplayMessages(chunks).map((item) => item.text), [
     "具体消息内容",
   ]);
 });
@@ -160,7 +151,7 @@ test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
     },
   ];
 
-  assert.deepEqual(resolveVisiblePlainMessages(messages).map((item) => item.text), [
+  assert.deepEqual(resolvePlainDisplayMessages(messages).map((item) => item.text), [
     "帮我分析下现在项目的分支是什么？",
   ]);
 });
@@ -177,7 +168,7 @@ test("plain message timeline filters whole OpenCode wrapper echo messages", () =
   ].join("\n");
 
   assert.deepEqual(
-    resolveVisiblePlainMessages([
+    resolvePlainDisplayMessages([
       {
         id: "real-user",
         role: "user",
@@ -207,7 +198,7 @@ test("plain message timeline keeps a single OpenCode wrapper when no original pr
   ].join("\n");
 
   assert.deepEqual(
-    resolveVisiblePlainMessages([
+    resolvePlainDisplayMessages([
       {
         id: "wrapper-whole",
         role: "user",
@@ -236,7 +227,7 @@ test("plain message timeline splits cumulative assistant chunks at tool call bou
   ];
 
   assert.deepEqual(
-    resolveVisiblePlainMessages(chunks, DEFAULT_VISIBLE_MESSAGE_LIMIT, [
+    resolvePlainDisplayMessages(chunks, [
       "2026-05-06T01:10:02.000Z",
     ]).map((item) => item.text),
     ["先说明", "再继续"],
