@@ -40,7 +40,7 @@ function listSourceFiles(directory: string): string[] {
     if (stat.isDirectory()) {
       return listSourceFiles(path);
     }
-    if (!SOURCE_EXTENSIONS.has(extname(path)) || /\.test\.[^.]+$/u.test(path)) {
+    if (!SOURCE_EXTENSIONS.has(extname(path))) {
       return [];
     }
     return [path];
@@ -49,6 +49,11 @@ function listSourceFiles(directory: string): string[] {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/gu, "/");
+}
+
+function sourceBaseName(path: string): string {
+  const fileName = basename(path, extname(path));
+  return fileName.endsWith(".test") ? fileName.slice(0, -".test".length) : fileName;
 }
 
 function sourceNamingViolations(repoRoot: string): string[] {
@@ -61,7 +66,7 @@ function sourceNamingViolations(repoRoot: string): string[] {
       continue;
     }
     const parent = basename(dirname(file));
-    const fileName = basename(file, extname(file));
+    const fileName = sourceBaseName(file);
     const repeatsParentName =
       fileName === parent ||
       fileName.startsWith(`${parent}-`) ||

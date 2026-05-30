@@ -52,7 +52,7 @@ test("mission workspace implementation lives in the workspace subdomain", () => 
 test("mission composer implementation lives in the composer subdomain", () => {
   for (const filename of [
     "composer.tsx",
-    "composer.test.tsx",
+    "component.test.tsx",
     "attachments.tsx",
     "config-controls.tsx",
     "draft-selectors.tsx",
