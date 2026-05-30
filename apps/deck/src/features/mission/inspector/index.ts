@@ -1,1 +1,1 @@
-export { MissionInspector } from "./inspector";
+export { MissionInspector } from "./panel";

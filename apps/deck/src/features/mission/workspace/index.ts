@@ -1,4 +1,4 @@
-export { MissionWorktree } from "./workspace";
+export { MissionWorktree } from "./controller";
 export { buildMissionWorktreeModel } from "./model";
 export { dedupeRuntimeOverviewItems } from "./runtime-overview-dedupe";
 export { buildChatWindowModel } from "./chat-window-model";

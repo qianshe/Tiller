@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const worktreeSource = readFileSync(resolve(currentDir, "../workspace/workspace.tsx"), "utf8");
+const worktreeSource = readFileSync(resolve(currentDir, "../workspace/controller.tsx"), "utf8");
 const shellStylesSource = readFileSync(
   resolve(currentDir, "../../../app/shell/styles.css"),
   "utf8",
@@ -40,7 +40,7 @@ const missionRouteSource = readFileSync(
   resolve(currentDir, "../../../app/routing/mission-route.tsx"),
   "utf8",
 );
-const inspectorSource = readFileSync(resolve(currentDir, "../inspector/inspector.tsx"), "utf8");
+const inspectorSource = readFileSync(resolve(currentDir, "../inspector/panel.tsx"), "utf8");
 const panelHeaderSource = readFileSync(resolve(currentDir, "../inspector/panel-header.tsx"), "utf8");
 const logbookPanelSource = readFileSync(resolve(currentDir, "../display/logbook-panel.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
@@ -52,7 +52,7 @@ const chatPaneSource = [
   readFileSync(resolve(currentDir, "../conversation/session-cards.tsx"), "utf8"),
   readFileSync(resolve(currentDir, "../conversation/chat-pane-layout-model.ts"), "utf8"),
 ].join("\n");
-const composerSource = readFileSync(resolve(currentDir, "../composer/composer.tsx"), "utf8");
+const composerSource = readFileSync(resolve(currentDir, "../composer/form.tsx"), "utf8");
 const sessionCommandActionsSource = readFileSync(
   resolve(currentDir, "../actions/session-command-actions.ts"),
   "utf8",

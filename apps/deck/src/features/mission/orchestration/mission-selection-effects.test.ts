@@ -11,11 +11,11 @@ const composerSourceText = readFileSync(
   "utf8",
 );
 const composerShellSourceText = readFileSync(
-  new URL("../composer/composer.tsx", import.meta.url),
+  new URL("../composer/form.tsx", import.meta.url),
   "utf8",
 );
 const worktreeSourceText = readFileSync(
-  new URL("../workspace/workspace.tsx", import.meta.url),
+  new URL("../workspace/controller.tsx", import.meta.url),
   "utf8",
 );
 const worktreeModelSourceText = readFileSync(

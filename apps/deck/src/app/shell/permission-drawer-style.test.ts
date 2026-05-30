@@ -56,10 +56,10 @@ test("permission drawer detail block keeps raw approval payload readable", () =>
 
 test("mission light theme critical surfaces use semantic Tailwind tokens", () => {
   const files = [
-    "src/features/mission/workspace/workspace.tsx",
+    "src/features/mission/workspace/controller.tsx",
     "src/features/mission/conversation/chat-pane.tsx",
-    "src/features/mission/inspector/inspector.tsx",
-    "src/features/mission/composer/composer.tsx",
+    "src/features/mission/inspector/panel.tsx",
+    "src/features/mission/composer/form.tsx",
     "src/features/mission/display/panel.tsx",
     "src/features/mission/display/session-overview-card.tsx",
     "src/features/logbook/ui/activity-log-panel.tsx",

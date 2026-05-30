@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MissionComposer } from "./composer.js";
+import { MissionComposer } from "./form.js";
 
 function baseProps(overrides: Record<string, unknown> = {}) {
   return {

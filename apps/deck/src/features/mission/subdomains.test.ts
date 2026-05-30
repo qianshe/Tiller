@@ -31,19 +31,19 @@ test("mission root re-exports subdomain public APIs", () => {
 });
 
 test("mission workspace composes panes through subdomain entrypoints", () => {
-  const workspaceSource = readFileSync(join(missionRoot, "workspace", "workspace.tsx"), "utf8");
+  const workspaceSource = readFileSync(join(missionRoot, "workspace", "controller.tsx"), "utf8");
 
   for (const subdomain of ["conversation", "composer", "display", "inspector", "navigation"] as const) {
     assert.match(workspaceSource, new RegExp(`from "\\.\\./${subdomain}"`));
   }
 
-  for (const internalImport of ["./chat-pane", "./composer", "./diff-panel", "./section", "./inspector", "./sidebar"] as const) {
+  for (const internalImport of ["./chat-pane", "./form", "./diff-panel", "./section", "./panel", "./sidebar"] as const) {
     assert.doesNotMatch(workspaceSource, new RegExp(`from "${internalImport.replace(".", "\\\\.")}"`));
   }
 });
 
 test("mission workspace implementation lives in the workspace subdomain", () => {
-  for (const filename of ["workspace.tsx", "model.ts", "runtime-overview-dedupe.ts"] as const) {
+  for (const filename of ["controller.tsx", "model.ts", "runtime-overview-dedupe.ts"] as const) {
     assert.equal(existsSync(join(missionRoot, "workspace", filename)), true, `workspace/${filename} should exist`);
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }
@@ -51,8 +51,8 @@ test("mission workspace implementation lives in the workspace subdomain", () => 
 
 test("mission composer implementation lives in the composer subdomain", () => {
   for (const filename of [
-    "composer.tsx",
-    "component.test.tsx",
+    "form.tsx",
+    "form.test.tsx",
     "attachments.tsx",
     "config-controls.tsx",
     "draft-selectors.tsx",
@@ -105,7 +105,7 @@ test("mission display implementation lives in the display subdomain", () => {
 });
 
 test("mission inspector implementation lives in the inspector subdomain", () => {
-  for (const filename of ["inspector.tsx", "panel-header.tsx"] as const) {
+  for (const filename of ["panel.tsx", "panel-header.tsx"] as const) {
     assert.equal(existsSync(join(missionRoot, "inspector", filename)), true, `inspector/${filename} should exist`);
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }

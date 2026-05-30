@@ -15,21 +15,6 @@ const EXCLUDED_DIRECTORIES = new Set([
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".mjs"]);
 
-const ALLOWED_STUTTER_FILES = new Map<string, string>([
-  [
-    "apps/deck/src/features/mission/composer/composer.tsx",
-    "component root kept until the composer component is split from its folder entry",
-  ],
-  [
-    "apps/deck/src/features/mission/inspector/inspector.tsx",
-    "component root kept until the inspector component is split from its folder entry",
-  ],
-  [
-    "apps/deck/src/features/mission/workspace/workspace.tsx",
-    "component root kept until the workspace controller split replaces the folder entry",
-  ],
-]);
-
 function listSourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     if (EXCLUDED_DIRECTORIES.has(entry)) {
@@ -62,9 +47,6 @@ function sourceNamingViolations(repoRoot: string): string[] {
 
   for (const file of sourceRoots.flatMap(listSourceFiles)) {
     const relativePath = normalizePath(relative(repoRoot, file));
-    if (ALLOWED_STUTTER_FILES.has(relativePath)) {
-      continue;
-    }
     const parent = basename(dirname(file));
     const fileName = sourceBaseName(file);
     const repeatsParentName =
