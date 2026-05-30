@@ -1,4 +1,4 @@
-import { createAcpConnectionManager } from "./connection/connection-manager";
+import { createAcpConnectionManager } from "./connection/manager";
 import { createRestoreReplayEventSink } from "./restore-replay";
 import type { AgentPromptContent } from "@tiller/shared";
 import type { AcpRuntimeOptions } from "./runtime-types";

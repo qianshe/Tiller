@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import type { DetectedAcpSessionCapabilities } from "../capabilities";
-import type { AcpConnectionKey } from "./connection-key";
+import type { AcpConnectionKey } from "./key";
 
 export type AcpConnectionStatus = "starting" | "ready" | "idle" | "error" | "closed";
 

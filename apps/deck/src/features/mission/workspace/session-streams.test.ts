@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
-import { buildSessionStreamHydrationPlan } from "./workspace-session-streams";
+import { buildSessionStreamHydrationPlan } from "./session-streams";
 
 const idleSession = {
   id: "idle-session",

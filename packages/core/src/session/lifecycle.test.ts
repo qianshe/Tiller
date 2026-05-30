@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSessionLifecycle } from "./session-lifecycle.js";
+import { createSessionLifecycle } from "./lifecycle.js";
 
 test("createSessionLifecycle persists the created session through ports", async () => {
   const calls: string[] = [];

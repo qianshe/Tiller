@@ -9,7 +9,7 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import { performDraftRuntimeCleanup } from "./draft-runtime-lifecycle";
+import { performDraftRuntimeCleanup } from "./draft-lifecycle";
 import type { ProviderLifecyclePort } from "./provider-lifecycle";
 import {
   resolveConfigOptionsForSelection,

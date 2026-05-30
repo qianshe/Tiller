@@ -1,4 +1,4 @@
-import type { RuntimeDraft, RuntimeDraftReason } from "./runtime-draft-registry";
+import type { RuntimeDraft, RuntimeDraftReason } from "./draft-registry";
 
 export type DraftRuntimeCleanupOptions = {
   draft: RuntimeDraft;

@@ -16,15 +16,16 @@ const sidebarProjectNodeSource = readFileSync(
   "utf8",
 );
 const sessionRowSource = readFileSync(resolve(currentDir, "../navigation/session-row.tsx"), "utf8");
-const displayPanelSource = readFileSync(resolve(currentDir, "../display/display-panel.tsx"), "utf8");
+const displayPanelSource = readFileSync(resolve(currentDir, "../display/panel.tsx"), "utf8");
 const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
 const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
-const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/workspace-model.ts"), "utf8");
+const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/model.ts"), "utf8");
 const workspaceChatCompositionSource = readFileSync(
-  resolve(currentDir, "../workspace/workspace-chat-composition.ts"),
+  resolve(currentDir, "../workspace/chat-composition.ts"),
   "utf8",
 );
+const sessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/session-streams.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
@@ -366,8 +367,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /resumeCheckSessionIds/);
   assert.match(worktreeSource, /openSessionResumeCheckRef\.current\.add\(sessionId\)/);
   assert.match(worktreeSource, /dispatch\(client, "session\/check_resume", \{ sessionId \}\)/);
-  assert.match(worktreeSource, /session\.status !== "running"/);
-  assert.match(worktreeSource, /session\.resume\?\.state !== "resume-unavailable"/);
+  assert.match(sessionStreamsSource, /session\.status !== "running"/);
+  assert.match(sessionStreamsSource, /session\.resume\?\.state !== "resume-unavailable"/);
   assert.match(worktreeSource, /sessions,/);
   assert.match(worktreeSource, /setMessageHistoryState\(\(current: any\) =>/);
   assert.match(worktreeSource, /setActivityHistoryState\(\(current: any\) =>/);
@@ -762,7 +763,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
 });
 
 const composerAttachmentsSource = readFileSync(
-  resolve(currentDir, "../composer/composer-attachments.tsx"),
+  resolve(currentDir, "../composer/attachments.tsx"),
   "utf8",
 );
 const sessionOverviewCardSource = readFileSync(

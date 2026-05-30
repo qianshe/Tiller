@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
+import { dedupeRuntimeOverviewItems } from "./runtime-overview-dedupe";
 
 test("dedupeRuntimeOverviewItems merges ACP cards for the same agent and cwd", () => {
   const items = dedupeRuntimeOverviewItems([

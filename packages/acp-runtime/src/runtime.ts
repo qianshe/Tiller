@@ -1,11 +1,11 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
 export { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection } from "./runtime-session";
-export { AcpConnection } from "./connection/acp-connection";
-export { createAcpConnectionManager } from "./connection/connection-manager";
-export type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
-export { resolveAcpConnectionKey } from "./connection/connection-key";
-export type { AcpConnectionInventoryItem } from "./connection/connection-types";
+export { AcpConnection } from "./connection/lifecycle";
+export { createAcpConnectionManager } from "./connection/manager";
+export type { AcpConnectionLifecycleEvent } from "./connection/manager";
+export { resolveAcpConnectionKey } from "./connection/key";
+export type { AcpConnectionInventoryItem } from "./connection/types";
 export { testAcpConnection } from "./connection-test";
 export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./session-list";
 export {

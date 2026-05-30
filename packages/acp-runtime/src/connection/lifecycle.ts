@@ -13,15 +13,15 @@ import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } 
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
-import { resolveAcpConnectionKey } from "./connection-key";
-import { createConnectionClientMethods } from "./connection-client-methods";
-import { withConnectionRequest } from "./connection-request";
+import { resolveAcpConnectionKey } from "./key";
+import { createConnectionClientMethods } from "./client-methods";
+import { withConnectionRequest } from "./request";
 import {
   resolveRequestedRuntimeSessionId,
   updateSessionConfigOptionValue,
   updateSessionConfigOptionValueById,
-} from "./connection-session-config";
-import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./connection-types";
+} from "./session-config";
+import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./types";
 import { emitTerminalChunk, formatTerminalCommand, mergeTerminalEnv, requireTerminal, resolveContainedWorktreePath, sliceTextFileContent, type ManagedSdkTerminal } from "../terminal-client";
 
 export type AcpConnectionOptions = {

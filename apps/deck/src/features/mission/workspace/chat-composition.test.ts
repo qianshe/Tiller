@@ -4,7 +4,7 @@ import {
   buildDraftPreparingMessage,
   buildMissionChatRestoreNotice,
   resolveMissionChatSelectedSessionId,
-} from "./workspace-chat-composition.js";
+} from "./chat-composition.js";
 
 test("resolveMissionChatSelectedSessionId hides real selection while draft window is focused", () => {
   assert.equal(

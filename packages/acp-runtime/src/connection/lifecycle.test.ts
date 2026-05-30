@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
-import { AcpConnection } from "./acp-connection";
+import { AcpConnection } from "./lifecycle";
 
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;

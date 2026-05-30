@@ -7,7 +7,7 @@ const sourceText = readFileSync(
   "utf8",
 );
 const composerSourceText = readFileSync(
-  new URL("../composer/composer-config-controls.tsx", import.meta.url),
+  new URL("../composer/config-controls.tsx", import.meta.url),
   "utf8",
 );
 const composerShellSourceText = readFileSync(
@@ -19,7 +19,7 @@ const worktreeSourceText = readFileSync(
   "utf8",
 );
 const worktreeModelSourceText = readFileSync(
-  new URL("../workspace/workspace-model.ts", import.meta.url),
+  new URL("../workspace/model.ts", import.meta.url),
   "utf8",
 );
 const runtimeOverviewSourceText = readFileSync(

@@ -9,7 +9,7 @@ import {
   saveAgent,
   testAgent,
 } from "./agent-rpc";
-import { listHelms, saveHelm, shutdownDaemon } from "./helm-config-rpc";
+import { listHelms, saveHelm, shutdownDaemon } from "./helm-rpc";
 import {
   createBranch,
   deleteProject,

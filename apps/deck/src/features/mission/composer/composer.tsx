@@ -29,8 +29,8 @@ import {
   MissionConfigControls,
   type AgentModeOption,
   type MissionConfigPicker,
-} from "./composer-config-controls";
-import { ComposerAttachments } from "./composer-attachments";
+} from "./config-controls";
+import { ComposerAttachments } from "./attachments";
 import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {

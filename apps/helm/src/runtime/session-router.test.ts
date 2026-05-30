@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AgentMessage, PromptTraceEvent, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import { sendPromptToSession, drainPromptQueue } from "./session-runtime-router";
+import { sendPromptToSession, drainPromptQueue } from "./session-router";
 import { createSessionPromptQueueManager } from "./session-prompt-queue";
 import { createLiveMessageBuffer } from "./live-message-buffer";
 import { flushLiveAssistantMessage } from "./events";
@@ -376,7 +376,7 @@ test("configureSessionRuntime applies config through an active runtime", async (
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", model: "gpt-5.5", reasoningEffort: "high" },
     context,
@@ -406,7 +406,7 @@ test("configureSessionRuntime persists explicit model over runtime default state
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", model: "gpt-5.4", reasoningEffort: "medium" },
     context,
@@ -445,7 +445,7 @@ test("configureSessionRuntime applies arbitrary ACP config option to the session
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", configId: "approval-mode", value: "auto" },
     context,
@@ -484,7 +484,7 @@ test("configureSessionRuntime omits reasoning when config options do not support
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", model: "claude-haiku-4-5" },
     context,
@@ -523,7 +523,7 @@ test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it"
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", model: "opencode/haiku" },
     context,
@@ -579,7 +579,7 @@ test("configureSessionRuntime ignores stale default options for a different sele
     } as any,
   });
 
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
   const result = await configureSessionRuntime(
     { sessionId: "session-1", model: "claude-haiku-4-5" },
     context,
@@ -592,7 +592,7 @@ test("configureSessionRuntime ignores stale default options for a different sele
 
 test("configureSessionRuntime saves config when no runtime is active", async () => {
   const { context } = createContext();
-  const { configureSessionRuntime } = await import("./session-runtime-router");
+  const { configureSessionRuntime } = await import("./session-router");
 
   const result = await configureSessionRuntime(
     { sessionId: "session-1", agentMode: "bypass", model: "provider-default" },
@@ -615,7 +615,7 @@ test("cancelSessionRuntime cancels and clears an active runtime", async () => {
       sessionCapabilities: { imageInput: true },
     } as any,
   });
-  const { cancelSessionRuntime } = await import("./session-runtime-router");
+  const { cancelSessionRuntime } = await import("./session-router");
 
   const handled = await cancelSessionRuntime("session-1", context);
 
@@ -626,7 +626,7 @@ test("cancelSessionRuntime cancels and clears an active runtime", async () => {
 
 test("cancelSessionRuntime broadcasts an error when the runtime is missing", async () => {
   const { context, broadcasts } = createContext();
-  const { cancelSessionRuntime } = await import("./session-runtime-router");
+  const { cancelSessionRuntime } = await import("./session-router");
 
   const handled = await cancelSessionRuntime("missing-session", context);
 

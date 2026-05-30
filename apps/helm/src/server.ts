@@ -61,7 +61,7 @@ import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project-catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createPromptTraceEmitter } from "./runtime/prompt-trace";
-import { drainPromptQueue } from "./runtime/session-runtime-router";
+import { drainPromptQueue } from "./runtime/session-router";
 import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";

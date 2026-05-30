@@ -6,7 +6,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import type { ChildProcess } from "node:child_process";
 import type { AcpAgentProvider } from "@tiller/shared";
-import { withConnectionRequest } from "./connection-request";
+import { withConnectionRequest } from "./request";
 
 const provider = {
   id: "test-provider",

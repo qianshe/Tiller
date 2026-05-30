@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   finalizeActiveRuntimeThinking,
   normalizeRuntimeThinkingToolCall,
-} from "./runtime-segment-state.js";
+} from "./segment-state.js";
 
 test("runtime thinking helper keeps one stable tool call id across deltas", () => {
   const sessionId = "runtime-segment-state-thinking-stable";

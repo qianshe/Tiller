@@ -60,7 +60,7 @@ test("mission light theme critical surfaces use semantic Tailwind tokens", () =>
     "src/features/mission/conversation/chat-pane.tsx",
     "src/features/mission/inspector/inspector.tsx",
     "src/features/mission/composer/composer.tsx",
-    "src/features/mission/display/display-panel.tsx",
+    "src/features/mission/display/panel.tsx",
     "src/features/mission/display/session-overview-card.tsx",
     "src/features/logbook/ui/activity-log-panel.tsx",
   ].map((relativePath) => readFileSync(resolve(deckRoot, relativePath), "utf8"));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMissionWorktreeModel } from "./workspace-model.js";
+import { buildMissionWorktreeModel } from "./model.js";
 
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {

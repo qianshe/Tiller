@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createConnectionClientMethods } from "./connection-client-methods";
+import { createConnectionClientMethods } from "./client-methods";
 
 test("createConnectionClientMethods delegates session updates and returns undefined", async () => {
   const seenUpdates: unknown[] = [];

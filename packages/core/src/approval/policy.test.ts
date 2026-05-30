@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApprovalPolicyRule } from "@tiller/domain-contracts";
-import { evaluateApprovalPolicy } from "./approval-policy";
+import { evaluateApprovalPolicy } from "./policy";
 
 const allowRule: ApprovalPolicyRule = {
   id: "allow-read",

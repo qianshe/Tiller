@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MissionDisplayPanel } from "./display-panel.js";
+import { MissionDisplayPanel } from "./panel.js";
 
 const noop = () => undefined;
 

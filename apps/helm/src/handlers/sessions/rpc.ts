@@ -13,7 +13,7 @@ import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifica
 import {
   cancelSessionRuntime,
   configureSessionRuntime,
-} from "../../runtime/session-runtime-router";
+} from "../../runtime/session-router";
 import type { HelmHandlerContext } from "../context";
 import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
 import { createSession } from "./session-create-rpc";

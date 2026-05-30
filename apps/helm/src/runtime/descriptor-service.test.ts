@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AcpAgentProvider, SessionSummary } from "@tiller/shared";
-import { createRuntimeDescriptorService } from "./runtime-descriptor-service.js";
+import { createRuntimeDescriptorService } from "./descriptor-service.js";
 
 function sessionSummary(overrides: Partial<SessionSummary>): SessionSummary {
   return {

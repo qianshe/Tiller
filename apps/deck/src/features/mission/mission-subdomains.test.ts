@@ -37,13 +37,13 @@ test("mission workspace composes panes through subdomain entrypoints", () => {
     assert.match(workspaceSource, new RegExp(`from "\\.\\./${subdomain}"`));
   }
 
-  for (const internalImport of ["./chat-pane", "./composer", "./diff-panel", "./display-section", "./inspector", "./sidebar"] as const) {
+  for (const internalImport of ["./chat-pane", "./composer", "./diff-panel", "./section", "./inspector", "./sidebar"] as const) {
     assert.doesNotMatch(workspaceSource, new RegExp(`from "${internalImport.replace(".", "\\\\.")}"`));
   }
 });
 
 test("mission workspace implementation lives in the workspace subdomain", () => {
-  for (const filename of ["workspace.tsx", "workspace-model.ts", "workspace-runtime-overview.ts"] as const) {
+  for (const filename of ["workspace.tsx", "model.ts", "runtime-overview-dedupe.ts"] as const) {
     assert.equal(existsSync(join(missionRoot, "workspace", filename)), true, `workspace/${filename} should exist`);
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }
@@ -53,9 +53,9 @@ test("mission composer implementation lives in the composer subdomain", () => {
   for (const filename of [
     "composer.tsx",
     "composer.test.tsx",
-    "composer-attachments.tsx",
-    "composer-config-controls.tsx",
-    "composer-draft-selectors.tsx",
+    "attachments.tsx",
+    "config-controls.tsx",
+    "draft-selectors.tsx",
     "mission-status-bar.tsx",
     "mission-status-bar.test.tsx",
     "slash-command-popup.tsx",
@@ -91,9 +91,9 @@ test("mission display implementation lives in the display subdomain", () => {
     "diff-panel.tsx",
     "diff-tree.tsx",
     "diff-tree.test.tsx",
-    "display-panel.tsx",
-    "display-panel.test.tsx",
-    "display-section.tsx",
+    "panel.tsx",
+    "panel.test.tsx",
+    "section.tsx",
     "logbook-panel.tsx",
     "panels.ts",
     "session-overview-card.tsx",

@@ -1,7 +1,7 @@
 import type { AcpAgentProvider, AgentMessage, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
-import { AcpConnection, type AcpConnectionOptions, type AcpSessionRuntimeHandle, type OpenAcpSessionRequest } from "./acp-connection";
-import { resolveAcpConnectionKey, type AcpConnectionKey } from "./connection-key";
-import type { AcpConnectionInventoryItem } from "./connection-types";
+import { AcpConnection, type AcpConnectionOptions, type AcpSessionRuntimeHandle, type OpenAcpSessionRequest } from "./lifecycle";
+import { resolveAcpConnectionKey, type AcpConnectionKey } from "./key";
+import type { AcpConnectionInventoryItem } from "./types";
 
 export type AcpConnectionLifecycleEvent = {
   type:

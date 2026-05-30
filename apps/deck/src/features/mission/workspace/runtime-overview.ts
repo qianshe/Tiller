@@ -1,4 +1,4 @@
-import { dedupeRuntimeOverviewItems } from "./workspace-runtime-overview";
+import { dedupeRuntimeOverviewItems } from "./runtime-overview-dedupe";
 import {
   formatAcpConnectionStatus,
   formatRuntimeSessionCount,

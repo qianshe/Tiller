@@ -13,7 +13,7 @@ import type {
   SessionStatus,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
+import type { AcpConnectionLifecycleEvent } from "./connection/manager";
 
 export type ProviderCleanupResult =
   | { kind: "unsupported"; providerId: string; message: string }

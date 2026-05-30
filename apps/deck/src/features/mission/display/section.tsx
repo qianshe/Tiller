@@ -7,7 +7,7 @@ import type {
 } from "@tiller/shared";
 import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
-import { MissionDisplayPanel, type RuntimeOverviewItem } from "./display-panel";
+import { MissionDisplayPanel, type RuntimeOverviewItem } from "./panel";
 import { LogbookPanel } from "./logbook-panel";
 import type { MissionPanelPage } from "./panels";
 

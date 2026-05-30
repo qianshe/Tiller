@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
-import { resolveAcpConnectionKey } from "./connection-key";
-import { createAcpConnectionManager } from "./connection-manager";
+import { resolveAcpConnectionKey } from "./key";
+import { createAcpConnectionManager } from "./manager";
 
 const provider: AcpAgentProvider = {
   id: "codex",

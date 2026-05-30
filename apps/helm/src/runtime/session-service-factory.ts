@@ -37,11 +37,11 @@ import {
 import { createRestoreReplayBuffer } from "./replay-event-buffer";
 import { createProviderHistoryService } from "./provider-history-service";
 import { createSessionPersistenceService } from "./session-persistence-service";
-import { createRuntimeDraftRegistry } from "./runtime-draft-registry";
+import { createRuntimeDraftRegistry } from "./draft-registry";
 import { createSessionResumeService } from "./session-resume-service";
 import { createSessionDiffHydrationService } from "./session-diff-hydration";
 import { createSessionSummaryHydrationService } from "./session-summary-hydration";
-import { createRuntimeDescriptorService } from "./runtime-descriptor-service";
+import { createRuntimeDescriptorService } from "./descriptor-service";
 import {
   chooseRecoverySummary,
   preservePreviousUserPromptsAfterReimport,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { performDraftRuntimeCleanup } from "./draft-runtime-lifecycle";
+import { performDraftRuntimeCleanup } from "./draft-lifecycle";
 
 test("performDraftRuntimeCleanup delegates provider cleanup once and logs ownership details", async () => {
   const calls: string[] = [];

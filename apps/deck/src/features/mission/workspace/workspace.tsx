@@ -19,7 +19,7 @@ import {
   buildDraftPreparingMessage,
   buildMissionChatRestoreNotice,
   resolveMissionChatSelectedSessionId,
-} from "./workspace-chat-composition";
+} from "./chat-composition";
 import { MissionWorktreeList } from "./worktree-list";
 import {
   ResizableHandle,
@@ -28,10 +28,10 @@ import {
 } from "../../../shared/ui";
 import { MissionSidebar } from "../navigation";
 import { buildChatWindowModel } from "./chat-window-model";
-import { buildMissionWorktreeModel } from "./workspace-model";
-import { buildSessionStreamHydrationPlan } from "./workspace-session-streams";
+import { buildMissionWorktreeModel } from "./model";
+import { buildSessionStreamHydrationPlan } from "./session-streams";
 import { buildRuntimeOverviewItems } from "./runtime-overview";
-import { shouldAttachDraftWindowToSession } from "./workspace-draft-window";
+import { shouldAttachDraftWindowToSession } from "./draft-window";
 import {
   acpReconnectKey,
   formatAcpConnectionStatus,

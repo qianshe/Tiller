@@ -6,7 +6,7 @@ import {
   resolveRequestedRuntimeSessionId,
   updateSessionConfigOptionValue,
   updateSessionConfigOptionValueById,
-} from "./connection-session-config";
+} from "./session-config";
 
 test("resolveRequestedRuntimeSessionId prefers runtime id for loaded sessions", () => {
   assert.equal(

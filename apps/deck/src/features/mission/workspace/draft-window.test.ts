@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { shouldAttachDraftWindowToSession } from "./workspace-draft-window";
+import { shouldAttachDraftWindowToSession } from "./draft-window";
 
 test("shouldAttachDraftWindowToSession matches project cwd and optional agent", () => {
   const session = {

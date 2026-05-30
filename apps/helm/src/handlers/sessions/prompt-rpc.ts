@@ -4,7 +4,7 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session-config-options";
-import { sendPromptToSession } from "../../runtime/session-runtime-router";
+import { sendPromptToSession } from "../../runtime/session-router";
 import type { HelmHandlerContext } from "../context";
 
 export type SessionPromptParams = {

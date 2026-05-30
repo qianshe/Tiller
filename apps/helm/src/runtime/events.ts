@@ -17,8 +17,8 @@ import {
   normalizeRuntimeAssistantMessageId,
   normalizeRuntimeThinkingToolCall,
   startNextAssistantResponseSegment,
-} from "./runtime-segment-state";
-import { createRuntimeStreamLogController } from "./runtime-stream-log";
+} from "./segment-state";
+import { createRuntimeStreamLogController } from "./stream-log";
 import { formatLogValue } from "./session-event-normalizer";
 
 const liveEventSequenceBySession = new Map<string, number>();
