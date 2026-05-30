@@ -363,9 +363,10 @@ function compareTimelineItems<T extends { timelineSequence?: number; timestamp: 
   if (timelineDelta !== null) {
     return timelineDelta;
   }
-  if (hasMixedTimelineSequence(leftItem, rightItem)) {
-    return left.index - right.index;
-  }
+  // When timelineSequence is absent or present on only one side, fall back to
+  // chronological timestamp (then insertion index) rather than index alone, so
+  // legacy history with partial sequences keeps real message/tool interleaving
+  // instead of collapsing into the kind-segregated rebuild order.
   const timestampDelta = compareIsoTimestamps(leftItem.timestamp, rightItem.timestamp);
   return timestampDelta === 0 ? left.index - right.index : timestampDelta;
 }
@@ -379,13 +380,6 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function hasMixedTimelineSequence(
-  left: { timelineSequence?: number },
-  right: { timelineSequence?: number },
-) {
-  return (left.timelineSequence === undefined) !== (right.timelineSequence === undefined);
 }
 
 function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {

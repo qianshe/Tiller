@@ -7,6 +7,7 @@ import {
   SessionCard,
   SessionPreviewMessages,
   SessionRestoreNotice,
+  formatProjectWorktreeLabel,
   type MissionDraftChatWindow,
 } from "./session-cards.js";
 
@@ -66,6 +67,53 @@ test("DraftSessionCard renders selectable agent options", () => {
 
   assert.match(html, /选择 ACP Agent/);
   assert.match(html, /Codex/);
+});
+
+test("formatProjectWorktreeLabel drops worktree suffix that echoes the project name", () => {
+  assert.equal(formatProjectWorktreeLabel("Tiller", "Tiller"), "Tiller");
+  assert.equal(formatProjectWorktreeLabel("Tiller", "tiller"), "Tiller");
+  assert.equal(formatProjectWorktreeLabel("Tiller", "  Tiller  "), "Tiller");
+  assert.equal(formatProjectWorktreeLabel("Tiller", ""), "Tiller");
+  assert.equal(formatProjectWorktreeLabel("Tiller", undefined), "Tiller");
+  assert.equal(formatProjectWorktreeLabel("Tiller", "feature-x"), "Tiller / feature-x");
+});
+
+test("SessionCard does not duplicate project name when worktree echoes it (any case)", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session({ worktreeName: "tiller" })}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.doesNotMatch(html, /[Tt]iller\s*\/\s*[Tt]iller/);
+});
+
+test("SessionCard shows distinct worktree name alongside project", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session({ worktreeName: "feature-x" })}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /Tiller\s*\/\s*feature-x/);
 });
 
 test("SessionCard renders running tool status in the title bar", () => {

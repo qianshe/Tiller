@@ -23,7 +23,7 @@ import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
-import { splitMissionToolCalls } from "./chat-pane-model";
+import { resolveSessionStreamContentLength, splitMissionToolCalls } from "./chat-pane-model";
 import {
   resolveChatSessionMessages,
   resolveChatSessionToolCalls,
@@ -41,6 +41,9 @@ import {
 
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
 type MissionToolActivity = MissionToolLoadingState["activity"];
+
+// 距底部小于该像素阈值时视为"贴底"，流式与工具加载才自动跟随；超过则尊重用户上滑。
+const STICK_TO_BOTTOM_THRESHOLD = 80;
 
 type HistoryState = {
   hasMore: boolean;
@@ -316,8 +319,17 @@ export function MissionChatPane({
     };
   }, [activeSession?.id, chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
-  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number }>>({});
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
+  const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
+  const recordSessionBodyScroll = (sessionId: string, body: HTMLDivElement) => {
+    sessionBodyScrollPositionRef.current[sessionId] = {
+      scrollTop: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+    };
+    sessionBodyStickToBottomRef.current[sessionId] =
+      body.scrollHeight - body.scrollTop - body.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
+  };
   const draftCard = draftWindow ? (
     <DraftSessionCard
       draftWindow={draftWindow}
@@ -335,21 +347,30 @@ export function MissionChatPane({
       return;
     }
     const changedSessionIds: string[] = [];
-    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number }> = {};
+    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number }> = {};
 
     openSessions.forEach((session) => {
       const messageCount = sessionMessagesById[session.id]?.length ?? 0;
       const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
       const toolCallCount = sessionToolCallsById[session.id]?.length ?? 0;
+      const contentLength = resolveSessionStreamContentLength({
+        messages: sessionMessagesById[session.id],
+        timeline: sessionTimelineById[session.id],
+        toolCalls: sessionToolCallsById[session.id],
+      });
       const previous = sessionBodyScrollSnapshotRef.current[session.id];
-      nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount };
+      nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount, contentLength };
       if (!previous) {
         if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
           changedSessionIds.push(session.id);
         }
         return;
       }
-      if (previous.messageCount !== Math.max(messageCount, timelineCount) || previous.toolCallCount !== toolCallCount) {
+      if (
+        previous.messageCount !== Math.max(messageCount, timelineCount) ||
+        previous.toolCallCount !== toolCallCount ||
+        previous.contentLength !== contentLength
+      ) {
         changedSessionIds.push(session.id);
       }
     });
@@ -362,13 +383,19 @@ export function MissionChatPane({
     const scrollChangedBodies = () => {
       changedSessionIds.forEach((sessionId) => {
         const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
-        if (body) {
-          body.scrollTop = body.scrollHeight;
-          sessionBodyScrollPositionRef.current[sessionId] = {
-            scrollTop: body.scrollTop,
-            scrollHeight: body.scrollHeight,
-          };
+        if (!body) {
+          return;
         }
+        // 仅当用户当前贴底（未手动上滑）时才跟随到最新内容。
+        if (sessionBodyStickToBottomRef.current[sessionId] === false) {
+          return;
+        }
+        body.scrollTop = body.scrollHeight;
+        sessionBodyScrollPositionRef.current[sessionId] = {
+          scrollTop: body.scrollTop,
+          scrollHeight: body.scrollHeight,
+        };
+        sessionBodyStickToBottomRef.current[sessionId] = true;
       });
     };
 
@@ -551,10 +578,7 @@ export function MissionChatPane({
               flat
               bodyScrollSnapshot={sessionBodyScrollPositionRef.current[singleSession.id]}
               onBodyScroll={(event) => {
-                sessionBodyScrollPositionRef.current[singleSession.id] = {
-                  scrollTop: event.currentTarget.scrollTop,
-                  scrollHeight: event.currentTarget.scrollHeight,
-                };
+                recordSessionBodyScroll(singleSession.id, event.currentTarget);
               }}
               onFocus={onSelectSessionView}
               onRename={onRenameSession}
@@ -582,10 +606,7 @@ export function MissionChatPane({
                   active={session.id === selectedSessionId}
                   bodyScrollSnapshot={sessionBodyScrollPositionRef.current[session.id]}
                   onBodyScroll={(event) => {
-                    sessionBodyScrollPositionRef.current[session.id] = {
-                      scrollTop: event.currentTarget.scrollTop,
-                      scrollHeight: event.currentTarget.scrollHeight,
-                    };
+                    recordSessionBodyScroll(session.id, event.currentTarget);
                   }}
                   onFocus={onSelectSessionView}
                   onRename={onRenameSession}

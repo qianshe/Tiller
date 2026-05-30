@@ -26,6 +26,36 @@ function toolCall(
   };
 }
 
+test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by timestamp instead of grouping it after messages", () => {
+  // Real chronology: user(seq 1) -> tool(no sequence) -> assistant(seq 3).
+  // Legacy history can carry tool calls without a timelineSequence (e.g. pre-migration
+  // records), and they must still land between the two messages by timestamp.
+  const timeline = buildSessionTimelineFromLegacy({
+    messages: [
+      message({ id: "user-1", role: "user", text: "Start", timelineSequence: 1 }),
+      message({ id: "assistant-1", role: "assistant", text: "Answer", timelineSequence: 3 }),
+    ],
+    toolCalls: [
+      {
+        id: "tool-1",
+        commandId: "tool-1",
+        kind: "search",
+        title: "Search",
+        status: "completed",
+        output: "result",
+        timestamp: at(2),
+        updatedAt: at(2),
+      } as AgentToolCall,
+    ],
+    outputs: [],
+  });
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["user_message", "tool_call", "assistant_message"],
+  );
+});
+
 test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks in sequence order while keeping tool calls independent", () => {
   const timeline = buildSessionTimelineFromLegacy({
     messages: [

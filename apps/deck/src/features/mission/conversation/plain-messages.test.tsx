@@ -419,6 +419,44 @@ test("plain messages auto-expands running thinking and collapses completed think
   assert.doesNotMatch(completedHtml, /class="[^"]*rotate-180/);
 });
 
+test("plain messages collapses still-running thinking once newer content follows", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "最终回答",
+          timestamp: "2026-05-17T10:00:05.000Z",
+        },
+      ],
+      thinkingToolCalls: [
+        {
+          id: "think-1",
+          kind: "think",
+          title: "Thinking",
+          status: "running",
+          output: "仍标记为运行中的 Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      assistantLabel: "Assistant",
+      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /<details[^>]*open=""/);
+  assert.match(html, /aria-label="展开 Thinking"/);
+  assert.ok(html.indexOf("仍标记为运行中的 Thinking") < html.indexOf("最终回答"));
+});
+
 test("plain messages collapses merged thinking when the latest chunk completes", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {

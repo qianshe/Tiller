@@ -126,7 +126,13 @@ export function PlainMessages({
     <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_32px))] gap-4">
       {visibleRenderMessages.map((renderItem, index) => {
         if (renderItem.kind === "thinking") {
-          return <PlainThinkingItem key={renderItem.renderKey} item={renderItem.toolCall} />;
+          return (
+            <PlainThinkingItem
+              key={renderItem.renderKey}
+              item={renderItem.toolCall}
+              hasNewerContent={index < visibleRenderMessages.length - 1}
+            />
+          );
         }
         if (renderItem.kind === "tool-group") {
           return (

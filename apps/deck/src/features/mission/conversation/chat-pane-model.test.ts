@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { SessionTimelineEntry } from "@tiller/shared";
 import {
   formatSessionPreviewTime,
   resolveSessionStatusTone,
+  resolveSessionStreamContentLength,
   splitMissionToolCalls,
 } from "./chat-pane-model";
 
@@ -27,4 +29,55 @@ test("resolveSessionStatusTone maps session statuses", () => {
 test("formatSessionPreviewTime returns placeholder for missing or invalid values", () => {
   assert.equal(formatSessionPreviewTime(undefined), "--:--");
   assert.equal(formatSessionPreviewTime("not-a-date"), "--:--");
+});
+
+test("resolveSessionStreamContentLength grows as streamed text and tool output grow", () => {
+  const baseTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "答",
+          timestamp: "2026-05-29T00:00:00.000Z",
+        },
+      ],
+      timestamp: "2026-05-29T00:00:00.000Z",
+      updatedAt: "2026-05-29T00:00:00.000Z",
+    },
+  ];
+  const grownTimeline: SessionTimelineEntry[] = [
+    {
+      ...baseTimeline[0],
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "答案更长了",
+          timestamp: "2026-05-29T00:00:00.000Z",
+        },
+      ],
+    } as SessionTimelineEntry,
+  ];
+
+  const before = resolveSessionStreamContentLength({ timeline: baseTimeline });
+  const after = resolveSessionStreamContentLength({ timeline: grownTimeline });
+  assert.ok(after > before, "streamed content growth must increase the signature");
+
+  const toolBefore = resolveSessionStreamContentLength({
+    toolCalls: [
+      { id: "t", kind: "shell", title: "Run", status: "running", output: "12", timestamp: "2026-05-29T00:00:00.000Z" },
+    ] as any,
+  });
+  const toolAfter = resolveSessionStreamContentLength({
+    toolCalls: [
+      { id: "t", kind: "shell", title: "Run", status: "running", output: "123456", timestamp: "2026-05-29T00:00:00.000Z" },
+    ] as any,
+  });
+  assert.ok(toolAfter > toolBefore, "growing tool output must increase the signature");
+
+  assert.equal(resolveSessionStreamContentLength({}), 0);
 });

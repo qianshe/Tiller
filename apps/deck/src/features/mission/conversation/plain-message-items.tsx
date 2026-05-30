@@ -173,14 +173,22 @@ function PlainThinkingIcon() {
   );
 }
 
-export function PlainThinkingItem({ item }: { item: AgentToolCall }) {
+export function PlainThinkingItem({
+  item,
+  hasNewerContent = false,
+}: {
+  item: AgentToolCall;
+  hasNewerContent?: boolean;
+}) {
   const isRunning = item.status === "pending" || item.status === "running";
   const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
-  const [open, setOpen] = useState(isRunning);
+  // Thinking 缺乏可靠的完成事件（status 可能长期停留在 running），因此一旦其后出现新内容即视为已结束并折叠。
+  const shouldAutoOpen = isRunning && !hasNewerContent;
+  const [open, setOpen] = useState(shouldAutoOpen);
 
   useEffect(() => {
-    setOpen(isRunning);
-  }, [isRunning]);
+    setOpen(shouldAutoOpen);
+  }, [shouldAutoOpen]);
 
   return (
     <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">

@@ -41,6 +41,21 @@ export type SessionCardScrollSnapshot = {
   scrollHeight: number;
 };
 
+/**
+ * Joins project and worktree names, dropping the worktree suffix when it only
+ * echoes the project name (e.g. a root worktree named after the project).
+ */
+export function formatProjectWorktreeLabel(
+  projectName: string,
+  worktreeName: string | null | undefined,
+): string {
+  const worktree = worktreeName?.trim();
+  if (worktree && worktree.toLowerCase() !== projectName.trim().toLowerCase()) {
+    return `${projectName} / ${worktree}`;
+  }
+  return projectName;
+}
+
 export function SessionCard({
   session,
   active,
@@ -115,8 +130,7 @@ export function SessionCard({
           {session.title?.trim() || session.agentName}
         </span>
         <span className="font-mono text-2xs text-muted-foreground tabular shrink-0">
-          {session.projectName}
-          {session.worktreeName ? ` / ${session.worktreeName}` : ""}
+          {formatProjectWorktreeLabel(session.projectName, session.worktreeName)}
         </span>
         {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
         <div className="min-w-0 flex-1">
@@ -267,7 +281,7 @@ export function DraftSessionCard({
         <AgentIcon name={draftWindow.agentName ?? "ACP"} size={14} />
         <span className="truncate text-section font-medium text-foreground">{draftWindow.title}</span>
         <span className="shrink-0 font-mono text-2xs tabular text-muted-foreground">
-          {draftWindow.projectName}{draftWindow.worktreeName ? ` / ${draftWindow.worktreeName}` : ""}
+          {formatProjectWorktreeLabel(draftWindow.projectName, draftWindow.worktreeName)}
         </span>
         <div className="flex-1" />
         <StatusDot tone={statusTone} pulse={draftWindow.status !== "ready"} />
