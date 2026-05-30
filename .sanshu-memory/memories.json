@@ -35,23 +35,34 @@
       "updated_at": "2026-05-17T13:03:58.231822300Z"
     },
     {
-      "id": "33a526cb-bb3f-47c0-bbcb-57b864708f45",
-      "content": "在 Tiller UI 复刻任务中，如果浏览器参考路由不可用或交互不切页，可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据；用户明确允许“直接去看代码设计”。",
-      "content_normalized": "在 tiller ui 复刻任务中如果浏览器参考路由不可用或交互不切页可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据用户明确允许直接去看代码设计",
-      "category": "Preference",
-      "created_at": "2026-05-20T17:01:56.604662100Z",
-      "updated_at": "2026-05-20T17:01:56.604662100Z"
+      "id": "1096f7e7-814a-4294-a5b9-85dc5d14efe6",
+      "content": "Tiller 当前架构重构状态（2026-05-30）：Phase 42-44 已完成并提交，重点是低风险职责外移：Deck chat-session-state、workspace-session-streams、workspace-draft-window；ACP connection-request、connection-client-methods、connection-session-config。后续不要继续盲目拆大文件，优先基于真实 Prompt 联调反馈推进。若继续规划，推荐两个中风险方向：1) Deck `workspace.tsx` 的 chat window actions/controller（open/select/close/draft/focus）收口；2) `packages/acp-runtime/src/connection/acp-connection.ts` 的 terminal/file client facade。Helm `session-runtime-router.ts` 是 prompt 实时链路热点，但应在 Prompt smoke 后再拆。",
+      "content_normalized": "tiller 当前架构重构状态2026-05-30phase 42-44 已完成并提交重点是低风险职责外移deck chat-session-stateworkspace-session-streamsworkspace-draft-windowacp connection-requestconnection-client-methodsconnection-session-config后续不要继续盲目拆大文件优先基于真实 prompt 联调反馈推进若继续规划推荐两个中风险方向1 deck `workspacetsx` 的 chat window actions/controlleropen/select/close/draft/focus收口2 `packages/acp-runtime/src/connection/acp-connectionts` 的 terminal/file client facadehelm `session-runtime-routerts` 是 prompt 实时链路热点但应在 prompt smoke 后再拆",
+      "category": "Context",
+      "created_at": "2026-05-30T04:19:13.915143100Z",
+      "updated_at": "2026-05-30T04:19:13.915143100Z"
     },
     {
-      "id": "1bd511b4-38cb-4f5b-934b-42023a242a51",
-      "content": "Tiller Mission 页 v6 复刻：用户明确要求只负责 Mission 页，像素级复刻应直接读取 docs/redesign/v6/src/views/mission.tsx 和 docs/redesign/v6/src/styles.css 的设计代码，再应用到 apps/deck 框架中；不要处理其他页面，不要管轮盘菜单/底部设置按钮。",
-      "content_normalized": "tiller mission 页 v6 复刻用户明确要求只负责 mission 页像素级复刻应直接读取 docs/redesign/v6/src/views/missiontsx 和 docs/redesign/v6/src/stylescss 的设计代码再应用到 apps/deck 框架中不要处理其他页面不要管轮盘菜单/底部设置按钮",
-      "category": "Context",
-      "created_at": "2026-05-20T17:42:34.081296600Z",
-      "updated_at": "2026-05-20T17:42:34.081296600Z"
+      "id": "28d37ba4-92d0-41b6-82b5-de3c1df1e943",
+      "content": "Tiller 命名规则：优先避免 stutter naming（目录上下文重复）。在领域目录内，新文件默认不要重复父目录名作为前缀或中缀，例如 `connection/request.ts` 优于 `connection/connection-request.ts`，`workspace/chat-controller.ts` 优于 `workspace/workspace-chat-controller.ts`。例外：历史兼容、跨目录公共 facade、概念冲突或文件脱离目录后必须自解释时可保留，但需要在 plan 中说明理由。后续 project-rules/架构规划不要覆盖这条命名约束。",
+      "content_normalized": "tiller 命名规则优先避免 stutter naming目录上下文重复在领域目录内新文件默认不要重复父目录名作为前缀或中缀例如 `connection/requestts` 优于 `connection/connection-requestts``workspace/chat-controllerts` 优于 `workspace/workspace-chat-controllerts`例外历史兼容跨目录公共 facade概念冲突或文件脱离目录后必须自解释时可保留但需要在 plan 中说明理由后续 project-rules/架构规划不要覆盖这条命名约束",
+      "category": "Rule",
+      "created_at": "2026-05-30T04:31:42.875734Z",
+      "updated_at": "2026-05-30T04:31:42.875734Z"
     }
   ],
-  "deleted_entries": [],
+  "deleted_entries": [
+    {
+      "content": "在 Tiller UI 复刻任务中，如果浏览器参考路由不可用或交互不切页，可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据；用户明确允许“直接去看代码设计”。",
+      "content_normalized": "在 tiller ui 复刻任务中如果浏览器参考路由不可用或交互不切页可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据用户明确允许直接去看代码设计",
+      "deleted_at": "2026-05-30T04:19:03.462179800Z"
+    },
+    {
+      "content": "Tiller Mission 页 v6 复刻：用户明确要求只负责 Mission 页，像素级复刻应直接读取 docs/redesign/v6/src/views/mission.tsx 和 docs/redesign/v6/src/styles.css 的设计代码，再应用到 apps/deck 框架中；不要处理其他页面，不要管轮盘菜单/底部设置按钮。",
+      "content_normalized": "tiller mission 页 v6 复刻用户明确要求只负责 mission 页像素级复刻应直接读取 docs/redesign/v6/src/views/missiontsx 和 docs/redesign/v6/src/stylescss 的设计代码再应用到 apps/deck 框架中不要处理其他页面不要管轮盘菜单/底部设置按钮",
+      "deleted_at": "2026-05-30T04:19:03.487391100Z"
+    }
+  ],
   "last_dedup_at": "2026-04-29T07:33:32.395266400Z",
   "config": {
     "similarity_threshold": 0.7,

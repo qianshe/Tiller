@@ -36,11 +36,12 @@ tiller/
 │   │       │   ├── context.ts     # handler 上下文装配
 │   │       │   └── devices-rpc.ts # 设备/配对 RPC
 │   │       ├── sessions/    # 会话持久化与生命周期
-│   │       │   ├── sqlite/        # SQLite 实现
+│   │       │   ├── sqlite/        # 仅余 boundary 测试；实现位于 packages/persistence/src/sqlite/
 │   │       │   ├── project/       # 项目相关会话数据
 │   │       │   ├── summary/       # 会话摘要
 │   │       │   ├── store-factory.ts / runtime-store.ts / message-store.ts / artifact-store.ts / cleanup.ts ...
 │   │       │   └── facade.ts      # 对外公共 API
+│   │       ├── updates/     # 自更新（check / installer / npm-registry / versions）
 │   │       ├── runtime/     # 运行时核心服务
 │   │       ├── auth/        # 认证与配对
 │   │       ├── providers/   # ACP provider 适配
@@ -70,8 +71,11 @@ tiller/
 │   │       └── store/       # Zustand：slices/、facade.ts、middleware.ts、persist.ts
 │   └── mobile/        # 移动端 (早期规划，避免反向耦合 Deck/Helm)
 ├── packages/
-│   ├── shared/            # 跨包共享类型与工具（无内部依赖；types.ts 按 domain 拆分）
-│   ├── acp-runtime/       # ACP 运行时集成（未来按 protocol/ session/ sdk/ 分组）
+│   ├── shared/            # 跨包共享类型与工具（无内部依赖；若 types.ts 多域累积难以导航再按 domain 拆）
+│   ├── core/              # 后端领域模型 / 端口 / 用例；CI 由 dependency-guard 强制不依赖 apps/SDK/SQLite
+│   ├── domain-contracts/  # 跨 app 契约（agent/approval/project/runtime/session），纯类型
+│   ├── persistence/       # SQLite/JSON 存储适配器（含 sqlite/、summary/、message-store 等）
+│   ├── acp-runtime/       # ACP 运行时集成（adapters/{claude,codex,opencode,openclaw,generic} + connection/）
 │   ├── agent-registry/    # Agent 注册与发现
 │   └── sync-protocol/     # 同步协议消息定义
 ├── docs/                  # 设计 / 发布 / 前端文档
@@ -82,12 +86,14 @@ tiller/
 ## 依赖关系
 
 ```
-deck → shared, sync-protocol
-helm → acp-runtime, shared (运行时)
+deck → shared, sync-protocol, domain-contracts
+helm → core, persistence, acp-runtime, shared, domain-contracts, sync-protocol
+core → shared, domain-contracts
+persistence → shared
+domain-contracts → shared
 acp-runtime → agent-registry (可选)
-agent-registry → (独立)
-sync-protocol → (独立)
-shared → (独立, 无内部依赖)
+agent-registry / sync-protocol / shared → 独立
+# core 禁止 import apps/*、acp-runtime、persistence、sync-protocol、ACP SDK、WS、React、SQLite、Node fs；由 *-guard.test.ts 在 CI 强制
 ```
 
 ## 常用命令
@@ -113,6 +119,8 @@ pnpm --filter @tiller/deck typecheck
 # 测试
 pnpm test                         # 全量
 pnpm --filter @tiller/helm test
+pnpm --filter @tiller/core test   # 含 dependency-guard / workspace-boundary-guard 架构边界测试
+pnpm --filter @tiller/persistence test
 
 # 构建
 pnpm --filter @tiller/helm build
@@ -161,7 +169,8 @@ pnpm --filter @tiller/helm pack:npm
   - `src/handlers/<domain>/` 才是业务方法实现，按 `config/`、`sessions/` 等 domain 分组。
   - 新增 RPC 方法 = 在对应 `handlers/<domain>/` 下扩展，不要往 `rpc/` 里加业务，也不要继续把不相关方法堆进同一个 `handlers/<domain>/rpc.ts`。
   - 当 `handlers/<domain>/rpc.ts` 开始混合校验/路由/业务时，先按职责（validate / route-within-domain / implement）拆分再追加。
-- 会话持久化：SQLite 实现放 `sessions/sqlite/`，JSON fallback 与工厂决策在 `store-factory.ts`，不要混入 handler。
+- 会话持久化：SQLite/JSON 实现位于 `packages/persistence/`，Helm 通过 `@tiller/persistence` 公开导出 + `sessions/store-factory.ts` 消费；不要把存储实现搬回 `apps/helm/src/sessions/sqlite/`，也不要在 handler 中直接触碰存储内部。
+- 自更新：`apps/helm/src/updates/*` 独立成簇；网络调用只能停留在 `updates/npm-registry.ts`，不要泄漏到 `handlers/` 或 `server.ts`。
 - 配对/可信设备：`auth/` + `state/`。
 - ACP provider/进程集成：放 `packages/acp-runtime` 或 Helm `providers/`，不要落到 CLI、HTTP handler 或 Deck。
 - 默认日志不得包含 assistant 消息正文与命令输出正文，遵守 `README.md` 隐私边界。
