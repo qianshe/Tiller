@@ -27,6 +27,7 @@ const workspaceChatCompositionSource = readFileSync(
 );
 const sessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/session-streams.ts"), "utf8");
 const openSessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/open-session-streams.ts"), "utf8");
+const chatWindowActionsSource = readFileSync(resolve(currentDir, "../workspace/chat-window-actions.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
@@ -99,7 +100,7 @@ test("mission chat renders permission drawers inside matching session cards", ()
   assert.match(permissionDrawerSource, /sticky/);
   assert.match(permissionDrawerSource, /top-2/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-2/);
-  assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\]\]/);
   assert.doesNotMatch(shellStylesSource, /mission-responsive-mode \.mission-permission-drawer/);
   assert.doesNotMatch(permissionDrawerSource, /left-1\/2/);
   assert.doesNotMatch(permissionDrawerSource, /-translate-x-1\/2/);
@@ -349,15 +350,16 @@ test("mission sidebar exposes search and new-task actions in the header", () => 
 
 test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /openChatSessionIds/);
-  assert.match(worktreeSource, /const openChatSession = \(sessionId: string\) =>/);
-  assert.match(worktreeSource, /const closeChatSession = \(session: SessionSummary\) =>/);
+  assert.match(worktreeSource, /useChatWindowActions\(\{/);
+  assert.match(chatWindowActionsSource, /const openChatSession = \(sessionId: string\) =>/);
+  assert.match(chatWindowActionsSource, /const closeChatSession = \(session: SessionSummary\) =>/);
   assert.match(worktreeSource, /openSession=\{openChatSession\}/);
   assert.match(worktreeSource, /focusedChatWindowId/);
   assert.match(worktreeSource, /buildChatWindowModel\(\{/);
   assert.match(worktreeSource, /focusedRealSessionId,/);
-  assert.match(worktreeSource, /const selectChatSession = \(sessionId: string\) =>/);
-  assert.match(worktreeSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
-  assert.doesNotMatch(worktreeSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
+  assert.match(chatWindowActionsSource, /const selectChatSession = \(sessionId: string\) =>/);
+  assert.match(chatWindowActionsSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
+  assert.doesNotMatch(chatWindowActionsSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
   assert.match(worktreeSource, /useOpenSessionStreams\(\{/);
   assert.match(openSessionStreamsSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
   assert.match(openSessionStreamsSource, /openSessionTopicSubscriptionsRef/);
@@ -374,7 +376,7 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /sessions: sessions as SessionSummary\[\]/);
   assert.match(openSessionStreamsSource, /setMessageHistoryState\(\(current: any\) =>/);
   assert.match(openSessionStreamsSource, /setActivityHistoryState\(\(current: any\) =>/);
-  assert.match(worktreeSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
+  assert.match(chatWindowActionsSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
   assert.match(openSessionStreamsSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
   assert.match(worktreeSource, /focusedDraftWindow,/);
   assert.match(worktreeSource, /selectedComposerSession,/);
@@ -421,9 +423,9 @@ test("mission chat pane renders draft windows as first-class cards", () => {
   assert.match(worktreeSource, /draftWindow=\{visibleDraftChatWindow\}/);
   assert.match(worktreeSource, /draftAgentOptions=\{visibleDraftAgentOptions\}/);
   assert.match(worktreeSource, /onSelectDraftAgent=\{selectAgentForDraftWindow\}/);
-  assert.match(worktreeSource, /const openDraftChatWindow = \(\{/);
-  assert.match(worktreeSource, /setFocusedChatWindowId\(draftWindow\.id\)/);
-  assert.match(worktreeSource, /setActiveSessionId\(null\)/);
+  assert.match(chatWindowActionsSource, /const openDraftChatWindow = \(\{/);
+  assert.match(chatWindowActionsSource, /setFocusedChatWindowId\(draftWindow\.id\)/);
+  assert.match(chatWindowActionsSource, /setActiveSessionId\(null\)/);
   assert.match(worktreeSource, /selectedSessionId=\{missionChatSelectedSessionId\}/);
   assert.match(workspaceChatCompositionSource, /return focusedDraftWindow \? null : focusedRealSessionId \?\? activeSessionId \?\? null/);
   assert.match(worktreeSource, /onSelectDraftWindow=\{\(draftWindowId\) => \{[\s\S]*?setActiveSessionId\(null\);/);
@@ -435,9 +437,9 @@ test("mission chat pane renders draft windows as first-class cards", () => {
   assert.match(worktreeSource, /selectedCwd=\{effectiveSelectedCwd\}/);
   assert.match(worktreeSource, /selectedDraftAgent=\{effectiveSelectedDraftAgent\}/);
   assert.match(worktreeSource, /selectedAgentId=\{effectiveSelectedAgentId\}/);
-  assert.match(worktreeSource, /setSelectedAgentId\(focusedDraftWindow\.agentId\)/);
-  assert.match(worktreeSource, /pendingDraftWindowRef/);
-  assert.match(worktreeSource, /setDraftChatWindow\?\.\(null\)/);
+  assert.match(chatWindowActionsSource, /setSelectedAgentId\(focusedDraftWindow\.agentId\)/);
+  assert.match(chatWindowActionsSource, /pendingDraftWindowRef/);
+  assert.match(chatWindowActionsSource, /setDraftChatWindow\?\.\(null\)/);
 });
 
 test("mission composer mirrors the v6 sunken command deck", () => {

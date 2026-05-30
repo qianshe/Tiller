@@ -1,6 +1,5 @@
 import type { SessionSummary } from "@tiller/shared";
-import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
@@ -10,6 +9,7 @@ import {
   MISSION_MOBILE_PANE_ORDER,
   selectAdjacentMissionMobilePane as resolveAdjacentMissionMobilePane,
 } from "./mobile-pane";
+import { useChatWindowActions } from "./chat-window-actions";
 import { MissionPage } from "./page";
 import {
   buildDraftPreparingMessage,
@@ -27,7 +27,6 @@ import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./model";
 import { useOpenSessionStreams } from "./open-session-streams";
 import { buildRuntimeOverviewItems } from "./runtime-overview";
-import { shouldAttachDraftWindowToSession } from "./draft-window";
 import {
   acpReconnectKey,
   formatAcpConnectionStatus,
@@ -274,7 +273,6 @@ export function MissionWorktree(props: any) {
     focusedChatWindowId,
     draftChatWindow,
   });
-  const pendingDraftWindowRef = useRef<typeof draftChatWindow>(null);
   const hydrateOpenSessionStreams = useOpenSessionStreams({
     pairingState,
     rpcClientRef,
@@ -296,120 +294,39 @@ export function MissionWorktree(props: any) {
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(effectiveSelectedCwd ?? undefined),
   ) ?? selectedWorktree;
   const effectiveSelectedWorktreeName = effectiveSelectedWorktree?.name ?? selectedWorktreeName;
-  useEffect(() => {
-    setOpenChatSessionIds((current: string[]) => {
-      const existingSessionIds = new Set((sessions as SessionSummary[]).map((session) => session.id));
-      const retained = current.filter((sessionId) => existingSessionIds.has(sessionId));
-      if (!activeSession?.id || retained.includes(activeSession.id)) {
-        return retained.length === current.length ? current : retained;
-      }
-      return [...retained, activeSession.id];
-    });
-  }, [activeSession?.id, sessions]);
-  useEffect(() => {
-    if (activeSession?.id && !focusedChatWindowId) {
-      setFocusedChatWindowId(`session:${activeSession.id}`);
-    }
-  }, [activeSession?.id, focusedChatWindowId]);
-  useEffect(() => {
-    if (!focusedDraftWindow) {
-      return;
-    }
-    if (focusedDraftWindow.projectId !== selectedProjectId) {
-      setSelectedProjectId(focusedDraftWindow.projectId);
-    }
-    if (focusedDraftWindow.cwd !== selectedCwd) {
-      setSelectedCwd(focusedDraftWindow.cwd);
-    }
-    if (focusedDraftWindow.agentId && focusedDraftWindow.agentId !== selectedAgentId) {
-      setSelectedAgentId(focusedDraftWindow.agentId);
-    }
-  }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
-  const openChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatWindowId(`session:${sessionId}`);
-    hydrateOpenSessionStreams([sessionId]);
-    if (sessionId !== activeSessionId) {
-      openSession(sessionId);
-    }
-  };
-  const selectChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatWindowId(`session:${sessionId}`);
-    if (sessionId !== activeSessionId) {
-      openSession(sessionId);
-    }
-  };
-  const closeChatSession = (session: SessionSummary) => {
-    setOpenChatSessionIds((current: string[]) => {
-      const next = current.filter((sessionId) => sessionId !== session.id);
-      if (focusedRealSessionId === session.id) {
-        setFocusedChatWindowId(next.at(-1) ? `session:${next.at(-1)}` : null);
-      }
-      if (activeSessionId === session.id) {
-        const nextActiveSessionId = next.at(-1) ?? null;
-        if (nextActiveSessionId) {
-          openSession(nextActiveSessionId);
-        } else {
-          setActiveSessionId(null);
-        }
-      }
-      return next;
-    });
-  };
-  const openDraftChatWindow = ({
-    projectId,
-    cwd,
-    agentId = null,
-  }: {
-    projectId: string;
-    cwd: string | null;
-    agentId?: string | null;
-  }) => {
-    const project = projects.find((item: any) => item.id === projectId);
-    const draftWindow = {
-      id: `draft:${projectId}`,
-      projectId,
-      cwd,
-      agentId,
-    };
-    setDraftChatWindow?.(draftWindow);
-    setFocusedChatWindowId(draftWindow.id);
-    setActiveSessionId(null);
-    setSelectedMissionHelmId(project?.helmId ?? null);
-    setSelectedProjectId(projectId);
-    setSelectedCwd(cwd);
-    setSelectedAgentId(agentId);
-    setActiveSessionId(null);
-    setSelectedMissionMobilePane("chat");
-  };
-  const selectAgentForDraftWindow = (agentId: string) => {
-    const focusedDraftWindowId = draftChatWindow?.id ?? (selectedProjectId ? `draft:${selectedProjectId}` : null);
-    setDraftChatWindow?.((current: any) => (current ? { ...current, agentId } : current));
-    if (focusedDraftWindowId) {
-      setFocusedChatWindowId(focusedDraftWindowId);
-    }
-    setActiveSessionId(null);
-    selectDraftAgent(agentId);
-  };
-  const submitPromptFromFocusedWindow = (event: FormEvent<HTMLFormElement>, targetSession?: SessionSummary | null) => {
-    if (focusedDraftWindow) {
-      pendingDraftWindowRef.current = draftChatWindow;
-    }
-    submitPrompt(event, targetSession);
-  };
-  useEffect(() => {
-    const pendingDraftWindow = pendingDraftWindowRef.current;
-    if (!shouldAttachDraftWindowToSession(pendingDraftWindow, activeSession)) {
-      return;
-    }
-    pendingDraftWindowRef.current = null;
-    setDraftChatWindow?.(null);
-    setOpenChatSessionIds((current: string[]) => (
-      current.includes(activeSession.id) ? current : [...current, activeSession.id]
-    ));
-    setFocusedChatWindowId(`session:${activeSession.id}`);
-  }, [activeSession?.id, activeSession?.projectId, activeSession?.cwd, activeSession?.agentId, draftChatWindow]);
+  const {
+    openChatSession,
+    selectChatSession,
+    closeChatSession,
+    openDraftChatWindow,
+    selectAgentForDraftWindow,
+    submitPromptFromFocusedWindow,
+  } = useChatWindowActions({
+    activeSessionId,
+    activeSession,
+    sessions: sessions as SessionSummary[],
+    focusedChatWindowId,
+    focusedRealSessionId,
+    focusedDraftWindow,
+    draftChatWindow,
+    projects,
+    selectedProjectId,
+    selectedCwd,
+    selectedAgentId,
+    hydrateOpenSessionStreams,
+    setOpenChatSessionIds,
+    setFocusedChatWindowId,
+    openSession,
+    setActiveSessionId,
+    setDraftChatWindow,
+    setSelectedMissionHelmId,
+    setSelectedProjectId,
+    setSelectedCwd,
+    setSelectedAgentId,
+    setSelectedMissionMobilePane,
+    selectDraftAgent,
+    submitPrompt,
+  });
   const onToggleDisplay = () => {
     setMissionDisplayCollapsed((current: boolean) => !current);
   };
