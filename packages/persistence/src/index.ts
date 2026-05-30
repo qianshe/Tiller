@@ -6,6 +6,7 @@ export * from "./pagination";
 export * from "./runtime-store";
 export * from "./session-stores";
 export * from "./summary/store";
+export * from "./timeline-store";
 export {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -16,3 +17,4 @@ export {
   type JsonSessionStorePaths,
   type JsonToSqliteMigrationOptions,
 } from "./sqlite/store";
+export { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";

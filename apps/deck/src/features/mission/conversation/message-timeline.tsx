@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import type { AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
@@ -14,6 +14,7 @@ type MissionMessageTimelineCopy = {
 
 type MissionMessageTimelineProps = {
   items: AgentMessage[];
+  timelineItems?: SessionTimelineEntry[];
   thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
@@ -33,6 +34,7 @@ type MissionMessageTimelineProps = {
  */
 export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   items,
+  timelineItems = [],
   thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
@@ -61,6 +63,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
     <PlainMessages
       sessionId={sessionId ?? null}
       items={items}
+      timelineItems={timelineItems}
       thinkingToolCalls={thinkingToolCalls}
       toolCalls={toolCalls}
       showThinking={showThinking}

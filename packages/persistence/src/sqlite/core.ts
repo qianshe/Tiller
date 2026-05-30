@@ -60,6 +60,18 @@ export function openSessionDatabase(dbPath: string) {
       PRIMARY KEY(session_id, id)
     );
 
+    CREATE TABLE IF NOT EXISTS session_timeline_entries(
+      session_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      kind TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      timeline_sequence INTEGER,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, id)
+    );
+
     CREATE TABLE IF NOT EXISTS session_diffs(
       session_id TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -80,6 +92,7 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
+    CREATE INDEX IF NOT EXISTS idx_session_timeline_entries_page ON session_timeline_entries(session_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
   `);
   ensureSessionMessagePositions(db);

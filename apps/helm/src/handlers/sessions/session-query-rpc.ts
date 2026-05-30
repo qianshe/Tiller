@@ -1,4 +1,5 @@
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import type { AgentToolCall, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
@@ -53,9 +54,13 @@ export async function listMessages(
     limit: params.limit,
     before: params.before,
   });
+  const timelinePage = listSessionTimelinePage(params, context);
   return {
     sessionId: params.sessionId,
     messages: page.messages,
+    timeline: timelinePage.entries,
+    timelineNextCursor: timelinePage.nextCursor,
+    timelineHasMore: timelinePage.hasMore,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
     before: params.before,
@@ -138,6 +143,36 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
   }
 
   context.sessionArtifactStore.replaceToolCalls(sessionId, repairedToolCalls);
+}
+
+function listSessionTimelinePage(
+  params: { sessionId: string; limit?: number; before?: string },
+  context: HelmHandlerContext,
+) {
+  if (!context.sessionTimelineStore) {
+    return { entries: [], hasMore: false };
+  }
+  const existing = context.sessionTimelineStore.list(params.sessionId);
+  if (!existing.length) {
+    const messages = context.sessionMessageStore.list?.(params.sessionId) ?? [];
+    const artifacts = context.sessionArtifactStore.get?.(params.sessionId) ?? {
+      outputs: [],
+      diffs: [],
+      toolCalls: [],
+    };
+    const rebuilt = buildSessionTimelineFromLegacy({
+      messages,
+      outputs: artifacts.outputs,
+      toolCalls: artifacts.toolCalls,
+    });
+    if (rebuilt.length) {
+      context.sessionTimelineStore.replace(params.sessionId, rebuilt);
+    }
+  }
+  return context.sessionTimelineStore.listPage(params.sessionId, {
+    limit: params.limit,
+    before: params.before,
+  });
 }
 
 function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {

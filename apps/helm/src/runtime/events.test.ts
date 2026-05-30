@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, PromptTraceEvent, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  PromptTraceEvent,
+  SessionSummary,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   handleRuntimeEvent,
@@ -15,6 +22,7 @@ type TestContextCapture = {
   detailBroadcasts: unknown[];
   persisted: AgentMessage[];
   summaryUpdates?: SessionSummary[];
+  timelineEntries?: SessionTimelineEntry[];
   traceEvents?: PromptTraceEvent[];
 };
 
@@ -84,6 +92,27 @@ function createTestContext(
     sessionArtifactStore: {
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
+    },
+    sessionTimelineStore: {
+      append: (_sessionId: string, entry: SessionTimelineEntry) => {
+        capture.timelineEntries = [
+          ...(capture.timelineEntries ?? []).filter((candidate) => candidate.id !== entry.id),
+          entry,
+        ];
+        return capture.timelineEntries;
+      },
+      replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+        capture.timelineEntries = entries;
+        return entries;
+      },
+      list: () => capture.timelineEntries ?? [],
+      listPage: () => ({
+        entries: capture.timelineEntries ?? [],
+        hasMore: false,
+      }),
+      remove: () => {
+        capture.timelineEntries = [];
+      },
     },
     publishDiffUpdate: async () => undefined,
     hydrateSessionSummary: (item: SessionSummary) => item,
@@ -1171,6 +1200,82 @@ test("runtime status completion finalizes active thinking stream", () => {
   const finalBroadcast = capture.detailBroadcasts.at(-1) as any;
   assert.equal(finalBroadcast.method, "session/update");
   assert.equal(finalBroadcast.params.update.toolCall.status, "completed");
+});
+
+test("runtime timeline store nests thinking and assistant content under one assistant entry", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-timeline-nested");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current
+      ? {
+          ...current,
+          ...toolCall,
+          output: `${current.output ?? ""}${toolCall.output ?? ""}`,
+          timestamp: current.timestamp,
+        }
+      : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "reply-1:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Plan",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "Done",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "status",
+      status: "idle",
+      message: "done",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["assistant_message"],
+  );
+  const assistantEntry = capture.timelineEntries?.[0];
+  assert.deepEqual(
+    assistantEntry?.kind === "assistant_message"
+      ? assistantEntry.chunks.map((chunk) => chunk.kind)
+      : [],
+    ["thinking", "content"],
+  );
 });
 
 test("runtime tool-call broadcasts keep stronger persisted classifications", () => {

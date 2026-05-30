@@ -44,12 +44,23 @@ function createSessionRuntimeStore(): SessionServicesOptions["sessionRuntimeStor
   };
 }
 
+function createSessionTimelineStore(): SessionServicesOptions["sessionTimelineStore"] {
+  return {
+    append: () => [],
+    replace: () => [],
+    list: () => [],
+    listPage: () => ({ entries: [], hasMore: false }),
+    remove: () => undefined,
+  };
+}
+
 test("createHelmRuntimeComposition owns runtime maps queue and services", () => {
   const composition = createHelmRuntimeComposition({
     sessionStore: createSessionStore(),
     sessionMessageStore: createSessionMessageStore(),
     sessionArtifactStore: createSessionArtifactStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
+    sessionTimelineStore: createSessionTimelineStore(),
     getAgents: () => [],
     getProjects: () => [],
     getWorktrees: () => [],

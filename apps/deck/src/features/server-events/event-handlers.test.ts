@@ -7,6 +7,7 @@ import type {
   PermissionRequest,
   SessionConfigOption,
   SessionSummary,
+  SessionTimelineEntry,
   TrustedDeviceSummary,
 } from "@tiller/shared";
 import { useDeckStore } from "../../store";
@@ -44,6 +45,7 @@ function resetStore() {
     sessions: [],
     statuses: {},
     messages: {},
+    sessionTimeline: {},
     messageHistoryState: {},
     outputs: {},
     toolCalls: {},
@@ -236,6 +238,73 @@ test("session/list_messages replaces initial loaded history instead of mixing wi
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().messages["session-1"], [loadedHistory]);
+});
+
+test("session/list_messages stores unified timeline entries when provided by Helm", () => {
+  resetStore();
+  const loadedUser: AgentMessage = {
+    id: "user-1",
+    role: "user",
+    text: "开始",
+    timestamp: "2026-05-24T10:00:00.000Z",
+    timelineSequence: 1,
+  };
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: loadedUser,
+      timestamp: loadedUser.timestamp,
+      updatedAt: loadedUser.timestamp,
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking",
+          text: "先思考",
+          title: "Thinking",
+          status: "completed",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          updatedAt: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "完成",
+          timestamp: "2026-05-24T10:00:02.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:01.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [loadedUser],
+      timeline,
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.kind),
+    ["user_message", "assistant_message"],
+  );
 });
 
 test("session/list_messages preserves local user prompts when loaded history omits users", () => {

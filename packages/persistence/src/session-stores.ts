@@ -3,11 +3,13 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  SessionTimelineEntry,
   SessionSummary,
 } from "@tiller/shared";
 import type { SessionArtifactPage, SessionArtifactPageOptions } from "./artifact-store";
 import type { SessionMessagePage, SessionMessagePageOptions } from "./message-store";
 import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
+import type { SessionTimelinePage, SessionTimelinePageOptions } from "./timeline-store";
 
 export type StoredSessionArtifacts = {
   outputs: CommandChunk[];
@@ -46,11 +48,20 @@ export type SessionRuntimeStore = {
   remove: (sessionId: string) => void;
 };
 
+export type SessionTimelineStore = {
+  append: (sessionId: string, entry: SessionTimelineEntry) => SessionTimelineEntry[];
+  replace: (sessionId: string, entries: SessionTimelineEntry[]) => SessionTimelineEntry[];
+  list: (sessionId: string) => SessionTimelineEntry[];
+  listPage: (sessionId: string, options?: SessionTimelinePageOptions) => SessionTimelinePage;
+  remove: (sessionId: string) => void;
+};
+
 export type SessionStores = {
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
   sessionRuntimeStore: SessionRuntimeStore;
+  sessionTimelineStore: SessionTimelineStore;
 };
 
 export type HelmSessionStores = SessionStores;

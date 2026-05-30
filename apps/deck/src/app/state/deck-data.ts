@@ -10,6 +10,7 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
+  SessionTimelineEntry,
   SessionPromptQueueSnapshot,
   WorktreeSummary,
 } from "@tiller/shared";
@@ -65,6 +66,8 @@ export function useDeckData(missionVisualFixture: any) {
   const setMessages = useDeckStore((state) => state.setMessages);
   const storedMessages = useDeckStore((state) => state.messages);
   const messages = (missionVisualFixture?.messages ?? storedMessages) as Record<string, AgentMessage[]>;
+  const storedSessionTimeline = useDeckStore((state) => state.sessionTimeline);
+  const sessionTimeline = (missionVisualFixture?.sessionTimeline ?? storedSessionTimeline) as Record<string, SessionTimelineEntry[]>;
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
@@ -177,6 +180,7 @@ export function useDeckData(missionVisualFixture: any) {
     statuses,
     setStatuses,
     messages,
+    sessionTimeline,
     setMessages,
     messageHistoryState,
     setMessageHistoryState,

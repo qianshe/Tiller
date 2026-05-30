@@ -8,3 +8,4 @@ export {
   type JsonSessionStorePaths,
   type JsonToSqliteMigrationOptions,
 } from "./store";
+export { createSqliteSessionTimelineStore } from "./timeline-store";

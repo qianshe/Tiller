@@ -1,5 +1,10 @@
 import type { MutableRefObject } from "react";
 import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
+import {
+  appendMessageToSessionTimeline,
+  appendToolCallToSessionTimeline,
+  sortSessionTimelineEntries,
+} from "@tiller/shared";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 import type { SessionUpdateParams } from "./session-update-contracts";
@@ -47,6 +52,7 @@ export function applyActivityUpdate(
           toolBoundaryTimes,
         ),
       }));
+      appendMessageTimelineEntry(store, sessionId, message);
       if (shouldApplyMessageToSessionSummary(message)) {
         store.setSessions((current) =>
           current.map((session) =>
@@ -67,11 +73,16 @@ export function applyActivityUpdate(
           chunk,
         ],
       }));
-      mergeSessionToolCalls(sessionId, [commandChunkToToolCall(chunk)]);
+      {
+        const toolCall = commandChunkToToolCall(chunk);
+        mergeSessionToolCalls(sessionId, [toolCall]);
+        appendToolCallTimelineEntry(store, sessionId, toolCall);
+      }
       return true;
     }
     case "tool_call":
       mergeSessionToolCalls(sessionId, [update.toolCall]);
+      appendToolCallTimelineEntry(store, sessionId, update.toolCall);
       return true;
     case "diff_update":
       store.setDiffs((current) => ({
@@ -85,6 +96,36 @@ export function applyActivityUpdate(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function appendMessageTimelineEntry(
+  store: DeckStore,
+  sessionId: string,
+  message: AgentMessage,
+) {
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    appendMessageToSessionTimeline(entries, message);
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
+
+function appendToolCallTimelineEntry(
+  store: DeckStore,
+  sessionId: string,
+  toolCall: AgentToolCall,
+) {
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    appendToolCallToSessionTimeline(entries, toolCall);
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
 
 function clearActiveThinkingToolCalls(
   sessionId: string,

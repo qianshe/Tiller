@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import { coalesceDisplayMessages, groupToolCalls, sortAgentMessagesByTimeline, type ConversationToolCallItem } from "../../logbook";
@@ -10,6 +10,7 @@ export const DEFAULT_VISIBLE_MESSAGE_LIMIT = 20;
 type PlainMessagesProps = {
   sessionId: string | null;
   items: AgentMessage[];
+  timelineItems?: SessionTimelineEntry[];
   thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
@@ -26,6 +27,7 @@ type PlainMessagesProps = {
 export function PlainMessages({
   sessionId,
   items,
+  timelineItems = [],
   thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
@@ -53,12 +55,14 @@ export function PlainMessages({
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
-    () => buildPlainConversationItems(
-      displayMessages,
-      showThinking ? thinkingToolCalls : [],
-      toolCalls,
-    ),
-    [displayMessages, showThinking, thinkingToolCalls, toolCalls],
+    () => timelineItems.length
+      ? buildPlainConversationItemsFromTimeline(timelineItems, showThinking)
+      : buildPlainConversationItems(
+          displayMessages,
+          showThinking ? thinkingToolCalls : [],
+          toolCalls,
+        ),
+    [displayMessages, showThinking, thinkingToolCalls, timelineItems, toolCalls],
   );
   const visibleItems = useMemo(
     () => displayItems.slice(-visibleMessageCount),
@@ -303,6 +307,94 @@ function buildPlainConversationItems(
   }));
   const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
+}
+
+function buildPlainConversationItemsFromTimeline(
+  timelineItems: SessionTimelineEntry[],
+  showThinking: boolean,
+): PlainConversationItem[] {
+  const items: PlainConversationItem[] = [];
+  let sourceIndex = 0;
+
+  for (const entry of timelineItems) {
+    if (entry.kind === "user_message" || entry.kind === "system_message") {
+      const text = normalizeLocalCommandMessageText(entry.message.text);
+      if (text) {
+        items.push({
+          kind: "message",
+          sourceIndex,
+          timestamp: entry.timestamp,
+          timelineSequence: entry.timelineSequence,
+          message: text === entry.message.text ? entry.message : { ...entry.message, text },
+        });
+        sourceIndex += 1;
+      }
+      continue;
+    }
+
+    if (entry.kind === "assistant_message") {
+      for (const chunk of entry.chunks) {
+        if (chunk.kind === "thinking") {
+          if (showThinking) {
+            items.push({
+              kind: "thinking",
+              sourceIndex,
+              timestamp: chunk.timestamp,
+              timelineSequence: chunk.timelineSequence,
+              toolCall: {
+                id: chunk.id,
+                kind: "think",
+                title: chunk.title,
+                status: chunk.status,
+                output: chunk.text,
+                timestamp: chunk.timestamp,
+                updatedAt: chunk.updatedAt,
+                timelineSequence: chunk.timelineSequence,
+              },
+            });
+            sourceIndex += 1;
+          }
+          continue;
+        }
+
+        const text = normalizeLocalCommandMessageText(chunk.text);
+        if (text) {
+          items.push({
+            kind: "message",
+            sourceIndex,
+            timestamp: chunk.timestamp,
+            timelineSequence: chunk.timelineSequence,
+            message: {
+              id: chunk.id,
+              role: "assistant",
+              text,
+              timestamp: chunk.timestamp,
+              timelineSequence: chunk.timelineSequence,
+              streaming: chunk.streaming,
+            },
+          });
+          sourceIndex += 1;
+        }
+      }
+      continue;
+    }
+
+    if (entry.kind === "tool_call") {
+      const [toolCall] = groupToolCalls([entry.toolCall]);
+      if (toolCall) {
+        items.push({
+          kind: "tool-group",
+          sourceIndex,
+          timestamp: entry.timestamp,
+          timelineSequence: entry.timelineSequence,
+          group: [toolCall],
+        });
+        sourceIndex += 1;
+      }
+    }
+  }
+
+  return mergeAdjacentToolItems(mergeAdjacentThinkingItems(items));
 }
 
 function mergeAdjacentToolItems(

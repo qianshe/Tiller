@@ -68,6 +68,7 @@ export type SessionServicesOptions = {
   sessionMessageStore: HelmSessionStores["sessionMessageStore"];
   sessionArtifactStore: HelmSessionStores["sessionArtifactStore"];
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
+  sessionTimelineStore: HelmSessionStores["sessionTimelineStore"];
   getAgents: () => AcpAgentProvider[];
   getProjects: () => ProjectSummary[];
   getWorktrees: () => WorktreeSummary[];
@@ -109,6 +110,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
+    sessionTimelineStore: options.sessionTimelineStore,
   });
   const providerHistory = createProviderHistoryService({
     sessions: options.sessions,

@@ -26,6 +26,7 @@ function resetStore() {
     helmInventories: {},
     sessions: [],
     messages: {},
+    sessionTimeline: {},
     trustedDevices: [],
     sessionAvailableCommands: {},
     agentAvailableCommands: {},
@@ -169,6 +170,36 @@ test("applySessionUpdate routes agent_message notifications into activity state 
   assert.equal(
     useDeckStore.getState().sessions[0]?.lastMessagePreview,
     "用户输入的 Prompt",
+  );
+});
+
+test("applySessionUpdate projects agent_message notifications into the unified timeline", () => {
+  resetStore();
+  const message: AgentMessage = {
+    id: "m1",
+    role: "assistant",
+    text: "hello from rpc",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    timelineSequence: 2,
+  };
+
+  const handled = applySessionUpdate(
+    { sessionId: "s1", update: { kind: "agent_message", message } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  const timeline = useDeckStore.getState().sessionTimeline.s1 ?? [];
+  assert.deepEqual(timeline.map((entry) => entry.kind), ["assistant_message"]);
+  assert.deepEqual(
+    timeline[0]?.kind === "assistant_message"
+      ? timeline[0].chunks.map((chunk) => chunk.kind)
+      : [],
+    ["content"],
   );
 });
 

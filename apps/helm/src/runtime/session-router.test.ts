@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AgentMessage, PromptTraceEvent, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  PromptTraceEvent,
+  SessionSummary,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { sendPromptToSession, drainPromptQueue } from "./session-router";
 import { createSessionPromptQueueManager } from "./session-prompt-queue";
@@ -52,6 +57,7 @@ function createContext(options: {
 } = {}) {
   const summary = createSummary(options.summary);
   const persisted: AgentMessage[] = [];
+  const timelineEntries: SessionTimelineEntry[] = [];
   const broadcasts: Array<{ method: string; params: any }> = [];
   const traceEvents: PromptTraceEvent[] = [];
   let currentSummary = summary;
@@ -75,6 +81,24 @@ function createContext(options: {
     logError: () => undefined,
     promptTrace: { emit: (event: PromptTraceEvent) => traceEvents.push(event) },
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => persisted.push(message),
+    sessionTimelineStore: {
+      append: (_sessionId: string, entry: SessionTimelineEntry) => {
+        const index = timelineEntries.findIndex((candidate) => candidate.id === entry.id);
+        if (index === -1) {
+          timelineEntries.push(entry);
+        } else {
+          timelineEntries[index] = entry;
+        }
+        return timelineEntries;
+      },
+      replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+        timelineEntries.splice(0, timelineEntries.length, ...entries);
+        return timelineEntries;
+      },
+      list: () => timelineEntries,
+      listPage: () => ({ entries: timelineEntries, hasMore: false }),
+      remove: () => timelineEntries.splice(0, timelineEntries.length),
+    },
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
       currentSummary = mutate(currentSummary);
       return currentSummary;
@@ -103,7 +127,7 @@ function createContext(options: {
       };
     },
   } as unknown as HelmHandlerContext;
-  return { context, persisted, broadcasts, sessions, traceEvents };
+  return { context, persisted, timelineEntries, broadcasts, sessions, traceEvents };
 }
 
 test("sendPromptToSession dispatches through an active runtime", async () => {
@@ -133,6 +157,31 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
     "helm.prompt.send_start",
     "helm.prompt.runtime_accepted",
   ]);
+});
+
+test("sendPromptToSession records the local user prompt as a timeline entry before runtime dispatch", async () => {
+  const snapshotsDuringPrompt: string[][] = [];
+  const { context, timelineEntries } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        snapshotsDuringPrompt.push(timelineEntries.map((entry) => entry.kind));
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "先记录我", clientMessageId: "client-timeline" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(snapshotsDuringPrompt, [["user_message"]]);
+  assert.deepEqual(
+    timelineEntries.map((entry) => entry.kind),
+    ["user_message"],
+  );
+  assert.equal(timelineEntries[0]?.id, "client-timeline");
 });
 
 test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {

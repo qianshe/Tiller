@@ -1,10 +1,16 @@
 import type { MutableRefObject } from "react";
 import type {
+  AgentMessage,
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
   SessionConfigOption,
   SessionSummary,
+  SessionTimelineEntry,
+} from "@tiller/shared";
+import {
+  appendMessageToSessionTimeline,
+  sortSessionTimelineEntries,
 } from "@tiller/shared";
 import { toast } from "../toast";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
@@ -209,6 +215,7 @@ export function applySessionResult(
         store.setSessionHistoryState(listResult.historyState);
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setSessionTimeline((current) => pruneSessionScopedMap(current, nextSessions));
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
@@ -290,6 +297,14 @@ export function applySessionResult(
             })
           : replaceInitialMessageHistory(current[payload.sessionId] ?? [], payload.messages),
       }));
+      if (Array.isArray(payload.timeline)) {
+        store.setSessionTimeline((current) => ({
+          ...current,
+          [payload.sessionId]: payload.before
+            ? mergeTimelineEntries(payload.timeline as SessionTimelineEntry[], current[payload.sessionId] ?? [])
+            : mergeTimelineEntries(payload.timeline as SessionTimelineEntry[], current[payload.sessionId] ?? []),
+        }));
+      }
       store.setMessageHistoryState((current) => ({
         ...current,
         [payload.sessionId]: {
@@ -331,6 +346,12 @@ export function applySessionResult(
         ...current,
         [payload.sessionId]: reimportState.messages,
       }));
+      if (Array.isArray(payload.timeline)) {
+        store.setSessionTimeline((current) => ({
+          ...current,
+          [payload.sessionId]: payload.timeline as SessionTimelineEntry[],
+        }));
+      }
       store.setMessageHistoryState((current) => ({
         ...current,
         [payload.sessionId]: reimportState.messageHistoryState,
@@ -438,6 +459,9 @@ export function applySessionResult(
       store.setMessages((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
+      store.setSessionTimeline((current) =>
+        removeSessionRecord(current, payload.result.sessionId),
+      );
       store.dropSessionApprovals(payload.result.sessionId);
       store.setOutputs((current) =>
         removeSessionRecord(current, payload.result.sessionId),
@@ -470,6 +494,32 @@ export function applySessionResult(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function mergeTimelineEntries(
+  incoming: SessionTimelineEntry[],
+  current: SessionTimelineEntry[],
+) {
+  const seenIds = new Set(incoming.map((entry) => entry.id));
+  return sortSessionTimelineEntries([
+    ...incoming,
+    ...current.filter((entry) => !seenIds.has(entry.id)),
+  ]);
+}
+
+function appendTimelineMessage(
+  store: DeckStore,
+  sessionId: string,
+  message: AgentMessage,
+) {
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    appendMessageToSessionTimeline(entries, message);
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
 
 function pruneActiveThinkingToolCalls(
   sessionId: string,
@@ -607,6 +657,7 @@ export function applySessionUpdate(
           { mode: "append" },
         ),
       }));
+      appendTimelineMessage(store, sessionId, update.message);
       return true;
     case "status_change":
       requestAgentConnectionsRefresh(context);
@@ -630,6 +681,3 @@ export function applySessionUpdate(
       return false;
   }
 }
-
-
-

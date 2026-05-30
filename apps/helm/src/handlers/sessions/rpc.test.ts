@@ -62,6 +62,76 @@ test("session/get_artifacts repairs stale running thinking for idle sessions", a
   assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
 });
 
+test("session/list_messages returns a unified timeline rebuilt from legacy stores", async () => {
+  const sessionId = "session-with-legacy-timeline";
+  const messages = [
+    {
+      id: "user-1",
+      role: "user" as const,
+      text: "Start",
+      timestamp: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "Done",
+      timestamp: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const toolCalls = [
+    {
+      id: "assistant-1:thinking",
+      commandId: "assistant-1:thinking",
+      kind: "think" as const,
+      title: "Thinking",
+      status: "completed" as const,
+      output: "Reason",
+      timestamp: "2026-05-24T10:00:01.000Z",
+      updatedAt: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => messages,
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls }),
+      },
+      sessionTimelineStore: {
+        list: () => [],
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+        listPage: () => ({ entries: replacedTimeline, hasMore: false }),
+      },
+    } as any,
+  ) as { timeline: any[] };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => entry.kind),
+    ["user_message", "assistant_message"],
+  );
+  assert.deepEqual(
+    result.timeline[1]?.chunks.map((chunk: any) => chunk.kind),
+    ["thinking", "content"],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => entry.kind),
+    ["user_message", "assistant_message"],
+  );
+});
+
 test("session/reimport_history delegates to the history reimport service", async () => {
   let delegated: unknown;
   const result = await handleSessionRpcRequest(

@@ -102,6 +102,7 @@ export type HelmHandlerContext = {
   sessionMessageStore: any;
   sessionArtifactStore: any;
   sessionRuntimeStore: any;
+  sessionTimelineStore: any;
   liveMessageBuffer: LiveMessageBuffer;
   promptQueue: SessionPromptQueueManager;
   drainPromptQueue: (sessionId: string) => Promise<void>;
@@ -223,4 +224,3 @@ export type HelmHandlerContext = {
   clearPermissionRequestsForSession: (sessionId: string) => void;
   deleteLocalSessionData: (sessionId: string) => void;
 };
-

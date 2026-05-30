@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { SessionTimelineEntry } from "@tiller/shared";
 import { PlainMessages } from "./plain-messages.js";
 
 function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]> = {}) {
@@ -67,6 +68,65 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /aria-label="展开 Thinking"/);
   assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
+});
+
+test("plain messages can render unified timeline entries with ordered assistant chunks", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: {
+        id: "user-1",
+        role: "user",
+        text: "开始",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking",
+          text: "先思考",
+          title: "Thinking",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "最终回答",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+
+  const html = renderPlainMessages({
+    timelineItems,
+    items: [],
+    thinkingToolCalls: [],
+    toolCalls: [],
+  } as any);
+
+  const userIndex = html.indexOf("开始");
+  const thinkingIndex = html.indexOf("先思考");
+  const answerIndex = html.indexOf("最终回答");
+  assert.ok(userIndex >= 0);
+  assert.ok(thinkingIndex > userIndex);
+  assert.ok(answerIndex > thinkingIndex);
 });
 
 test("plain messages can hide thinking cards without dropping normal messages", () => {

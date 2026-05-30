@@ -6,13 +6,14 @@ test("handler session context groups runtime dependencies and preserves queue dr
   const calls: unknown[] = [];
   const sessions = new Map();
   const permissionIndex = new Map();
-  const factory = createHandlerSessionContextFactory({
+  const factory = createHandlerSessionContextFactory<{ socketId: string | undefined }>({
     sessions,
     permissionIndex,
     sessionStore: { id: "sessionStore" },
     sessionMessageStore: { id: "sessionMessageStore" },
     sessionArtifactStore: { id: "sessionArtifactStore" },
     sessionRuntimeStore: { id: "sessionRuntimeStore" },
+    sessionTimelineStore: { id: "sessionTimelineStore" },
     liveMessageBuffer: { id: "liveMessageBuffer" },
     promptQueue: { id: "promptQueue" },
     createHandlerContext: (socketId) => ({ socketId }),

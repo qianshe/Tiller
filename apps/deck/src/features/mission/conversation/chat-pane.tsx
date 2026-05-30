@@ -5,6 +5,7 @@ import type {
   PermissionRequest,
   SessionPromptQueueSnapshot,
   SessionSummary,
+  SessionTimelineEntry,
 } from "@tiller/shared";
 import type {
   CSSProperties,
@@ -60,6 +61,7 @@ type MissionChatPaneProps = {
   selectedSessionId: string | null;
   activeSessionMessages: AgentMessage[];
   sessionMessagesById: Record<string, AgentMessage[] | undefined>;
+  sessionTimelineById: Record<string, SessionTimelineEntry[] | undefined>;
   activeSessionToolCalls: AgentToolCall[];
   sessionToolCallsById: Record<string, AgentToolCall[] | undefined>;
   copy: MissionChatPaneCopy;
@@ -118,6 +120,7 @@ export function MissionChatPane({
   selectedSessionId,
   activeSessionMessages,
   sessionMessagesById,
+  sessionTimelineById,
   activeSessionToolCalls,
   sessionToolCallsById,
   copy,
@@ -176,6 +179,7 @@ export function MissionChatPane({
     resolveChatSessionToolLoading(session, sessionStateSources);
   const renderSessionStream = (session: SessionSummary) => {
     const sessionMessages = resolveSessionMessages(session);
+    const timelineItems = sessionTimelineById[session.id] ?? [];
     const sessionToolCalls = resolveSessionToolCalls(session);
     const sessionTimeline = splitMissionToolCalls(sessionToolCalls);
     const sessionPendingApprovals = pendingApprovals.filter(
@@ -201,9 +205,10 @@ export function MissionChatPane({
     return (
       <>
         {approvalStack}
-        {sessionMessages.length ? (
+        {sessionMessages.length || timelineItems.length ? (
           <MissionMessageTimeline
             items={sessionMessages}
+            timelineItems={timelineItems}
             thinkingToolCalls={sessionTimeline.thinkingToolCalls}
             toolCalls={sessionTimeline.timelineToolCalls}
             showThinking={showThinking}
@@ -235,7 +240,7 @@ export function MissionChatPane({
   });
   const singleSession = openSessions[0];
   const visibleSessionStreamCounts = openSessions
-    .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
+    .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
     .join("|");
   const [dragOver, setDragOver] = useState(false);
   const sessionDragType = "application/x-tiller-session-id";
@@ -334,16 +339,17 @@ export function MissionChatPane({
 
     openSessions.forEach((session) => {
       const messageCount = sessionMessagesById[session.id]?.length ?? 0;
+      const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
       const toolCallCount = sessionToolCallsById[session.id]?.length ?? 0;
       const previous = sessionBodyScrollSnapshotRef.current[session.id];
-      nextSnapshot[session.id] = { messageCount, toolCallCount };
+      nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount };
       if (!previous) {
-        if (messageCount > 0 || toolCallCount > 0) {
+        if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
           changedSessionIds.push(session.id);
         }
         return;
       }
-      if (previous.messageCount !== messageCount || previous.toolCallCount !== toolCallCount) {
+      if (previous.messageCount !== Math.max(messageCount, timelineCount) || previous.toolCallCount !== toolCallCount) {
         changedSessionIds.push(session.id);
       }
     });
@@ -373,7 +379,7 @@ export function MissionChatPane({
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [chatMainRef, openSessions, sessionMessagesById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [chatMainRef, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
     if (!shouldAnchorActiveParallelCard || !activeSession?.id) {

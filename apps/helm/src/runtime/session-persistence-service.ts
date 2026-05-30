@@ -8,6 +8,7 @@ type SessionPersistenceServiceOptions = {
   };
   sessionArtifactStore: { remove(sessionId: string): void };
   sessionRuntimeStore: { remove(sessionId: string): void };
+  sessionTimelineStore: { remove(sessionId: string): void };
 };
 
 export function createSessionPersistenceService(options: SessionPersistenceServiceOptions) {
@@ -16,6 +17,7 @@ export function createSessionPersistenceService(options: SessionPersistenceServi
     options.sessionMessageStore.remove(sessionId);
     options.sessionArtifactStore.remove(sessionId);
     options.sessionRuntimeStore.remove(sessionId);
+    options.sessionTimelineStore.remove(sessionId);
   }
 
   function persistSessionMessage(sessionId: string, message: AgentMessage) {

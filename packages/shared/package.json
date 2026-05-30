@@ -7,9 +7,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "test": "tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^24.12.2",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
 }

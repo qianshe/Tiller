@@ -100,6 +100,7 @@ const {
   sessionMessageStore,
   sessionArtifactStore,
   sessionRuntimeStore,
+  sessionTimelineStore,
   trustedDeviceStore,
 } = createHelmServerStores({
   environment: serverEnvironment,
@@ -148,6 +149,7 @@ const runtimeComposition = createHelmRuntimeComposition({
   sessionMessageStore,
   sessionArtifactStore,
   sessionRuntimeStore,
+  sessionTimelineStore,
   getAgents: contextState.getAgents,
   getProjects: contextState.getProjects,
   getWorktrees: contextState.getWorktrees,
@@ -186,6 +188,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessionMessageStore,
   sessionArtifactStore,
   sessionRuntimeStore,
+  sessionTimelineStore,
   liveMessageBuffer,
   promptQueue,
   createHandlerContext,

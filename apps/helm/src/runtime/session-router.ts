@@ -9,6 +9,7 @@ import { createSessionEventPublisher } from "./session-event-publisher";
 import { allocateLiveEventSequence, flushLiveAssistantMessage } from "./events";
 import type { HelmHandlerContext } from "../handlers/context";
 import { emitHelmPromptTrace } from "./prompt-trace";
+import { persistTimelineMessage } from "./session-timeline-effects";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -106,6 +107,7 @@ export async function sendPromptImmediately(
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
   context.persistSessionMessage(item.sessionId, userMessage);
+  persistTimelineMessage(context, item.sessionId, userMessage);
   createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
     kind: "user_message",
     message: userMessage,
@@ -147,6 +149,7 @@ async function appendUserPromptMessage(
   context: HelmHandlerContext,
 ) {
   context.persistSessionMessage(sessionId, userMessage);
+  persistTimelineMessage(context, sessionId, userMessage);
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "user_message",
     message: userMessage,

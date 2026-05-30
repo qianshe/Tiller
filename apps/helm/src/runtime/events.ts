@@ -5,6 +5,7 @@ import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session-event-effects";
+import { persistTimelineMessage } from "./session-timeline-effects";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
@@ -66,6 +67,7 @@ export function flushLiveAssistantMessage(sessionId: string, context: HelmHandle
     return false;
   }
   context.persistSessionMessage(sessionId, message);
+  persistTimelineMessage(context, sessionId, message);
   context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, message));
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "agent_message",

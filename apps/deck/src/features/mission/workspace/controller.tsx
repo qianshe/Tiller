@@ -58,6 +58,7 @@ export function MissionWorktree(props: any) {
     diffs,
     outputs,
     messages,
+    sessionTimeline,
     toolCalls,
     statuses,
     copy,
@@ -603,6 +604,7 @@ export function MissionWorktree(props: any) {
           selectedSessionId={missionChatSelectedSessionId}
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
+          sessionTimelineById={sessionTimeline ?? {}}
           activeSessionToolCalls={activeToolCalls}
           sessionToolCallsById={toolCalls ?? {}}
           copy={copy}

@@ -284,7 +284,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /renderSessionStream\(session\)/);
   assert.match(chatPaneSource, /data-session-card-body=\{session\.id\}/);
   assert.match(chatPaneSource, /changedSessionIds\.forEach/);
-  assert.match(chatPaneSource, /if \(messageCount > 0 \|\| toolCallCount > 0\)/);
+  assert.match(chatPaneSource, /if \(messageCount > 0 \|\| timelineCount > 0 \|\| toolCallCount > 0\)/);
   assert.match(chatPaneSource, /sessionBodyScrollPositionRef/);
   assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
   assert.doesNotMatch(chatPaneSource, /scrollBottom/);

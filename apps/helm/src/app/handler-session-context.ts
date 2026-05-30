@@ -11,6 +11,7 @@ export type HandlerSessionContext = Pick<
   | "sessionMessageStore"
   | "sessionArtifactStore"
   | "sessionRuntimeStore"
+  | "sessionTimelineStore"
   | "liveMessageBuffer"
   | "promptQueue"
   | "drainPromptQueue"
@@ -51,6 +52,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionMessageStore: unknown;
   sessionArtifactStore: unknown;
   sessionRuntimeStore: unknown;
+  sessionTimelineStore: unknown;
   liveMessageBuffer: unknown;
   promptQueue: unknown;
   createHandlerContext: (socketId?: string) => TContext;
@@ -102,6 +104,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionMessageStore: options.sessionMessageStore,
         sessionArtifactStore: options.sessionArtifactStore,
         sessionRuntimeStore: options.sessionRuntimeStore,
+        sessionTimelineStore: options.sessionTimelineStore,
         liveMessageBuffer: options.liveMessageBuffer,
         promptQueue: options.promptQueue,
         drainPromptQueue: (sessionId: string) =>

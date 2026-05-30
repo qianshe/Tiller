@@ -2,6 +2,7 @@ import type { AgentToolCall, CommandChunk } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { createSessionEventPublisher } from "./session-event-publisher";
 import { resolveBroadcastToolCall } from "./session-event-normalizer";
+import { persistTimelineToolCall } from "./session-timeline-effects";
 
 export function publishRuntimeToolCall(
   context: HelmHandlerContext,
@@ -15,6 +16,7 @@ export function publishRuntimeToolCall(
     toolCall,
     artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
   );
+  persistTimelineToolCall(context, sessionId, mergedToolCall);
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "tool_call",
     toolCall: mergedToolCall,
