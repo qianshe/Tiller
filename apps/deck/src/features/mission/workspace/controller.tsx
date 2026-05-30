@@ -1,5 +1,5 @@
 import type { SessionSummary } from "@tiller/shared";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
@@ -26,11 +26,8 @@ import { MissionSidebar } from "../navigation";
 import { buildChatWindowModel } from "./chat-window-model";
 import { buildMissionWorktreeModel } from "./model";
 import { useOpenSessionStreams } from "./open-session-streams";
-import { buildRuntimeOverviewItems } from "./runtime-overview";
+import { useRuntimeOverviewActions } from "./runtime-overview-actions";
 import {
-  acpReconnectKey,
-  formatAcpConnectionStatus,
-  formatRuntimeSessionCount,
   isManagedWorktreeWorktree,
   normalizeWorktreePath,
 } from "./runtime-display";
@@ -220,7 +217,6 @@ export function MissionWorktree(props: any) {
     defaultLogbookVisibleLimit,
     agentModelOptions = {},
   } = props;
-  const [pendingAcpReconnects, setPendingAcpReconnects] = useState<Record<string, string | null>>({});
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const {
     canSend,
@@ -420,25 +416,9 @@ export function MissionWorktree(props: any) {
     isMissionMobile && "mission-mobile-mode",
     `mission-mobile-pane-${resolvedMissionMobilePane}`,
   ]);
-  useEffect(() => {
-    setPendingAcpReconnects((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const connection of agentConnectionInventory as any[]) {
-        const key = acpReconnectKey(connection.providerId, connection.cwd);
-        if (
-          key in next &&
-          connection.status === "ready" &&
-          connection.runtimeConnectionId !== next[key]
-        ) {
-          delete next[key];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [agentConnectionInventory]);
-  const runtimeOverviewItems = buildRuntimeOverviewItems({
+  const { runtimeOverviewItems, reconnectAcpRuntime } = useRuntimeOverviewActions({
+    rpcClientRef,
+    dispatch,
     agentConnectionInventory: agentConnectionInventory as any[],
     agents: agents as any[],
     worktrees: worktrees ?? [],
@@ -446,7 +426,6 @@ export function MissionWorktree(props: any) {
     projects,
     statuses,
     statusLabels: copy.status,
-    pendingAcpReconnects,
     selectedProjectId,
     selectedCwd,
     activeSession,
@@ -454,33 +433,6 @@ export function MissionWorktree(props: any) {
     agentModelOptions: agentModelOptions as Record<string, any>,
     draftWorktreeOptions,
   });
-  const reconnectAcpRuntime = (runtime: {
-    agentId?: string;
-    projectId?: string;
-    cwd?: string;
-    canConnect?: boolean;
-    canReconnect?: boolean;
-  }) => {
-    const client = rpcClientRef?.current;
-    if (!runtime.agentId || !client || client.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    const reconnectKey = acpReconnectKey(runtime.agentId, runtime.cwd);
-    const currentConnection = (agentConnectionInventory as any[]).find(
-      (connection) =>
-        connection.providerId === runtime.agentId &&
-        normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(runtime.cwd),
-    );
-    setPendingAcpReconnects((current) => ({
-      ...current,
-      [reconnectKey]: currentConnection?.runtimeConnectionId ?? null,
-    }));
-    void dispatch?.(client, runtime.canReconnect ? "agent/reconnect" : "agent/connect", {
-      providerId: runtime.agentId,
-      projectId: runtime.projectId ?? selectedProjectId ?? undefined,
-      cwd: runtime.cwd ?? selectedCwd ?? undefined,
-    });
-  };
   const selectedDraftConnection = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd
     ? (agentConnectionInventory as any[]).find(
         (connection) =>

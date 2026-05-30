@@ -43,7 +43,7 @@ test("mission workspace composes panes through subdomain entrypoints", () => {
 });
 
 test("mission workspace implementation lives in the workspace subdomain", () => {
-  for (const filename of ["chat-window-actions.ts", "controller.tsx", "model.ts", "open-session-streams.ts", "runtime-overview-dedupe.ts"] as const) {
+  for (const filename of ["chat-window-actions.ts", "controller.tsx", "model.ts", "open-session-streams.ts", "runtime-overview-actions.ts", "runtime-overview-dedupe.ts"] as const) {
     assert.equal(existsSync(join(missionRoot, "workspace", filename)), true, `workspace/${filename} should exist`);
     assert.equal(existsSync(join(missionRoot, "ui", filename)), false, `ui/${filename} should be moved out`);
   }

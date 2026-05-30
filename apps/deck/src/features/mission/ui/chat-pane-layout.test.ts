@@ -28,6 +28,7 @@ const workspaceChatCompositionSource = readFileSync(
 const sessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/session-streams.ts"), "utf8");
 const openSessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/open-session-streams.ts"), "utf8");
 const chatWindowActionsSource = readFileSync(resolve(currentDir, "../workspace/chat-window-actions.ts"), "utf8");
+const runtimeOverviewActionsSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview-actions.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
@@ -222,7 +223,10 @@ test("mission composer falls back to active session available commands", () => {
 
 test("ACP runtime overview refreshes after restore and does not stay connected during reconnect", () => {
   assert.match(sessionEventsSource, /"agent\/connections"/);
-  assert.match(worktreeSource, /pendingAcpReconnects/);
+  assert.match(worktreeSource, /useRuntimeOverviewActions\(\{/);
+  assert.match(runtimeOverviewActionsSource, /pendingAcpReconnects/);
+  assert.match(runtimeOverviewActionsSource, /setPendingAcpReconnects/);
+  assert.match(runtimeOverviewActionsSource, /dispatch\?\.\(client, runtime\.canReconnect \? "agent\/reconnect" : "agent\/connect"/);
   assert.match(runtimeOverviewSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
   assert.match(runtimeOverviewSource, /canReconnect: !reconnectPending/);
   assert.match(runtimeOverviewSource, /canConnect: reconnectPending/);

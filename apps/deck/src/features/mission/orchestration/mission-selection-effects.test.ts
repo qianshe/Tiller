@@ -42,6 +42,10 @@ const rootSourceText = readFileSync(
   new URL("../../../app/shell/root.tsx", import.meta.url),
   "utf8",
 );
+const sessionDraftPreferencesSourceText = readFileSync(
+  new URL("../../../app/composition/session-draft-preferences.ts", import.meta.url),
+  "utf8",
+);
 
 test("mission draft composer waits for ACP connection before creating a session", () => {
   assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd/);
@@ -158,18 +162,19 @@ test("mission selection effects preserves available model options while probing"
 });
 
 test("mission config changes dispatch through embedded Helm clients", () => {
-  assert.match(rootSourceText, /runtimeState\.helmRpcClientRefs\.current\.get\(helmId\)/);
-  assert.match(rootSourceText, /runtimeState\.selectedMissionHelmId/);
-  assert.match(rootSourceText, /runtimeState\.primaryHelmKeyRef\.current/);
-  assert.match(rootSourceText, /readConfigSelectionState\(draftConfigOptions\)/);
-  assert.match(rootSourceText, /toConfigPatchState\(next\)/);
-  assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.activeConfigState \}/);
-  assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.draftConfigPatchState \}/);
-  assert.doesNotMatch(rootSourceText, /function omitReasoningOnModelChange/);
-  assert.doesNotMatch(rootSourceText, /function omitReasoningConfigOptionsOnModelChange/);
-  assert.doesNotMatch(rootSourceText, /modelChangedWithoutReasoning/);
-  assert.match(rootSourceText, /resolveConfigClient\(activeSession\.helmId\)/);
-  assert.match(rootSourceText, /const draftClient = resolveConfigClient\(null\)/);
+  assert.match(rootSourceText, /createSessionDraftPreferencesAction\(\{/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.helmRpcClientRefs\.current\.get\(helmId\)/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.selectedMissionHelmId/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.primaryHelmKeyRef\.current/);
+  assert.match(sessionDraftPreferencesSourceText, /readConfigSelectionState\(draftConfigOptions\)/);
+  assert.match(sessionDraftPreferencesSourceText, /toConfigPatchState\(next\)/);
+  assert.match(sessionDraftPreferencesSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.activeConfigState \}/);
+  assert.match(sessionDraftPreferencesSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.draftConfigPatchState \}/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /function omitReasoningOnModelChange/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /function omitReasoningConfigOptionsOnModelChange/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /modelChangedWithoutReasoning/);
+  assert.match(sessionDraftPreferencesSourceText, /resolveConfigClient\(activeSession\.helmId\)/);
+  assert.match(sessionDraftPreferencesSourceText, /const draftClient = resolveConfigClient\(null\)/);
 });
 
 test("mission model picker surfaces loading state without hiding cached options", () => {
