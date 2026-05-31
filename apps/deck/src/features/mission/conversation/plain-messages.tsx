@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
@@ -10,6 +10,9 @@ import {
   type ConversationToolCallItem,
 } from "../../logbook";
 import { PlainMessageItem, PlainThinkingItem, PlainToolGroupItem } from "./plain-message-items";
+
+export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
+export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
 
 type PlainMessagesProps = {
   sessionId: string | null;
@@ -47,9 +50,18 @@ export function PlainMessages({
   const listRef = useRef<HTMLDivElement | null>(null);
   const localScrollSnapshotRef = useRef<ScrollSnapshot | null>(null);
   const olderLoadRequestedRef = useRef(false);
+  const pendingRemoteHistoryRevealRef = useRef(false);
+  const previousDisplayItemsLengthRef = useRef(0);
+  const renderRevealRequestedRef = useRef(false);
+  const [visibleItemLimit, setVisibleItemLimit] = useState(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
 
   useEffect(() => {
     olderLoadRequestedRef.current = false;
+    pendingRemoteHistoryRevealRef.current = false;
+    previousDisplayItemsLengthRef.current = 0;
+    renderRevealRequestedRef.current = false;
+    localScrollSnapshotRef.current = null;
+    setVisibleItemLimit(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
   }, [sessionId]);
 
   const displayMessages = useMemo(
@@ -66,34 +78,75 @@ export function PlainMessages({
         ),
     [displayMessages, showThinking, thinkingToolCalls, timelineItems, toolCalls],
   );
-  const visibleItems = displayItems;
+  const visibleItems = useMemo(
+    () => resolveVisiblePlainConversationItems(displayItems, visibleItemLimit),
+    [displayItems, visibleItemLimit],
+  );
+  const hasHiddenLoadedItems = visibleItemLimit < displayItems.length;
   const visibleRenderMessages = useMemo(
     () => resolvePlainMessageRenderItems(visibleItems),
     [visibleItems],
   );
 
   useEffect(() => {
-    if (!historyState?.loading) {
-      olderLoadRequestedRef.current = false;
+    const previousDisplayItemsLength = previousDisplayItemsLengthRef.current;
+    previousDisplayItemsLengthRef.current = displayItems.length;
+    if (!pendingRemoteHistoryRevealRef.current || historyState?.loading) {
+      return;
     }
-  }, [historyState?.loading]);
+    if (displayItems.length <= previousDisplayItemsLength || visibleItemLimit >= displayItems.length) {
+      pendingRemoteHistoryRevealRef.current = false;
+      localScrollSnapshotRef.current = null;
+      return;
+    }
+    pendingRemoteHistoryRevealRef.current = false;
+    renderRevealRequestedRef.current = true;
+    setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
+      currentLimit,
+      displayItems.length,
+    ));
+  }, [displayItems.length, historyState?.loading, visibleItemLimit]);
 
   useEffect(() => {
-    const scrollContainer = listRef.current?.parentElement;
-    if (!scrollContainer || !historyState?.hasMore || historyState.loading) {
+    const scrollContainer = resolvePlainMessageScrollContainer(listRef.current);
+    if (!scrollContainer || historyState?.loading) {
       return;
     }
     const container = scrollContainer;
+
+    function captureScrollSnapshot() {
+      localScrollSnapshotRef.current = {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+      };
+    }
+
+    function revealOlderLoadedItems() {
+      if (renderRevealRequestedRef.current) {
+        return;
+      }
+      captureScrollSnapshot();
+      renderRevealRequestedRef.current = true;
+      setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
+        currentLimit,
+        displayItems.length,
+      ));
+    }
 
     function loadOlderWhenScrolledToTop() {
       if (olderLoadRequestedRef.current || container.scrollTop > 48) {
         return;
       }
-      localScrollSnapshotRef.current = {
-        scrollHeight: container.scrollHeight,
-        scrollTop: container.scrollTop,
-      };
+      if (hasHiddenLoadedItems) {
+        revealOlderLoadedItems();
+        return;
+      }
+      if (!historyState?.hasMore) {
+        return;
+      }
+      captureScrollSnapshot();
       olderLoadRequestedRef.current = true;
+      pendingRemoteHistoryRevealRef.current = true;
       onLoadOlderMessages();
     }
 
@@ -105,11 +158,12 @@ export function PlainMessages({
       loadOlderWhenScrolledToTop();
     }
     return () => container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
-  }, [historyState?.hasMore, historyState?.loading, onLoadOlderMessages]);
+  }, [displayItems.length, hasHiddenLoadedItems, historyState?.hasMore, historyState?.loading, onLoadOlderMessages]);
 
   useEffect(() => {
+    renderRevealRequestedRef.current = false;
     const snapshot = localScrollSnapshotRef.current;
-    const scrollContainer = listRef.current?.parentElement;
+    const scrollContainer = resolvePlainMessageScrollContainer(listRef.current);
     if (!snapshot || !scrollContainer) {
       return;
     }
@@ -255,6 +309,37 @@ export function shouldAutoLoadOlderHistory(
   threshold = 48,
 ) {
   return metrics.scrollHeight <= metrics.clientHeight + threshold;
+}
+
+export function resolvePlainMessageScrollContainer(
+  listElement: HTMLDivElement | null,
+): HTMLElement | null {
+  return listElement?.closest<HTMLElement>("[data-session-card-body]") ?? listElement?.parentElement ?? null;
+}
+
+export function resolveVisiblePlainConversationItems<T>(
+  items: T[],
+  limit = INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+): T[] {
+  const safeLimit = Math.max(0, Math.floor(limit));
+  if (safeLimit <= 0 || items.length <= safeLimit) {
+    return items;
+  }
+  return items.slice(items.length - safeLimit);
+}
+
+export function resolveNextPlainConversationRenderLimit(
+  currentLimit: number,
+  totalItems: number,
+  step = PLAIN_MESSAGE_RENDER_LOAD_STEP,
+): number {
+  const safeTotal = Math.max(0, Math.floor(totalItems));
+  const safeCurrent = Math.max(0, Math.floor(currentLimit));
+  const safeStep = Math.max(1, Math.floor(step));
+  if (safeCurrent >= safeTotal) {
+    return safeTotal;
+  }
+  return Math.min(safeTotal, safeCurrent + safeStep);
 }
 
 function normalizePlainMessageRenderSource(
@@ -572,9 +657,6 @@ function comparePlainConversationItems(left: PlainConversationItem, right: Plain
   if (timelineDelta !== null) {
     return timelineDelta;
   }
-  if (hasMixedTimelineSequence(left, right) && left.sourceIndex !== undefined && right.sourceIndex !== undefined) {
-    return left.sourceIndex - right.sourceIndex;
-  }
   const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;
@@ -591,13 +673,6 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function hasMixedTimelineSequence(
-  left: { timelineSequence?: number },
-  right: { timelineSequence?: number },
-) {
-  return (left.timelineSequence === undefined) !== (right.timelineSequence === undefined);
 }
 
 function plainConversationKindRank(item: PlainConversationItem) {

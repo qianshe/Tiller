@@ -5,8 +5,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { AgentMessage } from "@tiller/shared";
 import {
   PlainMessages,
+  INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+  PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  resolveNextPlainConversationRenderLimit,
   resolvePlainDisplayMessages,
   resolvePlainMessageRenderItems,
+  resolvePlainMessageScrollContainer,
+  resolveVisiblePlainConversationItems,
   shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
 
@@ -41,6 +46,35 @@ test("plain message display keeps all loaded messages", () => {
   );
 });
 
+test("plain message render window keeps newest loaded items first", () => {
+  const messages = Array.from(
+    { length: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5 },
+    (_, index) => message(index + 1),
+  );
+
+  assert.deepEqual(
+    resolveVisiblePlainConversationItems(messages).map((item) => item.id),
+    messages.slice(5).map((item) => item.id),
+  );
+});
+
+test("plain message render window reveals local loaded items before remote history", () => {
+  assert.equal(
+    resolveNextPlainConversationRenderLimit(
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5,
+    ),
+    INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5,
+  );
+  assert.equal(
+    resolveNextPlainConversationRenderLimit(
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    ),
+    INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  );
+});
+
 test("plain message history auto-loads older pages when loaded content does not fill the viewport", () => {
   assert.equal(
     shouldAutoLoadOlderHistory({ scrollHeight: 720, clientHeight: 760 }),
@@ -50,6 +84,19 @@ test("plain message history auto-loads older pages when loaded content does not 
     shouldAutoLoadOlderHistory({ scrollHeight: 1200, clientHeight: 760 }),
     false,
   );
+});
+
+test("plain message history uses the session card body as the scroll container", () => {
+  const wrapper = {} as HTMLDivElement;
+  const scrollContainer = {} as HTMLDivElement;
+  const list = {
+    parentElement: wrapper,
+    closest(selector: string) {
+      return selector === "[data-session-card-body]" ? scrollContainer : null;
+    },
+  } as unknown as HTMLDivElement;
+
+  assert.equal(resolvePlainMessageScrollContainer(list), scrollContainer);
 });
 
 test("plain message display uses chronological order from newest-first pages", () => {
@@ -75,7 +122,7 @@ test("plain message timeline coalesces runtime assistant chunks before rendering
   ]);
 });
 
-test("plain message timeline preserves mixed sequence source order across tool calls", () => {
+test("plain message timeline orders mixed sequence history by timestamp across tool calls", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -120,7 +167,7 @@ test("plain message timeline preserves mixed sequence source order across tool c
   const userIndex = html.indexOf("旧用户提问");
   const assistantIndex = html.indexOf("Provider 回复");
   const toolIndex = html.indexOf("Run tests");
-  assert.ok(userIndex >= 0 && assistantIndex > userIndex && toolIndex > assistantIndex);
+  assert.ok(assistantIndex >= 0 && toolIndex > assistantIndex && userIndex > toolIndex);
 });
 
 test("plain message timeline filters OpenCode prompt wrapper echoes", () => {

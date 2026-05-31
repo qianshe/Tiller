@@ -307,6 +307,90 @@ test("session/list_messages stores unified timeline entries when provided by Hel
   );
 });
 
+test("session/list_messages preserves provided timeline order with partial sequence data", () => {
+  resetStore();
+  const loadedUser: AgentMessage = {
+    id: "user-1",
+    role: "user",
+    text: "开始",
+    timestamp: "2026-05-24T10:00:30.000Z",
+    timelineSequence: 1,
+  };
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: loadedUser,
+      timestamp: loadedUser.timestamp,
+      updatedAt: loadedUser.timestamp,
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:thinking",
+        kind: "thinking",
+        text: "先思考",
+        title: "Thinking",
+        status: "completed",
+        timestamp: "2026-05-24T10:00:10.000Z",
+        updatedAt: "2026-05-24T10:00:10.000Z",
+      }],
+      timestamp: "2026-05-24T10:00:10.000Z",
+      updatedAt: "2026-05-24T10:00:10.000Z",
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-1",
+        kind: "read",
+        title: "Read",
+        status: "completed",
+        timestamp: "2026-05-24T10:00:20.000Z",
+        updatedAt: "2026-05-24T10:00:20.000Z",
+      },
+      timestamp: "2026-05-24T10:00:20.000Z",
+      updatedAt: "2026-05-24T10:00:20.000Z",
+    },
+    {
+      id: "assistant-1#p0",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1#p0:content",
+        kind: "content",
+        text: "完成",
+        timestamp: "2026-05-24T10:00:40.000Z",
+        timelineSequence: 2,
+      }],
+      timestamp: "2026-05-24T10:00:40.000Z",
+      updatedAt: "2026-05-24T10:00:40.000Z",
+      timelineSequence: 2,
+    },
+  ];
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [loadedUser],
+      timeline,
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["user-1", "assistant-1", "tool:tool-1", "assistant-1#p0"],
+  );
+});
+
 test("session/list_messages applies timeline-only pages without replacing legacy messages", () => {
   resetStore();
   const existingMessage: AgentMessage = {

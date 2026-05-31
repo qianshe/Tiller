@@ -4,7 +4,17 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { AcpRuntimeProviderConfig, AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentToolCall } from "@tiller/shared";
+import { collectHistoryImageAttachments } from "../history-content";
+import {
+  buildAuthoritativeHistoryFromEvents,
+  normalizeHistoryMessageRole,
+  stringFrom,
+  stringifyHistoryPayload,
+  timestampFromMillis,
+  type HistoryEvent,
+} from "../history-events";
+import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
 import { inferOpenCodeToolKind } from "./tool-calls";
 
@@ -12,22 +22,52 @@ const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
 const OPENCODE_EXPORT_MAX_BUFFER = 16 * 1024 * 1024;
 
+export type OpenCodeHistorySource =
+  | { kind: "export"; raw: string }
+  | { kind: "sqlite"; messageRows: OpenCodeSqliteMessageRow[]; partRows: OpenCodeSqlitePartRow[] };
+
+export const openCodeHistoryReader: ProviderHistoryReader<OpenCodeHistorySource> = {
+  read: ({ provider, runtimeSessionId, cwd }) =>
+    readOpenCodeHistorySource(provider, runtimeSessionId, cwd),
+  toEvents: (source) =>
+    source.kind === "export"
+      ? parseOpenCodeExportEvents(source.raw)
+      : parseOpenCodeSqliteEvents(source.messageRows, source.partRows),
+  options: { coalesceThinking: true },
+};
+
 export async function loadOpenCodeExportHistory(
   agent: AcpRuntimeProviderConfig,
   runtimeSessionId: string,
   cwd: string,
 ): Promise<AcpAuthoritativeHistory | null> {
+  const source = await readOpenCodeHistorySource(agent, runtimeSessionId, cwd);
+  if (!source) {
+    return null;
+  }
+  return buildAuthoritativeHistoryFromEvents(openCodeHistoryReader.toEvents(source, {
+    provider: agent,
+    runtimeSessionId,
+    cwd,
+  }), openCodeHistoryReader.options);
+}
+
+async function readOpenCodeHistorySource(
+  agent: AcpRuntimeProviderConfig,
+  runtimeSessionId: string,
+  cwd: string,
+): Promise<OpenCodeHistorySource | null> {
   if (!isOpenCodeCommand(agent.command)) {
     return null;
   }
 
   try {
     const stdout = await runOpenCodeExport(agent, runtimeSessionId, cwd);
-    return parseOpenCodeExportHistory(stdout);
+    return { kind: "export", raw: stdout };
   } catch (error) {
-    const sqliteHistory = loadOpenCodeSqliteHistory(runtimeSessionId);
-    if (sqliteHistory) {
-      return sqliteHistory;
+    const sqliteSource = loadOpenCodeSqliteHistorySource(runtimeSessionId);
+    if (sqliteSource) {
+      return sqliteSource;
     }
     throw error;
   }
@@ -68,7 +108,7 @@ function quotePowerShellArg(value: string) {
   return `'${value.replace(/'/gu, "''")}'`;
 }
 
-function loadOpenCodeSqliteHistory(runtimeSessionId: string): AcpAuthoritativeHistory | null {
+function loadOpenCodeSqliteHistorySource(runtimeSessionId: string): OpenCodeHistorySource | null {
   const dbPath = process.env.OPENCODE_DB_PATH || join(homedir(), ".local", "share", "opencode", "opencode.db");
   if (!existsSync(dbPath)) {
     return null;
@@ -87,7 +127,7 @@ function loadOpenCodeSqliteHistory(runtimeSessionId: string): AcpAuthoritativeHi
     const parts = db
       .prepare("SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? ORDER BY time_created ASC")
       .all(runtimeSessionId) as OpenCodeSqlitePartRow[];
-    return parseOpenCodeSqliteHistory(messages, parts);
+    return { kind: "sqlite", messageRows: messages, partRows: parts };
   } finally {
     db.close();
   }
@@ -111,29 +151,49 @@ export function parseOpenCodeSqliteHistory(
   messageRows: OpenCodeSqliteMessageRow[],
   partRows: OpenCodeSqlitePartRow[],
 ): AcpAuthoritativeHistory {
-  const messages: AgentMessage[] = [];
-  const toolCalls: AgentToolCall[] = [];
+  return buildAuthoritativeHistoryFromEvents(
+    parseOpenCodeSqliteEvents(messageRows, partRows),
+    openCodeHistoryReader.options,
+  );
+}
+
+function parseOpenCodeSqliteEvents(
+  messageRows: OpenCodeSqliteMessageRow[],
+  partRows: OpenCodeSqlitePartRow[],
+): HistoryEvent[] {
+  const events: HistoryEvent[] = [];
   const partsByMessageId = groupPartsByMessageId(partRows);
 
   for (const row of messageRows) {
     const messageData = parseJson(row.data);
     const parts = partsByMessageId.get(row.id) ?? [];
-    const role = normalizeMessageRole(messageData?.role);
+    const role = normalizeHistoryMessageRole(messageData?.role);
     const timestamp = timestampFromMillis(messageData?.time?.created ?? row.time_created);
-    const text = collectMessageText(parts, role);
-    if (role && timestamp && text) {
-      messages.push({ id: row.id, role, text, timestamp });
+    if (!role || !timestamp) {
+      continue;
     }
 
-    for (const toolCall of collectToolCalls({ id: row.id, parts })) {
-      toolCalls.push(toolCall);
+    if (role === "assistant") {
+      appendOpenCodeAssistantEvents({
+        events,
+        message: { id: row.id, parts },
+        messageId: row.id,
+        messageTimestamp: timestamp,
+        parts,
+      });
+      continue;
     }
+
+    appendOpenCodeMessage({
+      events,
+      id: row.id,
+      parts,
+      role,
+      timestamp,
+    });
   }
 
-  return {
-    messages: sortByTimestamp(messages),
-    toolCalls: sortByTimestamp(coalesceThinkingToolCalls(toolCalls)),
-  };
+  return events;
 }
 
 function groupPartsByMessageId(partRows: OpenCodeSqlitePartRow[]) {
@@ -163,75 +223,161 @@ function parseJson(raw: string): any | null {
 }
 
 export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory {
+  return buildAuthoritativeHistoryFromEvents(
+    parseOpenCodeExportEvents(raw),
+    openCodeHistoryReader.options,
+  );
+}
+
+function parseOpenCodeExportEvents(raw: string): HistoryEvent[] {
   const parsed = JSON.parse(raw);
-  const messages: AgentMessage[] = [];
-  const toolCalls: AgentToolCall[] = [];
+  const events: HistoryEvent[] = [];
 
   for (const message of Array.isArray(parsed?.messages) ? parsed.messages : []) {
     const messageId = stringFrom(message?.id ?? message?.info?.id);
-    const role = normalizeMessageRole(message?.info?.role ?? message?.role);
+    const role = normalizeHistoryMessageRole(message?.info?.role ?? message?.role);
     const timestamp = timestampFromMillis(message?.info?.time?.created ?? message?.time?.created);
-    const text = collectMessageText(message?.parts, role);
-    if (messageId && role && timestamp && text) {
-      messages.push({ id: messageId, role, text, timestamp });
+    if (!messageId || !role || !timestamp) {
+      continue;
     }
 
-    for (const toolCall of collectToolCalls(message)) {
-      toolCalls.push(toolCall);
+    if (role === "assistant") {
+      appendOpenCodeAssistantEvents({
+        events,
+        message,
+        messageId,
+        messageTimestamp: timestamp,
+        parts: Array.isArray(message?.parts) ? message.parts : [],
+      });
+      continue;
     }
+
+    appendOpenCodeMessage({
+      events,
+      id: messageId,
+      parts: message?.parts,
+      role,
+      timestamp,
+    });
   }
 
-  return {
-    messages: sortByTimestamp(messages),
-    toolCalls: sortByTimestamp(coalesceThinkingToolCalls(toolCalls)),
-  };
+  return events;
 }
 
-function collectToolCalls(message: any): AgentToolCall[] {
-  const calls: AgentToolCall[] = [];
-  for (const part of Array.isArray(message?.parts) ? message.parts : []) {
-    if (part?.type === "reasoning") {
-      const thinking = collectReasoningToolCall(part, message);
-      if (thinking) {
-        calls.push(thinking);
+function appendOpenCodeMessage({
+  events,
+  id,
+  parts,
+  role,
+  timestamp,
+}: {
+  events: HistoryEvent[];
+  id: string;
+  parts: unknown;
+  role: "user" | "assistant" | "system";
+  timestamp: string;
+}) {
+  const text = collectMessageText(parts, role);
+  const attachments = role === "user" ? collectHistoryImageAttachments(parts, id) : [];
+  if (!text && !attachments.length) {
+    return;
+  }
+  events.push({
+    kind: "message",
+    id,
+    role,
+    ...(text ? { text } : {}),
+    timestamp,
+    ...(attachments.length ? { attachments } : {}),
+  });
+}
+
+function appendOpenCodeAssistantEvents({
+  events,
+  message,
+  messageId,
+  messageTimestamp,
+  parts,
+}: {
+  events: HistoryEvent[];
+  message: any;
+  messageId: string;
+  messageTimestamp: string;
+  parts: any[];
+}) {
+  let textPartIndex = 0;
+  for (const part of parts) {
+    if (part?.type === "text") {
+      const text = stringFrom(part.text);
+      if (text) {
+        events.push({
+          kind: "message",
+          id: resolveOpenCodeTextMessageId(messageId, textPartIndex),
+          role: "assistant",
+          text,
+          timestamp:
+            timestampFromMillis(part?.time?.created ?? part?.time?.start) ?? messageTimestamp,
+        });
+        textPartIndex += 1;
       }
       continue;
     }
-    if (part?.type !== "tool") {
+
+    if (part?.type === "reasoning") {
+      const thinking = collectReasoningEvent(part, message);
+      if (thinking) {
+        events.push(thinking);
+      }
       continue;
     }
-    const id = stringFrom(part.callID ?? part.callId ?? part.id);
-    const state = part.state ?? {};
-    const start = timestampFromMillis(
-      state?.time?.start ?? part?.time?.start ?? state?.time?.created ?? part?.time?.created,
-    );
-    const end =
-      timestampFromMillis(
-        state?.time?.end ?? part?.time?.end ?? state?.time?.updated ?? part?.time?.updated,
-      ) ?? start;
-    if (!id || !start || !end) {
-      continue;
+
+    if (part?.type === "tool") {
+      const toolCall = collectOpenCodeToolCallEvent(part);
+      if (toolCall) {
+        events.push(toolCall);
+      }
     }
-    const toolName = stringFrom(part.tool) ?? "tool";
-    const title = stringFrom(state.title) || toolName || id;
-    const input = stringifyToolPayload(state.input);
-    const output = stringFrom(state.output);
-    calls.push({
-      id,
-      commandId: id,
-      kind: inferOpenCodeToolKind(toolName, title, state.input),
-      title,
-      status: normalizeToolStatus(state.status),
-      ...(input ? { input } : {}),
-      ...(output ? { output } : {}),
-      timestamp: start,
-      updatedAt: end,
-    });
   }
-  return calls;
 }
 
-function collectReasoningToolCall(part: any, message: any): AgentToolCall | null {
+function resolveOpenCodeTextMessageId(messageId: string, textPartIndex: number) {
+  return textPartIndex === 0 ? messageId : `${messageId}#p${textPartIndex}`;
+}
+
+function collectOpenCodeToolCallEvent(part: any): HistoryEvent | null {
+  const id = stringFrom(part.callID ?? part.callId ?? part.id);
+  const state = part.state ?? {};
+  const start = timestampFromMillis(
+    state?.time?.start ?? part?.time?.start ?? state?.time?.created ?? part?.time?.created,
+  );
+  const end =
+    timestampFromMillis(
+      state?.time?.end ?? part?.time?.end ?? state?.time?.updated ?? part?.time?.updated,
+    ) ?? start;
+  if (!id || !start || !end) {
+    return null;
+  }
+  const toolName = stringFrom(part.tool) ?? "tool";
+  const title = stringFrom(state.title) || toolName || id;
+  const input = stringifyToolPayload(state.input);
+  const output = stringFrom(state.output);
+  return {
+    kind: "tool_call",
+    id,
+    toolKind: inferOpenCodeToolKind(toolName, title, state.input),
+    title,
+    status: normalizeToolStatus(state.status),
+    ...(input ? { input } : {}),
+    ...(output ? { output } : {}),
+    timestamp: start,
+    updatedAt: end,
+  };
+}
+
+function collectReasoningEvent(
+  part: any,
+  message: any,
+): HistoryEvent | null {
   const id = reasoningToolCallId(part, message);
   const output = stringFrom(part.text ?? part.reasoning ?? part.thinking);
   const timestamp = timestampFromMillis(part?.time?.start ?? part?.time?.created);
@@ -240,12 +386,9 @@ function collectReasoningToolCall(part: any, message: any): AgentToolCall | null
     return null;
   }
   return {
+    kind: "thinking",
     id,
-    commandId: id,
-    kind: "think",
-    title: "Thinking",
-    status: "completed",
-    output,
+    text: output,
     timestamp,
     updatedAt,
   };
@@ -259,37 +402,7 @@ function reasoningToolCallId(part: any, message: any) {
   return stringFrom(part.id) ?? `${messageId ?? "opencode"}:reasoning`;
 }
 
-function coalesceThinkingToolCalls(toolCalls: AgentToolCall[]) {
-  const coalesced = new Map<string, AgentToolCall>();
-  const result: AgentToolCall[] = [];
-
-  for (const toolCall of toolCalls) {
-    if (toolCall.kind !== "think") {
-      result.push(toolCall);
-      continue;
-    }
-
-    const existing = coalesced.get(toolCall.id);
-    if (!existing) {
-      const copy = { ...toolCall };
-      coalesced.set(toolCall.id, copy);
-      result.push(copy);
-      continue;
-    }
-
-    existing.output = [existing.output, toolCall.output].filter(Boolean).join("\n\n");
-    if (toolCall.timestamp < existing.timestamp) {
-      existing.timestamp = toolCall.timestamp;
-    }
-    if (toolCall.updatedAt > existing.updatedAt) {
-      existing.updatedAt = toolCall.updatedAt;
-    }
-  }
-
-  return result;
-}
-
-function collectMessageText(parts: unknown, role: AgentMessage["role"] | null) {
+function collectMessageText(parts: unknown, role: "user" | "assistant" | "system" | null) {
   const textParts = collectTextPartValues(parts);
   if (role === "user") {
     return normalizeOpenCodeUserTextParts(textParts);
@@ -342,10 +455,6 @@ function normalizeForContainment(value: string) {
   return value.replace(/\r\n/gu, "\n").trim();
 }
 
-function normalizeMessageRole(role: unknown): AgentMessage["role"] | null {
-  return role === "user" || role === "assistant" || role === "system" ? role : null;
-}
-
 function normalizeToolStatus(status: unknown): AgentToolCall["status"] {
   const raw = String(status ?? "completed").toLowerCase();
   if (raw === "error" || raw === "failed") {
@@ -364,34 +473,7 @@ function normalizeToolStatus(status: unknown): AgentToolCall["status"] {
 }
 
 function stringifyToolPayload(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function timestampFromMillis(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? new Date(value).toISOString()
-    : undefined;
-}
-
-function stringFrom(value: unknown) {
-  return typeof value === "string" ? value : undefined;
-}
-
-function sortByTimestamp<T extends { timestamp: string; id: string }>(items: T[]) {
-  return [...items].sort((left, right) => {
-    const delta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
-    return delta === 0 ? left.id.localeCompare(right.id) : delta;
-  });
+  return stringifyHistoryPayload(value);
 }
 
 function isOpenCodeCommand(command: string) {

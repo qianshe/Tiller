@@ -5,6 +5,8 @@ import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tille
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
+const TIMELINE_ENTRY_PAGE_LIMIT = 96;
+
 export function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
   const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
   const page = pageSessionSummaries(normalizedSessions, {
@@ -157,6 +159,7 @@ function listSessionTimelinePage(
   const existing = context.sessionTimelineStore.list(params.sessionId);
   const repaired = repairSessionTimelineFromLegacy(params.sessionId, existing, context);
   return pageSessionTimeline(repaired, {
+    entryLimit: TIMELINE_ENTRY_PAGE_LIMIT,
     limit: params.limit,
     before: params.timelineBefore ?? params.before,
     window: "message",
@@ -195,10 +198,63 @@ function mergeRebuiltTimeline(
   rebuilt: SessionTimelineEntry[],
 ) {
   const rebuiltIds = new Set(rebuilt.map((entry) => entry.id));
-  return sortSessionTimelineEntries([
-    ...rebuilt,
-    ...existing.filter((entry) => !rebuiltIds.has(entry.id)),
-  ]);
+  if (!existing.length || !hasTimelineMessageAnchor(existing)) {
+    return sortSessionTimelineEntries([
+      ...rebuilt,
+      ...existing.filter((entry) => !rebuiltIds.has(entry.id)),
+    ]);
+  }
+
+  const rebuiltById = new Map(rebuilt.map((entry) => [entry.id, entry]));
+  const merged = existing.map((entry) => rebuiltById.get(entry.id) ?? entry);
+  const mergedIds = new Set(merged.map((entry) => entry.id));
+  const missing = rebuilt.filter((entry) => !mergedIds.has(entry.id));
+  if (!missing.length) {
+    return sortSessionTimelineEntries(merged);
+  }
+
+  return sortSessionTimelineEntries(insertMissingTimelineEntries(merged, missing, rebuilt));
+}
+
+function insertMissingTimelineEntries(
+  existing: SessionTimelineEntry[],
+  missing: SessionTimelineEntry[],
+  rebuilt: SessionTimelineEntry[],
+) {
+  const result = [...existing];
+  const presentIds = new Set(result.map((entry) => entry.id));
+  missing.forEach((entry) => {
+    const insertAt = resolveMissingTimelineInsertIndex(result, rebuilt, entry.id, presentIds);
+    result.splice(insertAt, 0, entry);
+    presentIds.add(entry.id);
+  });
+  return result;
+}
+
+function resolveMissingTimelineInsertIndex(
+  current: SessionTimelineEntry[],
+  rebuilt: SessionTimelineEntry[],
+  entryId: string,
+  presentIds: ReadonlySet<string>,
+) {
+  const rebuiltIndex = rebuilt.findIndex((entry) => entry.id === entryId);
+  for (let index = rebuiltIndex - 1; index >= 0; index -= 1) {
+    const previousId = rebuilt[index]?.id;
+    if (!previousId || !presentIds.has(previousId)) {
+      continue;
+    }
+    const currentIndex = current.findIndex((entry) => entry.id === previousId);
+    return currentIndex === -1 ? current.length : currentIndex + 1;
+  }
+  for (let index = rebuiltIndex + 1; index < rebuilt.length; index += 1) {
+    const nextId = rebuilt[index]?.id;
+    if (!nextId || !presentIds.has(nextId)) {
+      continue;
+    }
+    const currentIndex = current.findIndex((entry) => entry.id === nextId);
+    return currentIndex === -1 ? current.length : currentIndex;
+  }
+  return current.length;
 }
 
 function timelineSignature(entries: SessionTimelineEntry[]) {
@@ -306,4 +362,12 @@ function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
       item.updatedAt !== next.updatedAt
     );
   });
+}
+
+function hasTimelineMessageAnchor(entries: SessionTimelineEntry[]) {
+  return entries.some((entry) => (
+    entry.kind === "user_message" ||
+    entry.kind === "system_message" ||
+    (entry.kind === "assistant_message" && entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim()))
+  ));
 }

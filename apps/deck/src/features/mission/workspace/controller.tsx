@@ -278,7 +278,7 @@ export function MissionWorktree(props: any) {
     sessions: sessions as SessionSummary[],
     messageHistoryState,
     activityHistoryState,
-    messagesBySession: messages,
+    sessionTimelineBySession: sessionTimeline,
     outputsBySession: outputs,
     toolCallsBySession: toolCalls,
     setMessageHistoryState,

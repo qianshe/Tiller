@@ -47,7 +47,7 @@ test("sortAgentMessagesByTimeline orders messages by timestamp and preserves sou
   );
 });
 
-test("sortAgentMessagesByTimeline preserves source order for mixed timeline sequences", () => {
+test("sortAgentMessagesByTimeline orders mixed timeline sequences by timestamp", () => {
   const messages: AgentMessage[] = [
     {
       id: "legacy-user",
@@ -66,7 +66,7 @@ test("sortAgentMessagesByTimeline preserves source order for mixed timeline sequ
 
   assert.deepEqual(
     sortAgentMessagesByTimeline(messages).map((message) => message.id),
-    ["legacy-user", "provider-assistant"],
+    ["provider-assistant", "legacy-user"],
   );
 });
 
@@ -127,7 +127,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
   );
 });
 
-test("buildConversationTimeline preserves mixed sequence source order for legacy user prompts", () => {
+test("buildConversationTimeline orders mixed sequence legacy prompts by timestamp", () => {
   const userMessage: AgentMessage = {
     id: "legacy-user",
     role: "user",
@@ -151,7 +151,7 @@ test("buildConversationTimeline preserves mixed sequence source order for legacy
 
   assert.deepEqual(
     timeline.map((item) => item.kind === "message" ? item.message.id : item.id),
-    ["legacy-user", "tool-seq-2"],
+    ["tool-seq-2", "legacy-user"],
   );
 });
 

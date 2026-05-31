@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
+import { buildAuthoritativeHistoryFromEvents } from "../history-events.js";
 import { loadAdapterAuthoritativeHistory } from "../index.js";
-import { parseOpenCodeExportHistory, parseOpenCodeSqliteHistory } from "./history.js";
+import {
+  openCodeHistoryReader,
+  parseOpenCodeExportHistory,
+  parseOpenCodeSqliteHistory,
+} from "./history.js";
+
+const openCodeHistoryContext = {
+  provider: {
+    id: "opencode",
+    name: "OpenCode",
+    command: "opencode",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  },
+  runtimeSessionId: "session-test",
+  cwd: "D:/repo",
+};
 
 test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode export", () => {
   const history = parseOpenCodeExportHistory(
@@ -42,12 +60,14 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
       role: "user",
       text: "尝试调用个mcp或者skill，我测试下效果",
       timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
     },
     {
       id: "msg-assistant",
       role: "assistant",
       text: "我来调用工具",
       timestamp: "2026-04-30T09:58:57.977Z",
+      timelineSequence: 2,
     },
   ]);
   assert.deepEqual(history.toolCalls, [
@@ -61,6 +81,7 @@ test("parseOpenCodeExportHistory maps message and tool timestamps from OpenCode 
       output: "ok",
       timestamp: "2026-04-30T09:59:10.384Z",
       updatedAt: "2026-04-30T09:59:10.482Z",
+      timelineSequence: 3,
     },
   ]);
 });
@@ -100,6 +121,7 @@ test("parseOpenCodeExportHistory replaces enhanced OpenCode user wrapper with or
       role: "user",
       text: originalPrompt,
       timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
     },
   ]);
 });
@@ -126,8 +148,236 @@ test("parseOpenCodeExportHistory preserves normal user text parts when no wrappe
       role: "user",
       text: "第一段第二段",
       timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
     },
   ]);
+});
+
+test("openCodeHistoryReader.toEvents emits export text and tool events in part order", () => {
+  const events = openCodeHistoryReader.toEvents(
+    {
+      kind: "export",
+      raw: JSON.stringify({
+        messages: [
+          {
+            id: "msg-assistant",
+            info: { role: "assistant", time: { created: 1777543137977 } },
+            parts: [
+              { type: "text", text: "先说明。" },
+              {
+                id: "prt-tool",
+                type: "tool",
+                tool: "read",
+                callID: "call-read",
+                state: {
+                  status: "completed",
+                  input: {
+                    filePath: "apps/deck/src/features/mission/conversation/plain-messages.tsx",
+                  },
+                  output: "file content",
+                  title: "Read",
+                  time: { start: 1777543150384, end: 1777543150482 },
+                },
+              },
+              { type: "text", text: "读完后继续。" },
+            ],
+          },
+        ],
+      }),
+    },
+    openCodeHistoryContext,
+  );
+
+  assert.deepEqual(
+    events.map((event) => [event.kind, event.id]),
+    [
+      ["message", "msg-assistant"],
+      ["tool_call", "call-read"],
+      ["message", "msg-assistant#p1"],
+    ],
+  );
+  assert.deepEqual(
+    buildSessionTimelineFromLegacy(
+      buildAuthoritativeHistoryFromEvents(events, openCodeHistoryReader.options),
+    ).map((entry) => entry.kind),
+    ["assistant_message", "tool_call", "assistant_message"],
+  );
+});
+
+test("openCodeHistoryReader.toEvents emits sqlite image-only message events", () => {
+  const events = openCodeHistoryReader.toEvents(
+    {
+      kind: "sqlite",
+      messageRows: [
+        {
+          id: "msg-user-image-only",
+          time_created: 1777543137952,
+          data: JSON.stringify({ role: "user", time: { created: 1777543137952 } }),
+        },
+      ],
+      partRows: [
+        {
+          id: "prt-image",
+          message_id: "msg-user-image-only",
+          time_created: 1777543137952,
+          time_updated: 1777543137952,
+          data: JSON.stringify({
+            type: "input_image",
+            imageUrl: "data:image/webp;base64,sqlite-webp",
+          }),
+        },
+      ],
+    },
+    openCodeHistoryContext,
+  );
+
+  assert.deepEqual(events, [
+    {
+      kind: "message",
+      id: "msg-user-image-only",
+      role: "user",
+      timestamp: "2026-04-30T09:58:57.952Z",
+      attachments: [
+        {
+          type: "image",
+          data: "sqlite-webp",
+          mimeType: "image/webp",
+          name: "msg-user-image-only-image-1.webp",
+        },
+      ],
+    },
+  ]);
+});
+
+test("parseOpenCodeExportHistory preserves user image attachments", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-user-image",
+          info: { role: "user", time: { created: 1777543137952 } },
+          parts: [
+            { type: "text", text: "看这张图" },
+            {
+              type: "image_url",
+              image_url: {
+                url: "data:image/png;base64,opencode-png",
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-image",
+      role: "user",
+      text: "看这张图",
+      timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
+      attachments: [
+        {
+          type: "image",
+          data: "opencode-png",
+          mimeType: "image/png",
+          name: "msg-user-image-image-1.png",
+        },
+      ],
+    },
+  ]);
+});
+
+test("parseOpenCodeSqliteHistory preserves image-only user prompts", () => {
+  const history = parseOpenCodeSqliteHistory(
+    [
+      {
+        id: "msg-user-image-only",
+        time_created: 1777543137952,
+        data: JSON.stringify({ role: "user", time: { created: 1777543137952 } }),
+      },
+    ],
+    [
+      {
+        id: "prt-image",
+        message_id: "msg-user-image-only",
+        time_created: 1777543137952,
+        time_updated: 1777543137952,
+        data: JSON.stringify({
+          type: "input_image",
+          imageUrl: "data:image/webp;base64,sqlite-webp",
+        }),
+      },
+    ],
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-image-only",
+      role: "user",
+      text: "图片 1 张",
+      timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
+      attachments: [
+        {
+          type: "image",
+          data: "sqlite-webp",
+          mimeType: "image/webp",
+          name: "msg-user-image-only-image-1.webp",
+        },
+      ],
+    },
+  ]);
+});
+
+test("parseOpenCodeExportHistory preserves assistant text around tool calls in ACP part order", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            { type: "text", text: "先说明。" },
+            {
+              id: "prt-tool",
+              type: "tool",
+              tool: "read",
+              callID: "call-read",
+              state: {
+                status: "completed",
+                input: { filePath: "apps/deck/src/features/mission/conversation/plain-messages.tsx" },
+                output: "file content",
+                title: "Read",
+                time: { start: 1777543150384, end: 1777543150482 },
+              },
+            },
+            { type: "text", text: "读完后继续。" },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const timeline = buildSessionTimelineFromLegacy(history);
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["assistant_message", "tool_call", "assistant_message"],
+  );
+  assert.deepEqual(
+    timeline.map((entry) => {
+      if (entry.kind === "assistant_message") {
+        return entry.chunks.map((chunk) => "text" in chunk ? chunk.text : "").join("");
+      }
+      if (entry.kind === "tool_call") {
+        return entry.toolCall.output;
+      }
+      return "";
+    }),
+    ["先说明。", "file content", "读完后继续。"],
+  );
 });
 
 test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlite rows", () => {
@@ -169,12 +419,14 @@ test("parseOpenCodeSqliteHistory maps message and text parts from OpenCode sqlit
         role: "user",
         text: "你好",
         timestamp: "2026-04-30T09:58:57.952Z",
+        timelineSequence: 1,
       },
       {
         id: "msg-assistant",
         role: "assistant",
         text: "你好，主人喵~",
         timestamp: "2026-04-30T09:58:57.977Z",
+        timelineSequence: 2,
       },
     ],
     toolCalls: [],
@@ -227,6 +479,7 @@ test("parseOpenCodeSqliteHistory replaces enhanced OpenCode user wrapper with or
       role: "user",
       text: originalPrompt,
       timestamp: "2026-04-30T09:58:57.952Z",
+      timelineSequence: 1,
     },
   ]);
   assert.deepEqual(history.toolCalls, []);
@@ -360,6 +613,7 @@ test("parseOpenCodeExportHistory keeps single OpenCode analyze wrapper and extra
       output: "Let me inspect the plan files.",
       timestamp: "2026-04-30T09:58:58.000Z",
       updatedAt: "2026-04-30T09:58:59.000Z",
+      timelineSequence: 2,
     },
   ]);
 });
@@ -416,6 +670,7 @@ test("parseOpenCodeExportHistory keeps OpenCode reasoning scoped to each assista
       output: "first thought\n\nfirst follow-up",
       timestamp: "2026-04-30T09:58:58.000Z",
       updatedAt: "2026-04-30T09:58:59.900Z",
+      timelineSequence: 1,
     },
     {
       id: "msg-b:thinking",
@@ -426,6 +681,7 @@ test("parseOpenCodeExportHistory keeps OpenCode reasoning scoped to each assista
       output: "second thought",
       timestamp: "2026-04-30T09:59:01.000Z",
       updatedAt: "2026-04-30T09:59:02.000Z",
+      timelineSequence: 3,
     },
   ]);
 });

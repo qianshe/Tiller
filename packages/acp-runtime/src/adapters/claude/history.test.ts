@@ -3,8 +3,26 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
+import { buildAuthoritativeHistoryFromEvents } from "../history-events.js";
 import { loadAdapterAuthoritativeHistory } from "../index.js";
-import { loadClaudeCodeHistory, parseClaudeCodeJsonlHistory } from "./history.js";
+import {
+  claudeCodeHistoryReader,
+  loadClaudeCodeHistory,
+  parseClaudeCodeJsonlHistory,
+} from "./history.js";
+
+const claudeHistoryContext = {
+  provider: {
+    id: "claude",
+    name: "Claude",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  },
+  runtimeSessionId: "runtime-test",
+  cwd: "D:/repo",
+};
 
 test("parseClaudeCodeJsonlHistory maps messages and merges tool results", () => {
   const history = parseClaudeCodeJsonlHistory(
@@ -50,12 +68,14 @@ test("parseClaudeCodeJsonlHistory maps messages and merges tool results", () => 
       role: "user",
       text: "检查航行日志",
       timestamp: "2026-05-17T09:34:35.000Z",
+      timelineSequence: 1,
     },
     {
       id: "msg-assistant",
       role: "assistant",
       text: "我先查一下。",
       timestamp: "2026-05-17T09:34:38.683Z",
+      timelineSequence: 2,
     },
   ]);
   assert.deepEqual(history.toolCalls, [
@@ -69,10 +89,161 @@ test("parseClaudeCodeJsonlHistory maps messages and merges tool results", () => 
       output: "Found 12 files",
       timestamp: "2026-05-17T09:34:38.683Z",
       updatedAt: "2026-05-17T09:34:39.559Z",
+      timelineSequence: 3,
     },
   ]);
 });
 
+test("claudeCodeHistoryReader.toEvents preserves ACP part order as common events", () => {
+  const raw = [
+    JSON.stringify({
+      uuid: "msg-assistant",
+      timestamp: "2026-05-17T09:34:38.683Z",
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "先说明。" },
+          {
+            type: "tool_use",
+            id: "toolu_read",
+            name: "Read",
+            input: {
+              file_path: "apps/deck/src/features/mission/conversation/plain-messages.tsx",
+            },
+          },
+          { type: "text", text: "读完后继续。" },
+        ],
+      },
+    }),
+    JSON.stringify({
+      uuid: "msg-result",
+      timestamp: "2026-05-17T09:34:39.559Z",
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "toolu_read", content: "file content" },
+        ],
+      },
+    }),
+  ].join("\n");
+
+  const events = claudeCodeHistoryReader.toEvents(raw, claudeHistoryContext);
+
+  assert.deepEqual(
+    events.map((event) => [event.kind, event.id]),
+    [
+      ["message", "msg-assistant"],
+      ["tool_call", "toolu_read"],
+      ["message", "msg-assistant#p1"],
+      ["tool_result", "toolu_read"],
+    ],
+  );
+  assert.deepEqual(
+    buildSessionTimelineFromLegacy(buildAuthoritativeHistoryFromEvents(events)).map(
+      (entry) => entry.kind,
+    ),
+    ["assistant_message", "tool_call", "assistant_message"],
+  );
+});
+
+test("parseClaudeCodeJsonlHistory preserves assistant text around tool calls in ACP part order", () => {
+  const history = parseClaudeCodeJsonlHistory(
+    [
+      JSON.stringify({
+        uuid: "msg-assistant",
+        timestamp: "2026-05-17T09:34:38.683Z",
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "先说明。" },
+            {
+              type: "tool_use",
+              id: "toolu_read",
+              name: "Read",
+              input: { file_path: "apps/deck/src/features/mission/conversation/plain-messages.tsx" },
+            },
+            { type: "text", text: "读完后继续。" },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-result",
+        timestamp: "2026-05-17T09:34:39.559Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_read", content: "file content" }],
+        },
+      }),
+    ].join("\n"),
+  );
+
+  const timeline = buildSessionTimelineFromLegacy(history);
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["assistant_message", "tool_call", "assistant_message"],
+  );
+  assert.deepEqual(
+    timeline.map((entry) => {
+      if (entry.kind === "assistant_message") {
+        return entry.chunks.map((chunk) => "text" in chunk ? chunk.text : "").join("");
+      }
+      if (entry.kind === "tool_call") {
+        return entry.toolCall.output;
+      }
+      return "";
+    }),
+    ["先说明。", "file content", "读完后继续。"],
+  );
+});
+
+test("parseClaudeCodeJsonlHistory preserves user image attachments", () => {
+  const history = parseClaudeCodeJsonlHistory(
+    [
+      JSON.stringify({
+        uuid: "msg-user-image",
+        timestamp: "2026-05-17T09:34:35.000Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "请看图" },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: "iVBORw0KGgo=",
+              },
+            },
+          ],
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "msg-user-image",
+      role: "user",
+      text: "请看图",
+      timestamp: "2026-05-17T09:34:35.000Z",
+      timelineSequence: 1,
+      attachments: [
+        {
+          type: "image",
+          data: "iVBORw0KGgo=",
+          mimeType: "image/png",
+          name: "msg-user-image-image-1.png",
+        },
+      ],
+    },
+  ]);
+});
 
 test("parseClaudeCodeJsonlHistory hides local command wrappers and model switch stdout", () => {
   const history = parseClaudeCodeJsonlHistory(
@@ -122,6 +293,7 @@ test("parseClaudeCodeJsonlHistory hides local command wrappers and model switch 
       role: "user",
       text: "Command finished",
       timestamp: "2026-05-17T09:34:38.000Z",
+      timelineSequence: 1,
     },
   ]);
 });
@@ -150,11 +322,12 @@ test("parseClaudeCodeJsonlHistory preserves thinking as collapsible think items"
       output: "需要先定位数据链路",
       timestamp: "2026-05-17T09:34:36.442Z",
       updatedAt: "2026-05-17T09:34:36.442Z",
+      timelineSequence: 1,
     },
   ]);
 });
 
-test("parseClaudeCodeJsonlHistory skips thinking blocks from final text answers", () => {
+test("parseClaudeCodeJsonlHistory preserves thinking blocks before final text answers", () => {
   const history = parseClaudeCodeJsonlHistory(
     JSON.stringify({
       uuid: "msg-final",
@@ -176,9 +349,22 @@ test("parseClaudeCodeJsonlHistory skips thinking blocks from final text answers"
       role: "assistant",
       text: "最终结论",
       timestamp: "2026-05-17T09:34:40.000Z",
+      timelineSequence: 2,
     },
   ]);
-  assert.deepEqual(history.toolCalls, []);
+  assert.deepEqual(history.toolCalls, [
+    {
+      id: "msg-final:thinking:0",
+      commandId: "msg-final:thinking:0",
+      kind: "think",
+      title: "Thinking",
+      status: "completed",
+      output: "这段思考不应作为历史 Thinking 展示",
+      timestamp: "2026-05-17T09:34:40.000Z",
+      updatedAt: "2026-05-17T09:34:40.000Z",
+      timelineSequence: 1,
+    },
+  ]);
 });
 
 test("parseClaudeCodeJsonlHistory classifies common Claude Code tools", () => {

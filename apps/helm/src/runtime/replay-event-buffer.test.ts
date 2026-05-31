@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary, SessionTimelineEntry } from "@tiller/shared";
 import { createRestoreReplayBuffer } from "./replay-event-buffer.js";
 
 function createStores() {
@@ -9,12 +9,16 @@ function createStores() {
   const toolCalls: AgentToolCall[] = [];
   const outputs: CommandChunk[] = [];
   let diffs: FileDiffSummary[] = [];
+  let timelineEntries: SessionTimelineEntry[] = [];
   return {
     messages,
     toolCalls,
     outputs,
     get diffs() {
       return diffs;
+    },
+    get timelineEntries() {
+      return timelineEntries;
     },
     context: {
       sessionMessageStore: {
@@ -40,6 +44,12 @@ function createStores() {
         replaceDiffs: (_sessionId: string, files: FileDiffSummary[]) => {
           diffs = files;
           return { outputs, diffs, toolCalls };
+        },
+      },
+      sessionTimelineStore: {
+        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+          timelineEntries = entries;
+          return entries;
         },
       },
       logInfo: (_message: string) => undefined,
@@ -169,5 +179,65 @@ test("restore replay buffer keeps stronger tool-call classification across updat
       output: undefined,
     },
   ]);
+});
+
+test("restore replay buffer persists ordered local timeline entries", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "message",
+    message: {
+      id: "user-1",
+      role: "user",
+      text: "恢复历史",
+      timestamp: "2026-05-08T08:00:00.000Z",
+      timelineSequence: 1,
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "assistant-1",
+      role: "assistant",
+      text: "第一段",
+      timestamp: "2026-05-08T08:00:01.000Z",
+      timelineSequence: 2,
+    },
+  });
+  buffer.add({
+    type: "tool-call",
+    toolCall: {
+      id: "tool-read",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      timestamp: "2026-05-08T08:00:02.000Z",
+      updatedAt: "2026-05-08T08:00:02.000Z",
+      timelineSequence: 3,
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "assistant-2",
+      role: "assistant",
+      text: "最终段",
+      timestamp: "2026-05-08T08:00:03.000Z",
+      timelineSequence: 4,
+    },
+  });
+
+  buffer.flush();
+
+  assert.deepEqual(
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    [
+      ["user_message", "user-1", 1],
+      ["assistant_message", "assistant-1", 2],
+      ["tool_call", "tool:tool-read", 3],
+      ["assistant_message", "assistant-2", 4],
+    ],
+  );
 });
 

@@ -198,6 +198,139 @@ test("session/list_messages repairs partial persisted timelines before paging", 
   assert.ok(replacedTimeline.some((entry) => entry.id === "user-latest"));
 });
 
+test("session/list_messages repairs stale persisted timeline order while repairing content", async () => {
+  const sessionId = "session-preserve-timeline-order";
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => [
+          {
+            id: "user-1",
+            role: "user" as const,
+            text: "start",
+            timestamp: "2026-05-24T10:00:30.000Z",
+            timelineSequence: 1,
+          },
+          {
+            id: "assistant-1#p0",
+            role: "assistant" as const,
+            text: "new done",
+            timestamp: "2026-05-24T10:00:40.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        listPage: () => ({ messages: [], hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({
+          outputs: [],
+          diffs: [],
+          toolCalls: [
+            {
+              id: "assistant-1:thinking",
+              commandId: "assistant-1:thinking",
+              kind: "think" as const,
+              title: "Thinking",
+              status: "completed" as const,
+              output: "reasoning",
+              timestamp: "2026-05-24T10:00:10.000Z",
+              updatedAt: "2026-05-24T10:00:10.000Z",
+            },
+            {
+              id: "tool-1",
+              kind: "read" as const,
+              title: "Read",
+              status: "completed" as const,
+              timestamp: "2026-05-24T10:00:20.000Z",
+              updatedAt: "2026-05-24T10:00:20.000Z",
+            },
+          ],
+        }),
+      },
+      sessionTimelineStore: {
+        list: () => [
+          {
+            id: "user-1",
+            kind: "user_message" as const,
+            message: {
+              id: "user-1",
+              role: "user" as const,
+              text: "start",
+              timestamp: "2026-05-24T10:00:30.000Z",
+              timelineSequence: 1,
+            },
+            timestamp: "2026-05-24T10:00:30.000Z",
+            updatedAt: "2026-05-24T10:00:30.000Z",
+            timelineSequence: 1,
+          },
+          {
+            id: "assistant-1",
+            kind: "assistant_message" as const,
+            chunks: [{
+              id: "assistant-1:thinking",
+              kind: "thinking" as const,
+              text: "reasoning",
+              title: "Thinking",
+              status: "completed" as const,
+              timestamp: "2026-05-24T10:00:10.000Z",
+              updatedAt: "2026-05-24T10:00:10.000Z",
+            }],
+            timestamp: "2026-05-24T10:00:10.000Z",
+            updatedAt: "2026-05-24T10:00:10.000Z",
+          },
+          {
+            id: "tool:tool-1",
+            kind: "tool_call" as const,
+            toolCall: {
+              id: "tool-1",
+              kind: "read" as const,
+              title: "Read",
+              status: "completed" as const,
+              timestamp: "2026-05-24T10:00:20.000Z",
+              updatedAt: "2026-05-24T10:00:20.000Z",
+            },
+            timestamp: "2026-05-24T10:00:20.000Z",
+            updatedAt: "2026-05-24T10:00:20.000Z",
+          },
+          {
+            id: "assistant-1#p0",
+            kind: "assistant_message" as const,
+            chunks: [{
+              id: "assistant-1#p0:content",
+              kind: "content" as const,
+              text: "old done",
+              timestamp: "2026-05-24T10:00:40.000Z",
+              timelineSequence: 2,
+            }],
+            timestamp: "2026-05-24T10:00:40.000Z",
+            updatedAt: "2026-05-24T10:00:40.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; chunks?: Array<{ text: string }> }> };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => entry.id),
+    ["assistant-1", "tool:tool-1", "user-1", "assistant-1#p0"],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => entry.id),
+    ["assistant-1", "tool:tool-1", "user-1", "assistant-1#p0"],
+  );
+  assert.equal(result.timeline.at(-1)?.chunks?.[0]?.text, "new done");
+});
+
 test("session/list_messages replaces stale persisted timeline content with rebuilt entries", async () => {
   const sessionId = "session-stale-timeline-content";
   let replacedTimeline: any[] = [];
@@ -398,6 +531,79 @@ test("session/list_messages pages timeline by content messages instead of raw to
     ["assistant-intro", "tool-0", "tool-1", "tool-2", "tool-3", "assistant-final"],
   );
   assert.equal(result.timelineHasMore, false);
+});
+
+test("session/list_messages caps dense timeline entry pages", async () => {
+  const sessionId = "session-dense-entry-cap";
+  const timeline = [
+    {
+      id: "assistant-intro",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-intro:content",
+          kind: "content" as const,
+          text: "intro",
+          timestamp: "2026-05-24T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    ...Array.from({ length: 140 }, (_, index) => ({
+      id: `tool-${index}`,
+      kind: "tool_call" as const,
+      toolCall: {
+        id: `tool-${index}`,
+        kind: "read" as const,
+        title: `Read ${index}`,
+        status: "completed" as const,
+        timestamp: `2026-05-24T10:01:${String(index).padStart(2, "0")}.000Z`,
+        updatedAt: `2026-05-24T10:01:${String(index).padStart(2, "0")}.000Z`,
+        timelineSequence: index + 2,
+      },
+      timestamp: `2026-05-24T10:01:${String(index).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-05-24T10:01:${String(index).padStart(2, "0")}.000Z`,
+      timelineSequence: index + 2,
+    })),
+    {
+      id: "assistant-final",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-final:content",
+          kind: "content" as const,
+          text: "final",
+          timestamp: "2026-05-24T10:03:00.000Z",
+          timelineSequence: 142,
+        },
+      ],
+      timestamp: "2026-05-24T10:03:00.000Z",
+      updatedAt: "2026-05-24T10:03:00.000Z",
+      timelineSequence: 142,
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        listPage: () => ({ messages: [], hasMore: false }),
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean };
+
+  assert.equal(result.timeline.length, 96);
+  assert.equal(result.timeline[0]?.id, "tool-45");
+  assert.equal(result.timeline.at(-1)?.id, "assistant-final");
+  assert.equal(result.timelineHasMore, true);
 });
 
 test("session/reimport_history delegates to the history reimport service", async () => {

@@ -1,10 +1,25 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
+export function createNoStoreDevServerPlugin(): Plugin {
+  return {
+    name: "tiller-dev-no-store-cache",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        delete req.headers["if-none-match"];
+        delete req.headers["if-modified-since"];
+        res.setHeader("Cache-Control", "no-store");
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [createNoStoreDevServerPlugin(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -27,6 +42,9 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
+    headers: {
+      "Cache-Control": "no-store",
+    },
     port: 5173,
   },
 });

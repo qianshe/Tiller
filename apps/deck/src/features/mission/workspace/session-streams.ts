@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 
 type HistoryState = {
   hasMore: boolean;
@@ -16,7 +16,7 @@ export type WorkspaceSessionStreamHydrationInput = {
   sessionById: ReadonlyMap<string, SessionSummary>;
   messageHistoryState: Record<string, HistoryState | undefined>;
   activityHistoryState: Record<string, HistoryState | undefined>;
-  messagesBySession?: Record<string, AgentMessage[] | undefined>;
+  sessionTimelineBySession?: Record<string, SessionTimelineEntry[] | undefined>;
   outputsBySession?: Record<string, unknown[] | undefined>;
   toolCallsBySession?: Record<string, AgentToolCall[] | undefined>;
   checkedResumeSessionIds: ReadonlySet<string>;
@@ -27,7 +27,7 @@ export function buildSessionStreamHydrationPlan({
   sessionById,
   messageHistoryState,
   activityHistoryState,
-  messagesBySession,
+  sessionTimelineBySession,
   outputsBySession,
   toolCallsBySession,
   checkedResumeSessionIds,
@@ -35,7 +35,7 @@ export function buildSessionStreamHydrationPlan({
   const uniqueSessionIds = [...new Set(sessionIds)];
   return {
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
-      !messageHistoryState[sessionId] && !(messagesBySession?.[sessionId]?.length)
+      !messageHistoryState[sessionId] && !(sessionTimelineBySession?.[sessionId]?.length)
     )),
     activitySessionIds: uniqueSessionIds.filter((sessionId) => (
       !activityHistoryState[sessionId] &&

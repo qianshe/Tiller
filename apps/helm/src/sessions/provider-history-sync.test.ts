@@ -58,6 +58,62 @@ test("planProviderHistorySync skips unchanged provider history", () => {
   assert.equal(decision.nextState.latestMessageId, "provider-1");
 });
 
+test("planProviderHistorySync replaces when provider history gains timeline sequence metadata", () => {
+  const oldProviderMessages = [baseMessage("provider-1", "没有变化")];
+  const currentState = buildProviderHistoryState(
+    oldProviderMessages,
+    "2026-05-07T08:00:01.000Z",
+  );
+  const sequencedProviderMessages: AgentMessage[] = [
+    {
+      ...baseMessage("provider-1", "没有变化"),
+      timelineSequence: 7,
+    },
+  ];
+
+  const decision = planProviderHistorySync({
+    currentState,
+    providerMessages: sequencedProviderMessages,
+    syncedAt: "2026-05-07T08:00:02.000Z",
+  });
+
+  assert.equal(decision.action, "replace");
+  assert.deepEqual(decision.messages.map((message) => message.timelineSequence), [7]);
+});
+
+test("planProviderHistorySync replaces when provider history gains attachments", () => {
+  const oldProviderMessages: AgentMessage[] = [
+    { ...baseMessage("provider-user", "请看图"), role: "user" },
+  ];
+  const currentState = buildProviderHistoryState(
+    oldProviderMessages,
+    "2026-05-07T08:00:01.000Z",
+  );
+  const providerMessagesWithImage: AgentMessage[] = [
+    {
+      ...baseMessage("provider-user", "请看图"),
+      role: "user",
+      attachments: [
+        {
+          type: "image",
+          data: "iVBORw0KGgo=",
+          mimeType: "image/png",
+          name: "prompt.png",
+        },
+      ],
+    },
+  ];
+
+  const decision = planProviderHistorySync({
+    currentState,
+    providerMessages: providerMessagesWithImage,
+    syncedAt: "2026-05-07T08:00:02.000Z",
+  });
+
+  assert.equal(decision.action, "replace");
+  assert.deepEqual(decision.messages[0]?.attachments, providerMessagesWithImage[0]?.attachments);
+});
+
 test("planProviderHistorySync skips unchanged empty provider history", () => {
   const decision = planProviderHistorySync({
     currentState: {
@@ -190,21 +246,21 @@ test("toParagraphMessages keeps stable assistant paragraph ids and trims blank p
   );
 });
 
-test("toParagraphMessages assigns strictly increasing paragraph sequences", () => {
+test("toParagraphMessages keeps assistant paragraphs on the source message sequence", () => {
   const paragraphs = toParagraphMessages([
     {
       id: "assistant-1",
       role: "assistant",
-      text: "first paragraph\n\nsecond paragraph",
+      text: "first paragraph\n\nsecond paragraph\n\nthird paragraph",
       timestamp: "2026-05-28T00:00:00.000Z",
       timelineSequence: 10,
     },
   ]);
 
-  assert.equal(paragraphs.length, 2);
+  assert.equal(paragraphs.length, 3);
   assert.deepEqual(
     paragraphs.map((message) => message.timelineSequence),
-    [10, 11],
+    [10, 10, 10],
   );
 });
 
@@ -341,6 +397,55 @@ test("shouldRepairProviderHistorySnapshot detects persisted restore replay mixed
 
   assert.equal(
     shouldRepairProviderHistorySnapshot(pollutedLocalMessages, providerMessages),
+    true,
+  );
+});
+
+test("shouldRepairProviderHistorySnapshot detects matching paragraphs missing timeline sequence metadata", () => {
+  const providerMessages: AgentMessage[] = [
+    {
+      ...baseMessage("provider-1", "第一段\n\n第二段"),
+      timelineSequence: 10,
+    },
+  ];
+  const localMessagesWithoutSequence = toParagraphMessages([
+    baseMessage("provider-1", "第一段\n\n第二段"),
+  ]);
+
+  assert.equal(
+    shouldRepairProviderHistorySnapshot(localMessagesWithoutSequence, providerMessages),
+    true,
+  );
+});
+
+test("shouldRepairProviderHistorySnapshot detects matching user messages missing attachments", () => {
+  const providerMessages: AgentMessage[] = [
+    {
+      id: "provider-user",
+      role: "user",
+      text: "请看图",
+      timestamp: "2026-05-07T08:00:00.000Z",
+      attachments: [
+        {
+          type: "image",
+          data: "iVBORw0KGgo=",
+          mimeType: "image/png",
+          name: "prompt.png",
+        },
+      ],
+    },
+  ];
+  const localMessagesWithoutAttachments: AgentMessage[] = [
+    {
+      id: "provider-user",
+      role: "user",
+      text: "请看图",
+      timestamp: "2026-05-07T08:00:00.000Z",
+    },
+  ];
+
+  assert.equal(
+    shouldRepairProviderHistorySnapshot(localMessagesWithoutAttachments, providerMessages),
     true,
   );
 });

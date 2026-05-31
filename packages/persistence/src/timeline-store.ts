@@ -1,9 +1,10 @@
 import type { SessionTimelineEntry } from "@tiller/shared";
-import { sortSessionTimelineEntries } from "@tiller/shared";
+import { sortAssistantTimelineChunks } from "@tiller/shared";
 import { normalizePageLimit } from "./pagination";
 
 export type SessionTimelinePageOptions = {
   limit?: number;
+  entryLimit?: number;
   before?: string;
   window?: "entry" | "message";
 };
@@ -22,7 +23,7 @@ export function pageSessionTimeline(
   entries: SessionTimelineEntry[],
   options: SessionTimelinePageOptions = {},
 ): SessionTimelinePage {
-  const normalized = sortSessionTimelineEntries(entries);
+  const normalized = normalizeTimelineEntriesForPage(entries);
   const limit = normalizePageLimit(
     options.limit,
     DEFAULT_TIMELINE_PAGE_LIMIT,
@@ -30,7 +31,7 @@ export function pageSessionTimeline(
   );
   const endIndex = resolvePageEndIndex(normalized, options.before);
   const eligible = normalized.slice(0, endIndex);
-  const startIndex = resolvePageStartIndex(eligible, limit, options.window);
+  const startIndex = resolvePageStartIndex(eligible, limit, options);
   const page = eligible.slice(startIndex);
   const hasMore = startIndex > 0;
   return {
@@ -40,20 +41,34 @@ export function pageSessionTimeline(
   };
 }
 
+function normalizeTimelineEntriesForPage(entries: SessionTimelineEntry[]) {
+  return entries.map((entry) => entry.kind === "assistant_message"
+    ? { ...entry, chunks: sortAssistantTimelineChunks(entry.chunks) }
+    : entry,
+  );
+}
+
 function resolvePageStartIndex(
   entries: SessionTimelineEntry[],
   limit: number,
-  window: SessionTimelinePageOptions["window"] = "entry",
+  options: SessionTimelinePageOptions,
 ) {
-  if (window !== "message") {
+  if (options.window !== "message") {
     return Math.max(entries.length - limit, 0);
   }
 
   const messageIndexes = resolveMessageWindowAnchorIndexes(entries);
-  if (!messageIndexes.length) {
-    return Math.max(entries.length - limit, 0);
-  }
-  return messageIndexes[Math.max(messageIndexes.length - limit, 0)] ?? 0;
+  const messageStartIndex = messageIndexes.length
+    ? messageIndexes.length <= limit
+      ? 0
+      : messageIndexes[messageIndexes.length - limit] ?? 0
+    : Math.max(entries.length - limit, 0);
+  const entryLimit = normalizePageLimit(
+    options.entryLimit,
+    MAX_TIMELINE_PAGE_LIMIT,
+    MAX_TIMELINE_PAGE_LIMIT,
+  );
+  return Math.max(messageStartIndex, entries.length - entryLimit, 0);
 }
 
 function resolveMessageWindowAnchorIndexes(entries: SessionTimelineEntry[]) {

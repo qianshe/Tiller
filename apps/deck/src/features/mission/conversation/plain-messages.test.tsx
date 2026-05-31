@@ -322,6 +322,33 @@ test("plain messages renders all loaded timeline message blocks without manual l
   assert.doesNotMatch(html, />查看更多<\/button>/);
 });
 
+test("plain messages initially renders only the newest window for large loaded timelines", () => {
+  const timelineItems: SessionTimelineEntry[] = Array.from(
+    { length: 140 },
+    (_, index) => ({
+      id: `assistant-large-${index}`,
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: `assistant-large-${index}:content`,
+          kind: "content" as const,
+          text: `大历史消息 ${index}`,
+          timestamp: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
+          timelineSequence: index + 1,
+        },
+      ],
+      timestamp: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
+      timelineSequence: index + 1,
+    }),
+  );
+
+  const html = renderPlainMessages({ timelineItems });
+
+  assert.doesNotMatch(html, /大历史消息 0/);
+  assert.match(html, /大历史消息 139/);
+});
+
 test("plain messages can hide thinking cards without dropping normal messages", () => {
   const html = renderPlainMessages({
     items: [

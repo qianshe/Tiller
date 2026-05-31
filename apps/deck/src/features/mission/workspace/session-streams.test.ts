@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall, SessionSummary } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 import { buildSessionStreamHydrationPlan } from "./session-streams";
 
 const idleSession = {
@@ -34,7 +34,7 @@ test("buildSessionStreamHydrationPlan skips cached streams and deduplicates ids"
       [runningSession.id]: { hasMore: false, loading: false },
     },
     activityHistoryState: {},
-    messagesBySession: {},
+    sessionTimelineBySession: {},
     outputsBySession: {
       [runningSession.id]: [{ id: "output-1" }],
     },
@@ -59,7 +59,7 @@ test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
     sessionById: new Map([[idleSession.id, idleSession]]),
     messageHistoryState: {},
     activityHistoryState: {},
-    messagesBySession: { [idleSession.id]: [{ id: "message-1" }] as AgentMessage[] },
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
     outputsBySession: {},
     toolCallsBySession: { [idleSession.id]: [{ id: "tool-1" }] as AgentToolCall[] },
     checkedResumeSessionIds: new Set([idleSession.id]),
@@ -68,4 +68,34 @@ test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
   assert.deepEqual(plan.messageSessionIds, []);
   assert.deepEqual(plan.activitySessionIds, []);
   assert.deepEqual(plan.resumeCheckSessionIds, []);
+});
+
+test("buildSessionStreamHydrationPlan hydrates messages when timeline is missing", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {},
+    sessionTimelineBySession: {},
+    outputsBySession: {},
+    toolCallsBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan skips message hydration when timeline is cached", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {},
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
 });

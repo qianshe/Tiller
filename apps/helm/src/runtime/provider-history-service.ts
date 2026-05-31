@@ -1,13 +1,15 @@
 import { loadAdapterAuthoritativeHistory } from "@tiller/acp-runtime";
 import { resolveProviderById } from "@tiller/agent-registry";
-import type {
-  AcpAgentProvider,
-  AgentMessage,
-  AgentToolCall,
-  CommandChunk,
-  FileDiffSummary,
-  SessionSummary,
-  WorktreeSummary,
+import {
+  buildSessionTimelineFromLegacy,
+  type AcpAgentProvider,
+  type AgentMessage,
+  type AgentToolCall,
+  type CommandChunk,
+  type FileDiffSummary,
+  type SessionSummary,
+  type SessionTimelineEntry,
+  type WorktreeSummary,
 } from "@tiller/shared";
 import type { SessionRecord } from "./session-services";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
@@ -47,12 +49,17 @@ type SessionRuntimeStore = {
   upsert(descriptor: StoredSessionRuntimeDescriptor): void;
 };
 
+type SessionTimelineStore = {
+  replace(sessionId: string, entries: SessionTimelineEntry[]): SessionTimelineEntry[];
+};
+
 type ProviderHistoryServiceOptions = {
   sessions: Map<string, SessionRecord>;
   sessionStore: { list(): SessionSummary[] };
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
   sessionRuntimeStore: SessionRuntimeStore;
+  sessionTimelineStore?: SessionTimelineStore;
   getAgents(): AcpAgentProvider[];
   getWorktrees(): WorktreeSummary[];
   logInfo(message: string): void;
@@ -161,6 +168,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
             { preserveLocalThinking: true },
           ),
         );
+        persistLocalProviderHistoryTimeline(sessionId);
       }
       options.logInfo(
         `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
@@ -233,9 +241,26 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
         ),
       );
     }
+    persistLocalProviderHistoryTimeline(sessionId);
     options.logInfo(
       `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
     );
+  }
+
+  function persistLocalProviderHistoryTimeline(sessionId: string) {
+    if (!options.sessionTimelineStore) {
+      return;
+    }
+
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    const entries = buildSessionTimelineFromLegacy({
+      messages: options.sessionMessageStore.list(sessionId),
+      outputs: artifacts.outputs,
+      toolCalls: artifacts.toolCalls,
+    });
+    if (entries.length) {
+      options.sessionTimelineStore.replace(sessionId, entries);
+    }
   }
 
   function hasHistoryContent(history: ProviderHistorySnapshotContent) {

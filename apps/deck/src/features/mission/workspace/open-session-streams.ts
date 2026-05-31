@@ -26,7 +26,7 @@ export type OpenSessionStreamsOptions = {
   sessions: SessionSummary[];
   messageHistoryState: WorkspaceSessionStreamHydrationInput["messageHistoryState"];
   activityHistoryState: WorkspaceSessionStreamHydrationInput["activityHistoryState"];
-  messagesBySession: WorkspaceSessionStreamHydrationInput["messagesBySession"];
+  sessionTimelineBySession: WorkspaceSessionStreamHydrationInput["sessionTimelineBySession"];
   outputsBySession: WorkspaceSessionStreamHydrationInput["outputsBySession"];
   toolCallsBySession: WorkspaceSessionStreamHydrationInput["toolCallsBySession"];
   setMessageHistoryState: SessionStateSetter;
@@ -42,7 +42,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     sessions,
     messageHistoryState,
     activityHistoryState,
-    messagesBySession,
+    sessionTimelineBySession,
     outputsBySession,
     toolCallsBySession,
     setMessageHistoryState,
@@ -106,7 +106,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
       sessionById,
       messageHistoryState,
       activityHistoryState,
-      messagesBySession,
+      sessionTimelineBySession,
       outputsBySession,
       toolCallsBySession,
       checkedResumeSessionIds: openSessionResumeCheckRef.current,
@@ -161,7 +161,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     pairingState,
     messageHistoryState,
     activityHistoryState,
-    messagesBySession,
+    sessionTimelineBySession,
     outputsBySession,
     toolCallsBySession,
     sessions,

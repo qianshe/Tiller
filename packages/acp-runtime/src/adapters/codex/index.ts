@@ -1,6 +1,8 @@
 import type { AcpAgentAdapter } from "../types";
+import { loadProviderAuthoritativeHistory } from "../history-reader";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
+import { codexHistoryReader } from "./history";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
   return {
@@ -19,5 +21,7 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
       providerId: provider.id,
       message: "Codex ACP does not expose remote session deletion yet.",
     }),
+    loadAuthoritativeHistory: (context) =>
+      loadProviderAuthoritativeHistory(codexHistoryReader, context),
   };
 }

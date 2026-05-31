@@ -3,23 +3,40 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { normalizeLocalCommandMessageText } from "@tiller/shared";
-import type { AgentMessage, AgentToolCall, AgentToolCallKind } from "@tiller/shared";
+import type { AgentToolCallKind } from "@tiller/shared";
+import { collectHistoryImageAttachments } from "../history-content";
+import {
+  buildAuthoritativeHistoryFromEvents,
+  normalizeHistoryMessageRole,
+  stringFrom,
+  stringifyHistoryPayload,
+  type HistoryEvent,
+} from "../history-events";
+import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
+
+export const claudeCodeHistoryReader: ProviderHistoryReader<string> = {
+  read: ({ runtimeSessionId, cwd }) => readClaudeCodeHistorySource(runtimeSessionId, cwd),
+  toEvents: (raw) => parseClaudeCodeJsonlEvents(raw),
+};
 
 export async function loadClaudeCodeHistory(
   runtimeSessionId: string,
   cwd: string,
 ): Promise<AcpAuthoritativeHistory | null> {
-  const historyPath = resolveClaudeCodeHistoryPath(runtimeSessionId, cwd);
-  if (!existsSync(historyPath)) {
+  const raw = await readClaudeCodeHistorySource(runtimeSessionId, cwd);
+  if (!raw) {
     return null;
   }
-  return parseClaudeCodeJsonlHistory(await readFile(historyPath, "utf8"));
+  return parseClaudeCodeJsonlHistory(raw);
 }
 
 export function parseClaudeCodeJsonlHistory(raw: string): AcpAuthoritativeHistory {
-  const messages: AgentMessage[] = [];
-  const toolCalls = new Map<string, AgentToolCall>();
+  return buildAuthoritativeHistoryFromEvents(parseClaudeCodeJsonlEvents(raw));
+}
+
+function parseClaudeCodeJsonlEvents(raw: string): HistoryEvent[] {
+  const events: HistoryEvent[] = [];
 
   for (const line of raw.split(/\r?\n/u)) {
     const entry = parseJsonLine(line);
@@ -27,94 +44,45 @@ export function parseClaudeCodeJsonlHistory(raw: string): AcpAuthoritativeHistor
       continue;
     }
     const timestamp = stringFrom(entry.timestamp);
-    const role = normalizeMessageRole(entry.message?.role ?? entry.type);
+    const role = normalizeHistoryMessageRole(entry.message?.role ?? entry.type);
     const content = entry.message?.content;
-    const messageId = stringFrom(entry.uuid) ?? `claude:${messages.length + toolCalls.size}`;
+    const messageId = stringFrom(entry.uuid) ?? `claude:${events.length}`;
     if (!timestamp || !role) {
+      continue;
+    }
+
+    if (Array.isArray(content)) {
+      appendClaudeContentEvents({
+        content,
+        events,
+        messageId,
+        role,
+        timestamp,
+      });
       continue;
     }
 
     const text = collectClaudeText(content);
     if (text) {
-      messages.push({ id: messageId, role, text, timestamp });
-    }
-
-    for (const [index, part] of asArray(content).entries()) {
-      if (part?.type === "thinking") {
-        if (text) {
-          continue;
-        }
-        const thinking = stringFrom(part.thinking);
-        if (!thinking) {
-          continue;
-        }
-        const id = `${messageId}:thinking:${index}`;
-        toolCalls.set(id, {
-          id,
-          commandId: id,
-          kind: "think",
-          title: "Thinking",
-          status: "completed",
-          output: thinking,
-          timestamp,
-          updatedAt: timestamp,
-        });
-        continue;
-      }
-
-      if (part?.type === "tool_use") {
-        const id = stringFrom(part.id);
-        if (!id) {
-          continue;
-        }
-        const title = stringFrom(part.name) ?? "Tool";
-        toolCalls.set(id, {
-          id,
-          commandId: id,
-          kind: inferClaudeToolKind(title),
-          title,
-          status: "running",
-          ...(stringifyToolPayload(part.input) ? { input: stringifyToolPayload(part.input) } : {}),
-          timestamp,
-          updatedAt: timestamp,
-        });
-        continue;
-      }
-
-      if (part?.type === "tool_result") {
-        const id = stringFrom(part.tool_use_id);
-        if (!id) {
-          continue;
-        }
-        const existing = toolCalls.get(id);
-        const output = stringifyToolResult(part.content);
-        if (existing) {
-          toolCalls.set(id, {
-            ...existing,
-            status: part.is_error === true ? "failed" : "completed",
-            ...(output ? { output } : {}),
-            updatedAt: timestamp,
-          });
-        } else {
-          toolCalls.set(id, {
-            id,
-            commandId: id,
-            kind: "tool",
-            title: id,
-            status: part.is_error === true ? "failed" : "completed",
-            ...(output ? { output } : {}),
-            timestamp,
-            updatedAt: timestamp,
-          });
-        }
-      }
+      events.push({
+        kind: "message",
+        id: messageId,
+        role,
+        text,
+        timestamp,
+      });
     }
   }
 
-  return {
-    messages: sortByTimestamp(messages),
-    toolCalls: sortByTimestamp([...toolCalls.values()]),
-  };
+  return events;
+}
+
+async function readClaudeCodeHistorySource(runtimeSessionId: string, cwd: string) {
+  const historyPath = resolveClaudeCodeHistoryPath(runtimeSessionId, cwd);
+  if (!existsSync(historyPath)) {
+    return null;
+  }
+  return readFile(historyPath, "utf8");
 }
 
 function resolveClaudeCodeHistoryPath(runtimeSessionId: string, cwd: string) {
@@ -141,6 +109,104 @@ function parseJsonLine(line: string): any | null {
   }
 }
 
+function appendClaudeContentEvents({
+  content,
+  events,
+  messageId,
+  role,
+  timestamp,
+}: {
+  content: any[];
+  events: HistoryEvent[];
+  messageId: string;
+  role: "user" | "assistant" | "system";
+  timestamp: string;
+}) {
+  let textPartIndex = 0;
+  let pendingUserImages = role === "user" ? collectHistoryImageAttachments(content, messageId) : [];
+  for (const [index, part] of content.entries()) {
+    if (part?.type === "text") {
+      const text = normalizeClaudeText(part.text);
+      if (text) {
+        const attachments = pendingUserImages;
+        pendingUserImages = [];
+        events.push({
+          kind: "message",
+          id: resolveClaudeTextMessageId(messageId, textPartIndex),
+          role,
+          text,
+          timestamp,
+          ...(attachments.length ? { attachments } : {}),
+        });
+        textPartIndex += 1;
+      }
+      continue;
+    }
+
+    if (part?.type === "thinking") {
+      const thinking = stringFrom(part.thinking);
+      if (!thinking) {
+        continue;
+      }
+      const id = `${messageId}:thinking:${index}`;
+      events.push({
+        kind: "thinking",
+        id,
+        text: thinking,
+        timestamp,
+      });
+      continue;
+    }
+
+    if (part?.type === "tool_use") {
+      const id = stringFrom(part.id);
+      if (!id) {
+        continue;
+      }
+      const title = stringFrom(part.name) ?? "Tool";
+      events.push({
+        kind: "tool_call",
+        id,
+        toolKind: inferClaudeToolKind(title),
+        title,
+        status: "running",
+        ...(stringifyHistoryPayload(part.input) ? { input: stringifyHistoryPayload(part.input) } : {}),
+        timestamp,
+      });
+      continue;
+    }
+
+    if (part?.type === "tool_result") {
+      const id = stringFrom(part.tool_use_id);
+      if (!id) {
+        continue;
+      }
+      const output = stringifyToolResult(part.content);
+      events.push({
+        kind: "tool_result",
+        id,
+        status: part.is_error === true ? "failed" : "completed",
+        ...(output ? { output } : {}),
+        timestamp,
+      });
+    }
+  }
+
+  if (role === "user" && pendingUserImages.length) {
+    events.push({
+      kind: "message",
+      id: messageId,
+      role,
+      timestamp,
+      attachments: pendingUserImages,
+    });
+  }
+}
+
+function resolveClaudeTextMessageId(messageId: string, textPartIndex: number) {
+  return textPartIndex === 0 ? messageId : `${messageId}#p${textPartIndex}`;
+}
+
 function collectClaudeText(content: unknown) {
   const raw =
     typeof content === "string"
@@ -149,16 +215,16 @@ function collectClaudeText(content: unknown) {
           .filter((part) => part?.type === "text" && typeof part.text === "string")
           .map((part) => part.text)
           .join("");
-  const normalized = normalizeLocalCommandMessageText(raw);
+  return normalizeClaudeText(raw);
+}
+
+function normalizeClaudeText(raw: unknown) {
+  const normalized = normalizeLocalCommandMessageText(typeof raw === "string" ? raw : "");
   return shouldHideClaudeLocalCommandOutput(normalized) ? "" : normalized;
 }
 
 function shouldHideClaudeLocalCommandOutput(text: string) {
   return /^Set model to\b/iu.test(text);
-}
-
-function normalizeMessageRole(role: unknown): AgentMessage["role"] | null {
-  return role === "user" || role === "assistant" || role === "system" ? role : null;
 }
 
 function inferClaudeToolKind(toolName: string): AgentToolCallKind {
@@ -193,20 +259,6 @@ function inferClaudeToolKind(toolName: string): AgentToolCallKind {
   return "tool";
 }
 
-function stringifyToolPayload(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
 function stringifyToolResult(value: unknown) {
   if (typeof value === "string") {
     return value;
@@ -216,22 +268,12 @@ function stringifyToolResult(value: unknown) {
       .map((part) => (typeof part === "string" ? part : stringFrom(part?.text)))
       .filter(Boolean)
       .join("");
-    return text || stringifyToolPayload(value);
+    return text || stringifyHistoryPayload(value);
   }
-  return stringifyToolPayload(value);
+  return stringifyHistoryPayload(value);
 }
 
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringFrom(value: unknown) {
-  return typeof value === "string" ? value : undefined;
-}
-
-function sortByTimestamp<T extends { timestamp: string; id: string }>(items: T[]) {
-  return [...items].sort((left, right) => {
-    const delta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
-    return delta === 0 ? left.id.localeCompare(right.id) : delta;
-  });
-}

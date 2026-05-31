@@ -296,9 +296,6 @@ function compareMessageTimelineEntries(left: MessageTimelineEntry, right: Messag
   if (timelineDelta !== null) {
     return timelineDelta;
   }
-  if (hasMixedTimelineSequence(left.message, right.message)) {
-    return left.index - right.index;
-  }
   const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
   return timestampDelta === 0 ? left.index - right.index : timestampDelta;
 }
@@ -310,9 +307,6 @@ function compareTimelineItems(left: ConversationTimelineItem, right: Conversatio
   );
   if (timelineDelta !== null) {
     return timelineDelta;
-  }
-  if (hasMixedTimelineSequence(left, right) && left.sourceIndex !== undefined && right.sourceIndex !== undefined) {
-    return left.sourceIndex - right.sourceIndex;
   }
   const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
   if (timestampDelta !== 0) {
@@ -330,13 +324,6 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function hasMixedTimelineSequence(
-  left: { timelineSequence?: number },
-  right: { timelineSequence?: number },
-) {
-  return (left.timelineSequence === undefined) !== (right.timelineSequence === undefined);
 }
 
 function timelineKindRank(item: ConversationTimelineItem) {

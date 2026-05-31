@@ -1,10 +1,17 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import {
+  buildSessionTimelineFromLegacy,
+  type AgentMessage,
+  type AgentToolCall,
+  type AgentToolCallKind,
+  type CommandChunk,
+  type FileDiffSummary,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
 type ReplayBufferContext = Pick<
   HelmHandlerContext,
-  "sessionMessageStore" | "sessionArtifactStore" | "logInfo"
+  "sessionMessageStore" | "sessionArtifactStore" | "sessionTimelineStore" | "logInfo"
 >;
 
 export type RestoreReplayFlushCounts = {
@@ -65,6 +72,7 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
       if (diffs) {
         context.sessionArtifactStore.replaceDiffs(sessionId, diffs);
       }
+      persistReplayTimeline();
       const counts = {
         messages: messages.size,
         toolCalls: toolCalls.size,
@@ -81,6 +89,21 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
       return counts;
     },
   };
+
+  function persistReplayTimeline() {
+    if (!context.sessionTimelineStore) {
+      return;
+    }
+
+    const entries = buildSessionTimelineFromLegacy({
+      messages: Array.from(messages.values()),
+      outputs: Array.from(outputs.values()),
+      toolCalls: Array.from(toolCalls.values()),
+    });
+    if (entries.length) {
+      context.sessionTimelineStore.replace(sessionId, entries);
+    }
+  }
 }
 
 function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCall) {

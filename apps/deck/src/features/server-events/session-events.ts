@@ -511,10 +511,10 @@ function mergeTimelineEntries(
   current: SessionTimelineEntry[],
 ) {
   const seenIds = new Set(incoming.map((entry) => entry.id));
-  return sortSessionTimelineEntries([
+  return [
     ...incoming,
     ...current.filter((entry) => !seenIds.has(entry.id)),
-  ]);
+  ];
 }
 
 function appendTimelineMessage(

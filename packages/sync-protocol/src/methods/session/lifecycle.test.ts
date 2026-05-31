@@ -73,6 +73,31 @@ test("session/list returns paginated session summaries", () => {
 test("session/list_messages requires sessionId", () => {
   assert.equal(sessionListMessages.method, "session/list_messages");
   assert.throws(() => sessionListMessages.ParamsSchema.parse({}));
+  assert.deepEqual(
+    sessionListMessages.ParamsSchema.parse({
+      sessionId: "s1",
+      timelineBefore: "order\t1\ttimeline-1",
+    }),
+    { sessionId: "s1", timelineBefore: "order\t1\ttimeline-1" },
+  );
+  const result = sessionListMessages.ResultSchema.parse({
+    sessionId: "s1",
+    messages: [],
+    timeline: [
+      {
+        id: "timeline-1",
+        kind: "assistant_message",
+        chunks: [],
+        timestamp: "2026-05-24T10:00:00.000Z",
+        updatedAt: "2026-05-24T10:00:00.000Z",
+      },
+    ],
+    timelineNextCursor: "order\t1\ttimeline-1",
+    timelineHasMore: true,
+    timelineBefore: "order\t2\ttimeline-2",
+  });
+  assert.equal(result.timeline?.[0]?.id, "timeline-1");
+  assert.equal(result.timelineHasMore, true);
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {

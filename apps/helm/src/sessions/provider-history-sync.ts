@@ -165,7 +165,9 @@ function isSameStoredMessage(left: AgentMessage, right: AgentMessage) {
     left.id === right.id &&
     left.role === right.role &&
     left.timestamp === right.timestamp &&
-    left.text === right.text
+    left.text === right.text &&
+    left.timelineSequence === right.timelineSequence &&
+    attachmentSignature(left) === attachmentSignature(right)
   );
 }
 
@@ -185,7 +187,7 @@ function splitMessageIntoParagraphs(message: AgentMessage): AgentMessage[] {
     id: `${message.id}#p${index}`,
     text,
     ...(typeof message.timelineSequence === "number"
-      ? { timelineSequence: message.timelineSequence + index }
+      ? { timelineSequence: message.timelineSequence }
       : {}),
   }));
 }
@@ -207,8 +209,27 @@ function isSameProviderHistory(
 
 function hashProviderMessage(message: AgentMessage) {
   return stableHash(
-    `${message.id}\u001f${message.role}\u001f${message.timestamp}\u001f${message.text}`,
+    [
+      message.id,
+      message.role,
+      message.timestamp,
+      message.text,
+      message.timelineSequence ?? "",
+      attachmentSignature(message),
+    ].join("\u001f"),
   ).toString(16);
+}
+
+function attachmentSignature(message: AgentMessage) {
+  return (message.attachments ?? [])
+    .map((attachment) => [
+      attachment.type,
+      attachment.mimeType,
+      attachment.data,
+      attachment.uri ?? "",
+      attachment.name ?? "",
+    ].join("\u001e"))
+    .join("\u001d");
 }
 
 function stableHash(value: string) {

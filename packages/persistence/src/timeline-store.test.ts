@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
 import { pageSessionTimeline } from "./timeline-store";
@@ -111,6 +111,44 @@ test("timeline message window pagination includes tool entries between the lates
   assert.equal(page.hasMore, false);
 });
 
+test("timeline message window pagination caps dense entry pages", () => {
+  const entries = buildSessionTimelineFromLegacy({
+    messages: [
+      message({ id: "assistant-intro", role: "assistant", text: "intro", timelineSequence: 1 }),
+      message({ id: "assistant-final", role: "assistant", text: "final", timelineSequence: 142 }),
+    ],
+    toolCalls: Array.from({ length: 140 }, (_, index) =>
+      toolCall({
+        id: `tool-${index}`,
+        kind: "read",
+        status: "completed",
+        title: `Read ${index}`,
+        timelineSequence: index + 2,
+      }),
+    ),
+  });
+
+  const page = pageSessionTimeline(entries, {
+    entryLimit: 50,
+    limit: 2,
+    window: "message",
+  });
+  const olderPage = pageSessionTimeline(entries, {
+    before: page.nextCursor,
+    entryLimit: 50,
+    limit: 2,
+    window: "message",
+  });
+
+  assert.equal(page.entries.length, 50);
+  assert.equal(page.entries[0]?.id, "tool:tool-91");
+  assert.equal(page.entries.at(-1)?.id, "assistant-final");
+  assert.equal(page.hasMore, true);
+  assert.equal(olderPage.entries.length, 50);
+  assert.equal(olderPage.entries[0]?.id, "tool:tool-41");
+  assert.equal(olderPage.entries.at(-1)?.id, "tool:tool-90");
+});
+
 test("timeline message window pagination counts coalesced provider paragraphs as one message block", () => {
   const entries = buildSessionTimelineFromLegacy({
     messages: [
@@ -134,4 +172,136 @@ test("timeline message window pagination counts coalesced provider paragraphs as
   assert.equal(page.entries[0]?.id, "user-latest");
   assert.equal(page.entries.at(-1)?.id, "assistant-final#p29");
   assert.equal(page.hasMore, false);
+});
+
+test("timeline pagination preserves persisted order with partial sequence data", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: message({ id: "user-1", role: "user", text: "start", timelineSequence: 1, timestamp: at(30) }),
+      timestamp: at(30),
+      updatedAt: at(30),
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1:thinking",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:thinking",
+        kind: "thinking",
+        text: "reasoning",
+        title: "Thinking",
+        status: "completed",
+        timestamp: at(10),
+        updatedAt: at(10),
+      }],
+      timestamp: at(10),
+      updatedAt: at(10),
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-1",
+        kind: "read",
+        status: "completed",
+        title: "Read",
+        timestamp: at(20),
+        updatedAt: at(20),
+      },
+      timestamp: at(20),
+      updatedAt: at(20),
+    },
+    {
+      id: "assistant-1#p0",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1#p0:content",
+        kind: "content",
+        text: "done",
+        timestamp: at(40),
+        timelineSequence: 2,
+      }],
+      timestamp: at(40),
+      updatedAt: at(40),
+      timelineSequence: 2,
+    },
+  ];
+
+  const page = pageSessionTimeline(entries, {
+    limit: 10,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["user-1", "assistant-1:thinking", "tool:tool-1", "assistant-1#p0"],
+  );
+});
+
+test("timeline message window includes leading tool entries when anchors fit within limit", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1:thinking",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:thinking",
+        kind: "thinking",
+        text: "reasoning",
+        title: "Thinking",
+        status: "completed",
+        timestamp: at(10),
+        updatedAt: at(10),
+      }],
+      timestamp: at(10),
+      updatedAt: at(10),
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-1",
+        kind: "read",
+        status: "completed",
+        title: "Read",
+        timestamp: at(20),
+        updatedAt: at(20),
+      },
+      timestamp: at(20),
+      updatedAt: at(20),
+    },
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: message({ id: "user-1", role: "user", text: "start", timelineSequence: 1, timestamp: at(30) }),
+      timestamp: at(30),
+      updatedAt: at(30),
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1#p0",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1#p0:content",
+        kind: "content",
+        text: "done",
+        timestamp: at(40),
+        timelineSequence: 2,
+      }],
+      timestamp: at(40),
+      updatedAt: at(40),
+      timelineSequence: 2,
+    },
+  ];
+
+  const page = pageSessionTimeline(entries, {
+    limit: 10,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["assistant-1:thinking", "tool:tool-1", "user-1", "assistant-1#p0"],
+  );
 });

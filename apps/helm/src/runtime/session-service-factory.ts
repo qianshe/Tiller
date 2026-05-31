@@ -118,6 +118,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
+    sessionTimelineStore: options.sessionTimelineStore,
     getAgents: options.getAgents,
     getWorktrees: options.getWorktrees,
     logInfo: options.logInfo,
