@@ -272,6 +272,94 @@ test("plain messages reveals leading timeline details when all loaded messages f
   assert.doesNotMatch(html, />查看更多<\/button>/);
 });
 
+test("plain messages marks paged windows that start inside earlier context", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "assistant-thinking-only",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-thinking-only:thinking",
+            kind: "thinking",
+            text: "缺少上方正文上下文的 Thinking",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:00.000Z",
+            updatedAt: "2026-05-17T10:00:00.000Z",
+            timelineSequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "后续正文",
+            timestamp: "2026-05-17T10:00:01.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      },
+    ],
+    historyState: { hasMore: true, loading: false },
+  });
+
+  assert.match(html, /plain-history-boundary/);
+  assert.match(html, /上方还有上下文/);
+  assert.ok(html.indexOf("上方还有上下文") < html.indexOf("缺少上方正文上下文的 Thinking"));
+});
+
+test("plain messages does not mark paged windows that start at a normal message", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "user-start",
+        kind: "user_message",
+        message: {
+          id: "user-start",
+          role: "user",
+          text: "正常起点",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "回答",
+            timestamp: "2026-05-17T10:00:01.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      },
+    ],
+    historyState: { hasMore: true, loading: false },
+  });
+
+  assert.doesNotMatch(html, /plain-history-boundary/);
+  assert.match(html, /正常起点/);
+});
+
 test("plain messages counts coalesced provider paragraphs as one green-dot message block", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

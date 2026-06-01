@@ -176,8 +176,21 @@ export function PlainMessages({
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
   }
 
+  const startsInsideEarlierContext = Boolean(
+    historyState?.hasMore &&
+      visibleRenderMessages[0] &&
+      visibleRenderMessages[0].kind !== "message",
+  );
+
   return (
     <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_32px))] gap-4">
+      {startsInsideEarlierContext ? (
+        <div className="plain-history-boundary mx-auto flex w-full max-w-[min(620px,72%)] items-center gap-2 text-xs text-muted-foreground/70">
+          <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-border-ghost" />
+          <span className="shrink-0">上方还有上下文</span>
+          <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-border-ghost" />
+        </div>
+      ) : null}
       {visibleRenderMessages.map((renderItem, index) => {
         if (renderItem.kind === "thinking") {
           return (
