@@ -557,6 +557,71 @@ test("session/list_messages preserves local user attachments represented by prov
   ]);
 });
 
+test("session/get_artifacts projects active tool calls into the unified timeline", () => {
+  resetStore();
+  const existingAssistant: SessionTimelineEntry = {
+    id: "assistant-1",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "assistant-1:content",
+        kind: "content",
+        text: "我先检查文件。",
+        timestamp: "2026-05-24T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+    ],
+    timestamp: "2026-05-24T10:00:00.000Z",
+    updatedAt: "2026-05-24T10:00:00.000Z",
+    timelineSequence: 1,
+  };
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": [existingAssistant] },
+  });
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "session-1",
+      outputs: [
+        {
+          id: "output-1",
+          commandId: "command-1",
+          text: "stdout",
+          stream: "stdout",
+          timestamp: "2026-05-24T10:00:02.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      toolCalls: [
+        {
+          id: "call-1",
+          commandId: "command-1",
+          kind: "shell",
+          title: "Shell",
+          status: "running",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          updatedAt: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      diffs: [],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  const toolEntries = timeline.filter((entry) => entry.kind === "tool_call");
+  assert.equal(handled, true);
+  assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1", "tool:call-1"]);
+  assert.equal(toolEntries.length, 1);
+  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.status : undefined, "running");
+  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.output : undefined, "stdout");
+});
+
 test("session/list_messages preserves live streaming messages when initial history returns late", () => {
   resetStore();
   const loadedHistory: AgentMessage = {

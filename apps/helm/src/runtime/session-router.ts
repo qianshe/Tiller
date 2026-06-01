@@ -1,4 +1,10 @@
-import type { AgentPromptContent, SessionConfigOptionValue, SessionQueuedPrompt, SessionReasoningEffort } from "@tiller/shared";
+import type {
+  AgentPromptContent,
+  SessionConfigOptionValue,
+  SessionQueuedPrompt,
+  SessionReasoningEffort,
+  SessionSummary,
+} from "@tiller/shared";
 import { SendPromptUseCase } from "@tiller/core";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
@@ -75,6 +81,17 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
   });
 }
 
+function applyDispatchingUserPromptToSummary(
+  current: SessionSummary,
+  text: string,
+  timestamp: string,
+) {
+  return {
+    ...applyUserPromptToSummary(current, text, timestamp),
+    status: "running" as const,
+  };
+}
+
 export async function sendPromptImmediately(
   item: SessionQueuedPrompt,
   context: HelmHandlerContext,
@@ -113,7 +130,7 @@ export async function sendPromptImmediately(
     message: userMessage,
   });
   const updated = context.updateSessionSummary(item.sessionId, (current) =>
-    applyUserPromptToSummary(current, item.text, timestamp),
+    applyDispatchingUserPromptToSummary(current, item.text, timestamp),
   );
   if (updated) {
     createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
@@ -155,7 +172,7 @@ async function appendUserPromptMessage(
     message: userMessage,
   });
   const updated = context.updateSessionSummary(sessionId, (current) =>
-    applyUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
+    applyDispatchingUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
   );
   if (updated) {
     createSessionEventPublisher(context).sessionUpdate(sessionId, {

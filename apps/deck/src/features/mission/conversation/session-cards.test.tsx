@@ -37,13 +37,15 @@ test("SessionPreviewMessages renders session preview and restoring state", () =>
   assert.match(html, /restoring/);
 });
 
-test("SessionRestoreNotice renders restore title and message", () => {
+test("SessionRestoreNotice shows only the status word and keeps detail in tooltip", () => {
   const html = renderToStaticMarkup(
     <SessionRestoreNotice notice={{ title: "恢复中", message: "正在重连 ACP" }} />,
   );
 
   assert.match(html, /恢复中/);
-  assert.match(html, /正在重连 ACP/);
+  // 描述性细节仅保留在悬浮 tooltip（title 属性）中，不再出现在可见文案里
+  assert.match(html, /title="恢复中：正在重连 ACP"/);
+  assert.doesNotMatch(html, /恢复中 · 正在重连 ACP/);
 });
 
 test("DraftSessionCard renders selectable agent options", () => {
@@ -114,6 +116,49 @@ test("SessionCard shows distinct worktree name alongside project", () => {
   );
 
   assert.match(html, /Tiller\s*\/\s*feature-x/);
+});
+
+test("SessionCard renders the plain status inside a framed, tone-colored pill", () => {
+  const running = renderToStaticMarkup(
+    <SessionCard
+      session={session({ status: "running" })}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  // 普通状态与“工具执行中”一样进框：圆角 + 边框 + 背景，按 tone 着色，但不带呼吸点
+  assert.match(running, /mission-session-status-pill/);
+  assert.match(running, /rounded-full border/);
+  assert.match(running, /text-primary/);
+  assert.match(running, /运行中/);
+  assert.doesNotMatch(running, /wb-pulse[^"]*">[\s\S]*运行中/);
+
+  const idle = renderToStaticMarkup(
+    <SessionCard
+      session={session({ status: "idle" })}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(idle, /mission-session-status-pill/);
+  assert.match(idle, /text-muted-foreground/);
+  assert.match(idle, /空闲/);
 });
 
 test("SessionCard renders running tool status in the title bar", () => {

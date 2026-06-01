@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { submitPromptRequest } from "./prompt-submission.js";
 
+function flushPromises() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 function createDependencies(overrides: Record<string, unknown> = {}) {
   const dispatched: Array<{ method: string; params: unknown }> = [];
   const traces: unknown[] = [];
   const cleared: string[] = [];
+  const appended: unknown[] = [];
   const dependencies = {
     client: { socket: { readyState: 1 } },
     createSession: () => true,
@@ -17,10 +22,16 @@ function createDependencies(overrides: Record<string, unknown> = {}) {
       dispatched.push({ method, params });
       return Promise.resolve({});
     },
+    appendExistingSessionPrompt: (
+      sessionId: string,
+      text: string,
+      id: string,
+      images: unknown[],
+    ) => appended.push({ sessionId, text, id, images }),
     tracePromptSubmit: (input: unknown) => traces.push(input),
     ...overrides,
   } as any;
-  return { dependencies, dispatched, traces, cleared };
+  return { dependencies, dispatched, traces, cleared, appended };
 }
 
 test("submitPromptRequest dispatches existing-session prompts with a matching trace id", () => {
@@ -56,6 +67,74 @@ test("submitPromptRequest dispatches existing-session prompts with a matching tr
     },
   ]);
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
+});
+
+test("submitPromptRequest prepares an existing image session before dispatching the prompt", async () => {
+  let releasePrepare!: () => void;
+  const prepareGate = new Promise<void>((resolve) => {
+    releasePrepare = resolve;
+  });
+  const calls: string[] = [];
+  const image = {
+    type: "image" as const,
+    data: "data:image/png;base64,AAA",
+    mimeType: "image/png",
+    name: "screen.png",
+  };
+  const { dependencies, dispatched } = createDependencies({
+    prepareExistingSessionPrompt: async (sessionId: string) => {
+      calls.push(`prepare:${sessionId}`);
+      await prepareGate;
+      calls.push(`prepared:${sessionId}`);
+    },
+    appendExistingSessionPrompt: (
+      sessionId: string,
+      text: string,
+      id: string,
+      images: unknown[],
+    ) => {
+      calls.push(`append:${sessionId}:${text}:${id}:${images.length}`);
+    },
+    dispatch: (_client: unknown, method: string, params: unknown) => {
+      calls.push(`dispatch:${method}`);
+      dispatched.push({ method, params });
+      return Promise.resolve({});
+    },
+  });
+
+  const submitted = submitPromptRequest(
+    {
+      prompt: "  看这张图  ",
+      promptImages: [image],
+      activeSessionId: "session-1",
+    },
+    dependencies,
+  );
+
+  assert.equal(submitted, true);
+  assert.deepEqual(calls, ["append:session-1:看这张图:client-session-1:1", "prepare:session-1"]);
+  assert.deepEqual(dispatched, []);
+
+  releasePrepare();
+  await flushPromises();
+
+  assert.deepEqual(calls, [
+    "append:session-1:看这张图:client-session-1:1",
+    "prepare:session-1",
+    "prepared:session-1",
+    "dispatch:session/prompt",
+  ]);
+  assert.deepEqual(dispatched, [
+    {
+      method: "session/prompt",
+      params: {
+        sessionId: "session-1",
+        text: "看这张图",
+        content: [{ type: "text", text: "看这张图" }, image],
+        clientMessageId: "client-session-1",
+      },
+    },
+  ]);
 });
 
 test("submitPromptRequest preserves the no-session create path", () => {

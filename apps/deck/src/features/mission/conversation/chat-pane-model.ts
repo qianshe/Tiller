@@ -57,6 +57,28 @@ export function resolveSessionStatusTone(status: SessionSummary["status"]): "act
   }
 }
 
+/**
+ * Short, always-present status word for a session, shown in the chat window
+ * title bar so a running window is never left without a visible status.
+ */
+export function resolveSessionStatusLabel(status: SessionSummary["status"]): string {
+  switch (status) {
+    case "starting":
+      return "启动中";
+    case "running":
+      return "运行中";
+    case "waiting_for_permission":
+      return "等待审批";
+    case "error":
+      return "错误";
+    case "cancelled":
+      return "已取消";
+    case "idle":
+    default:
+      return "空闲";
+  }
+}
+
 export function formatSessionPreviewTime(value: string | undefined) {
   if (!value) {
     return "--:--";

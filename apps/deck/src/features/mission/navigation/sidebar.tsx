@@ -175,7 +175,6 @@ export function MissionSidebar({
     setSelectedProjectId(targetProject.id);
     setSelectedCwd(targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null);
     setSelectedAgentId(null);
-    setAgentPickerOpen(true);
     setExpandedMissionProjectIds(
       (current) => new Set([...current, targetProject.id]),
     );

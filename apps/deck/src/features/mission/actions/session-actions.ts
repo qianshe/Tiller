@@ -61,6 +61,12 @@ type SubmitPromptContext = {
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
   createClientUserMessageId: (sessionId: string) => string;
+  appendUserMessage: (
+    sessionId: string,
+    text: string,
+    id: string,
+    attachments: AgentPromptImageContent[],
+  ) => void;
   dispatch: DispatchToHelm;
 };
 
@@ -176,6 +182,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     setPrompt,
     setPromptImages,
     createClientUserMessageId,
+    appendUserMessage,
     dispatch,
   } = context;
 
@@ -199,8 +206,12 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
       setPrompt,
       setPromptImages,
       createClientUserMessageId,
+      appendExistingSessionPrompt: appendUserMessage,
       dispatch,
       tracePromptSubmit: traceDeckPromptSubmit,
+      prepareExistingSessionPrompt: async (sessionId) => {
+        await dispatch(client, "session/subscribe", { sessionId });
+      },
     },
   );
 }

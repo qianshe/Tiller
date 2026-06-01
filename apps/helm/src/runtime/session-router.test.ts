@@ -6,11 +6,12 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
+import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../handlers/context";
 import { sendPromptToSession, drainPromptQueue } from "./session-router";
 import { createSessionPromptQueueManager } from "./session-prompt-queue";
 import { createLiveMessageBuffer } from "./live-message-buffer";
-import { flushLiveAssistantMessage } from "./events";
+import { flushLiveAssistantMessage, handleRuntimeEvent } from "./events";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -22,6 +23,12 @@ function deferred<T>() {
 
 function flushPromises() {
   return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+async function waitForPromptSettled(context: HelmHandlerContext, sessionId: string) {
+  for (let attempt = 0; attempt < 10 && context.promptQueue.hasInFlight(sessionId); attempt += 1) {
+    await flushPromises();
+  }
 }
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -101,11 +108,18 @@ function createContext(options: {
     },
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
       currentSummary = mutate(currentSummary);
+      const record = sessions.get(_sessionId);
+      if (record) {
+        record.summary = currentSummary;
+      }
       return currentSummary;
     },
     hydrateSessionSummary: (next: SessionSummary) => next,
     sessionStore: { list: () => [currentSummary] },
     broadcastNotification: (method: string, params: any) => broadcasts.push({ method, params }),
+    broadcastSessionTopic: (_sessionId: string, method: string, params: any) => {
+      broadcasts.push({ method, params });
+    },
     startSessionResume: async () => {
       if (!options.restoreOk || !options.restoreRuntime) {
         return {
@@ -271,6 +285,41 @@ test("sendPromptToSession acknowledges before a long ACP prompt completes", asyn
   gate.resolve();
   await flushPromises();
   assert.equal(context.promptQueue.hasInFlight("session-1"), false);
+});
+
+test("sendPromptToSession accepts new runtime status after a previous error", async () => {
+  const { context, broadcasts } = createContext({
+    summary: { status: "error" },
+    activeRuntime: {
+      prompt: async () => {
+        handleRuntimeEvent(
+          "session-1",
+          {
+            type: "status",
+            status: "running",
+            message: "retry started",
+          } satisfies SessionRuntimeEvent,
+          context,
+        );
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "重新执行", clientMessageId: "client-retry" },
+    context,
+  );
+  await waitForPromptSettled(context, "session-1");
+
+  assert.equal(
+    broadcasts.some(
+      (item) => item.method === "session/update"
+        && item.params.update.kind === "status_change"
+        && item.params.update.status === "running",
+    ),
+    true,
+  );
 });
 
 test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {

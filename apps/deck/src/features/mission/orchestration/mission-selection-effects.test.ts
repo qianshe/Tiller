@@ -59,28 +59,21 @@ test("mission draft composer waits for ACP connection before creating a session"
 test("mission draft agent selection resets model before creating an ACP session", () => {
   assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
   assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
-  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "agent\/connect"/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/draft"/);
 });
 
-test("mission project plus owns the ACP picker and selected agent connects before showing composer", () => {
-  assert.match(sidebarSourceText, /mission-tree-agent-menu/);
+test("mission project plus opens only the draft window without a sidebar agent dropdown", () => {
+  // 新建任务仅打开草稿小窗口（Agent 选择在小窗口内完成），不再渲染侧边栏 Agent 下拉框
   assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
+  assert.match(sidebarSourceText, /openDraftChatWindow\(\{/);
+  assert.doesNotMatch(sidebarSourceText, /mission-tree-agent-menu/);
+  assert.doesNotMatch(sidebarSourceText, /setAgentPickerOpen\(true\)/);
   assert.match(composerShellSourceText, /aria-label="打开任务设置"/);
   assert.match(composerShellSourceText, />\s*⋯\s*<\/Button>/);
-  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
-  assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
-  assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean/);
   assert.match(worktreeSourceText, /正在连接 ACP/);
-});
-
-test("mission mobile jumps to chat after selecting an ACP agent from project new task", () => {
-  assert.match(sidebarSourceText, /setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>/);
-  assert.match(sidebarSourceText, /setSelectedMissionMobilePane\("chat"\)/);
-  assert.match(worktreeSourceText, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
 });
 
 test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {

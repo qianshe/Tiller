@@ -192,7 +192,10 @@ function upsertToolCallEntry(
   toolCall: AgentToolCall,
 ): SessionTimelineEntry[] {
   const id = `tool:${toolCall.id}`;
-  const existingIndex = entries.findIndex((entry) => entry.id === id && entry.kind === "tool_call");
+  const existingIndex = entries.findIndex((entry) =>
+    entry.kind === "tool_call" &&
+    (entry.id === id || isSameToolCommand(entry.toolCall, toolCall)),
+  );
   const entry: SessionTimelineToolCallEntry = {
     id,
     kind: "tool_call",
@@ -304,6 +307,8 @@ function mergeToolCallEntry(
       ...current.toolCall,
       ...incoming.toolCall,
       id: current.toolCall.id,
+      title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
+      status: resolveMergedToolCallStatus(current.toolCall.status, incoming.toolCall.status),
       input: mergeOptionalText(current.toolCall.input, incoming.toolCall.input),
       output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
       timestamp: current.toolCall.timestamp,
@@ -312,6 +317,34 @@ function mergeToolCallEntry(
     timestamp: current.timestamp,
     timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
   };
+}
+
+function isSameToolCommand(left: AgentToolCall, right: AgentToolCall) {
+  if (left.commandId && right.commandId && left.commandId === right.commandId) {
+    return true;
+  }
+  return (
+    Boolean(left.commandId && left.commandId === right.id) ||
+    Boolean(right.commandId && right.commandId === left.id)
+  );
+}
+
+function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolCall) {
+  const incomingTitle = incoming.title.trim();
+  if (!incomingTitle || incomingTitle === incoming.id || incomingTitle === incoming.commandId) {
+    return current.title;
+  }
+  return incoming.title;
+}
+
+function resolveMergedToolCallStatus(
+  current: AgentToolCall["status"],
+  incoming: AgentToolCall["status"],
+) {
+  if ((current === "completed" || current === "failed") && incoming === "running") {
+    return current;
+  }
+  return incoming;
 }
 
 function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {

@@ -303,7 +303,11 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /<MissionToolLoadingTitle \{\.\.\.toolLoading\} \/>/);
   assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(singleSession\)\}/);
   assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(session\)\}/);
-  assert.match(chatPaneSource, /<StatusDot tone=\{statusTone\} pulse=\{isStreaming\} \/>/);
+  assert.match(chatPaneSource, /<StatusDot tone=\{statusTone\} \/>/);
+  // 普通状态走与工具执行中同款的状态框（pill），而非裸文字
+  assert.match(chatPaneSource, /<SessionStatusPill status=\{session\.status\} \/>/);
+  assert.match(chatPaneSource, /mission-session-status-pill/);
+  assert.match(chatPaneSource, /data-session-status-label/);
   assert.match(chatPaneSource, /onRename=\{onRenameSession\}/);
   assert.match(chatPaneSource, /onClear=\{onClearSession\}/);
   assert.doesNotMatch(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
@@ -341,7 +345,8 @@ test("mission sidebar exposes search and new-task actions in the header", () => 
   assert.match(sidebarSource, /aria-label="搜索任务"/);
   assert.match(sidebarSource, /aria-label="新建任务"/);
   assert.match(sidebarSource, /wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务/);
-  assert.match(sidebarSource, /setAgentPickerOpen\(true\)/);
+  // 新建任务只弹出草稿小窗口，不再打开侧边栏 Agent 下拉框
+  assert.doesNotMatch(sidebarSource, /setAgentPickerOpen\(true\)/);
   assert.match(sidebarSource, /openDraftChatWindow\(\{/);
   assert.match(sidebarProjectNodeSource, /openDraftChatWindow\(\{/);
   assert.match(sidebarSource, /runtimeOverviewItems\.length/);

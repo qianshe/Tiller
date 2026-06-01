@@ -193,6 +193,7 @@ export function useSessionCommandActions({
       setPrompt,
       setPromptImages,
       createClientUserMessageId,
+      appendUserMessage,
       dispatch,
     });
   }

@@ -28,8 +28,15 @@ export type PromptSubmissionDependencies = {
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
   createClientUserMessageId: (sessionId: string) => string;
+  appendExistingSessionPrompt: (
+    sessionId: string,
+    text: string,
+    id: string,
+    images: AgentPromptImageContent[],
+  ) => void;
   dispatch: DispatchToHelm;
   tracePromptSubmit?: (input: PromptSubmitTraceInput) => void;
+  prepareExistingSessionPrompt?: (sessionId: string) => Promise<void>;
 };
 
 export function buildPromptContent(
@@ -68,20 +75,39 @@ export function submitPromptRequest(
     return false;
   }
 
-  const clientMessageId = dependencies.createClientUserMessageId(input.activeSessionId);
+  const activeSessionId = input.activeSessionId;
+  const clientMessageId = dependencies.createClientUserMessageId(activeSessionId);
   dependencies.tracePromptSubmit?.({
     traceId: clientMessageId,
-    sessionId: input.activeSessionId,
+    sessionId: activeSessionId,
     text: messageText,
     imageCount: input.promptImages.length,
   });
   dependencies.setPrompt("");
   dependencies.setPromptImages([]);
-  void dependencies.dispatch(dependencies.client, "session/prompt", {
-    sessionId: input.activeSessionId,
+  dependencies.appendExistingSessionPrompt(
+    activeSessionId,
+    messageText,
+    clientMessageId,
+    [...input.promptImages],
+  );
+  const dispatchPrompt = () => dependencies.dispatch(dependencies.client, "session/prompt", {
+    sessionId: activeSessionId,
     text: messageText,
     content,
     clientMessageId,
   });
+  if (dependencies.prepareExistingSessionPrompt) {
+    void (async () => {
+      try {
+        await dependencies.prepareExistingSessionPrompt?.(activeSessionId);
+      } catch {
+        // Best effort: a missed subscription should not block the prompt itself.
+      }
+      await dispatchPrompt();
+    })();
+  } else {
+    void dispatchPrompt();
+  }
   return true;
 }

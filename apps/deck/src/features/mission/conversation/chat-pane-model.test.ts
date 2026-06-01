@@ -3,6 +3,7 @@ import test from "node:test";
 import type { SessionTimelineEntry } from "@tiller/shared";
 import {
   formatSessionPreviewTime,
+  resolveSessionStatusLabel,
   resolveSessionStatusTone,
   resolveSessionStreamContentLength,
   splitMissionToolCalls,
@@ -24,6 +25,15 @@ test("resolveSessionStatusTone maps session statuses", () => {
   assert.equal(resolveSessionStatusTone("waiting_for_permission" as any), "warning");
   assert.equal(resolveSessionStatusTone("error" as any), "danger");
   assert.equal(resolveSessionStatusTone("idle" as any), "idle");
+});
+
+test("resolveSessionStatusLabel maps every session status to a short word", () => {
+  assert.equal(resolveSessionStatusLabel("starting" as any), "启动中");
+  assert.equal(resolveSessionStatusLabel("running" as any), "运行中");
+  assert.equal(resolveSessionStatusLabel("waiting_for_permission" as any), "等待审批");
+  assert.equal(resolveSessionStatusLabel("idle" as any), "空闲");
+  assert.equal(resolveSessionStatusLabel("error" as any), "错误");
+  assert.equal(resolveSessionStatusLabel("cancelled" as any), "已取消");
 });
 
 test("formatSessionPreviewTime returns placeholder for missing or invalid values", () => {

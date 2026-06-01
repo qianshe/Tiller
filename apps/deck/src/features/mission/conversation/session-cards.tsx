@@ -9,6 +9,7 @@ import {
 import { cn } from "../../../shared/utils/cn";
 import {
   formatSessionPreviewTime,
+  resolveSessionStatusLabel,
   resolveSessionStatusTone,
 } from "./chat-pane-model";
 import {
@@ -56,6 +57,36 @@ export function formatProjectWorktreeLabel(
   return projectName;
 }
 
+const SESSION_STATUS_PILL_TONES: Record<
+  ReturnType<typeof resolveSessionStatusTone>,
+  string
+> = {
+  active: "border-success/25 bg-success/10 text-success",
+  idle: "border-border-ghost bg-surface-sunken text-muted-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+  primary: "border-primary/20 bg-primary/10 text-primary",
+};
+
+/**
+ * Title-bar status chip mirroring the tool-loading pill so a session's
+ * running / idle / error state shares the same framed look. No pulsing dot
+ * here — liveness stays owned by the title-bar StatusDot.
+ */
+export function SessionStatusPill({ status }: { status: SessionSummary["status"] }) {
+  return (
+    <span
+      className={cn(
+        "mission-session-status-pill flex min-w-0 items-center rounded-full border px-2 py-0.5 text-2xs font-medium",
+        SESSION_STATUS_PILL_TONES[resolveSessionStatusTone(status)],
+      )}
+      data-session-status-label
+    >
+      <span className="truncate">{resolveSessionStatusLabel(status)}</span>
+    </span>
+  );
+}
+
 export function SessionCard({
   session,
   active,
@@ -85,7 +116,6 @@ export function SessionCard({
   flat?: boolean;
   children: ReactNode;
 }) {
-  const isStreaming = session.status === "running";
   const statusTone = resolveSessionStatusTone(session.status);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
@@ -134,9 +164,13 @@ export function SessionCard({
         </span>
         {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
         <div className="min-w-0 flex-1">
-          {toolLoading ? <MissionToolLoadingTitle {...toolLoading} /> : null}
+          {toolLoading ? (
+            <MissionToolLoadingTitle {...toolLoading} />
+          ) : restoreNotice ? null : (
+            <SessionStatusPill status={session.status} />
+          )}
         </div>
-        <StatusDot tone={statusTone} pulse={isStreaming} />
+        <StatusDot tone={statusTone} />
         <div className="relative">
           <button
             type="button"
@@ -243,7 +277,7 @@ export function SessionRestoreNotice({ notice }: { notice: SessionRestoreNotice 
       data-session-restore-notice
       title={`${notice.title}：${notice.message}`}
     >
-      {notice.title} · {notice.message}
+      {notice.title}
     </span>
   );
 }

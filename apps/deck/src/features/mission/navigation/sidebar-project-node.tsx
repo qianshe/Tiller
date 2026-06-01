@@ -134,47 +134,16 @@ export function SidebarProjectNode({
             setSelectedProjectId(project.id);
             setSelectedCwd(project.path ?? project.worktrees?.[0]?.path ?? null);
             setSelectedAgentId(null);
-            setAgentPickerOpen(true);
             setExpandedMissionProjectIds(
               (current) => new Set([...current, project.id]),
             );
             setActiveSessionId(null);
           }}
           aria-label={`在 ${project.name} 下新建任务`}
-          aria-haspopup="listbox"
-          aria-expanded={selectedProject && agentPickerOpen}
           title="新建任务"
         >
           ＋
         </Button>
-        {selectedProject && agentPickerOpen ? (
-          <div
-            className="mission-tree-agent-menu absolute right-0 top-full z-50 mt-2 grid min-w-40 gap-1 rounded-lg border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
-            role="listbox"
-            aria-label="选择 ACP Agent"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            {agents.map((agent) => (
-              <button
-                key={agent.id}
-                type="button"
-                role="option"
-                aria-selected={agent.id === selectedAgentId}
-                className={cn(
-                  "px-2.5 py-1.5 text-left text-section text-foreground transition hover:bg-surface-emphasis hover:text-primary",
-                  agent.id === selectedAgentId && "active bg-surface-emphasis/60 text-primary",
-                )}
-                onClick={() => {
-                  setAgentPickerOpen(false);
-                  selectDraftAgent(agent.id);
-                  setSelectedMissionMobilePane("chat");
-                }}
-              >
-                {agent.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
       {projectExpanded ? (
         <div

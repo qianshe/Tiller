@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentToolCall } from "./types";
-import { buildSessionTimelineFromLegacy } from "./session-timeline";
+import type { SessionTimelineEntry } from "./session-timeline";
+import {
+  appendToolCallToSessionTimeline,
+  buildSessionTimelineFromLegacy,
+} from "./session-timeline";
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
 
@@ -100,4 +104,31 @@ test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks
     timeline[2]?.kind === "tool_call" ? timeline[2].toolCall.kind : undefined,
     "search",
   );
+});
+
+test("appendToolCallToSessionTimeline merges tool output updates by command id", () => {
+  const entries: SessionTimelineEntry[] = [];
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-1",
+    commandId: "command-1",
+    kind: "shell",
+    status: "running",
+    title: "Shell",
+    timelineSequence: 1,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "tool-command-1",
+    commandId: "command-1",
+    kind: "shell",
+    output: "stdout",
+    status: "running",
+    title: "command-1",
+    timelineSequence: 1,
+  }));
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(entries[0]?.kind === "tool_call" ? entries[0].id : undefined, "tool:call-1");
+  assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.id : undefined, "call-1");
+  assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.output : undefined, "stdout");
 });

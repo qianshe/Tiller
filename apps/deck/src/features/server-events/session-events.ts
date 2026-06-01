@@ -10,6 +10,7 @@ import type {
 } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
+  appendToolCallToSessionTimeline,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
 import { toast } from "../toast";
@@ -325,7 +326,12 @@ export function applySessionResult(
       }));
       return true;
     }
-    case "session/get_artifacts":
+    case "session/get_artifacts": {
+      const outputToolCalls = payload.outputs.map(commandChunkToToolCall);
+      const artifactToolCalls = [
+        ...(payload.toolCalls ?? []),
+        ...outputToolCalls,
+      ];
       store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
@@ -335,9 +341,10 @@ export function applySessionResult(
       }));
       pruneActiveThinkingToolCalls(payload.sessionId, toolCallsRef, store);
       mergeSessionToolCalls(payload.sessionId, [
-        ...payload.outputs.map(commandChunkToToolCall),
+        ...outputToolCalls,
         ...(payload.toolCalls ?? []),
       ]);
+      appendToolCallsToSessionTimeline(store, payload.sessionId, artifactToolCalls);
       store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.diffs,
@@ -351,6 +358,7 @@ export function applySessionResult(
         },
       }));
       return true;
+    }
     case "session/reimport_history": {
       const reimportState = deriveSessionReimportState(payload as any);
       store.setMessages((current) => ({
@@ -505,6 +513,26 @@ export function applySessionResult(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function appendToolCallsToSessionTimeline(
+  store: DeckStore,
+  sessionId: string,
+  toolCalls: AgentToolCall[],
+) {
+  if (!toolCalls.length) {
+    return;
+  }
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    for (const toolCall of toolCalls) {
+      appendToolCallToSessionTimeline(entries, toolCall);
+    }
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
 
 function mergeTimelineEntries(
   incoming: SessionTimelineEntry[],

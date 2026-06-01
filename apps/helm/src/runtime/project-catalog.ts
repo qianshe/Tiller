@@ -3,7 +3,6 @@ import { basename, resolve } from "node:path";
 import {
   listAvailableHelms as listConfiguredHelms,
   listAvailableProjects as listConfiguredProjects,
-  readTillerConfig,
 } from "@tiller/agent-registry";
 import type { HelmSummary, ProjectSummary, WorktreeSummary } from "@tiller/shared";
 
@@ -35,7 +34,7 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
 
   function loadAvailableWorktrees() {
     const configuredWorktrees = dedupeWorktrees(
-      readTillerConfig(options.configPath).worktrees ?? [],
+      listConfiguredProjects(options.configPath).flatMap(projectWorktrees),
     );
     if (configuredWorktrees.length) {
       return configuredWorktrees;
@@ -110,14 +109,37 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
   };
 }
 
+function projectWorktrees(project: ProjectSummary): WorktreeSummary[] {
+  if (project.worktrees?.length) {
+    return project.worktrees;
+  }
+  if (!project.path) {
+    return [];
+  }
+  return [
+    {
+      name: basename(normalizeWorktreePath(project.path)),
+      path: normalizeWorktreePath(project.path),
+      branch: project.gitCurrentBranch,
+      kind: "root",
+      summary: project.summary,
+    },
+  ];
+}
+
+function normalizeWorktreePath(path: string) {
+  return path.replace(/\\/g, "/");
+}
+
 function dedupeWorktrees(items: WorktreeSummary[]) {
   const seen = new Set<string>();
   const next: WorktreeSummary[] = [];
   for (const item of items) {
-    if (seen.has(item.path)) {
+    const key = normalizeWorktreePath(item.path).toLowerCase();
+    if (seen.has(key)) {
       continue;
     }
-    seen.add(item.path);
+    seen.add(key);
     next.push(item);
   }
   return next;
