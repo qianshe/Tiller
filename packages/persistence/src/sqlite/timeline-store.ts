@@ -1,5 +1,10 @@
-import type { SessionTimelineEntry } from "@tiller/shared";
-import { sortAssistantTimelineChunks, sortSessionTimelineEntries } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import {
+  appendMessageToSessionTimeline,
+  appendToolCallToSessionTimeline,
+  sortAssistantTimelineChunks,
+  sortSessionTimelineEntries,
+} from "@tiller/shared";
 import { normalizePageLimit } from "../pagination";
 import {
   pageSessionTimeline,
@@ -18,6 +23,12 @@ export function createSqliteSessionTimelineStore(dbPath: string) {
     append(sessionId: string, entry: SessionTimelineEntry) {
       upsertSessionTimelineEntry(db, sessionId, entry);
       return listSessionTimelineEntries(db, sessionId);
+    },
+    upsertMessage(sessionId: string, message: AgentMessage) {
+      return upsertSessionTimelineMessage(db, sessionId, message);
+    },
+    upsertToolCall(sessionId: string, toolCall: AgentToolCall) {
+      return upsertSessionTimelineToolCall(db, sessionId, toolCall);
     },
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
       const next = sortSessionTimelineEntries(entries);
@@ -148,6 +159,61 @@ function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
     .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
     .filter(isNotNull)
     .map(normalizePersistedTimelineEntry);
+}
+
+function getSessionTimelineEntry(
+  db: DatabaseSync,
+  sessionId: string,
+  entryId: string,
+) {
+  const row = db
+    .prepare("SELECT payload_json FROM session_timeline_entries WHERE session_id = ? AND id = ?")
+    .get(sessionId, entryId) as { payload_json: string } | undefined;
+  const parsed = row ? parseJson<SessionTimelineEntry>(row.payload_json) : null;
+  return parsed ? normalizePersistedTimelineEntry(parsed) : undefined;
+}
+
+function upsertSessionTimelineMessage(
+  db: DatabaseSync,
+  sessionId: string,
+  message: AgentMessage,
+) {
+  const existing = getSessionTimelineEntry(db, sessionId, message.id);
+  const entries = appendMessageToSessionTimeline(existing ? [existing] : [], message);
+  const entry = entries.find((candidate) => candidate.id === message.id);
+  if (!entry) {
+    return undefined;
+  }
+  upsertSessionTimelineEntry(db, sessionId, entry);
+  return normalizePersistedTimelineEntry(entry);
+}
+
+function upsertSessionTimelineToolCall(
+  db: DatabaseSync,
+  sessionId: string,
+  toolCall: AgentToolCall,
+) {
+  const entryId = resolveToolCallTimelineEntryId(toolCall);
+  const existing = getSessionTimelineEntry(db, sessionId, entryId);
+  const entries = appendToolCallToSessionTimeline(existing ? [existing] : [], toolCall);
+  const entry = entries.find((candidate) => candidate.id === entryId);
+  if (!entry) {
+    return undefined;
+  }
+  upsertSessionTimelineEntry(db, sessionId, entry);
+  return normalizePersistedTimelineEntry(entry);
+}
+
+function resolveToolCallTimelineEntryId(toolCall: AgentToolCall) {
+  if (toolCall.kind === "think") {
+    const sourceId = toolCall.commandId ?? toolCall.id;
+    return stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
+  }
+  return `tool:${toolCall.id}`;
+}
+
+function stripThinkingSuffix(value: string) {
+  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
 }
 
 function upsertSessionTimelineEntry(

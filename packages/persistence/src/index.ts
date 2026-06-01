@@ -7,6 +7,8 @@ export * from "./pagination";
 export * from "./runtime-store";
 export * from "./session-stores";
 export * from "./summary/store";
+export * from "./timeline-block-codec";
+export * from "./timeline-block-store";
 export * from "./timeline-store";
 export {
   createSqliteSessionArtifactStore,
@@ -20,3 +22,4 @@ export {
 } from "./sqlite/store";
 export { createSqliteSessionAttachmentStore } from "./sqlite/attachment-store";
 export { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
+export { createSqliteTimelineBlockStore } from "./sqlite/timeline-block-store";

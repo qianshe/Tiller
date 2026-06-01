@@ -14,6 +14,9 @@ export function persistTimelineMessage(
   if (!context.sessionTimelineStore) {
     return undefined;
   }
+  if (typeof context.sessionTimelineStore.upsertMessage === "function") {
+    return context.sessionTimelineStore.upsertMessage(sessionId, message);
+  }
   const entries = context.sessionTimelineStore.list(sessionId);
   appendMessageToSessionTimeline(entries, message);
   return replaceTimelineEntries(context, sessionId, entries, resolveMessageEntryId(message));
@@ -26,6 +29,9 @@ export function persistTimelineToolCall(
 ) {
   if (!context.sessionTimelineStore) {
     return undefined;
+  }
+  if (typeof context.sessionTimelineStore.upsertToolCall === "function") {
+    return context.sessionTimelineStore.upsertToolCall(sessionId, toolCall);
   }
   const entries = context.sessionTimelineStore.list(sessionId);
   appendToolCallToSessionTimeline(entries, toolCall);

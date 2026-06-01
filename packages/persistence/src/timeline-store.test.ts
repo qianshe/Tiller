@@ -84,6 +84,124 @@ test("sqlite timeline append updates an existing entry without moving its persis
   }
 });
 
+test("sqlite timeline upsertMessage updates one entry without moving its persisted position", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", timelineSequence: 1 }));
+    store.upsertMessage("session-1", message({ id: "user-1", role: "user", text: "next", timelineSequence: 2 }));
+    const updated = store.upsertMessage(
+      "session-1",
+      message({ id: "assistant-1", role: "assistant", text: "first updated", timelineSequence: 99, timestamp: at(99) }),
+    );
+
+    assert.equal(updated?.id, "assistant-1");
+    const persisted = store.list("session-1");
+    assert.deepEqual(persisted.map((entry) => entry.id), ["assistant-1", "user-1"]);
+    assert.equal(
+      persisted[0]?.kind === "assistant_message" ? persisted[0].chunks[0]?.text : undefined,
+      "first updated",
+    );
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      const rows = db
+        .prepare("SELECT id, position FROM session_timeline_entries WHERE session_id = ? ORDER BY position ASC")
+        .all("session-1") as Array<{ id: string; position: number }>;
+      assert.deepEqual(rows.map((row) => ({ id: row.id, position: row.position })), [
+        { id: "assistant-1", position: 0 },
+        { id: "user-1", position: 1 },
+      ]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline upsertMessage updates one row in a 20k-entry fixture", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-large-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    const entries: SessionTimelineEntry[] = Array.from({ length: 20_000 }, (_, index) => ({
+      id: `assistant-${index}`,
+      kind: "assistant_message" as const,
+      chunks: [{
+        id: `assistant-${index}:content`,
+        kind: "content" as const,
+        text: `message ${index}`,
+        timestamp: at(index),
+        timelineSequence: index,
+      }],
+      timestamp: at(index),
+      updatedAt: at(index),
+      timelineSequence: index,
+    }));
+    store.replace("session-1", entries);
+
+    store.upsertMessage(
+      "session-1",
+      message({ id: "assistant-10000", role: "assistant", text: "large fixture updated", timelineSequence: 30_000, timestamp: at(30_000) }),
+    );
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      const count = db.prepare("SELECT COUNT(*) AS count FROM session_timeline_entries WHERE session_id = ?").get("session-1") as { count: number };
+      const row = db
+        .prepare("SELECT position, payload_json FROM session_timeline_entries WHERE session_id = ? AND id = ?")
+        .get("session-1", "assistant-10000") as { position: number; payload_json: string };
+      const payload = JSON.parse(row.payload_json) as SessionTimelineEntry;
+
+      assert.equal(count.count, 20_000);
+      assert.equal(row.position, 10_000);
+      assert.equal(payload.kind === "assistant_message" ? payload.chunks[0]?.text.includes("large fixture updated") : false, true);
+    } finally {
+      db.close();
+    }
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline upsertToolCall merges thinking into one assistant entry", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", timelineSequence: 2 }));
+    const updated = store.upsertToolCall("session-1", toolCall({
+      id: "assistant-1:thinking",
+      commandId: "assistant-1:thinking",
+      kind: "think",
+      output: "reasoning",
+      status: "completed",
+      title: "Thinking",
+      timelineSequence: 1,
+    }));
+
+    assert.equal(updated?.id, "assistant-1");
+    const persisted = store.list("session-1");
+    assert.equal(persisted.length, 1);
+    assert.deepEqual(
+      persisted[0]?.kind === "assistant_message"
+        ? persisted[0].chunks.map((chunk) => chunk.kind)
+        : [],
+      ["thinking", "content"],
+    );
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("sqlite timeline listPage returns the newest page in display order with a position cursor", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");

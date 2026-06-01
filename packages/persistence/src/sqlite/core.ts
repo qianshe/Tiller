@@ -72,6 +72,29 @@ export function openSessionDatabase(dbPath: string) {
       PRIMARY KEY(session_id, id)
     );
 
+    CREATE TABLE IF NOT EXISTS session_timeline_blocks(
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      first_position INTEGER NOT NULL,
+      last_position INTEGER NOT NULL,
+      entry_count INTEGER NOT NULL,
+      byte_size INTEGER NOT NULL,
+      storage_key TEXT NOT NULL,
+      sha256 TEXT,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      sealed_at TEXT,
+      payload_json TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS session_timeline_block_entries(
+      session_id TEXT NOT NULL,
+      entry_id TEXT NOT NULL,
+      block_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      PRIMARY KEY(session_id, entry_id)
+    );
+
     CREATE TABLE IF NOT EXISTS session_attachments(
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -106,6 +129,8 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
     CREATE INDEX IF NOT EXISTS idx_session_timeline_entries_page ON session_timeline_entries(session_id, position, id);
+    CREATE INDEX IF NOT EXISTS idx_session_timeline_blocks_latest ON session_timeline_blocks(session_id, last_position DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_timeline_block_entries_block ON session_timeline_block_entries(block_id);
     CREATE INDEX IF NOT EXISTS idx_session_attachments_session_message ON session_attachments(session_id, message_id);
     CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256 ON session_attachments(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);

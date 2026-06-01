@@ -13,6 +13,8 @@ export function createHelmServerStores(options: CreateHelmServerStoresOptions) {
   const sessionStores = createHelmSessionStores({
     sqlitePath: environment.sessionsSqlitePath,
     attachmentRootPath: environment.sessionAttachmentsPath,
+    timelineBlockRootPath: environment.sessionTimelineBlocksPath,
+    timelineBlockMode: process.env.TILLER_TIMELINE_BLOCK_MODE,
     jsonPaths: {
       sessionHistoryPath: environment.sessionHistoryPath,
       sessionMessagesPath: environment.sessionMessagesPath,

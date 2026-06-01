@@ -4,7 +4,6 @@ import {
   createSqliteSessionMessageStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
-  createSqliteSessionTimelineStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
@@ -16,6 +15,7 @@ import {
   type SessionTimelineStore,
   type StoredSessionArtifacts,
 } from "@tiller/persistence";
+import { createModeAwareSessionTimelineStore } from "./timeline-store-mode";
 
 export type {
   HelmSessionStores,
@@ -33,6 +33,8 @@ type StoreFactoryLogger = (message: string) => void;
 export type HelmSessionStoreFactoryOptions = {
   sqlitePath: string;
   attachmentRootPath: string;
+  timelineBlockRootPath?: string;
+  timelineBlockMode?: string;
   /**
    * Legacy JSON paths used only for the one-shot SQLite migration. Once the
    * migration version is recorded (`hasMigrationVersion(db, 2)`), these paths
@@ -60,6 +62,11 @@ export function createHelmSessionStores(
       rootPath: options.attachmentRootPath,
     }),
     sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
-    sessionTimelineStore: createSqliteSessionTimelineStore(options.sqlitePath),
+    sessionTimelineStore: createModeAwareSessionTimelineStore({
+      sqlitePath: options.sqlitePath,
+      blockRootPath: options.timelineBlockRootPath ?? `${options.sqlitePath}.timeline-blocks`,
+      mode: options.timelineBlockMode,
+      logInfo: options.logInfo,
+    }),
   };
 }
