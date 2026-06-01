@@ -20,6 +20,7 @@ export {
   type HelmSessionStoreFactoryOptions,
   type HelmSessionStores,
   type SessionArtifactStore,
+  type SessionAttachmentStore,
   type SessionMessageStore,
   type SessionRuntimeStore,
   type SessionSummaryStore,

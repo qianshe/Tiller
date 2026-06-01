@@ -13,6 +13,7 @@ test("deleteLocalSessionData removes timeline entries with other local session s
       remove: (id) => removed.push(`messages:${id}`),
     },
     sessionArtifactStore: { remove: (id) => removed.push(`artifacts:${id}`) },
+    sessionAttachmentStore: { removeSession: (id) => removed.push(`attachments:${id}`) },
     sessionRuntimeStore: { remove: (id) => removed.push(`runtime:${id}`) },
     sessionTimelineStore: { remove: (id) => removed.push(`timeline:${id}`) },
   });
@@ -23,6 +24,7 @@ test("deleteLocalSessionData removes timeline entries with other local session s
     `session:${sessionId}`,
     `messages:${sessionId}`,
     `artifacts:${sessionId}`,
+    `attachments:${sessionId}`,
     `runtime:${sessionId}`,
     `timeline:${sessionId}`,
   ]);

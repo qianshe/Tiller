@@ -35,6 +35,25 @@ function createSessionArtifactStore(): SessionServicesOptions["sessionArtifactSt
   };
 }
 
+function createSessionAttachmentStore(): SessionServicesOptions["sessionAttachmentStore"] {
+  return {
+    put: () => ({
+      id: "attachment-1",
+      sessionId: "session-1",
+      mimeType: "image/png",
+      sha256: "sha256",
+      byteSize: 0,
+      storageKey: "storage-key",
+      uri: "/api/sessions/session-1/attachments/attachment-1",
+      createdAt: new Date(0).toISOString(),
+    }),
+    get: () => undefined,
+    listForMessage: () => [],
+    readBytes: () => undefined,
+    removeSession: () => undefined,
+  };
+}
+
 function createSessionRuntimeStore(): SessionServicesOptions["sessionRuntimeStore"] {
   return {
     list: () => [],
@@ -59,6 +78,7 @@ test("createHelmRuntimeComposition owns runtime maps queue and services", () => 
     sessionStore: createSessionStore(),
     sessionMessageStore: createSessionMessageStore(),
     sessionArtifactStore: createSessionArtifactStore(),
+    sessionAttachmentStore: createSessionAttachmentStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
     sessionTimelineStore: createSessionTimelineStore(),
     getAgents: () => [],

@@ -12,6 +12,7 @@ export function createHelmServerStores(options: CreateHelmServerStoresOptions) {
   const { environment, logInfo, logError } = options;
   const sessionStores = createHelmSessionStores({
     sqlitePath: environment.sessionsSqlitePath,
+    attachmentRootPath: environment.sessionAttachmentsPath,
     jsonPaths: {
       sessionHistoryPath: environment.sessionHistoryPath,
       sessionMessagesPath: environment.sessionMessagesPath,

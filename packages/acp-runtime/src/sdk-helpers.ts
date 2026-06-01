@@ -45,17 +45,23 @@ export function mapTillerMcpServersToSdkMcpServers(mcpServers: AcpMcpServer[] = 
 }
 
 export function mapPromptContentToSdkBlocks(content: AgentPromptContent[]): acp.ContentBlock[] {
-  return content.map((item) => item.type === "image"
-    ? {
-        type: "image",
-        data: item.data,
-        mimeType: item.mimeType,
-        ...(item.uri ? { uri: item.uri } : {}),
-      }
-    : {
+  return content.map((item) => {
+    if (item.type !== "image") {
+      return {
         type: "text",
         text: item.text,
-      });
+      };
+    }
+    if (!item.data) {
+      throw new Error("Cannot send reference-only image content to ACP provider");
+    }
+    return {
+      type: "image",
+      data: item.data,
+      mimeType: item.mimeType,
+      ...(item.uri ? { uri: item.uri } : {}),
+    };
+  });
 }
 
 export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id: string, cwd: string): SdkMappedPermissionRequest {

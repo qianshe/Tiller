@@ -129,6 +129,30 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(answerIndex > thinkingIndex);
 });
 
+test("plain messages renders persisted image attachment URIs", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-image",
+        role: "user",
+        text: "看图",
+        timestamp: "2026-06-01T10:00:00.000Z",
+        attachments: [
+          {
+            type: "image",
+            mimeType: "image/png",
+            uri: "/api/sessions/session-1/attachments/attachment-1",
+            name: "screen.png",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(html, /src="\/api\/sessions\/session-1\/attachments\/attachment-1"/);
+  assert.doesNotMatch(html, /base64,undefined/);
+});
+
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

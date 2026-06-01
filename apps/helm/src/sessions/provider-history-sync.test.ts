@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import type { AgentMessage } from "@tiller/shared";
 import {
@@ -21,6 +22,43 @@ const baseMessage = (
   role: "assistant",
   text,
   timestamp,
+});
+
+function sha256Base64(dataBase64: string) {
+  return createHash("sha256").update(Buffer.from(dataBase64, "base64")).digest("hex");
+}
+
+test("shouldRepairProviderHistorySnapshot treats persisted image references as equivalent to provider image data", () => {
+  const imageData = Buffer.from("png").toString("base64");
+  const providerMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "看图",
+      timestamp: "2026-05-07T08:00:00.000Z",
+      attachments: [{ type: "image", data: imageData, mimeType: "image/png" }],
+    },
+  ];
+  const localMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "看图",
+      timestamp: "2026-05-07T08:00:00.000Z",
+      attachments: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          uri: "/api/sessions/session-1/attachments/attachment-1",
+          attachmentId: "attachment-1",
+          sha256: sha256Base64(imageData),
+          byteSize: Buffer.from(imageData, "base64").byteLength,
+        },
+      ],
+    },
+  ];
+
+  assert.equal(shouldRepairProviderHistorySnapshot(localMessages, providerMessages), false);
 });
 
 test("buildProviderHistoryState records latest provider message hash", () => {

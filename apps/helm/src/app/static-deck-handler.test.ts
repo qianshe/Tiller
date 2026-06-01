@@ -54,6 +54,79 @@ test("createStaticDeckHandler serves successful assets with cache headers", asyn
   assert.equal((captured.body as Buffer).toString("utf8"), "console.log('ok')");
 });
 
+test("createStaticDeckHandler serves owned session attachments from the attachment store", async () => {
+  const captured: CapturedResponse = {};
+  const handler = createStaticDeckHandler({
+    deckStaticDir: "/deck/dist",
+    sessionAttachmentStore: {
+      put: () => { throw new Error("unused"); },
+      get: (id) => id === "attachment-1"
+        ? {
+            id,
+            sessionId: "session-1",
+            mimeType: "image/png",
+            sha256: "sha256",
+            byteSize: 3,
+            storageKey: "private/path/not/exposed",
+            uri: "/api/sessions/session-1/attachments/attachment-1",
+            createdAt: "2026-06-01T00:00:00.000Z",
+          }
+        : undefined,
+      listForMessage: () => [],
+      removeSession: () => undefined,
+      readBytes: (id) => id === "attachment-1" ? Buffer.from("png") : undefined,
+    },
+    loadStaticAsset: async () => {
+      throw new Error("static loader should not handle attachment requests");
+    },
+    logError: () => undefined,
+  });
+
+  await handler(createRequest("/api/sessions/session-1/attachments/attachment-1"), createResponse(captured));
+
+  assert.equal(captured.statusCode, 200);
+  assert.deepEqual(captured.headers, {
+    "cache-control": "private, max-age=31536000, immutable",
+    "content-type": "image/png",
+  });
+  assert.equal((captured.body as Buffer).toString("utf8"), "png");
+});
+
+test("createStaticDeckHandler rejects attachments that do not belong to the requested session", async () => {
+  const captured: CapturedResponse = {};
+  const handler = createStaticDeckHandler({
+    deckStaticDir: "/deck/dist",
+    sessionAttachmentStore: {
+      put: () => { throw new Error("unused"); },
+      get: () => ({
+        id: "attachment-1",
+        sessionId: "session-2",
+        mimeType: "image/png",
+        sha256: "sha256",
+        byteSize: 3,
+        storageKey: "private/path/not/exposed",
+        uri: "/api/sessions/session-2/attachments/attachment-1",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }),
+      listForMessage: () => [],
+      removeSession: () => undefined,
+      readBytes: () => Buffer.from("png"),
+    },
+    loadStaticAsset: async () => {
+      throw new Error("static loader should not handle attachment requests");
+    },
+    logError: () => undefined,
+  });
+
+  await handler(createRequest("/api/sessions/session-1/attachments/attachment-1"), createResponse(captured));
+
+  assert.deepEqual(captured, {
+    statusCode: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+    body: "Attachment not found.",
+  });
+});
+
 test("createStaticDeckHandler preserves not-found and forbidden responses", async () => {
   const notFound: CapturedResponse = {};
   const forbidden: CapturedResponse = {};

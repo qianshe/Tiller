@@ -101,6 +101,7 @@ export type HelmHandlerContext = {
   sessionStore: any;
   sessionMessageStore: any;
   sessionArtifactStore: any;
+  sessionAttachmentStore: any;
   sessionRuntimeStore: any;
   sessionTimelineStore: any;
   liveMessageBuffer: LiveMessageBuffer;

@@ -1,4 +1,5 @@
 export * from "./artifact-store";
+export * from "./attachment-store";
 export * from "./legacy-json-loader";
 export * from "./message-store";
 export * from "./normalize";
@@ -17,4 +18,5 @@ export {
   type JsonSessionStorePaths,
   type JsonToSqliteMigrationOptions,
 } from "./sqlite/store";
+export { createSqliteSessionAttachmentStore } from "./sqlite/attachment-store";
 export { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";

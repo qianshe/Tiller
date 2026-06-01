@@ -12,7 +12,7 @@ import {
   type WorktreeSummary,
 } from "@tiller/shared";
 import type { SessionRecord } from "./session-services";
-import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import {
   filterNewProviderHistoryMessages,
   mergeAuthoritativeMessagesWithLocalUserPrompts,
@@ -28,6 +28,7 @@ import {
 } from "./provider-history-source";
 import { resolveSessionRestoreCapabilities } from "./resume-info";
 import { normalizeWorktreePath } from "./session-worktree-resolution";
+import { persistMessageImageAttachments } from "./session-attachment-projection";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -58,6 +59,7 @@ type ProviderHistoryServiceOptions = {
   sessionStore: { list(): SessionSummary[] };
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
+  sessionAttachmentStore?: SessionAttachmentStore;
   sessionRuntimeStore: SessionRuntimeStore;
   sessionTimelineStore?: SessionTimelineStore;
   getAgents(): AcpAgentProvider[];
@@ -138,6 +140,31 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     return toolCalls.some((toolCall) => toolCall.kind === "think");
   }
 
+  function areToolCallListsEqual(left: AgentToolCall[], right: AgentToolCall[]) {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((toolCall, index) => toolCallSignature(toolCall) === toolCallSignature(right[index]));
+  }
+
+  function toolCallSignature(toolCall: AgentToolCall | undefined) {
+    if (!toolCall) {
+      return "";
+    }
+    return [
+      toolCall.id,
+      toolCall.commandId ?? "",
+      toolCall.kind,
+      toolCall.title,
+      toolCall.status,
+      toolCall.input ?? "",
+      toolCall.output ?? "",
+      toolCall.timestamp,
+      toolCall.updatedAt,
+      toolCall.timelineSequence ?? "",
+    ].join("\u001f");
+  }
+
   function applyAuthoritativeProviderHistory(
     sessionId: string,
     agent: AcpAgentProvider,
@@ -160,15 +187,16 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
     if (!history.messages.length) {
       if (history.toolCalls.length) {
-        options.sessionArtifactStore.replaceToolCalls(
-          sessionId,
-          mergeAuthoritativeToolCalls(
-            options.sessionArtifactStore.get(sessionId).toolCalls,
-            history.toolCalls,
-            { preserveLocalThinking: true },
-          ),
+        const localToolCalls = options.sessionArtifactStore.get(sessionId).toolCalls;
+        const mergedToolCalls = mergeAuthoritativeToolCalls(
+          localToolCalls,
+          history.toolCalls,
+          { preserveLocalThinking: true },
         );
-        persistLocalProviderHistoryTimeline(sessionId);
+        if (!areToolCallListsEqual(localToolCalls, mergedToolCalls)) {
+          options.sessionArtifactStore.replaceToolCalls(sessionId, mergedToolCalls);
+          persistLocalProviderHistoryTimeline(sessionId);
+        }
       }
       options.logInfo(
         `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
@@ -195,7 +223,10 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       if (syncDecision.messages.length) {
         options.sessionMessageStore.replace(
           sessionId,
-          mergeAuthoritativeMessagesWithLocalUserPrompts(localMessages, syncDecision.messages),
+          mergeAuthoritativeMessagesWithLocalUserPrompts(
+            localMessages,
+            persistProviderHistoryMessageAttachments(sessionId, syncDecision.messages),
+          ),
         );
       }
     } else if (syncDecision.action === "append") {
@@ -203,17 +234,21 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
         localMessages,
         syncDecision.messages,
       );
-      for (const message of appendMessages) {
+      const storedAppendMessages = persistProviderHistoryMessageAttachments(
+        sessionId,
+        appendMessages,
+      );
+      for (const message of storedAppendMessages) {
         options.sessionMessageStore.append(sessionId, message);
       }
-      localMessageCount = appendMessages.length;
-      const messagesAfterAppend = appendMessages.length
-        ? [...localMessages, ...appendMessages]
+      localMessageCount = storedAppendMessages.length;
+      const messagesAfterAppend = storedAppendMessages.length
+        ? [...localMessages, ...storedAppendMessages]
         : localMessages;
       if (shouldRepairProviderHistorySnapshot(messagesAfterAppend, history.messages)) {
         const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
           messagesAfterAppend,
-          toParagraphMessages(history.messages),
+          persistProviderHistoryMessageAttachments(sessionId, toParagraphMessages(history.messages)),
         );
         options.sessionMessageStore.replace(sessionId, repairedMessages);
         localMessageCount = repairedMessages.length;
@@ -222,7 +257,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     } else if (shouldRepairProviderHistorySnapshot(localMessages, history.messages)) {
       const repairedMessages = mergeAuthoritativeMessagesWithLocalUserPrompts(
         localMessages,
-        toParagraphMessages(history.messages),
+        persistProviderHistoryMessageAttachments(sessionId, toParagraphMessages(history.messages)),
       );
       options.sessionMessageStore.replace(sessionId, repairedMessages);
       localMessageCount = repairedMessages.length;
@@ -231,17 +266,21 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
     persistProviderHistoryState(sessionId, agent, runtimeSessionId, syncDecision.nextState);
     const localToolCalls = options.sessionArtifactStore.get(sessionId).toolCalls;
+    let toolCallsChanged = false;
     if (history.toolCalls.length || hasThinkingToolCalls(localToolCalls)) {
-      options.sessionArtifactStore.replaceToolCalls(
-        sessionId,
-        mergeAuthoritativeToolCalls(
-          localToolCalls,
-          history.toolCalls,
-          { preserveLocalThinking: false },
-        ),
+      const mergedToolCalls = mergeAuthoritativeToolCalls(
+        localToolCalls,
+        history.toolCalls,
+        { preserveLocalThinking: false },
       );
+      toolCallsChanged = !areToolCallListsEqual(localToolCalls, mergedToolCalls);
+      if (toolCallsChanged) {
+        options.sessionArtifactStore.replaceToolCalls(sessionId, mergedToolCalls);
+      }
     }
-    persistLocalProviderHistoryTimeline(sessionId);
+    if (logAction !== "skip" || toolCallsChanged) {
+      persistLocalProviderHistoryTimeline(sessionId);
+    }
     options.logInfo(
       `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
     );
@@ -261,6 +300,22 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     if (entries.length) {
       options.sessionTimelineStore.replace(sessionId, entries);
     }
+  }
+
+  function persistProviderHistoryMessageAttachments(
+    sessionId: string,
+    messages: AgentMessage[],
+  ) {
+    if (!options.sessionAttachmentStore) {
+      return messages;
+    }
+    return messages.map((message) =>
+      persistMessageImageAttachments({
+        sessionId,
+        message,
+        attachments: options.sessionAttachmentStore!,
+      }),
+    );
   }
 
   function hasHistoryContent(history: ProviderHistorySnapshotContent) {

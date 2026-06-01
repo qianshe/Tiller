@@ -6,6 +6,7 @@ export type HelmServerEnvironment = {
   sessionHistoryPath: string;
   sessionMessagesPath: string;
   sessionArtifactsPath: string;
+  sessionAttachmentsPath: string;
   sessionRuntimesPath: string;
   sessionsSqlitePath: string;
   trustedDevicesPath: string;
@@ -19,6 +20,7 @@ export function createHelmServerEnvironment(configPath: string): HelmServerEnvir
     sessionHistoryPath: resolve(configDir, "sessions.json"),
     sessionMessagesPath: resolve(configDir, "session-messages"),
     sessionArtifactsPath: resolve(configDir, "session-artifacts"),
+    sessionAttachmentsPath: resolve(configDir, "session-attachments"),
     sessionRuntimesPath: resolve(configDir, "session-runtimes.json"),
     sessionsSqlitePath: resolve(configDir, "sessions.sqlite"),
     trustedDevicesPath: resolve(configDir, "trusted-devices.json"),

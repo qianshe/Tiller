@@ -67,6 +67,7 @@ export type SessionServicesOptions = {
   sessionStore: HelmSessionStores["sessionStore"];
   sessionMessageStore: HelmSessionStores["sessionMessageStore"];
   sessionArtifactStore: HelmSessionStores["sessionArtifactStore"];
+  sessionAttachmentStore: HelmSessionStores["sessionAttachmentStore"];
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
   sessionTimelineStore: HelmSessionStores["sessionTimelineStore"];
   getAgents: () => AcpAgentProvider[];
@@ -109,6 +110,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionStore: options.sessionStore,
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
+    sessionAttachmentStore: options.sessionAttachmentStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
     sessionTimelineStore: options.sessionTimelineStore,
   });
@@ -117,6 +119,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionStore: options.sessionStore,
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
+    sessionAttachmentStore: options.sessionAttachmentStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
     sessionTimelineStore: options.sessionTimelineStore,
     getAgents: options.getAgents,

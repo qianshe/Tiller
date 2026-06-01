@@ -7,6 +7,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import type { SessionArtifactPage, SessionArtifactPageOptions } from "./artifact-store";
+import type { SessionAttachmentStore } from "./attachment-store";
 import type { SessionMessagePage, SessionMessagePageOptions } from "./message-store";
 import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
 import type { SessionTimelinePage, SessionTimelinePageOptions } from "./timeline-store";
@@ -60,6 +61,7 @@ export type SessionStores = {
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
+  sessionAttachmentStore: SessionAttachmentStore;
   sessionRuntimeStore: SessionRuntimeStore;
   sessionTimelineStore: SessionTimelineStore;
 };

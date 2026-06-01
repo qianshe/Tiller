@@ -418,3 +418,245 @@ test("authoritative provider history persists ordered local timeline entries", (
     ],
   );
 });
+
+test("authoritative provider history leaves timeline untouched for unchanged snapshots", () => {
+  const sessionId = "session-provider-timeline-skip";
+  const providerMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-17T09:34:37.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "完成",
+      timestamp: "2026-05-17T09:34:38.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  const storedToolCalls: AgentToolCall[] = [
+    {
+      id: "tool-read",
+      commandId: "tool-read",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      output: "file content",
+      timestamp: "2026-05-17T09:34:39.000Z",
+      updatedAt: "2026-05-17T09:34:39.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const localMessagesBySession = new Map<string, AgentMessage[]>([
+    [
+      sessionId,
+      [
+        providerMessages[0]!,
+        {
+          ...providerMessages[1]!,
+          id: "assistant-1#p0",
+        },
+      ],
+    ],
+  ]);
+  let replacedToolCalls = false;
+  let replacedTimeline = false;
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id) => localMessagesBySession.get(id) ?? [],
+      replace: (id, messages) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id, message) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: storedToolCalls, outputs: [], diffs: [] }),
+      replaceToolCalls: () => {
+        replacedToolCalls = true;
+      },
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-acp",
+        runtimeSessionId: "runtime-1",
+        lastSeenAt: "2026-05-17T09:34:37.000Z",
+        state: "resumeable",
+        providerHistory: buildProviderHistoryState(
+          providerMessages,
+          "2026-05-17T09:34:40.000Z",
+        ),
+      }),
+      upsert: () => {},
+    },
+    sessionTimelineStore: {
+      replace: () => {
+        replacedTimeline = true;
+        return [];
+      },
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  service.applyAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "claude-acp",
+      name: "Claude",
+      command: "claude-code-acp",
+      transport: "stdio",
+      protocol: "acp",
+    } as any,
+    "runtime-1",
+    createHistorySnapshot({
+      source: "adapter-authoritative-history",
+      messages: providerMessages,
+      toolCalls: storedToolCalls,
+      outputs: [],
+      diffs: [],
+    }),
+  );
+
+  assert.equal(replacedToolCalls, false);
+  assert.equal(replacedTimeline, false);
+});
+
+test("authoritative provider history stores inline image attachments as references", () => {
+  const sessionId = "session-provider-image-history";
+  const imageData = Buffer.from("png").toString("base64");
+  const localMessagesBySession = new Map<string, AgentMessage[]>();
+  const storedAttachmentInputs: unknown[] = [];
+  let storedTimeline: SessionTimelineEntry[] = [];
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id) => localMessagesBySession.get(id) ?? [],
+      replace: (id, messages) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id, message) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+      replaceToolCalls: () => {},
+    },
+    sessionAttachmentStore: {
+      put: (input) => {
+        storedAttachmentInputs.push(input);
+        return {
+          id: "attachment-1",
+          sessionId: input.sessionId,
+          messageId: input.messageId,
+          mimeType: input.mimeType,
+          name: input.name,
+          sha256: "sha256",
+          byteSize: 3,
+          storageKey: "storage-key",
+          uri: "/api/sessions/session-provider-image-history/attachments/attachment-1",
+          createdAt: "2026-06-01T00:00:00.000Z",
+        };
+      },
+      get: () => undefined,
+      listForMessage: () => [],
+      readBytes: () => undefined,
+      removeSession: () => undefined,
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-acp",
+        runtimeSessionId: "runtime-1",
+        lastSeenAt: "2026-05-17T09:34:37.000Z",
+        state: "resumeable",
+      }),
+      upsert: () => {},
+    },
+    sessionTimelineStore: {
+      replace: (_id, entries) => {
+        storedTimeline = entries;
+        return entries;
+      },
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  service.applyAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "claude-acp",
+      name: "Claude",
+      command: "claude-code-acp",
+      transport: "stdio",
+      protocol: "acp",
+    } as any,
+    "runtime-1",
+    createHistorySnapshot({
+      source: "adapter-authoritative-history",
+      messages: [
+        {
+          id: "user-image",
+          role: "user",
+          text: "看图",
+          timestamp: "2026-05-17T09:34:37.000Z",
+          timelineSequence: 1,
+          attachments: [
+            {
+              type: "image",
+              data: imageData,
+              mimeType: "image/png",
+              name: "screen.png",
+            },
+          ],
+        },
+      ],
+      toolCalls: [],
+      outputs: [],
+      diffs: [],
+    }),
+  );
+
+  assert.deepEqual(storedAttachmentInputs, [
+    {
+      sessionId,
+      messageId: "user-image",
+      mimeType: "image/png",
+      name: "screen.png",
+      dataBase64: imageData,
+    },
+  ]);
+  assert.deepEqual(localMessagesBySession.get(sessionId)?.[0]?.attachments, [
+    {
+      type: "image",
+      mimeType: "image/png",
+      name: "screen.png",
+      uri: "/api/sessions/session-provider-image-history/attachments/attachment-1",
+      attachmentId: "attachment-1",
+      sha256: "sha256",
+      byteSize: 3,
+    },
+  ]);
+  assert.equal(
+    storedTimeline[0]?.kind === "user_message"
+      ? storedTimeline[0].message.attachments?.[0]?.data
+      : "unexpected",
+    undefined,
+  );
+});

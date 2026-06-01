@@ -1,5 +1,6 @@
 import {
   createSqliteSessionArtifactStore,
+  createSqliteSessionAttachmentStore,
   createSqliteSessionMessageStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
@@ -8,6 +9,7 @@ import {
   type HelmSessionStores,
   type JsonSessionStorePaths,
   type SessionArtifactStore,
+  type SessionAttachmentStore,
   type SessionMessageStore,
   type SessionRuntimeStore,
   type SessionSummaryStore,
@@ -18,6 +20,7 @@ import {
 export type {
   HelmSessionStores,
   SessionArtifactStore,
+  SessionAttachmentStore,
   SessionMessageStore,
   SessionRuntimeStore,
   SessionSummaryStore,
@@ -29,6 +32,7 @@ type StoreFactoryLogger = (message: string) => void;
 
 export type HelmSessionStoreFactoryOptions = {
   sqlitePath: string;
+  attachmentRootPath: string;
   /**
    * Legacy JSON paths used only for the one-shot SQLite migration. Once the
    * migration version is recorded (`hasMigrationVersion(db, 2)`), these paths
@@ -51,6 +55,10 @@ export function createHelmSessionStores(
     sessionStore: createSqliteSessionStore(options.sqlitePath),
     sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
     sessionArtifactStore: createSqliteSessionArtifactStore(options.sqlitePath),
+    sessionAttachmentStore: createSqliteSessionAttachmentStore({
+      dbPath: options.sqlitePath,
+      rootPath: options.attachmentRootPath,
+    }),
     sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
     sessionTimelineStore: createSqliteSessionTimelineStore(options.sqlitePath),
   };

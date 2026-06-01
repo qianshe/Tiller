@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall } from "./types";
+import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "./types";
 import type { SessionTimelineEntry } from "./session-timeline";
 import {
   appendToolCallToSessionTimeline,
@@ -8,6 +8,19 @@ import {
 } from "./session-timeline";
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
+
+test("reference-only prompt images satisfy the shared prompt image contract", () => {
+  const image = {
+    type: "image",
+    uri: "/api/sessions/session-1/attachments/att-1",
+    mimeType: "image/png",
+    attachmentId: "att-1",
+    sha256: "a".repeat(64),
+    byteSize: 12,
+  } satisfies AgentPromptImageContent;
+
+  assert.equal(image.uri, "/api/sessions/session-1/attachments/att-1");
+});
 
 function at(seconds: number) {
   return new Date(Date.parse(BASE_TIME) + seconds * 1000).toISOString();

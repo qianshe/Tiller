@@ -22,6 +22,7 @@ import {
 } from "./session-config-options";
 import { assertSupportedSlashCommand } from "./session-command-support";
 import { createUserPromptMessage as createProjectedUserPromptMessage } from "./session-user-message";
+import { persistMessageImageAttachments } from "./session-attachment-projection";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -123,11 +124,16 @@ export async function sendPromptImmediately(
     timelineSequence: allocateLiveEventSequence(item.sessionId),
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
-  context.persistSessionMessage(item.sessionId, userMessage);
-  persistTimelineMessage(context, item.sessionId, userMessage);
+  const storedUserMessage = persistMessageImageAttachments({
+    sessionId: item.sessionId,
+    message: userMessage,
+    attachments: context.sessionAttachmentStore,
+  });
+  context.persistSessionMessage(item.sessionId, storedUserMessage);
+  persistTimelineMessage(context, item.sessionId, storedUserMessage);
   createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
     kind: "user_message",
-    message: userMessage,
+    message: storedUserMessage,
   });
   const updated = context.updateSessionSummary(item.sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, item.text, timestamp),
@@ -165,14 +171,19 @@ async function appendUserPromptMessage(
   userMessage: ReturnType<typeof createUserPromptMessage>,
   context: HelmHandlerContext,
 ) {
-  context.persistSessionMessage(sessionId, userMessage);
-  persistTimelineMessage(context, sessionId, userMessage);
+  const storedUserMessage = persistMessageImageAttachments({
+    sessionId,
+    message: userMessage,
+    attachments: context.sessionAttachmentStore,
+  });
+  context.persistSessionMessage(sessionId, storedUserMessage);
+  persistTimelineMessage(context, sessionId, storedUserMessage);
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "user_message",
-    message: userMessage,
+    message: storedUserMessage,
   });
   const updated = context.updateSessionSummary(sessionId, (current) =>
-    applyDispatchingUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
+    applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
   if (updated) {
     createSessionEventPublisher(context).sessionUpdate(sessionId, {

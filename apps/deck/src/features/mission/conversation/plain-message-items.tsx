@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import type { AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
 import { Badge, Button, Icon } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
@@ -15,6 +15,50 @@ import { splitStreamingMarkdown } from "./streaming-markdown";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+
+function resolveMessageImageSource(image: AgentPromptImageContent) {
+  if (image.uri) {
+    return image.uri;
+  }
+  return image.data ? `data:${image.mimeType};base64,${image.data}` : undefined;
+}
+
+function PlainMessageImageAttachment({
+  image,
+  index,
+  messageId,
+  tone,
+}: {
+  image: AgentPromptImageContent;
+  index: number;
+  messageId: string;
+  tone: "assistant" | "user";
+}) {
+  const src = resolveMessageImageSource(image);
+  if (!src) {
+    return null;
+  }
+  return (
+    <figure
+      key={`${messageId}-image-${index}`}
+      className={cn(
+        "mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken",
+        tone === "user"
+          ? "shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
+          : "shadow-[0_8px_24px_rgb(0_0_0/0.08)]",
+      )}
+    >
+      <img
+        src={src}
+        alt={image.name ?? `粘贴图片 ${index + 1}`}
+        className="h-16 w-full object-cover"
+      />
+      <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
+        {image.name ?? `粘贴图片 ${index + 1}`}
+      </figcaption>
+    </figure>
+  );
+}
 
 function shouldCollapsePlainMessage(text: string) {
   const lineCount = text.split(/\r?\n/).length;
@@ -90,19 +134,13 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         {message.role === "user" && message.attachments?.length ? (
           <div className="mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end">
             {message.attachments.map((image, index) => (
-              <figure
+              <PlainMessageImageAttachment
                 key={`${message.id}-image-${index}`}
-                className="mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
-              >
-                <img
-                  src={`data:${image.mimeType};base64,${image.data}`}
-                  alt={image.name ?? `粘贴图片 ${index + 1}`}
-                  className="h-16 w-full object-cover"
-                />
-                <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
-                  {image.name ?? `粘贴图片 ${index + 1}`}
-                </figcaption>
-              </figure>
+                image={image}
+                index={index}
+                messageId={message.id}
+                tone="user"
+              />
             ))}
           </div>
         ) : null}
@@ -127,19 +165,13 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         {message.role !== "user" && message.attachments?.length ? (
           <div className="mission-message-attachments flex max-w-full flex-wrap gap-2">
             {message.attachments.map((image, index) => (
-              <figure
+              <PlainMessageImageAttachment
                 key={`${message.id}-image-${index}`}
-                className="mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken shadow-[0_8px_24px_rgb(0_0_0/0.08)]"
-              >
-                <img
-                  src={`data:${image.mimeType};base64,${image.data}`}
-                  alt={image.name ?? `粘贴图片 ${index + 1}`}
-                  className="h-16 w-full object-cover"
-                />
-                <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
-                  {image.name ?? `粘贴图片 ${index + 1}`}
-                </figcaption>
-              </figure>
+                image={image}
+                index={index}
+                messageId={message.id}
+                tone="assistant"
+              />
             ))}
           </div>
         ) : null}
