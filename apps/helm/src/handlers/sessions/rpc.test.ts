@@ -132,7 +132,85 @@ test("session/list_messages returns a unified timeline rebuilt from legacy store
   );
 });
 
-test("session/list_messages repairs partial persisted timelines before paging", async () => {
+test("session/list_messages treats existing timeline as the primary history", async () => {
+  const sessionId = "session-existing-timeline-primary";
+  const timeline = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking" as const,
+          text: "先思考",
+          title: "Thinking",
+          status: "completed" as const,
+          timestamp: "2026-05-24T10:00:00.000Z",
+          updatedAt: "2026-05-24T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content" as const,
+          text: "再回复",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+  ];
+  let readLegacyMessages = false;
+  let readLegacyArtifacts = false;
+  let replacedTimeline = false;
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => {
+          readLegacyMessages = true;
+          return [
+            {
+              id: "assistant-1#p0",
+              role: "assistant" as const,
+              text: "legacy paragraph",
+              timestamp: "2026-05-24T10:00:05.000Z",
+              timelineSequence: 3,
+            },
+          ];
+        },
+        listPage: () => ({ messages: [], hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => {
+          readLegacyArtifacts = true;
+          return { outputs: [], diffs: [], toolCalls: [] };
+        },
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: timeline, hasMore: false }),
+        list: () => timeline,
+        replace: () => {
+          replacedTimeline = true;
+          return timeline;
+        },
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; chunks?: Array<{ kind: string; text: string }> }> };
+
+  assert.deepEqual(result.timeline.map((entry) => entry.id), ["assistant-1"]);
+  assert.deepEqual(result.timeline[0]?.chunks?.map((chunk) => chunk.kind), ["thinking", "content"]);
+  assert.equal(readLegacyMessages, false);
+  assert.equal(readLegacyArtifacts, false);
+  assert.equal(replacedTimeline, false);
+});
+
+test("session/list_messages keeps partial persisted timelines as primary history", async () => {
   const sessionId = "session-partial-timeline";
   const messages = [
     {
@@ -192,13 +270,12 @@ test("session/list_messages repairs partial persisted timelines before paging", 
     } as any,
   ) as { timeline: any[]; timelineHasMore: boolean };
 
-  assert.equal(result.timeline[0]?.id, "user-latest");
-  assert.equal(result.timeline.at(-1)?.id, "assistant-final#p29");
-  assert.ok(result.timeline.some((entry) => entry.id === "tool:stale-read"));
-  assert.ok(replacedTimeline.some((entry) => entry.id === "user-latest"));
+  assert.deepEqual(result.timeline.map((entry) => entry.id), ["tool:stale-read"]);
+  assert.equal(result.timelineHasMore, false);
+  assert.deepEqual(replacedTimeline, []);
 });
 
-test("session/list_messages repairs stale persisted timeline order while repairing content", async () => {
+test("session/list_messages preserves persisted timeline order and content", async () => {
   const sessionId = "session-preserve-timeline-order";
   let replacedTimeline: any[] = [];
 
@@ -322,16 +399,13 @@ test("session/list_messages repairs stale persisted timeline order while repairi
 
   assert.deepEqual(
     result.timeline.map((entry) => entry.id),
-    ["assistant-1", "tool:tool-1", "user-1", "assistant-1#p0"],
+    ["user-1", "assistant-1", "tool:tool-1", "assistant-1#p0"],
   );
-  assert.deepEqual(
-    replacedTimeline.map((entry) => entry.id),
-    ["assistant-1", "tool:tool-1", "user-1", "assistant-1#p0"],
-  );
-  assert.equal(result.timeline.at(-1)?.chunks?.[0]?.text, "new done");
+  assert.deepEqual(replacedTimeline, []);
+  assert.equal(result.timeline.at(-1)?.chunks?.[0]?.text, "old done");
 });
 
-test("session/list_messages replaces stale persisted timeline content with rebuilt entries", async () => {
+test("session/list_messages keeps persisted timeline content when timeline exists", async () => {
   const sessionId = "session-stale-timeline-content";
   let replacedTimeline: any[] = [];
 
@@ -382,8 +456,8 @@ test("session/list_messages replaces stale persisted timeline content with rebui
     } as any,
   ) as { timeline: Array<{ chunks?: Array<{ text: string }> }> };
 
-  assert.equal(result.timeline[0]?.chunks?.[0]?.text, "新内容");
-  assert.equal(replacedTimeline[0]?.chunks?.[0]?.text, "新内容");
+  assert.equal(result.timeline[0]?.chunks?.[0]?.text, "旧内容");
+  assert.deepEqual(replacedTimeline, []);
 });
 
 test("session/list_messages uses timelineBefore independently from legacy message before", async () => {
@@ -454,7 +528,7 @@ test("session/list_messages uses timelineBefore independently from legacy messag
   assert.equal(result.timelineNextCursor, undefined);
 });
 
-test("session/list_messages pages timeline by content messages instead of raw tool entries", async () => {
+test("session/list_messages requests message-window timeline pages from the store", async () => {
   const sessionId = "session-dense-tools";
   const timeline = [
     {
@@ -507,6 +581,8 @@ test("session/list_messages pages timeline by content messages instead of raw to
     },
   ];
 
+  let timelinePageOptions: any;
+
   const result = await handleSessionRpcRequest(
     "session/list_messages",
     { sessionId, limit: 2 },
@@ -517,15 +593,20 @@ test("session/list_messages pages timeline by content messages instead of raw to
       },
       sessionTimelineStore: {
         list: () => timeline,
-        listPage: () => ({
-          entries: timeline.slice(-2),
-          nextCursor: "raw-entry-cursor",
-          hasMore: true,
-        }),
+        listPage: (_sessionId: string, options: any) => {
+          timelinePageOptions = options;
+          return { entries: timeline, hasMore: false };
+        },
       },
     } as any,
   ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean };
 
+  assert.deepEqual(timelinePageOptions, {
+    entryLimit: 96,
+    limit: 2,
+    before: undefined,
+    window: "message",
+  });
   assert.deepEqual(
     result.timeline.map((entry) => entry.id),
     ["assistant-intro", "tool-0", "tool-1", "tool-2", "tool-3", "assistant-final"],

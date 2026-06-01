@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,9 @@ import { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
 import { pageSessionTimeline } from "./timeline-store";
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
 
 function at(seconds: number) {
   return new Date(Date.parse(BASE_TIME) + seconds * 1000).toISOString();
@@ -30,6 +34,92 @@ function toolCall(
     ...overrides,
   };
 }
+
+test("sqlite timeline append updates an existing entry without moving its persisted position", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    store.append("session-1", {
+      id: "user-1",
+      kind: "user_message",
+      message: message({ id: "user-1", role: "user", text: "start", timelineSequence: 1 }),
+      timestamp: at(1),
+      updatedAt: at(1),
+      timelineSequence: 1,
+    });
+    store.append("session-1", {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{ id: "assistant-1:content", kind: "content", text: "done", timestamp: at(2), timelineSequence: 2 }],
+      timestamp: at(2),
+      updatedAt: at(2),
+      timelineSequence: 2,
+    });
+    store.append("session-1", {
+      id: "user-1",
+      kind: "user_message",
+      message: message({ id: "user-1", role: "user", text: "start edited", timelineSequence: 99, timestamp: at(99) }),
+      timestamp: at(99),
+      updatedAt: at(99),
+      timelineSequence: 99,
+    });
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      const rows = db
+        .prepare("SELECT id, position FROM session_timeline_entries WHERE session_id = ? ORDER BY position ASC")
+        .all("session-1") as Array<{ id: string; position: number }>;
+      assert.deepEqual(rows.map((row) => ({ id: row.id, position: row.position })), [
+        { id: "user-1", position: 0 },
+        { id: "assistant-1", position: 1 },
+      ]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline listPage returns the newest page in display order with a position cursor", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    const entries: SessionTimelineEntry[] = Array.from({ length: 5 }, (_, index) => ({
+      id: `assistant-${index}`,
+      kind: "assistant_message" as const,
+      chunks: [{
+        id: `assistant-${index}:content`,
+        kind: "content" as const,
+        text: `message ${index}`,
+        timestamp: at(index),
+        timelineSequence: index,
+      }],
+      timestamp: at(index),
+      updatedAt: at(index),
+      timelineSequence: index,
+    }));
+    store.replace("session-1", entries);
+
+    const latest = store.listPage("session-1", { limit: 2 });
+    const older = store.listPage("session-1", { limit: 2, before: latest.nextCursor });
+
+    assert.deepEqual(latest.entries.map((entry) => entry.id), ["assistant-3", "assistant-4"]);
+    assert.equal(latest.nextCursor, "order\t3\tassistant-3");
+    assert.equal(latest.hasMore, true);
+    assert.deepEqual(older.entries.map((entry) => entry.id), ["assistant-1", "assistant-2"]);
+    assert.equal(older.nextCursor, "order\t1\tassistant-1");
+    assert.equal(older.hasMore, true);
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
 
 test("sqlite timeline store persists ordered unified entries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));

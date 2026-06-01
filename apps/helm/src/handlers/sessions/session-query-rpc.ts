@@ -1,6 +1,6 @@
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { pageSessionTimeline } from "@tiller/persistence";
-import { buildSessionTimelineFromLegacy, sortSessionTimelineEntries } from "@tiller/shared";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
@@ -156,148 +156,51 @@ function listSessionTimelinePage(
   if (!context.sessionTimelineStore) {
     return { entries: [], hasMore: false };
   }
-  const existing = context.sessionTimelineStore.list(params.sessionId);
-  const repaired = repairSessionTimelineFromLegacy(params.sessionId, existing, context);
-  return pageSessionTimeline(repaired, {
+
+  const options = {
     entryLimit: TIMELINE_ENTRY_PAGE_LIMIT,
     limit: params.limit,
     before: params.timelineBefore ?? params.before,
-    window: "message",
-  });
+    window: "message" as const,
+  };
+  const persistedPage = context.sessionTimelineStore.listPage?.(params.sessionId, options);
+  if (persistedPage && isAuthoritativeTimelinePage(persistedPage, options.before)) {
+    return persistedPage;
+  }
+
+  const existing = persistedPage ? [] : (context.sessionTimelineStore.list?.(params.sessionId) ?? []);
+  if (existing.length) {
+    return pageSessionTimeline(existing, options);
+  }
+
+  const rebuilt = rebuildSessionTimelineFromLegacy(params.sessionId, context);
+  if (!rebuilt.length) {
+    return persistedPage ?? { entries: [], hasMore: false };
+  }
+
+  const stored = context.sessionTimelineStore.replace(params.sessionId, rebuilt);
+  return pageSessionTimeline(stored, options);
 }
 
-function repairSessionTimelineFromLegacy(
-  sessionId: string,
-  existing: SessionTimelineEntry[],
-  context: HelmHandlerContext,
+function isAuthoritativeTimelinePage(
+  page: { entries: SessionTimelineEntry[]; hasMore: boolean },
+  before: string | undefined,
 ) {
+  return Boolean(before) || page.hasMore || page.entries.length > 0;
+}
+
+function rebuildSessionTimelineFromLegacy(sessionId: string, context: HelmHandlerContext) {
   const messages = context.sessionMessageStore.list?.(sessionId) ?? [];
   const artifacts = context.sessionArtifactStore?.get?.(sessionId) ?? {
     outputs: [],
     diffs: [],
     toolCalls: [],
   };
-  const rebuilt = buildSessionTimelineFromLegacy({
+  return buildSessionTimelineFromLegacy({
     messages,
     outputs: artifacts.outputs,
     toolCalls: artifacts.toolCalls,
   });
-  if (!rebuilt.length) {
-    return existing;
-  }
-
-  const repaired = mergeRebuiltTimeline(existing, rebuilt);
-  if (timelineSignature(existing) === timelineSignature(repaired)) {
-    return existing;
-  }
-  return context.sessionTimelineStore.replace(sessionId, repaired);
-}
-
-function mergeRebuiltTimeline(
-  existing: SessionTimelineEntry[],
-  rebuilt: SessionTimelineEntry[],
-) {
-  const rebuiltIds = new Set(rebuilt.map((entry) => entry.id));
-  if (!existing.length || !hasTimelineMessageAnchor(existing)) {
-    return sortSessionTimelineEntries([
-      ...rebuilt,
-      ...existing.filter((entry) => !rebuiltIds.has(entry.id)),
-    ]);
-  }
-
-  const rebuiltById = new Map(rebuilt.map((entry) => [entry.id, entry]));
-  const merged = existing.map((entry) => rebuiltById.get(entry.id) ?? entry);
-  const mergedIds = new Set(merged.map((entry) => entry.id));
-  const missing = rebuilt.filter((entry) => !mergedIds.has(entry.id));
-  if (!missing.length) {
-    return sortSessionTimelineEntries(merged);
-  }
-
-  return sortSessionTimelineEntries(insertMissingTimelineEntries(merged, missing, rebuilt));
-}
-
-function insertMissingTimelineEntries(
-  existing: SessionTimelineEntry[],
-  missing: SessionTimelineEntry[],
-  rebuilt: SessionTimelineEntry[],
-) {
-  const result = [...existing];
-  const presentIds = new Set(result.map((entry) => entry.id));
-  missing.forEach((entry) => {
-    const insertAt = resolveMissingTimelineInsertIndex(result, rebuilt, entry.id, presentIds);
-    result.splice(insertAt, 0, entry);
-    presentIds.add(entry.id);
-  });
-  return result;
-}
-
-function resolveMissingTimelineInsertIndex(
-  current: SessionTimelineEntry[],
-  rebuilt: SessionTimelineEntry[],
-  entryId: string,
-  presentIds: ReadonlySet<string>,
-) {
-  const rebuiltIndex = rebuilt.findIndex((entry) => entry.id === entryId);
-  for (let index = rebuiltIndex - 1; index >= 0; index -= 1) {
-    const previousId = rebuilt[index]?.id;
-    if (!previousId || !presentIds.has(previousId)) {
-      continue;
-    }
-    const currentIndex = current.findIndex((entry) => entry.id === previousId);
-    return currentIndex === -1 ? current.length : currentIndex + 1;
-  }
-  for (let index = rebuiltIndex + 1; index < rebuilt.length; index += 1) {
-    const nextId = rebuilt[index]?.id;
-    if (!nextId || !presentIds.has(nextId)) {
-      continue;
-    }
-    const currentIndex = current.findIndex((entry) => entry.id === nextId);
-    return currentIndex === -1 ? current.length : currentIndex;
-  }
-  return current.length;
-}
-
-function timelineSignature(entries: SessionTimelineEntry[]) {
-  return entries.map(timelineEntrySignature).join("|");
-}
-
-function timelineEntrySignature(entry: SessionTimelineEntry) {
-  if (entry.kind === "assistant_message") {
-    return [
-      entry.kind,
-      entry.id,
-      entry.chunks.map((chunk) => [
-        chunk.kind,
-        chunk.id,
-        "text" in chunk ? chunk.text : "",
-        "status" in chunk ? chunk.status : "",
-        "title" in chunk ? chunk.title : "",
-        chunk.timelineSequence ?? "",
-        "streaming" in chunk ? String(Boolean(chunk.streaming)) : "",
-      ].join(":")),
-    ].join(":");
-  }
-  if (entry.kind === "tool_call") {
-    return [
-      entry.kind,
-      entry.id,
-      entry.toolCall.kind,
-      entry.toolCall.title,
-      entry.toolCall.status,
-      entry.toolCall.timelineSequence ?? "",
-      entry.toolCall.timestamp,
-      entry.toolCall.updatedAt,
-    ].join(":");
-  }
-  return [
-    entry.kind,
-    entry.id,
-    entry.message.id,
-    entry.message.role,
-    entry.message.text,
-    entry.message.timelineSequence ?? "",
-    entry.message.timestamp,
-  ].join(":");
 }
 
 function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {
