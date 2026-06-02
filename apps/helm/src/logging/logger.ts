@@ -1,9 +1,28 @@
-import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { Writable } from "node:stream";
+import pino, { type DestinationStream, type Logger as PinoLogger } from "pino";
+import pretty from "pino-pretty";
+import {
+  resolveLoggingOptions,
+  type TillerLogFormat,
+  type TillerLogLevel,
+} from "./options";
+import { redactLogFields } from "./redaction";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
+export type TillerLogFields = Record<string, unknown>;
+
+const PRETTY_TIME_FORMAT = "SYS:yyyy-mm-dd HH:MM:ss";
+const PRETTY_FIELD_IGNORED_KEYS = new Set(["event", "format", "level", "message", "time"]);
 
 export type TillerLogger = {
+  fatal(event: string, fields?: TillerLogFields): void;
+  trace(event: string, fields?: TillerLogFields): void;
+  info(event: string, fields?: TillerLogFields): void;
+  debug(event: string, fields?: TillerLogFields): void;
+  warn(event: string, fields?: TillerLogFields): void;
+  error(event: string, fields?: TillerLogFields): void;
   logInfo(message: string): void;
   logDebug(message: string): void;
   logWarn(message: string): void;
@@ -15,9 +34,13 @@ export type TillerLogger = {
 
 export type CreateTillerLoggerOptions = {
   logsDir: string;
-  debugEnabled?: boolean;
+  level?: TillerLogLevel;
+  format?: TillerLogFormat;
   fileName?: string;
-  logStream?: WriteStream;
+  destination?: DestinationStream;
+  consoleDestination?: DestinationStream;
+  consoleOutput?: boolean;
+  debugEnabled?: boolean;
   console?: Pick<Console, "log" | "debug" | "warn" | "error">;
   now?: () => Date;
 };
@@ -25,49 +48,369 @@ export type CreateTillerLoggerOptions = {
 export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLogger {
   const {
     logsDir,
-    debugEnabled = /^(1|true|yes)$/iu.test(process.env.TILLER_DEBUG ?? ""),
+    level: explicitLevel,
+    format = "json",
     fileName = "tiller.log",
-    logStream,
+    destination,
+    consoleDestination,
+    consoleOutput = false,
+    debugEnabled,
     console: consoleOverride,
-    now = () => new Date(),
   } = options;
 
   const out = consoleOverride ?? console;
   const logFile = resolve(logsDir, fileName);
-  let stream = logStream;
-  if (!stream) {
+  if (!destination) {
     mkdirSync(logsDir, { recursive: true });
-    stream = createWriteStream(logFile, { flags: "a" });
+  }
+  const resolvedOptions = resolveLoggingOptions(process.env);
+  const level = explicitLevel ?? (debugEnabled ? "debug" : resolvedOptions.level);
+  const legacyDebugEnabled = debugEnabled ?? (level === "debug" || level === "trace");
+  const mirrorsStructuredLogsToConsole = format === "pretty" && (consoleOutput || Boolean(consoleDestination));
+  const logDestination = createLogDestination({
+    consoleDestination,
+    consoleOutput,
+    destination,
+    format,
+    logFile,
+  });
+  const logger = pino(
+    {
+      base: null,
+      level,
+      formatters: {
+        level: (label) => ({ level: label }),
+      },
+      timestamp: pino.stdTimeFunctions.isoTime,
+    },
+    logDestination,
+  );
+
+  function writeStructured(
+    level: TillerLogLevel,
+    event: string,
+    fields: TillerLogFields = {},
+  ) {
+    const payload = {
+      ...redactLogFields(fields) as TillerLogFields,
+      event,
+      format,
+    };
+    const writer = logger[level] as PinoLogger[TillerLogLevel];
+    writer.call(logger, payload);
   }
 
   function writeLogLine(level: LogLevel, message: string) {
-    stream!.write(`${now().toISOString()} [${level}] ${message}\n`);
+    const mappedLevel = mapLegacyLogLevel(level);
+    writeStructured(mappedLevel, `legacy.${mappedLevel}`, { message });
   }
 
   return {
+    fatal(event, fields) {
+      writeStructured("fatal", event, fields);
+    },
+    trace(event, fields) {
+      writeStructured("trace", event, fields);
+    },
+    info(event, fields) {
+      writeStructured("info", event, fields);
+    },
+    debug(event, fields) {
+      writeStructured("debug", event, fields);
+    },
+    warn(event, fields) {
+      writeStructured("warn", event, fields);
+    },
+    error(event, fields) {
+      writeStructured("error", event, fields);
+    },
     logInfo(message) {
       writeLogLine("INFO", message);
-      out.log(message);
+      if (!mirrorsStructuredLogsToConsole) {
+        out.log(message);
+      }
     },
     logDebug(message) {
-      if (!debugEnabled) {
+      if (!legacyDebugEnabled) {
         return;
       }
       writeLogLine("DEBUG", message);
-      out.debug(message);
+      if (!mirrorsStructuredLogsToConsole) {
+        out.debug(message);
+      }
     },
     logWarn(message) {
       writeLogLine("WARN", message);
-      out.warn(message);
+      if (!mirrorsStructuredLogsToConsole) {
+        out.warn(message);
+      }
     },
     logError(message) {
       writeLogLine("ERROR", message);
-      out.error(message);
+      if (!mirrorsStructuredLogsToConsole) {
+        out.error(message);
+      }
     },
     writeLogLine,
     logFile,
     close() {
-      stream!.end();
+      if ("end" in logDestination && typeof logDestination.end === "function") {
+        logDestination.end();
+      }
     },
   };
+}
+
+function createLogDestination(options: {
+  consoleDestination?: DestinationStream;
+  consoleOutput: boolean;
+  destination?: DestinationStream;
+  format: TillerLogFormat;
+  logFile: string;
+}): DestinationStream {
+  if (options.format === "pretty") {
+    const fileDestination = pretty({
+      colorize: false,
+      destination: options.destination ?? options.logFile,
+      ignore: "event,format,message",
+      messageFormat: formatPrettyEvent,
+      mkdir: !options.destination,
+      singleLine: true,
+      sync: true,
+      translateTime: PRETTY_TIME_FORMAT,
+    });
+    const consoleDestination = options.consoleDestination
+      ? createConsolePrettyDestination(options.consoleDestination, false)
+      : (options.consoleOutput
+        ? createConsolePrettyDestination(process.stdout, !process.env.NO_COLOR)
+        : undefined);
+    return consoleDestination
+      ? teeDestinations([fileDestination, consoleDestination])
+      : fileDestination;
+  }
+
+  return options.destination ?? pino.destination({ dest: options.logFile, mkdir: true });
+}
+
+function formatPrettyEvent(log: Record<string, unknown>) {
+  if (typeof log.event === "string" && log.event.startsWith("legacy.")) {
+    return typeof log.message === "string" ? stripTillerPrefix(log.message) : log.event;
+  }
+  return typeof log.event === "string" ? log.event : "";
+}
+
+function stripTillerPrefix(message: string) {
+  return message.replace(/^\[tiller\]\s*/u, "");
+}
+
+function createConsolePrettyDestination(destination: DestinationStream, colorizeLevel: boolean) {
+  let pending = "";
+  const consoleDestination = new Writable({
+    write(chunk, _encoding, callback) {
+      pending += String(chunk);
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        writeConsolePrettyLine(destination, line, colorizeLevel);
+      }
+      callback();
+    },
+    final(callback) {
+      if (pending) {
+        writeConsolePrettyLine(destination, pending, colorizeLevel);
+        pending = "";
+      }
+      callback();
+    },
+  });
+  return Object.assign(consoleDestination, {
+    flushSync() {
+      if ("flushSync" in destination && typeof destination.flushSync === "function") {
+        destination.flushSync();
+      }
+    },
+  });
+}
+
+function writeConsolePrettyLine(
+  destination: DestinationStream,
+  line: string,
+  colorizeLevel: boolean,
+) {
+  if (!line.trim()) {
+    return;
+  }
+  try {
+    const log = JSON.parse(line) as Record<string, unknown>;
+    destination.write(`${formatConsolePrettyLog(log, colorizeLevel)}\n`);
+  } catch {
+    destination.write(line.endsWith("\n") ? line : `${line}\n`);
+  }
+}
+
+function formatConsolePrettyLog(log: Record<string, unknown>, colorizeLevel: boolean) {
+  const time = typeof log.time === "string" ? formatLocalTimestamp(new Date(log.time)) : "";
+  const level = typeof log.level === "string" ? log.level.toUpperCase() : "INFO";
+  const event = formatPrettyEvent(log);
+  const readableMessage = formatConsoleReadableMessage(log, event);
+  const fields = formatPrettyJsonFields(log);
+  const prefix = time ? `[${time}] ` : "";
+  const levelLabel = colorizeLevel ? colorizeLogLevel(level) : level;
+  const eventLabel = colorizeLevel ? colorizeEvent(event) : event;
+  const fieldsLabel = colorizeLevel ? colorizeJsonFields(fields) : fields;
+  if (readableMessage) {
+    return `${prefix}${levelLabel}: ${readableMessage}`;
+  }
+  return fields
+    ? `${prefix}${levelLabel}: ${eventLabel} ${fieldsLabel}`
+    : `${prefix}${levelLabel}: ${eventLabel}`;
+}
+
+function formatConsoleReadableMessage(log: Record<string, unknown>, event: string) {
+  if (event.startsWith("legacy.")) {
+    return formatPrettyEvent(log);
+  }
+
+  switch (event) {
+    case "server.listening": {
+      const url = readString(log.url)
+        ?? `http://${readString(log.host) ?? "unknown"}:${readNumber(log.port) ?? "unknown"}`;
+      return `listening on ${url}`;
+    }
+    case "server.deck_available":
+      return `Deck available at ${readString(log.url) ?? "unknown"}`;
+    case "server.websocket_available":
+      return "WebSocket available on the same origin";
+    case "server.auth_mode":
+      return `auth mode: ${readString(log.authMode) ?? "unknown"}`;
+    case "server.config_stub":
+      return `config stub ${readBoolean(log.exists) ? "found" : "not found"} at ${readString(log.path) ?? "unknown"}`;
+    case "server.logs_file":
+      return `logs at ${readString(log.path) ?? "unknown"}`;
+    case "updates.latest_available":
+      return [
+        "Update available: ",
+        readString(log.current) ?? "unknown",
+        " -> ",
+        readString(log.latest) ?? "unknown",
+        "; Run: ",
+        readString(log.command) ?? "tiller update",
+      ].join("");
+    case "updates.preview_available":
+      return [
+        "Preview available: ",
+        readString(log.preview) ?? "unknown",
+        "; Try it with: ",
+        readString(log.command) ?? "unknown",
+      ].join("");
+    case "server.shutdown.started":
+      return `shutdown reason=${readString(log.reason) ?? "unknown"}; closing ACP connections`;
+    case "server.shutdown.completed":
+      return `shutdown complete reason=${readString(log.reason) ?? "unknown"}`;
+    default:
+      return undefined;
+  }
+}
+
+function formatPrettyJsonFields(log: Record<string, unknown>) {
+  const fields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(log)) {
+    if (!PRETTY_FIELD_IGNORED_KEYS.has(key)) {
+      fields[key] = value;
+    }
+  }
+  return Object.keys(fields).length > 0 ? JSON.stringify(fields) : "";
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readNumber(value: unknown) {
+  return typeof value === "number" ? value : undefined;
+}
+
+function readBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function formatLocalTimestamp(date: Date) {
+  const year = date.getFullYear();
+  const month = padDatePart(date.getMonth() + 1);
+  const day = padDatePart(date.getDate());
+  const hours = padDatePart(date.getHours());
+  const minutes = padDatePart(date.getMinutes());
+  const seconds = padDatePart(date.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function colorizeLogLevel(level: string) {
+  switch (level) {
+    case "TRACE":
+      return `\u001B[90m${level}\u001B[39m`;
+    case "DEBUG":
+      return `\u001B[34m${level}\u001B[39m`;
+    case "INFO":
+      return `\u001B[32m${level}\u001B[39m`;
+    case "WARN":
+      return `\u001B[33m${level}\u001B[39m`;
+    case "ERROR":
+    case "FATAL":
+      return `\u001B[31m${level}\u001B[39m`;
+    default:
+      return level;
+  }
+}
+
+function colorizeEvent(event: string) {
+  return `\u001B[36m${event}\u001B[39m`;
+}
+
+function colorizeJsonFields(fields: string) {
+  return `\u001B[90m${fields}\u001B[39m`;
+}
+
+function teeDestinations(destinations: DestinationStream[]): DestinationStream {
+  const destination: DestinationStream & {
+    end(): void;
+    flushSync(): void;
+  } = {
+    write(chunk: string) {
+      for (const destination of destinations) {
+        destination.write(chunk);
+      }
+    },
+    end() {
+      for (const destination of destinations) {
+        if ("end" in destination && typeof destination.end === "function") {
+          destination.end();
+        }
+      }
+    },
+    flushSync() {
+      for (const destination of destinations) {
+        if ("flushSync" in destination && typeof destination.flushSync === "function") {
+          destination.flushSync();
+        }
+      }
+    },
+  };
+  return destination;
+}
+
+function mapLegacyLogLevel(level: LogLevel): TillerLogLevel {
+  switch (level) {
+    case "DEBUG":
+      return "debug";
+    case "INFO":
+      return "info";
+    case "WARN":
+      return "warn";
+    case "ERROR":
+      return "error";
+  }
 }

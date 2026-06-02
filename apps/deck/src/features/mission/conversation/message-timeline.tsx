@@ -3,7 +3,9 @@ import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
+  nextCursor?: string;
   hasMore: boolean;
+  timelineNextCursor?: string;
   timelineHasMore?: boolean;
   loading: boolean;
 };
@@ -80,19 +82,24 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   );
 });
 
-function resolveConversationHistoryState(
+export function resolveConversationHistoryState(
   messageHistoryState?: MessageHistoryState,
   activityHistoryState?: MessageHistoryState,
 ): MessageHistoryState | undefined {
   if (!messageHistoryState && !activityHistoryState) {
     return undefined;
   }
+  const hasLoadableMessages = Boolean(
+    messageHistoryState?.hasMore && messageHistoryState.nextCursor,
+  );
+  const hasLoadableTimeline = Boolean(
+    messageHistoryState?.timelineHasMore && messageHistoryState.timelineNextCursor,
+  );
+  const hasLoadableActivities = Boolean(
+    activityHistoryState?.hasMore && activityHistoryState.nextCursor,
+  );
   return {
-    hasMore: Boolean(
-      messageHistoryState?.hasMore ||
-      messageHistoryState?.timelineHasMore ||
-      activityHistoryState?.hasMore,
-    ),
+    hasMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
     loading: Boolean(messageHistoryState?.loading || activityHistoryState?.loading),
   };
 }

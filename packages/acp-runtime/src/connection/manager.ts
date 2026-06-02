@@ -30,6 +30,7 @@ export type OpenManagedConnectionOptions = {
   provider: AcpAgentProvider;
   worktree: WorktreeSummary;
   sessionConfig?: AcpConnectionOptions["sessionConfig"];
+  protocolLogging?: AcpConnectionOptions["protocolLogging"];
   onLifecycleEvent?: (event: AcpConnectionLifecycleEvent) => void;
   sessionId?: string;
 };

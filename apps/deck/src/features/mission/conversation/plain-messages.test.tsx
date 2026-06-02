@@ -3,6 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { SessionTimelineEntry } from "@tiller/shared";
+import { resolveMessageImageSource } from "./plain-message-items.js";
 import { PlainMessages } from "./plain-messages.js";
 
 function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]> = {}) {
@@ -151,6 +152,50 @@ test("plain messages renders persisted image attachment URIs", () => {
 
   assert.match(html, /src="\/api\/sessions\/session-1\/attachments\/attachment-1"/);
   assert.doesNotMatch(html, /base64,undefined/);
+});
+
+test("plain message image sources route persisted attachment APIs to Helm in dev mode", () => {
+  assert.equal(
+    resolveMessageImageSource(
+      {
+        type: "image",
+        mimeType: "image/png",
+        uri: "/api/sessions/session-1/attachments/attachment-1",
+      },
+      {
+        location: { protocol: "http:", hostname: "127.0.0.1", port: "5173" },
+        storage: {
+          getItem: (key: string) => key === "tiller.daemon-port" ? "47631" : "127.0.0.1",
+        },
+      },
+    ),
+    "http://127.0.0.1:47631/api/sessions/session-1/attachments/attachment-1",
+  );
+});
+
+test("plain messages render local prompt images from data instead of placeholder URIs", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-local-image",
+        role: "user",
+        text: "看图",
+        timestamp: "2026-06-01T10:00:00.000Z",
+        attachments: [
+          {
+            type: "image",
+            data: "QUJD",
+            mimeType: "image/png",
+            uri: "tiller:///agent/prompt-image?name=screen.png&index=0",
+            name: "screen.png",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(html, /src="data:image\/png;base64,QUJD"/);
+  assert.doesNotMatch(html, /tiller:\/\/\/agent\/prompt-image/);
 });
 
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
@@ -316,7 +361,8 @@ test("plain messages marks paged windows that start inside earlier context", () 
 
   assert.match(html, /plain-history-boundary/);
   assert.match(html, /上方还有上下文/);
-  assert.ok(html.indexOf("上方还有上下文") < html.indexOf("缺少上方正文上下文的 Thinking"));
+  assert.doesNotMatch(html, /缺少上方正文上下文的 Thinking/);
+  assert.ok(html.indexOf("上方还有上下文") < html.indexOf("后续正文"));
 });
 
 test("plain messages does not mark paged windows that start at a normal message", () => {

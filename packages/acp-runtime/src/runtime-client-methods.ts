@@ -4,7 +4,7 @@ import { dirname, relative } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
 import { mapSessionUpdateNotification } from "./events";
 import { terminateChildProcess } from "./process";
-import { writeProtocolLog } from "./protocol-logging";
+import { writeProtocolLog, type ProtocolLogSink } from "./protocol-logging";
 import { mapSdkPermissionRequest } from "./sdk-helpers";
 import {
   emitTerminalChunk,
@@ -35,7 +35,7 @@ type RuntimeClientMethodsOptions = {
   options: AcpRuntimeOptions;
   launchCwd: string;
   childEnv: NodeJS.ProcessEnv;
-  logFile: string;
+  protocolLog: ProtocolLogSink;
   terminals: Map<string, ManagedSdkTerminal>;
   pendingPermissionReplies: Map<string, AcpRuntimePendingPermissionReply>;
   getSessionToken: () => string;
@@ -48,7 +48,7 @@ export function createRuntimeClientMethods({
   options,
   launchCwd,
   childEnv,
-  logFile,
+  protocolLog,
   terminals,
   pendingPermissionReplies,
   getSessionToken,
@@ -99,7 +99,7 @@ export function createRuntimeClientMethods({
       if (mapped.event.type === "config-options") {
         setCurrentConfigOptions(mapped.event.options);
       }
-      writeProtocolLog(logFile, "stdout", { method: "session/update", params });
+      writeProtocolLog(protocolLog, "stdout", { method: "session/update", params });
       options.onEvent(mapped.event);
     },
     async requestPermission(params: any) {

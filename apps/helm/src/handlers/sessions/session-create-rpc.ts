@@ -44,9 +44,13 @@ export async function createSession(
   const sessionId = `session-${Date.now()}`;
   const createdAt = new Date().toISOString();
   const initialReasoningEffort = params.reasoningEffort;
-  context.logInfo(
-    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${worktree.path} agent=${agent.id}`,
-  );
+  logSessionCreateInfo(context, "session.create.requested", {
+    sessionId,
+    projectId: project.id,
+    helmId: helm.id,
+    cwd: worktree.path,
+    agentId: agent.id,
+  });
   const summaryBase: SessionSummary = {
     id: sessionId,
     projectId: project.id,
@@ -86,16 +90,13 @@ export async function createSession(
           sessionConfig,
           onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
           onConnectionLifecycleEvent: (event) => {
-            const phaseMap = {
-              "connection-open": "ACP连接新建",
-              "connection-reuse": "ACP连接复用",
-              "connection-pending": "ACP连接等待",
-              "connection-replace": "ACP连接替换",
-              "connection-reconnect": "ACP连接重连",
-            } as const;
-            context.logInfo(
-              `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
-            );
+            logSessionCreateInfo(context, "acp.connection.lifecycle", {
+              type: event.type,
+              providerId: event.providerId,
+              key: event.key,
+              sessionId: event.sessionId,
+              cwd: event.cwd,
+            });
           },
         }),
       buildSession: ({ runtime, timestamp }) => {
@@ -133,9 +134,11 @@ export async function createSession(
       cwd: worktree.path,
       status: "idle",
     });
-    context.logInfo(
-      `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
-    );
+    logSessionCreateInfo(context, "session.create.runtime_ready", {
+      sessionId,
+      runtimeSessionId: runtime.runtimeSessionId,
+      capabilities: runtime.sessionCapabilities ?? {},
+    });
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
     broadcastSessionUpdate(context, sessionId, {
@@ -146,9 +149,12 @@ export async function createSession(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
     broadcastErrorRaised(context, { sessionId, message });
-    context.logError(
-      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${worktree.path} message=${message}`,
-    );
+    logSessionCreateError(context, "session.create.failed", {
+      projectId: project.id,
+      agentId: agent.id,
+      cwd: worktree.path,
+      message,
+    });
     context.updateSessionSummary(sessionId, (current) => ({
       ...current,
       status: "error",
@@ -162,4 +168,38 @@ export async function createSession(
     });
     throw error;
   }
+}
+
+function logSessionCreateInfo(
+  context: HelmHandlerContext,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (context.logger) {
+    if (event === "acp.connection.lifecycle") {
+      context.logger.debug(event, fields);
+      return;
+    }
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logSessionCreateError(
+  context: HelmHandlerContext,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (context.logger) {
+    context.logger.error(event, fields);
+    return;
+  }
+  context.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }

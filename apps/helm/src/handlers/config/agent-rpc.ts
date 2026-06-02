@@ -88,9 +88,10 @@ export async function connectAgent(
     };
   }
 
-  context.logInfo(
-    `[tiller] 阶段=ACP连接请求 provider=${agent.id} cwd=${worktree.path}`,
-  );
+  logAgentInfo(context, "acp.connection.requested", {
+    providerId: agent.id,
+    cwd: worktree.path,
+  });
   try {
     const connection = await context.connectAcpConnection({
       sessionId: `connect-${agent.id}-${Date.now()}`,
@@ -98,9 +99,11 @@ export async function connectAgent(
       worktree,
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
-        context.logInfo(
-          `[tiller] 阶段=ACP连接打开 provider=${event.providerId} key=${event.key} cwd=${event.cwd}`,
-        );
+        logAgentInfo(context, "acp.connection.opened", {
+          providerId: event.providerId,
+          key: event.key,
+          cwd: event.cwd,
+        });
       },
     });
     const inventory = connection.inventory();
@@ -115,9 +118,11 @@ export async function connectAgent(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to connect ACP provider";
-    context.logError(
-      `[tiller] 阶段=ACP连接失败 provider=${agent.id} cwd=${worktree.path} message=${message}`,
-    );
+    logAgentError(context, "acp.connection.failed", {
+      providerId: agent.id,
+      cwd: worktree.path,
+      message,
+    });
     return {
       ok: false,
       providerId: agent.id,
@@ -143,9 +148,10 @@ export async function reconnectAgent(
     };
   }
 
-  context.logInfo(
-    `[tiller] 阶段=ACP重连请求 provider=${agent.id} cwd=${worktree.path}`,
-  );
+  logAgentInfo(context, "acp.connection.reconnect_requested", {
+    providerId: agent.id,
+    cwd: worktree.path,
+  });
   try {
     const connection = await context.reconnectAcpConnection({
       sessionId: `reconnect-${agent.id}-${Date.now()}`,
@@ -153,15 +159,20 @@ export async function reconnectAgent(
       worktree,
       onEvent: () => undefined,
       onConnectionLifecycleEvent: (event) => {
-        context.logInfo(
-          `[tiller] 阶段=ACP连接${event.type === "connection-reconnect" ? "重连" : "打开"} provider=${event.providerId} key=${event.key} cwd=${event.cwd}`,
-        );
+        logAgentInfo(context, "acp.connection.lifecycle", {
+          type: event.type,
+          providerId: event.providerId,
+          key: event.key,
+          cwd: event.cwd,
+        });
       },
     });
     const inventory = connection.inventory();
-    context.logInfo(
-      `[tiller] 阶段=ACP重连完成 provider=${agent.id} cwd=${worktree.path} connection=${inventory.runtimeConnectionId}`,
-    );
+    logAgentInfo(context, "acp.connection.reconnect_completed", {
+      providerId: agent.id,
+      cwd: worktree.path,
+      runtimeConnectionId: inventory.runtimeConnectionId,
+    });
     return {
       ok: true,
       providerId: agent.id,
@@ -173,9 +184,11 @@ export async function reconnectAgent(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reconnect ACP provider";
-    context.logError(
-      `[tiller] 阶段=ACP重连失败 provider=${agent.id} cwd=${worktree.path} message=${message}`,
-    );
+    logAgentError(context, "acp.connection.reconnect_failed", {
+      providerId: agent.id,
+      cwd: worktree.path,
+      message,
+    });
     return {
       ok: false,
       providerId: agent.id,
@@ -209,6 +222,32 @@ function resolveAgentWorktree(
         ? { ...baseWorktree, path: project.path }
         : baseWorktree;
   return { agent, worktree };
+}
+
+function logAgentInfo(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    if (event === "acp.connection.lifecycle") {
+      context.logger.debug(event, fields);
+      return;
+    }
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logAgentError(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.error(event, fields);
+    return;
+  }
+  context.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }
 
 function normalizeWorktreePath(path: string) {

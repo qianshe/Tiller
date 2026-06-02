@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode, UIEventHandler } from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { SessionSummary } from "@tiller/shared";
 import {
   Icon,
@@ -41,6 +41,80 @@ export type SessionCardScrollSnapshot = {
   scrollTop: number;
   scrollHeight: number;
 };
+
+const SCROLL_TO_BOTTOM_THRESHOLD = 80;
+
+export function shouldShowSessionScrollToBottom({
+  scrollHeight,
+  scrollTop,
+  clientHeight,
+}: {
+  scrollHeight: number;
+  scrollTop: number;
+  clientHeight: number;
+}): boolean {
+  return scrollHeight - scrollTop - clientHeight > SCROLL_TO_BOTTOM_THRESHOLD;
+}
+
+function ScrollToBottomButton({
+  visible,
+  onClick,
+}: {
+  visible: boolean;
+  onClick: () => void;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      className="absolute bottom-3 right-3 z-10 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      aria-label="回到底部"
+      title="回到底部"
+      data-session-scroll-bottom
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <Icon name="chevronDown" size={14} />
+    </button>
+  );
+}
+
+function useSessionCardScrollControls() {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const updateScrollToBottomVisibility = useCallback((body = bodyRef.current) => {
+    if (!body) {
+      setShowScrollToBottom(false);
+      return;
+    }
+    const next = shouldShowSessionScrollToBottom({
+      scrollHeight: body.scrollHeight,
+      scrollTop: body.scrollTop,
+      clientHeight: body.clientHeight,
+    });
+    setShowScrollToBottom((current) => (current === next ? current : next));
+  }, []);
+  const scrollToBottom = useCallback(() => {
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+    body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+    setShowScrollToBottom(false);
+  }, []);
+
+  return {
+    bodyRef,
+    showScrollToBottom,
+    scrollToBottom,
+    updateScrollToBottomVisibility,
+  };
+}
 
 /**
  * Joins project and worktree names, dropping the worktree suffix when it only
@@ -117,8 +191,13 @@ export function SessionCard({
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
-  const bodyRef = useRef<HTMLDivElement | null>(null);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
+  const {
+    bodyRef,
+    showScrollToBottom,
+    scrollToBottom,
+    updateScrollToBottomVisibility,
+  } = useSessionCardScrollControls();
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -130,26 +209,35 @@ export function SessionCard({
         bodyScrollSnapshot.scrollTop,
         Math.max(body.scrollHeight - body.clientHeight, 0),
       );
+      updateScrollToBottomVisibility(body);
       return;
     }
     body.scrollTop = Math.max(body.scrollHeight - body.clientHeight, 0);
-  }, [bodyScrollSnapshot]);
+    updateScrollToBottomVisibility(body);
+  }, [bodyScrollSnapshot, updateScrollToBottomVisibility]);
+
+  useLayoutEffect(() => {
+    updateScrollToBottomVisibility();
+  });
 
   return (
     <article
       onClick={() => onFocus(session.id)}
       data-active-session-card={active ? "true" : undefined}
       className={cn(
-        "flex flex-col overflow-hidden [contain:layout_paint]",
-        flat ? "h-full bg-surface" : "h-full min-h-0 bg-surface rounded-[8px] transition-all cursor-default",
+        "relative flex flex-col overflow-hidden [contain:layout_paint]",
+        flat
+          ? "h-full bg-surface"
+          : cn(
+              "h-full min-h-0 cursor-default rounded-[8px] border bg-surface transition-all",
+              active ? "border-primary" : "border-border-ghost",
+            ),
       )}
       style={
         flat
           ? undefined
           : {
-              boxShadow: active
-                ? "inset 0 0 0 1px var(--primary), 0 8px 20px rgb(0 0 0 / 0.18)"
-                : "inset 0 0 0 1px var(--border-ghost)",
+              boxShadow: active ? "0 8px 20px rgb(0 0 0 / 0.18)" : undefined,
             }
       }
       aria-current={active ? "true" : undefined}
@@ -260,12 +348,24 @@ export function SessionCard({
       </div>
       <div
         ref={bodyRef}
-        onScroll={onBodyScroll}
-        className={cn("flex flex-1 min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", flat ? "px-5 py-3" : "px-5 py-3")}
+        onScroll={(event) => {
+          onBodyScroll(event);
+          updateScrollToBottomVisibility(event.currentTarget);
+        }}
+        className={cn(
+          "flex flex-1 min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          flat ? "px-5 py-3" : "px-5 pb-10 pt-3",
+        )}
         data-session-card-body={session.id}
       >
         <div className="space-y-3">{children}</div>
       </div>
+      {!flat ? (
+        <ScrollToBottomButton
+          visible={showScrollToBottom}
+          onClick={scrollToBottom}
+        />
+      ) : null}
     </article>
   );
 }
@@ -298,16 +398,28 @@ export function DraftSessionCard({
   onClose?: (draftWindowId: string) => void;
 }) {
   const statusTone = draftWindow.status === "ready" ? "active" : "primary";
+  const {
+    bodyRef,
+    showScrollToBottom,
+    scrollToBottom,
+    updateScrollToBottomVisibility,
+  } = useSessionCardScrollControls();
+
+  useLayoutEffect(() => {
+    updateScrollToBottomVisibility();
+  });
+
   return (
     <article
       onClick={() => onFocus?.(draftWindow.id)}
       data-draft-session-card={draftWindow.id}
       data-active-session-card={active ? "true" : undefined}
-      className="flex h-full min-h-0 cursor-default flex-col overflow-hidden rounded-[8px] bg-surface transition-all [contain:layout_paint]"
+      className={cn(
+        "relative flex h-full min-h-0 cursor-default flex-col overflow-hidden rounded-[8px] border bg-surface transition-all [contain:layout_paint]",
+        active ? "border-primary" : "border-border-ghost",
+      )}
       style={{
-        boxShadow: active
-          ? "inset 0 0 0 1px var(--primary), 0 8px 20px rgb(0 0 0 / 0.18)"
-          : "inset 0 0 0 1px var(--border-ghost)",
+        boxShadow: active ? "0 8px 20px rgb(0 0 0 / 0.18)" : undefined,
       }}
       aria-current={active ? "true" : undefined}
     >
@@ -330,7 +442,11 @@ export function DraftSessionCard({
           <Icon name="x" size={11} />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 py-3">
+      <div
+        ref={bodyRef}
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-10 pt-3"
+        onScroll={(event) => updateScrollToBottomVisibility(event.currentTarget)}
+      >
         <div className="space-y-2 rounded-lg border border-border-ghost bg-surface-sunken p-3 text-section text-muted-foreground">
           <strong className="block text-foreground">{draftWindow.agentName ? "准备创建会话" : "选择 ACP Agent"}</strong>
           <span>{draftWindow.message}</span>
@@ -357,6 +473,10 @@ export function DraftSessionCard({
           ) : null}
         </div>
       </div>
+      <ScrollToBottomButton
+        visible={showScrollToBottom}
+        onClick={scrollToBottom}
+      />
     </article>
   );
 }

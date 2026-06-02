@@ -15,9 +15,19 @@ export function handleRuntimePermissionRequest(
   const sessionRecord = context.sessions.get(input.sessionId);
   const autoDecision = resolveAutoApprovalDecision(input, sessionRecord, context);
   if (autoDecision && sessionRecord?.runtime?.supportsPermissionResponses) {
-    context.logInfo(
-      `[tiller] 阶段=权限自动处理 ${input.logScope} request=${input.request.id} decision=${autoDecision}`,
-    );
+    const fields = {
+      sessionId: input.sessionId,
+      requestId: input.request.id,
+      decision: autoDecision,
+      scope: input.logScope,
+    };
+    if (context.logger) {
+      context.logger.info("runtime.permission.auto_decided", fields);
+    } else {
+      context.logInfo(
+        `[tiller] runtime.permission.auto_decided sessionId=${fields.sessionId} requestId=${fields.requestId} decision=${fields.decision} scope=${fields.scope}`,
+      );
+    }
     sessionRecord.runtime.respondPermission(input.request.id, autoDecision);
     // 自动审批不进入等待态，跳过 waiting_for_permission 写入避免状态闪烁。
     return;

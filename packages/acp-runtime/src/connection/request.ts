@@ -11,7 +11,7 @@ export async function withConnectionRequest<T>(
   operation: Promise<T>,
   child: ChildProcess,
   stderrBuffer: string,
-  logFile: string,
+  logFile: string | undefined,
   provider: AcpAgentProvider,
 ): Promise<T> {
   const timeoutMs = resolveAcpRequestTimeout(provider, method);

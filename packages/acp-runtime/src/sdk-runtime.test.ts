@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import type { AcpAgentProvider, AcpMcpServer } from "@tiller/shared";
-import { createAcpRuntime, listAcpAgentSessions, testAcpConnection } from "./runtime";
+import { createAcpRuntime, disposeAcpConnections, listAcpAgentSessions, testAcpConnection } from "./runtime";
 import { mapTillerMcpServersToSdkMcpServers } from "./sdk-helpers";
 
 const require = createRequire(import.meta.url);
@@ -197,6 +197,7 @@ test("production ACP runtime forwards cancel through the SDK connection", async 
     assert.equal(events.at(-1)?.type, "status");
     assert.equal(events.at(-1)?.status, "cancelled");
   } finally {
+    await disposeAcpConnections();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -223,6 +224,7 @@ test("production ACP runtime serves worktree fs requests through the SDK client"
     assert.ok(events.some((event) => event.type === "message" && event.message.text === "from sdk fs"));
   } finally {
     await runtime.close();
+    await disposeAcpConnections();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -249,6 +251,7 @@ test("production ACP runtime executes SDK terminal requests after Deck permissio
     assert.ok(events.some((event) => event.type === "message" && event.message.text === "terminal ok:0"));
   } finally {
     await runtime.close();
+    await disposeAcpConnections();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -323,6 +326,7 @@ test("production ACP runtime uses the SDK connection path with fake SDK agents",
     assert.equal(events.at(-1)?.status, "idle");
   } finally {
     await runtime.close();
+    await disposeAcpConnections();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

@@ -96,10 +96,12 @@ export function PlainMessages({
     }
     if (displayItems.length <= previousDisplayItemsLength || visibleItemLimit >= displayItems.length) {
       pendingRemoteHistoryRevealRef.current = false;
+      olderLoadRequestedRef.current = false;
       localScrollSnapshotRef.current = null;
       return;
     }
     pendingRemoteHistoryRevealRef.current = false;
+    olderLoadRequestedRef.current = false;
     renderRevealRequestedRef.current = true;
     setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
       currentLimit,
@@ -181,6 +183,10 @@ export function PlainMessages({
       visibleRenderMessages[0] &&
       visibleRenderMessages[0].kind !== "message",
   );
+  const renderMessages = resolveRenderablePlainMessageItems(
+    visibleRenderMessages,
+    startsInsideEarlierContext,
+  );
 
   return (
     <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_32px))] gap-4">
@@ -191,13 +197,13 @@ export function PlainMessages({
           <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-border-ghost" />
         </div>
       ) : null}
-      {visibleRenderMessages.map((renderItem, index) => {
+      {renderMessages.map((renderItem, index) => {
         if (renderItem.kind === "thinking") {
           return (
             <PlainThinkingItem
               key={renderItem.renderKey}
               item={renderItem.toolCall}
-              hasNewerContent={index < visibleRenderMessages.length - 1}
+              hasNewerContent={index < renderMessages.length - 1}
             />
           );
         }
@@ -206,7 +212,7 @@ export function PlainMessages({
             <PlainToolGroupItem
               key={renderItem.renderKey}
               group={renderItem.group}
-              hasNewerContent={index < visibleRenderMessages.length - 1}
+              hasNewerContent={index < renderMessages.length - 1}
             />
           );
         }
@@ -300,6 +306,17 @@ export function resolvePlainMessageRenderItems(
   });
 }
 
+function resolveRenderablePlainMessageItems(
+  items: PlainMessageRenderItem[],
+  hideDetachedLeadingContext: boolean,
+) {
+  if (!hideDetachedLeadingContext) {
+    return items;
+  }
+  const firstMessageIndex = items.findIndex((item) => item.kind === "message");
+  return firstMessageIndex >= 0 ? items.slice(firstMessageIndex) : [];
+}
+
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
   const sortedMessages = sortAgentMessagesByTimeline(items);
   return coalesceDisplayMessages(
@@ -338,7 +355,40 @@ export function resolveVisiblePlainConversationItems<T>(
   if (safeLimit <= 0 || items.length <= safeLimit) {
     return items;
   }
-  return items.slice(items.length - safeLimit);
+  const startIndex = resolvePlainConversationWindowStartIndex(
+    items,
+    items.length - safeLimit,
+  );
+  return items.slice(startIndex);
+}
+
+function resolvePlainConversationWindowStartIndex<T>(items: T[], startIndex: number) {
+  if (startIndex <= 0 || !isPlainConversationContextItem(items[startIndex])) {
+    return startIndex;
+  }
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (isPlainConversationMessageItem(item)) {
+      return index;
+    }
+    if (!isPlainConversationContextItem(item)) {
+      return startIndex;
+    }
+  }
+  return startIndex;
+}
+
+function isPlainConversationContextItem(item: unknown) {
+  return isPlainConversationItemKind(item, "thinking") ||
+    isPlainConversationItemKind(item, "tool-group");
+}
+
+function isPlainConversationMessageItem(item: unknown) {
+  return isPlainConversationItemKind(item, "message");
+}
+
+function isPlainConversationItemKind(item: unknown, kind: PlainConversationItem["kind"]) {
+  return Boolean(item && typeof item === "object" && "kind" in item && item.kind === kind);
 }
 
 export function resolveNextPlainConversationRenderLimit(

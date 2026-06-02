@@ -25,6 +25,7 @@ import type {
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session-prompt-queue";
+import type { TillerLogger } from "../logging/logger";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -71,6 +72,7 @@ export type HelmHandlerContext = {
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
   logError: (message: string) => void;
+  logger: TillerLogger;
   promptTrace?: {
     emit(event: PromptTraceEvent): void;
   };

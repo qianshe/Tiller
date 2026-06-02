@@ -50,6 +50,7 @@ export type SocketAuthenticatorOptions = {
   showPairingCode: () => void;
   attachRpcConnection: (socket: WebSocket) => void;
   logInfo: (message: string) => void;
+  logDebug: (message: string) => void;
   logError: (message: string) => void;
 };
 
@@ -63,6 +64,7 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
     showPairingCode,
     attachRpcConnection,
     logInfo,
+    logDebug,
     logError,
   } = options;
 
@@ -132,7 +134,7 @@ export function createSocketAuthenticator(options: SocketAuthenticatorOptions) {
   return function beginAuthenticationFlow(socket: WebSocket) {
     if (authMode === "none") {
       authenticateSocket(socket, "local-deck");
-      logInfo("[tiller] personal auth disabled; client accepted");
+      logDebug("[tiller] personal auth disabled; client accepted");
       return;
     }
 

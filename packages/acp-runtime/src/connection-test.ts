@@ -4,13 +4,16 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "./adapters";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
-import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "./protocol-logging";
+import { createProtocolLogSink, writeChunkLog, type AcpProtocolLoggingOptions } from "./protocol-logging";
 import { SDK_PROBE_CLIENT_CAPABILITIES } from "./sdk-helpers";
-import { resolve } from "node:path";
 
 const ACP_INITIALIZE_TIMEOUT_MS = 30_000;
 
-export async function testAcpConnection(provider: AcpAgentProvider, cwd = process.cwd()) {
+export async function testAcpConnection(
+  provider: AcpAgentProvider,
+  cwd = process.cwd(),
+  protocolLogging?: AcpProtocolLoggingOptions,
+) {
   const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: cwd });
   const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
   const launchCwd = launchConfig.cwd;
@@ -19,10 +22,14 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
   const initializeTimeoutMs = provider.initializeTimeoutMs ?? ACP_INITIALIZE_TIMEOUT_MS;
-  const logFile = resolve(ACP_LOGS_DIR, `connection-test-${sanitizeLogToken(provider.id)}.log`);
+  const protocolLog = createProtocolLogSink({
+    mode: protocolLogging?.mode,
+    logsDir: protocolLogging?.logsDir,
+    filePrefix: "connection-test",
+    token: provider.id,
+  });
 
-  writeLogLine(
-    logFile,
+  protocolLog.writeLine(
     "meta",
     `Starting ACP SDK connection test command=${launchSpec.command} args=${JSON.stringify(launchSpec.args)} cwd=${launchCwd}`,
   );
@@ -37,12 +44,12 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
   let stderrBuffer = "";
   const processClosed = new Promise<never>((_resolve, reject) => {
     child.once("error", (error) => {
-      writeLogLine(logFile, "process-error", error.message);
+      protocolLog.writeLine("process-error", error.message);
       reject(new Error(`Failed to start ACP command: ${error.message}`));
     });
     child.once("exit", (code, signal) => {
       const message = `ACP SDK connection test exited code=${code ?? "unknown"} signal=${signal ?? "unknown"}`;
-      writeLogLine(logFile, "exit", message);
+      protocolLog.writeLine("exit", message);
       reject(new Error(stderrBuffer.trim() ? `${message}: ${stderrBuffer.trim()}` : message));
     });
   });
@@ -51,11 +58,11 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
   child.stderr.on("data", (chunk) => {
     const text = String(chunk);
     stderrBuffer += text;
-    writeChunkLog(logFile, "stderr", text);
+    writeChunkLog(protocolLog, "stderr", text);
   });
 
   const protocolStdout = createProtocolStdoutStream(child.stdout, (line) => {
-    writeLogLine(logFile, "stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
+    protocolLog.writeLine("stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
   });
   const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(protocolStdout));
   const agent = new acp.ClientSideConnection(() => ({
@@ -81,7 +88,7 @@ export async function testAcpConnection(provider: AcpAgentProvider, cwd = proces
   });
 
   try {
-    writeLogLine(logFile, "sdk-request", "initialize");
+    protocolLog.writeLine("sdk-request", "initialize");
     const initializeResult = await Promise.race([
       agent.initialize({
         protocolVersion: acp.PROTOCOL_VERSION,

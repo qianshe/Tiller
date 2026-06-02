@@ -4,12 +4,13 @@ import type { HelmServerEnvironment } from "./server-environment";
 
 type CreateHelmServerStoresOptions = {
   environment: HelmServerEnvironment;
+  logDebug: (message: string) => void;
   logInfo: (message: string) => void;
   logError: (message: string) => void;
 };
 
 export function createHelmServerStores(options: CreateHelmServerStoresOptions) {
-  const { environment, logInfo, logError } = options;
+  const { environment, logDebug, logInfo, logError } = options;
   const sessionStores = createHelmSessionStores({
     sqlitePath: environment.sessionsSqlitePath,
     attachmentRootPath: environment.sessionAttachmentsPath,
@@ -21,6 +22,7 @@ export function createHelmServerStores(options: CreateHelmServerStoresOptions) {
       sessionArtifactsPath: environment.sessionArtifactsPath,
       sessionRuntimesPath: environment.sessionRuntimesPath,
     },
+    logDebug,
     logInfo,
     logError,
   });

@@ -29,6 +29,7 @@ import {
 import { resolveSessionRestoreCapabilities } from "./resume-info";
 import { normalizeWorktreePath } from "./session-worktree-resolution";
 import { persistMessageImageAttachments } from "./session-attachment-projection";
+import type { TillerLogger } from "../logging/logger";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -64,6 +65,7 @@ type ProviderHistoryServiceOptions = {
   sessionTimelineStore?: SessionTimelineStore;
   getAgents(): AcpAgentProvider[];
   getWorktrees(): WorktreeSummary[];
+  logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
 };
@@ -90,9 +92,10 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       applyAuthoritativeProviderHistory(sessionId, agent, runtimeSessionId, historySnapshot);
       return true;
     } catch (error) {
-      options.logError(
-        `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
-      );
+      logProviderHistoryError("runtime.provider_history.export_failed", {
+        sessionId,
+        message: error instanceof Error ? error.message : "Provider history export failed.",
+      });
       return false;
     }
   }
@@ -179,9 +182,14 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
         localMessages,
       })
     ) {
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_local_source providerMessages=${history.messages.length} localMessages=${localMessages.length} toolCalls=${history.toolCalls.length}`,
-      );
+      logProviderHistoryDecision({
+        sessionId,
+        runtimeSessionId,
+        action: "skip_local_source",
+        providerMessages: history.messages.length,
+        localMessages: localMessages.length,
+        toolCalls: history.toolCalls.length,
+      });
       return;
     }
 
@@ -198,16 +206,26 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
           persistLocalProviderHistoryTimeline(sessionId);
         }
       }
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_empty providerMessages=0 localMessages=0 toolCalls=${history.toolCalls.length}`,
-      );
+      logProviderHistoryDecision({
+        sessionId,
+        runtimeSessionId,
+        action: "skip_empty",
+        providerMessages: 0,
+        localMessages: 0,
+        toolCalls: history.toolCalls.length,
+      });
       return;
     }
 
     if (shouldSkipIncompleteProviderSnapshot(localMessages, history.messages)) {
-      options.logInfo(
-        `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=skip_incomplete_snapshot providerMessages=${history.messages.length} localMessages=${localMessages.length} toolCalls=${history.toolCalls.length}`,
-      );
+      logProviderHistoryDecision({
+        sessionId,
+        runtimeSessionId,
+        action: "skip_incomplete_snapshot",
+        providerMessages: history.messages.length,
+        localMessages: localMessages.length,
+        toolCalls: history.toolCalls.length,
+      });
       return;
     }
 
@@ -281,9 +299,14 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     if (logAction !== "skip" || toolCallsChanged) {
       persistLocalProviderHistoryTimeline(sessionId);
     }
-    options.logInfo(
-      `[tiller] provider.export.history session=${sessionId} runtime=${runtimeSessionId} action=${logAction} providerMessages=${history.messages.length} localMessages=${localMessageCount} toolCalls=${history.toolCalls.length}`,
-    );
+    logProviderHistoryDecision({
+      sessionId,
+      runtimeSessionId,
+      action: logAction,
+      providerMessages: history.messages.length,
+      localMessages: localMessageCount,
+      toolCalls: history.toolCalls.length,
+    });
   }
 
   function persistLocalProviderHistoryTimeline(sessionId: string) {
@@ -423,6 +446,29 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     providerHistoryRefreshes.delete(sessionId);
   }
 
+  function logProviderHistoryDecision(fields: {
+    sessionId: string;
+    runtimeSessionId: string;
+    action: string;
+    providerMessages: number;
+    localMessages: number;
+    toolCalls: number;
+  }) {
+    if (options.logger) {
+      options.logger.debug("runtime.provider_history.sync_decision", fields);
+      return;
+    }
+    options.logInfo(`[tiller] runtime.provider_history.sync_decision ${formatLogFields(fields)}`);
+  }
+
+  function logProviderHistoryError(event: string, fields: Record<string, unknown>) {
+    if (options.logger) {
+      options.logger.error(event, fields);
+      return;
+    }
+    options.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
+  }
+
   return {
     applyAuthoritativeProviderHistory,
     hasHistoryContent,
@@ -432,4 +478,10 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     refreshAuthoritativeSessionHistory,
     resetRefresh,
   };
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }

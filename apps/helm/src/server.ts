@@ -1,6 +1,7 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
@@ -66,12 +67,14 @@ import { createSessionTopicRegistry } from "./runtime/session-topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
+import { resolveLoggingOptions } from "./logging/options";
 import { createSocketState } from "./state/socket";
 import { TILLER_VERSION } from "./cli";
 import {
   buildUpdateNotice,
-  formatStartupUpdateNotice,
   loadUpdateVersions,
+  LATEST_UPDATE_COMMAND,
+  PREVIEW_UPDATE_COMMAND,
   resolveUpdateOptions,
 } from "./updates/check.js";
 
@@ -91,7 +94,18 @@ const LOGS_DIR = serverEnvironment.logsDir;
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
 const PROMPT_TRACE_ENABLED = process.env.TILLER_PROMPT_TRACE === "1";
 
-const logger = createTillerLogger({ logsDir: LOGS_DIR });
+const loggingOptions = resolveLoggingOptions(process.env, tillerConfig.logging);
+const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
+const acpProtocolLogging = {
+  mode: loggingOptions.acpTrace,
+  logsDir: ACP_LOGS_DIR,
+};
+const logger = createTillerLogger({
+  logsDir: LOGS_DIR,
+  level: loggingOptions.level,
+  format: loggingOptions.format,
+  consoleOutput: loggingOptions.format === "pretty",
+});
 const { logInfo, logDebug, logWarn, logError } = logger;
 const TILLER_LOG_FILE = logger.logFile;
 
@@ -105,6 +119,7 @@ const {
   trustedDeviceStore,
 } = createHelmServerStores({
   environment: serverEnvironment,
+  logDebug,
   logInfo,
   logError,
 });
@@ -159,6 +174,8 @@ const runtimeComposition = createHelmRuntimeComposition({
   broadcastNotification,
   logInfo,
   logError,
+  logger,
+  protocolLogging: acpProtocolLogging,
 });
 const { sessions, permissionIndex, promptQueue, sessionServices } = runtimeComposition;
 const {
@@ -196,9 +213,9 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   promptQueue,
   createHandlerContext,
   drainPromptQueue,
-  createRuntime: createAcpRuntime,
-  connectAcpConnection,
-  reconnectAcpConnection,
+  createRuntime: (options) => createAcpRuntime({ ...options, protocolLogging: acpProtocolLogging }),
+  connectAcpConnection: (options) => connectAcpConnection({ ...options, protocolLogging: acpProtocolLogging }),
+  reconnectAcpConnection: (options) => reconnectAcpConnection({ ...options, protocolLogging: acpProtocolLogging }),
   listAcpConnectionInventory,
   createRuntimeDraft,
   discardRuntimeDraft,
@@ -206,7 +223,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   scheduleDeckClientDraftDiscard,
   takeRuntimeDraft,
   configureRuntimeDraft,
-  testAcpConnection,
+  testAcpConnection: (agent, cwd) => testAcpConnection(agent, cwd, acpProtocolLogging),
   resolveHelmById,
   resolveProjectById,
   resolveProviderById,
@@ -235,6 +252,7 @@ const authComposition = createHelmAuthComposition({
   showPairingCode,
   attachRpcConnection,
   logInfo,
+  logDebug,
   logError,
 });
 const { pairingState, beginAuthenticationFlow } = authComposition;
@@ -264,20 +282,32 @@ async function checkForTillerUpdatesOnStart() {
 
   try {
     const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION), options);
-    for (const line of formatStartupUpdateNotice(notice)) {
-      logWarn(line);
+    if (notice.kind === "latest-update") {
+      logger.warn("updates.latest_available", {
+        current: notice.current,
+        latest: notice.latest,
+        command: LATEST_UPDATE_COMMAND,
+      });
+    } else if (notice.kind === "preview-hint") {
+      logger.warn("updates.preview_available", {
+        current: notice.current,
+        preview: notice.preview,
+        command: PREVIEW_UPDATE_COMMAND,
+      });
     }
   } catch (error) {
-    logWarn(
-      `[tiller] update check skipped: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.warn("updates.check_skipped", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
 try {
   await assertHelmPortAvailable({ host: HOST, port: PORT });
 } catch (error) {
-  logError(`[tiller] startup blocked: ${error instanceof Error ? error.message : String(error)}`);
+  logger.error("server.startup_blocked", {
+    reason: error instanceof Error ? error.message : String(error),
+  });
   process.exit(1);
 }
 
@@ -286,11 +316,11 @@ const server = new WebSocketServer({ server: httpServer });
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 
 server.on("connection", (socket) => {
-  logInfo("[tiller] client connected");
+  logger.debug("websocket.client.connected");
 
   socket.on("close", () => {
     const socketId = getSocketId(socket);
-    logInfo("[tiller] client disconnected");
+    logger.debug("websocket.client.disconnected", { socketId });
     sessionTopics.removeSocket(socketId);
     authenticatedSockets.remove(socketId);
   });
@@ -301,25 +331,26 @@ server.on("connection", (socket) => {
 httpServer.listen(PORT, HOST);
 
 httpServer.on("listening", () => {
-  logInfo(`[tiller] listening on http://${HOST}:${PORT}`);
+  logger.info("server.listening", { host: HOST, port: PORT, url: `http://${HOST}:${PORT}` });
   for (const url of resolveDisplayUrls()) {
-    logInfo(`[tiller] Deck available at ${url}`);
+    logger.info("server.deck_available", { url });
   }
-  logInfo(`[tiller] WebSocket available on the same origin`);
-  logInfo(`[tiller] auth mode: ${AUTH_MODE}`);
-  logInfo(
-    `[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`,
-  );
-  logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
+  logger.debug("server.websocket_available", { origin: "same-origin" });
+  logger.debug("server.auth_mode", { authMode: AUTH_MODE });
+  logger.debug("server.config_stub", {
+    exists: configStub.exists,
+    path: configStub.configPath,
+  });
+  logger.info("server.logs_file", { path: TILLER_LOG_FILE });
   void checkForTillerUpdatesOnStart();
 });
 
 httpServer.on("error", (error) => {
-  logError(`[tiller] server error: ${error.message}`);
+  logger.error("server.http_error", { message: error.message });
 });
 
 server.on("error", (error) => {
-  logError(`[tiller] websocket error: ${error.message}`);
+  logger.error("server.websocket_error", { message: error.message });
 });
 
 let shutdownStarted = false;
@@ -329,12 +360,12 @@ async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
     return;
   }
   shutdownStarted = true;
-  logInfo(`[tiller] shutdown reason=${reason}; closing ACP connections`);
+  logger.info("server.shutdown.started", { reason });
   stopWebSocketHeartbeat();
   server.close();
   httpServer.close();
   await disposeAcpConnections();
-  logInfo(`[tiller] shutdown complete reason=${reason}`);
+  logger.info("server.shutdown.completed", { reason });
   process.exit(0);
 }
 
@@ -346,14 +377,25 @@ process.once("SIGTERM", (signal) => {
   void shutdownHelm(signal);
 });
 
+process.on("warning", (warning) => {
+  logger.warn("process.warning", {
+    name: warning.name,
+    message: warning.message,
+    stack: warning.stack,
+  });
+});
+
 process.on("uncaughtException", (error) => {
-  logError(`[tiller] uncaught exception: ${error.stack ?? error.message}`);
+  logger.error("process.uncaught_exception", {
+    message: error.message,
+    stack: error.stack,
+  });
 });
 
 process.on("unhandledRejection", (reason) => {
-  logError(
-    `[tiller] unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
-  );
+  logger.error("process.unhandled_rejection", reason instanceof Error
+    ? { message: reason.message, stack: reason.stack }
+    : { reason: String(reason) });
 });
 
 function attachRpcConnection(socket: WebSocket) {
@@ -378,6 +420,7 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     logDebug,
     logWarn,
     logError,
+    logger,
     requestShutdown: (reason) => {
       setTimeout(() => {
         void shutdownHelm(reason);

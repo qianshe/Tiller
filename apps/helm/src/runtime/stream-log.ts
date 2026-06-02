@@ -2,17 +2,28 @@ import type { HelmHandlerContext } from "../handlers/context";
 
 const activeAssistantStreamLogBySession = new Map<
   string,
-  { key: string; endsWithNewline: boolean }
+  { key: string }
 >();
+
+function logStreamInfo(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}
 
 export function createRuntimeStreamLogController() {
   function closeAssistantStreamLog(sessionId: string) {
     const active = activeAssistantStreamLogBySession.get(sessionId);
     if (!active) {
       return;
-    }
-    if (!active.endsWithNewline) {
-      process.stdout.write("\n");
     }
     activeAssistantStreamLogBySession.delete(sessionId);
   }
@@ -22,36 +33,24 @@ export function createRuntimeStreamLogController() {
     message: { id: string; role: string },
     context: HelmHandlerContext,
     nextLiveEventSequence: (sessionId: string) => number,
-    runtimeLogScope: (sessionId: string, context: HelmHandlerContext) => string,
+    runtimeLogFields: (sessionId: string, context: HelmHandlerContext) => Record<string, unknown>,
   ) {
     const key = `${sessionId}:${message.id}`;
     if (activeAssistantStreamLogBySession.get(sessionId)?.key === key) {
       return;
     }
     closeAssistantStreamLog(sessionId);
-    activeAssistantStreamLogBySession.set(sessionId, {
-      key,
-      endsWithNewline: true,
+    activeAssistantStreamLogBySession.set(sessionId, { key });
+    logStreamInfo(context, "runtime.assistant_stream.started", {
+      ...runtimeLogFields(sessionId, context),
+      seq: nextLiveEventSequence(sessionId),
+      role: message.role,
+      messageId: message.id,
     });
-    context.logInfo(
-      `[tiller] 阶段=直播消息流开始 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} role=${message.role} id=${message.id}`,
-    );
-  }
-
-  function writeAssistantStreamText(sessionId: string, text: string) {
-    if (!text) {
-      return;
-    }
-    process.stdout.write(text);
-    const active = activeAssistantStreamLogBySession.get(sessionId);
-    if (active) {
-      active.endsWithNewline = /[\r\n]$/u.test(text);
-    }
   }
 
   return {
     closeAssistantStreamLog,
     ensureAssistantStreamLogStarted,
-    writeAssistantStreamText,
   };
 }

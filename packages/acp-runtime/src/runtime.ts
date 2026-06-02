@@ -67,7 +67,11 @@ export type {
 } from "./runtime-types";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult, summarizeSessionUpdateNotification } from "./events";
-export { sanitizeProtocolLogPayload } from "./protocol-logging";
+export {
+  sanitizeProtocolLogPayload,
+  type AcpProtocolLoggingOptions,
+  type AcpProtocolTraceMode,
+} from "./protocol-logging";
 
 export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {

@@ -1,5 +1,6 @@
 import {
   createAcpRuntime,
+  type AcpProtocolLoggingOptions,
   type AcpConnectionLifecycleEvent,
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
@@ -23,6 +24,7 @@ type CreateRuntimeInput = {
   onEvent: (event: SessionRuntimeEvent) => void;
   onRestoreReplayEvent?: (event: SessionRuntimeEvent) => void;
   onConnectionLifecycleEvent?: (event: AcpConnectionLifecycleEvent) => void;
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 export type HelmRuntimeHandle = Awaited<ReturnType<typeof createAcpRuntime>>;

@@ -49,6 +49,8 @@ import {
   recoverUserPromptFromSessionSummary,
 } from "./session-history-reimport-helpers";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./session-worktree-resolution";
+import type { TillerLogger } from "../logging/logger";
+import type { AcpProtocolLoggingOptions } from "@tiller/acp-runtime";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -77,6 +79,8 @@ export type SessionServicesOptions = {
   broadcastNotification: (method: string, params: unknown) => void;
   logInfo: (message: string) => void;
   logError: (message: string) => void;
+  logger?: TillerLogger;
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 type ProjectSummary = import("@tiller/shared").ProjectSummary;
@@ -93,16 +97,17 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
   }
 
   function logConnectionLifecycle(event: AcpConnectionLifecycleEvent) {
-    const phaseMap: Record<AcpConnectionLifecycleEvent["type"], string> = {
-      "connection-open": "ACP连接新建",
-      "connection-reuse": "ACP连接复用",
-      "connection-pending": "ACP连接等待",
-      "connection-replace": "ACP连接替换",
-      "connection-reconnect": "ACP连接重连",
-    };
-    options.logInfo(
-      `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
-    );
+    if (options.logger) {
+      options.logger.debug("acp.connection.lifecycle", {
+        type: event.type,
+        providerId: event.providerId,
+        key: event.key,
+        sessionId: event.sessionId ?? "<none>",
+        cwd: event.cwd,
+      });
+      return;
+    }
+    options.logInfo(`[tiller] acp.connection.lifecycle type=${event.type} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`);
   }
 
   const providerLifecycle = createProviderLifecycle();
@@ -124,6 +129,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionTimelineStore: options.sessionTimelineStore,
     getAgents: options.getAgents,
     getWorktrees: options.getWorktrees,
+    logger: options.logger,
     logInfo: options.logInfo,
     logError: options.logError,
   });
@@ -156,6 +162,8 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logConnectionLifecycle,
     logInfo: options.logInfo,
     logError: options.logError,
+    logger: options.logger,
+    protocolLogging: options.protocolLogging,
   });
   const sessionResume = createSessionResumeService({
     sessions: options.sessions,
@@ -174,8 +182,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     persistRuntimeDescriptor,
     handleRuntimeEvent,
     logConnectionLifecycle,
+    logger: options.logger,
     logInfo: options.logInfo,
     logError: options.logError,
+    protocolLogging: options.protocolLogging,
   });
 
   function clearPermissionRequestsForSession(sessionId: string) {
@@ -378,4 +388,3 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     updateSessionSummary,
   };
 }
-

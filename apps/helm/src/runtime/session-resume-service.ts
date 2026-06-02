@@ -1,6 +1,6 @@
 import type { AcpAgentProvider, SessionResumeInfo, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import { resolveProviderById } from "@tiller/agent-registry";
-import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../handlers/context";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { SessionRecord } from "./session-services";
@@ -13,6 +13,7 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./session-config-options";
+import type { TillerLogger } from "../logging/logger";
 
 type ResumePreconditionInput = {
   agent: AcpAgentProvider | undefined;
@@ -50,8 +51,10 @@ type SessionResumeServiceOptions = {
       ? Event
       : never
     : never): void;
+  logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 export function createSessionResumeService(options: SessionResumeServiceOptions) {
@@ -63,9 +66,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
     if (activeRecord && !resumeOptions.forceReloadActive) {
       await options.providerHistory.refreshAuthoritativeSessionHistory(sessionId);
       const resume = options.buildResumeInfo(activeRecord.summary, activeRecord.agent);
-      options.logInfo(
-        `[tiller] client reconnect session=${sessionId} runtime=${resume.runtimeSessionId ?? "unknown"}`,
-      );
+      logResumeInfo(options, "runtime.session_reconnect.active", {
+        sessionId,
+        runtimeSessionId: resume.runtimeSessionId ?? "unknown",
+      });
       return {
         ok: true,
         resume,
@@ -127,16 +131,16 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
     const restoreMethod = resume.restoreMethod as "session/load" | "session/resume";
 
     try {
-      options.logInfo(
-        `[tiller] 阶段=恢复旧会话开始 session=${sessionId} runtime=${restoreRuntimeSessionId} method=${restoreMethod}`,
-      );
+      logResumeInfo(options, "runtime.session_restore.started", {
+        sessionId,
+        runtimeSessionId: restoreRuntimeSessionId,
+        method: restoreMethod,
+      });
       const restoreReplayBuffer = createRestoreReplayBuffer(
         sessionId,
         options.createHandlerContext(),
       );
-      options.logInfo(
-        `[tiller] 阶段=恢复重放缓存打开 session=${sessionId}`,
-      );
+      logResumeInfo(options, "runtime.restore_replay.opened", { sessionId });
       const runtime = await options.providerLifecycle.createRuntime({
         sessionId,
         worktree: restoreWorktree,
@@ -150,6 +154,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
           strategy: restoreMethod === "session/load" ? "load" : "resume",
           replayBaselineMessages: options.sessionMessageStore.list(sessionId),
         },
+        protocolLogging: options.protocolLogging,
         onEvent: (event) => options.handleRuntimeEvent(sessionId, event),
         onRestoreReplayEvent: (event) => {
           restoreReplayBuffer.add(event);
@@ -164,9 +169,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         options.sessionArtifactStore.remove(sessionId);
       }
       const replayCounts = restoreReplayBuffer.flush();
-      options.logInfo(
-        `[tiller] 阶段=恢复重放缓存完成 session=${sessionId} messages=${replayCounts.messages} toolCalls=${replayCounts.toolCalls} outputs=${replayCounts.outputs} diffs=${replayCounts.diffs}`,
-      );
+      logResumeInfo(options, "runtime.restore_replay.completed", {
+        sessionId,
+        ...replayCounts,
+      });
       const historySnapshot = await resolveProviderHistorySnapshot([
         {
           source: "acp-session-load",
@@ -178,9 +184,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
             try {
               return await options.providerHistory.loadAdapterHistoryContent(restoreAgent, restoreRuntimeSessionId, restoreWorktree.path);
             } catch (error) {
-              options.logError(
-                `[tiller] provider.export.history failed session=${sessionId}: ${error instanceof Error ? error.message : "Provider history export failed."}`,
-              );
+              logResumeError(options, "runtime.provider_history.export_failed", {
+                sessionId,
+                message: error instanceof Error ? error.message : "Provider history export failed.",
+              });
               return null;
             }
           },
@@ -191,9 +198,14 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         },
       ]);
       if (historySnapshot?.source === "acp-session-load") {
-        options.logInfo(
-          `[tiller] history.cache source=acp-session-load session=${sessionId} messages=${historySnapshot.messages.length} toolCalls=${historySnapshot.toolCalls.length} outputs=${historySnapshot.outputs.length} diffs=${historySnapshot.diffs.length}`,
-        );
+        logResumeInfo(options, "runtime.history_cache.loaded", {
+          source: "acp-session-load",
+          sessionId,
+          messages: historySnapshot.messages.length,
+          toolCalls: historySnapshot.toolCalls.length,
+          outputs: historySnapshot.outputs.length,
+          diffs: historySnapshot.diffs.length,
+        });
       } else if (historySnapshot?.source === "adapter-authoritative-history") {
         options.providerHistory.applyAuthoritativeProviderHistory(sessionId, restoreAgent, restoreRuntimeSessionId, historySnapshot);
       }
@@ -223,18 +235,21 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
       options.sessionStore.upsert(restoredSummary);
       options.persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
-      options.logInfo(
-        `[tiller] 阶段=恢复旧会话完成 session=${sessionId} runtime=${runtime.runtimeSessionId} method=${restoreMethod}`,
-      );
+      logResumeInfo(options, "runtime.session_restore.completed", {
+        sessionId,
+        runtimeSessionId: runtime.runtimeSessionId,
+        method: restoreMethod,
+      });
       return {
         ok: true,
         resume: options.buildResumeInfo(restoredSummary, restoreAgent),
         message: `ACP ${restoreMethod} completed for this session.`,
       };
     } catch (error) {
-      options.logError(
-        `[tiller] 阶段=恢复旧会话失败 session=${sessionId} message=${error instanceof Error ? error.message : "ACP restore failed."}`,
-      );
+      logResumeError(options, "runtime.session_restore.failed", {
+        sessionId,
+        message: error instanceof Error ? error.message : "ACP restore failed.",
+      });
       return {
         ok: false,
         resume: {
@@ -249,6 +264,36 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
   }
 
   return { startSessionResume };
+}
+
+function logResumeInfo(
+  options: SessionResumeServiceOptions,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (options.logger) {
+    options.logger.debug(event, fields);
+    return;
+  }
+  options.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logResumeError(
+  options: SessionResumeServiceOptions,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (options.logger) {
+    options.logger.error(event, fields);
+    return;
+  }
+  options.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }
 
 function resolveResumeUnavailableReason({

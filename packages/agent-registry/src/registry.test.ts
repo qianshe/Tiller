@@ -9,6 +9,7 @@ import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
   listAvailableProjects,
+  readTillerConfig,
   readProjectYaml,
   saveProjectYaml,
 } from "./registry.js";
@@ -41,6 +42,22 @@ test("ensureTillerConfigDefaults migrates the legacy .tiller directory to xdg co
   assert.equal(existsSync(legacyConfigPath), false);
   assert.equal(existsSync(configPath), true);
   assert.equal(JSON.parse(readFileSync(configPath, "utf8")).daemon.host, "0.0.0.0");
+});
+
+test("readTillerConfig preserves logging options", () => {
+  const configPath = createConfigPath();
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(
+    configPath,
+    JSON.stringify({ logging: { level: "warn", format: "pretty", acpTrace: "off" } }),
+    "utf8",
+  );
+
+  assert.deepEqual(readTillerConfig(configPath).logging, {
+    level: "warn",
+    format: "pretty",
+    acpTrace: "off",
+  });
 });
 
 test("saveProjectYaml stores generic project ids under the project name", () => {

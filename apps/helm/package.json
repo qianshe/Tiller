@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node scripts/build-package.mjs",
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
-    "dev": "pnpm run clean-port && tsx watch src/app/main.ts",
+    "dev": "pnpm run clean-port && node scripts/dev-helm.mjs",
     "pack:npm": "pnpm run build && npm pack ./dist-package",
     "publish:npm": "pnpm run build && npm publish ./dist-package --access public",
     "test": "tsx --test src/**/*.test.ts scripts/**/*.test.mjs",
@@ -34,6 +34,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
     "@tiller/persistence": "workspace:*",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.3",
     "yaml": "^2.9.0"

@@ -7,15 +7,39 @@ import { pageSessionSummaries } from "./session-list-page";
 
 const TIMELINE_ENTRY_PAGE_LIMIT = 96;
 
+function logSessionDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.debug(event, fields);
+    return;
+  }
+  context.logDebug?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logSessionInfo(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}
+
 export function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
   const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
   const page = pageSessionSummaries(normalizedSessions, {
     limit: params.limit,
     before: params.before,
   });
-  context.logInfo(
-    `[tiller] session.list count=${normalizedSessions.length} page=${page.sessions.length} hasMore=${page.hasMore}`,
-  );
+  logSessionDebug(context, "session.list", {
+    count: normalizedSessions.length,
+    page: page.sessions.length,
+    hasMore: page.hasMore,
+  });
   return {
     sessions: page.sessions,
     nextCursor: page.nextCursor,
@@ -100,7 +124,7 @@ export async function reimportHistory(
 }
 
 export function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] 阶段=恢复检查 session=${params.sessionId}`);
+  logSessionDebug(context, "session.resume.check", { sessionId: params.sessionId });
   const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
   if (!summary) {
     throw new Error("Session not found");
@@ -118,11 +142,14 @@ export function checkResume(params: { sessionId: string }, context: HelmHandlerC
 }
 
 export async function resumeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] 阶段=恢复请求开始 session=${params.sessionId}`);
+  logSessionDebug(context, "session.resume.started", { sessionId: params.sessionId });
   const result = await context.startSessionResume(params.sessionId);
-  context.logInfo(
-    `[tiller] 阶段=恢复请求完成 session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
-  );
+  logSessionInfo(context, "session.resume.completed", {
+    sessionId: params.sessionId,
+    ok: result.ok,
+    method: result.resume.restoreMethod ?? "none",
+    messageChars: result.message.length,
+  });
   return {
     sessionId: params.sessionId,
     ok: result.ok,

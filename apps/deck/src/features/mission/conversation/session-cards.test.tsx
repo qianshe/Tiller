@@ -8,6 +8,7 @@ import {
   SessionPreviewMessages,
   SessionRestoreNotice,
   formatProjectWorktreeLabel,
+  shouldShowSessionScrollToBottom,
   type MissionDraftChatWindow,
 } from "./session-cards.js";
 
@@ -69,6 +70,62 @@ test("DraftSessionCard renders selectable agent options", () => {
 
   assert.match(html, /选择 ACP Agent/);
   assert.match(html, /Codex/);
+});
+
+test("session cards use real borders so scroll content cannot cover the frame", () => {
+  const card = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active={false}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+  const draft = renderToStaticMarkup(
+    <DraftSessionCard
+      draftWindow={{
+        id: "draft-1",
+        title: "新任务",
+        projectName: "Tiller",
+        worktreeName: "feature/0.1.6",
+        agentName: null,
+        status: "select-agent",
+        message: "请选择一个 ACP Agent。",
+      }}
+      active={false}
+      agentOptions={[]}
+    />,
+  );
+
+  assert.match(card, /border-border-ghost/);
+  assert.match(draft, /border-border-ghost/);
+  assert.doesNotMatch(card, /inset 0 0 0 1px var\(--border-ghost\)/);
+  assert.doesNotMatch(draft, /inset 0 0 0 1px var\(--border-ghost\)/);
+});
+
+test("session scroll-to-bottom affordance appears only when content is away from bottom", () => {
+  assert.equal(
+    shouldShowSessionScrollToBottom({
+      scrollHeight: 1000,
+      scrollTop: 700,
+      clientHeight: 220,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowSessionScrollToBottom({
+      scrollHeight: 1000,
+      scrollTop: 680,
+      clientHeight: 220,
+    }),
+    true,
+  );
 });
 
 test("formatProjectWorktreeLabel drops worktree suffix that echoes the project name", () => {

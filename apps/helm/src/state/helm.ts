@@ -98,7 +98,7 @@ export type HelmState = HelmSessionStores & {
 export type CreateHelmStateOptions = {
   configPath: string;
   defaultWorktreeRoot: string;
-  logger: Pick<TillerLogger, "logInfo" | "logError">;
+  logger: Pick<TillerLogger, "logDebug" | "logInfo" | "logError">;
   argv?: string[];
   env?: NodeJS.ProcessEnv;
 };
@@ -136,6 +136,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
       sessionArtifactsPath: paths.sessionArtifacts,
       sessionRuntimesPath: paths.sessionRuntimes,
     },
+    logDebug: logger.logDebug,
     logInfo: logger.logInfo,
     logError: logger.logError,
   });

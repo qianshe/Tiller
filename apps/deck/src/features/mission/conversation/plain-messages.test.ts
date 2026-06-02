@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,6 +15,11 @@ import {
   resolveVisiblePlainConversationItems,
   shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
+
+const plainMessagesSource = readFileSync(
+  new URL("./plain-messages.tsx", import.meta.url),
+  "utf8",
+);
 
 function message(index: number): AgentMessage {
   return {
@@ -58,6 +64,64 @@ test("plain message render window keeps newest loaded items first", () => {
   );
 });
 
+test("plain message render window keeps the preceding message for leading tool context", () => {
+  const items = [
+    ...Array.from({ length: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT }, (_, index) => message(index + 1)),
+    {
+      kind: "message" as const,
+      timestamp: "2026-05-06T01:00:00.000Z",
+      message: {
+        id: "assistant-context",
+        role: "assistant" as const,
+        text: "工具前回复正文",
+        timestamp: "2026-05-06T01:00:00.000Z",
+      },
+    },
+    {
+      kind: "thinking" as const,
+      timestamp: "2026-05-06T01:00:01.000Z",
+      toolCall: {
+        id: "thinking-1",
+        kind: "think" as const,
+        title: "Thinking",
+        status: "completed" as const,
+        output: "推理内容",
+        timestamp: "2026-05-06T01:00:01.000Z",
+        updatedAt: "2026-05-06T01:00:01.000Z",
+      },
+    },
+    {
+      kind: "tool-group" as const,
+      timestamp: "2026-05-06T01:00:02.000Z",
+      group: [
+        {
+          id: "tool-1",
+          kind: "read" as const,
+          title: "Read",
+          status: "completed" as const,
+          timestamp: "2026-05-06T01:00:02.000Z",
+          updatedAt: "2026-05-06T01:00:02.000Z",
+        },
+      ],
+    },
+    {
+      kind: "message" as const,
+      timestamp: "2026-05-06T01:00:03.000Z",
+      message: {
+        id: "assistant-after-tools",
+        role: "assistant" as const,
+        text: "工具后回复正文",
+        timestamp: "2026-05-06T01:00:03.000Z",
+      },
+    },
+  ];
+
+  assert.deepEqual(
+    resolveVisiblePlainConversationItems(items, 3).map((item) => "role" in item ? item.id : item.kind === "message" ? item.message.id : item.kind),
+    ["assistant-context", "thinking", "tool-group", "assistant-after-tools"],
+  );
+});
+
 test("plain message render window reveals local loaded items before remote history", () => {
   assert.equal(
     resolveNextPlainConversationRenderLimit(
@@ -97,6 +161,19 @@ test("plain message history uses the session card body as the scroll container",
   } as unknown as HTMLDivElement;
 
   assert.equal(resolvePlainMessageScrollContainer(list), scrollContainer);
+});
+
+test("plain message remote history requests reset so repeated top scroll can load again", () => {
+  const resetCount = plainMessagesSource.match(/olderLoadRequestedRef\.current = false/g)?.length ?? 0;
+
+  assert.ok(resetCount >= 3);
+  assert.notEqual(
+    plainMessagesSource.indexOf(
+      "pendingRemoteHistoryRevealRef.current = false;\n" +
+        "      olderLoadRequestedRef.current = false;",
+    ),
+    -1,
+  );
 });
 
 test("plain message display uses chronological order from newest-first pages", () => {

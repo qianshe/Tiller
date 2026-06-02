@@ -89,7 +89,9 @@ test("mission chat history state includes activity history for thinking-only pag
   assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
   assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryState\}/);
   assert.match(messageTimelineSource, /resolveConversationHistoryState/);
-  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore \|\|\s*messageHistoryState\?\.timelineHasMore \|\|\s*activityHistoryState\?\.hasMore/);
+  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore && messageHistoryState\.nextCursor/);
+  assert.match(messageTimelineSource, /messageHistoryState\?\.timelineHasMore && messageHistoryState\.timelineNextCursor/);
+  assert.match(messageTimelineSource, /activityHistoryState\?\.hasMore && activityHistoryState\.nextCursor/);
 });
 
 test("mission chat renders permission drawers inside matching session cards", () => {
@@ -253,7 +255,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.doesNotMatch(chatPaneSource, /min-h-9/);
   assert.match(chatPaneSource, /aria-label="展开任务导航"/);
   assert.match(chatPaneSource, /chat-main flex-1 w-full overflow-x-hidden min-h-0 relative/);
-  assert.match(chatPaneSource, /shouldLockChatMainScroll: \(sessionCount > 0 \|\| hasDraftWindow\) && parallelGridCompact/);
+  assert.match(chatPaneSource, /shouldLockChatMainScroll: \(sessionCount > 0 \|\| hasDraftWindow\) && parallelGridFillsContainer/);
   assert.match(chatPaneSource, /shouldLockChatMainScroll \? "overflow-y-clip" : "overflow-y-auto"/);
   assert.match(worktreeSource, /mission-pane-chat[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
@@ -268,17 +270,21 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
     chatPaneSource,
     /const parallelGridCompact = cardCount <= 2/,
   );
+  assert.match(chatPaneSource, /const parallelGridFillsContainer = parallelGridCompact \|\| singleRow/);
   assert.match(
     chatPaneSource,
     /shouldAnchorActiveParallelCard: cardCount > 2/,
   );
   assert.match(chatPaneSource, /\[contain:layout_paint\]/);
   assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSession\?\.id/);
-  assert.match(chatPaneSource, /gridAutoRows: parallelGridCompact \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
-  assert.match(chatPaneSource, /parallelGridCompact \? "h-full min-h-0 overflow-hidden" : "min-h-full"/);
+  assert.match(chatPaneSource, /gridAutoRows: parallelGridFillsContainer \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
+  assert.match(chatPaneSource, /parallelGridFillsContainer \? "h-full min-h-0 overflow-hidden" : "min-h-full"/);
+  assert.match(chatPaneSource, /ResizeObserverCtor/);
   assert.match(chatPaneSource, /mission-session-grid grid box-border gap-2 p-2/);
   assert.match(chatPaneSource, /gridTemplateColumns: "repeat\(auto-fit, minmax\(min\(100%, 360px\), 1fr\)\)"/);
-  assert.match(chatPaneSource, /flat \? "h-full bg-surface" : "h-full min-h-0 bg-surface rounded-\[8px\] transition-all cursor-default"/);
+  assert.match(chatPaneSource, /"h-full min-h-0 cursor-default rounded-\[8px\] border bg-surface transition-all"/);
+  assert.match(chatPaneSource, /active \? "border-primary" : "border-border-ghost"/);
+  assert.doesNotMatch(chatPaneSource, /boxShadow: active\s*\?\s*"inset 0 0 0 1px var\(--primary\)/);
   assert.match(chatPaneSource, /sessionMessagesById\[session\.id\]/);
   assert.match(chatPaneSource, /sessionToolCallsById\[session\.id\]/);
   assert.match(chatPaneSource, /renderSessionStream\(session\)/);
@@ -288,7 +294,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /sessionBodyScrollPositionRef/);
   assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
   assert.doesNotMatch(chatPaneSource, /scrollBottom/);
-  assert.doesNotMatch(chatPaneSource, /ResizeObserver/);
+  assert.match(chatPaneSource, /ResizeObserverCtor/);
   assert.match(chatPaneSource, /onBodyScroll=\{\(event\) => \{/);
   assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
   assert.match(chatPaneSource, /selectedSessionId: string \| null/);

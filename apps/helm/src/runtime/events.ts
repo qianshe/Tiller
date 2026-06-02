@@ -20,14 +20,64 @@ import {
   startNextAssistantResponseSegment,
 } from "./segment-state";
 import { createRuntimeStreamLogController } from "./stream-log";
-import { formatLogValue } from "./session-event-normalizer";
+import type { TillerLogFields } from "../logging/logger";
 
 const liveEventSequenceBySession = new Map<string, number>();
 const runtimeStreamLog = createRuntimeStreamLogController();
+const ignoredUserEchoSummaryBySession = new Map<string, IgnoredUserEchoSummary>();
+
+type IgnoredUserEchoSummary = {
+  count: number;
+  firstMessageId: string;
+  firstSeq: number;
+  lastMessageId: string;
+  lastSeq: number;
+  messageIds: Set<string>;
+  totalChars: number;
+};
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
   return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.worktree.path ?? "<stored>"}`;
+}
+
+function runtimeLogFields(sessionId: string, context: HelmHandlerContext): TillerLogFields {
+  const record = context.sessions.get(sessionId);
+  return {
+    sessionId,
+    agentId: record?.agent.id ?? "<stored>",
+    cwd: record?.worktree.path ?? "<stored>",
+  };
+}
+
+function logRuntimeDebug(context: HelmHandlerContext, event: string, fields: TillerLogFields) {
+  if (context.logger) {
+    context.logger.debug(event, fields);
+    return;
+  }
+  context.logDebug?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logRuntimeInfo(context: HelmHandlerContext, event: string, fields: TillerLogFields) {
+  if (context.logger) {
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logRuntimeError(context: HelmHandlerContext, event: string, fields: TillerLogFields) {
+  if (context.logger) {
+    context.logger.error(event, fields);
+    return;
+  }
+  context.logError?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: TillerLogFields) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }
 
 export function seedLiveEventSequenceForSession(
@@ -60,6 +110,12 @@ export function nextLiveEventSequenceForTest(sessionId: string) {
   return allocateLiveEventSequence(sessionId);
 }
 
+export function flushRuntimeUserEchoLogSummaryForTest(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  flushIgnoredUserEchoSummary(sessionId, context);
+}
 
 export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
   const message = context.liveMessageBuffer.finalize(sessionId);
@@ -90,10 +146,16 @@ export function handleRuntimeEvent(
     return;
   }
   if (shouldIgnoreLateRuntimeEvent(sessionId, event, context)) {
-    context.logInfo(
-      `[tiller] 阶段=忽略迟到运行事件 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} type=${event.type}`,
-    );
+    flushIgnoredUserEchoSummary(sessionId, context);
+    logRuntimeDebug(context, "runtime.event.ignored_late", {
+      ...runtimeLogFields(sessionId, context),
+      seq: nextLiveEventSequence(sessionId),
+      type: event.type,
+    });
     return;
+  }
+  if (!isRuntimeUserMessageEvent(event)) {
+    flushIgnoredUserEchoSummary(sessionId, context);
   }
 
   switch (event.type) {
@@ -113,9 +175,12 @@ export function handleRuntimeEvent(
           publishRuntimeToolCall(context, sessionId, finalizedThinking);
         }
       }
-      context.logInfo(
-        `[tiller] 阶段=运行状态流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} status=${event.status}${event.message ? ` message=${formatLogValue(event.message)}` : ""}`,
-      );
+      logRuntimeInfo(context, "runtime.status.changed", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        status: event.status,
+        messageChars: event.message?.length ?? 0,
+      });
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         status: event.status,
@@ -131,9 +196,7 @@ export function handleRuntimeEvent(
       if (event.message.role === "user") {
         runtimeStreamLog.closeAssistantStreamLog(sessionId);
         startNextAssistantResponseSegment(sessionId);
-        context.logInfo(
-          `[tiller] 阶段=用户回显忽略 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} id=${event.message.id} chars=${event.message.text.length} text=${formatLogValue(event.message.text, 520)}`,
-        );
+        recordIgnoredUserEcho(sessionId, event.message);
         return;
       }
       const message = {
@@ -150,8 +213,7 @@ export function handleRuntimeEvent(
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
       }
-      runtimeStreamLog.ensureAssistantStreamLogStarted(sessionId, message, context, nextLiveEventSequence, runtimeLogScope);
-      runtimeStreamLog.writeAssistantStreamText(sessionId, message.text);
+      runtimeStreamLog.ensureAssistantStreamLogStarted(sessionId, message, context, nextLiveEventSequence, runtimeLogFields);
       const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "agent_message",
@@ -162,9 +224,12 @@ export function handleRuntimeEvent(
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=权限请求 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} request=${event.request.id} reason=${formatLogValue(event.request.reason)}`,
-      );
+      logRuntimeInfo(context, "runtime.permission.requested", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        requestId: event.request.id,
+        reasonChars: event.request.reason.length,
+      });
       handleRuntimePermissionRequest(
         {
           sessionId,
@@ -206,9 +271,13 @@ export function handleRuntimeEvent(
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
       bumpAssistantStreamSegment(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=命令输出流 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} command=${event.chunk.commandId} stream=${event.chunk.stream} chars=${event.chunk.text.length} text=${formatLogValue(event.chunk.text, 520)}`,
-      );
+      logRuntimeDebug(context, "runtime.command_output.chunk", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        commandId: event.chunk.commandId,
+        stream: event.chunk.stream,
+        chars: event.chunk.text.length,
+      });
       const orderedChunk = {
         ...event.chunk,
         timelineSequence: nextLiveEventSequence(sessionId),
@@ -228,9 +297,12 @@ export function handleRuntimeEvent(
     case "diff-update":
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=Diff更新 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} files=${event.files.length} paths=${formatLogValue(event.files.map((file) => file.path).slice(0, 8))}`,
-      );
+      logRuntimeInfo(context, "runtime.diff.updated", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        files: event.files.length,
+        paths: event.files.map((file) => file.path).slice(0, 8),
+      });
       void context.publishDiffUpdate(sessionId, event.files);
       return;
     case "config-options": {
@@ -254,9 +326,14 @@ export function handleRuntimeEvent(
         model: resolvedModel,
         reasoningEffort: resolvedReasoningEffort,
       };
-      context.logInfo(
-        `[tiller] 阶段=配置选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} agentMode=${event.state.agentMode ?? "<none>"} model=${resolvedModel ?? "<none>"} reasoning=${resolvedReasoningEffort ?? "<none>"} options=${resolvedOptions.length}`,
-      );
+      logRuntimeDebug(context, "runtime.config_options.received", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        agentMode: event.state.agentMode ?? "<none>",
+        model: resolvedModel ?? "<none>",
+        reasoning: resolvedReasoningEffort ?? "<none>",
+        options: resolvedOptions.length,
+      });
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         agentMode: current.agentMode ?? event.state.agentMode,
@@ -281,9 +358,12 @@ export function handleRuntimeEvent(
     case "model-options": {
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=模型选项 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} currentModel=${event.state.currentModelId ?? "<none>"} options=${event.state.options.length}`,
-      );
+      logRuntimeDebug(context, "runtime.model_options.received", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        currentModel: event.state.currentModelId ?? "<none>",
+        options: event.state.options.length,
+      });
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         model: current.model ?? event.state.currentModelId,
@@ -306,9 +386,11 @@ export function handleRuntimeEvent(
     case "available-commands": {
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
-      context.logInfo(
-        `[tiller] 阶段=可用命令 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} commands=${event.commands.length}`,
-      );
+      logRuntimeDebug(context, "runtime.available_commands.received", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        commands: event.commands.length,
+      });
       const updated = context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         availableCommands: event.commands,
@@ -329,9 +411,12 @@ export function handleRuntimeEvent(
     case "error":
       flushLiveAssistantMessage(sessionId, context);
       runtimeStreamLog.closeAssistantStreamLog(sessionId);
-      context.logError(
-        `[tiller] 阶段=运行错误 seq=${nextLiveEventSequence(sessionId)} ${runtimeLogScope(sessionId, context)} code=${event.code ?? "UNKNOWN"} message=${formatLogValue(event.message, 500)}`,
-      );
+      logRuntimeError(context, "runtime.error", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        code: event.code ?? "UNKNOWN",
+        messageChars: event.message.length,
+      });
       context.persistSessionMessage(sessionId, {
         id: `${sessionId}-system-${Date.now()}`,
         role: "system",
@@ -346,9 +431,10 @@ export function handleRuntimeEvent(
       }));
       if (event.code === "ACP_CONNECTION_EXITED") {
         context.sessions.delete(sessionId);
-        context.logInfo(
-          `[tiller] 阶段=运行时已标记为可恢复 ${runtimeLogScope(sessionId, context)} code=${event.code}`,
-        );
+        logRuntimeInfo(context, "runtime.recoverable.marked", {
+          ...runtimeLogFields(sessionId, context),
+          code: event.code,
+        });
       }
       createSessionEventPublisher(context).errorRaised({
         sessionId,
@@ -359,6 +445,54 @@ export function handleRuntimeEvent(
     default:
       return;
   }
+}
+
+function isRuntimeUserMessageEvent(event: SessionRuntimeEvent) {
+  return event.type === "message" && event.message.role === "user";
+}
+
+function recordIgnoredUserEcho(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+) {
+  const seq = nextLiveEventSequence(sessionId);
+  const current = ignoredUserEchoSummaryBySession.get(sessionId);
+  if (!current) {
+    ignoredUserEchoSummaryBySession.set(sessionId, {
+      count: 1,
+      firstMessageId: message.id,
+      firstSeq: seq,
+      lastMessageId: message.id,
+      lastSeq: seq,
+      messageIds: new Set([message.id]),
+      totalChars: message.text.length,
+    });
+    return;
+  }
+  current.count += 1;
+  current.lastMessageId = message.id;
+  current.lastSeq = seq;
+  current.messageIds.add(message.id);
+  current.totalChars += message.text.length;
+}
+
+function flushIgnoredUserEchoSummary(sessionId: string, context: HelmHandlerContext) {
+  const summary = ignoredUserEchoSummaryBySession.get(sessionId);
+  if (!summary) {
+    return;
+  }
+  ignoredUserEchoSummaryBySession.delete(sessionId);
+  logRuntimeDebug(context, "runtime.message.user_echo.ignored_summary", {
+    ...runtimeLogFields(sessionId, context),
+    role: "user",
+    count: summary.count,
+    uniqueMessages: summary.messageIds.size,
+    totalChars: summary.totalChars,
+    firstSeq: summary.firstSeq,
+    lastSeq: summary.lastSeq,
+    firstMessageId: summary.firstMessageId,
+    lastMessageId: summary.lastMessageId,
+  });
 }
 
 function shouldIgnoreLateRuntimeEvent(

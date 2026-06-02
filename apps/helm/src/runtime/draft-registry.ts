@@ -8,9 +8,10 @@ import type {
   SessionReasoningEffort,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { performDraftRuntimeCleanup } from "./draft-lifecycle";
 import type { ProviderLifecyclePort } from "./provider-lifecycle";
+import type { TillerLogger } from "../logging/logger";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -65,6 +66,8 @@ type RuntimeDraftRegistryOptions = {
     : never): void;
   logInfo(message: string): void;
   logError(message: string): void;
+  logger?: TillerLogger;
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions) {
@@ -72,6 +75,22 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
   const runtimeDraftsById = new Map<string, RuntimeDraft>();
   const pendingRuntimeDrafts = new Map<string, PendingRuntimeDraft>();
   const deckDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function logDraftInfo(event: string, fields: Record<string, unknown>) {
+    if (options.logger) {
+      options.logger.info(event, fields);
+      return;
+    }
+    options.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+  }
+
+  function logDraftError(event: string, fields: Record<string, unknown>) {
+    if (options.logger) {
+      options.logger.error(event, fields);
+      return;
+    }
+    options.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
+  }
 
   function resolveRuntimeDraftKeys(params: {
     deckClientId: string;
@@ -117,6 +136,7 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
       activeDrafts: runtimeDraftsById.size,
       cleanupDraftRuntime: options.providerLifecycle.cleanupDraftRuntime,
       logInfo: options.logInfo,
+      logger: options.logger,
     });
   }
 
@@ -150,9 +170,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
 
     const existing = runtimeDrafts.get(scopeKey);
     if (existing) {
-      options.logInfo(
-        `[tiller] draft.reuse draft=${existing.draftId} deck=${params.deckClientId} scope=${scopeKey} runtime=${existing.runtime.runtimeSessionId} activeDrafts=${runtimeDraftsById.size}`,
-      );
+      logDraftInfo("runtime.draft.reused", {
+        draftId: existing.draftId,
+        deckClientId: params.deckClientId,
+        scopeKey,
+        runtimeSessionId: existing.runtime.runtimeSessionId,
+        activeDrafts: runtimeDraftsById.size,
+      });
       return runtimeDraftPayload(existing, true, "ACP runtime draft is already ready.");
     }
 
@@ -169,9 +193,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     let configOptions: Extract<SessionRuntimeEvent, { type: "config-options" }>["options"] = [];
     let availableCommands: AvailableCommand[] = [];
     let readyDraft: RuntimeDraft | undefined;
-    options.logInfo(
-      `[tiller] draft.create.start draft=${draftId} deck=${params.deckClientId} scope=${scopeKey} provider=${params.agent.id} cwd=${params.worktree.path}`,
-    );
+    logDraftInfo("runtime.draft.create_started", {
+      draftId,
+      deckClientId: params.deckClientId,
+      scopeKey,
+      providerId: params.agent.id,
+      cwd: params.worktree.path,
+    });
 
     const pendingDraft: PendingRuntimeDraft = {
       deckClientId: params.deckClientId,
@@ -182,6 +210,7 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
         worktree: params.worktree,
         agent: params.agent,
         sessionConfig: params.sessionConfig,
+        protocolLogging: options.protocolLogging,
         onConnectionLifecycleEvent: options.logConnectionLifecycle,
         onEvent: (event) => {
           if (attachedSessionId) {
@@ -228,9 +257,12 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
             return;
           }
           if (event.type === "error") {
-            options.logError(
-              `[tiller] draft.error draft=${draftId} provider=${params.agent.id} code=${event.code ?? "UNKNOWN"} message=${event.message}`,
-            );
+            logDraftError("runtime.draft.error", {
+              draftId,
+              providerId: params.agent.id,
+              code: event.code ?? "UNKNOWN",
+              messageChars: event.message.length,
+            });
           }
         },
       }).then(async (runtime) => {
@@ -272,9 +304,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
         }
         runtimeDrafts.set(scopeKey, draft);
         runtimeDraftsById.set(draftId, draft);
-        options.logInfo(
-          `[tiller] draft.create.done draft=${draftId} deck=${params.deckClientId} runtime=${runtime.runtimeSessionId} provider=${params.agent.id} activeDrafts=${runtimeDraftsById.size}`,
-        );
+        logDraftInfo("runtime.draft.create_completed", {
+          draftId,
+          deckClientId: params.deckClientId,
+          runtimeSessionId: runtime.runtimeSessionId,
+          providerId: params.agent.id,
+          activeDrafts: runtimeDraftsById.size,
+        });
         return draft;
       }),
     };
@@ -284,9 +320,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
       const draft = await pendingDraft.promise;
       return runtimeDraftPayload(draft, false, "ACP runtime draft ready.");
     } catch (error) {
-      options.logError(
-        `[tiller] draft.create.failed draft=${draftId} deck=${params.deckClientId} provider=${params.agent.id} message=${error instanceof Error ? error.message : "Failed to create ACP draft."}`,
-      );
+      const message = error instanceof Error ? error.message : "Failed to create ACP draft.";
+      logDraftError("runtime.draft.create_failed", {
+        draftId,
+        deckClientId: params.deckClientId,
+        providerId: params.agent.id,
+        messageChars: message.length,
+      });
       throw error;
     } finally {
       pendingRuntimeDrafts.delete(scopeKey);
@@ -361,9 +401,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     clearTimeout(draft.expiresTimer);
     runtimeDrafts.delete(draft.scopeKey);
     runtimeDraftsById.delete(draft.draftId);
-    options.logInfo(
-      `[tiller] draft.take draft=${draft.draftId} deck=${draft.deckClientId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id} activeDrafts=${runtimeDraftsById.size}`,
-    );
+    logDraftInfo("runtime.draft.taken", {
+      draftId: draft.draftId,
+      deckClientId: draft.deckClientId,
+      runtimeSessionId: draft.runtime.runtimeSessionId,
+      providerId: draft.agent.id,
+      activeDrafts: runtimeDraftsById.size,
+    });
     return draft;
   }
 
@@ -406,9 +450,11 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     };
     draft.modelState = result.modelState ?? draft.modelState;
     draft.configOptions = nextConfigOptions;
-    options.logInfo(
-      `[tiller] draft.configure draft=${draft.draftId} model=${result.state.model ?? "<none>"} mode=${result.state.agentMode ?? "<none>"}`,
-    );
+    logDraftInfo("runtime.draft.configured", {
+      draftId: draft.draftId,
+      model: result.state.model ?? "<none>",
+      mode: result.state.agentMode ?? "<none>",
+    });
     return {
       draftId: draft.draftId,
       ok: true,
@@ -426,4 +472,10 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     scheduleDeckClientDraftDiscard,
     takeRuntimeDraft,
   };
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }

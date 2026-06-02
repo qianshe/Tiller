@@ -41,6 +41,7 @@ export type HelmSessionStoreFactoryOptions = {
    * are no longer read on subsequent boots.
    */
   jsonPaths: JsonSessionStorePaths;
+  logDebug?: StoreFactoryLogger;
   logInfo?: StoreFactoryLogger;
   logError?: StoreFactoryLogger;
 };
@@ -52,7 +53,7 @@ export function createHelmSessionStores(
     sqlitePath: options.sqlitePath,
     jsonPaths: options.jsonPaths,
   });
-  options.logInfo?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
+  options.logDebug?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
   return {
     sessionStore: createSqliteSessionStore(options.sqlitePath),
     sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
@@ -66,7 +67,7 @@ export function createHelmSessionStores(
       sqlitePath: options.sqlitePath,
       blockRootPath: options.timelineBlockRootPath ?? `${options.sqlitePath}.timeline-blocks`,
       mode: options.timelineBlockMode,
-      logInfo: options.logInfo,
+      logDebug: options.logDebug,
     }),
   };
 }

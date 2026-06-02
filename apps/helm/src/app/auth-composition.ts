@@ -20,6 +20,7 @@ export type HelmAuthCompositionOptions = {
   showPairingCode: (pairingState: PairingState) => void;
   attachRpcConnection: (socket: WebSocket) => void;
   logInfo: (message: string) => void;
+  logDebug: (message: string) => void;
   logError: (message: string) => void;
   createPairingState?: () => PairingState;
   createSocketAuthenticator?: (options: SocketAuthenticatorOptions) => BeginAuthenticationFlow;
@@ -43,6 +44,7 @@ export function createHelmAuthComposition(
     showPairingCode: () => options.showPairingCode(pairingState),
     attachRpcConnection: options.attachRpcConnection,
     logInfo: options.logInfo,
+    logDebug: options.logDebug,
     logError: options.logError,
   });
 

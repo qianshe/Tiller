@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
+import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
 import { Badge, Button, Icon } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
@@ -15,12 +16,58 @@ import { splitStreamingMarkdown } from "./streaming-markdown";
 
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
+const DEFAULT_ATTACHMENT_PORT = "47631";
 
-function resolveMessageImageSource(image: AgentPromptImageContent) {
-  if (image.uri) {
-    return image.uri;
+type MessageImageSourceEnvironment = {
+  location?: Pick<Location, "protocol" | "hostname" | "port">;
+  storage?: Pick<Storage, "getItem">;
+};
+
+export function resolveMessageImageSource(
+  image: AgentPromptImageContent,
+  environment: MessageImageSourceEnvironment = resolveBrowserImageSourceEnvironment(),
+) {
+  if (image.data) {
+    return `data:${image.mimeType};base64,${image.data}`;
   }
-  return image.data ? `data:${image.mimeType};base64,${image.data}` : undefined;
+  if (!image.uri) {
+    return undefined;
+  }
+  return resolveAttachmentImageUri(image.uri, environment);
+}
+
+function resolveBrowserImageSourceEnvironment(): MessageImageSourceEnvironment {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  return {
+    location: window.location,
+    storage: window.localStorage,
+  };
+}
+
+function resolveAttachmentImageUri(
+  uri: string,
+  environment: MessageImageSourceEnvironment,
+) {
+  if (!uri.startsWith("/api/") || !environment.location) {
+    return uri;
+  }
+  const helmPort = environment.storage?.getItem(DAEMON_PORT_KEY) ?? DEFAULT_ATTACHMENT_PORT;
+  if (!helmPort || environment.location.port === helmPort) {
+    return uri;
+  }
+  const storedHost = environment.storage?.getItem(DAEMON_HOST_KEY);
+  const helmHost = resolveAttachmentHost(storedHost, environment.location.hostname);
+  return `${environment.location.protocol}//${helmHost}:${helmPort}${uri}`;
+}
+
+function resolveAttachmentHost(host: string | null | undefined, locationHostname: string) {
+  if (!host || host === "0.0.0.0" || host === "::") {
+    return locationHostname || DEFAULT_ATTACHMENT_HOST;
+  }
+  return host;
 }
 
 function PlainMessageImageAttachment({
@@ -434,4 +481,3 @@ function PlainStreamingText({ tail = false, text }: PlainStreamingTextProps) {
     </div>
   );
 }
-

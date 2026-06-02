@@ -1,13 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
-import { resolve } from "node:path";
 import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
-import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "../protocol-logging";
+import { createProtocolLogSink, writeChunkLog, writeLogLine, type AcpProtocolLoggingOptions, type ProtocolLogSink } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
 import { resolveRuntimeSessionId } from "../requests";
@@ -32,6 +31,7 @@ export type AcpConnectionOptions = {
     model?: string;
     reasoningEffort?: import("@tiller/shared").SessionReasoningEffort;
   };
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 type AcpConnectionState = {
@@ -41,7 +41,8 @@ type AcpConnectionState = {
   sessionConfig?: AcpConnectionOptions["sessionConfig"];
   child: ChildProcess;
   agent: acp.ClientSideConnection;
-  logFile: string;
+  logFile?: string;
+  protocolLog: ProtocolLogSink;
   capabilities: DetectedAcpSessionCapabilities;
   runtimeConnectionId: string;
 };
@@ -132,7 +133,13 @@ export class AcpConnection {
     delete childEnv.TSX_DISABLE_CACHE;
 
     const runtimeConnectionId = `conn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const logFile = resolve(ACP_LOGS_DIR, `connection-${sanitizeLogToken(runtimeConnectionId)}.log`);
+    const protocolLog = createProtocolLogSink({
+      mode: options.protocolLogging?.mode,
+      logsDir: options.protocolLogging?.logsDir,
+      filePrefix: "connection",
+      token: runtimeConnectionId,
+    });
+    const logFile = protocolLog.logFile;
     const child = spawn(launchSpec.command, launchSpec.args, {
       cwd: launchConfig.cwd,
       env: childEnv,
@@ -144,12 +151,12 @@ export class AcpConnection {
     child.stderr?.on("data", (chunk) => {
       const text = String(chunk);
       stderrBuffer += text;
-      writeChunkLog(logFile, "stderr", text);
+      writeChunkLog(protocolLog, "stderr", text);
     });
 
     let connection: AcpConnection | undefined;
     const protocolStdout = createProtocolStdoutStream(child.stdout, (line) => {
-      writeLogLine(logFile, "stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
+      protocolLog.writeLine("stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
     });
     const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(protocolStdout));
     const agent = new acp.ClientSideConnection(
@@ -193,6 +200,7 @@ export class AcpConnection {
       child,
       agent,
       logFile,
+      protocolLog,
       capabilities: resolveSessionCapabilities(initializeResult, options.provider),
       runtimeConnectionId,
     });
@@ -449,7 +457,7 @@ export class AcpConnection {
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
-      writeLogLine(this.state.logFile, "sdk-error", message);
+    writeLogLine(this.state.logFile, "sdk-error", message);
       if (/ACP connection closed/iu.test(message)) {
         this.status = "error";
         this.lastError = message;

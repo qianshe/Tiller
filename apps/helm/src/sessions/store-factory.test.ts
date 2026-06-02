@@ -34,7 +34,7 @@ function createOptions(tempDir: string, logs: string[] = []) {
       sessionArtifactsPath: join(tempDir, "session-artifacts"),
       sessionRuntimesPath: join(tempDir, "session-runtimes.json"),
     },
-    logInfo: (message: string) => logs.push(message),
+    logDebug: (message: string) => logs.push(message),
     logError: (message: string) => logs.push(`error:${message}`),
   };
 }

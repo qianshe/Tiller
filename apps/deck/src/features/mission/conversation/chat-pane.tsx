@@ -163,7 +163,9 @@ export function MissionChatPane({
   children,
 }: MissionChatPaneProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const sessionGridRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
   const sessionStateSources = {
     activeSessionId: activeSession?.id ?? null,
     activeSessionMessages,
@@ -233,13 +235,14 @@ export function MissionChatPane({
   };
   const {
     isSingleSession,
-    parallelGridCompact,
+    parallelGridFillsContainer,
     shouldLockChatMainScroll,
     shouldAnchorActiveParallelCard,
     parallelGridStyle,
   } = buildParallelChatLayoutModel({
     sessionCount: openSessions.length,
     hasDraftWindow: Boolean(draftWindow),
+    singleRow: parallelGridSingleRow,
   });
   const singleSession = openSessions[0];
   const visibleSessionStreamCounts = openSessions
@@ -275,6 +278,41 @@ export function MissionChatPane({
     }
     onChatMainScroll(event);
   };
+
+  useEffect(() => {
+    const grid = sessionGridRef.current;
+    const cardCount = openSessions.length + (draftWindow ? 1 : 0);
+    if (!grid || cardCount <= 2) {
+      setParallelGridSingleRow(false);
+      return;
+    }
+
+    const updateSingleRowState = () => {
+      const cards = Array.from(grid.children).filter(
+        (child): child is HTMLElement => child instanceof HTMLElement,
+      );
+      const firstCard = cards[0];
+      if (!firstCard) {
+        setParallelGridSingleRow(false);
+        return;
+      }
+      const firstTop = firstCard.offsetTop;
+      setParallelGridSingleRow(
+        cards.every((card) => Math.abs(card.offsetTop - firstTop) <= 1),
+      );
+    };
+
+    updateSingleRowState();
+    const ResizeObserverCtor = window.ResizeObserver;
+    if (!ResizeObserverCtor) {
+      window.addEventListener("resize", updateSingleRowState);
+      return () => window.removeEventListener("resize", updateSingleRowState);
+    }
+    const observer = new ResizeObserverCtor(updateSingleRowState);
+    observer.observe(grid);
+    Array.from(grid.children).forEach((child) => observer.observe(child));
+    return () => observer.disconnect();
+  }, [draftWindow, openSessions.length]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -592,9 +630,10 @@ export function MissionChatPane({
             </SessionCard>
           ) : (
             <div
+              ref={sessionGridRef}
               className={cn(
                 "mission-session-grid grid box-border gap-2 p-2",
-                parallelGridCompact ? "h-full min-h-0 overflow-hidden" : "min-h-full",
+                parallelGridFillsContainer ? "h-full min-h-0 overflow-hidden" : "min-h-full",
               )}
               style={parallelGridStyle}
             >

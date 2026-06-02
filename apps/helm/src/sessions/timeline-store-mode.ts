@@ -10,7 +10,7 @@ export type TimelineStoreModeOptions = {
   sqlitePath: string;
   blockRootPath: string;
   mode?: string;
-  logInfo?: (message: string) => void;
+  logDebug?: (message: string) => void;
 };
 
 type ClosableTimelineStore = SessionTimelineStore & { close?: () => void };
@@ -34,7 +34,7 @@ export function createModeAwareSessionTimelineStore(
     mode,
     rowStore,
     blockStore,
-    logInfo: options.logInfo,
+    logDebug: options.logDebug,
   });
 }
 
@@ -49,7 +49,7 @@ type DualTimelineStoreOptions = {
   mode: Exclude<SessionTimelineBlockMode, "sqlite_rows">;
   rowStore: ClosableTimelineStore;
   blockStore: ClosableTimelineStore;
-  logInfo?: (message: string) => void;
+  logDebug?: (message: string) => void;
 };
 
 function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTimelineStore {
@@ -61,7 +61,7 @@ function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTim
     }
     const rowPage = options.rowStore.listPage(sessionId, pageOptions);
     const blockPage = options.blockStore.listPage(sessionId, pageOptions);
-    options.logInfo?.(`timeline.block.parity=${sameEntryPage(rowPage.entries, blockPage.entries) && rowPage.hasMore === blockPage.hasMore ? "ok" : "mismatch"}`);
+    options.logDebug?.(`timeline.block.parity=${sameEntryPage(rowPage.entries, blockPage.entries) && rowPage.hasMore === blockPage.hasMore ? "ok" : "mismatch"}`);
   }
 
   return {
@@ -89,7 +89,7 @@ function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTim
       const result = readStore.list(sessionId);
       if (options.mode === "blocks_shadow") {
         const block = options.blockStore.list(sessionId);
-        options.logInfo?.(`timeline.block.parity=${sameEntryPage(result, block) ? "ok" : "mismatch"}`);
+        options.logDebug?.(`timeline.block.parity=${sameEntryPage(result, block) ? "ok" : "mismatch"}`);
       }
       return result;
     },

@@ -21,6 +21,11 @@ export type TillerConfig = {
     checkOnStart?: boolean;
     previewHint?: boolean;
   };
+  logging?: {
+    level?: string;
+    format?: string;
+    acpTrace?: string;
+  };
   approvalPolicy?: ApprovalPolicy;
 };
 
@@ -202,6 +207,7 @@ function stripProjectState(config: LegacyTillerConfig): TillerConfig {
     agents: config.agents ?? [],
     daemon: config.daemon,
     updates: config.updates,
+    logging: config.logging,
     approvalPolicy: config.approvalPolicy,
   };
 }

@@ -40,6 +40,36 @@ export type SessionConfigureRequest = {
   value?: SessionConfigOptionValue;
 };
 
+function logRuntimeDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.debug(event, fields);
+    return;
+  }
+  context.logDebug?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logRuntimeInfo(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function logRuntimeError(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.error(event, fields);
+    return;
+  }
+  context.logError?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}
+
 async function resolvePromptRuntime(
   params: Pick<SessionPromptRequest, "sessionId" | "text">,
   context: HelmHandlerContext,
@@ -49,13 +79,17 @@ async function resolvePromptRuntime(
     return record;
   }
 
-  context.logInfo(
-    `[tiller] 阶段=发送前需要恢复 session=${params.sessionId} chars=${params.text.length}`,
-  );
+  logRuntimeDebug(context, "runtime.prompt.restore_required", {
+    sessionId: params.sessionId,
+    chars: params.text.length,
+  });
   const restore = await context.startSessionResume(params.sessionId);
-  context.logInfo(
-    `[tiller] 阶段=发送前恢复完成 session=${params.sessionId} ok=${restore.ok} method=${restore.resume.restoreMethod ?? "none"} message=${restore.message}`,
-  );
+  logRuntimeInfo(context, "runtime.prompt.restore_completed", {
+    sessionId: params.sessionId,
+    ok: restore.ok,
+    method: restore.resume.restoreMethod ?? "none",
+    messageChars: restore.message.length,
+  });
   record = context.sessions.get(params.sessionId);
   return record;
 }
@@ -99,16 +133,20 @@ export async function sendPromptImmediately(
 ) {
   const record = await resolvePromptRuntime(item, context);
   if (!record) {
-    context.logError(
-      `[tiller] 阶段=发送失败 session=${item.sessionId} reason=Session runtime not available`,
-    );
+    logRuntimeError(context, "runtime.prompt.send_failed", {
+      sessionId: item.sessionId,
+      reason: "runtime_not_available",
+    });
     throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
   }
 
   const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
-  context.logInfo(
-    `[tiller] 阶段=发送Prompt session=${item.sessionId} chars=${item.text.length} images=${imageAttachments.length}`,
-  );
+  logRuntimeInfo(context, "runtime.prompt.send_started", {
+    sessionId: item.sessionId,
+    queued: true,
+    chars: item.text.length,
+    images: imageAttachments.length,
+  });
   emitHelmPromptTrace(context, {
     traceId: item.clientMessageId,
     sessionId: item.sessionId,
@@ -153,9 +191,10 @@ export async function sendPromptImmediately(
     meta: { queued: true },
   });
   if (flushLiveAssistantMessage(item.sessionId, context)) {
-    context.logInfo(
-      `[tiller] 阶段=Prompt完成兜底落盘 session=${item.sessionId} reason=assistant_buffer_after_prompt_completion`,
-    );
+    logRuntimeDebug(context, "runtime.prompt.flush_after_completion", {
+      sessionId: item.sessionId,
+      reason: "assistant_buffer_after_prompt_completion",
+    });
   }
   return "end_turn" as const;
 }
@@ -201,7 +240,10 @@ async function runInFlightPrompt(
     await sendPromptImmediately(item, context);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Prompt failed.";
-    context.logError(`[tiller] prompt.inflight failed session=${item.sessionId} message=${message}`);
+    logRuntimeError(context, "runtime.prompt.inflight_failed", {
+      sessionId: item.sessionId,
+      messageChars: message.length,
+    });
     broadcastPromptFailure(context, item.sessionId, message);
   } finally {
     context.promptQueue.clearInFlight(item.sessionId, item.id);
@@ -228,7 +270,10 @@ export async function drainPromptQueue(sessionId: string, context: HelmHandlerCo
         await sendPromptImmediately(inFlight, context);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Prompt failed.";
-        context.logError(`[tiller] prompt.queue failed session=${sessionId} message=${message}`);
+        logRuntimeError(context, "runtime.prompt.queue_failed", {
+          sessionId,
+          messageChars: message.length,
+        });
       } finally {
         context.promptQueue.clearInFlight(sessionId, inFlight.id);
         broadcastPromptQueue(context, sessionId);
@@ -245,9 +290,10 @@ export async function sendPromptToSession(
 ) {
   const record = await resolvePromptRuntime(params, context);
   if (!record) {
-    context.logError(
-      `[tiller] 阶段=发送失败 session=${params.sessionId} reason=Session runtime not available`,
-    );
+    logRuntimeError(context, "runtime.prompt.send_failed", {
+      sessionId: params.sessionId,
+      reason: "runtime_not_available",
+    });
     throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
   }
 
@@ -270,14 +316,18 @@ export async function sendPromptToSession(
         const promptContent = input.content as AgentPromptContent[] | undefined;
         const activeRecord = await resolvePromptRuntime(input, context);
         if (!activeRecord) {
-          context.logError(
-            `[tiller] 阶段=发送失败 session=${input.sessionId} reason=Session runtime not available`,
-          );
+          logRuntimeError(context, "runtime.prompt.send_failed", {
+            sessionId: input.sessionId,
+            reason: "runtime_not_available",
+          });
           throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
         }
-        context.logInfo(
-          `[tiller] 阶段=发送Prompt session=${input.sessionId} chars=${input.text.length} images=${promptContent?.filter((content) => content.type === "image").length ?? 0}`,
-        );
+        logRuntimeInfo(context, "runtime.prompt.send_started", {
+          sessionId: input.sessionId,
+          queued: false,
+          chars: input.text.length,
+          images: promptContent?.filter((content) => content.type === "image").length ?? 0,
+        });
         emitHelmPromptTrace(context, {
           traceId: input.clientMessageId,
           sessionId: input.sessionId,
@@ -296,9 +346,10 @@ export async function sendPromptToSession(
           meta: { queued: false },
         });
         if (flushLiveAssistantMessage(input.sessionId, context)) {
-          context.logInfo(
-            `[tiller] 阶段=Prompt完成兜底落盘 session=${input.sessionId} reason=assistant_buffer_after_prompt_completion`,
-          );
+          logRuntimeDebug(context, "runtime.prompt.flush_after_completion", {
+            sessionId: input.sessionId,
+            reason: "assistant_buffer_after_prompt_completion",
+          });
         }
         return { accepted: true, runtimeSessionId: activeRecord.runtime.runtimeSessionId };
       },
@@ -313,7 +364,10 @@ export async function sendPromptToSession(
     onQueueChanged: (sessionId) => broadcastPromptQueue(context, sessionId),
     onPromptFailed: (sessionId, error) => {
       const message = error instanceof Error ? error.message : "Prompt failed.";
-      context.logError(`[tiller] prompt.inflight failed session=${sessionId} message=${message}`);
+      logRuntimeError(context, "runtime.prompt.inflight_failed", {
+        sessionId,
+        messageChars: message.length,
+      });
       broadcastPromptFailure(context, sessionId, message);
     },
     onPromptSettled: (sessionId, queueItem) => {

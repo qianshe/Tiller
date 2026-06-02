@@ -8,11 +8,14 @@ import {
   type FileDiffSummary,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+import type { TillerLogger } from "../logging/logger";
 
 type ReplayBufferContext = Pick<
   HelmHandlerContext,
   "sessionMessageStore" | "sessionArtifactStore" | "sessionTimelineStore" | "logInfo"
->;
+> & {
+  logger?: Pick<TillerLogger, "debug">;
+};
 
 export type RestoreReplayFlushCounts = {
   messages: number;
@@ -79,9 +82,10 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
         outputs: outputs.size,
         diffs: diffs?.length ?? 0,
       };
-      context.logInfo(
-        `[tiller] 阶段=恢复重放缓存落盘 session=${sessionId} messages=${counts.messages} toolCalls=${counts.toolCalls} outputs=${counts.outputs} diffs=${counts.diffs}`,
-      );
+      logReplayBufferEvent(context, "runtime.restore_replay.persisted", {
+        sessionId,
+        ...counts,
+      });
       messages.clear();
       toolCalls.clear();
       outputs.clear();
@@ -104,6 +108,24 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
       context.sessionTimelineStore.replace(sessionId, entries);
     }
   }
+}
+
+function logReplayBufferEvent(
+  context: ReplayBufferContext,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (context.logger) {
+    context.logger.debug(event, fields);
+    return;
+  }
+  context.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 }
 
 function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCall) {

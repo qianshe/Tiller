@@ -15,6 +15,20 @@ export type SessionPromptParams = {
   clientMessageId?: string;
 };
 
+function logSessionInfo(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
+  if (context.logger) {
+    context.logger.info(event, fields);
+    return;
+  }
+  context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}
+
 export async function promptSession(
   params: SessionPromptParams,
   context: HelmHandlerContext,
@@ -104,9 +118,12 @@ async function promptRuntimeDraft(
   context.sessionStore.upsert(summary);
   context.persistRuntimeDescriptor(summary, draft.agent, draft.runtime.sessionCapabilities);
   broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
-  context.logInfo(
-    `[tiller] draft.activate draft=${params.draftId} session=${sessionId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id}`,
-  );
+  logSessionInfo(context, "runtime.draft.activated", {
+    draftId: params.draftId,
+    sessionId,
+    runtimeSessionId: draft.runtime.runtimeSessionId,
+    providerId: draft.agent.id,
+  });
 
   try {
     const result = await sendPromptToSession({ ...params, sessionId }, context);

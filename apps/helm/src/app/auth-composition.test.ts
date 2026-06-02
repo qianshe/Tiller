@@ -19,6 +19,7 @@ test("createHelmAuthComposition wires auth dependencies through one app boundary
   const getSocketId = () => "socket-1";
   const attachRpcConnection = () => undefined;
   const logInfo = () => undefined;
+  const logDebug = () => undefined;
   const logError = () => undefined;
   const beginAuthenticationFlow = () => undefined;
   let capturedOptions: SocketAuthenticatorOptions | undefined;
@@ -34,6 +35,7 @@ test("createHelmAuthComposition wires auth dependencies through one app boundary
     },
     attachRpcConnection,
     logInfo,
+    logDebug,
     logError,
     createPairingState: () => pairingState,
     createSocketAuthenticator: (options) => {
@@ -50,6 +52,7 @@ test("createHelmAuthComposition wires auth dependencies through one app boundary
   assert.equal(capturedOptions?.trustedDeviceStore, trustedDeviceStore);
   assert.equal(capturedOptions?.attachRpcConnection, attachRpcConnection);
   assert.equal(capturedOptions?.logInfo, logInfo);
+  assert.equal(capturedOptions?.logDebug, logDebug);
   assert.equal(capturedOptions?.logError, logError);
 
   capturedOptions?.showPairingCode();

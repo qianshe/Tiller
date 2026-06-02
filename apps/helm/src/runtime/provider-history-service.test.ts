@@ -231,7 +231,7 @@ test("authoritative provider history repairs unchanged snapshots with missing ti
     ],
   ]);
   let replaceCalled = false;
-  const logMessages: string[] = [];
+  const debugLogs: Array<{ event: string; fields: Record<string, unknown> }> = [];
 
   const service = createProviderHistoryService({
     sessions: new Map(),
@@ -266,7 +266,11 @@ test("authoritative provider history repairs unchanged snapshots with missing ti
     },
     getAgents: () => [],
     getWorktrees: () => [],
-    logInfo: (message) => logMessages.push(message),
+    logger: {
+      debug: (event, fields) => debugLogs.push({ event, fields: fields ?? {} }),
+      error: () => {},
+    },
+    logInfo: () => {},
     logError: () => {},
   });
 
@@ -294,7 +298,17 @@ test("authoritative provider history repairs unchanged snapshots with missing ti
     localMessagesBySession.get(sessionId)?.map((message) => [message.id, message.timelineSequence]),
     [["provider-1#p0", 5]],
   );
-  assert.ok(logMessages.some((message) => message.includes("action=repair")));
+  assert.deepEqual(debugLogs.at(-1), {
+    event: "runtime.provider_history.sync_decision",
+    fields: {
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      action: "repair",
+      providerMessages: 1,
+      localMessages: 1,
+      toolCalls: 0,
+    },
+  });
 });
 
 test("authoritative provider history persists ordered local timeline entries", () => {
