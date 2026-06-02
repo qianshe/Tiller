@@ -3,7 +3,7 @@ import type { AppView } from "../../shared/utils/routes";
 export type { AppView };
 
 export function shouldEnsureLiveConnection(view: AppView) {
-  return view === "sessions" || view === "agents";
+  return view === "sessions" || view === "agents" || view === "settings";
 }
 
 export function shouldAttemptSilentReconnect(input: {

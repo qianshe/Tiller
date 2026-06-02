@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary, SessionTimelineEntry } from "@tiller/shared";
-import { createRestoreReplayBuffer } from "./replay-event-buffer.js";
+import { createRestoreReplayBuffer, hasRestoreReplayContent } from "./replay-event-buffer.js";
 
 function createStores() {
   const messages: AgentMessage[] = [];
@@ -139,6 +139,21 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
   ]);
 });
 
+test("restore replay buffer content detection ignores empty flushes", () => {
+  assert.equal(
+    hasRestoreReplayContent({ messages: 0, toolCalls: 0, outputs: 0, diffs: 0 }),
+    false,
+  );
+  assert.equal(
+    hasRestoreReplayContent({ messages: 1, toolCalls: 0, outputs: 0, diffs: 0 }),
+    true,
+  );
+  assert.equal(
+    hasRestoreReplayContent({ messages: 0, toolCalls: 0, outputs: 0, diffs: 1 }),
+    true,
+  );
+});
+
 test("restore replay buffer keeps stronger tool-call classification across updates", () => {
   const stores = createStores();
   const buffer = createRestoreReplayBuffer("session-1", stores.context);
@@ -240,4 +255,3 @@ test("restore replay buffer persists ordered local timeline entries", () => {
     ],
   );
 });
-

@@ -193,6 +193,26 @@ test("codexHistoryReader.toEvents emits message thinking tool and result events"
   );
 });
 
+test("parseCodexJsonlHistory classifies spawned agents as subagent tool calls", () => {
+  const history = parseCodexJsonlHistory(
+    JSON.stringify({
+      timestamp: "2026-05-31T06:38:59.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agents_on_csv",
+        arguments: "{\"agent\":\"explorer\",\"task\":\"map affected files\"}",
+        call_id: "call-subagent",
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    history.toolCalls.map((tool) => [tool.id, tool.kind, tool.title]),
+    [["call-subagent", "subagent", "spawn_agents_on_csv"]],
+  );
+});
+
 test("parseCodexJsonlHistory preserves image-only user prompts", () => {
   const history = parseCodexJsonlHistory(
     JSON.stringify({

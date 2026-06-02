@@ -52,6 +52,25 @@ test("debug level enables legacy debug logs", () => {
   assert.equal(destination.lines.some((line) => line.includes("debug visible")), true);
 });
 
+test("setLevel enables debug logs for the current process", () => {
+  const destination = createMemoryDestination();
+  const logger = createTillerLogger({
+    logsDir: ".",
+    level: "info",
+    destination,
+    console: { log() {}, debug() {}, warn() {}, error() {} },
+  });
+
+  logger.logDebug("debug hidden before update");
+  assert.equal(logger.getLevel(), "info");
+  logger.setLevel("debug");
+  assert.equal(logger.getLevel(), "debug");
+  logger.logDebug("debug visible after update");
+
+  assert.equal(destination.lines.some((line) => line.includes("debug hidden before update")), false);
+  assert.equal(destination.lines.some((line) => line.includes("debug visible after update")), true);
+});
+
 test("structured logs redact forbidden text fields", () => {
   const destination = createMemoryDestination();
   const logger = createTillerLogger({

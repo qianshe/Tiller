@@ -9,6 +9,7 @@ import {
   INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
   PLAIN_MESSAGE_RENDER_LOAD_STEP,
   resolveNextPlainConversationRenderLimit,
+  resolvePlainConversationItemSpacingClass,
   resolvePlainDisplayMessages,
   resolvePlainMessageRenderItems,
   resolvePlainMessageScrollContainer,
@@ -41,6 +42,30 @@ test("plain message render keys stay unique for duplicate provider ids", () => {
     resolvePlainMessageRenderItems(duplicateMessages).map((item) => item.renderKey),
     ["session-1-msg-s0", "session-1-msg-s0#1", "session-1-msg-s1"],
   );
+});
+
+test("plain message timeline keeps tool and thinking rows tighter than content boundaries", () => {
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("thinking", "tool-group"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("subagent", "thinking"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("tool-group", "subagent"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "tool-group"),
+    "plain-message-block min-w-0 mt-2",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("thinking", "message"),
+    "plain-message-block min-w-0 mt-2",
+  );
+  assert.match(plainMessagesSource, /gap-y-1/);
 });
 
 test("plain message display keeps all loaded messages", () => {

@@ -8,14 +8,11 @@ import {
   type FileDiffSummary,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import type { TillerLogger } from "../logging/logger";
 
 type ReplayBufferContext = Pick<
   HelmHandlerContext,
-  "sessionMessageStore" | "sessionArtifactStore" | "sessionTimelineStore" | "logInfo"
-> & {
-  logger?: Pick<TillerLogger, "debug">;
-};
+  "sessionMessageStore" | "sessionArtifactStore" | "sessionTimelineStore"
+>;
 
 export type RestoreReplayFlushCounts = {
   messages: number;
@@ -23,6 +20,10 @@ export type RestoreReplayFlushCounts = {
   outputs: number;
   diffs: number;
 };
+
+export function hasRestoreReplayContent(counts: RestoreReplayFlushCounts) {
+  return counts.messages > 0 || counts.toolCalls > 0 || counts.outputs > 0 || counts.diffs > 0;
+}
 
 export function createRestoreReplayBuffer(sessionId: string, context: ReplayBufferContext) {
   const messages = new Map<string, AgentMessage>();
@@ -82,10 +83,6 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
         outputs: outputs.size,
         diffs: diffs?.length ?? 0,
       };
-      logReplayBufferEvent(context, "runtime.restore_replay.persisted", {
-        sessionId,
-        ...counts,
-      });
       messages.clear();
       toolCalls.clear();
       outputs.clear();
@@ -108,24 +105,6 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
       context.sessionTimelineStore.replace(sessionId, entries);
     }
   }
-}
-
-function logReplayBufferEvent(
-  context: ReplayBufferContext,
-  event: string,
-  fields: Record<string, unknown>,
-) {
-  if (context.logger) {
-    context.logger.debug(event, fields);
-    return;
-  }
-  context.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
-}
-
-function formatLogFields(fields: Record<string, unknown>) {
-  return Object.entries(fields)
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join(" ");
 }
 
 function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCall) {

@@ -61,6 +61,8 @@ function createCapturedLogger(capture: TestContextCapture, legacyLogs: string[])
     logWarn: (message) => writeLegacy("warn", message),
     logError: (message) => writeLegacy("error", message),
     writeLogLine: (level: LogLevel, message: string) => writeLegacy(level.toLowerCase() as CapturedLog["level"], message),
+    getLevel: () => "debug",
+    setLevel: () => undefined,
     logFile: "captured.log",
     close: () => undefined,
   };
@@ -486,6 +488,16 @@ test("runtime user echo messages are ignored because prompts are already persist
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [
+      {
+        id: "client-user-1",
+        role: "user",
+        text: "你好",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    ],
+  } as HelmHandlerContext["sessionMessageStore"];
   context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
     appendedToolCalls.push(toolCall);
   };
@@ -529,10 +541,81 @@ test("runtime user echo messages are ignored because prompts are already persist
   assert.equal(capture.broadcasts.length, 0);
 });
 
+test("runtime user messages are persisted when no local prompt matches the provider message", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [],
+  } as HelmHandlerContext["sessionMessageStore"];
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "runtime-user-opencode-1",
+        role: "user",
+        text: "[build-mode]\nOpenCode processed prompt",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.persisted.map((message) => [message.id, message.role, message.text]),
+    [["runtime-user-opencode-1", "user", "[build-mode]\nOpenCode processed prompt"]],
+  );
+  assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["user_message"]);
+  assert.equal(capture.summaryUpdates?.[0]?.lastMessagePreview, "[build-mode]\nOpenCode processed prompt");
+  assert.deepEqual(capture.detailBroadcasts, [
+    {
+      sessionId: "session-1",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          kind: "user_message",
+          message: capture.persisted[0],
+        },
+      },
+    },
+  ]);
+});
+
 test("runtime user echo debug logs are summarized across a replay burst", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [
+      {
+        id: "client-user-1",
+        role: "user",
+        text: "first prompt",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+      {
+        id: "client-user-2",
+        role: "user",
+        text: "ok",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+      {
+        id: "client-user-3",
+        role: "user",
+        text: "third prompt",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    ],
+  } as HelmHandlerContext["sessionMessageStore"];
 
   for (const [index, text] of ["first prompt", "ok", "third prompt"].entries()) {
     handleRuntimeEvent(

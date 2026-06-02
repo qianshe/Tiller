@@ -1,6 +1,6 @@
-import { applyAgentMessageToSummary } from "../sessions/facade";
+import { applyAgentMessageToSummary, applyUserPromptToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { SessionSummary } from "@tiller/shared";
+import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session-event-publisher";
@@ -196,7 +196,12 @@ export function handleRuntimeEvent(
       if (event.message.role === "user") {
         runtimeStreamLog.closeAssistantStreamLog(sessionId);
         startNextAssistantResponseSegment(sessionId);
-        recordIgnoredUserEcho(sessionId, event.message);
+        if (shouldIgnoreRuntimeUserMessage(sessionId, event.message, context)) {
+          recordIgnoredUserEcho(sessionId, event.message);
+          return;
+        }
+        flushIgnoredUserEchoSummary(sessionId, context);
+        publishRuntimeUserMessage(sessionId, event.message, context);
         return;
       }
       const message = {
@@ -474,6 +479,51 @@ function recordIgnoredUserEcho(
   current.lastSeq = seq;
   current.messageIds.add(message.id);
   current.totalChars += message.text.length;
+}
+
+function shouldIgnoreRuntimeUserMessage(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: HelmHandlerContext,
+) {
+  const text = message.text.trim();
+  if (!text) {
+    return false;
+  }
+  return listLocalUserMessages(sessionId, context).some((candidate) => {
+    const localText = candidate.text.trim();
+    return candidate.id === message.id || localText === text || text.includes(localText);
+  });
+}
+
+function listLocalUserMessages(sessionId: string, context: HelmHandlerContext): AgentMessage[] {
+  try {
+    return context.sessionMessageStore.list(sessionId).filter(
+      (message: AgentMessage) => message.role === "user" && message.text.trim(),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function publishRuntimeUserMessage(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: HelmHandlerContext,
+) {
+  const userMessage = {
+    ...message,
+    timelineSequence: nextLiveEventSequence(sessionId),
+  };
+  context.persistSessionMessage(sessionId, userMessage);
+  persistTimelineMessage(context, sessionId, userMessage);
+  context.updateSessionSummary(sessionId, (current) =>
+    applyUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
+  );
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
+    kind: "user_message",
+    message: userMessage,
+  });
 }
 
 function flushIgnoredUserEchoSummary(sessionId: string, context: HelmHandlerContext) {

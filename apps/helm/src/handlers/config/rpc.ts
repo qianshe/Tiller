@@ -10,6 +10,7 @@ import {
   testAgent,
 } from "./agent-rpc";
 import { listHelms, saveHelm, shutdownDaemon } from "./helm-rpc";
+import { getLoggingSettings, saveLoggingSettings } from "./logging-rpc";
 import {
   createBranch,
   deleteProject,
@@ -32,6 +33,10 @@ export async function handleConfigRpcRequest(
       return listHelms(context);
     case "helm/save":
       return saveHelm(params as { helm: HelmSummary }, context);
+    case "logging/get":
+      return getLoggingSettings(context);
+    case "logging/save":
+      return saveLoggingSettings(params as { logging?: Record<string, string> }, context);
     case "project/list":
       return listProjects(context);
     case "project/list_files":

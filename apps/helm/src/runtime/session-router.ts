@@ -116,6 +116,13 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
   });
 }
 
+function subscribePromptingSocketToSession(sessionId: string, context: HelmHandlerContext) {
+  if (!context.socketId) {
+    return;
+  }
+  context.subscribeSessionTopic(context.socketId, sessionId);
+}
+
 function applyDispatchingUserPromptToSummary(
   current: SessionSummary,
   text: string,
@@ -139,6 +146,8 @@ export async function sendPromptImmediately(
     });
     throw new Error("Session runtime is not available. Try reconnecting this Mission first.");
   }
+
+  subscribePromptingSocketToSession(item.sessionId, context);
 
   const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
   logRuntimeInfo(context, "runtime.prompt.send_started", {
@@ -309,6 +318,8 @@ export async function sendPromptToSession(
     record.summary?.availableCommands,
     record.summary?.agentName ?? record.agent?.name ?? record.agent?.id ?? "ACP agent",
   );
+
+  subscribePromptingSocketToSession(params.sessionId, context);
 
   const useCase = new SendPromptUseCase<SessionQueuedPrompt, ReturnType<typeof context.promptQueue.snapshot>, ReturnType<typeof createUserPromptMessage>, AgentPromptContent>({
     runtime: {

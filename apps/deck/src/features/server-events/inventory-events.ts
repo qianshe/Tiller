@@ -216,6 +216,12 @@ export function applyInventoryResult(
         store.setAgentConnectionInventory(payload.connections ?? []);
       }
       return true;
+    case "logging/get":
+    case "logging/save":
+      if (payload.logging) {
+        store.applyHelmInventory(sourceHelmKey, { logging: payload.logging });
+      }
+      return true;
     case "agent/connect":
     case "agent/reconnect":
       if (sourceIsCurrentHelm) {

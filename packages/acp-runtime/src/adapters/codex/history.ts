@@ -216,6 +216,9 @@ function codexToolTitle(payload: any) {
 
 function inferCodexToolKind(title: string): AgentToolCallKind {
   const normalized = title.toLowerCase();
+  if (isCodexSubagentTool(normalized)) {
+    return "subagent";
+  }
   if (normalized.includes("shell") || normalized.includes("powershell")) {
     return "shell";
   }
@@ -232,6 +235,10 @@ function inferCodexToolKind(title: string): AgentToolCallKind {
     return "mcp";
   }
   return "tool";
+}
+
+function isCodexSubagentTool(normalized: string) {
+  return /(?:^|[.\s_-])(?:agent|subagents?|delegate[_-]?task|spawn[_-]?agents?(?:[_-]?on[_-]?csv)?)(?:$|[.\s_-])/u.test(normalized);
 }
 
 function stringifyCodexOutput(value: unknown) {

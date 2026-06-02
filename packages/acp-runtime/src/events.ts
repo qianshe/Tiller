@@ -1,5 +1,7 @@
 import type { AgentToolCall, SessionStatus } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "./runtime-types";
+import { normalizeClaudeToolCall } from "./adapters/claude/tool-calls";
+import { normalizeCodexToolCall } from "./adapters/codex/tool-calls";
 import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
 import { extractAvailableCommands } from "./available-command-events";
 import { extractCommandChunk, extractPermissionRequest } from "./command-events";
@@ -27,7 +29,16 @@ function normalizeProviderToolCall(
   toolCall: AgentToolCall,
   update: any,
 ) {
-  return providerId === "opencode" ? normalizeOpenCodeToolCall(toolCall, update) : toolCall;
+  if (providerId === "opencode") {
+    return normalizeOpenCodeToolCall(toolCall, update);
+  }
+  if (providerId === "codex") {
+    return normalizeCodexToolCall(toolCall, update);
+  }
+  if (providerId === "claudecode" || providerId === "claude") {
+    return normalizeClaudeToolCall(toolCall, update);
+  }
+  return toolCall;
 }
 
 export function mapSessionUpdateNotification(

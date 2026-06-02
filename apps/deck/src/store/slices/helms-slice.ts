@@ -10,6 +10,12 @@ import type {
 import type { StateCreator } from "zustand";
 import type { ConnectionState } from "./connection-slice";
 
+export type HelmLoggingSettings = {
+  level: "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+  format: string;
+  acpTrace: string;
+};
+
 export type HelmInventoryBucket = {
   helms?: HelmSummary[];
   projects: ProjectSummary[];
@@ -18,6 +24,7 @@ export type HelmInventoryBucket = {
   sessions: SessionSummary[];
   statuses: Record<string, SessionStatus>;
   trustedDevices: TrustedDeviceSummary[];
+  logging?: HelmLoggingSettings;
 };
 
 export type HelmListUpdater =

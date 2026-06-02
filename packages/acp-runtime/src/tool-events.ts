@@ -171,9 +171,41 @@ function primitiveStringFrom(value: unknown): string | undefined {
 function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
   const toolInput = parseToolInput(source.rawInput ?? source.raw_input ?? source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input);
   const toolName = toolNameFromRawInput(toolInput);
-  const raw = String(source.kind ?? source.type ?? updateType).toLowerCase();
+  const descriptorRaw = [
+    source.kind,
+    source.type,
+    source.name,
+    source.toolName,
+    source.tool_name,
+    source.tool,
+    toolName,
+    updateType,
+  ]
+    .map((value) => primitiveStringFrom(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const raw = [
+    source.kind,
+    source.type,
+    source.title,
+    source.label,
+    source.displayName,
+    source.display_name,
+    source.name,
+    source.toolName,
+    source.tool_name,
+    source.tool,
+    toolName,
+    updateType,
+  ]
+    .map((value) => primitiveStringFrom(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
+  if (isSubagentToolInput(toolInput) || isSubagentToolDescriptor(descriptorRaw)) return "subagent";
   if (toolName) return "mcp";
   if (/read/u.test(raw)) return "read";
   if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
@@ -181,9 +213,34 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
   if (/execute|terminal|command|shell|bash|exec/u.test(raw)) return "shell";
   if (/fetch/u.test(raw)) return "fetch";
   if (/think/u.test(raw)) return "think";
-  if (/subagent|agent/u.test(raw)) return "subagent";
   if (/tool/u.test(raw)) return "tool";
   return "unknown";
+}
+
+function isSubagentToolInput(rawInput: unknown) {
+  if (!rawInput || typeof rawInput !== "object") return false;
+  const record = rawInput as Record<string, unknown>;
+  if (typeof record.subagent_type === "string" || typeof record.agent_type === "string") {
+    return true;
+  }
+  const raw = [
+    record.tool,
+    record.name,
+    record.toolName,
+    record.tool_name,
+    record.agent,
+    record.agentName,
+    record.agent_name,
+  ]
+    .map((value) => primitiveStringFrom(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return isSubagentToolDescriptor(raw);
+}
+
+function isSubagentToolDescriptor(raw: string) {
+  return /(?:^|[^a-z0-9])subagents?(?:$|[^a-z0-9])/u.test(raw);
 }
 
 function isSkillToolInput(rawInput: unknown) {

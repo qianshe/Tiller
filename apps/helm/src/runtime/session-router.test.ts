@@ -67,6 +67,7 @@ function createContext(options: {
   const timelineEntries: SessionTimelineEntry[] = [];
   const broadcasts: Array<{ method: string; params: any }> = [];
   const traceEvents: PromptTraceEvent[] = [];
+  const subscriptions: string[] = [];
   let currentSummary = summary;
   const sessions = new Map<string, any>();
   if (options.activeRuntime) {
@@ -78,6 +79,7 @@ function createContext(options: {
     });
   }
   const context = {
+    socketId: "socket-1",
     sessions,
     promptQueue: createSessionPromptQueueManager(),
     liveMessageBuffer: createLiveMessageBuffer(),
@@ -120,6 +122,11 @@ function createContext(options: {
     broadcastSessionTopic: (_sessionId: string, method: string, params: any) => {
       broadcasts.push({ method, params });
     },
+    subscribeSessionTopic: (socketId: string, sessionId: string) => {
+      subscriptions.push(`${socketId}:${sessionId}`);
+    },
+    unsubscribeSessionTopic: () => undefined,
+    removeSocketSessionTopics: () => undefined,
     startSessionResume: async () => {
       if (!options.restoreOk || !options.restoreRuntime) {
         return {
@@ -141,7 +148,7 @@ function createContext(options: {
       };
     },
   } as unknown as HelmHandlerContext;
-  return { context, persisted, timelineEntries, broadcasts, sessions, traceEvents };
+  return { context, persisted, timelineEntries, broadcasts, sessions, traceEvents, subscriptions };
 }
 
 test("sendPromptToSession dispatches through an active runtime", async () => {
@@ -196,6 +203,26 @@ test("sendPromptToSession records the local user prompt as a timeline entry befo
     ["user_message"],
   );
   assert.equal(timelineEntries[0]?.id, "client-timeline");
+});
+
+test("sendPromptToSession subscribes the prompting socket before runtime dispatch", async () => {
+  const subscriptionsDuringPrompt: string[][] = [];
+  const { context, subscriptions } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        subscriptionsDuringPrompt.push([...subscriptions]);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请实时展示", clientMessageId: "client-subscribe" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(subscriptionsDuringPrompt, [["socket-1:session-1"]]);
 });
 
 test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {

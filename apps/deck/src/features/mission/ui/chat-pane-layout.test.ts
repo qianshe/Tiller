@@ -118,9 +118,9 @@ test("mission message timeline keeps chat list props stable for unchanged messag
 });
 
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
-  assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\]/);
+  assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_16px\)\)\]/);
   assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
-  assert.match(plainMessagesSource, /max-w-\[min\(620px,72%\)\]/);
+  assert.match(plainMessagesSource, /max-w-\[min\(680px,61\.8%\)\]/);
   assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /message\.role === "user" && "rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
@@ -143,11 +143,25 @@ test("collapsed plain-text user messages use a three-line visual clamp without a
 test("assistant markdown uses readable prose styling without paragraph marker bullets", () => {
   assert.doesNotMatch(plainMessagesSource, /markdown-paragraph\]:before/);
   assert.doesNotMatch(plainMessagesSource, /before:bg-green-500/);
-  assert.match(markdownSource, /markdown-message space-y-3/);
-  assert.match(markdownSource, /className="my-2 list-disc/);
+  assert.match(markdownSource, /markdown-message space-y-1\.5 text-\[12\.5px\] leading-\[1\.5\]/);
+  assert.match(markdownSource, /markdown-heading my-1\.5 text-\[15px\]/);
+  assert.match(markdownSource, /className="my-1\.5 list-disc space-y-0\.5 pl-4/);
+  assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12\.5px\]/);
   assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
   assert.match(markdownSource, /className="overflow-x-auto/);
   assert.match(markdownSource, /className="not-prose flex items-center justify-between/);
+});
+
+test("plain conversation text uses compact small-pane typography", () => {
+  assert.match(plainMessagesSource, /messageBodyClassName\} min-w-0 text-\[12\.5px\] leading-\[1\.5\]/);
+  assert.match(plainMessagesSource, /plain-thinking-content[^\n]+text-\[12\.5px\] leading-\[1\.5\]/);
+  assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+text-\[12\.5px\]/);
+  assert.match(chatPaneSource, /flat \? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2\.5"/);
+  assert.match(chatPaneSource, /overflow-auto px-3 pb-9 pt-2\.5/);
+});
+
+test("markdown normalizes text only when the source changes", () => {
+  assert.match(markdownSource, /useMemo\(\(\) => normalizeMarkdownMessageText\(text\), \[text\]\)/);
 });
 
 test("assistant streaming messages expose streaming state for lightweight rendering", () => {
@@ -804,6 +818,17 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
   assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
+});
+
+test("session scroll-to-bottom button stays absolute inside responsive panes", () => {
+  assert.match(
+    shellStylesSource,
+    /\.mission-responsive-mode \[data-mission-mobile-pane\] \[data-session-scroll-frame\] > \[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\[data-session-scroll-frame\] > \[data-session-scroll-bottom\]\s*{[^}]*right:\s*0\.75rem;[^}]*bottom:\s*0\.75rem;/s,
+  );
 });
 
 test("mission composer is sticky and swipe-locked on mobile", () => {

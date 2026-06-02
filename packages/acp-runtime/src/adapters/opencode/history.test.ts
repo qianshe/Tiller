@@ -542,6 +542,109 @@ test("parseOpenCodeExportHistory classifies OpenCode read/write/search and MCP t
   );
 });
 
+test("parseOpenCodeExportHistory keeps delegate task tools as subagent calls", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant-subagent",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              type: "tool",
+              tool: "mcpServers_delegate_task",
+              callID: "call-subagent",
+              state: {
+                status: "completed",
+                input: {
+                  task: "检查 mission 会话 UI",
+                  agent: "explore",
+                  mcpServers: ["morph"],
+                },
+                title: "mcpServers_delegate_task",
+                time: { start: 1777543150784, end: 1777543150882 },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    history.toolCalls.map((tool) => [tool.id, tool.kind, tool.title]),
+    [["call-subagent", "subagent", "mcpServers_delegate_task"]],
+  );
+});
+
+test("parseOpenCodeExportHistory treats typed task payloads as subagent calls", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant-subagent-task",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              type: "tool",
+              tool: "task",
+              callID: "call-task-subagent",
+              state: {
+                status: "completed",
+                input: {
+                  description: "Review concurrency findings",
+                  prompt: "TASK: Review race-condition findings.",
+                  run_in_background: false,
+                  subagent_type: "oracle",
+                  task_id: "",
+                },
+                title: "Review concurrency findings",
+                time: { start: 1777543150784, end: 1777543150882 },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    history.toolCalls.map((tool) => [tool.id, tool.kind, tool.title]),
+    [["call-task-subagent", "subagent", "Review concurrency findings"]],
+  );
+});
+
+test("parseOpenCodeExportHistory does not infer subagent from task text alone", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant-task-title",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              type: "tool",
+              tool: "custom_tool",
+              callID: "call-task-title",
+              state: {
+                status: "completed",
+                input: { value: "notes" },
+                title: "Review task findings",
+                time: { start: 1777543150784, end: 1777543150882 },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    history.toolCalls.map((tool) => [tool.id, tool.kind, tool.title]),
+    [["call-task-title", "tool", "Review task findings"]],
+  );
+});
+
 test("loadAdapterAuthoritativeHistory returns null for providers without native export", async () => {
   assert.equal(
     await loadAdapterAuthoritativeHistory(

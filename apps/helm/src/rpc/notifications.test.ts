@@ -5,6 +5,15 @@ import { createSessionEventPublisher } from "../runtime/session-event-publisher"
 
 const detailUpdates = [
   {
+    kind: "user_message",
+    message: {
+      id: "user-1",
+      role: "user",
+      text: "hello",
+      timestamp: "2026-05-23T00:00:00.000Z",
+    },
+  },
+  {
     kind: "agent_message",
     message: {
       id: "msg-1",

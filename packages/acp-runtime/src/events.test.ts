@@ -667,6 +667,114 @@ test("mapSessionUpdateNotification classifies MCP tools from rawInput server and
   assert.equal(mapped.event.toolCall.title, "Tool: sanshu/zhi");
 });
 
+test("mapSessionUpdateNotification classifies agent tool calls as subagent", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-subagent-tool",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-subagent",
+        title: "Agent",
+        status: "in_progress",
+        rawInput: {
+          prompt: "Find all API endpoints",
+          description: "Find API endpoints",
+          subagent_type: "Explore",
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Agent");
+});
+
+test("mapSessionUpdateNotification classifies Claude task tools in the Claude adapter", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-task-tool",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-task-tool",
+          toolName: "Task",
+          title: "Task",
+          status: "in_progress",
+          rawInput: { prompt: "Inspect session flow" },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Task");
+});
+
+test("mapSessionUpdateNotification classifies Codex spawned agents in the Codex adapter", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-subagent",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-subagent",
+          toolName: "spawn_agents_on_csv",
+          title: "spawn_agents_on_csv",
+          status: "in_progress",
+          rawInput: { path: "input.csv" },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "spawn_agents_on_csv");
+});
+
+test("mapSessionUpdateNotification does not infer subagent from task text in normal titles", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-search-task-title",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-search-task-title",
+        title: "Search task notes",
+        status: "completed",
+        rawInput: { query: "task notes" },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+  assert.equal(mapped.event.toolCall.title, "Search task notes");
+});
+
 test("mapSessionUpdateNotification classifies MCP tools from stringified input", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

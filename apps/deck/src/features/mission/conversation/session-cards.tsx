@@ -247,17 +247,24 @@ export function SessionCard({
         <span className="min-w-0 truncate text-section font-medium text-foreground">
           {session.title?.trim() || session.agentName}
         </span>
-        <span className="font-mono text-2xs text-muted-foreground tabular shrink-0">
+        <span
+          className="min-w-0 shrink-[999] truncate font-mono text-2xs tabular text-muted-foreground"
+          data-session-project-label="true"
+        >
           {formatProjectWorktreeLabel(session.projectName, session.worktreeName)}
         </span>
-        {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
-        <div className="min-w-0 flex-1">
+        <div
+          className="flex shrink-0 items-center gap-1"
+          data-session-status-slot="true"
+        >
+          {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
           {toolLoading ? (
             <MissionToolLoadingTitle {...toolLoading} />
           ) : restoreNotice ? null : (
             <SessionStatusPill status={session.status} />
           )}
         </div>
+        <div className="min-w-0 flex-1" />
         <StatusDot tone={statusTone} />
         <div className="relative">
           <button
@@ -346,26 +353,26 @@ export function SessionCard({
           <Icon name="x" size={11} />
         </button>
       </div>
-      <div
-        ref={bodyRef}
-        onScroll={(event) => {
-          onBodyScroll(event);
-          updateScrollToBottomVisibility(event.currentTarget);
-        }}
-        className={cn(
-          "flex flex-1 min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          flat ? "px-5 py-3" : "px-5 pb-10 pt-3",
-        )}
-        data-session-card-body={session.id}
-      >
-        <div className="space-y-3">{children}</div>
-      </div>
-      {!flat ? (
+      <div className="relative min-h-0 flex-1" data-session-scroll-frame={session.id}>
+        <div
+          ref={bodyRef}
+          onScroll={(event) => {
+            onBodyScroll(event);
+            updateScrollToBottomVisibility(event.currentTarget);
+          }}
+          className={cn(
+            "flex h-full min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            flat ? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2.5",
+          )}
+          data-session-card-body={session.id}
+        >
+          <div className="space-y-3">{children}</div>
+        </div>
         <ScrollToBottomButton
           visible={showScrollToBottom}
           onClick={scrollToBottom}
         />
-      ) : null}
+      </div>
     </article>
   );
 }
@@ -442,41 +449,43 @@ export function DraftSessionCard({
           <Icon name="x" size={11} />
         </button>
       </div>
-      <div
-        ref={bodyRef}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-10 pt-3"
-        onScroll={(event) => updateScrollToBottomVisibility(event.currentTarget)}
-      >
-        <div className="space-y-2 rounded-lg border border-border-ghost bg-surface-sunken p-3 text-section text-muted-foreground">
-          <strong className="block text-foreground">{draftWindow.agentName ? "准备创建会话" : "选择 ACP Agent"}</strong>
-          <span>{draftWindow.message}</span>
-          {!draftWindow.agentName ? (
-            <div className="flex flex-wrap gap-2 pt-2" data-draft-agent-options>
-              {agentOptions.length ? (
-                agentOptions.map((agent) => (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    className="rounded-md border border-border-ghost bg-surface px-2.5 py-1 text-action font-medium text-foreground transition hover:border-primary/50 hover:bg-primary-soft/20 hover:text-primary"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelectAgent?.(agent.id);
-                    }}
-                  >
-                    {agent.name}
-                  </button>
-                ))
-              ) : (
-                <span className="text-meta text-muted-foreground">暂无可用 ACP Agent。</span>
-              )}
-            </div>
-          ) : null}
+      <div className="relative min-h-0 flex-1" data-session-scroll-frame={draftWindow.id}>
+        <div
+          ref={bodyRef}
+          className="flex h-full min-h-0 flex-col gap-3 overflow-auto px-3 pb-9 pt-2.5"
+          onScroll={(event) => updateScrollToBottomVisibility(event.currentTarget)}
+        >
+          <div className="space-y-2 rounded-lg border border-border-ghost bg-surface-sunken p-3 text-section text-muted-foreground">
+            <strong className="block text-foreground">{draftWindow.agentName ? "准备创建会话" : "选择 ACP Agent"}</strong>
+            <span>{draftWindow.message}</span>
+            {!draftWindow.agentName ? (
+              <div className="flex flex-wrap gap-2 pt-2" data-draft-agent-options>
+                {agentOptions.length ? (
+                  agentOptions.map((agent) => (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      className="rounded-md border border-border-ghost bg-surface px-2.5 py-1 text-action font-medium text-foreground transition hover:border-primary/50 hover:bg-primary-soft/20 hover:text-primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelectAgent?.(agent.id);
+                      }}
+                    >
+                      {agent.name}
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-meta text-muted-foreground">暂无可用 ACP Agent。</span>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
+        <ScrollToBottomButton
+          visible={showScrollToBottom}
+          onClick={scrollToBottom}
+        />
       </div>
-      <ScrollToBottomButton
-        visible={showScrollToBottom}
-        onClick={scrollToBottom}
-      />
     </article>
   );
 }

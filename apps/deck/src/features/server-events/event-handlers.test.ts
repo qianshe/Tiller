@@ -853,6 +853,46 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
+test("inventory RPC results hydrate logging settings for the source helm", () => {
+  resetStore();
+  const handled = applyInventoryResult(
+    "logging/get",
+    { logging: { level: "trace", format: "pretty", acpTrace: "summary" } },
+    "helm-1",
+    true,
+    {
+      projectFilesKey: (projectId, worktreeId) => `${projectId}:${worktreeId ?? ""}`,
+      setProjectFilesByScope: () => undefined,
+      setSelectedCwd: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+      setAgentTestResult: () => undefined,
+      agentModelOptionsKey: (providerId, worktreeId) => `${providerId}:${worktreeId}`,
+      writeAgentModelOptionsCache: () => undefined,
+      selectedAgentId: null,
+      selectedCwd: null,
+      resolveModelOptions: () => [],
+      resolvePreferredModel: (_current, options) => options[0],
+      selectedModel: "provider-default",
+      setSelectedModel: () => undefined,
+      setSelectedAgentMode: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+      setConfigSaveMessage: () => undefined,
+      setFleetProjectSaveMessage: () => undefined,
+      setSelectedProjectId: () => undefined,
+      rpcClientRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      dispatch: async () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().helmInventories["helm-1"]?.logging, {
+    level: "trace",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+});
+
 test("session draft result hydrates draft model options and commands", () => {
   resetStore();
   let cached: unknown;

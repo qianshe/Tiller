@@ -28,6 +28,8 @@ export type TillerLogger = {
   logWarn(message: string): void;
   logError(message: string): void;
   writeLogLine(level: LogLevel, message: string): void;
+  getLevel(): TillerLogLevel;
+  setLevel(level: TillerLogLevel): void;
   readonly logFile: string;
   close(): void;
 };
@@ -64,8 +66,10 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
     mkdirSync(logsDir, { recursive: true });
   }
   const resolvedOptions = resolveLoggingOptions(process.env);
-  const level = explicitLevel ?? (debugEnabled ? "debug" : resolvedOptions.level);
-  const legacyDebugEnabled = debugEnabled ?? (level === "debug" || level === "trace");
+  let currentLevel = explicitLevel ?? (debugEnabled ? "debug" : resolvedOptions.level);
+  const isLegacyDebugEnabled = () => (
+    debugEnabled ?? (currentLevel === "debug" || currentLevel === "trace")
+  );
   const mirrorsStructuredLogsToConsole = format === "pretty" && (consoleOutput || Boolean(consoleDestination));
   const logDestination = createLogDestination({
     consoleDestination,
@@ -77,7 +81,7 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
   const logger = pino(
     {
       base: null,
-      level,
+      level: currentLevel,
       formatters: {
         level: (label) => ({ level: label }),
       },
@@ -131,7 +135,7 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
       }
     },
     logDebug(message) {
-      if (!legacyDebugEnabled) {
+      if (!isLegacyDebugEnabled()) {
         return;
       }
       writeLogLine("DEBUG", message);
@@ -152,6 +156,13 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
       }
     },
     writeLogLine,
+    getLevel() {
+      return currentLevel;
+    },
+    setLevel(level) {
+      currentLevel = level;
+      logger.level = level;
+    },
     logFile,
     close() {
       if ("end" in logDestination && typeof logDestination.end === "function") {

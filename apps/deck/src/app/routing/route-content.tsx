@@ -126,6 +126,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     resetDeckPreferences,
     updateDeckPreference,
     updateTechnicalPanelPreference,
+    updatePromptEnhancerPreference,
     updatePromptEnhancerLlmPreference,
     updatePromptEnhancerModelInput,
     setPromptEnhancerModelPickerOpen,
@@ -133,6 +134,12 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     setPromptEnhancerModelFilter,
     selectPromptEnhancerModel,
     testPromptEnhancerSelectedModel,
+    loggingSettings,
+    loggingStatus,
+    loggingClientAvailable,
+    loggingConnectionKnownConnected,
+    refreshLoggingSettings,
+    saveLoggingLevel,
   } = source;
 function renderOverview() {
   return (
@@ -270,6 +277,7 @@ function renderSettings() {
       resetDeckPreferences={resetDeckPreferences}
       updateDeckPreference={updateDeckPreference}
       updateTechnicalPanelPreference={updateTechnicalPanelPreference}
+      updatePromptEnhancerPreference={updatePromptEnhancerPreference}
       updatePromptEnhancerLlmPreference={updatePromptEnhancerLlmPreference}
       updatePromptEnhancerModelInput={updatePromptEnhancerModelInput}
       setPromptEnhancerModelPickerOpen={setPromptEnhancerModelPickerOpen}
@@ -277,6 +285,12 @@ function renderSettings() {
       setPromptEnhancerModelFilter={setPromptEnhancerModelFilter}
       selectPromptEnhancerModel={selectPromptEnhancerModel}
       testPromptEnhancerSelectedModel={testPromptEnhancerSelectedModel}
+      loggingSettings={loggingSettings}
+      loggingStatus={loggingStatus}
+      loggingClientAvailable={loggingClientAvailable}
+      loggingConnectionKnownConnected={loggingConnectionKnownConnected}
+      onRefreshLoggingSettings={refreshLoggingSettings}
+      onSaveLoggingLevel={saveLoggingLevel}
     />
   );
 }

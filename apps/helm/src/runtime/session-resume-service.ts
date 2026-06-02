@@ -6,7 +6,7 @@ import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { SessionRecord } from "./session-services";
 import type { ProviderLifecyclePort } from "./provider-lifecycle";
 import type { createProviderHistoryService } from "./provider-history-service";
-import { createRestoreReplayBuffer } from "./replay-event-buffer";
+import { createRestoreReplayBuffer, hasRestoreReplayContent } from "./replay-event-buffer";
 import { buildSessionResumeInfo, markSessionResumeUnavailable } from "./resume-info";
 import { resolveProviderHistorySnapshot } from "./provider-history-source";
 import {
@@ -169,15 +169,13 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         options.sessionArtifactStore.remove(sessionId);
       }
       const replayCounts = restoreReplayBuffer.flush();
-      logResumeInfo(options, "runtime.restore_replay.completed", {
-        sessionId,
-        ...replayCounts,
-      });
+      if (hasRestoreReplayContent(replayCounts)) {
+        logResumeInfo(options, "runtime.restore_replay.completed", {
+          sessionId,
+          ...replayCounts,
+        });
+      }
       const historySnapshot = await resolveProviderHistorySnapshot([
-        {
-          source: "acp-session-load",
-          load: async () => (options.providerHistory.hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
-        },
         {
           source: "adapter-authoritative-history",
           load: async () => {
@@ -191,6 +189,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
               return null;
             }
           },
+        },
+        {
+          source: "acp-session-load",
+          load: async () => (options.providerHistory.hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
         },
         {
           source: "local-cache",

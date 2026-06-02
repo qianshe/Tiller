@@ -65,6 +65,11 @@ type ProviderHistoryServiceOptions = {
   sessionTimelineStore?: SessionTimelineStore;
   getAgents(): AcpAgentProvider[];
   getWorktrees(): WorktreeSummary[];
+  loadAdapterHistoryContent?: (
+    agent: AcpAgentProvider,
+    runtimeSessionId: string,
+    cwd: string,
+  ) => Promise<ProviderHistorySnapshotContent | null>;
   logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
@@ -72,6 +77,7 @@ type ProviderHistoryServiceOptions = {
 
 export function createProviderHistoryService(options: ProviderHistoryServiceOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
+  const providerHistoryRefreshInFlight = new Map<string, Promise<void>>();
 
   async function importAuthoritativeProviderHistory(
     sessionId: string,
@@ -105,6 +111,9 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     runtimeSessionId: string,
     cwd: string,
   ): Promise<ProviderHistorySnapshotContent | null> {
+    if (options.loadAdapterHistoryContent) {
+      return options.loadAdapterHistoryContent(agent, runtimeSessionId, cwd);
+    }
     const history = await loadAdapterAuthoritativeHistory(agent, runtimeSessionId, cwd);
     if (!history) {
       return null;
@@ -355,7 +364,66 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       localMessages.some((message) => message.role === "user") &&
       !providerMessages.some((message) => message.role === "user") &&
       providerMessages.length < localMessages.length,
+    ) || isProviderSnapshotBehindCompletedLocalTurn(localMessages, providerMessages);
+  }
+
+  function isProviderSnapshotBehindCompletedLocalTurn(
+    localMessages: AgentMessage[],
+    providerMessages: AgentMessage[],
+  ) {
+    const latestLocalUserIndex = findLastIndex(
+      localMessages,
+      (message) => message.role === "user" && Boolean(message.text.trim()),
     );
+    if (latestLocalUserIndex < 0) {
+      return false;
+    }
+
+    const latestLocalUser = localMessages[latestLocalUserIndex];
+    if (!latestLocalUser || !localMessages.slice(latestLocalUserIndex + 1).some(isAssistantTextMessage)) {
+      return false;
+    }
+
+    const matchingProviderUserIndex = providerMessages.findIndex(
+      (message) => message.role === "user" && representsUserPrompt(message, latestLocalUser),
+    );
+    if (matchingProviderUserIndex >= 0) {
+      return !providerMessages.slice(matchingProviderUserIndex + 1).some(isAssistantTextMessage);
+    }
+
+    const latestLocalUserTime = Date.parse(latestLocalUser.timestamp);
+    if (!Number.isFinite(latestLocalUserTime)) {
+      return false;
+    }
+    return !providerMessages.some((message) => {
+      if (!isAssistantTextMessage(message)) {
+        return false;
+      }
+      const providerAssistantTime = Date.parse(message.timestamp);
+      return Number.isFinite(providerAssistantTime) && providerAssistantTime > latestLocalUserTime;
+    });
+  }
+
+  function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      if (predicate(items[index]!)) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  function isAssistantTextMessage(message: AgentMessage) {
+    return message.role === "assistant" && Boolean(message.text.trim());
+  }
+
+  function representsUserPrompt(providerMessage: AgentMessage, localMessage: AgentMessage) {
+    const providerText = providerMessage.text.trim();
+    const localText = localMessage.text.trim();
+    return providerMessage.id === localMessage.id ||
+      providerText === localText ||
+      providerText.includes(localText) ||
+      localText.includes(providerText);
   }
 
   function readLocalProviderHistory(sessionId: string): ProviderHistorySnapshotContent {
@@ -414,6 +482,23 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       return;
     }
 
+    const inFlightRefresh = providerHistoryRefreshInFlight.get(sessionId);
+    if (inFlightRefresh) {
+      return inFlightRefresh;
+    }
+
+    const refresh = refreshAuthoritativeSessionHistoryOnce(sessionId);
+    providerHistoryRefreshInFlight.set(sessionId, refresh);
+    try {
+      await refresh;
+    } finally {
+      if (providerHistoryRefreshInFlight.get(sessionId) === refresh) {
+        providerHistoryRefreshInFlight.delete(sessionId);
+      }
+    }
+  }
+
+  async function refreshAuthoritativeSessionHistoryOnce(sessionId: string) {
     const activeRecord = options.sessions.get(sessionId);
     const summary =
       activeRecord?.summary ?? options.sessionStore.list().find((item) => item.id === sessionId);
@@ -444,6 +529,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
   function resetRefresh(sessionId: string) {
     providerHistoryRefreshes.delete(sessionId);
+    providerHistoryRefreshInFlight.delete(sessionId);
   }
 
   function logProviderHistoryDecision(fields: {
@@ -454,6 +540,9 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     localMessages: number;
     toolCalls: number;
   }) {
+    if (fields.action.startsWith("skip")) {
+      return;
+    }
     if (options.logger) {
       options.logger.debug("runtime.provider_history.sync_decision", fields);
       return;

@@ -1,13 +1,17 @@
 import type { RefObject } from "react";
-import { useState } from "react";
-import { Button, Switch, Icon } from "@/shared/ui";
+import { useEffect, useState } from "react";
+import { Button, Icon } from "@/shared/ui";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
+import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 import type { DeckPreferences, TechnicalPanelPreferences } from "../../preferences";
 import { resolveSettingsCopy } from "../utils/copy";
 import { PromptEnhancerCard } from "./prompt-enhancer-card";
 import { SettingsNavigation } from "./settings-navigation";
 import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings-sections";
-import { SettingsRow, SettingsSectionFrame } from "./settings-section-frame";
+import { SettingsRow, SettingsSectionFrame, SettingsSwitch } from "./settings-section-frame";
+import type { LoggingLevel, LoggingSettings } from "../types";
+
+const LOGGING_LEVELS: LoggingLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
 
 type SettingsPageProps = {
   deckPreferences: DeckPreferences;
@@ -33,12 +37,22 @@ type SettingsPageProps = {
     key: K,
     value: DeckPreferences["promptEnhancer"]["llm"][K],
   ) => void;
+  updatePromptEnhancerPreference: <K extends keyof PromptEnhancerPreferences>(
+    key: K,
+    value: PromptEnhancerPreferences[K],
+  ) => void;
   updatePromptEnhancerModelInput: (value: string) => void;
   setPromptEnhancerModelPickerOpen: (open: boolean) => void;
   refreshPromptEnhancerModels: () => void;
   setPromptEnhancerModelFilter: (value: string) => void;
   selectPromptEnhancerModel: (model: PromptEnhancerModelOption) => void;
   testPromptEnhancerSelectedModel: () => void;
+  loggingSettings?: LoggingSettings | null;
+  loggingStatus?: string;
+  loggingClientAvailable?: boolean;
+  loggingConnectionKnownConnected?: boolean;
+  onRefreshLoggingSettings?: () => void;
+  onSaveLoggingLevel?: (level: LoggingLevel) => void;
   isMobile?: boolean;
 };
 
@@ -58,6 +72,7 @@ export function SettingsPage({
   resetDeckPreferences,
   updateDeckPreference,
   updateTechnicalPanelPreference,
+  updatePromptEnhancerPreference,
   updatePromptEnhancerLlmPreference,
   updatePromptEnhancerModelInput,
   setPromptEnhancerModelPickerOpen,
@@ -65,20 +80,25 @@ export function SettingsPage({
   setPromptEnhancerModelFilter,
   selectPromptEnhancerModel,
   testPromptEnhancerSelectedModel,
+  loggingSettings,
+  loggingStatus,
+  loggingClientAvailable = false,
+  loggingConnectionKnownConnected = false,
+  onRefreshLoggingSettings,
+  onSaveLoggingLevel,
   isMobile = false,
 }: SettingsPageProps) {
   const settingsCopy = resolveSettingsCopy(deckPreferences.language);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
   const [mobileScreen, setMobileScreen] = useState<"list" | "detail">("list");
-  const [noRecordAssistant, setNoRecordAssistant] = useState(true);
+  const [loggingDraftLevel, setLoggingDraftLevel] = useState<LoggingLevel | "">("");
+  const visibleLoggingStatus =
+    (loggingClientAvailable || loggingConnectionKnownConnected) && loggingStatus === "Helm 未连接" ? "" : loggingStatus;
 
-  const handleCheckUpdates = () => {
-    alert("当前已是最新版本 喵~");
-  };
+  useEffect(() => {
+    setLoggingDraftLevel(loggingSettings?.level ?? "");
+  }, [loggingSettings?.level]);
 
-  const handleOpenLogDir = () => {
-    alert("已向本地 Helm 节点请求打开日志目录 喵~");
-  };
   const appearance = sectionMeta("appearance");
   const language = sectionMeta("language");
   const motion = sectionMeta("motion");
@@ -159,13 +179,7 @@ export function SettingsPage({
               </div>
             </SettingsRow>
             <SettingsRow label="字体" desc="UI 字体 · 代码字体">
-              <span className="font-mono text-2xs text-muted-foreground tabular mr-2">Inter · JetBrains Mono</span>
-              <button
-                type="button"
-                className="h-6 px-2 rounded text-2xs bg-surface-sunken hover:bg-surface-emphasis text-muted-foreground"
-              >
-                更改
-              </button>
+              <span className="font-mono text-2xs text-muted-foreground tabular">Inter · JetBrains Mono</span>
             </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
@@ -224,7 +238,8 @@ export function SettingsPage({
         {activeSection === "motion" ? (
           <SettingsSectionFrame id={motion.id} label={motion.label} desc={motion.desc}>
             <SettingsRow label="减少动效" desc="禁用 streaming pulse / drawer slide / fade transitions">
-              <Switch
+              <SettingsSwitch
+                label="减少动效"
                 checked={deckPreferences.reduceMotion}
                 onCheckedChange={(checked) =>
                   updateDeckPreference("reduceMotion", checked)
@@ -237,37 +252,43 @@ export function SettingsPage({
         {activeSection === "panels" ? (
           <SettingsSectionFrame id={panels.id} label={panels.label} desc={panels.desc}>
             <SettingsRow label={settingsCopy.logbookOpen} desc="mission 进入时即可见工具调用列表">
-              <Switch
+              <SettingsSwitch
+                label={settingsCopy.logbookOpen}
                 checked={technicalPanels.logbookDefaultOpen}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("logbookDefaultOpen", checked)}
               />
             </SettingsRow>
             <SettingsRow label={settingsCopy.diffOpen} desc="mission 进入时即可见 patch 列表">
-              <Switch
+              <SettingsSwitch
+                label={settingsCopy.diffOpen}
                 checked={technicalPanels.diffDefaultOpen}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("diffDefaultOpen", checked)}
               />
             </SettingsRow>
             <SettingsRow label={settingsCopy.runtimeMeta} desc="PID / Working dir / Spawn args">
-              <Switch
+              <SettingsSwitch
+                label={settingsCopy.runtimeMeta}
                 checked={technicalPanels.showSessionRuntimeMeta}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("showSessionRuntimeMeta", checked)}
               />
             </SettingsRow>
             <SettingsRow label={settingsCopy.permissionWorktree} desc="权限弹窗附加 cwd / scope 说明">
-              <Switch
+              <SettingsSwitch
+                label={settingsCopy.permissionWorktree}
                 checked={technicalPanels.showPermissionWorktree}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("showPermissionWorktree", checked)}
               />
             </SettingsRow>
             <SettingsRow label="Mission Thinking" desc="只控制会话小窗口中的 Thinking 展示">
-              <Switch
+              <SettingsSwitch
+                label="Mission Thinking"
                 checked={technicalPanels.showMissionThinking}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("showMissionThinking", checked)}
               />
             </SettingsRow>
             <SettingsRow label={settingsCopy.connectionDebug} desc="WebSocket / RPC raw 帧">
-              <Switch
+              <SettingsSwitch
+                label={settingsCopy.connectionDebug}
                 checked={technicalPanels.showConnectionDebug}
                 onCheckedChange={(checked) => updateTechnicalPanelPreference("showConnectionDebug", checked)}
               />
@@ -285,6 +306,7 @@ export function SettingsPage({
               modelFilter={promptEnhancerModelFilter}
               models={promptEnhancerModels}
               status={promptEnhancerStatus}
+              updatePreference={updatePromptEnhancerPreference}
               updateLlmPreference={updatePromptEnhancerLlmPreference}
               updateModelInput={updatePromptEnhancerModelInput}
               setModelPickerOpen={setPromptEnhancerModelPickerOpen}
@@ -302,15 +324,58 @@ export function SettingsPage({
               <span className="font-mono text-2xs text-muted-foreground tabular">~/.config/tiller</span>
             </SettingsRow>
             <SettingsRow label="日志保留" desc="单文件 ≤ 5MB · 滚动 5 份">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-2xs text-muted-foreground tabular">默认</span>
-                <Button variant="outline" size="sm" className="h-6 px-2 text-2xs hover:bg-surface-sunken" onClick={handleOpenLogDir}>
-                  打开日志目录
-                </Button>
+              <span className="font-mono text-2xs text-muted-foreground tabular">默认</span>
+            </SettingsRow>
+            <SettingsRow label="日志级别" desc="保存后当前 Helm 进程立即生效">
+              <div className="grid justify-items-end gap-1.5">
+                <div className="flex items-center justify-end gap-2">
+                  <select
+                    value={loggingDraftLevel}
+                    onChange={(event) => setLoggingDraftLevel(event.target.value as LoggingLevel)}
+                    className="h-8 min-w-[140px] rounded border border-border-ghost bg-surface-sunken px-2 font-mono text-action uppercase text-foreground outline-none transition-colors hover:bg-surface-emphasis focus:border-primary"
+                  >
+                    <option value="" disabled>
+                      选择级别
+                    </option>
+                    {LOGGING_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {level.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    className="h-7 px-2 text-action bg-primary text-on-primary hover:bg-primary-strong disabled:bg-surface-sunken disabled:text-muted-foreground"
+                    disabled={!loggingDraftLevel || loggingDraftLevel === loggingSettings?.level || !onSaveLoggingLevel || !loggingClientAvailable}
+                    onClick={() => {
+                      if (loggingDraftLevel) {
+                        onSaveLoggingLevel?.(loggingDraftLevel);
+                      }
+                    }}
+                  >
+                    保存
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    className="h-7 px-2 text-action hover:bg-surface-sunken"
+                    onClick={onRefreshLoggingSettings}
+                  >
+                    刷新
+                  </Button>
+                </div>
+                {visibleLoggingStatus ? (
+                  <span className="block w-[220px] text-right font-mono text-2xs leading-5 text-muted-foreground tabular whitespace-normal break-words sm:w-[360px]">
+                    {visibleLoggingStatus}
+                  </span>
+                ) : null}
               </div>
             </SettingsRow>
-            <SettingsRow label="不记录 assistant 正文" desc="Helm 默认行为 · 排查时直接读 sessions.sqlite">
-              <Switch checked={noRecordAssistant} onCheckedChange={setNoRecordAssistant} />
+            <SettingsRow label="不记录 assistant 正文" desc="Helm 固定行为 · 排查时直接读 sessions.sqlite">
+              <span className="font-mono text-2xs text-muted-foreground tabular">固定</span>
             </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
@@ -326,9 +391,7 @@ export function SettingsPage({
               </Button>
             </SettingsRow>
             <SettingsRow label="检查更新" desc="启动时检查 npm latest 通道">
-              <Button variant="outline" size="sm" className="h-7 px-3 text-action bg-primary text-on-primary hover:bg-primary-strong" onClick={handleCheckUpdates}>
-                立即检查
-              </Button>
+              <span className="font-mono text-2xs text-muted-foreground tabular">自动</span>
             </SettingsRow>
           </SettingsSectionFrame>
         ) : null}
@@ -386,8 +449,8 @@ export function SettingsPage({
           <span className="wb-pane-head-eyebrow">{activeSectionMeta.label}</span>
           <span className="ml-1.5 text-meta text-muted-foreground hidden sm:inline">{activeSectionMeta.desc}</span>
           <div className="flex-1" />
-          <Button variant="ghost" size="sm" type="button" onClick={resetDeckPreferences}>
-            {settingsCopy.reset}
+          <Button variant="ghost" size="sm" type="button" title="重置所有 Deck 前端偏好" onClick={resetDeckPreferences}>
+            重置全部
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -406,8 +469,8 @@ export function SettingsPage({
           <span className="wb-pane-head-eyebrow">{sectionMeta(activeSection).label}</span>
           <span className="ml-1.5 text-meta text-muted-foreground">{sectionMeta(activeSection).desc}</span>
           <div className="flex-1" />
-          <Button variant="ghost" size="sm" type="button" onClick={resetDeckPreferences}>
-            {settingsCopy.reset}
+          <Button variant="ghost" size="sm" type="button" title="重置所有 Deck 前端偏好" onClick={resetDeckPreferences}>
+            重置全部
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">

@@ -258,6 +258,73 @@ test("config RPC save helm creates daemon auth config field", async () => {
   });
 });
 
+test("config RPC gets and saves logging level with live logger update", async () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({ logging: { level: "warn", format: "pretty", acpTrace: "summary" } }),
+    "utf8",
+  );
+  const appliedLevels: string[] = [];
+
+  const getResult = await handleConfigRpcRequest("logging/get", {}, {
+    configPath,
+    logger: {
+      getLevel: () => "warn",
+    },
+  } as any) as { logging: { level: string; format: string; acpTrace: string } };
+
+  assert.deepEqual(getResult.logging, {
+    level: "warn",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+
+  const saveResult = await handleConfigRpcRequest("logging/save", {
+    logging: { level: "debug" },
+  }, {
+    configPath,
+    logger: {
+      getLevel: () => "warn",
+      setLevel(level: string) {
+        appliedLevels.push(level);
+      },
+    },
+  } as any) as { ok: boolean; logging: { level: string; format: string; acpTrace: string } };
+
+  const saved = JSON.parse(readFileSync(configPath, "utf8"));
+  assert.equal(saveResult.ok, true);
+  assert.deepEqual(saveResult.logging, {
+    level: "debug",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+  assert.equal(saved.logging.level, "debug");
+  assert.deepEqual(appliedLevels, ["debug"]);
+});
+
+test("config RPC reports live logger level after runtime logging changes", async () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({ logging: { level: "trace", format: "pretty", acpTrace: "summary" } }),
+    "utf8",
+  );
+
+  const getResult = await handleConfigRpcRequest("logging/get", {}, {
+    configPath,
+    logger: {
+      getLevel: () => "debug",
+    },
+  } as any) as { logging: { level: string; format: string; acpTrace: string } };
+
+  assert.deepEqual(getResult.logging, {
+    level: "debug",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+});
+
 test("config RPC prunes deleted git worktree worktrees", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-prune-"));
   const repoPath = join(tempRoot, "repo");

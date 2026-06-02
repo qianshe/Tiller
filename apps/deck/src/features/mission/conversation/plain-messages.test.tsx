@@ -198,6 +198,21 @@ test("plain messages render local prompt images from data instead of placeholder
   assert.doesNotMatch(html, /tiller:\/\/\/agent\/prompt-image/);
 });
 
+test("plain user messages use a golden-ratio responsive measure", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-wide",
+        role: "user",
+        text: "This session has a user message that should not be cramped in a narrow pane.",
+        timestamp: "2026-06-01T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-user[^"]*max-w-\[min\(680px,61\.8%\)\]/);
+});
+
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
@@ -404,6 +419,39 @@ test("plain messages does not mark paged windows that start at a normal message"
 
   assert.doesNotMatch(html, /plain-history-boundary/);
   assert.match(html, /正常起点/);
+});
+
+test("plain messages keep optimistic live messages visible when timeline history exists", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "history-user",
+        kind: "user_message",
+        message: {
+          id: "history-user",
+          role: "user",
+          text: "历史问题",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+    ],
+    items: [
+      {
+        id: "client-session-1",
+        role: "user",
+        text: "新的 OpenCode prompt",
+        timestamp: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /历史问题/);
+  assert.match(html, /新的 OpenCode prompt/);
+  assert.ok(html.indexOf("历史问题") < html.indexOf("新的 OpenCode prompt"));
 });
 
 test("plain messages counts coalesced provider paragraphs as one green-dot message block", () => {
@@ -846,6 +894,70 @@ test("plain messages keeps adjacent thinking tool calls separate when ids differ
   assert.match(html, /第二轮 Thinking/);
 });
 
+test("plain messages coalesces adjacent duplicate generic thinking snapshots", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "opencode-thinking-a",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "opencode-thinking-a:thinking",
+            kind: "thinking",
+            text: "",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:00.000Z",
+            updatedAt: "2026-05-17T10:00:00.000Z",
+            timelineSequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      {
+        id: "opencode-thinking-b",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "opencode-thinking-b:thinking",
+            kind: "thinking",
+            text: "",
+            title: "Thinking",
+            status: "running",
+            timestamp: "2026-05-17T10:00:01.000Z",
+            updatedAt: "2026-05-17T10:00:01.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "最终回答",
+            timestamp: "2026-05-17T10:00:02.000Z",
+            timelineSequence: 3,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        timelineSequence: 3,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
+  assert.match(html, /最终回答/);
+});
+
 test("plain messages groups adjacent normal tool calls between assistant segments", () => {
   const html = renderPlainMessages({
     items: [
@@ -927,6 +1039,184 @@ test("plain messages keeps the latest completed tool group expanded by default",
   assert.match(html, /<details class="plain-tool-group[^>]*open=""/);
   assert.match(html, /aria-label="收起工具调用"/);
   assert.ok(html.indexOf("先说明。") < html.indexOf("工具调用 · 1 项"));
+});
+
+test("plain messages renders subagents as standalone timeline rows", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-before",
+        role: "assistant",
+        text: "准备委派。",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-subagent",
+        kind: "subagent",
+        title: "spawn_agents_on_csv",
+        status: "completed",
+        output: "Explorer summarized affected files.",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-subagent/);
+  assert.match(html, /Subagent/);
+  assert.match(html, /spawn_agents_on_csv/);
+  assert.doesNotMatch(html, /工具调用 · 1 项/);
+  assert.doesNotMatch(html, /plain-tool-group/);
+  assert.doesNotMatch(html, /data-tool-group-kind="subagent"/);
+  assert.match(html, /aria-label="展开 Subagent"/);
+  assert.ok(html.indexOf("准备委派。") < html.indexOf("spawn_agents_on_csv"));
+});
+
+test("plain messages keeps subagents out of adjacent normal tool groups", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-before",
+        role: "assistant",
+        text: "开始检查。",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-subagent",
+        kind: "subagent",
+        title: "background_output",
+        status: "completed",
+        output: "Explore result.",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-search-a",
+        kind: "search",
+        title: "Search runtime async guard patterns",
+        status: "completed",
+        output: "search a",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+      {
+        id: "tool-search-b",
+        kind: "search",
+        title: "Search async functions in helm",
+        status: "completed",
+        output: "search b",
+        timestamp: "2026-05-17T10:00:03.000Z",
+        updatedAt: "2026-05-17T10:00:03.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-subagent/g)?.length, 1);
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
+  assert.match(html, /工具调用 · 2 项/);
+  assert.match(html, /Search/);
+  assert.doesNotMatch(html, /工具调用 · 3 项/);
+  assert.doesNotMatch(html, /Subagent \/ Search/);
+  assert.ok(html.indexOf("background_output") < html.indexOf("工具调用 · 2 项"));
+});
+
+test("plain messages surfaces subagent type and task summary when available", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent",
+        kind: "subagent",
+        title: "background_output",
+        status: "running",
+        input: JSON.stringify({
+          subagent_type: "Explore",
+          description: "trace async refresh flow",
+        }),
+        output: "",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /Explore · trace async refresh flow/);
+  assert.match(html, /aria-label="收起 Subagent"/);
+  assert.doesNotMatch(html, /Subagent<\/span><span[^>]*>background_output/);
+});
+
+test("plain messages treats OpenCode task payloads as standalone subagents", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-opencode-subagent",
+        kind: "search",
+        title: "Review concurrency findings",
+        status: "completed",
+        input: JSON.stringify({
+          description: "Review concurrency findings",
+          prompt: "TASK: Review race-condition findings.",
+          run_in_background: false,
+          subagent_type: "oracle",
+          task_id: "",
+        }),
+        output: "Task completed.",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-search",
+        kind: "search",
+        title: "Search async functions in helm",
+        status: "completed",
+        output: "search result",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-subagent/g)?.length, 1);
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
+  assert.match(html, /oracle · Review concurrency findings/);
+  assert.match(html, /工具调用 · 1 项/);
+  assert.doesNotMatch(html, /Subagent \/ Search/);
+  assert.ok(html.indexOf("oracle · Review concurrency findings") < html.indexOf("工具调用 · 1 项"));
+});
+
+test("plain messages marks cancelled and failed subagent rows clearly", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-cancel",
+        kind: "subagent",
+        title: "background_cancel",
+        status: "completed",
+        input: JSON.stringify({ taskId: "bg_cancelled", all: false }),
+        output: "",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-subagent-failed",
+        kind: "subagent",
+        title: "",
+        status: "failed",
+        input: "",
+        output: "Subagent failed to start.",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /background_cancel · 取消后台任务/);
+  assert.match(html, /已取消/);
+  assert.match(html, /Error/);
+  assert.match(html, /错误/);
 });
 
 test("plain messages starts a new tool group after assistant text resumes", () => {

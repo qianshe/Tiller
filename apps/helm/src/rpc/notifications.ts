@@ -33,7 +33,8 @@ function isSessionDetailUpdate(update: unknown): boolean {
     return false;
   }
   const kind = (update as { kind?: unknown }).kind;
-  return kind === "agent_message"
+  return kind === "user_message"
+    || kind === "agent_message"
     || kind === "tool_call"
     || kind === "command_output"
     || kind === "diff_update";

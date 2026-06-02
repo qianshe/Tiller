@@ -147,7 +147,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         isStreaming && "plain-message-streaming",
         isAssistant
           ? "mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5"
-          : "ml-auto grid max-w-[min(620px,72%)] justify-items-end gap-2 text-left",
+          : "ml-auto grid max-w-[min(680px,61.8%)] justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
     >
@@ -193,7 +193,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         ) : null}
         <div
           className={cn(
-            `${messageBodyClassName} min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]`,
+            `${messageBodyClassName} min-w-0 text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
             message.role === "user" && "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
           )}
         >
@@ -296,7 +296,7 @@ export function PlainThinkingItem({
             )}
           />
         </summary>
-        <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+        <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
           <MarkdownMessage text={text} />
         </div>
       </details>
@@ -313,8 +313,9 @@ export function PlainToolGroupItem({
 }) {
   const isRunning = group.some((item) => isActiveToolStatus(item.status));
   const [open, setOpen] = useState(() => isRunning || !hasNewerContent);
-  const summaryTitle = summarizeToolGroupTitle(group);
-  const groupBadgeLabel = resolveToolGroupBadgeLabel(group);
+  const groupLabels = resolveToolGroupLabels(group);
+  const summaryTitle = summarizeToolGroupTitle(groupLabels);
+  const groupBadgeLabel = resolveToolGroupBadgeLabel(groupLabels);
 
   useEffect(() => {
     if (isRunning) {
@@ -361,7 +362,7 @@ export function PlainToolGroupItem({
             )}
           />
         </summary>
-        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-sm text-muted-foreground" data-mission-swipe-lock="true">
+        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground" data-mission-swipe-lock="true">
           {group.map((item) => (
             <PlainToolCallItem key={item.id} item={item} />
           ))}
@@ -369,6 +370,177 @@ export function PlainToolGroupItem({
       </details>
     </div>
   );
+}
+
+export function PlainSubagentItem({
+  item,
+  hasNewerContent = false,
+}: {
+  item: ConversationToolCallItem;
+  hasNewerContent?: boolean;
+}) {
+  const isRunning = isActiveToolStatus(item.status);
+  const shouldAutoOpen = isRunning && !hasNewerContent;
+  const [open, setOpen] = useState(shouldAutoOpen);
+  const text = item.text.trim() || formatToolInputPreview(item.input) || "暂无 Subagent 内容";
+  const summary = resolveSubagentSummary(item);
+  const statusBadge = resolveSubagentStatusBadge(item);
+
+  useEffect(() => {
+    setOpen(shouldAutoOpen);
+  }, [shouldAutoOpen]);
+
+  return (
+    <div className="plain-subagent-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+      <span aria-hidden="true" />
+      <details
+        className="plain-subagent min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+        data-subagent-call
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          aria-label={open ? "收起 Subagent" : "展开 Subagent"}
+        >
+          <Icon name="message" size={12} className="shrink-0 text-primary" />
+          <span className="shrink-0 font-medium">
+            Subagent
+          </span>
+          <span className="min-w-0 truncate text-muted-foreground/70">
+            {summary}
+          </span>
+          {statusBadge ? (
+            <span className={cn("ml-auto shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-semibold", statusBadge.className)}>
+              {statusBadge.label}
+            </span>
+          ) : null}
+          <Icon
+            name="chevronDown"
+            size={12}
+            className={cn(
+              "text-muted-foreground/60 transition-transform duration-150",
+              statusBadge ? "ml-1.5" : "ml-auto",
+              open && "rotate-180",
+            )}
+          />
+        </summary>
+        <div className="plain-subagent-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+          <MarkdownMessage text={text} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function resolveSubagentSummary(item: ConversationToolCallItem) {
+  const metadata = parseSubagentMetadata(item.input);
+  const fallback = metadata.name ?? metadata.description ?? item.title.trim();
+  if (isBackgroundCancelSubagent(item)) {
+    return `${fallback || "background_cancel"} · 取消后台任务`;
+  }
+  if (item.status === "failed" && isOpaqueSubagentTitle(fallback)) {
+    return "Error";
+  }
+  if (metadata.name && metadata.description) {
+    return `${metadata.name} · ${metadata.description}`;
+  }
+  return fallback || "Error";
+}
+
+function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
+  if (item.status === "failed") {
+    return {
+      className: "bg-danger-soft text-danger",
+      label: "错误",
+    };
+  }
+  if (item.status === "cancelled" || isBackgroundCancelSubagent(item)) {
+    return {
+      className: "bg-surface-sunken text-muted-foreground",
+      label: "已取消",
+    };
+  }
+  if (isActiveToolStatus(item.status)) {
+    return {
+      className: "bg-accent/10 text-accent",
+      label: "运行中",
+    };
+  }
+  return null;
+}
+
+function isBackgroundCancelSubagent(item: ConversationToolCallItem) {
+  return item.title.trim().toLowerCase() === "background_cancel";
+}
+
+function isOpaqueSubagentTitle(title: string) {
+  return /^(call[_-]|tool[_-])/iu.test(title.trim());
+}
+
+function parseSubagentMetadata(input: string) {
+  const parsed = parseJsonRecord(input);
+  if (!parsed) {
+    return {};
+  }
+  const candidates = [
+    parsed,
+    recordFrom(parsed.arguments),
+    recordFrom(parsed.args),
+    recordFrom(parsed.params),
+    recordFrom(parsed.input),
+  ].filter((record): record is Record<string, unknown> => Boolean(record));
+  for (const record of candidates) {
+    const name = firstString(record, [
+      "subagent_type",
+      "subagentType",
+      "agent_type",
+      "agentType",
+      "agent_name",
+      "agentName",
+      "agent",
+    ]);
+    const description = firstString(record, [
+      "description",
+      "task",
+      "prompt",
+      "query",
+      "message",
+      "instructions",
+    ]);
+    if (name || description) {
+      return { name, description };
+    }
+  }
+  return {};
+}
+
+function parseJsonRecord(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  try {
+    return recordFrom(JSON.parse(trimmed) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
@@ -405,8 +577,7 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
   );
 }
 
-function resolveToolGroupBadgeLabel(group: ConversationToolCallItem[]): string {
-  const labels = resolveToolGroupLabels(group);
+function resolveToolGroupBadgeLabel(labels: string[]): string {
   return labels[0] ?? "Tool";
 }
 
@@ -415,8 +586,8 @@ function resolveToolGroupLabels(group: ConversationToolCallItem[]) {
   return Array.from(new Set(labels));
 }
 
-function summarizeToolGroupTitle(group: ConversationToolCallItem[]) {
-  return resolveToolGroupLabels(group).slice(0, 3).join(" / ");
+function summarizeToolGroupTitle(labels: string[]) {
+  return labels.slice(0, 3).join(" / ");
 }
 
 function renderPlainMessageContent(

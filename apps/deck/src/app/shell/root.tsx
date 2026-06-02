@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "highlight.js/styles/github-dark.css";
 import type { AgentToolCall } from "@tiller/shared";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../../features/agents";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
+  daemonProfileKey,
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
   type DeckRpcClient,
@@ -45,6 +46,7 @@ import {
   usePromptEnhanceAction,
   usePromptEnhancerSettings,
 } from "../../features/prompt-enhancer";
+import type { LoggingLevel, LoggingSettings } from "../../features/settings";
 import {
   DECK_DEVICE_NAME,
   DEFAULT_DAEMON_HOST,
@@ -71,6 +73,12 @@ import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
 const MOBILE_ADDRESSBAR_SCROLL_OFFSET = 80;
+const LOGGING_LEVEL_VALUES = new Set<LoggingLevel>(["trace", "debug", "info", "warn", "error", "fatal"]);
+
+type LocalLoggingSettings = {
+  helmKey: string;
+  settings: LoggingSettings;
+};
 
 const V6_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: "overview", icon: "home", label: "首页" },
@@ -92,6 +100,46 @@ function tryCollapseMobileAddressBar() {
   }
 
   window.scrollTo({ top: MOBILE_ADDRESSBAR_SCROLL_OFFSET, behavior: "smooth" });
+}
+
+function isLoggingLevel(value: unknown): value is LoggingLevel {
+  return typeof value === "string" && LOGGING_LEVEL_VALUES.has(value as LoggingLevel);
+}
+
+function normalizeLoggingSettings(result: unknown): LoggingSettings | null {
+  const logging = (result as { logging?: Partial<LoggingSettings> } | null)?.logging;
+  if (!logging || !isLoggingLevel(logging.level)) {
+    return null;
+  }
+  return {
+    level: logging.level,
+    format: typeof logging.format === "string" ? logging.format : "pretty",
+    acpTrace: typeof logging.acpTrace === "string" ? logging.acpTrace : "summary",
+  };
+}
+
+function formatRpcError(error: unknown) {
+  if (error instanceof Error) {
+    if (error.message.includes("Unknown method: logging/")) {
+      return "当前 Helm 需重启后才支持日志设置";
+    }
+    return error.message;
+  }
+  if (typeof error === "object" && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      if (maybeMessage.includes("Unknown method: logging/")) {
+        return "当前 Helm 需重启后才支持日志设置";
+      }
+      return maybeMessage;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
 }
 
 export function App() {
@@ -186,6 +234,8 @@ export function App() {
   });
   const panelPages = usePanelPages();
   const route = useRouteView();
+  const [localLoggingSettings, setLocalLoggingSettings] = useState<LocalLoggingSettings | null>(null);
+  const [loggingStatus, setLoggingStatus] = useState("");
 
   usePreferencesEffects();
   useEffect(() => {
@@ -206,6 +256,121 @@ export function App() {
     runtimeState.pendingSessionScrollToBottomRef.current = sessionId;
     runtimeState.stickChatToBottomRef.current = true;
     runtimeState.setSessionOpenScrollTick((current: number) => current + 1);
+  }
+
+  async function refreshLoggingSettings() {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      setLoggingStatus("Helm 未连接");
+      return;
+    }
+    setLoggingStatus("正在读取日志级别...");
+    try {
+      const result = await target.client.request("logging/get", {});
+      const next = normalizeLoggingSettings(result);
+      if (!next) {
+        setLoggingStatus("读取失败：响应格式不正确");
+        return;
+      }
+      setLocalLoggingSettings({ helmKey: target.helmKey, settings: next });
+      deckData.applyHelmInventory(target.helmKey, { logging: next });
+      setLoggingStatus("");
+    } catch (error) {
+      setLoggingStatus(`读取失败：${formatRpcError(error)}`);
+    }
+  }
+
+  async function saveLoggingLevel(level: LoggingLevel) {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      setLoggingStatus("Helm 未连接");
+      return;
+    }
+    setLoggingStatus(`正在保存日志级别：${level}...`);
+    try {
+      const result = await target.client.request("logging/save", {
+        logging: { level },
+      });
+      const next = normalizeLoggingSettings(result);
+      if (!next) {
+        setLoggingStatus("保存失败：响应格式不正确");
+        return;
+      }
+      setLocalLoggingSettings({ helmKey: target.helmKey, settings: next });
+      deckData.applyHelmInventory(target.helmKey, { logging: next });
+      setLoggingStatus(`已保存并生效：${next.level}`);
+    } catch (error) {
+      setLoggingStatus(`保存失败：${formatRpcError(error)}`);
+    }
+  }
+
+  function resolveCurrentHelmKey() {
+    return daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    );
+  }
+
+  function resolveCandidateHelmIds() {
+    return Array.from(new Set([
+      deckData.selectedHelmKey,
+      runtimeState.selectedMissionHelmId,
+      runtimeState.primaryHelmKeyRef.current,
+      resolveCurrentHelmKey(),
+    ].filter((helmId): helmId is string => Boolean(helmId))));
+  }
+
+  function resolveLoggingTarget() {
+    const candidateHelmIds = resolveCandidateHelmIds();
+    for (const helmId of candidateHelmIds) {
+      const helmClient = runtimeState.helmRpcClientRefs.current.get(helmId);
+      if (helmClient?.socket.readyState === WebSocket.OPEN) {
+        return { client: helmClient, helmKey: helmId };
+      }
+    }
+    const directClient = runtimeState.rpcClientRef.current;
+    if (directClient?.socket.readyState === WebSocket.OPEN) {
+      return {
+        client: directClient,
+        helmKey: runtimeState.primaryHelmKeyRef.current ?? resolveCurrentHelmKey(),
+      };
+    }
+    for (const [helmKey, client] of runtimeState.helmRpcClientRefs.current) {
+      if (client.socket.readyState === WebSocket.OPEN) {
+        return { client, helmKey };
+      }
+    }
+    return null;
+  }
+
+  function resolveLoggingClient() {
+    return resolveLoggingTarget()?.client ?? null;
+  }
+
+  function resolveSyncedLoggingSettings() {
+    for (const helmId of resolveCandidateHelmIds()) {
+      const logging = deckData.helmInventories[helmId]?.logging;
+      const normalized = normalizeLoggingSettings({ logging });
+      if (normalized) {
+        return normalized;
+      }
+    }
+    for (const inventory of Object.values(deckData.helmInventories)) {
+      const normalized = normalizeLoggingSettings({ logging: inventory.logging });
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  function resolveLocalLoggingSettings() {
+    if (!localLoggingSettings) {
+      return null;
+    }
+    return resolveCandidateHelmIds().includes(localLoggingSettings.helmKey)
+      ? localLoggingSettings.settings
+      : null;
   }
 
   const selection = useSelection({
@@ -370,6 +535,13 @@ export function App() {
   }
 
   const activeProfileId = `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  const currentLoggingSettings = resolveLocalLoggingSettings();
+  const syncedLoggingSettings = resolveSyncedLoggingSettings();
+  const effectiveLoggingSettings = currentLoggingSettings ?? syncedLoggingSettings;
+  const loggingClientAvailable = Boolean(resolveLoggingClient());
+  const loggingConnectionKnownConnected =
+    helmConnection.connection === "connected" ||
+    Object.values(deckData.helmConnectionStates).includes("connected");
   const shellClassName = resolveShellClassName(
     route.activeView,
     deckData.deckPreferences.theme,
@@ -380,6 +552,20 @@ export function App() {
   useEffect(() => {
     document.body.dataset.theme = deckTheme;
   }, [deckTheme]);
+
+  useEffect(() => {
+    if (route.activeView !== "settings") {
+      return;
+    }
+    void refreshLoggingSettings();
+  }, [
+    route.activeView,
+    helmConnection.connection,
+    helmConnection.daemonHost,
+    helmConnection.daemonPort,
+    deckData.selectedHelmKey,
+    deckData.helmConnectionStates,
+  ]);
 
   const appShell = (
     <main className={shellClassName}>
@@ -414,6 +600,12 @@ export function App() {
           openDiffDetail,
           toggleExpandedMessage,
           renderMissionAgentIcon,
+          loggingSettings: effectiveLoggingSettings,
+          loggingStatus,
+          loggingClientAvailable,
+          loggingConnectionKnownConnected,
+          refreshLoggingSettings,
+          saveLoggingLevel,
         })}
       />
       <SessionCleanupConfirmDialog

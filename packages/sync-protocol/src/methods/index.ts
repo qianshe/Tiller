@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { NotificationDescriptor, RequestDescriptor } from "./descriptor";
 import * as helmList from "./helm/list";
 import * as helmSave from "./helm/save";
+import * as loggingGet from "./logging/get";
+import * as loggingSave from "./logging/save";
 import * as projectList from "./project/list";
 import * as projectListFiles from "./project/list-files";
 import * as projectListWorktrees from "./project/list-worktrees";
@@ -56,6 +58,8 @@ type AnyDescriptor =
 const METHOD_DESCRIPTORS = {
   [helmList.method]: helmList.descriptor,
   [helmSave.method]: helmSave.descriptor,
+  [loggingGet.method]: loggingGet.descriptor,
+  [loggingSave.method]: loggingSave.descriptor,
   [projectList.method]: projectList.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
   [projectListWorktrees.method]: projectListWorktrees.descriptor,
@@ -112,6 +116,8 @@ export type MethodName = keyof typeof METHOD_DESCRIPTORS;
 export const CLIENT_REQUEST_METHODS = [
   helmList.method,
   helmSave.method,
+  loggingGet.method,
+  loggingSave.method,
   projectList.method,
   projectListFiles.method,
   projectListWorktrees.method,

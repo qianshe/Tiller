@@ -7,10 +7,10 @@ export function resolveSettingsCopy(language: DeckLanguage) {
     ? {
         title: "Settings",
         subtitle: [
-          "Configure Deck theme, language, technical panels, and prompt enhancement.",
-          "All options are stored locally in this browser.",
+          "Configure Deck theme, language, technical panels, prompt enhancement,",
+          "and Helm logging. Deck preferences stay in this browser; logging level writes to the active Helm.",
         ].join(" "),
-        reset: "Reset defaults",
+        reset: "Reset all",
         languageEyebrow: "Language",
         languageLabel: "Language",
         languageHelp:
@@ -66,8 +66,8 @@ export function resolveSettingsCopy(language: DeckLanguage) {
     : {
         title: "设置",
         subtitle:
-          "配置 Deck 语言、主题、技术面板与提示词增强；所有选项只保存在浏览器本地。",
-        reset: "重置默认",
+          "配置 Deck 语言、主题、技术面板、提示词增强与 Helm 日志；Deck 偏好保存在当前浏览器，日志级别会写入当前 Helm。",
+        reset: "重置全部",
         languageEyebrow: "语言 / Language",
         languageLabel: "语言",
         languageHelp:

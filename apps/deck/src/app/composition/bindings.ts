@@ -55,6 +55,7 @@ export function buildAppRouteContext(input: any) {
     setPromptEnhancerModelFilter: input.promptEnhancerSettings.setModelFilter,
     promptEnhancerModelPickerOpen: input.promptEnhancerSettings.modelPickerOpen,
     setPromptEnhancerModelPickerOpen: input.promptEnhancerSettings.setModelPickerOpen,
+    updatePromptEnhancerPreference: input.promptEnhancerSettings.updatePreference,
     updatePromptEnhancerLlmPreference: input.promptEnhancerSettings.updateLlmPreference,
     testPromptEnhancerSelectedModel: input.promptEnhancerSettings.testSelectedModel,
     refreshPromptEnhancerModels: input.promptEnhancerSettings.refreshModels,
@@ -75,6 +76,12 @@ export function buildAppRouteContext(input: any) {
     openDiffDetail: input.openDiffDetail,
     toggleExpandedMessage: input.toggleExpandedMessage,
     renderMissionAgentIcon: input.renderMissionAgentIcon,
+    loggingSettings: input.loggingSettings,
+    loggingStatus: input.loggingStatus,
+    loggingClientAvailable: input.loggingClientAvailable,
+    loggingConnectionKnownConnected: input.loggingConnectionKnownConnected,
+    refreshLoggingSettings: input.refreshLoggingSettings,
+    saveLoggingLevel: input.saveLoggingLevel,
   };
 }
 

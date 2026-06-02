@@ -54,6 +54,11 @@ export async function requestInitialSync(
   await dispatch(client, "project/list", {});
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
+  try {
+    await dispatch(client, "logging/get", {});
+  } catch {
+    // Logging settings are optional during reconnect; inventory must still load.
+  }
   setSessionHistoryState({ hasMore: false, loading: true });
   try {
     await dispatch(client, "session/list", { limit: sessionPageLimit });

@@ -35,6 +35,17 @@ export function inferOpenCodeToolKind(
   title: string,
   input: unknown,
 ): AgentToolCall["kind"] {
+  if (isOpenCodeSubagentInput(input)) {
+    return "subagent";
+  }
+  const descriptorRaw = `${toolName} ${title}`.toLowerCase();
+  if (
+    isOpenCodeSubagentToolName(toolName) ||
+    isOpenCodeSubagentToolName(title) ||
+    isExplicitOpenCodeSubagentTool(descriptorRaw)
+  ) {
+    return "subagent";
+  }
   const raw = `${toolName} ${title} ${stringifyToolPayload(input) ?? ""}`.toLowerCase();
   if (/\bmcp[-_]|\bmcpservers?[_-]|\bmcp\b/u.test(raw)) {
     return "mcp";
@@ -59,9 +70,6 @@ export function inferOpenCodeToolKind(
   if (structuredInputKind) {
     return structuredInputKind;
   }
-  if (/task|agent|subagent|background/u.test(raw)) {
-    return "subagent";
-  }
   if (looksLikeOpenCodePathTitle(title)) {
     return "read";
   }
@@ -69,6 +77,30 @@ export function inferOpenCodeToolKind(
     return "tool";
   }
   return "unknown";
+}
+
+function isExplicitOpenCodeSubagentTool(raw: string) {
+  return /(?:^|[^a-z0-9])(?:delegate[_-]?task|subagent|spawn[_-]?agents?(?:[_-]?on[_-]?csv)?|background[_-]?(?:agent|task|output|cancel))(?:$|[^a-z0-9])/u.test(raw);
+}
+
+function isOpenCodeSubagentToolName(name: string) {
+  return /^(agent|task)$/iu.test(name.trim());
+}
+
+function isOpenCodeSubagentInput(input: unknown) {
+  const record = parseToolInputRecord(input);
+  if (!record) {
+    return false;
+  }
+  if (
+    typeof record.subagent_type === "string" ||
+    typeof record.subagentType === "string" ||
+    typeof record.agent_type === "string" ||
+    typeof record.agentType === "string"
+  ) {
+    return true;
+  }
+  return typeof record.task_id === "string" && record.run_in_background === true;
 }
 
 function inferOpenCodeStructuredInputKind(input: unknown): AgentToolCall["kind"] | undefined {

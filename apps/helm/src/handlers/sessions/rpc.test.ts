@@ -8,6 +8,7 @@ function createPromptQueueContextExtras() {
   return {
     promptQueue,
     drainPromptQueue: async () => undefined,
+    broadcastSessionTopic: () => undefined,
   };
 }
 

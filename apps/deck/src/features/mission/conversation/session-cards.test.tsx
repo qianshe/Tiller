@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { SessionSummary } from "@tiller/shared";
@@ -11,6 +12,11 @@ import {
   shouldShowSessionScrollToBottom,
   type MissionDraftChatWindow,
 } from "./session-cards.js";
+
+const sessionCardsSource = readFileSync(
+  new URL("./session-cards.tsx", import.meta.url),
+  "utf8",
+);
 
 function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -128,6 +134,13 @@ test("session scroll-to-bottom affordance appears only when content is away from
   );
 });
 
+test("session scroll-to-bottom affordance anchors to the scroll frame in flat and card modes", () => {
+  assert.match(sessionCardsSource, /data-session-scroll-frame/);
+  assert.match(sessionCardsSource, /className="relative min-h-0 flex-1"/);
+  assert.match(sessionCardsSource, /flat \? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2\.5"/);
+  assert.doesNotMatch(sessionCardsSource, /!\s*flat\s*\?\s*\(\s*<ScrollToBottomButton/);
+});
+
 test("formatProjectWorktreeLabel drops worktree suffix that echoes the project name", () => {
   assert.equal(formatProjectWorktreeLabel("Tiller", "Tiller"), "Tiller");
   assert.equal(formatProjectWorktreeLabel("Tiller", "tiller"), "Tiller");
@@ -216,6 +229,38 @@ test("SessionCard renders the plain status inside a framed, tone-colored pill", 
   assert.match(idle, /mission-session-status-pill/);
   assert.match(idle, /text-muted-foreground/);
   assert.match(idle, /空闲/);
+});
+
+test("SessionCard keeps title order while shrinking project metadata before status", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session({
+        projectName: "VeryLongProjectName",
+        worktreeName: "feature/very-long-branch-name",
+      })}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  const statusIndex = html.indexOf('data-session-status-slot="true"');
+  const projectIndex = html.indexOf('data-session-project-label="true"');
+  assert.ok(statusIndex >= 0);
+  assert.ok(projectIndex >= 0);
+  assert.ok(projectIndex < statusIndex);
+  const statusClass = html.match(/<div class="([^"]*)" data-session-status-slot="true"/)?.[1] ?? "";
+  assert.match(statusClass, /shrink-0/);
+  const projectClass = html.match(/<span class="([^"]*)" data-session-project-label="true"/)?.[1] ?? "";
+  assert.match(projectClass, /min-w-0/);
+  assert.match(projectClass, /shrink-\[999\]/);
+  assert.match(projectClass, /truncate/);
 });
 
 test("SessionCard renders running tool status in the title bar", () => {

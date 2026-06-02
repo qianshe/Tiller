@@ -10,6 +10,8 @@ import {
 const expectedRequests = [
   "helm/list",
   "helm/save",
+  "logging/get",
+  "logging/save",
   "project/list",
   "project/list_files",
   "project/list_worktrees",

@@ -483,6 +483,14 @@ export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfi
   return writeGlobalConfig({ ...current, helms: nextHelms, daemon: resolveDaemonConfig(current.daemon) }, configPath, { helm });
 }
 
+export function saveLoggingToConfig(
+  logging: NonNullable<TillerConfig["logging"]>,
+  configPath = getDefaultConfigPath(),
+) {
+  const current = readTillerConfig(configPath);
+  return writeGlobalConfig({ ...current, logging }, configPath, { logging });
+}
+
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {
   const current = readTillerConfig(configPath);
   const normalizedProvider = hydrateProvider(provider);

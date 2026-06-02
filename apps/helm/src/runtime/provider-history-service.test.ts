@@ -36,11 +36,11 @@ test("authoritative provider history drops stale local thinking after final mess
     sessions: new Map(),
     sessionStore: { list: () => [] },
     sessionMessageStore: {
-      list: (id) => localMessagesBySession.get(id) ?? [],
-      replace: (id, messages) => {
+      list: (id: string) => localMessagesBySession.get(id) ?? [],
+      replace: (id: string, messages: AgentMessage[]) => {
         localMessagesBySession.set(id, messages);
       },
-      append: (id, message) => {
+      append: (id: string, message: AgentMessage) => {
         localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
       },
     },
@@ -204,6 +204,119 @@ test("authoritative provider history skips assistant-only snapshots that would d
   assert.equal(replaceCalled, false);
   assert.equal(replacedToolCalls, false);
   assert.deepEqual(localMessagesBySession.get(sessionId), localMessages);
+});
+
+test("authoritative provider history skips snapshots missing the latest local assistant turn", () => {
+  const sessionId = "session-incomplete-latest-turn";
+  const localMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "第一条消息",
+      timestamp: "2026-05-17T09:34:37.000Z",
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "第一条回复",
+      timestamp: "2026-05-17T09:34:38.000Z",
+    },
+    {
+      id: "user-2",
+      role: "user",
+      text: "第二条消息",
+      timestamp: "2026-05-17T09:35:37.000Z",
+    },
+    {
+      id: "assistant-2",
+      role: "assistant",
+      text: "第二条回复的最终结论",
+      timestamp: "2026-05-17T09:35:58.000Z",
+    },
+  ];
+  const localMessagesBySession = new Map<string, AgentMessage[]>([[sessionId, localMessages]]);
+  let replaceCalled = false;
+  let replacedToolCalls = false;
+  let replacedTimeline = false;
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id) => localMessagesBySession.get(id) ?? [],
+      replace: (id, messages) => {
+        replaceCalled = true;
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id, message) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+      replaceToolCalls: () => {
+        replacedToolCalls = true;
+      },
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "opencode",
+        runtimeSessionId: "runtime-1",
+        lastSeenAt: "2026-05-17T09:34:38.000Z",
+        state: "resumeable",
+        providerHistory: buildProviderHistoryState(
+          localMessages.slice(0, 2),
+          "2026-05-17T09:34:39.000Z",
+        ),
+      }),
+      upsert: () => {},
+    },
+    sessionTimelineStore: {
+      replace: () => {
+        replacedTimeline = true;
+        return [];
+      },
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  service.applyAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "opencode",
+      name: "OpenCode",
+      command: "opencode",
+      transport: "stdio",
+      protocol: "acp",
+    } as any,
+    "runtime-1",
+    createHistorySnapshot({
+      source: "adapter-authoritative-history",
+      messages: localMessages.slice(0, 3),
+      toolCalls: [
+        {
+          id: "tool-after-second-user",
+          commandId: "tool-after-second-user",
+          kind: "mcp",
+          title: "MCP",
+          status: "completed",
+          timestamp: "2026-05-17T09:35:45.000Z",
+          updatedAt: "2026-05-17T09:35:46.000Z",
+        },
+      ],
+      outputs: [],
+      diffs: [],
+    }),
+  );
+
+  assert.equal(replaceCalled, false);
+  assert.equal(replacedToolCalls, false);
+  assert.equal(replacedTimeline, false);
+  assert.equal(localMessagesBySession.get(sessionId)?.at(-1)?.text, "第二条回复的最终结论");
 });
 
 test("authoritative provider history repairs unchanged snapshots with missing timeline sequence metadata", () => {
@@ -544,6 +657,164 @@ test("authoritative provider history leaves timeline untouched for unchanged sna
 
   assert.equal(replacedToolCalls, false);
   assert.equal(replacedTimeline, false);
+});
+
+test("authoritative provider history does not log unchanged skip decisions", () => {
+  const sessionId = "session-provider-history-skip-log";
+  const providerMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-17T09:34:37.000Z",
+    },
+  ];
+  const localMessagesBySession = new Map<string, AgentMessage[]>([[sessionId, providerMessages]]);
+  const debugLogs: Array<{ event: string; fields: Record<string, unknown> }> = [];
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id) => localMessagesBySession.get(id) ?? [],
+      replace: (id, messages) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id, message) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+      replaceToolCalls: () => {},
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-acp",
+        runtimeSessionId: "runtime-1",
+        lastSeenAt: "2026-05-17T09:34:37.000Z",
+        state: "resumeable",
+        providerHistory: buildProviderHistoryState(
+          providerMessages,
+          "2026-05-17T09:34:40.000Z",
+        ),
+      }),
+      upsert: () => {},
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    logger: {
+      debug: (event, fields) => debugLogs.push({ event, fields: fields ?? {} }),
+      error: () => {},
+    },
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  service.applyAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "claude-acp",
+      name: "Claude",
+      command: "claude-code-acp",
+      transport: "stdio",
+      protocol: "acp",
+    } as any,
+    "runtime-1",
+    createHistorySnapshot({
+      source: "adapter-authoritative-history",
+      messages: providerMessages,
+      toolCalls: [],
+      outputs: [],
+      diffs: [],
+    }),
+  );
+
+  assert.deepEqual(debugLogs, []);
+});
+
+test("provider history refresh coalesces concurrent refreshes for one session", async () => {
+  const sessionId = "session-provider-history-inflight";
+  const providerMessages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-17T09:34:37.000Z",
+    },
+  ];
+  const localMessagesBySession = new Map<string, AgentMessage[]>();
+  let resolveHistory: (() => void) | undefined;
+  let loaderCalls = 0;
+  const historyReady = new Promise<void>((resolve) => {
+    resolveHistory = resolve;
+  });
+
+  const service = createProviderHistoryService({
+    sessions: new Map([
+      [
+        sessionId,
+        {
+          summary: {
+            id: sessionId,
+            projectId: "project-1",
+            agentId: "claude-acp",
+            cwd: "D:/repo",
+            status: "running",
+          },
+          agent: {
+            id: "claude-acp",
+            name: "Claude",
+            command: "claude-code-acp",
+            transport: "stdio",
+            protocol: "acp",
+          },
+          worktree: { path: "D:/repo" },
+          runtime: { runtimeSessionId: "runtime-1" },
+        } as any,
+      ],
+    ]),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id: string) => localMessagesBySession.get(id) ?? [],
+      replace: (id: string, messages: AgentMessage[]) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id: string, message: AgentMessage) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+      replaceToolCalls: () => {},
+    },
+    sessionRuntimeStore: {
+      get: () => undefined,
+      upsert: () => {},
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    loadAdapterHistoryContent: async () => {
+      loaderCalls += 1;
+      await historyReady;
+      return {
+        messages: providerMessages,
+        toolCalls: [],
+        outputs: [],
+        diffs: [],
+      };
+    },
+    logInfo: () => {},
+    logError: () => {},
+  } as any);
+
+  const firstRefresh = service.refreshAuthoritativeSessionHistory(sessionId);
+  const secondRefresh = service.refreshAuthoritativeSessionHistory(sessionId);
+  resolveHistory?.();
+  await Promise.all([firstRefresh, secondRefresh]);
+
+  assert.equal(loaderCalls, 1);
 });
 
 test("authoritative provider history stores inline image attachments as references", () => {
