@@ -25,3 +25,24 @@ test("createMissionVisualFixture can build a two-window mission fixture", () => 
   assert.ok(fixture.sessionPlans["visual-session"]);
   assert.ok(fixture.sessionPlans["visual-session-secondary"]);
 });
+
+test("createMissionVisualFixture can simulate dashboard status colors", () => {
+  const fixture = createMissionVisualFixture({
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "4269",
+    visualSearch: "?visual=mission&visualStatusDemo=1",
+  });
+
+  assert.equal(fixture.sessions.length, 4);
+  assert.deepEqual(fixture.openChatSessionIds, [
+    "visual-session",
+    "visual-session-secondary",
+    "visual-session-error",
+  ]);
+  assert.deepEqual(fixture.statuses, {
+    "visual-session": "idle",
+    "visual-session-secondary": "running",
+    "visual-session-error": "error",
+    "visual-session-idle": "idle",
+  });
+});

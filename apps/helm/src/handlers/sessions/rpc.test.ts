@@ -63,6 +63,37 @@ test("session/get_artifacts repairs stale running thinking for idle sessions", a
   assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
 });
 
+test("session/get_artifacts returns the current history plan when available", async () => {
+  const sessionId = "session-opencode-plan-history";
+  const plan = {
+    updatedAt: "2026-06-02T13:37:09.663Z",
+    entries: [
+      { content: "并行委派 apps/helm 竞态模式搜索", priority: "high" as const, status: "completed" as const },
+      { content: "补充读取候选代码并验证是否真有 await 竞态", priority: "high" as const, status: "completed" as const },
+      { content: "汇总类似问题、风险等级与证据位置", priority: "high" as const, status: "completed" as const },
+    ],
+  };
+
+  const result = await handleSessionRpcRequest(
+    "session/get_artifacts",
+    { sessionId },
+    {
+      sessions: new Map(),
+      sessionStore: { list: () => [] },
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      readSessionPlan: (currentSessionId: string) =>
+        currentSessionId === sessionId ? plan : undefined,
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+        getPage: () => ({ outputs: [], diffs: [], toolCalls: [], hasMore: false }),
+      },
+      hydrateDiffsFromWorktreeGit: async (_sessionId: string, diffs: unknown[]) => diffs,
+    } as any,
+  ) as { plan?: typeof plan };
+
+  assert.deepEqual(result.plan, plan);
+});
+
 test("session/list_messages returns a unified timeline rebuilt from legacy stores", async () => {
   const sessionId = "session-with-legacy-timeline";
   const messages = [

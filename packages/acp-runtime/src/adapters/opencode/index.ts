@@ -1,11 +1,10 @@
 import type { AcpAgentAdapter } from "../types";
-import { loadProviderAuthoritativeHistory } from "../history-reader";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import {
   applyOpenCodeSessionLaunchArgs,
   resolveOpenCodeSessionEnv,
 } from "../session-config";
-import { openCodeHistoryReader } from "./history";
+import { buildOpenCodeAuthoritativeHistoryFromEvents, openCodeHistoryReader } from "./history";
 import { mapOpenCodePlanUpdate } from "./plan-events";
 
 export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
@@ -40,8 +39,14 @@ export function createOpenCodeAcpAdapter(): AcpAgentAdapter {
     resolveRequestTimeout: ({ method }) =>
       isOpenCodeSessionRequest(method) ? OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS : undefined,
     mapSessionUpdate: mapOpenCodePlanUpdate,
-    loadAuthoritativeHistory: (context) =>
-      loadProviderAuthoritativeHistory(openCodeHistoryReader, context),
+    loadAuthoritativeHistory: async (context) => {
+      const source = await openCodeHistoryReader.read(context);
+      return source
+        ? buildOpenCodeAuthoritativeHistoryFromEvents(
+            openCodeHistoryReader.toEvents(source, context),
+          )
+        : null;
+    },
   };
 }
 

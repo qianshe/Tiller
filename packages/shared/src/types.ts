@@ -451,6 +451,7 @@ export type SessionHistoryReimportResult = {
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
   toolCalls: AgentToolCall[];
+  plan?: AgentPlan;
   nextCursor?: string;
   hasMore: boolean;
   activityNextCursor?: string;

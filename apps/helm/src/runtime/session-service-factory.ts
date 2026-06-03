@@ -267,6 +267,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         sessionId,
         limit: reimportOptions.limit,
         message: "历史已从 ACP 重新导入。",
+        plan: providerHistory.readSessionPlan(sessionId),
         sessionMessageStore: options.sessionMessageStore,
         sessionArtifactStore: options.sessionArtifactStore,
       });
@@ -289,6 +290,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
           sessionId,
           limit: reimportOptions.limit,
           message: `ACP 历史重导入失败，已保留本地历史并恢复用户提示：${error instanceof Error ? error.message : "未知错误"}`,
+          plan: providerHistory.readSessionPlan(sessionId),
           sessionMessageStore: options.sessionMessageStore,
           sessionArtifactStore: options.sessionArtifactStore,
         });
@@ -382,6 +384,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     publishDiffUpdate,
     reimportSessionHistory,
     refreshAuthoritativeSessionHistory: providerHistory.refreshAuthoritativeSessionHistory,
+    readSessionPlan: providerHistory.readSessionPlan,
     scheduleDeckClientDraftDiscard: runtimeDraftRegistry.scheduleDeckClientDraftDiscard,
     startSessionResume: sessionResume.startSessionResume,
     takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,

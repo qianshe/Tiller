@@ -102,12 +102,19 @@ test("session/list_messages requires sessionId", () => {
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {
   assert.equal(sessionGetArtifacts.method, "session/get_artifacts");
-  sessionGetArtifacts.ResultSchema.parse({
+  const parsed = sessionGetArtifacts.ResultSchema.parse({
     sessionId: "s1",
     outputs: [],
     diffs: [],
     toolCalls: [],
+    plan: {
+      updatedAt: "2026-06-02T13:37:09.663Z",
+      entries: [
+        { content: "恢复 OpenCode todo", priority: "high", status: "completed" },
+      ],
+    },
   });
+  assert.equal(parsed.plan?.entries[0]?.content, "恢复 OpenCode todo");
 });
 
 test("session/check_resume and session/resume share sessionId param", () => {

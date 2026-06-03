@@ -40,3 +40,18 @@ test("messages slice stores session plans by session id", () => {
 
   assert.deepEqual(store.getState().sessionPlans.s1, plan);
 });
+
+test("messages slice stores dismissed completed plan keys by session id", () => {
+  const store = createTestStore();
+
+  store.getState().setDismissedCompletedSessionPlanKeys({ s1: "plan-key" });
+  store.getState().setDismissedCompletedSessionPlanKeys((current) => ({
+    ...current,
+    s2: "other-plan-key",
+  }));
+
+  assert.deepEqual(store.getState().dismissedCompletedSessionPlanKeys, {
+    s1: "plan-key",
+    s2: "other-plan-key",
+  });
+});

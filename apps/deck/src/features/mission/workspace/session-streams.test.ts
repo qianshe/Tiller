@@ -70,6 +70,48 @@ test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
   assert.deepEqual(plan.resumeCheckSessionIds, []);
 });
 
+test("buildSessionStreamHydrationPlan hydrates cached todo activity when the plan is missing", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {},
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {
+      [idleSession.id]: [{ id: "todo-1", kind: "todo" }] as AgentToolCall[],
+    },
+    sessionPlansBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan skips cached todo activity when a plan exists", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {},
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {
+      [idleSession.id]: [{ id: "todo-1", kind: "todo" }] as AgentToolCall[],
+    },
+    sessionPlansBySession: {
+      [idleSession.id]: {
+        updatedAt: "2026-06-02T13:37:09.663Z",
+        entries: [{ content: "已有 plan", priority: "medium", status: "completed" }],
+      },
+    },
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.activitySessionIds, []);
+});
+
 test("buildSessionStreamHydrationPlan hydrates messages when timeline is missing", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],

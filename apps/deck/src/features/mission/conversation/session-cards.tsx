@@ -16,7 +16,11 @@ import {
   MissionToolLoadingTitle,
   type MissionToolLoadingState,
 } from "./tool-loading";
-import { MissionPlanDrawer } from "./plan-drawer";
+import {
+  MissionPlanDrawer,
+  createAgentPlanDismissalKey,
+  isAgentPlanComplete,
+} from "./plan-drawer";
 
 export type SessionRestoreNotice = {
   title: string;
@@ -59,9 +63,11 @@ export function shouldShowSessionScrollToBottom({
 
 function ScrollToBottomButton({
   visible,
+  position = "bottom",
   onClick,
 }: {
   visible: boolean;
+  position?: "bottom" | "above-plan";
   onClick: () => void;
 }) {
   if (!visible) {
@@ -71,10 +77,14 @@ function ScrollToBottomButton({
   return (
     <button
       type="button"
-      className="absolute bottom-3 right-3 z-10 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      className={cn(
+        "absolute right-3 z-10 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+        position === "above-plan" ? "bottom-14" : "bottom-3",
+      )}
       aria-label="回到底部"
       title="回到底部"
       data-session-scroll-bottom
+      data-session-scroll-bottom-position={position}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -172,6 +182,7 @@ export function SessionCard({
   onClear,
   onReimportHistory,
   onClose,
+  onDismissCompletedPlan,
   restoreNotice,
   toolLoading,
   plan,
@@ -187,6 +198,7 @@ export function SessionCard({
   onClear: (session: SessionSummary) => void;
   onReimportHistory: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  onDismissCompletedPlan?: (sessionId: string, planKey: string) => void;
   restoreNotice?: SessionRestoreNotice;
   toolLoading?: MissionToolLoadingState;
   plan?: AgentPlan | null;
@@ -201,6 +213,31 @@ export function SessionCard({
     scrollToBottom,
     updateScrollToBottomVisibility,
   } = useSessionCardScrollControls();
+  const [dismissedTransientPlan, setDismissedTransientPlan] = useState<{
+    sessionId: string;
+    planKey: string;
+  } | null>(null);
+  const planKey = plan ? createAgentPlanDismissalKey(plan) : null;
+  const visiblePlan =
+    plan &&
+    !(
+      !isAgentPlanComplete(plan) &&
+      dismissedTransientPlan?.sessionId === session.id &&
+      dismissedTransientPlan.planKey === planKey
+    )
+      ? plan
+      : null;
+  const hasFloatingPlan = Boolean(visiblePlan?.entries.length);
+  const dismissPlan = useCallback(() => {
+    if (!plan || !planKey) {
+      return;
+    }
+    if (isAgentPlanComplete(plan)) {
+      onDismissCompletedPlan?.(session.id, createAgentPlanDismissalKey(plan));
+      return;
+    }
+    setDismissedTransientPlan({ sessionId: session.id, planKey });
+  }, [onDismissCompletedPlan, plan, planKey, session.id]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -371,18 +408,23 @@ export function SessionCard({
         >
           <div className="space-y-3">{children}</div>
         </div>
-        <ScrollToBottomButton
-          visible={showScrollToBottom}
-          onClick={scrollToBottom}
-        />
       </div>
-      {plan?.entries.length ? (
+      <ScrollToBottomButton
+        visible={showScrollToBottom}
+        position={hasFloatingPlan ? "above-plan" : "bottom"}
+        onClick={scrollToBottom}
+      />
+      {hasFloatingPlan ? (
         <div
           className="mission-plan-dock pointer-events-none absolute inset-x-2 bottom-2 z-20"
           data-plan-dock="session"
           data-plan-session-id={session.id}
         >
-          <MissionPlanDrawer plan={plan} placement="floating" />
+          <MissionPlanDrawer
+            plan={visiblePlan}
+            placement="floating"
+            onDismiss={dismissPlan}
+          />
         </div>
       ) : null}
     </article>

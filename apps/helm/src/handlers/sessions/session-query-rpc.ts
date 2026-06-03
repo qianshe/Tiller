@@ -106,11 +106,13 @@ export async function getArtifacts(
     before: params.before,
   });
   const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
+  const plan = context.readSessionPlan?.(params.sessionId);
   return {
     sessionId: params.sessionId,
     outputs: artifacts.outputs,
     diffs,
     toolCalls: artifacts.toolCalls,
+    ...(plan ? { plan } : {}),
     nextCursor: artifacts.nextCursor,
     hasMore: artifacts.hasMore,
   };

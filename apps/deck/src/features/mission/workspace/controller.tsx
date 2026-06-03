@@ -60,6 +60,8 @@ export function MissionWorktree(props: any) {
     messages,
     sessionTimeline,
     sessionPlans = {},
+    dismissedCompletedSessionPlanKeys = {},
+    setDismissedCompletedSessionPlanKeys,
     toolCalls,
     statuses,
     copy,
@@ -282,6 +284,7 @@ export function MissionWorktree(props: any) {
     sessionTimelineBySession: sessionTimeline,
     outputsBySession: outputs,
     toolCallsBySession: toolCalls,
+    sessionPlansBySession: sessionPlans,
     setMessageHistoryState,
     setActivityHistoryState,
   });
@@ -345,6 +348,12 @@ export function MissionWorktree(props: any) {
     currentGitBranch,
   });
   const activeSessionPlan = activeSession?.id ? sessionPlans?.[activeSession.id] : null;
+  const dismissCompletedSessionPlan = (sessionId: string, planKey: string) => {
+    setDismissedCompletedSessionPlanKeys?.((current: Record<string, string>) => ({
+      ...current,
+      [sessionId]: planKey,
+    }));
+  };
   const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
   const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
     selectedSessionWorktreeItems,
@@ -606,10 +615,11 @@ export function MissionWorktree(props: any) {
           selectedSessionId={missionChatSelectedSessionId}
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
-          sessionTimelineById={sessionTimeline ?? {}}
-          activeSessionPlan={activeSessionPlan}
-          sessionPlansById={sessionPlans ?? {}}
-          activeSessionToolCalls={activeToolCalls}
+            sessionTimelineById={sessionTimeline ?? {}}
+            activeSessionPlan={activeSessionPlan}
+            sessionPlansById={sessionPlans ?? {}}
+            dismissedCompletedSessionPlanKeys={dismissedCompletedSessionPlanKeys}
+            activeSessionToolCalls={activeToolCalls}
           sessionToolCallsById={toolCalls ?? {}}
           copy={copy}
           expandedMessageIds={expandedMessageIds}
@@ -633,10 +643,11 @@ export function MissionWorktree(props: any) {
           onFocusSession={openChatSession}
           onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}
-          onCloseSessionView={closeChatSession}
-          onClearSession={setPendingSessionCleanup}
-          onReimportSessionHistory={setPendingSessionHistoryReimport}
-          onRespondToPermission={respondToPermission}
+            onCloseSessionView={closeChatSession}
+            onClearSession={setPendingSessionCleanup}
+            onReimportSessionHistory={setPendingSessionHistoryReimport}
+            onDismissCompletedSessionPlan={dismissCompletedSessionPlan}
+            onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
           restoreNotice={missionChatRestoreNotice}
           onUpdateQueuedPrompt={updateQueuedPrompt}

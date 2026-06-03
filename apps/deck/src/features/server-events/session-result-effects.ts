@@ -1,4 +1,5 @@
 import type {
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -22,6 +23,7 @@ export function deriveSessionReimportState(payload: SessionHistoryReimportResult
     },
     outputs: (payload.outputs ?? []) as CommandChunk[],
     toolCalls: (payload.toolCalls ?? []) as AgentToolCall[],
+    plan: payload.plan as AgentPlan | undefined,
     diffs: (payload.diffs ?? []) as FileDiffSummary[],
     activityHistoryState: {
       nextCursor: payload.activityNextCursor,

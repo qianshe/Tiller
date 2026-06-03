@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { SessionSummary } from "@tiller/shared";
+import type { AgentPlan, SessionSummary } from "@tiller/shared";
 import {
   DraftSessionCard,
   SessionCard,
@@ -33,6 +33,14 @@ function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
     ...overrides,
   } as SessionSummary;
 }
+
+const completedPlan: AgentPlan = {
+  entries: [
+    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+    { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
+  ],
+  updatedAt: "2026-05-29T00:02:00.000Z",
+};
 
 test("SessionPreviewMessages renders session preview and restoring state", () => {
   const html = renderToStaticMarkup(
@@ -134,11 +142,64 @@ test("session scroll-to-bottom affordance appears only when content is away from
   );
 });
 
-test("session scroll-to-bottom affordance anchors to the scroll frame in flat and card modes", () => {
+test("session scroll-to-bottom affordance stays available in flat and card modes", () => {
   assert.match(sessionCardsSource, /data-session-scroll-frame/);
   assert.match(sessionCardsSource, /className="relative min-h-0 flex-1"/);
   assert.match(sessionCardsSource, /flat \? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2\.5"/);
   assert.doesNotMatch(sessionCardsSource, /!\s*flat\s*\?\s*\(\s*<ScrollToBottomButton/);
+});
+
+test("session scroll-to-bottom affordance moves above the floating plan", () => {
+  assert.match(sessionCardsSource, /const hasFloatingPlan = Boolean\(visiblePlan\?\.entries\.length\);/);
+  assert.match(sessionCardsSource, /visible=\{showScrollToBottom\}/);
+  assert.match(sessionCardsSource, /position=\{hasFloatingPlan \? "above-plan" : "bottom"\}/);
+  assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingPlan\}/);
+});
+
+test("SessionCard keeps a completed plan visible as a collapsed dock", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      plan={completedPlan}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-plan-dock="session"/);
+  assert.match(html, /data-plan-drawer-placement="floating"/);
+  assert.match(html, /已完成 2 个任务（共 2 个）/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
+test("SessionCard wires plan dismissal through the session dock", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      plan={completedPlan}
+      onDismissCompletedPlan={() => undefined}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-plan-dismiss/);
+  assert.match(sessionCardsSource, /dismissedTransientPlan/);
+  assert.match(sessionCardsSource, /onDismissCompletedPlan\?\.\(session\.id,\s*createAgentPlanDismissalKey\(plan\),?\s*\)/);
 });
 
 test("formatProjectWorktreeLabel drops worktree suffix that echoes the project name", () => {

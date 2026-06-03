@@ -100,6 +100,12 @@ export function useDeckData(missionVisualFixture: any) {
   const storedSessionPlans = useDeckStore((state) => state.sessionPlans);
   const sessionPlans = (missionVisualFixture?.sessionPlans ?? storedSessionPlans) as Record<string, AgentPlan>;
   const setSessionPlans = useDeckStore((state) => state.setSessionPlans);
+  const dismissedCompletedSessionPlanKeys = useDeckStore(
+    (state) => state.dismissedCompletedSessionPlanKeys,
+  );
+  const setDismissedCompletedSessionPlanKeys = useDeckStore(
+    (state) => state.setDismissedCompletedSessionPlanKeys,
+  );
 
   const activityHistoryState = useDeckStore((state) => state.activityHistoryState);
   const setActivityHistoryState = useDeckStore((state) => state.setActivityHistoryState);
@@ -199,6 +205,8 @@ export function useDeckData(missionVisualFixture: any) {
     setToolCalls,
     sessionPlans,
     setSessionPlans,
+    dismissedCompletedSessionPlanKeys,
+    setDismissedCompletedSessionPlanKeys,
     activityHistoryState,
     setActivityHistoryState,
     activityVisibleCounts,

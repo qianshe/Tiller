@@ -4,6 +4,7 @@ import {
   buildSessionTimelineFromLegacy,
   type AcpAgentProvider,
   type AgentMessage,
+  type AgentPlan,
   type AgentToolCall,
   type CommandChunk,
   type FileDiffSummary,
@@ -78,6 +79,7 @@ type ProviderHistoryServiceOptions = {
 export function createProviderHistoryService(options: ProviderHistoryServiceOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
   const providerHistoryRefreshInFlight = new Map<string, Promise<void>>();
+  const providerHistoryPlans = new Map<string, AgentPlan>();
 
   async function importAuthoritativeProviderHistory(
     sessionId: string,
@@ -121,6 +123,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     return {
       messages: history.messages,
       toolCalls: history.toolCalls,
+      ...(history.plan ? { plan: history.plan } : {}),
       outputs: [],
       diffs: [],
     };
@@ -185,6 +188,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
   ) {
     const descriptor = options.sessionRuntimeStore.get(sessionId);
     const localMessages = options.sessionMessageStore.list(sessionId);
+    recordProviderHistoryPlan(sessionId, history.plan);
     if (
       !shouldImportAuthoritativeProviderHistory({
         currentState: descriptor?.providerHistory,
@@ -352,7 +356,11 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
   function hasHistoryContent(history: ProviderHistorySnapshotContent) {
     return Boolean(
-      history.messages.length || history.toolCalls.length || history.outputs.length || history.diffs.length,
+      history.messages.length ||
+        history.toolCalls.length ||
+        history.outputs.length ||
+        history.diffs.length ||
+        history.plan,
     );
   }
 
@@ -428,12 +436,26 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
   function readLocalProviderHistory(sessionId: string): ProviderHistorySnapshotContent {
     const artifacts = options.sessionArtifactStore.get(sessionId);
+    const plan = providerHistoryPlans.get(sessionId);
     return {
       messages: options.sessionMessageStore.list(sessionId),
       toolCalls: artifacts.toolCalls,
       outputs: artifacts.outputs,
       diffs: artifacts.diffs,
+      ...(plan ? { plan } : {}),
     };
+  }
+
+  function readSessionPlan(sessionId: string) {
+    return providerHistoryPlans.get(sessionId);
+  }
+
+  function recordProviderHistoryPlan(sessionId: string, plan: AgentPlan | undefined) {
+    if (plan) {
+      providerHistoryPlans.set(sessionId, plan);
+      return;
+    }
+    providerHistoryPlans.delete(sessionId);
   }
 
   function persistProviderHistoryState(
@@ -530,6 +552,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
   function resetRefresh(sessionId: string) {
     providerHistoryRefreshes.delete(sessionId);
     providerHistoryRefreshInFlight.delete(sessionId);
+    providerHistoryPlans.delete(sessionId);
   }
 
   function logProviderHistoryDecision(fields: {
@@ -564,6 +587,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     importAuthoritativeProviderHistory,
     loadAdapterHistoryContent,
     readLocalProviderHistory,
+    readSessionPlan,
     refreshAuthoritativeSessionHistory,
     resetRefresh,
   };

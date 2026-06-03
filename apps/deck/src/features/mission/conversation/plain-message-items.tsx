@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
 import { Badge, Button, Icon } from "../../../shared/ui";
@@ -22,6 +23,12 @@ const DEFAULT_ATTACHMENT_PORT = "47631";
 type MessageImageSourceEnvironment = {
   location?: Pick<Location, "protocol" | "hostname" | "port">;
   storage?: Pick<Storage, "getItem">;
+};
+
+type PlainMessageImagePreview = {
+  alt: string;
+  caption: string;
+  src: string;
 };
 
 export function resolveMessageImageSource(
@@ -74,36 +81,99 @@ function PlainMessageImageAttachment({
   image,
   index,
   messageId,
+  onPreview,
   tone,
 }: {
   image: AgentPromptImageContent;
   index: number;
   messageId: string;
+  onPreview: (preview: PlainMessageImagePreview) => void;
   tone: "assistant" | "user";
 }) {
   const src = resolveMessageImageSource(image);
   if (!src) {
     return null;
   }
+  const label = image.name ?? `粘贴图片 ${index + 1}`;
   return (
     <figure
       key={`${messageId}-image-${index}`}
       className={cn(
-        "mission-message-image w-28 max-w-[30vw] overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken",
+        "mission-message-image w-24 max-w-[28vw] shrink-0 overflow-hidden rounded-[10px] border border-border-ghost bg-surface-sunken",
         tone === "user"
           ? "shadow-[0_8px_24px_rgb(0_0_0/0.10)]"
           : "shadow-[0_8px_24px_rgb(0_0_0/0.08)]",
       )}
     >
-      <img
-        src={src}
-        alt={image.name ?? `粘贴图片 ${index + 1}`}
-        className="h-16 w-full object-cover"
-      />
-      <figcaption className="truncate px-2 py-1 text-xs text-muted-foreground">
-        {image.name ?? `粘贴图片 ${index + 1}`}
-      </figcaption>
+      <button
+        type="button"
+        className="mission-message-image-preview-trigger block w-full text-left"
+        aria-label={`放大查看 ${label}`}
+        onClick={() => onPreview({ alt: label, caption: label, src })}
+      >
+        <img
+          src={src}
+          alt={label}
+          className="h-14 w-full object-cover"
+        />
+      </button>
     </figure>
+  );
+}
+
+function PlainMessageImageLightbox({
+  image,
+  onClose,
+}: {
+  image: PlainMessageImagePreview;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="mission-message-image-lightbox fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={image.caption}
+      onClick={onClose}
+    >
+      <div
+        className="max-h-full max-w-full overflow-hidden rounded-[10px] border border-border-ghost bg-surface shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex h-9 items-center gap-2 border-b border-border-ghost px-3">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{image.caption}</span>
+          <button
+            type="button"
+            className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
+            aria-label="关闭图片预览"
+            onClick={onClose}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+        <img
+          src={image.src}
+          alt={image.alt}
+          className="max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] object-contain"
+        />
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -138,6 +208,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     isCollapsible && !isExpanded
       ? "plain-message-body plain-message-body-collapsed"
       : "plain-message-body";
+  const [previewImage, setPreviewImage] = useState<PlainMessageImagePreview | null>(null);
 
   return (
     <article
@@ -147,7 +218,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         isStreaming && "plain-message-streaming",
         isAssistant
           ? "mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5"
-          : "ml-auto grid max-w-[min(680px,61.8%)] justify-items-end gap-2 text-left",
+          : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
     >
@@ -186,6 +257,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
                 image={image}
                 index={index}
                 messageId={message.id}
+                onPreview={setPreviewImage}
                 tone="user"
               />
             ))}
@@ -194,7 +266,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         <div
           className={cn(
             `${messageBodyClassName} min-w-0 text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
-            message.role === "user" && "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
+            message.role === "user" && "max-w-[min(680px,61.8%)] rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
           )}
         >
           {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
@@ -210,17 +282,24 @@ export const PlainMessageItem = memo(function PlainMessageItem({
           </Button>
         ) : null}
         {message.role !== "user" && message.attachments?.length ? (
-          <div className="mission-message-attachments flex max-w-full flex-wrap gap-2">
+          <div className="mission-message-attachments flex max-w-full flex-wrap justify-start gap-2">
             {message.attachments.map((image, index) => (
               <PlainMessageImageAttachment
                 key={`${message.id}-image-${index}`}
                 image={image}
                 index={index}
                 messageId={message.id}
+                onPreview={setPreviewImage}
                 tone="assistant"
               />
             ))}
           </div>
+        ) : null}
+        {previewImage ? (
+          <PlainMessageImageLightbox
+            image={previewImage}
+            onClose={() => setPreviewImage(null)}
+          />
         ) : null}
       </div>
     </article>

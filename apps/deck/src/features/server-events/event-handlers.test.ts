@@ -623,6 +623,36 @@ test("session/get_artifacts projects active tool calls into the unified timeline
   assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.output : undefined, "stdout");
 });
 
+test("session/get_artifacts stores returned session plans", () => {
+  resetStore();
+  const plan = {
+    updatedAt: "2026-06-02T13:37:09.663Z",
+    entries: [
+      { content: "并行委派 apps/helm 竞态模式搜索", priority: "high", status: "completed" },
+      { content: "补充读取候选代码并验证是否真有 await 竞态", priority: "high", status: "completed" },
+      { content: "汇总类似问题、风险等级与证据位置", priority: "high", status: "completed" },
+    ],
+  };
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "session-1",
+      outputs: [],
+      toolCalls: [],
+      diffs: [],
+      plan,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
+});
+
 test("session/list_messages preserves live streaming messages when initial history returns late", () => {
   resetStore();
   const loadedHistory: AgentMessage = {
@@ -775,6 +805,67 @@ test("activity update stores ACP plan updates by session", () => {
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
     { content: "Render drawer", priority: "medium", status: "in_progress" },
+  ]);
+});
+
+test("activity update preserves completed plans when an empty plan update arrives", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionPlans: {
+      s1: {
+        entries: [
+          { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+          { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
+        ],
+        updatedAt: "2026-06-02T00:00:00.000Z",
+      },
+    },
+  });
+  const context = {
+    toolCallsRef: { current: {} },
+    mergeSessionToolCalls: () => undefined,
+    appendSystemMessage: () => undefined,
+  };
+
+  const emptyHandled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "plan_update",
+        plan: {
+          entries: [],
+          updatedAt: "2026-06-02T00:01:00.000Z",
+        },
+      },
+    },
+    context,
+  );
+
+  assert.equal(emptyHandled, true);
+  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
+    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+    { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
+  ]);
+
+  const replacementHandled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "plan_update",
+        plan: {
+          entries: [
+            { content: "汇总 Diff 详情", priority: "medium", status: "in_progress" },
+          ],
+          updatedAt: "2026-06-02T00:02:00.000Z",
+        },
+      },
+    },
+    context,
+  );
+
+  assert.equal(replacementHandled, true);
+  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
+    { content: "汇总 Diff 详情", priority: "medium", status: "in_progress" },
   ]);
 });
 

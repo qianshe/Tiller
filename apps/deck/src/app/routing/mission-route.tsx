@@ -23,6 +23,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
     messages,
     sessionTimeline,
     sessionPlans,
+    dismissedCompletedSessionPlanKeys,
+    setDismissedCompletedSessionPlanKeys,
     toolCalls,
     statuses,
     copy,
@@ -206,6 +208,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
       messages={messages}
       sessionTimeline={sessionTimeline}
       sessionPlans={sessionPlans}
+      dismissedCompletedSessionPlanKeys={dismissedCompletedSessionPlanKeys}
+      setDismissedCompletedSessionPlanKeys={setDismissedCompletedSessionPlanKeys}
       toolCalls={toolCalls}
       statuses={statuses}
       copy={copy}

@@ -542,6 +542,66 @@ test("parseOpenCodeExportHistory classifies OpenCode read/write/search and MCP t
   );
 });
 
+test("parseOpenCodeExportHistory derives the latest todo tool call as a plan", () => {
+  const history = parseOpenCodeExportHistory(
+    JSON.stringify({
+      messages: [
+        {
+          id: "msg-assistant-todos",
+          info: { role: "assistant", time: { created: 1777543137977 } },
+          parts: [
+            {
+              type: "tool",
+              tool: "todowrite",
+              callID: "call-todo-progress",
+              state: {
+                status: "completed",
+                input: {
+                  todos: [
+                    { content: "并行委派 apps/helm 竞态模式搜索", status: "completed", priority: "high" },
+                    { content: "补充读取候选代码并验证是否真有 await 竞态", status: "completed", priority: "high" },
+                    { content: "汇总类似问题、风险等级与证据位置", status: "in_progress", priority: "high" },
+                  ],
+                },
+                output: [],
+                title: "1 todos",
+                time: { start: 1777543150784, end: 1777543150882 },
+              },
+            },
+            {
+              type: "tool",
+              tool: "todowrite",
+              callID: "call-todo-complete",
+              state: {
+                status: "completed",
+                input: {
+                  todos: [
+                    { content: "并行委派 apps/helm 竞态模式搜索", status: "completed", priority: "high" },
+                    { content: "补充读取候选代码并验证是否真有 await 竞态", status: "completed", priority: "high" },
+                    { content: "汇总类似问题、风险等级与证据位置", status: "completed", priority: "high" },
+                  ],
+                },
+                title: "0 todos",
+                time: { start: 1777543151784, end: 1777543151882 },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.equal(history.toolCalls.at(-1)?.kind, "todo");
+  assert.deepEqual(history.plan, {
+    updatedAt: "2026-04-30T09:59:11.882Z",
+    entries: [
+      { content: "并行委派 apps/helm 竞态模式搜索", priority: "high", status: "completed" },
+      { content: "补充读取候选代码并验证是否真有 await 竞态", priority: "high", status: "completed" },
+      { content: "汇总类似问题、风险等级与证据位置", priority: "high", status: "completed" },
+    ],
+  });
+});
+
 test("parseOpenCodeExportHistory keeps delegate task tools as subagent calls", () => {
   const history = parseOpenCodeExportHistory(
     JSON.stringify({

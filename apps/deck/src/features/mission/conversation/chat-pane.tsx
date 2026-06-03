@@ -31,6 +31,10 @@ import {
   resolveChatSessionToolLoading,
 } from "./chat-session-state";
 import {
+  createAgentPlanDismissalKey,
+  isAgentPlanComplete,
+} from "./plan-drawer";
+import {
   DraftSessionCard,
   MenuItem,
   SessionCard,
@@ -68,6 +72,7 @@ type MissionChatPaneProps = {
   sessionTimelineById: Record<string, SessionTimelineEntry[] | undefined>;
   activeSessionPlan?: AgentPlan | null;
   sessionPlansById: Record<string, AgentPlan | undefined>;
+  dismissedCompletedSessionPlanKeys?: Record<string, string | undefined>;
   activeSessionToolCalls: AgentToolCall[];
   sessionToolCallsById: Record<string, AgentToolCall[] | undefined>;
   copy: MissionChatPaneCopy;
@@ -102,6 +107,7 @@ type MissionChatPaneProps = {
   onCloseSessionView: (session: SessionSummary) => void;
   onClearSession: (session: SessionSummary) => void;
   onReimportSessionHistory: (session: SessionSummary) => void;
+  onDismissCompletedSessionPlan?: (sessionId: string, planKey: string) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
   restoreNotice?: SessionRestoreNotice;
@@ -129,6 +135,7 @@ export function MissionChatPane({
   sessionTimelineById,
   activeSessionPlan,
   sessionPlansById,
+  dismissedCompletedSessionPlanKeys = {},
   activeSessionToolCalls,
   sessionToolCallsById,
   copy,
@@ -160,6 +167,7 @@ export function MissionChatPane({
   onCloseSessionView,
   onClearSession,
   onReimportSessionHistory,
+  onDismissCompletedSessionPlan,
   onRespondToPermission,
   promptQueue,
   restoreNotice,
@@ -187,8 +195,17 @@ export function MissionChatPane({
     resolveChatSessionToolCalls(session, sessionStateSources);
   const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined =>
     resolveChatSessionToolLoading(session, sessionStateSources);
-  const resolveSessionPlan = (session: SessionSummary) =>
-    sessionPlansById[session.id] ?? (session.id === activeSession?.id ? activeSessionPlan : null);
+  const resolveSessionPlan = (session: SessionSummary) => {
+    const plan = sessionPlansById[session.id] ?? (session.id === activeSession?.id ? activeSessionPlan : null);
+    if (
+      plan &&
+      isAgentPlanComplete(plan) &&
+      dismissedCompletedSessionPlanKeys[session.id] === createAgentPlanDismissalKey(plan)
+    ) {
+      return null;
+    }
+    return plan;
+  };
   const renderSessionStream = (session: SessionSummary) => {
     const sessionMessages = resolveSessionMessages(session);
     const timelineItems = sessionTimelineById[session.id] ?? [];
@@ -630,6 +647,7 @@ export function MissionChatPane({
               onClear={onClearSession}
               onReimportHistory={onReimportSessionHistory}
               onClose={onCloseSessionView}
+              onDismissCompletedPlan={onDismissCompletedSessionPlan}
               restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
               toolLoading={resolveSessionToolLoading(singleSession)}
               plan={resolveSessionPlan(singleSession)}
@@ -660,6 +678,7 @@ export function MissionChatPane({
                   onClear={onClearSession}
                   onReimportHistory={onReimportSessionHistory}
                   onClose={onCloseSessionView}
+                  onDismissCompletedPlan={onDismissCompletedSessionPlan}
                   restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
                   toolLoading={resolveSessionToolLoading(session)}
                   plan={resolveSessionPlan(session)}

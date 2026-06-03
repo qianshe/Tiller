@@ -1,4 +1,4 @@
-import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentPlan, AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 
 type HistoryState = {
   hasMore: boolean;
@@ -19,6 +19,7 @@ export type WorkspaceSessionStreamHydrationInput = {
   sessionTimelineBySession?: Record<string, SessionTimelineEntry[] | undefined>;
   outputsBySession?: Record<string, unknown[] | undefined>;
   toolCallsBySession?: Record<string, AgentToolCall[] | undefined>;
+  sessionPlansBySession?: Record<string, AgentPlan | undefined>;
   checkedResumeSessionIds: ReadonlySet<string>;
 };
 
@@ -30,6 +31,7 @@ export function buildSessionStreamHydrationPlan({
   sessionTimelineBySession,
   outputsBySession,
   toolCallsBySession,
+  sessionPlansBySession,
   checkedResumeSessionIds,
 }: WorkspaceSessionStreamHydrationInput): WorkspaceSessionStreamHydrationPlan {
   const uniqueSessionIds = [...new Set(sessionIds)];
@@ -37,11 +39,18 @@ export function buildSessionStreamHydrationPlan({
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
       !messageHistoryState[sessionId] && !(sessionTimelineBySession?.[sessionId]?.length)
     )),
-    activitySessionIds: uniqueSessionIds.filter((sessionId) => (
-      !activityHistoryState[sessionId] &&
-      !(outputsBySession?.[sessionId]?.length) &&
-      !(toolCallsBySession?.[sessionId]?.length)
-    )),
+    activitySessionIds: uniqueSessionIds.filter((sessionId) => {
+      const toolCalls = toolCallsBySession?.[sessionId] ?? [];
+      const hasCachedActivity = Boolean(
+        outputsBySession?.[sessionId]?.length || toolCalls.length,
+      );
+      const needsCachedTodoPlan = Boolean(
+        !sessionPlansBySession?.[sessionId] &&
+          toolCalls.some((toolCall) => toolCall.kind === "todo"),
+      );
+      return !activityHistoryState[sessionId] &&
+        (!hasCachedActivity || needsCachedTodoPlan);
+    }),
     resumeCheckSessionIds: uniqueSessionIds.filter((sessionId) => {
       const session = sessionById.get(sessionId);
       return Boolean(

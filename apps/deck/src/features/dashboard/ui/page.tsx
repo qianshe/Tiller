@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PermissionDecision, SessionSummary } from "@tiller/shared";
+import type { PermissionDecision } from "@tiller/shared";
 import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
 
 type DashboardHelm = {
@@ -24,12 +24,31 @@ type DashboardApproval = {
 
 type DashboardActivity = {
   id: string;
+  sessionId?: string;
   time: string;
-  tone: "active" | "primary" | "warning" | "idle";
-  icon: "message" | "shield" | "activity" | "server" | "branch";
+  tone: "active" | "primary" | "warning" | "danger" | "idle";
+  pulse?: boolean;
+  icon: "message" | "shield" | "activity";
   title: string;
   meta: string;
-  type: string;
+  type: "会话" | "权限";
+  agentName?: string | null;
+  stateLabel: "已选中" | "运行中" | "出错" | "未选中" | "待审批";
+  planSummary?: DashboardSession["planSummary"];
+};
+
+type DashboardSession = {
+  id: string;
+  title: string;
+  agentName?: string | null;
+  status?: string;
+  selected?: boolean;
+  updatedAt?: string;
+  planSummary?: {
+    completed: number;
+    total: number;
+    label: string;
+  };
 };
 
 export type DashboardPageProps = {
@@ -38,12 +57,14 @@ export type DashboardPageProps = {
   totalHelmCount: number;
   activeSessionCount: number;
   pendingApprovalCount: number;
-  localMessageCount: number;
+  planSessionCount: number;
+  completedPlanSessionCount: number;
   toolCallCount: number;
-  sessions?: SessionSummary[];
+  sessions?: DashboardSession[];
   helms?: DashboardHelm[];
   approvals?: DashboardApproval[];
   onNavigateAgents: () => void;
+  onOpenSession?: (sessionId: string) => void;
   onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
   isMobile?: boolean;
 };
@@ -64,27 +85,46 @@ function formatActivityTime(value?: string) {
   }).format(date);
 }
 
-function resolveSessionTitle(session: SessionSummary) {
-  return session.title || session.id;
+function resolveSessionActivityState(
+  status: string | undefined,
+  selected: boolean,
+): Pick<DashboardActivity, "tone" | "pulse" | "stateLabel"> {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized.includes("error") || normalized.includes("fail")) {
+    return { tone: "danger", stateLabel: "出错" };
+  }
+  if (normalized === "running" || normalized === "starting") {
+    return { tone: "active", pulse: true, stateLabel: "运行中" };
+  }
+  if (normalized === "waiting_for_permission") {
+    return { tone: "warning", stateLabel: "待审批" };
+  }
+  if (selected) {
+    return { tone: "primary", stateLabel: "已选中" };
+  }
+  return { tone: "idle", stateLabel: "未选中" };
 }
 
 function buildActivities(
-  sessions: SessionSummary[] = [],
+  sessions: DashboardSession[] = [],
   approvals: DashboardApproval[] = [],
-  helms: DashboardHelm[] = []
 ): DashboardActivity[] {
   const list: DashboardActivity[] = [];
 
   // 1. 会话事件
   sessions.forEach((session, index) => {
+    const state = resolveSessionActivityState(session.status, session.selected ?? index === 0);
     list.push({
       id: `session-${session.id}`,
+      sessionId: session.id,
       time: formatActivityTime(session.updatedAt),
-      tone: index === 0 ? ("primary" as const) : ("idle" as const),
+      ...state,
       icon: "message" as const,
-      title: `会话活动 · ${session.agentName || "Agent"}`,
-      meta: resolveSessionTitle(session),
+      title: session.title || session.id,
+      meta: session.id,
       type: "会话",
+      agentName: session.agentName || "Agent",
+      planSummary: session.planSummary,
     });
   });
 
@@ -95,22 +135,11 @@ function buildActivities(
       time: formatActivityTime(new Date().toISOString()),
       tone: "warning" as const,
       icon: "shield" as const,
-      title: `权限请求 · ${app.kind}`,
-      meta: `${app.agentName || "Agent"} 请求操作: ${app.target}`,
+      title: app.sessionName ?? app.target,
+      meta: `${app.kind} · ${app.target}`,
       type: "权限",
-    });
-  });
-
-  // 3. 系统事件
-  helms.forEach((h) => {
-    list.push({
-      id: `helm-${h.id}`,
-      time: formatActivityTime(new Date().toISOString()),
-      tone: h.status === "active" ? ("active" as const) : ("idle" as const),
-      icon: "server" as const,
-      title: `Helm 节点 · ${h.name}`,
-      meta: `节点状态变更为: ${h.status === "active" ? "活动" : "空闲"} (${h.endpoint})`,
-      type: "系统",
+      agentName: app.agentName || "Agent",
+      stateLabel: "待审批" as const,
     });
   });
 
@@ -121,10 +150,12 @@ function buildActivities(
       id: "empty",
       time: "--:--:--",
       tone: "idle" as const,
-      icon: "server" as const,
+      icon: "activity" as const,
       title: "等待本地 Helm 活动",
       meta: "连接后会显示会话、权限与工具调用事件",
-      type: "系统",
+      type: "会话",
+      agentName: "Helm",
+      stateLabel: "未选中" as const,
     },
   ];
 }
@@ -135,16 +166,18 @@ export function DashboardPage({
   totalHelmCount,
   activeSessionCount,
   pendingApprovalCount,
-  localMessageCount,
+  planSessionCount,
+  completedPlanSessionCount,
   toolCallCount,
   sessions = [],
   helms = [],
   approvals = [],
   onNavigateAgents,
+  onOpenSession,
   onRespondApproval,
   isMobile = false,
 }: DashboardPageProps) {
-  const [activeTab, setActiveTab] = useState<"全部" | "会话" | "权限" | "系统">("全部");
+  const [activeTab, setActiveTab] = useState<"全部" | "会话" | "权限">("全部");
 
   const approvalRows = approvals.length > 0 ? approvals : FALLBACK_APPROVALS;
   const helmRows = helms.length > 0 ? helms : [
@@ -159,16 +192,16 @@ export function DashboardPage({
     },
   ];
 
-  const rawActivities = buildActivities(sessions, approvals, helmRows);
+  const rawActivities = buildActivities(sessions, approvals);
   const filteredActivities = activeTab === "全部"
     ? rawActivities
-    : rawActivities.filter((a) => a.type === activeTab || (activeTab === "系统" && a.id === "empty"));
+    : rawActivities.filter((a) => a.type === activeTab);
 
   const kpis = [
     { label: "在线 Helm", value: `${onlineHelmCount} / ${totalHelmCount}`, sub: `${Math.max(totalHelmCount - onlineHelmCount, 0)} idle`, icon: "server" as const, tone: onlineHelmCount > 0 ? ("active" as const) : ("idle" as const) },
     { label: "活跃会话", value: String(activeSessionCount), sub: activeSessionCount > 0 ? "streaming" : "idle", icon: "activity" as const, tone: activeSessionCount > 0 ? ("primary" as const) : ("idle" as const) },
     { label: "待审批", value: String(pendingApprovalCount), sub: "权限请求", icon: "shield" as const, tone: pendingApprovalCount > 0 ? ("warning" as const) : ("idle" as const) },
-    { label: "本日消息", value: String(localMessageCount), sub: `+${toolCallCount} 工具调用`, icon: "activity" as const, tone: "idle" as const },
+    { label: "计划", value: String(planSessionCount), sub: `${completedPlanSessionCount} 已完成 · ${toolCallCount} 工具`, icon: "activity" as const, tone: planSessionCount > completedPlanSessionCount ? ("primary" as const) : ("idle" as const) },
   ];
 
   if (isMobile) {
@@ -263,18 +296,28 @@ export function DashboardPage({
           </div>
           <ul className="divide-y divide-border-ghost">
             {filteredActivities.slice(0, 4).map(a => (
-              <li
-                key={a.id}
-                className="flex items-start gap-2.5 px-3 py-2.5 active:bg-surface-sunken overview-session-item-btn"
-              >
-                <span className="font-mono text-meta text-muted-foreground tabular pt-0.5 w-[58px] shrink-0">{a.time}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <StatusDot tone={a.tone} size={6} />
-                    <span className="text-section truncate">{a.title}</span>
+              <li key={a.id}>
+                <button
+                  type="button"
+                  className="overview-session-item-btn overview-activity-row flex w-full items-center gap-2 px-3 py-2 text-left active:bg-surface-sunken disabled:cursor-default"
+                  disabled={!a.sessionId || !onOpenSession}
+                  aria-label={`${a.type}: ${a.title}. ${a.stateLabel}. ${a.agentName ?? "Agent"}`}
+                  onClick={() => a.sessionId ? onOpenSession?.(a.sessionId) : undefined}
+                >
+                  <span className="w-[58px] shrink-0 font-mono text-meta tabular text-muted-foreground">{a.time}</span>
+                  <div className="grid h-6 w-6 shrink-0 place-items-center rounded bg-surface-sunken text-muted-foreground" aria-hidden="true">
+                    <Icon name={a.icon} size={12} />
                   </div>
-                  <div className="font-mono text-meta text-muted-foreground tabular truncate mt-0.5">{a.meta}</div>
-                </div>
+                  <StatusDot tone={a.tone} pulse={a.pulse} size={6} />
+                  <span className="min-w-0 flex-1 truncate text-section">{a.title}</span>
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {a.planSummary ? <span className="rounded border border-border-ghost px-1.5 py-0.5 font-mono text-meta tabular text-muted-foreground">{a.planSummary.label}</span> : null}
+                    <span className="overview-activity-agent flex max-w-[84px] items-center gap-1 rounded bg-surface-sunken px-1.5 py-0.5 text-meta text-muted-foreground">
+                      <AgentIcon name={a.agentName ?? undefined} size={10} />
+                      <span className="truncate">{a.agentName ?? "Agent"}</span>
+                    </span>
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -312,7 +355,7 @@ export function DashboardPage({
           <div className="wb-pane-head min-h-9">
             <span className="wb-pane-head-title">活动流</span>
             <div className="ml-2 flex items-center gap-1">
-              {(["全部", "会话", "权限", "系统"] as const).map((item) => (
+              {(["全部", "会话", "权限"] as const).map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -328,25 +371,35 @@ export function DashboardPage({
           </div>
           <ul className="flex-1 overflow-auto">
             {filteredActivities.map((activity) => (
-              <li key={activity.id} className="flex items-start gap-2.5 border-b border-border-ghost last:border-b-0 px-3 py-2.5 transition-colors hover:bg-surface-sunken">
-                <span className="w-[68px] shrink-0 pt-0.5 font-mono text-meta tabular text-muted-foreground">{activity.time}</span>
-                <div className="mt-px grid h-6 w-6 shrink-0 place-items-center rounded bg-surface-sunken text-muted-foreground">
-                  <Icon name={activity.icon} size={12} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <StatusDot tone={activity.tone} size={6} />
-                    <span className="truncate text-section">{activity.title}</span>
+              <li key={activity.id} className="border-b border-border-ghost last:border-b-0">
+                <button
+                  type="button"
+                  className="overview-activity-row flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-surface-sunken disabled:cursor-default"
+                  disabled={!activity.sessionId || !onOpenSession}
+                  aria-label={`${activity.type}: ${activity.title}. ${activity.stateLabel}. ${activity.agentName ?? "Agent"}`}
+                  onClick={() => activity.sessionId ? onOpenSession?.(activity.sessionId) : undefined}
+                >
+                  <span className="w-[68px] shrink-0 font-mono text-meta tabular text-muted-foreground">{activity.time}</span>
+                  <div className="grid h-6 w-6 shrink-0 place-items-center rounded bg-surface-sunken text-muted-foreground" aria-hidden="true">
+                    <Icon name={activity.icon} size={12} />
                   </div>
-                  <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">{activity.meta}</p>
-                </div>
+                  <StatusDot tone={activity.tone} pulse={activity.pulse} size={6} />
+                  <span className="min-w-0 flex-1 truncate text-section">{activity.title}</span>
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                    {activity.planSummary ? <span className="rounded border border-border-ghost px-1.5 py-0.5 font-mono text-meta tabular text-muted-foreground">{activity.planSummary.label}</span> : null}
+                    <span className="overview-activity-agent flex max-w-[120px] items-center gap-1.5 rounded bg-surface-sunken px-2 py-1 text-meta text-muted-foreground">
+                      <AgentIcon name={activity.agentName ?? undefined} size={11} />
+                      <span className="truncate">{activity.agentName ?? "Agent"}</span>
+                    </span>
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
           <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5">
             <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">24h</span>
             <Sparkline />
-            <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{localMessageCount} msg · {toolCallCount} tool</span>
+            <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{planSessionCount} plan · {toolCallCount} tool</span>
           </div>
         </section>
 

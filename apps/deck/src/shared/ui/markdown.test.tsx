@@ -77,8 +77,8 @@ test("markdown headings stay message-sized instead of using browser default disp
   );
 
   assert.match(html, /markdown-heading/);
-  assert.match(html, /text-xl/);
-  assert.match(html, /text-lg/);
+  assert.match(html, /text-\[15px\]/);
+  assert.match(html, /text-\[14px\]/);
 });
 
 test("assistant markdown text inserts paragraph breaks at ACP boundary markers", () => {

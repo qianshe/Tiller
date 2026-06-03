@@ -13,6 +13,11 @@ const plan: AgentPlan = {
   ],
 };
 
+const completedPlan: AgentPlan = {
+  updatedAt: "2026-06-02T00:01:00.000Z",
+  entries: plan.entries.map((entry) => ({ ...entry, status: "completed" })),
+};
+
 test("summarizeAgentPlan counts completed entries", () => {
   assert.deepEqual(summarizeAgentPlan(plan), {
     completed: 1,
@@ -24,10 +29,18 @@ test("summarizeAgentPlan counts completed entries", () => {
 test("MissionPlanDrawer renders plan entries", () => {
   const html = renderToStaticMarkup(<MissionPlanDrawer plan={plan} />);
 
+  assert.match(html, /<details[^>]*open/);
   assert.match(html, /已完成 1 个任务（共 3 个）/);
   assert.match(html, /完成协议映射/);
   assert.match(html, /渲染抽屉/);
   assert.match(html, /跑验证/);
+});
+
+test("MissionPlanDrawer defaults completed plans collapsed", () => {
+  const html = renderToStaticMarkup(<MissionPlanDrawer plan={completedPlan} />);
+
+  assert.doesNotMatch(html, /<details[^>]*open/);
+  assert.match(html, /已完成 3 个任务（共 3 个）/);
 });
 
 test("MissionPlanDrawer marks floating placement", () => {
@@ -35,6 +48,19 @@ test("MissionPlanDrawer marks floating placement", () => {
 
   assert.match(html, /data-plan-drawer-placement="floating"/);
   assert.match(html, /已完成 1 个任务（共 3 个）/);
+});
+
+test("MissionPlanDrawer renders a close affordance when dismissal is available", () => {
+  const html = renderToStaticMarkup(
+    <MissionPlanDrawer
+      plan={completedPlan}
+      placement="floating"
+      onDismiss={() => undefined}
+    />,
+  );
+
+  assert.match(html, /aria-label="关闭 plan"/);
+  assert.match(html, /data-plan-dismiss/);
 });
 
 test("MissionPlanDrawer renders nothing for empty plans", () => {

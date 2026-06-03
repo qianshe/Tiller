@@ -1,4 +1,9 @@
-import type { AgentPlanEntryStatus } from "@tiller/shared";
+import type {
+  AgentPlan,
+  AgentPlanEntryPriority,
+  AgentPlanEntryStatus,
+  AgentToolCall,
+} from "@tiller/shared";
 import { SUPPRESS_SESSION_UPDATE, type AcpSessionUpdateProjection, type AcpSessionUpdateProjectionContext } from "../types";
 
 export function mapOpenCodePlanUpdate(
@@ -16,22 +21,47 @@ export function mapOpenCodePlanUpdate(
   if (!todos) {
     return isCountOnlyTodoUpdate(source) ? SUPPRESS_SESSION_UPDATE : null;
   }
+  const plan = extractOpenCodePlanFromSource(source, context.now ?? new Date().toISOString());
+  if (!plan) {
+    return null;
+  }
   return {
     type: "plan-update",
-    plan: {
-      updatedAt: context.now ?? new Date().toISOString(),
-      entries: todos.flatMap((item) => {
-        const content = stringFrom(item.content ?? item.step ?? item.title ?? item.text).trim();
-        if (!content) {
-          return [];
-        }
-        return [{
-          content,
-          priority: "medium" as const,
-          status: normalizeTodoStatus(item.status),
-        }];
-      }),
-    },
+    plan,
+  };
+}
+
+export function extractOpenCodePlanFromToolCall(toolCall: AgentToolCall): AgentPlan | null {
+  if (toolCall.kind !== "todo") {
+    return null;
+  }
+  return extractOpenCodePlanFromSource({
+    input: toolCall.input,
+    output: toolCall.output,
+  }, toolCall.updatedAt ?? toolCall.timestamp);
+}
+
+function extractOpenCodePlanFromSource(
+  source: Record<string, unknown>,
+  updatedAt: string,
+): AgentPlan | null {
+  const todos = extractTodoList(source);
+  if (!todos) {
+    return null;
+  }
+  return {
+    updatedAt,
+    entries: todos.flatMap((item) => {
+      const content = stringFrom(item.content ?? item.step ?? item.title ?? item.text).trim();
+      if (!content) {
+        return [];
+      }
+      return [{
+        content,
+        priority: normalizeTodoPriority(item.priority),
+        status: normalizeTodoStatus(item.status),
+      }];
+    }),
   };
 }
 
@@ -61,10 +91,11 @@ function extractTodoList(source: Record<string, unknown>): Array<Record<string, 
   );
   const candidates = [
     input,
-    input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).todos : null,
-    input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).items : null,
-    source.todos,
-  ];
+      input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).todos : null,
+      input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).items : null,
+      parseInput(source.output),
+      source.todos,
+    ];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       return candidate.filter((item): item is Record<string, unknown> =>
@@ -101,6 +132,13 @@ function normalizeTodoStatus(value: unknown): AgentPlanEntryStatus {
     return "in_progress";
   }
   return "pending";
+}
+
+function normalizeTodoPriority(value: unknown): AgentPlanEntryPriority {
+  if (value === "high" || value === "low") {
+    return value;
+  }
+  return "medium";
 }
 
 function stringFrom(value: unknown) {

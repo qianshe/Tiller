@@ -17,6 +17,7 @@ import {
 import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
 import { inferOpenCodeToolKind } from "./tool-calls";
+import { extractOpenCodePlanFromToolCall } from "./plan-events";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_EXPORT_TIMEOUT_MS = 20_000;
@@ -45,11 +46,11 @@ export async function loadOpenCodeExportHistory(
   if (!source) {
     return null;
   }
-  return buildAuthoritativeHistoryFromEvents(openCodeHistoryReader.toEvents(source, {
+  return buildOpenCodeAuthoritativeHistoryFromEvents(openCodeHistoryReader.toEvents(source, {
     provider: agent,
     runtimeSessionId,
     cwd,
-  }), openCodeHistoryReader.options);
+  }));
 }
 
 async function readOpenCodeHistorySource(
@@ -151,9 +152,8 @@ export function parseOpenCodeSqliteHistory(
   messageRows: OpenCodeSqliteMessageRow[],
   partRows: OpenCodeSqlitePartRow[],
 ): AcpAuthoritativeHistory {
-  return buildAuthoritativeHistoryFromEvents(
+  return buildOpenCodeAuthoritativeHistoryFromEvents(
     parseOpenCodeSqliteEvents(messageRows, partRows),
-    openCodeHistoryReader.options,
   );
 }
 
@@ -223,10 +223,18 @@ function parseJson(raw: string): any | null {
 }
 
 export function parseOpenCodeExportHistory(raw: string): AcpAuthoritativeHistory {
-  return buildAuthoritativeHistoryFromEvents(
-    parseOpenCodeExportEvents(raw),
-    openCodeHistoryReader.options,
-  );
+  return buildOpenCodeAuthoritativeHistoryFromEvents(parseOpenCodeExportEvents(raw));
+}
+
+export function buildOpenCodeAuthoritativeHistoryFromEvents(
+  events: HistoryEvent[],
+): AcpAuthoritativeHistory {
+  const history = buildAuthoritativeHistoryFromEvents(events, openCodeHistoryReader.options);
+  const plan = history.toolCalls
+    .map((toolCall) => extractOpenCodePlanFromToolCall(toolCall))
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .at(-1);
+  return plan ? { ...history, plan } : history;
 }
 
 function parseOpenCodeExportEvents(raw: string): HistoryEvent[] {

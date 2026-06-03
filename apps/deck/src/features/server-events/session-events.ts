@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
 import type {
   AgentMessage,
+  AgentPlan,
   AgentPromptContent,
   AgentPromptImageContent,
   AgentToolCall,
@@ -346,6 +347,7 @@ export function applySessionResult(
         ...(payload.toolCalls ?? []),
       ]);
       appendToolCallsToSessionTimeline(store, payload.sessionId, artifactToolCalls);
+      applySessionPlanPayload(store, payload.sessionId, payload.plan);
       store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.diffs,
@@ -388,6 +390,11 @@ export function applySessionResult(
         toolCallsRef.current = next;
         return next;
       });
+      store.setSessionPlans((current) =>
+        reimportState.plan
+          ? { ...current, [payload.sessionId]: reimportState.plan }
+          : removeSessionRecord(current, payload.sessionId),
+      );
       store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: reimportState.diffs,
@@ -533,6 +540,41 @@ function appendToolCallsToSessionTimeline(
       [sessionId]: sortSessionTimelineEntries(entries),
     };
   });
+}
+
+function applySessionPlanPayload(
+  store: DeckStore,
+  sessionId: string,
+  plan: unknown,
+) {
+  if (!isAgentPlanPayload(plan)) {
+    return;
+  }
+  store.setSessionPlans((current) => ({
+    ...current,
+    [sessionId]: plan,
+  }));
+}
+
+function isAgentPlanPayload(value: unknown): value is AgentPlan {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Partial<AgentPlan>;
+  return typeof record.updatedAt === "string" &&
+    Array.isArray(record.entries) &&
+    record.entries.every((entry) =>
+      Boolean(entry) &&
+        typeof entry === "object" &&
+        !Array.isArray(entry) &&
+        typeof (entry as { content?: unknown }).content === "string" &&
+        ((entry as { priority?: unknown }).priority === "high" ||
+          (entry as { priority?: unknown }).priority === "medium" ||
+          (entry as { priority?: unknown }).priority === "low") &&
+        ((entry as { status?: unknown }).status === "pending" ||
+          (entry as { status?: unknown }).status === "in_progress" ||
+          (entry as { status?: unknown }).status === "completed"),
+    );
 }
 
 function mergeTimelineEntries(

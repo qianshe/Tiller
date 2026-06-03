@@ -440,10 +440,17 @@ body[data-density="cozy"] {
     z-index: 7;
   }
 
-  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-frame] > [data-session-scroll-bottom] {
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom] {
     position: absolute;
     right: 0.75rem;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="bottom"] {
     bottom: 0.75rem;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-plan"] {
+    bottom: 3.5rem;
   }
 
   .mission-responsive-mode .mission-pane-resizer,
@@ -722,5 +729,3 @@ body[data-density="cozy"] {
 .mission-status-scroll::-webkit-scrollbar {
   display: none;
 }
-
-

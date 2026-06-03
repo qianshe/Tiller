@@ -55,6 +55,11 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     worktrees,
     agents,
     sessions,
+    statuses,
+    activeSessionId,
+    openChatSessionIds,
+    focusedChatWindowId,
+    sessionPlans,
     helms,
     approvalItemsById,
     toolCalls,
@@ -176,6 +181,11 @@ function renderDashboard() {
     agents,
     projects,
     sessions,
+    statuses,
+    activeSessionId,
+    openChatSessionIds,
+    focusedChatWindowId,
+    sessionPlans,
     toolCalls,
     approvalItemsById,
     resolveDisplaySessionTitle,
@@ -186,6 +196,10 @@ function renderDashboard() {
       isMobile={isMobile}
       {...dashboard}
       onNavigateAgents={() => navigateToView("agents")}
+      onOpenSession={(sessionId) => {
+        openSession(sessionId);
+        navigateToView("sessions");
+      }}
       onRespondApproval={(approvalRequestId, decision) =>
         respondToPermission(approvalRequestId, decision)
       }

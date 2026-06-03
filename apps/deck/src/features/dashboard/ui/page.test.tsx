@@ -16,8 +16,19 @@ const commonProps = {
   totalHelmCount: 3,
   activeSessionCount: 1,
   pendingApprovalCount: 3,
-  localMessageCount: 127,
+  planSessionCount: 1,
+  completedPlanSessionCount: 0,
   toolCallCount: 23,
+  sessions: [
+    {
+      id: "session-1",
+      title: "Plan review",
+      agentName: "Codex",
+      status: "running",
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      planSummary: { completed: 1, total: 2, label: "1/2 进行中" },
+    },
+  ],
   onNavigateAgents: () => undefined,
 };
 
@@ -29,7 +40,38 @@ test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals lay
   assert.match(html, /活动流/);
   assert.match(html, /Helm 矩阵/);
   assert.match(html, /待审批/);
+  assert.match(html, /计划/);
+  assert.match(html, /1\/2 进行中/);
+  assert.match(html, /overview-activity-row/);
+  assert.match(html, /overview-activity-agent/);
+  assert.doesNotMatch(html, /会话活动 ·/);
   assert.match(html, /Allow/);
+  assert.doesNotMatch(html, /本日消息/);
+});
+
+test("DashboardPage distinguishes compact activity row states", () => {
+  const html = renderToStaticMarkup(
+    createElement(DashboardPage, {
+      ...commonProps,
+      sessions: [
+        { id: "selected", title: "Selected session", agentName: "Codex", status: "idle", selected: true },
+        { id: "selected-2", title: "Second selected session", agentName: "Codex", status: "cancelled", selected: true },
+        { id: "running", title: "Running session", agentName: "OpenCode", status: "running" },
+        { id: "failed", title: "Failed session", agentName: "ClaudeCode", status: "error" },
+        { id: "idle", title: "Idle session", agentName: "Codex", status: "completed" },
+      ],
+    }),
+  );
+
+  assert.match(html, /会话: Selected session. 已选中. Codex/);
+  assert.match(html, /会话: Second selected session. 已选中. Codex/);
+  assert.match(html, /会话: Running session. 运行中. OpenCode/);
+  assert.match(html, /会话: Failed session. 出错. ClaudeCode/);
+  assert.match(html, /会话: Idle session. 未选中. Codex/);
+  assert.match(html, /bg-primary/);
+  assert.match(html, /bg-success/);
+  assert.match(html, /bg-destructive/);
+  assert.match(html, /bg-muted-foreground/);
 });
 
 test("DashboardPage renders approval session name and tool name", () => {
@@ -58,6 +100,11 @@ test("DashboardPage wires Allow buttons to approval responses", () => {
   assert.match(pageSource, /disabled=\{approval\.resolving \|\| !onRespondApproval\}/);
 });
 
+test("DashboardPage links session activities back to mission sessions", () => {
+  assert.match(pageSource, /onOpenSession\?\.\(activity\.sessionId\)/);
+  assert.match(pageSource, /disabled=\{!activity\.sessionId \|\| !onOpenSession\}/);
+});
+
 test("DashboardPage mobile keeps v6 priority order", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
@@ -72,4 +119,5 @@ test("DashboardPage uses shared v6 pane primitives and no redesign mock imports"
   assert.match(pageSource, /Sparkline/);
   assert.doesNotMatch(pageSource, /docs\/redesign\/v6/);
   assert.doesNotMatch(pageSource, /\.\.\/data\/mock/);
+  assert.doesNotMatch(pageSource, /"系统"/);
 });

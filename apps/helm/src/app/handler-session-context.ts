@@ -37,6 +37,7 @@ export type HandlerSessionContext = Pick<
   | "buildResumeInfo"
   | "persistRuntimeDescriptor"
   | "refreshAuthoritativeSessionHistory"
+  | "readSessionPlan"
   | "updateSessionSummary"
   | "persistSessionMessage"
   | "publishDiffUpdate"
@@ -80,6 +81,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   buildResumeInfo: AnyFunction;
   persistRuntimeDescriptor: AnyFunction;
   refreshAuthoritativeSessionHistory: AnyFunction;
+  readSessionPlan?: AnyFunction;
   updateSessionSummary: AnyFunction;
   persistSessionMessage: AnyFunction;
   publishDiffUpdate: AnyFunction;
@@ -133,6 +135,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         buildResumeInfo: options.buildResumeInfo,
         persistRuntimeDescriptor: options.persistRuntimeDescriptor,
         refreshAuthoritativeSessionHistory: options.refreshAuthoritativeSessionHistory,
+        readSessionPlan: options.readSessionPlan,
         updateSessionSummary: options.updateSessionSummary,
         persistSessionMessage: options.persistSessionMessage,
         publishDiffUpdate: options.publishDiffUpdate,

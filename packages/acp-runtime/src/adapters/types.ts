@@ -2,6 +2,7 @@ import type {
   AcpRuntimeProviderConfig,
   AgentCapabilities,
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   SessionReasoningEffort,
 } from "@tiller/shared";
@@ -25,6 +26,7 @@ export type AcpLaunchSpec = {
 export type AcpAuthoritativeHistory = {
   messages: AgentMessage[];
   toolCalls: AgentToolCall[];
+  plan?: AgentPlan;
 };
 
 export type AcpHistoryContext = {

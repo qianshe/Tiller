@@ -1,6 +1,7 @@
 import type {
   AcpAgentProvider,
   AgentMessage,
+  AgentPromptImageContent,
   AgentPlan,
   AgentToolCall,
   CommandChunk,
@@ -34,6 +35,20 @@ type MissionVisualFixture = {
   selectedAgentId: string;
 };
 
+const VISUAL_PROMPT_IMAGE_DATA =
+  "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiB2aWV3Qm94PSIwIDAgMzIwIDE4MCI+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIHJ4PSIyMCIgZmlsbD0iIzFmMjkzNyIvPjxjaXJjbGUgY3g9IjY0IiBjeT0iNTgiIHI9IjIyIiBmaWxsPSIjOTNjNWZkIiBvcGFjaXR5PSIwLjg1Ii8+PHRleHQgeD0iMzIiIHk9IjEzMiIgZmlsbD0iIzkzYzVmZCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjM0IiBmb250LXdlaWdodD0iNzAwIj5JTUcgQTwvdGV4dD48L3N2Zz4=";
+const VISUAL_PROMPT_IMAGES: AgentPromptImageContent[] = [
+  "visual-a.svg",
+  "visual-b.svg",
+  "visual-c.svg",
+  "visual-d.svg",
+].map((name) => ({
+  type: "image",
+  mimeType: "image/svg+xml",
+  data: VISUAL_PROMPT_IMAGE_DATA,
+  name,
+}));
+
 export function shouldUseMissionVisualFixture() {
   return (
     import.meta.env.DEV &&
@@ -45,6 +60,10 @@ export function resolveMissionVisualSessionCount(search: string) {
   const rawValue = new URLSearchParams(search).get("visualWindows");
   const count = Number(rawValue);
   return Number.isFinite(count) && count >= 2 ? 2 : 1;
+}
+
+function shouldUseVisualStatusDemo(search: string) {
+  return new URLSearchParams(search).get("visualStatusDemo") === "1";
 }
 
 export function createMissionVisualFixture({
@@ -63,7 +82,10 @@ export function createMissionVisualFixture({
   const agentId = "visual-codex";
   const sessionId = "visual-session";
   const secondarySessionId = "visual-session-secondary";
+  const errorSessionId = "visual-session-error";
+  const idleSessionId = "visual-session-idle";
   const visualSessionCount = resolveMissionVisualSessionCount(visualSearch);
+  const visualStatusDemo = shouldUseVisualStatusDemo(visualSearch);
   const session: SessionSummary = {
     id: sessionId,
     projectId,
@@ -91,7 +113,27 @@ export function createMissionVisualFixture({
     runtimeSessionId: "visual-acp-session-secondary",
     lastMessagePreview: "验证多窗口 plan 浮层绑定。",
   };
-  const sessions = visualSessionCount >= 2 ? [session, secondarySession] : [session];
+  const errorSession: SessionSummary = {
+    ...session,
+    id: errorSessionId,
+    agentName: "ClaudeCode",
+    agentId: "visual-claude",
+    status: "error",
+    runtimeSessionId: "visual-acp-session-error",
+    lastMessagePreview: "模拟错误状态用于 Dashboard 状态点验证。",
+  };
+  const idleSession: SessionSummary = {
+    ...session,
+    id: idleSessionId,
+    agentName: "Codex",
+    agentId: "visual-codex-idle",
+    status: "idle",
+    runtimeSessionId: "visual-acp-session-idle",
+    lastMessagePreview: "模拟未选中空闲会话。",
+  };
+  const sessions = visualStatusDemo
+    ? [{ ...session, status: "idle" as const }, secondarySession, errorSession, idleSession]
+    : visualSessionCount >= 2 ? [session, secondarySession] : [session];
   const sessionPlans: Record<string, AgentPlan> = {
     [sessionId]: {
       entries: [
@@ -162,9 +204,18 @@ export function createMissionVisualFixture({
       },
     ],
     sessions,
-    statuses: Object.fromEntries(sessions.map((item) => [item.id, "running" as const])),
+    statuses: visualStatusDemo
+      ? {
+        [sessionId]: "idle",
+        [secondarySessionId]: "running",
+        [errorSessionId]: "error",
+        [idleSessionId]: "idle",
+      }
+      : Object.fromEntries(sessions.map((item) => [item.id, "running" as const])),
     activeSessionId: sessionId,
-    openChatSessionIds: sessions.map((item) => item.id),
+    openChatSessionIds: visualStatusDemo
+      ? [sessionId, secondarySessionId, errorSessionId]
+      : sessions.map((item) => item.id),
     focusedChatWindowId: `session:${sessionId}`,
     selectedProjectId: projectId,
     selectedCwd: cwd,
@@ -190,13 +241,19 @@ export function createMissionVisualFixture({
 | 根因 | 结构化渲染抢占了源 Markdown |
 
 - 普通列表保持列表
-- 只有源 Markdown 表格渲染为表格`,
+- 只有源 Markdown 表格渲染为表格
+
+\`\`\`mermaid
+flowchart LR
+  A[附件] --> B[预览]
+\`\`\``,
           timestamp: now,
         },
         {
           id: "visual-user-2",
           role: "user",
           text: "继续执行 diff 渲染与权限审核复核。",
+          attachments: VISUAL_PROMPT_IMAGES.map((image) => ({ ...image })),
           timestamp: now,
         },
       ],

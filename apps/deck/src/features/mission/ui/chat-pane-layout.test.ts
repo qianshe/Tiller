@@ -114,10 +114,12 @@ test("mission chat renders permission drawers inside matching session cards", ()
 test("mission chat renders ACP plan drawer outside normal tool calls", () => {
   assert.match(chatPaneSource, /MissionPlanDrawer/);
   assert.match(chatPaneSource, /sessionPlansById/);
-  assert.match(chatPaneSource, /activeSessionPlan/);
-  assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(singleSession\)\}/);
-  assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(session\)\}/);
-  assert.match(chatPaneSource, /data-plan-dock="session"/);
+    assert.match(chatPaneSource, /activeSessionPlan/);
+    assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(singleSession\)\}/);
+    assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(session\)\}/);
+    assert.match(chatPaneSource, /dismissedCompletedSessionPlanKeys/);
+    assert.match(chatPaneSource, /createAgentPlanDismissalKey\(plan\)/);
+    assert.match(chatPaneSource, /data-plan-dock="session"/);
   assert.match(chatPaneSource, /data-plan-session-id=\{session\.id\}/);
   assert.match(chatPaneSource, /placement="floating"/);
   assert.doesNotMatch(chatPaneSource, /focusedPlanSession/);
@@ -136,10 +138,11 @@ test("mission message timeline keeps chat list props stable for unchanged messag
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
   assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_16px\)\)\]/);
   assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
-  assert.match(plainMessagesSource, /max-w-\[min\(680px,61\.8%\)\]/);
+  assert.match(plainMessagesSource, /ml-auto grid w-full justify-items-end/);
+  assert.match(plainMessagesSource, /message\.role === "user" && "max-w-\[min\(680px,61\.8%\)\]/);
   assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
-  assert.match(plainMessagesSource, /message\.role === "user" && "rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
+  assert.match(plainMessagesSource, /message\.role === "user" && "max-w-\[min\(680px,61\.8%\)\] rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
   assert.doesNotMatch(plainMessagesSource, /rounded-2xl border border-border-ghost bg-surface-elevated/);
   assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
   assert.doesNotMatch(plainMessagesSource, /rounded-md bg-surface-emphasis\/45/);
@@ -605,9 +608,15 @@ test("mission tool call rows stay compact", () => {
   assert.doesNotMatch(plainMessagesSource, />混合</);
   assert.doesNotMatch(plainMessagesSource, /BUILT-IN/);
   assert.match(plainMessagesSource, /mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end/);
-  assert.match(plainMessagesSource, /mission-message-image w-28 max-w-\[30vw\]/);
-  assert.match(plainMessagesSource, /className="h-16 w-full object-cover"/);
-  assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?[\s\S]*mission-message-attachments flex max-w-full flex-wrap gap-2/);
+  assert.match(plainMessagesSource, /mission-message-image w-24 max-w-\[28vw\] shrink-0/);
+  assert.match(plainMessagesSource, /mission-message-image-preview-trigger/);
+  assert.match(plainMessagesSource, /mission-message-image-lightbox/);
+  assert.match(plainMessagesSource, /createPortal\(/);
+  assert.match(plainMessagesSource, /document\.body/);
+  assert.match(plainMessagesSource, /className="h-14 w-full object-cover"/);
+  assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?[\s\S]*mission-message-attachments flex max-w-full flex-wrap justify-start gap-2/);
+  assert.doesNotMatch(plainMessagesSource, /mission-message-attachments[^\n]+overflow-x-auto/);
+  assert.doesNotMatch(plainMessagesSource, /mission-message-attachments[^\n]+flex-nowrap/);
 });
 
 test("mission display keeps v6 diff viewer chrome as the primary display surface", () => {
@@ -837,15 +846,23 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
 });
 
 test("session scroll-to-bottom button stays absolute inside responsive panes", () => {
-  assert.match(
-    shellStylesSource,
-    /\.mission-responsive-mode \[data-mission-mobile-pane\] \[data-session-scroll-frame\] > \[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;/s,
-  );
-  assert.match(
-    shellStylesSource,
-    /\[data-session-scroll-frame\] > \[data-session-scroll-bottom\]\s*{[^}]*right:\s*0\.75rem;[^}]*bottom:\s*0\.75rem;/s,
-  );
-});
+    assert.match(
+      shellStylesSource,
+      /\.mission-responsive-mode \[data-mission-mobile-pane\] \[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;/s,
+    );
+    assert.match(
+      shellStylesSource,
+      /\[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;[^}]*right:\s*0\.75rem;/s,
+    );
+    assert.match(
+      shellStylesSource,
+      /\[data-session-scroll-bottom-position="bottom"\]\s*{[^}]*bottom:\s*0\.75rem;/s,
+    );
+    assert.match(
+      shellStylesSource,
+      /\[data-session-scroll-bottom-position="above-plan"\]\s*{[^}]*bottom:\s*3\.5rem;/s,
+    );
+  });
 
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);

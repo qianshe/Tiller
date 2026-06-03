@@ -5,6 +5,7 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  AgentPlan,
   ApprovalPolicy,
   ApprovalPolicyRule,
   AgentPromptContent,
@@ -210,6 +211,7 @@ export type HelmHandlerContext = {
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) => void;
   refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
+  readSessionPlan?: (sessionId: string) => AgentPlan | undefined;
   reimportSessionHistory: (
     sessionId: string,
     options?: { limit?: number },

@@ -1,7 +1,9 @@
 import type {
+  AgentPlan,
   HelmSummary,
   PermissionDecision,
   PermissionRequestOption,
+  SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
 import { resolvePermissionCommandDisplay } from "../../mission/facade";
@@ -17,13 +19,54 @@ type DashboardInput = {
   agents: unknown[];
   projects: unknown[];
   sessions: SessionSummary[];
+  statuses?: Record<string, SessionStatus | undefined>;
+  activeSessionId?: string | null;
+  openChatSessionIds?: string[];
+  focusedChatWindowId?: string | null;
+  sessionPlans?: Record<string, AgentPlan | undefined>;
   toolCalls: Record<string, unknown[]>;
   approvalItemsById: Record<string, any>;
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
 };
 
+type DashboardPlanSummary = {
+  completed: number;
+  total: number;
+  label: string;
+};
+
 function dashboardText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function summarizeDashboardPlan(plan: AgentPlan | undefined): DashboardPlanSummary | null {
+  if (!plan?.entries.length) {
+    return null;
+  }
+  const completed = plan.entries.filter((entry) => entry.status === "completed").length;
+  const total = plan.entries.length;
+  return {
+    completed,
+    total,
+    label: completed === total ? `${completed}/${total} 已完成` : `${completed}/${total} 进行中`,
+  };
+}
+
+function resolveFocusedSessionId(focusedChatWindowId: string | null | undefined): string | null {
+  return focusedChatWindowId?.startsWith("session:")
+    ? focusedChatWindowId.slice("session:".length)
+    : null;
+}
+
+function resolveSelectedSessionIds(input: Pick<
+  DashboardInput,
+  "activeSessionId" | "focusedChatWindowId" | "openChatSessionIds"
+>): Set<string> {
+  return new Set([
+    input.activeSessionId,
+    resolveFocusedSessionId(input.focusedChatWindowId),
+    ...(input.openChatSessionIds ?? []),
+  ].filter((id): id is string => typeof id === "string" && id.length > 0));
 }
 
 export function resolveDashboardApprovalDecision(
@@ -85,6 +128,22 @@ export function buildDashboardViewModel(input: DashboardInput) {
     (total, calls) => total + (Array.isArray(calls) ? calls.length : 0),
     0,
   );
+  const selectedSessionIds = resolveSelectedSessionIds(input);
+  const sessions = input.sessions.map((session) => ({
+    id: session.id,
+    title: input.resolveDisplaySessionTitle(session),
+    agentName: session.agentName,
+    status: input.statuses?.[session.id] ?? session.status,
+    updatedAt: session.updatedAt,
+    selected: selectedSessionIds.has(session.id),
+    planSummary: summarizeDashboardPlan(input.sessionPlans?.[session.id]) ?? undefined,
+  }));
+  const planSessionCount = sessions.filter((session) => session.planSummary).length;
+  const completedPlanSessionCount = sessions.filter(
+    (session) =>
+      session.planSummary &&
+      session.planSummary.completed === session.planSummary.total,
+  ).length;
 
   return {
     activeHelmLabel,
@@ -92,9 +151,10 @@ export function buildDashboardViewModel(input: DashboardInput) {
     totalHelmCount: Math.max(helms.length, 1),
     activeSessionCount: input.sessions.length,
     pendingApprovalCount: approvals.length,
-    localMessageCount: input.sessions.length,
+    planSessionCount,
+    completedPlanSessionCount,
     toolCallCount,
-    sessions: input.sessions,
+    sessions,
     helms,
     approvals,
   };

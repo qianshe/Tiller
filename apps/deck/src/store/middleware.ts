@@ -16,6 +16,8 @@ type PersistedDeckStore = Pick<
   | "openChatSessionIds"
   | "focusedChatWindowId"
   | "draftChatWindow"
+  | "sessionPlans"
+  | "dismissedCompletedSessionPlanKeys"
 >;
 
 export function createDeckStorePersistOptions(): PersistOptions<
@@ -34,6 +36,8 @@ export function createDeckStorePersistOptions(): PersistOptions<
       openChatSessionIds: state.openChatSessionIds,
       focusedChatWindowId: state.focusedChatWindowId,
       draftChatWindow: state.draftChatWindow,
+      sessionPlans: state.sessionPlans,
+      dismissedCompletedSessionPlanKeys: state.dismissedCompletedSessionPlanKeys,
     }),
     merge: (persistedState, currentState) => {
       const persisted = persistedState as PersistedDeckStore | undefined;
@@ -51,6 +55,14 @@ export function createDeckStorePersistOptions(): PersistOptions<
         draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
           ? persisted.draftChatWindow
           : currentState.draftChatWindow,
+        sessionPlans: isSessionPlanMap(persisted.sessionPlans)
+          ? persisted.sessionPlans
+          : currentState.sessionPlans,
+        dismissedCompletedSessionPlanKeys: isStringMap(
+          persisted.dismissedCompletedSessionPlanKeys,
+        )
+          ? persisted.dismissedCompletedSessionPlanKeys
+          : currentState.dismissedCompletedSessionPlanKeys,
         preferences: persisted.preferences
           ? {
               ...currentState.preferences,
@@ -136,5 +148,29 @@ function isDraftChatWindow(value: unknown): value is PersistedDeckStore["draftCh
     typeof value.projectId === "string" &&
     (typeof value.cwd === "string" || value.cwd === null) &&
     (typeof value.agentId === "string" || value.agentId === null)
+  );
+}
+
+function isSessionPlanMap(value: unknown): value is PersistedDeckStore["sessionPlans"] {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.values(value).every((plan) =>
+    isRecord(plan) &&
+    typeof plan.updatedAt === "string" &&
+    Array.isArray(plan.entries) &&
+    plan.entries.every((entry) =>
+      isRecord(entry) &&
+      typeof entry.content === "string" &&
+      (entry.priority === "high" || entry.priority === "medium" || entry.priority === "low") &&
+      (entry.status === "pending" || entry.status === "in_progress" || entry.status === "completed"),
+    ),
+  );
+}
+
+function isStringMap(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((item) => typeof item === "string")
   );
 }

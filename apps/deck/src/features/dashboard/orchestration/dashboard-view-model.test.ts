@@ -51,6 +51,19 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
     agents: [{ id: "codex" }],
     projects: [{ id: "tiller" }],
     sessions,
+    statuses: { "session-1": "waiting_for_permission" },
+    activeSessionId: "session-1",
+    openChatSessionIds: ["session-1"],
+    focusedChatWindowId: "session:session-1",
+    sessionPlans: {
+      "session-1": {
+        updatedAt: "2026-06-02T00:00:00.000Z",
+        entries: [
+          { content: "调研 ACP plan", priority: "medium", status: "completed" },
+          { content: "接入 Dashboard", priority: "medium", status: "in_progress" },
+        ],
+      },
+    },
     toolCalls: { "session-1": [{ id: "tool-1" }] },
     approvalItemsById: {
       "approval-1": {
@@ -72,7 +85,16 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.activeSessionCount, 1);
   assert.equal(model.pendingApprovalCount, 1);
   assert.equal(model.toolCallCount, 1);
+  assert.equal(model.planSessionCount, 1);
+  assert.equal(model.completedPlanSessionCount, 0);
   assert.equal(model.helms[0]?.endpoint, "127.0.0.1:47631");
   assert.equal(model.approvals[0]?.kind, "file.write");
   assert.equal(model.approvals[0]?.sessionName, "Review plan");
+  assert.equal(model.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(model.sessions[0]?.selected, true);
+  assert.deepEqual(model.sessions[0]?.planSummary, {
+    completed: 1,
+    total: 2,
+    label: "1/2 进行中",
+  });
 });

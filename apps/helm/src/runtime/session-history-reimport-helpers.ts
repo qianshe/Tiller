@@ -1,5 +1,6 @@
 import type {
   AgentMessage,
+  AgentPlan,
   CommandChunk,
   FileDiffSummary,
   SessionHistoryReimportResult,
@@ -51,6 +52,7 @@ export function readReimportedHistoryPage(input: {
   sessionId: string;
   limit?: number;
   message: string;
+  plan?: AgentPlan;
   sessionMessageStore: ReimportMessageStore;
   sessionArtifactStore: ReimportArtifactStore;
 }): SessionHistoryReimportResult {
@@ -62,6 +64,7 @@ export function readReimportedHistoryPage(input: {
     outputs: artifactPage.outputs,
     diffs: artifactPage.diffs,
     toolCalls: artifactPage.toolCalls,
+    ...(input.plan ? { plan: input.plan } : {}),
     nextCursor: messagePage.nextCursor,
     hasMore: messagePage.hasMore,
     activityNextCursor: artifactPage.nextCursor,

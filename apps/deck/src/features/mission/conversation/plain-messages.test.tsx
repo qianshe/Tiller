@@ -198,6 +198,32 @@ test("plain messages render local prompt images from data instead of placeholder
   assert.doesNotMatch(html, /tiller:\/\/\/agent\/prompt-image/);
 });
 
+test("plain message image attachments wrap right and expose preview buttons", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-multi-image",
+        role: "user",
+        text: "看这两张图",
+        timestamp: "2026-06-01T10:00:00.000Z",
+        attachments: [
+          { type: "image", data: "QUJD", mimeType: "image/png", name: "a.png" },
+          { type: "image", data: "REVG", mimeType: "image/png", name: "b.png" },
+        ],
+      },
+    ],
+  });
+
+  assert.match(html, /mission-message-attachments[^"]*w-fit[^"]*flex-wrap[^"]*justify-end/);
+  assert.equal(html.match(/mission-message-image-preview-trigger/g)?.length, 2);
+  assert.match(html, /aria-label="放大查看 a.png"/);
+  assert.match(html, /aria-label="放大查看 b.png"/);
+  assert.doesNotMatch(html, /<figcaption/);
+  assert.doesNotMatch(html, />a\.png</);
+  assert.doesNotMatch(html, />b\.png</);
+  assert.doesNotMatch(html, /overflow-x-auto/);
+});
+
 test("plain user messages use a golden-ratio responsive measure", () => {
   const html = renderPlainMessages({
     items: [
@@ -210,7 +236,8 @@ test("plain user messages use a golden-ratio responsive measure", () => {
     ],
   });
 
-  assert.match(html, /plain-user[^"]*max-w-\[min\(680px,61\.8%\)\]/);
+  assert.match(html, /plain-user[^"]*w-full[^"]*justify-items-end/);
+  assert.match(html, /plain-message-body[^"]*max-w-\[min\(680px,61\.8%\)\]/);
 });
 
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
+import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
@@ -86,10 +86,9 @@ export function applyActivityUpdate(
       return true;
     case "plan_update":
       // Plan updates are session-scoped state carried over the activity update transport.
-      store.setSessionPlans((current) => ({
-        ...current,
-        [sessionId]: update.plan,
-      }));
+      store.setSessionPlans((current) =>
+        mergeSessionPlanUpdate(current, sessionId, update.plan),
+      );
       return true;
     case "diff_update":
       store.setDiffs((current) => ({
@@ -103,6 +102,27 @@ export function applyActivityUpdate(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function mergeSessionPlanUpdate(
+  current: Record<string, AgentPlan>,
+  sessionId: string,
+  incoming: AgentPlan,
+) {
+  if (incoming.entries.length === 0 && isAgentPlanComplete(current[sessionId])) {
+    return current;
+  }
+  return {
+    ...current,
+    [sessionId]: incoming,
+  };
+}
+
+function isAgentPlanComplete(plan: AgentPlan | undefined) {
+  if (!plan?.entries.length) {
+    return false;
+  }
+  return plan.entries.every((entry) => entry.status === "completed");
+}
 
 function appendMessageTimelineEntry(
   store: DeckStore,

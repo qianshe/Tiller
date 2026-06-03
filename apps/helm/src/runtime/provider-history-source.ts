@@ -1,4 +1,10 @@
-import type { AgentMessage, AgentToolCall, CommandChunk, FileDiffSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentPlan,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+} from "@tiller/shared";
 
 export type ProviderHistorySourceKind = "acp-session-load" | "adapter-authoritative-history" | "local-cache";
 
@@ -7,6 +13,7 @@ export type ProviderHistorySnapshotContent = {
   toolCalls: AgentToolCall[];
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
+  plan?: AgentPlan;
 };
 
 export type ProviderHistorySnapshot = ProviderHistorySnapshotContent & {
