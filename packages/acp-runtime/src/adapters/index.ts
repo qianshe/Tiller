@@ -4,7 +4,7 @@ import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpLaunchContext } from "./types";
+import type { AcpAgentAdapter, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -38,6 +38,15 @@ export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig,
   return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
 }
 
+export function mapAdapterSessionUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+) {
+  return provider
+    ? resolveAcpAgentAdapter(provider).mapSessionUpdate?.(context) ?? null
+    : null;
+}
+
 export function loadAdapterAuthoritativeHistory(
   provider: AcpRuntimeProviderConfig,
   runtimeSessionId: string,
@@ -59,4 +68,5 @@ export { createOpenClawAcpAdapter } from "./openclaw/index";
 export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export { SUPPRESS_SESSION_UPDATE } from "./types";
+export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";

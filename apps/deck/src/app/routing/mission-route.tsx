@@ -22,6 +22,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     outputs,
     messages,
     sessionTimeline,
+    sessionPlans,
     toolCalls,
     statuses,
     copy,
@@ -204,6 +205,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       outputs={outputs}
       messages={messages}
       sessionTimeline={sessionTimeline}
+      sessionPlans={sessionPlans}
       toolCalls={toolCalls}
       statuses={statuses}
       copy={copy}

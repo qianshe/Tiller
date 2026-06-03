@@ -3,6 +3,7 @@ import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -96,6 +97,9 @@ export function useDeckData(missionVisualFixture: any) {
   const storedToolCalls = useDeckStore((state) => state.toolCalls);
   const toolCalls = (missionVisualFixture?.toolCalls ?? storedToolCalls) as Record<string, AgentToolCall[]>;
   const setToolCalls = useDeckStore((state) => state.setToolCalls);
+  const storedSessionPlans = useDeckStore((state) => state.sessionPlans);
+  const sessionPlans = (missionVisualFixture?.sessionPlans ?? storedSessionPlans) as Record<string, AgentPlan>;
+  const setSessionPlans = useDeckStore((state) => state.setSessionPlans);
 
   const activityHistoryState = useDeckStore((state) => state.activityHistoryState);
   const setActivityHistoryState = useDeckStore((state) => state.setActivityHistoryState);
@@ -133,9 +137,11 @@ export function useDeckData(missionVisualFixture: any) {
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId = missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
   const setActiveSessionId = useDeckStore((state) => state.setActiveSessionId);
-  const openChatSessionIds = useDeckStore((state) => state.openChatSessionIds);
+  const storedOpenChatSessionIds = useDeckStore((state) => state.openChatSessionIds);
+  const openChatSessionIds = missionVisualFixture?.openChatSessionIds ?? storedOpenChatSessionIds;
   const setOpenChatSessionIds = useDeckStore((state) => state.setOpenChatSessionIds);
-  const focusedChatWindowId = useDeckStore((state) => state.focusedChatWindowId);
+  const storedFocusedChatWindowId = useDeckStore((state) => state.focusedChatWindowId);
+  const focusedChatWindowId = missionVisualFixture?.focusedChatWindowId ?? storedFocusedChatWindowId;
   const setFocusedChatWindowId = useDeckStore((state) => state.setFocusedChatWindowId);
   const draftChatWindow = useDeckStore((state) => state.draftChatWindow);
   const setDraftChatWindow = useDeckStore((state) => state.setDraftChatWindow);
@@ -191,6 +197,8 @@ export function useDeckData(missionVisualFixture: any) {
     setOutputs,
     toolCalls,
     setToolCalls,
+    sessionPlans,
+    setSessionPlans,
     activityHistoryState,
     setActivityHistoryState,
     activityVisibleCounts,

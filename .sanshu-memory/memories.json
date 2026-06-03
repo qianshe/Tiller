@@ -51,18 +51,6 @@
       "updated_at": "2026-05-30T04:31:42.875734Z"
     }
   ],
-  "deleted_entries": [
-    {
-      "content": "在 Tiller UI 复刻任务中，如果浏览器参考路由不可用或交互不切页，可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据；用户明确允许“直接去看代码设计”。",
-      "content_normalized": "在 tiller ui 复刻任务中如果浏览器参考路由不可用或交互不切页可以直接查看 docs/redesign/v6/src 等代码设计/参考实现作为对齐依据用户明确允许直接去看代码设计",
-      "deleted_at": "2026-05-30T04:19:03.462179800Z"
-    },
-    {
-      "content": "Tiller Mission 页 v6 复刻：用户明确要求只负责 Mission 页，像素级复刻应直接读取 docs/redesign/v6/src/views/mission.tsx 和 docs/redesign/v6/src/styles.css 的设计代码，再应用到 apps/deck 框架中；不要处理其他页面，不要管轮盘菜单/底部设置按钮。",
-      "content_normalized": "tiller mission 页 v6 复刻用户明确要求只负责 mission 页像素级复刻应直接读取 docs/redesign/v6/src/views/missiontsx 和 docs/redesign/v6/src/stylescss 的设计代码再应用到 apps/deck 框架中不要处理其他页面不要管轮盘菜单/底部设置按钮",
-      "deleted_at": "2026-05-30T04:19:03.487391100Z"
-    }
-  ],
   "last_dedup_at": "2026-04-29T07:33:32.395266400Z",
   "config": {
     "similarity_threshold": 0.7,

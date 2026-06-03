@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createMissionVisualFixture, resolveMissionVisualSessionCount } from "./visual-fixture";
+
+test("resolveMissionVisualSessionCount defaults to one session", () => {
+  assert.equal(resolveMissionVisualSessionCount("?visual=mission"), 1);
+  assert.equal(resolveMissionVisualSessionCount("?visual=mission&visualWindows=bad"), 1);
+});
+
+test("resolveMissionVisualSessionCount enables two visual windows", () => {
+  assert.equal(resolveMissionVisualSessionCount("?visual=mission&visualWindows=2"), 2);
+  assert.equal(resolveMissionVisualSessionCount("?visual=mission&visualWindows=3"), 2);
+});
+
+test("createMissionVisualFixture can build a two-window mission fixture", () => {
+  const fixture = createMissionVisualFixture({
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "4269",
+    visualSearch: "?visual=mission&visualWindows=2",
+  });
+
+  assert.equal(fixture.sessions.length, 2);
+  assert.deepEqual(fixture.openChatSessionIds, ["visual-session", "visual-session-secondary"]);
+  assert.equal(fixture.focusedChatWindowId, "session:visual-session");
+  assert.ok(fixture.sessionPlans["visual-session"]);
+  assert.ok(fixture.sessionPlans["visual-session-secondary"]);
+});

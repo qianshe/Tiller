@@ -667,6 +667,30 @@ test("mapSessionUpdateNotification classifies MCP tools from rawInput server and
   assert.equal(mapped.event.toolCall.title, "Tool: sanshu/zhi");
 });
 
+test("mapSessionUpdateNotification maps ACP plan updates", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-plan",
+      update: {
+        sessionUpdate: "plan",
+        entries: [
+          { content: "Map plan update", priority: "high", status: "in_progress" },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "plan-update");
+  if (mapped?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(mapped.event.plan.entries, [
+    { content: "Map plan update", priority: "high", status: "in_progress" },
+  ]);
+});
+
 test("mapSessionUpdateNotification classifies agent tool calls as subagent", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -953,7 +977,7 @@ test("mapSessionUpdateNotification repairs OpenCode path-only tool call history"
   assert.equal(mapped.event.toolCall.title, "apps\\helm\\src\\runtime\\events.ts");
 });
 
-test("mapSessionUpdateNotification classifies OpenCode todo tools as generic todo", () => {
+test("mapSessionUpdateNotification suppresses OpenCode count-only todo tools", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -971,15 +995,58 @@ test("mapSessionUpdateNotification classifies OpenCode todo tools as generic tod
         },
       },
     },
-    { providerId: "opencode" },
+    {
+      provider: {
+        id: "opencode",
+        name: "OpenCode",
+        command: "opencode",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    },
   );
 
-  assert.equal(mapped?.event.type, "tool-call");
-  if (mapped?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call event");
+  assert.equal(mapped, null);
+});
+
+test("mapSessionUpdateNotification lets provider adapters project todo updates into plans", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-plan",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            tool: "todowrite",
+            state: {
+              input: {
+                todos: [{ content: "Adapter projection", status: "completed" }],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "opencode",
+        name: "OpenCode",
+        command: "opencode",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    },
+  );
+
+  assert.equal(mapped?.event.type, "plan-update");
+  if (mapped?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
   }
-  assert.equal(mapped.event.toolCall.kind, "todo");
-  assert.equal(mapped.event.toolCall.title, "0 todos");
+  assert.deepEqual(mapped.event.plan.entries, [
+    { content: "Adapter projection", priority: "medium", status: "completed" },
+  ]);
 });
 
 test("mapSessionUpdateNotification classifies skill-shaped rawInput before generic MCP", () => {

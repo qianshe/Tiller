@@ -1,5 +1,7 @@
-import type { AgentToolCall, SessionStatus } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentToolCall, SessionStatus } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "./runtime-types";
+import { mapAdapterSessionUpdate, SUPPRESS_SESSION_UPDATE } from "./adapters";
+import type { AcpSessionUpdateProjection } from "./adapters";
 import { normalizeClaudeToolCall } from "./adapters/claude/tool-calls";
 import { normalizeCodexToolCall } from "./adapters/codex/tool-calls";
 import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
@@ -7,6 +9,7 @@ import { extractAvailableCommands } from "./available-command-events";
 import { extractCommandChunk, extractPermissionRequest } from "./command-events";
 import { extractSessionConfigOptions, resolveSessionConfigState } from "./config-events";
 import { extractDiffFiles } from "./diff-events";
+import { extractAgentPlan } from "./plan-events";
 import { extractThinkingToolCall } from "./thinking-events";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 export {
@@ -43,7 +46,7 @@ function normalizeProviderToolCall(
 
 export function mapSessionUpdateNotification(
   payload: any,
-  options: { providerId?: string } = {},
+  options: { provider?: AcpRuntimeProviderConfig; providerId?: string } = {},
 ): { sessionId: string; event: SessionRuntimeEvent } | null {
   if (payload?.method !== "session/update") {
     return null;
@@ -84,6 +87,17 @@ export function mapSessionUpdateNotification(
     };
   }
 
+  const plan = extractAgentPlan(updateType, update);
+  if (plan) {
+    return {
+      sessionId,
+      event: {
+        type: "plan-update",
+        plan,
+      },
+    };
+  }
+
   const configOptions = extractSessionConfigOptions(update);
   if (configOptions.length && updateType === "config_option_update") {
     return {
@@ -105,6 +119,18 @@ export function mapSessionUpdateNotification(
         commands: availableCommands,
       },
     };
+  }
+
+  const adapterEvent = mapAdapterSessionUpdate(options.provider, {
+    sessionId,
+    updateType,
+    update,
+  });
+  if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
+    return null;
+  }
+  if (adapterEvent) {
+    return { sessionId, event: adapterEvent };
   }
 
   const explicitToolCall = extractToolCall(sessionId, updateType, update);
@@ -165,6 +191,12 @@ export function mapSessionUpdateNotification(
   }
 
   return null;
+}
+
+function isSuppressedAdapterSessionUpdate(
+  projection: AcpSessionUpdateProjection | null,
+): projection is typeof SUPPRESS_SESSION_UPDATE {
+  return projection === SUPPRESS_SESSION_UPDATE;
 }
 
 export function summarizeSessionUpdateNotification(

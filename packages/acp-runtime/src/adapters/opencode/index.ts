@@ -6,6 +6,7 @@ import {
   resolveOpenCodeSessionEnv,
 } from "../session-config";
 import { openCodeHistoryReader } from "./history";
+import { mapOpenCodePlanUpdate } from "./plan-events";
 
 export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
 
@@ -38,6 +39,7 @@ export function createOpenCodeAcpAdapter(): AcpAgentAdapter {
     },
     resolveRequestTimeout: ({ method }) =>
       isOpenCodeSessionRequest(method) ? OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS : undefined,
+    mapSessionUpdate: mapOpenCodePlanUpdate,
     loadAuthoritativeHistory: (context) =>
       loadProviderAuthoritativeHistory(openCodeHistoryReader, context),
   };

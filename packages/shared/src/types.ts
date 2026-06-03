@@ -421,6 +421,21 @@ export type AgentToolCall = {
   timelineSequence?: number;
 };
 
+export type AgentPlanEntryStatus = "pending" | "in_progress" | "completed";
+
+export type AgentPlanEntryPriority = "high" | "medium" | "low";
+
+export type AgentPlanEntry = {
+  content: string;
+  priority: AgentPlanEntryPriority;
+  status: AgentPlanEntryStatus;
+};
+
+export type AgentPlan = {
+  entries: AgentPlanEntry[];
+  updatedAt: string;
+};
+
 export type FileDiffSummary = {
   path: string;
   status: "modified" | "added" | "deleted";
@@ -450,4 +465,3 @@ export function isWildcardHost(host: string) {
 
 export const ACP_IMAGE_INPUT_UNSUPPORTED_CODE = "ACP_IMAGE_INPUT_UNSUPPORTED";
 export const ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE = "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~";
-

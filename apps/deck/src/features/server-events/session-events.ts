@@ -229,6 +229,7 @@ export function applySessionResult(
           toolCallsRef.current = next;
           return next;
         });
+        store.setSessionPlans((current) => pruneSessionScopedMap(current, nextSessions));
         store.setActivityHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );

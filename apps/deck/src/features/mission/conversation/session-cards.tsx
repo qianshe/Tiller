@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode, UIEventHandler } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import type { SessionSummary } from "@tiller/shared";
+import type { AgentPlan, SessionSummary } from "@tiller/shared";
 import {
   Icon,
   AgentIcon,
@@ -16,6 +16,7 @@ import {
   MissionToolLoadingTitle,
   type MissionToolLoadingState,
 } from "./tool-loading";
+import { MissionPlanDrawer } from "./plan-drawer";
 
 export type SessionRestoreNotice = {
   title: string;
@@ -173,6 +174,7 @@ export function SessionCard({
   onClose,
   restoreNotice,
   toolLoading,
+  plan,
   flat = false,
   children,
 }: {
@@ -187,6 +189,7 @@ export function SessionCard({
   onClose: (session: SessionSummary) => void;
   restoreNotice?: SessionRestoreNotice;
   toolLoading?: MissionToolLoadingState;
+  plan?: AgentPlan | null;
   flat?: boolean;
   children: ReactNode;
 }) {
@@ -373,6 +376,15 @@ export function SessionCard({
           onClick={scrollToBottom}
         />
       </div>
+      {plan?.entries.length ? (
+        <div
+          className="mission-plan-dock pointer-events-none absolute inset-x-2 bottom-2 z-20"
+          data-plan-dock="session"
+          data-plan-session-id={session.id}
+        >
+          <MissionPlanDrawer plan={plan} placement="floating" />
+        </div>
+      ) : null}
     </article>
   );
 }

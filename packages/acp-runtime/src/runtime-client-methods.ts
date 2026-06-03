@@ -91,7 +91,7 @@ export function createRuntimeClientMethods({
       const sessionToken = getSessionToken();
       const mapped = mapSessionUpdateNotification(
         { method: "session/update", params },
-        { providerId: options.agent.id },
+        { provider: options.agent, providerId: options.agent.id },
       );
       if (!mapped || (sessionToken && mapped.sessionId !== sessionToken)) {
         return;

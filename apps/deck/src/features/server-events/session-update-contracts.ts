@@ -1,5 +1,6 @@
 import type {
   AcpModelOption,
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   AvailableCommand,
@@ -26,7 +27,8 @@ export type DeckSessionRealtimeUpdate =
       AcpModelOption,
       AvailableCommand,
       RuntimeSessionSummary,
-      SessionPromptQueueSnapshot
+      SessionPromptQueueSnapshot,
+      AgentPlan
     >
   | { kind: "restore_replay_cached" };
 

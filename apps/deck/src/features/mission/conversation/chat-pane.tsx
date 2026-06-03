@@ -1,4 +1,5 @@
 import type {
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   PermissionDecision,
@@ -65,6 +66,8 @@ type MissionChatPaneProps = {
   activeSessionMessages: AgentMessage[];
   sessionMessagesById: Record<string, AgentMessage[] | undefined>;
   sessionTimelineById: Record<string, SessionTimelineEntry[] | undefined>;
+  activeSessionPlan?: AgentPlan | null;
+  sessionPlansById: Record<string, AgentPlan | undefined>;
   activeSessionToolCalls: AgentToolCall[];
   sessionToolCallsById: Record<string, AgentToolCall[] | undefined>;
   copy: MissionChatPaneCopy;
@@ -124,6 +127,8 @@ export function MissionChatPane({
   activeSessionMessages,
   sessionMessagesById,
   sessionTimelineById,
+  activeSessionPlan,
+  sessionPlansById,
   activeSessionToolCalls,
   sessionToolCallsById,
   copy,
@@ -182,6 +187,8 @@ export function MissionChatPane({
     resolveChatSessionToolCalls(session, sessionStateSources);
   const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined =>
     resolveChatSessionToolLoading(session, sessionStateSources);
+  const resolveSessionPlan = (session: SessionSummary) =>
+    sessionPlansById[session.id] ?? (session.id === activeSession?.id ? activeSessionPlan : null);
   const renderSessionStream = (session: SessionSummary) => {
     const sessionMessages = resolveSessionMessages(session);
     const timelineItems = sessionTimelineById[session.id] ?? [];
@@ -625,6 +632,7 @@ export function MissionChatPane({
               onClose={onCloseSessionView}
               restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
               toolLoading={resolveSessionToolLoading(singleSession)}
+              plan={resolveSessionPlan(singleSession)}
             >
               {renderSessionStream(singleSession)}
             </SessionCard>
@@ -654,6 +662,7 @@ export function MissionChatPane({
                   onClose={onCloseSessionView}
                   restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
                   toolLoading={resolveSessionToolLoading(session)}
+                  plan={resolveSessionPlan(session)}
                 >
                   {renderSessionStream(session)}
                 </SessionCard>

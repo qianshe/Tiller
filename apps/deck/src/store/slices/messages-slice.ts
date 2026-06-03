@@ -1,4 +1,5 @@
 import type {
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   CommandChunk,
@@ -26,12 +27,14 @@ export type MessagesSlice = {
   messageHistoryState: MessageHistoryState;
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
+  sessionPlans: Record<string, AgentPlan>;
   diffs: Record<string, FileDiffSummary[]>;
   setMessages: (updater: Updater<Record<string, AgentMessage[]>>) => void;
   setSessionTimeline: (updater: Updater<Record<string, SessionTimelineEntry[]>>) => void;
   setMessageHistoryState: (updater: Updater<MessageHistoryState>) => void;
   setOutputs: (updater: Updater<Record<string, CommandChunk[]>>) => void;
   setToolCalls: (updater: Updater<Record<string, AgentToolCall[]>>) => void;
+  setSessionPlans: (updater: Updater<Record<string, AgentPlan>>) => void;
   setDiffs: (updater: Updater<Record<string, FileDiffSummary[]>>) => void;
 };
 
@@ -41,6 +44,7 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   messageHistoryState: {},
   outputs: {},
   toolCalls: {},
+  sessionPlans: {},
   diffs: {},
   setMessages: (updater) =>
     set((state) => ({
@@ -64,6 +68,11 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
     set((state) => ({
       toolCalls:
         typeof updater === "function" ? updater(state.toolCalls) : updater,
+    })),
+  setSessionPlans: (updater) =>
+    set((state) => ({
+      sessionPlans:
+        typeof updater === "function" ? updater(state.sessionPlans) : updater,
     })),
   setDiffs: (updater) =>
     set((state) => ({

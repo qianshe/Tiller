@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { PermissionRequest } from "@tiller/shared";
+import type { AgentPlan, PermissionRequest } from "@tiller/shared";
 import { MissionChatPane } from "./chat-pane.js";
 
 const copy = {
@@ -26,6 +26,8 @@ const baseProps = {
   selectedSessionId: null,
   activeSessionMessages: [],
   sessionMessagesById: {},
+  sessionTimelineById: {},
+  sessionPlansById: {},
   activeSessionToolCalls: [],
   sessionToolCallsById: {},
   copy,
@@ -36,6 +38,7 @@ const baseProps = {
   onToggleExpandedMessage: () => undefined,
   activityLoading: null,
   pendingToolPresent: false,
+  pendingApprovals: [],
   pendingToolTitle: null,
   showPermissionWorktree: false,
   onSelectDraftWindow: () => undefined,
@@ -62,6 +65,14 @@ function buildSession(id: string, title: string, agentName = "OpenCode") {
     projectName: "Tiller",
   } as any;
 }
+
+const plan: AgentPlan = {
+  updatedAt: "2026-06-03T00:00:00.000Z",
+  entries: [
+    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+    { content: "确认 Diff 详情状态", priority: "high", status: "in_progress" },
+  ],
+};
 
 function buildRequest(id: string, command: string, reason: string): PermissionRequest {
   return {
@@ -167,6 +178,54 @@ test("chat pane keeps approvals in the upper area of the session window", () => 
   assert.ok(bodyIndex >= 0);
   assert.ok(bodyIndex < approvalIndex);
   assert.ok(approvalIndex < messageIndex);
+});
+
+test("chat pane anchors plans to their matching session windows", () => {
+  const firstSession = buildSession("s1", "Session One");
+  const secondSession = buildSession("s2", "Session Two", "Codex");
+  const html = renderToStaticMarkup(
+    createElement(MissionChatPane, {
+      ...baseProps,
+      activeSession: firstSession,
+      openSessions: [firstSession, secondSession],
+      selectedSessionId: "s1",
+      sessionPlansById: {
+        s1: plan,
+        s2: {
+          ...plan,
+          entries: [
+            { content: "检查第二窗口", priority: "medium", status: "in_progress" },
+          ],
+        },
+      },
+      children: createElement("div", { "data-testid": "mission-composer" }, "composer"),
+      onRespondToPermission: () => undefined,
+    } as any),
+  );
+
+  const firstBodyIndex = html.indexOf('data-session-card-body="s1"');
+  const firstPlanDockIndex = html.indexOf('data-plan-session-id="s1"');
+  const firstPlanContentIndex = html.indexOf("确认 Diff 详情状态");
+  const secondBodyIndex = html.indexOf('data-session-card-body="s2"');
+  const secondPlanDockIndex = html.indexOf('data-plan-session-id="s2"');
+  const secondPlanContentIndex = html.indexOf("检查第二窗口");
+  const composerIndex = html.indexOf('data-testid="mission-composer"');
+
+  assert.equal((html.match(/data-plan-dock="session"/gu) ?? []).length, 2);
+  assert.equal(html.includes('data-plan-dock="bottom"'), false);
+  assert.ok(firstBodyIndex >= 0);
+  assert.ok(firstPlanDockIndex >= 0);
+  assert.ok(firstPlanContentIndex >= 0);
+  assert.ok(secondBodyIndex >= 0);
+  assert.ok(secondPlanDockIndex >= 0);
+  assert.ok(secondPlanContentIndex >= 0);
+  assert.ok(composerIndex >= 0);
+  assert.ok(firstBodyIndex < firstPlanDockIndex);
+  assert.ok(firstPlanDockIndex < firstPlanContentIndex);
+  assert.ok(firstPlanContentIndex < secondBodyIndex);
+  assert.ok(secondBodyIndex < secondPlanDockIndex);
+  assert.ok(secondPlanDockIndex < secondPlanContentIndex);
+  assert.ok(secondPlanContentIndex < composerIndex);
 });
 
 test("chat pane disables actions for a resolving approval", () => {

@@ -49,6 +49,7 @@ function resetStore() {
     messageHistoryState: {},
     outputs: {},
     toolCalls: {},
+    sessionPlans: {},
     diffs: {},
     activityHistoryState: {},
     approvalItemsById: {},
@@ -751,6 +752,32 @@ test("activity RPC notifications append assistant messages without changing sess
   );
 });
 
+test("activity update stores ACP plan updates by session", () => {
+  resetStore();
+  const handled = applyActivityUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "plan_update",
+        plan: {
+          entries: [{ content: "Render drawer", priority: "medium", status: "in_progress" }],
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      },
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
+    { content: "Render drawer", priority: "medium", status: "in_progress" },
+  ]);
+});
+
 test("approval resolved notifications drop pending approvals from inventory", () => {
   resetStore();
   useDeckStore.getState().upsertApproval({
@@ -1126,6 +1153,12 @@ test("session RPC results apply session list results and prune scoped maps", () 
   resetStore();
   useDeckStore.setState({
     messages: { stale: [{ id: "m", role: "assistant", text: "old", timestamp: "t" }] },
+    sessionPlans: {
+      stale: {
+        entries: [{ content: "Old plan", priority: "medium", status: "pending" }],
+        updatedAt: "2026-06-02T00:00:00.000Z",
+      },
+    },
   });
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
     current: { stale: [] },
@@ -1163,6 +1196,7 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessions[0]?.id, "s1");
   assert.equal(useDeckStore.getState().messages.stale, undefined);
+  assert.equal(useDeckStore.getState().sessionPlans.stale, undefined);
   assert.deepEqual(dispatched, []);
 });
 

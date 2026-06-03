@@ -112,6 +112,19 @@ const agent = {
       });
       return { stopReason: "end_turn" };
     }
+    if (text.includes("plan-client")) {
+      await client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "plan",
+          entries: [
+            { content: "Receive SDK plan", priority: "high", status: "in_progress" },
+            { content: "Render SDK plan", priority: "medium", status: "pending" },
+          ],
+        },
+      });
+      return { stopReason: "end_turn" };
+    }
     await client.sessionUpdate({
       sessionId: params.sessionId,
       update: {
@@ -249,6 +262,34 @@ test("production ACP runtime executes SDK terminal requests after Deck permissio
 
     assert.ok(events.some((event) => event.type === "command-output" && event.chunk.text.includes("terminal ok")));
     assert.ok(events.some((event) => event.type === "message" && event.message.text === "terminal ok:0"));
+  } finally {
+    await runtime.close();
+    await disposeAcpConnections();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("production ACP runtime maps SDK plan updates", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-sdk-plan-"));
+  const fakeAgentPath = createFakeSdkAgentFixture(tempDir);
+  const events: any[] = [];
+  const runtime = await createAcpRuntime({
+    sessionId: "local-session-plan",
+    worktree: { name: "Worktree", path: tempDir },
+    agent: createProvider(process.execPath, [fakeAgentPath]),
+    onEvent: (event) => events.push(event),
+  });
+
+  try {
+    await runtime.prompt("plan-client");
+
+    const planEvent = events.find((event) => event.type === "plan-update");
+    assert.deepEqual(planEvent?.plan.entries, [
+      { content: "Receive SDK plan", priority: "high", status: "in_progress" },
+      { content: "Render SDK plan", priority: "medium", status: "pending" },
+    ]);
+    assert.equal(events.at(-1)?.type, "status");
+    assert.equal(events.at(-1)?.status, "idle");
   } finally {
     await runtime.close();
     await disposeAcpConnections();

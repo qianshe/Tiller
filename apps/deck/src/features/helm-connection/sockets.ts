@@ -1,6 +1,7 @@
 import type { FormEvent, MutableRefObject } from "react";
 import type {
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -63,6 +64,7 @@ type ConnectToDaemonContext = RpcHandlers & {
   setOutputs: StoreSetter<Record<string, CommandChunk[]>>;
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   setToolCalls: StoreSetter<Record<string, AgentToolCall[]>>;
+  setSessionPlans: StoreSetter<Record<string, AgentPlan>>;
   setDiffs: StoreSetter<Record<string, FileDiffSummary[]>>;
   setSessionConfigOptions: StoreSetter<Record<string, SessionConfigOption[]>>;
   setTrustedDevices: StoreSetter<TrustedDeviceSummary[]>;
@@ -215,6 +217,7 @@ export function connectToDaemon(
     setOutputs,
     toolCallsRef,
     setToolCalls,
+    setSessionPlans,
     setDiffs,
     setSessionConfigOptions,
     setTrustedDevices,
@@ -269,6 +272,7 @@ export function connectToDaemon(
     setOutputs({});
     toolCallsRef.current = {};
     setToolCalls({});
+    setSessionPlans({});
     setDiffs({});
     setSessionConfigOptions({});
     setTrustedDevices([]);

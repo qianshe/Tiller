@@ -84,6 +84,13 @@ export function applyActivityUpdate(
       mergeSessionToolCalls(sessionId, [update.toolCall]);
       appendToolCallTimelineEntry(store, sessionId, update.toolCall);
       return true;
+    case "plan_update":
+      // Plan updates are session-scoped state carried over the activity update transport.
+      store.setSessionPlans((current) => ({
+        ...current,
+        [sessionId]: update.plan,
+      }));
+      return true;
     case "diff_update":
       store.setDiffs((current) => ({
         ...current,

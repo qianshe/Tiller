@@ -59,6 +59,7 @@ export function MissionWorktree(props: any) {
     outputs,
     messages,
     sessionTimeline,
+    sessionPlans = {},
     toolCalls,
     statuses,
     copy,
@@ -343,6 +344,7 @@ export function MissionWorktree(props: any) {
     activeSession,
     currentGitBranch,
   });
+  const activeSessionPlan = activeSession?.id ? sessionPlans?.[activeSession.id] : null;
   const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
   const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
     selectedSessionWorktreeItems,
@@ -605,6 +607,8 @@ export function MissionWorktree(props: any) {
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
           sessionTimelineById={sessionTimeline ?? {}}
+          activeSessionPlan={activeSessionPlan}
+          sessionPlansById={sessionPlans ?? {}}
           activeSessionToolCalls={activeToolCalls}
           sessionToolCallsById={toolCalls ?? {}}
           copy={copy}

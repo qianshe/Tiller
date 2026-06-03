@@ -5,6 +5,7 @@ import type {
   AgentToolCall,
   SessionReasoningEffort,
 } from "@tiller/shared";
+import type { SessionRuntimeEvent } from "../runtime-types";
 
 export type AcpLaunchContext = {
   fallbackCwd: string;
@@ -46,6 +47,17 @@ export type AcpRequestTimeoutContext = {
   method: string;
 };
 
+export type AcpSessionUpdateProjectionContext = {
+  sessionId: string;
+  updateType: string | undefined;
+  update: unknown;
+  now?: string;
+};
+
+export const SUPPRESS_SESSION_UPDATE = { kind: "suppress-session-update" } as const;
+
+export type AcpSessionUpdateProjection = SessionRuntimeEvent | typeof SUPPRESS_SESSION_UPDATE;
+
 export type ProviderAdapterPluginManifest = {
   kind: "provider-adapter-plugin-placeholder";
   enabled: false;
@@ -63,5 +75,6 @@ export type AcpAgentAdapter = {
   ): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
+  mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
   loadAuthoritativeHistory?(context: AcpHistoryContext): Promise<AcpAuthoritativeHistory | null>;
 };

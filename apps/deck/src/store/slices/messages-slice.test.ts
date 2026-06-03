@@ -28,3 +28,15 @@ test("artifact maps support updater forms", () => {
   assert.equal(store.getState().toolCalls.s1?.[0]?.id, "t1");
   assert.equal(store.getState().diffs.s1?.[0]?.path, "file.ts");
 });
+
+test("messages slice stores session plans by session id", () => {
+  const store = createTestStore();
+  const plan = {
+    entries: [{ content: "Render drawer", priority: "medium" as const, status: "pending" as const }],
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  };
+
+  store.getState().setSessionPlans({ s1: plan });
+
+  assert.deepEqual(store.getState().sessionPlans.s1, plan);
+});

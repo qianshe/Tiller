@@ -33,6 +33,13 @@ test("renderMissionRoute forwards all worktrees for scanned worktrees", () => {
   assert.match(source, /worktrees=\{worktrees\}/);
 });
 
+test("renderMissionRoute forwards session plans to the mission worktree", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /sessionPlans,/);
+  assert.match(source, /sessionPlans=\{sessionPlans\}/);
+});
+
 test("renderMissionRoute forwards mobile pane state", () => {
   const source = readFileSync(routePath, "utf8");
 

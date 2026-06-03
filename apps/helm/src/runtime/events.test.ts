@@ -1538,6 +1538,37 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
   ]);
 });
 
+test("handleRuntimeEvent broadcasts plan updates without storing a tool call", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const appendedToolCalls: AgentToolCall[] = [];
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+    return { toolCalls: appendedToolCalls };
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "plan-update",
+      plan: {
+        entries: [{ content: "Broadcast plan", priority: "medium", status: "in_progress" }],
+        updatedAt: "2026-06-02T00:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const planBroadcast = capture.detailBroadcasts.find(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
+  ) as any;
+  assert.deepEqual(planBroadcast?.params.update.plan.entries, [
+    { content: "Broadcast plan", priority: "medium", status: "in_progress" },
+  ]);
+  assert.deepEqual(appendedToolCalls, []);
+});
+
 test("runtime timeline events carry arrival order when timestamps collide", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };

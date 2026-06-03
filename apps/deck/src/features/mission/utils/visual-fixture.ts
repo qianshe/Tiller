@@ -1,6 +1,7 @@
 import type {
   AcpAgentProvider,
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -22,9 +23,12 @@ type MissionVisualFixture = {
   messages: Record<string, AgentMessage[]>;
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
+  sessionPlans: Record<string, AgentPlan>;
   diffs: Record<string, FileDiffSummary[]>;
   permissionRequests: Record<string, PermissionRequest>;
   activeSessionId: string;
+  openChatSessionIds: string[];
+  focusedChatWindowId: string | null;
   selectedProjectId: string;
   selectedCwd: string;
   selectedAgentId: string;
@@ -37,12 +41,20 @@ export function shouldUseMissionVisualFixture() {
   );
 }
 
+export function resolveMissionVisualSessionCount(search: string) {
+  const rawValue = new URLSearchParams(search).get("visualWindows");
+  const count = Number(rawValue);
+  return Number.isFinite(count) && count >= 2 ? 2 : 1;
+}
+
 export function createMissionVisualFixture({
   defaultDaemonHost,
   defaultDaemonPort,
+  visualSearch = typeof window === "undefined" ? "" : window.location.search,
 }: {
   defaultDaemonHost: string;
   defaultDaemonPort: string;
+  visualSearch?: string;
 }): MissionVisualFixture {
   const now = new Date().toISOString();
   const helmId = "visual-helm";
@@ -50,6 +62,8 @@ export function createMissionVisualFixture({
   const cwd = "D:/myProject/tools/Tiller";
   const agentId = "visual-codex";
   const sessionId = "visual-session";
+  const secondarySessionId = "visual-session-secondary";
+  const visualSessionCount = resolveMissionVisualSessionCount(visualSearch);
   const session: SessionSummary = {
     id: sessionId,
     projectId,
@@ -68,6 +82,55 @@ export function createMissionVisualFixture({
     runtimeSessionId: "visual-acp-session",
     lastMessagePreview: "按 Zed 风格微调 任务页布局。",
   };
+  const secondarySession: SessionSummary = {
+    ...session,
+    id: secondarySessionId,
+    agentName: "OpenCode",
+    agentId: "visual-opencode",
+    worktreeName: "Tiller / secondary",
+    runtimeSessionId: "visual-acp-session-secondary",
+    lastMessagePreview: "验证多窗口 plan 浮层绑定。",
+  };
+  const sessions = visualSessionCount >= 2 ? [session, secondarySession] : [session];
+  const sessionPlans: Record<string, AgentPlan> = {
+    [sessionId]: {
+      entries: [
+        {
+          content: "复核 Markdown 渲染",
+          priority: "medium",
+          status: "completed",
+        },
+        {
+          content: "检查权限审核抽屉",
+          priority: "medium",
+          status: "in_progress",
+        },
+        {
+          content: "确认 Diff 详情状态",
+          priority: "low",
+          status: "pending",
+        },
+      ],
+      updatedAt: now,
+    },
+  };
+  if (visualSessionCount >= 2) {
+    sessionPlans[secondarySessionId] = {
+      entries: [
+        {
+          content: "复核第二窗口 plan 绑定",
+          priority: "medium",
+          status: "completed",
+        },
+        {
+          content: "确认第二窗口向上展开",
+          priority: "high",
+          status: "in_progress",
+        },
+      ],
+      updatedAt: now,
+    };
+  }
 
   return {
     helms: [
@@ -98,9 +161,11 @@ export function createMissionVisualFixture({
         protocol: "acp",
       },
     ],
-    sessions: [session],
-    statuses: { [sessionId]: "running" },
+    sessions,
+    statuses: Object.fromEntries(sessions.map((item) => [item.id, "running" as const])),
     activeSessionId: sessionId,
+    openChatSessionIds: sessions.map((item) => item.id),
+    focusedChatWindowId: `session:${sessionId}`,
     selectedProjectId: projectId,
     selectedCwd: cwd,
     selectedAgentId: agentId,
@@ -163,6 +228,7 @@ export function createMissionVisualFixture({
         },
       ],
     },
+    sessionPlans,
     diffs: {
       [sessionId]: [
         {

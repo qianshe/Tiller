@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   AcpAgentSessionInfo,
   AcpModelState,
+  AgentPlan,
   AgentMessage,
   AgentPromptContent,
   AgentToolCall,
@@ -40,6 +41,10 @@ export type SessionRuntimeEvent =
   | {
       type: "tool-call";
       toolCall: AgentToolCall;
+    }
+  | {
+      type: "plan-update";
+      plan: AgentPlan;
     }
   | {
       type: "command-output";

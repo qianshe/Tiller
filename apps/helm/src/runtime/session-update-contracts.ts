@@ -1,5 +1,6 @@
 import type {
   AcpModelOption,
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   AvailableCommand,
@@ -16,6 +17,7 @@ import type {
   SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
   SessionDiffUpdate as DomainSessionDiffUpdate,
   SessionModelOptionsUpdate as DomainSessionModelOptionsUpdate,
+  SessionPlanUpdate as DomainSessionPlanUpdate,
   SessionPromptQueueUpdate as DomainSessionPromptQueueUpdate,
   SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
   SessionStatusUpdate,
@@ -37,6 +39,8 @@ export type SessionUserMessageUpdate = DomainSessionUserMessageUpdate<AgentMessa
 export type SessionAgentMessageUpdate = DomainSessionAgentMessageUpdate<AgentMessage>;
 
 export type SessionToolCallUpdate = DomainSessionToolCallUpdate<AgentToolCall>;
+
+export type SessionPlanUpdate = DomainSessionPlanUpdate<AgentPlan>;
 
 export type SessionCommandOutputUpdate = DomainSessionCommandOutputUpdate<CommandChunk>;
 
@@ -65,5 +69,6 @@ export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AcpModelOption,
   AvailableCommand,
   RuntimeSessionSummary,
-  SessionPromptQueueSnapshot
+  SessionPromptQueueSnapshot,
+  AgentPlan
 >;

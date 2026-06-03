@@ -676,7 +676,7 @@ export class AcpConnection {
   private handleSessionUpdate(params: unknown): void {
     const mapped = mapSessionUpdateNotification(
       { method: "session/update", params },
-      { providerId: this.state.provider.id },
+      { provider: this.state.provider, providerId: this.state.provider.id },
     );
     writeLogLine(
       this.state.logFile,

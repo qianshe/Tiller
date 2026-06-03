@@ -59,6 +59,11 @@ export type SessionToolCallUpdate<ToolCall = unknown> = {
   toolCall: ToolCall;
 };
 
+export type SessionPlanUpdate<Plan = unknown> = {
+  kind: "plan_update";
+  plan: Plan;
+};
+
 export type SessionCommandOutputUpdate<CommandOutput = unknown> = {
   kind: "command_output";
   commandId: string;
@@ -108,11 +113,13 @@ export type SessionRealtimeUpdate<
   Command = unknown,
   Summary = SessionSummary,
   Queue = unknown,
+  Plan = unknown,
 > =
   | SessionStatusUpdate
   | SessionUserMessageUpdate<Message>
   | SessionAgentMessageUpdate<Message>
   | SessionToolCallUpdate<ToolCall>
+  | SessionPlanUpdate<Plan>
   | SessionCommandOutputUpdate<CommandOutput>
   | SessionDiffUpdate<Diff>
   | SessionConfigOptionsUpdate<ConfigState, ConfigOption>

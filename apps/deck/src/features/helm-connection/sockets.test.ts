@@ -148,6 +148,27 @@ test("stale socket close does not mark a newer daemon connection disconnected", 
   }
 });
 
+test("daemon reconnect reset clears session plans with other session-scoped state", () => {
+  const previousWebSocket = globalThis.WebSocket;
+  (globalThis as typeof globalThis & { WebSocket: WebSocketCtor }).WebSocket = FakeWebSocket as unknown as WebSocketCtor;
+  FakeWebSocket.instances = [];
+  const setup = createContext();
+  const restoreWindow = setup.installWindow();
+  const planResets: unknown[] = [];
+
+  try {
+    connectToDaemon(undefined, { preserveState: false }, {
+      ...setup.context,
+      setSessionPlans: (next: unknown) => planResets.push(next),
+    } as never);
+
+    assert.deepEqual(planResets, [{}]);
+  } finally {
+    restoreWindow();
+    globalThis.WebSocket = previousWebSocket;
+  }
+});
+
 function connectionStatesTail(states: string[], count: number) {
   return states.slice(Math.max(states.length - count, 0));
 }

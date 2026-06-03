@@ -111,6 +111,22 @@ test("mission chat renders permission drawers inside matching session cards", ()
   assert.doesNotMatch(chatPaneSource, /padding-bottom:\s*170px/);
 });
 
+test("mission chat renders ACP plan drawer outside normal tool calls", () => {
+  assert.match(chatPaneSource, /MissionPlanDrawer/);
+  assert.match(chatPaneSource, /sessionPlansById/);
+  assert.match(chatPaneSource, /activeSessionPlan/);
+  assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(singleSession\)\}/);
+  assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(session\)\}/);
+  assert.match(chatPaneSource, /data-plan-dock="session"/);
+  assert.match(chatPaneSource, /data-plan-session-id=\{session\.id\}/);
+  assert.match(chatPaneSource, /placement="floating"/);
+  assert.doesNotMatch(chatPaneSource, /focusedPlanSession/);
+  assert.doesNotMatch(chatPaneSource, /data-plan-dock="bottom"/);
+  assert.doesNotMatch(chatPaneSource, /<MissionPlanDrawer plan=\{sessionPlan\}/);
+  assert.doesNotMatch(chatPaneSource, /planCount/);
+  assert.doesNotMatch(chatPaneSource, /todowrite|update_plan|isPlanLikeToolCall/);
+});
+
 test("mission message timeline keeps chat list props stable for unchanged messages", () => {
   assert.match(messageTimelineSource, /memo\(function MissionMessageTimeline/);
   assert.match(messageTimelineSource, /useCallback/);

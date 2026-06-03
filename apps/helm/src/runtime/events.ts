@@ -244,6 +244,17 @@ export function handleRuntimeEvent(
         context,
       );
       return;
+    case "plan-update":
+      logRuntimeDebug(context, "runtime.plan.updated", {
+        ...runtimeLogFields(sessionId, context),
+        seq: nextLiveEventSequence(sessionId),
+        entries: event.plan.entries.length,
+      });
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
+        kind: "plan_update",
+        plan: event.plan,
+      });
+      return;
     case "tool-call":
       emitFirstHelmPromptTrace(context, {
         sessionId,

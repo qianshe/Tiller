@@ -10,6 +10,7 @@ type ContractModelOption = { id: string; label: string };
 type ContractCommand = { id: string; label: string };
 type ContractSummary = { id: string; status: "running" };
 type ContractQueue = { items: string[] };
+type ContractPlan = { entries: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> };
 
 type ContractUpdate = SessionRealtimeUpdate<
   ContractMessage,
@@ -21,7 +22,8 @@ type ContractUpdate = SessionRealtimeUpdate<
   ContractModelOption,
   ContractCommand,
   ContractSummary,
-  ContractQueue
+  ContractQueue,
+  ContractPlan
 >;
 
 const realtimeUpdateContractSamples = [
@@ -48,6 +50,7 @@ const realtimeUpdateContractSamples = [
   { kind: "commands_available", commands: [{ id: "test", label: "Run tests" }] },
   { kind: "session_updated", session: { id: "s1", status: "running" } },
   { kind: "prompt_queue", queue: { items: ["q1"] } },
+  { kind: "plan_update", plan: { entries: [{ content: "Wire ACP plan", status: "in_progress" }] } },
 ] satisfies ContractUpdate[];
 
 void realtimeUpdateContractSamples;

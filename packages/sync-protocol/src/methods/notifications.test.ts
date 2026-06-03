@@ -50,6 +50,7 @@ test("session/update accepts every kind", () => {
     "commands_available",
     "session_updated",
     "prompt_queue",
+    "plan_update",
     "user_message",
     "permission_request",
     "permission_resolved",
@@ -72,15 +73,17 @@ test("session/update accepts every kind", () => {
                     ? { kind, session: {} }
                     : kind === "prompt_queue"
                       ? { kind, queue: { sessionId: "s1", queued: [] } }
-                      : kind === "user_message"
-                        ? { kind, message: { id: "m1", role: "user", text: "hello", timestamp: "2026-05-15T00:00:00.000Z" } }
-                        : kind === "agent_message"
-                          ? { kind, message: {} }
-                          : kind === "tool_call"
-                            ? { kind, toolCall: {} }
-                            : kind === "permission_request"
-                              ? { kind, permissionRequest: {} }
-                              : { kind, status: "running" },
+                      : kind === "plan_update"
+                        ? { kind, plan: { entries: [], updatedAt: "2026-06-02T00:00:00.000Z" } }
+                        : kind === "user_message"
+                          ? { kind, message: { id: "m1", role: "user", text: "hello", timestamp: "2026-05-15T00:00:00.000Z" } }
+                          : kind === "agent_message"
+                            ? { kind, message: {} }
+                            : kind === "tool_call"
+                              ? { kind, toolCall: {} }
+                              : kind === "permission_request"
+                                ? { kind, permissionRequest: {} }
+                                : { kind, status: "running" },
     });
   }
 });
