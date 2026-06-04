@@ -74,7 +74,8 @@ export function useAppRuntimeState(missionVisualFixture: any) {
     id?: string;
     name: string;
     path: string;
-  }>({ name: "", path: "" });
+    summaryFile: string;
+  }>({ name: "", path: "", summaryFile: "" });
   const [fleetProjectSaveMessage, setFleetProjectSaveMessage] = useState("");
   const [fleetAgentFormOpen, setFleetAgentFormOpen] = useState(false);
   const [fleetAgentDraft, setFleetAgentDraft] = useState<{

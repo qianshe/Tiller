@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { saveProjectYaml } from "@tiller/agent-registry";
+import { readProjectYaml, saveProjectYaml } from "@tiller/agent-registry";
 import { createProjectCatalog } from "./project-catalog.js";
 
 function makeCatalog(configPath: string, defaultWorktreeRoot: string) {
@@ -83,5 +83,33 @@ test("loadAvailableWorktrees falls back to the process cwd only when no projects
     assert.deepEqual(worktrees, [{ name: "sandbox", path: "D:/repos/sandbox" }]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("project catalog enriches summary from configured summary file", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tiller-catalog-"));
+  try {
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "context.md"), "# Context\nRuntime summary.", "utf8");
+    const configPath = join(root, ".config", "config.json");
+    saveProjectYaml(
+      {
+        id: "project-1",
+        name: "Tiller",
+        helmId: "local-helm",
+        path: root,
+        summaryFile: "docs/context.md",
+      },
+      configPath,
+    );
+
+    const catalog = makeCatalog(configPath, root);
+    const projects = await catalog.loadAvailableProjectsWithSemanticSummaries();
+
+    assert.match(projects[0]?.summary ?? "", /Runtime summary/u);
+    assert.equal(readProjectYaml("project-1", configPath).summary, undefined);
+    assert.equal(readProjectYaml("project-1", configPath).summaryFile, "docs/context.md");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -14,6 +14,7 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type { DaemonProfile, DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import type { ProjectFilesEntry } from "../../mission/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import { AgentsTree } from "./agents-tree";
 import { DeleteHelmConfigDialog } from "./delete-helm-config-dialog";
@@ -38,6 +39,7 @@ type AgentsPageProps = {
   connection: ConnectionState;
   helmConnectionStates: Record<string, ConnectionState>;
   helmInventories: Record<string, HelmInventoryBucket>;
+  projectFilesByScope: Record<string, ProjectFilesEntry>;
   trustedDevices: TrustedDeviceSummary[];
   projects: ProjectSummary[];
   agents: AcpAgentProvider[];
@@ -110,6 +112,7 @@ export function AgentsPage({
   connection,
   helmConnectionStates,
   helmInventories,
+  projectFilesByScope,
   trustedDevices,
   projects,
   agents,
@@ -286,6 +289,7 @@ export function AgentsPage({
               selectedHelmProjects={selectedHelmProjects}
               selectedHelmAgents={selectedHelmAgents}
               selectedHelmWorktrees={selectedHelmWorktrees}
+              projectFilesByScope={projectFilesByScope}
               selectedHelmSocket={selectedHelmSocket}
               selectedHelmRpcClient={selectedHelmRpcClient}
               selectedHelmId={selectedHelmId}
@@ -347,6 +351,7 @@ export function AgentsPage({
               selectedHelmProjects={selectedHelmProjects}
               selectedHelmAgents={selectedHelmAgents}
               selectedHelmWorktrees={selectedHelmWorktrees}
+              projectFilesByScope={projectFilesByScope}
               selectedHelmSocket={selectedHelmSocket}
               selectedHelmRpcClient={selectedHelmRpcClient}
               selectedHelmId={selectedHelmId}

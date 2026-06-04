@@ -14,6 +14,7 @@ import { getLoggingSettings, saveLoggingSettings } from "./logging-rpc";
 import {
   createBranch,
   deleteProject,
+  listDirectories,
   listBranches,
   listFiles,
   listProjects,
@@ -39,6 +40,8 @@ export async function handleConfigRpcRequest(
       return saveLoggingSettings(params as { logging?: Record<string, string> }, context);
     case "project/list":
       return listProjects(context);
+    case "project/list_directories":
+      return listDirectories(params as { path?: string });
     case "project/list_files":
       return listFiles(params as { projectId: string; cwd?: string }, context);
     case "project/save":

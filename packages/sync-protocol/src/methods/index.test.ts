@@ -13,6 +13,7 @@ const expectedRequests = [
   "logging/get",
   "logging/save",
   "project/list",
+  "project/list_directories",
   "project/list_files",
   "project/list_worktrees",
   "project/git/list_branches",

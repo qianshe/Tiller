@@ -14,4 +14,4 @@ export {
 } from "./utils/composer-options";
 export { projectFilesKey } from "./utils/project-files-key";
 export { resolvePermissionCommandDisplay } from "./conversation";
-export type { SessionConfigPreferencePatch } from "./types";
+export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";

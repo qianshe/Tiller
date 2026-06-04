@@ -18,6 +18,7 @@ import {
   type DeckRpcClient,
   type DispatchToHelm,
 } from "../../helm-connection/facade";
+import { projectFilesKey, type ProjectFilesEntry } from "../../mission/facade";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import {
   AgentInventorySection,
@@ -32,6 +33,10 @@ import {
 } from "./project-inventory-section";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
+type ProjectDirectoryListResult = {
+  ok: boolean;
+  directories: string[];
+};
 
 type HelmDetailSectionProps = {
   selectedHelm: HelmCard;
@@ -42,6 +47,7 @@ type HelmDetailSectionProps = {
   selectedHelmProjects: ProjectSummary[];
   selectedHelmAgents: AcpAgentProvider[];
   selectedHelmWorktrees: WorktreeSummary[];
+  projectFilesByScope: Record<string, ProjectFilesEntry>;
   selectedHelmSocket: WebSocket | null;
   selectedHelmRpcClient: DeckRpcClient | null;
   selectedHelmId: string;
@@ -93,6 +99,7 @@ export function HelmDetailSection({
   selectedHelmProjects,
   selectedHelmAgents,
   selectedHelmWorktrees,
+  projectFilesByScope,
   selectedHelmSocket,
   selectedHelmRpcClient,
   selectedHelmId,
@@ -125,6 +132,7 @@ export function HelmDetailSection({
   onBack,
 }: HelmDetailSectionProps) {
   const [activeTab, setActiveTab] = useState<"agents" | "projects" | "devices" | "worktrees" | "logs">("agents");
+  const [projectPathCandidates, setProjectPathCandidates] = useState<string[]>([]);
   const tabs = [
     { id: "agents", label: `Agents (${selectedHelmAgents.length})` },
     { id: "projects", label: `项目 (${selectedHelmProjects.length})` },
@@ -132,6 +140,49 @@ export function HelmDetailSection({
     { id: "worktrees", label: `工作区 (${selectedHelmWorktrees.length})` },
     { id: "logs", label: "日志" },
   ] as const;
+  const summaryFileProject = fleetProjectDraft.id
+    ? selectedHelmProjects.find((project) => project.id === fleetProjectDraft.id)
+    : undefined;
+  const summaryFileCwd = fleetProjectDraft.path.trim() || summaryFileProject?.path;
+  const summaryFileScopeKey = summaryFileProject
+    ? projectFilesKey(summaryFileProject.id, summaryFileCwd)
+    : undefined;
+  const summaryFileCandidates = summaryFileScopeKey
+    ? projectFilesByScope[summaryFileScopeKey]?.files ?? []
+    : [];
+
+  function requestSummaryFileCandidates(project: ProjectSummary) {
+    if (!selectedHelmRpcClient) {
+      return;
+    }
+    void dispatch(selectedHelmRpcClient, "project/list_files", {
+      projectId: project.id,
+      cwd: project.path,
+    });
+  }
+
+  function requestProjectPathCandidates(path: string) {
+    const query = path.trim();
+    if (!selectedHelmRpcClient || !query) {
+      setProjectPathCandidates([]);
+      return;
+    }
+    const requestId = requestCounter.current + 1;
+    requestCounter.current = requestId;
+    void dispatch(
+      selectedHelmRpcClient,
+      "project/list_directories",
+      { path: query },
+      {
+        onResult: (_method, result) => {
+          if (requestCounter.current !== requestId || !isProjectDirectoryListResult(result)) {
+            return;
+          }
+          setProjectPathCandidates(result.ok ? result.directories : []);
+        },
+      },
+    );
+  }
 
   return (
     <section className="wb-pane flex h-full min-h-0 flex-col overflow-hidden">
@@ -229,6 +280,10 @@ export function HelmDetailSection({
               setDraft={setFleetProjectDraft}
               setFormOpen={setFleetProjectFormOpen}
               setSaveMessage={setFleetProjectSaveMessage}
+              projectPathCandidates={projectPathCandidates}
+              requestProjectPathCandidates={requestProjectPathCandidates}
+              summaryFileCandidates={summaryFileCandidates}
+              requestSummaryFileCandidates={requestSummaryFileCandidates}
             />
             {fleetProjectSaveMessage ? (
               <p className="m-0 pl-0.5 text-sm text-muted-foreground">{fleetProjectSaveMessage}</p>
@@ -260,5 +315,17 @@ export function HelmDetailSection({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function isProjectDirectoryListResult(result: unknown): result is ProjectDirectoryListResult {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    "ok" in result &&
+    typeof result.ok === "boolean" &&
+    "directories" in result &&
+    Array.isArray(result.directories) &&
+    result.directories.every((directory) => typeof directory === "string")
   );
 }

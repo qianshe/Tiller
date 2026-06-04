@@ -69,6 +69,14 @@ test("HelmActions shows explicit shutdown when connected", () => {
   assert.match(html, /关闭 Helm/);
 });
 
+test("HelmActions renders connected controls as a compact header group", () => {
+  const html = renderToString(createActions());
+
+  assert.match(html, /aria-label="Helm 连接操作"/u);
+  assert.match(html, /border-l border-border-ghost/);
+  assert.match(html, /h-\[var\(--control-h-sm\)\]/);
+});
+
 test("HelmActions sends daemon shutdown before marking Helm disconnected", async () => {
   const calls: string[] = [];
   const tree = createActions({

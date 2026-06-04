@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as projectListDirectories from "./project/list-directories";
 import * as projectListFiles from "./project/list-files";
 import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
@@ -16,6 +17,28 @@ test("project/list_files validates required projectId", () => {
     { projectId: "p1" },
   );
   assert.throws(() => projectListFiles.ParamsSchema.parse({}));
+});
+
+test("project/list_directories accepts an optional path and returns candidates", () => {
+  assert.equal(projectListDirectories.method, "project/list_directories");
+  assert.deepEqual(projectListDirectories.ParamsSchema.parse({ path: "D:/repo" }), {
+    path: "D:/repo",
+  });
+  assert.deepEqual(projectListDirectories.ParamsSchema.parse({}), {});
+  assert.deepEqual(
+    projectListDirectories.ResultSchema.parse({
+      ok: true,
+      path: "D:/",
+      directories: ["D:/repo"],
+      message: "Loaded 1 directories",
+    }),
+    {
+      ok: true,
+      path: "D:/",
+      directories: ["D:/repo"],
+      message: "Loaded 1 directories",
+    },
+  );
 });
 
 test("project/git/list_branches result matches expected shape", () => {

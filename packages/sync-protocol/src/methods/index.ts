@@ -5,6 +5,7 @@ import * as helmSave from "./helm/save";
 import * as loggingGet from "./logging/get";
 import * as loggingSave from "./logging/save";
 import * as projectList from "./project/list";
+import * as projectListDirectories from "./project/list-directories";
 import * as projectListFiles from "./project/list-files";
 import * as projectListWorktrees from "./project/list-worktrees";
 import * as projectGitListBranches from "./project/git-list-branches";
@@ -61,6 +62,7 @@ const METHOD_DESCRIPTORS = {
   [loggingGet.method]: loggingGet.descriptor,
   [loggingSave.method]: loggingSave.descriptor,
   [projectList.method]: projectList.descriptor,
+  [projectListDirectories.method]: projectListDirectories.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
   [projectListWorktrees.method]: projectListWorktrees.descriptor,
   [projectGitListBranches.method]: projectGitListBranches.descriptor,
@@ -119,6 +121,7 @@ export const CLIENT_REQUEST_METHODS = [
   loggingGet.method,
   loggingSave.method,
   projectList.method,
+  projectListDirectories.method,
   projectListFiles.method,
   projectListWorktrees.method,
   projectGitListBranches.method,

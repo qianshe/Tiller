@@ -53,6 +53,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     daemonPort,
     projects,
     worktrees,
+    projectFilesByScope,
     agents,
     sessions,
     statuses,
@@ -225,6 +226,7 @@ function renderAgents() {
       projects={projects}
       agents={agents}
       worktrees={worktrees}
+      projectFilesByScope={projectFilesByScope}
       socketRef={socketRef}
       rpcClientRef={rpcClientRef}
       helmSocketRefs={helmSocketRefs}

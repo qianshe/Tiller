@@ -2,18 +2,19 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Label } from "@/shared/ui";
 import type {
   AcpAgentProvider,
+  ProjectFileSummary,
   ProjectSummary,
   WorktreeSummary,
 } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import {
-  createProjectId,
+  buildProjectSavePayload,
   resolveProjectDisplayId,
   resolveProjectWorktrees,
 } from "../utils/fleet-helpers";
 import { InventoryTable } from "./inventory-table";
 
-export type FleetProjectDraft = { id?: string; name: string; path: string };
+export type FleetProjectDraft = { id?: string; name: string; path: string; summaryFile: string };
 
 type ProjectInventorySectionProps = {
   connected: boolean;
@@ -28,6 +29,10 @@ type ProjectInventorySectionProps = {
   setDraft: Dispatch<SetStateAction<FleetProjectDraft>>;
   setFormOpen: Dispatch<SetStateAction<boolean>>;
   setSaveMessage: Dispatch<SetStateAction<string>>;
+  projectPathCandidates: string[];
+  requestProjectPathCandidates: (path: string) => void;
+  summaryFileCandidates: ProjectFileSummary[];
+  requestSummaryFileCandidates: (project: ProjectSummary) => void;
 };
 
 export function ProjectInventorySection({
@@ -43,10 +48,28 @@ export function ProjectInventorySection({
   setDraft,
   setFormOpen,
   setSaveMessage,
+  projectPathCandidates,
+  requestProjectPathCandidates,
+  summaryFileCandidates,
+  requestSummaryFileCandidates,
 }: ProjectInventorySectionProps) {
   function cancelEdit() {
-    setDraft({ name: "", path: "" });
+    setDraft({ name: "", path: "", summaryFile: "" });
     setFormOpen(false);
+  }
+
+  const editingProject = draft.id
+    ? selectedHelmProjects.find((project) => project.id === draft.id)
+    : undefined;
+  const isEditingProject = Boolean(editingProject);
+  const formClassName = isEditingProject
+    ? "grid w-full gap-3 rounded-md bg-surface-sunken p-3 pr-28 xl:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.2fr)_minmax(180px,1fr)_auto_auto] xl:items-center"
+    : "grid w-full gap-3 rounded-md bg-surface-sunken p-3 pr-28 xl:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto_auto] xl:items-center";
+
+  function requestEditingProjectSummaryFiles() {
+    if (editingProject) {
+      requestSummaryFileCandidates(createProjectPreview(editingProject, draft));
+    }
   }
 
   return (
@@ -67,43 +90,22 @@ export function ProjectInventorySection({
       )}
       form={formOpen ? (
         <form
-          className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto_auto] sm:items-center"
+          className={formClassName}
           onSubmit={(event) => {
             event.preventDefault();
             if (!selectedHelmRpcClient || !draft.path.trim()) {
               return;
             }
-            const projectPath = draft.path.trim().replace(/\\/g, "/");
-            const fallbackProjectName =
-              projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
-            const projectName = draft.name.trim() || fallbackProjectName;
-            const existingProject = draft.id
-              ? selectedHelmProjects.find((project) => project.id === draft.id)
-              : undefined;
-            const projectId = existingProject?.id ?? createProjectId(selectedHelmProjects, projectName);
-            const existingWorktrees = existingProject?.worktrees ?? [];
-            const worktrees = existingWorktrees.length
-              ? existingWorktrees
-              : [
-                  {
-                    name: projectName,
-                    path: projectPath,
-                    branch: existingProject?.gitCurrentBranch,
-                    kind: "root" as const,
-                  },
-                ];
-            setSaveMessage(`正在保存项目：${projectName}...`);
-            void dispatch(selectedHelmRpcClient, "project/save", {
-              project: {
-                ...existingProject,
-                id: projectId,
-                name: projectName,
-                helmId: existingProject?.helmId ?? selectedHelmId,
-                path: projectPath,
-                worktrees,
-              },
+            const payload = buildProjectSavePayload({
+              draft,
+              selectedHelmId,
+              selectedHelmProjects,
             });
-            setDraft({ name: "", path: "" });
+            setSaveMessage(`正在保存项目：${payload.projectName}...`);
+            void dispatch(selectedHelmRpcClient, "project/save", {
+              project: payload.project,
+            });
+            setDraft({ name: "", path: "", summaryFile: "" });
             setFormOpen(false);
           }}
         >
@@ -123,12 +125,44 @@ export function ProjectInventorySection({
           </Label>
           <Input
             id="fleet-project-path"
+            list="fleet-project-path-options"
             value={draft.path}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, path: event.target.value }))
-            }
+            onFocus={() => requestProjectPathCandidates(draft.path)}
+            onChange={(event) => {
+              const nextPath = event.target.value;
+              setDraft((current) => ({ ...current, path: nextPath }));
+              requestProjectPathCandidates(nextPath);
+            }}
             placeholder="项目路径，例如 D:/projects/my-app"
           />
+          <datalist id="fleet-project-path-options">
+            {projectPathCandidates.map((path) => (
+              <option key={path} value={path} />
+            ))}
+          </datalist>
+          {isEditingProject ? (
+            <>
+              <Label className="sr-only" htmlFor="fleet-project-summary-file">
+                摘要文件
+              </Label>
+              <Input
+                id="fleet-project-summary-file"
+                list="fleet-project-summary-file-options"
+                value={draft.summaryFile}
+                onClick={requestEditingProjectSummaryFiles}
+                onFocus={requestEditingProjectSummaryFiles}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, summaryFile: event.target.value }))
+                }
+                placeholder="默认读取 AGENTS.md、CLAUDE.md 或 README.md"
+              />
+              <datalist id="fleet-project-summary-file-options">
+                {filterSummaryFileCandidates(summaryFileCandidates).map((file) => (
+                  <option key={file.path} value={file.path} />
+                ))}
+              </datalist>
+            </>
+          ) : null}
           <Button type="submit" disabled={!draft.path.trim()}>
             {draft.id ? "更新项目" : "保存项目"}
           </Button>
@@ -137,39 +171,49 @@ export function ProjectInventorySection({
           </Button>
         </form>
       ) : null}
-      rows={selectedHelmProjects.map((project) => ({
-        key: project.id,
-        title: project.name,
-        subtitle: project.path
-          ? `路径 · ${project.path}`
-          : `项目 · ${project.id}`,
-        details: (
+      rows={selectedHelmProjects.map((project) => {
+        const previewProject = createProjectPreview(project, draft);
+        return {
+          key: project.id,
+          title: previewProject.name,
+          subtitle: previewProject.path
+            ? `路径 · ${previewProject.path}`
+            : `项目 · ${previewProject.id}`,
+          details: (
           <dl className="m-0 grid gap-2 text-sm">
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
               <dt className="font-semibold text-muted-foreground">Project ID</dt>
               <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                {resolveProjectDisplayId(project, selectedHelmProjects)}
+                {resolveProjectDisplayId(previewProject, selectedHelmProjects)}
               </dd>
             </div>
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
               <dt className="font-semibold text-muted-foreground">Path</dt>
-              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.path ?? "-"}</dd>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                {previewProject.path ?? "-"}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Summary File</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                {formatSummaryFile(previewProject.summaryFile)}
+              </dd>
             </div>
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
               <dt className="font-semibold text-muted-foreground">Helm ID</dt>
-              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{previewProject.helmId}</dd>
             </div>
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
               <dt className="font-semibold text-muted-foreground">Git Branch</dt>
               <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                {project.gitCurrentBranch ?? "-"}
+                {previewProject.gitCurrentBranch ?? "-"}
               </dd>
             </div>
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
               <dt className="font-semibold text-muted-foreground">Worktrees</dt>
               <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
                 <ProjectWorktreeList
-                  project={project}
+                  project={previewProject}
                   worktrees={selectedHelmWorktrees}
                 />
               </dd>
@@ -186,6 +230,7 @@ export function ProjectInventorySection({
                     id: project.id,
                     name: project.name,
                     path: project.path ?? "",
+                    summaryFile: project.summaryFile ?? "",
                   });
                   setFormOpen(true);
                 }}
@@ -212,11 +257,45 @@ export function ProjectInventorySection({
               </Button>
             </div>
           </dl>
-        ),
-      }))}
+          ),
+        };
+      })}
       emptyLabel={connected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"}
     />
   );
+}
+
+function createProjectPreview(project: ProjectSummary, draft: FleetProjectDraft) {
+  if (draft.id !== project.id) {
+    return project;
+  }
+  const summaryFile = draft.summaryFile.trim() || undefined;
+  return {
+    ...project,
+    name: draft.name.trim() || project.name,
+    path: draft.path.trim() || project.path,
+    summaryFile,
+  };
+}
+
+function formatSummaryFile(summaryFile: string | undefined) {
+  return summaryFile ?? "默认：AGENTS.md / CLAUDE.md / README.md";
+}
+
+function filterSummaryFileCandidates(files: ProjectFileSummary[]) {
+  return files.filter((file) => {
+    if (file.kind !== "file") {
+      return false;
+    }
+    const name = file.path.split("/").at(-1)?.toLowerCase() ?? "";
+    return (
+      name === "agents.md" ||
+      name === "claude.md" ||
+      name === "readme.md" ||
+      name.endsWith(".md") ||
+      name.endsWith(".mdx")
+    );
+  });
 }
 
 function ProjectWorktreeList({

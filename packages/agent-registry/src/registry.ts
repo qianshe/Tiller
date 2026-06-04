@@ -365,6 +365,7 @@ function normalizeLegacyProject(
     helmId: project.helmId,
     path: project.path,
     summary: sanitizeSummaryForConfig(project.summary, project.name),
+    summaryFile: sanitizeSummaryFileForConfig(project.summaryFile),
     gitBranches: project.gitBranches,
     gitCurrentBranch: project.gitCurrentBranch,
     worktrees,
@@ -459,6 +460,10 @@ function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
       typeof sanitized.summary === "string"
         ? sanitizeSummaryForConfig(sanitized.summary, String(sanitized.name))
         : undefined,
+    summaryFile:
+      typeof sanitized.summaryFile === "string"
+        ? sanitizeSummaryFileForConfig(sanitized.summaryFile)
+        : undefined,
     gitBranches: Array.isArray(sanitized.gitBranches)
       ? sanitized.gitBranches.filter((branch): branch is string => typeof branch === "string")
       : undefined,
@@ -473,6 +478,21 @@ function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
 function sanitizeWorktreeForConfig(worktree: WorktreeSummary): WorktreeSummary {
   const summary = sanitizeSummaryForConfig(worktree.summary);
   return summary === worktree.summary ? worktree : { ...worktree, summary };
+}
+
+function sanitizeSummaryFileForConfig(path: string | undefined) {
+  const slashed = path?.replace(/\\/gu, "/").trim();
+  if (!slashed) {
+    return undefined;
+  }
+  if (slashed.startsWith("/") || /^[a-zA-Z]:\//u.test(slashed)) {
+    return undefined;
+  }
+  const normalized = slashed.replace(/^\/+/, "");
+  if (normalized.split("/").some((part) => part === "..")) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function sanitizeSummaryForConfig(summary: string | undefined, projectName?: string) {

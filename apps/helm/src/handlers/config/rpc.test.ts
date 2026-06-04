@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -38,6 +38,20 @@ test("config RPC lists projects and updates context cache", async () => {
 
   assert.deepEqual(result, { projects });
   assert.equal(cached, projects);
+});
+
+test("config RPC lists local directory candidates", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tiller-config-directories-"));
+  const repoPath = join(root, "repo");
+  mkdirSync(repoPath);
+
+  const result = await handleConfigRpcRequest("project/list_directories", { path: root }, {} as any) as {
+    ok: boolean;
+    directories: string[];
+  };
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.directories, [repoPath.replace(/\\/g, "/")]);
 });
 
 test("config RPC lists only the requested project's worktrees", async () => {

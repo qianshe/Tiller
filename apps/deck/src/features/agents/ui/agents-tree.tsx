@@ -1,4 +1,5 @@
-import { Button, Icon, StatusDot, AgentIcon } from "@/shared/ui";
+import { Icon, StatusDot, AgentIcon } from "@/shared/ui";
+import { useEffect, useState } from "react";
 import type { ConnectionState, HelmInventoryBucket } from "../utils/helm-selection";
 import { resolveHelmConnectionState } from "../utils/fleet-helpers";
 import type { HelmCard } from "./helm-hub";
@@ -27,6 +28,20 @@ function resolveTone(state: ConnectionState): "active" | "idle" | "warning" {
   if (state === "connected") return "active";
   if (state === "connecting") return "warning";
   return "idle";
+}
+
+export function resolveNextAgentsTreeHelmExpansion(
+  expandedHelmKeys: ReadonlySet<string>,
+  helmKey: string,
+  selectedHelmKey: string,
+) {
+  const next = new Set(expandedHelmKeys);
+  if (helmKey === selectedHelmKey && next.has(helmKey)) {
+    next.delete(helmKey);
+    return next;
+  }
+  next.add(helmKey);
+  return next;
 }
 
 function countsForHelm(
@@ -66,6 +81,23 @@ export function AgentsTree({
   setSelectedHelmKey,
   isMobile = false,
 }: AgentsTreeProps) {
+  const [expandedHelmKeys, setExpandedHelmKeys] = useState<Set<string>>(
+    () => new Set([selectedHelm.key]),
+  );
+
+  useEffect(() => {
+    setExpandedHelmKeys((current) => new Set([...current, selectedHelm.key]));
+  }, [selectedHelm.key]);
+
+  function selectOrToggleHelm(helmKey: string) {
+    setExpandedHelmKeys((current) =>
+      resolveNextAgentsTreeHelmExpansion(current, helmKey, selectedHelm.key),
+    );
+    if (helmKey !== selectedHelm.key) {
+      setSelectedHelmKey(helmKey);
+    }
+  }
+
   if (isMobile) {
     return (
       <aside className="agents-helm-tree wb-pane flex min-h-0 flex-col flex-1 overflow-hidden" aria-label="Helm 舰队树">
@@ -73,16 +105,6 @@ export function AgentsTree({
           <span className="wb-pane-head-eyebrow">Helm</span>
           <span className="font-mono text-2xs text-muted-foreground tabular ml-1">{helmCards.length}</span>
           <div className="flex-1" />
-          {!isEmbeddedHelmDeck ? (
-            <button
-              type="button"
-              className="h-7 w-7 grid place-items-center rounded hover:bg-surface-sunken"
-              onClick={onAddHelm}
-              title="添加 Helm"
-            >
-              <Icon name="plus" size={14} className="text-muted-foreground" />
-            </button>
-          ) : null}
         </div>
         <div className="flex-1 overflow-auto p-1" role="list" aria-label="Helm 节点列表">
           {helmCards.map((helm) => {
@@ -138,11 +160,6 @@ export function AgentsTree({
         <span className="wb-pane-head-eyebrow">Helm</span>
         <span className="ml-1 font-mono text-meta tabular text-muted-foreground">{helmCards.length}</span>
         <div className="flex-1" />
-        {!isEmbeddedHelmDeck ? (
-          <Button type="button" size="icon-sm" variant="ghost" onClick={onAddHelm} title="添加 Helm">
-            <Icon name="plus" size={12} />
-          </Button>
-        ) : null}
       </div>
       <div className="flex-1 overflow-auto p-1" role="list" aria-label="Helm 节点列表">
         {helmCards.map((helm) => {
@@ -153,6 +170,7 @@ export function AgentsTree({
             helmConnectionStates,
           );
           const active = selectedHelm.key === helm.key;
+          const expanded = expandedHelmKeys.has(helm.key);
           const counts = countsForHelm(helm, selectedHelm, selectedHelmCounts, helmInventories);
           return (
             <div key={helm.key}>
@@ -162,21 +180,22 @@ export function AgentsTree({
                 className={`flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left transition-colors ${
                   active ? "bg-surface-emphasis text-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
                 }`}
-                onClick={() => setSelectedHelmKey(helm.key)}
+                onClick={() => selectOrToggleHelm(helm.key)}
                 aria-pressed={active}
+                aria-expanded={expanded}
                 title={`${helm.name} · ${helm.host}:${helm.port}`}
               >
                 <Icon
                   name="chevronDown"
                   size={12}
-                  className={`transition-transform ${active ? "rotate-0" : "-rotate-90"}`}
+                  className={`transition-transform ${expanded ? "rotate-0" : "-rotate-90"}`}
                 />
                 <StatusDot tone={resolveTone(state)} pulse={state === "connecting"} />
                 <Icon name="server" size={12} className="text-muted-foreground" />
                 <strong className="flex-1 truncate text-section font-medium">{helm.name}</strong>
                 <span className="font-mono text-meta tabular text-muted-foreground">{counts.agents}A</span>
               </button>
-              {active ? (
+              {expanded ? (
                 <div className="ml-4 mt-px mb-1 grid gap-px">
                   {(helmInventories[helm.key]?.agents ?? []).map((a) => (
                     <span

@@ -142,8 +142,10 @@ export type ProjectSummary = {
   helmId: string;
   /** Project root path owned by project config. */
   path?: string;
-  /** Helm-generated lightweight summary for prompt enhancement context. */
+  /** User-authored fallback summary for prompt enhancement context. */
   summary?: string;
+  /** Project-relative document path used as the runtime summary source. */
+  summaryFile?: string;
   /** Git worktrees discovered or created for this project. */
   worktrees?: WorktreeSummary[];
   /** Last Git branches discovered by Helm for this project root. */

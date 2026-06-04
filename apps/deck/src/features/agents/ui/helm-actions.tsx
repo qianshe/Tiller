@@ -69,11 +69,15 @@ export function HelmActions({
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <div
+      className="ml-2 flex shrink-0 flex-wrap items-center justify-end gap-1 border-l border-border-ghost pl-2"
+      aria-label="Helm 连接操作"
+    >
       {selectedHelmIsConnected ? (
         <>
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={markSelectedHelmDisconnected}
           >
@@ -82,6 +86,7 @@ export function HelmActions({
           {selectedHelmRpcClient ? (
             <Button
               variant="destructive"
+              size="sm"
               type="button"
               onClick={async () => {
                 await dispatch(selectedHelmRpcClient, "daemon/shutdown", {});
@@ -98,6 +103,7 @@ export function HelmActions({
       ) : (
         <Button
           variant="outline"
+          size="sm"
           type="button"
           onClick={() => {
             if (selectedHelm.profile) {
@@ -113,6 +119,7 @@ export function HelmActions({
       {selectedHelmSavedProfile && !isEmbeddedHelmDeck ? (
         <Button
           variant="destructive"
+          size="sm"
           type="button"
           onClick={() => setPendingHelmDeleteProfile(selectedHelmSavedProfile)}
           title="仅删除 Deck 前端保存的 Helm 配置，不销毁远端 Helm 进程或后端配置"

@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import type { ProjectSummary } from "@tiller/shared";
 import {
   deleteProjectYaml,
   ensureTillerConfigDefaults,
@@ -24,6 +25,8 @@ function createConfigPath() {
 function createXdgConfigPath() {
   return join(mkdtempSync(join(tmpdir(), "tiller-registry-")), ".config", "tiller", "config.json");
 }
+
+type ProjectWithSummaryFile = ProjectSummary & { summaryFile?: string };
 
 test("getDefaultConfigPath uses the xdg tiller config directory", () => {
   assert.equal(getDefaultConfigPath(), join(process.env.HOME ?? process.env.USERPROFILE ?? "", ".config", "tiller", "config.json"));
@@ -192,6 +195,61 @@ test("saveProjectYaml strips generated semantic summaries", () => {
     configPath,
   );
   assert.equal(configured.project.summary, "用于 Tiller 测试的空项目。");
+});
+
+test("saveProjectYaml persists a normalized summary file path", () => {
+  const configPath = createConfigPath();
+
+  const result = saveProjectYaml(
+    {
+      id: "project-2",
+      name: "Tiller",
+      helmId: "local-helm",
+      path: "D:/repo",
+      summaryFile: "docs\\AGENTS.md",
+    } as ProjectWithSummaryFile,
+    configPath,
+  );
+
+  assert.equal((result.project as ProjectWithSummaryFile).summaryFile, "docs/AGENTS.md");
+  assert.equal((readProjectYaml("project-2", configPath) as ProjectWithSummaryFile).summaryFile, "docs/AGENTS.md");
+});
+
+test("saveProjectYaml omits unsafe summary file paths", () => {
+  const configPath = createConfigPath();
+
+  const absolute = saveProjectYaml(
+    {
+      id: "project-2",
+      name: "Tiller",
+      helmId: "local-helm",
+      summaryFile: "C:/Users/qjq/.ssh/config",
+    } as ProjectWithSummaryFile,
+    configPath,
+  );
+  assert.equal((absolute.project as ProjectWithSummaryFile).summaryFile, undefined);
+
+  const posixAbsolute = saveProjectYaml(
+    {
+      id: "project-4",
+      name: "Posix",
+      helmId: "local-helm",
+      summaryFile: "/etc/passwd",
+    } as ProjectWithSummaryFile,
+    configPath,
+  );
+  assert.equal((posixAbsolute.project as ProjectWithSummaryFile).summaryFile, undefined);
+
+  const traversal = saveProjectYaml(
+    {
+      id: "project-3",
+      name: "Other",
+      helmId: "local-helm",
+      summaryFile: "../README.md",
+    } as ProjectWithSummaryFile,
+    configPath,
+  );
+  assert.equal((traversal.project as ProjectWithSummaryFile).summaryFile, undefined);
 });
 
 test("saveProjectYaml migrates an existing generic project id directory to the project name", () => {

@@ -5,6 +5,7 @@ import {
   listAvailableProjects as listConfiguredProjects,
 } from "@tiller/agent-registry";
 import type { HelmSummary, ProjectSummary, WorktreeSummary } from "@tiller/shared";
+import { loadProjectSummarySource } from "./project-summary-source.js";
 
 type ProjectCatalogOptions = {
   configPath: string;
@@ -83,6 +84,7 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
     const cacheKey = [
       project.id,
       project.summary ?? "",
+      project.summaryFile ?? "",
       projectWorktrees
         .map((worktree) => `${worktree.path}:${worktree.summary ?? ""}`)
         .join("|"),
@@ -175,7 +177,11 @@ async function collectProjectSummarySource(
   project: ProjectSummary,
   projectWorktrees: WorktreeSummary[],
 ) {
-  const configuredSummary = sanitizeConfiguredProjectSummary(project.name, project.summary);
+  const summarySource = await loadProjectSummarySource({
+    project,
+    worktrees: projectWorktrees,
+  });
+  const configuredSummary = sanitizeConfiguredProjectSummary(project.name, summarySource?.content);
   const snippets = await Promise.all(
     projectWorktrees.slice(0, 3).map(async (worktree) => {
       const agents = await readOptionalSnippet(resolve(worktree.path, "AGENTS.md"), 2800);

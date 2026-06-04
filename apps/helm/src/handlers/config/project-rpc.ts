@@ -4,7 +4,7 @@ import {
 } from "@tiller/agent-registry";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
-import { listProjectFiles, resolveProjectFileRoot } from "./project-files";
+import { listProjectDirectories, listProjectFiles, resolveProjectFileRoot } from "./project-files";
 import {
   createProjectWorktree,
   listGitBranches,
@@ -83,6 +83,25 @@ export async function listFiles(
       cwd: params.cwd,
       files: [],
       message: error instanceof Error ? error.message : "Failed to list project files",
+    };
+  }
+}
+
+export async function listDirectories(params: { path?: string }) {
+  try {
+    const result = await listProjectDirectories(params.path);
+    return {
+      ok: true,
+      path: result.path,
+      directories: result.directories,
+      message: result.message,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      path: params.path,
+      directories: [],
+      message: error instanceof Error ? error.message : "Failed to list directories",
     };
   }
 }

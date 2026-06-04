@@ -12,6 +12,7 @@ export type ProjectSummary = {
   helmId: string;
   path?: string;
   summary?: string;
+  summaryFile?: string;
   gitBranches?: string[];
   gitCurrentBranch?: string;
   worktrees?: WorktreeSummary[];
