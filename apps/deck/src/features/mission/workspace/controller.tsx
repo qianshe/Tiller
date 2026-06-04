@@ -290,6 +290,9 @@ export function MissionWorktree(props: any) {
   });
   const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
   const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
+  const effectiveSelectedProjectId = focusedDraftWindow?.projectId ?? selectedProjectId;
+  const effectiveSelectedProjectName =
+    (projects as any[]).find((project) => project.id === effectiveSelectedProjectId)?.name ?? "未选项目";
   const effectiveSelectedDraftAgent = (agents as any[]).find((agent) => agent.id === effectiveSelectedAgentId) ?? selectedDraftAgent;
   const effectiveSelectedWorktree = (draftWorktreeOptions as any[]).find(
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(effectiveSelectedCwd ?? undefined),
@@ -671,6 +674,7 @@ export function MissionWorktree(props: any) {
               agentPickerRef={agentPickerRef}
               agentPickerOpen={agentPickerOpen}
               setAgentPickerOpen={setAgentPickerOpen}
+              selectedProjectName={effectiveSelectedProjectName}
               selectedWorktreeName={effectiveSelectedWorktreeName}
               draftWorktreeOptions={draftWorktreeOptions}
               selectedCwd={effectiveSelectedCwd}

@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode, UIEventHandler } from "react";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentPlan, SessionSummary } from "@tiller/shared";
 import {
   Icon,
@@ -207,6 +207,7 @@ export function SessionCard({
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
   const {
     bodyRef,
     showScrollToBottom,
@@ -260,6 +261,23 @@ export function SessionCard({
     updateScrollToBottomVisibility();
   });
 
+  useEffect(() => {
+    if (!cardMenuOpen) {
+      return;
+    }
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && menuContainerRef.current?.contains(target)) {
+        return;
+      }
+      setCardMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handleOutsidePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown);
+    };
+  }, [cardMenuOpen]);
+
   return (
     <article
       onClick={() => onFocus(session.id)}
@@ -306,7 +324,7 @@ export function SessionCard({
         </div>
         <div className="min-w-0 flex-1" />
         <StatusDot tone={statusTone} />
-        <div className="relative">
+        <div ref={menuContainerRef} className="relative">
           <button
             type="button"
             className={cn(
@@ -334,16 +352,6 @@ export function SessionCard({
               }}
               onClick={(event) => event.stopPropagation()}
             >
-              <MenuItem
-                checked={active}
-                icon="check"
-                onClick={() => {
-                  onFocus(session.id);
-                  setCardMenuOpen(false);
-                }}
-              >
-                聚焦会话
-              </MenuItem>
               <MenuItem
                 onClick={() => {
                   onRename(session);

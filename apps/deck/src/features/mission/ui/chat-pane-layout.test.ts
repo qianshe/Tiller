@@ -351,7 +351,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /onClear=\{onClearSession\}/);
   assert.doesNotMatch(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
   assert.doesNotMatch(chatPaneSource, /<MissionToolLoading\s/);
-  assert.match(chatPaneSource, /聚焦会话/);
+  assert.doesNotMatch(chatPaneSource, /聚焦会话/);
   assert.match(chatPaneSource, /关闭窗口/);
   assert.match(chatPaneSource, /title="关闭此 session"/);
   assert.match(chatPaneSource, /Icon name="more"/);
@@ -482,6 +482,7 @@ test("mission chat pane renders draft windows as first-class cards", () => {
   assert.match(worktreeSource, /const effectiveSelectedAgentId = focusedDraftWindow\?\.agentId \?\? selectedAgentId/);
   assert.match(worktreeSource, /const effectiveSelectedCwd = focusedDraftWindow\?\.cwd \?\? selectedCwd/);
   assert.match(worktreeSource, /selectedWorktreeName=\{effectiveSelectedWorktreeName\}/);
+  assert.match(worktreeSource, /selectedProjectName=\{effectiveSelectedProjectName\}/);
   assert.match(worktreeSource, /selectedCwd=\{effectiveSelectedCwd\}/);
   assert.match(worktreeSource, /selectedDraftAgent=\{effectiveSelectedDraftAgent\}/);
   assert.match(worktreeSource, /selectedAgentId=\{effectiveSelectedAgentId\}/);

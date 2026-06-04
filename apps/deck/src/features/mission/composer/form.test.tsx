@@ -14,6 +14,7 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     agentPickerRef: { current: null },
     agentPickerOpen: false,
     setAgentPickerOpen: () => undefined,
+    selectedProjectName: "Tiller",
     selectedWorktreeName: "main",
     draftWorktreeOptions: [],
     selectedCwd: "D:/repo",
@@ -103,6 +104,30 @@ test("composer follows the focused session context labels", () => {
   assert.match(html, /→ 聚焦会话/);
   assert.doesNotMatch(html, /Project A/);
   assert.doesNotMatch(html, /→ 活动会话/);
+});
+
+test("composer shows project in folder chip and switches worktree from branch chip", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: null,
+    contextSession: null,
+    selectedProjectName: "Tiller",
+    selectedWorktreeName: "feature/0.1.6",
+    currentGitBranch: "feature/0.1.6",
+    worktreePickerOpen: true,
+    draftWorktreeOptions: [
+      { name: "feature/0.1.6", path: "D:/myProject/tools/Tiller" },
+      { name: "feature/menu", path: "D:/myProject/tools/Tiller/.worktrees/menu" },
+    ],
+  })));
+
+  assert.match(html, /title="Tiller"/);
+  assert.match(html, /title="选择 Worktree"/);
+  assert.match(html, /aria-label="选择 Worktree"/);
+  assert.match(html, /feature\/menu/);
+  assert.ok(
+    html.indexOf('title="Tiller"') < html.indexOf('title="选择 Worktree"'),
+    "project chip should render before the branch worktree picker",
+  );
 });
 
 test("composer uses compact sidecar and action button sizing", () => {

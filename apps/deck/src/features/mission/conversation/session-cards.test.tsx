@@ -156,6 +156,13 @@ test("session scroll-to-bottom affordance moves above the floating plan", () => 
   assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingPlan\}/);
 });
 
+test("SessionCard menu omits redundant focus action and closes on outside pointer", () => {
+  assert.doesNotMatch(sessionCardsSource, /聚焦会话/);
+  assert.match(sessionCardsSource, /menuContainerRef/);
+  assert.match(sessionCardsSource, /document\.addEventListener\("pointerdown", handleOutsidePointerDown\)/);
+  assert.match(sessionCardsSource, /document\.removeEventListener\("pointerdown", handleOutsidePointerDown\)/);
+});
+
 test("SessionCard keeps a completed plan visible as a collapsed dock", () => {
   const html = renderToStaticMarkup(
     <SessionCard
