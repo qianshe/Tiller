@@ -50,8 +50,9 @@ const cleanupDialogSource = readFileSync(
   resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
   "utf8",
 );
+const chatPaneComponentSource = readFileSync(resolve(currentDir, "../conversation/chat-pane.tsx"), "utf8");
 const chatPaneSource = [
-  readFileSync(resolve(currentDir, "../conversation/chat-pane.tsx"), "utf8"),
+  chatPaneComponentSource,
   readFileSync(resolve(currentDir, "../conversation/session-cards.tsx"), "utf8"),
   readFileSync(resolve(currentDir, "../conversation/chat-pane-layout-model.ts"), "utf8"),
 ].join("\n");
@@ -371,23 +372,30 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneSource, /onDrop=\{handleDrop\}/);
   assert.match(chatPaneSource, /application\/x-tiller-session-id/);
   assert.match(chatPaneSource, /dragOver \? "inset 0 0 0 2px var\(--primary\)" : "none"/);
-  assert.match(chatPaneSource, /重命名/);
-  assert.match(chatPaneSource, /生成摘要/);
-  assert.match(chatPaneSource, /展示栏/);
-  assert.match(chatPaneSource, /Inspector 面板/);
-  assert.match(chatPaneSource, /导出对话/);
-  assert.match(chatPaneSource, /清理会话/);
+  assert.match(chatPaneSource, /aria-label="新建任务"/);
+  assert.match(chatPaneComponentSource, /projectOptions\.map\(\(project\) =>/);
+  assert.match(chatPaneComponentSource, /onCreateTask\(project\.id\)/);
+  assert.match(chatPaneComponentSource, /展示栏/);
+  assert.match(chatPaneComponentSource, /Inspector 面板/);
+  assert.match(chatPaneComponentSource, />\s*Thinking\s*<\/MenuItem>/);
+  assert.doesNotMatch(chatPaneComponentSource, />\s*重命名\s*<\/MenuItem>/);
+  assert.doesNotMatch(chatPaneComponentSource, />\s*生成摘要\s*<\/MenuItem>/);
+  assert.doesNotMatch(chatPaneComponentSource, />\s*导出对话\s*<\/MenuItem>/);
+  assert.doesNotMatch(chatPaneComponentSource, />\s*清理会话\s*<\/MenuItem>/);
   assert.doesNotMatch(chatPaneSource, /DropdownMenuContent/);
 });
 
-test("mission sidebar exposes search and new-task actions in the header", () => {
+test("mission sidebar exposes search while task creation lives in the workbench header", () => {
   assert.match(sidebarSource, /aria-label="搜索任务"/);
-  assert.match(sidebarSource, /aria-label="新建任务"/);
+  assert.doesNotMatch(sidebarSource, /aria-label="新建任务"/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /aria-label=\{`在 \$\{project\.name\} 下新建任务`\}/);
   assert.match(sidebarSource, /wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务/);
   // 新建任务只弹出草稿小窗口，不再打开侧边栏 Agent 下拉框
   assert.doesNotMatch(sidebarSource, /setAgentPickerOpen\(true\)/);
-  assert.match(sidebarSource, /openDraftChatWindow\(\{/);
-  assert.match(sidebarProjectNodeSource, /openDraftChatWindow\(\{/);
+  assert.match(worktreeSource, /const workbenchProjectOptions = \(projects as any\[\]\)\.map/);
+  assert.match(worktreeSource, /const openNewTaskFromWorkbench = \(projectId: string\) =>/);
+  assert.match(worktreeSource, /projectOptions=\{workbenchProjectOptions\}/);
+  assert.match(worktreeSource, /onCreateTask=\{openNewTaskFromWorkbench\}/);
   assert.match(sidebarSource, /runtimeOverviewItems\.length/);
   assert.match(sidebarSource, /暂无 ACP 连接。/);
   assert.match(sidebarSource, /<span className="font-medium">ACP<\/span>/);
@@ -436,8 +444,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /openSessions=/);
   assert.match(worktreeSource, /sidebarCollapsed=\{effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
-  assert.match(worktreeSource, /onToggleDisplay=/);
-  assert.match(worktreeSource, /onToggleInspector=/);
+  assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
+  assert.match(worktreeSource, /onCollapse=\{onToggleInspector\}/);
   assert.match(worktreeSource, /setMissionDisplayCollapsed/);
   assert.match(worktreeSource, /setMissionInspectorCollapsed/);
   assert.match(missionLayoutHookSource, /sidebar: \{ min: 0 \}/);
@@ -477,7 +485,7 @@ test("mission chat pane renders draft windows as first-class cards", () => {
   assert.match(worktreeSource, /selectedSessionId=\{missionChatSelectedSessionId\}/);
   assert.match(workspaceChatCompositionSource, /return focusedDraftWindow \? null : focusedRealSessionId \?\? activeSessionId \?\? null/);
   assert.match(worktreeSource, /onSelectDraftWindow=\{\(draftWindowId\) => \{[\s\S]*?setActiveSessionId\(null\);/);
-  assert.match(worktreeSource, /selectDraftAgent=\{selectAgentForDraftWindow\}/);
+  assert.match(worktreeSource, /onSelectDraftAgent=\{selectAgentForDraftWindow\}/);
   assert.match(worktreeSource, /submitPrompt=\{submitPromptFromFocusedWindow\}/);
   assert.match(worktreeSource, /const effectiveSelectedAgentId = focusedDraftWindow\?\.agentId \?\? selectedAgentId/);
   assert.match(worktreeSource, /const effectiveSelectedCwd = focusedDraftWindow\?\.cwd \?\? selectedCwd/);
@@ -525,7 +533,7 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.match(sidebarSource, /bg-surface-sunken border-r border-border-ghost/);
   assert.match(sidebarSource, /mission-tree-switcher flex-1 overflow-auto p-1/);
   assert.doesNotMatch(sidebarSource, /Helm → Project → Session/);
-  assert.match(sidebarProjectNodeSource, /Button/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-new-inline/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
   assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
@@ -917,8 +925,12 @@ test("mission inspector diff rows stay compact on mobile", () => {
 });
 
 test("mission worktree uses default-closed display pane behavior", () => {
-  assert.match(worktreeSource, /const hasSelectedDisplayDiff = Boolean/);
+  assert.match(worktreeSource, /const hasSelectedDisplayDiff = activeDiffs\.some/);
+  assert.match(worktreeSource, /file\.path === selectedMissionDiffFilePath/);
+  assert.match(worktreeSource, /\(openedMissionDiffFilePaths \?\? \[\]\)\.includes\(file\.path\)/);
   assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed \|\| !hasSelectedDisplayDiff/);
   assert.match(worktreeSource, /displayCollapsed=\{displayPaneCollapsed\}/);
+  assert.match(worktreeSource, /canToggleDisplay=\{hasSelectedDisplayDiff\}/);
+  assert.match(chatPaneComponentSource, /disabled=\{!canToggleDisplay\}/);
   assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);
 });

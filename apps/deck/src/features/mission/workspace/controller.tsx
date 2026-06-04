@@ -1,4 +1,4 @@
-import type { SessionSummary } from "@tiller/shared";
+import type { FileDiffSummary, SessionSummary } from "@tiller/shared";
 import { useState } from "react";
 import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
@@ -332,6 +332,9 @@ export function MissionWorktree(props: any) {
     submitPrompt,
   });
   const onToggleDisplay = () => {
+    if (!hasSelectedDisplayDiff) {
+      return;
+    }
     setMissionDisplayCollapsed((current: boolean) => !current);
   };
   const onToggleInspector = () => {
@@ -356,6 +359,23 @@ export function MissionWorktree(props: any) {
       ...current,
       [sessionId]: planKey,
     }));
+  };
+  const workbenchProjectOptions = (projects as any[]).map((project) => ({
+    id: project.id,
+    name: project.name ?? project.id,
+  }));
+  const openNewTaskFromWorkbench = (projectId: string) => {
+    const targetProject =
+      (projects as any[]).find((project) => project.id === projectId);
+    if (!targetProject) {
+      return;
+    }
+    setExpandedMissionProjectIds((current: Set<string>) => new Set([...current, targetProject.id]));
+    openDraftChatWindow({
+      projectId: targetProject.id,
+      cwd: targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null,
+      agentId: null,
+    });
   };
   const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
   const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
@@ -416,8 +436,10 @@ export function MissionWorktree(props: any) {
   function selectAdjacentMissionMobilePane(direction: -1 | 1) {
     setSelectedMissionMobilePane(resolveAdjacentMissionMobilePane(resolvedMissionMobilePane, direction));
   }
-  const hasSelectedDisplayDiff = Boolean(
-    selectedMissionDiffFilePath || (openedMissionDiffFilePaths?.length ?? 0) > 0,
+  const hasSelectedDisplayDiff = activeDiffs.some(
+    (file: FileDiffSummary) =>
+      file.path === selectedMissionDiffFilePath ||
+      (openedMissionDiffFilePaths ?? []).includes(file.path),
   );
   const displayPaneCollapsed = effectiveDisplayCollapsed || !hasSelectedDisplayDiff;
   const missionLayoutClassName = joinClassNames([
@@ -551,18 +573,7 @@ export function MissionWorktree(props: any) {
           sessionCountsByProject={sessionCountsByProject}
           currentGitBranch={currentGitBranch}
           missionDiffCount={missionDiffCount}
-          agents={agents}
           runtimeOverviewItems={runtimeOverviewItems}
-          selectedAgentId={selectedAgentId}
-          agentPickerOpen={agentPickerOpen}
-          selectDraftAgent={selectAgentForDraftWindow}
-          openDraftChatWindow={openDraftChatWindow}
-          setSelectedMissionHelmId={setSelectedMissionHelmId}
-          setSelectedProjectId={setSelectedProjectId}
-          setSelectedCwd={setSelectedCwd}
-          setSelectedAgentId={setSelectedAgentId}
-          setAgentPickerOpen={setAgentPickerOpen}
-          setExpandedMissionProjectIds={setExpandedMissionProjectIds}
           setActiveSessionId={setActiveSessionId}
           statuses={statuses}
           copy={copy}
@@ -639,10 +650,13 @@ export function MissionWorktree(props: any) {
           inspectorCollapsed={effectiveInspectorCollapsed}
           sidebarCollapsed={effectiveSidebarCollapsed}
           showThinking={technicalPanels.showMissionThinking}
+          canToggleDisplay={hasSelectedDisplayDiff}
+          projectOptions={workbenchProjectOptions}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
           onToggleInspector={onToggleInspector}
           onToggleThinking={toggleMissionThinking}
+          onCreateTask={openNewTaskFromWorkbench}
           onFocusSession={openChatSession}
           onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}

@@ -592,6 +592,7 @@ export function MenuItem({
   icon,
   onClick,
   checked,
+  disabled,
   tone,
   kbd,
 }: {
@@ -599,6 +600,7 @@ export function MenuItem({
   icon?: ComponentProps<typeof Icon>["name"];
   onClick?: () => void;
   checked?: boolean;
+  disabled?: boolean;
   tone?: "destructive";
   kbd?: string;
 }) {
@@ -606,8 +608,12 @@ export function MenuItem({
     <button
       role="menuitem"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex h-7 w-full items-center gap-2 px-2.5 text-left text-action transition-colors hover:bg-surface-sunken",
+        "flex h-7 w-full items-center gap-2 px-2.5 text-left text-action transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-50"
+          : "hover:bg-surface-sunken",
         tone === "destructive" && "text-destructive",
       )}
     >

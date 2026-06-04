@@ -7,7 +7,6 @@ import type {
 } from "react";
 import { useMemo, useState } from "react";
 import type {
-  AcpAgentProvider,
   HelmSummary,
   ProjectSummary,
   SessionStatus,
@@ -64,18 +63,7 @@ type MissionSidebarProps = {
   sessionCountsByProject: Record<string, number>;
   currentGitBranch: string | null;
   missionDiffCount: number;
-  agents: AcpAgentProvider[];
   runtimeOverviewItems: MissionRuntimeOverviewItem[];
-  selectedAgentId: string | null;
-  agentPickerOpen: boolean;
-  selectDraftAgent: (agentId: string) => void;
-  openDraftChatWindow: (input: { projectId: string; cwd: string | null; agentId?: string | null }) => void;
-  setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
-  setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
-  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
-  setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
-  setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
-  setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
   copy: { status: Record<SessionStatus, string> };
@@ -116,18 +104,7 @@ export function MissionSidebar({
   expandedMissionProjectIds,
   sessions,
   sessionCountsByProject,
-  agents,
   runtimeOverviewItems,
-  selectedAgentId,
-  agentPickerOpen,
-  selectDraftAgent,
-  openDraftChatWindow,
-  setSelectedMissionHelmId,
-  setSelectedProjectId,
-  setSelectedCwd,
-  setSelectedAgentId,
-  setAgentPickerOpen,
-  setExpandedMissionProjectIds,
   setActiveSessionId,
   statuses,
   copy,
@@ -158,28 +135,6 @@ export function MissionSidebar({
         : projects,
     [normalizedSearchQuery, projects, sessions],
   );
-  const openNewTaskFromSidebar = () => {
-    const targetProject =
-      projects.find((project) => project.id === missionSelectedProjectId) ??
-      searchableProjects[0] ??
-      projects[0];
-    if (!targetProject) {
-      return;
-    }
-    setSelectedMissionHelmId(targetProject.helmId);
-    openDraftChatWindow({
-      projectId: targetProject.id,
-      cwd: targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null,
-      agentId: null,
-    });
-    setSelectedProjectId(targetProject.id);
-    setSelectedCwd(targetProject.path ?? targetProject.worktrees?.[0]?.path ?? null);
-    setSelectedAgentId(null);
-    setExpandedMissionProjectIds(
-      (current) => new Set([...current, targetProject.id]),
-    );
-    setActiveSessionId(null);
-  };
   const sidebarClassName = [
     "chat-session-sidebar mission-pane mission-pane-sidebar col-start-1 col-end-2 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken border-r border-border-ghost shadow-none",
     effectiveSidebarCollapsed ? "collapsed hidden" : "",
@@ -211,18 +166,6 @@ export function MissionSidebar({
                 title="搜索任务"
               >
                 <Icon name="search" size={12} />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:text-primary"
-                onClick={openNewTaskFromSidebar}
-                disabled={!projects.length}
-                aria-label="新建任务"
-                title="新建任务"
-              >
-                <Icon name="plus" size={12} />
               </Button>
               <Button
                 type="button"
@@ -342,19 +285,6 @@ export function MissionSidebar({
                               selectedProject={selectedProject}
                               projectExpanded={projectExpanded}
                               sessionCountsByProject={sessionCountsByProject}
-                              agents={agents}
-                              selectedAgentId={selectedAgentId}
-                              agentPickerOpen={agentPickerOpen}
-                              selectDraftAgent={selectDraftAgent}
-                              openDraftChatWindow={openDraftChatWindow}
-                              setSelectedMissionHelmId={setSelectedMissionHelmId}
-                              setSelectedProjectId={setSelectedProjectId}
-                              setSelectedCwd={setSelectedCwd}
-                              setSelectedAgentId={setSelectedAgentId}
-                              setAgentPickerOpen={setAgentPickerOpen}
-                              setExpandedMissionProjectIds={
-                                setExpandedMissionProjectIds
-                              }
                               setActiveSessionId={setActiveSessionId}
                               statuses={statuses}
                               copy={copy}

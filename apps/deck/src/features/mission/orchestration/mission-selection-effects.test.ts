@@ -64,10 +64,11 @@ test("mission draft agent selection resets model before creating an ACP session"
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/draft"/);
 });
 
-test("mission project plus opens only the draft window without a sidebar agent dropdown", () => {
-  // 新建任务仅打开草稿小窗口（Agent 选择在小窗口内完成），不再渲染侧边栏 Agent 下拉框
-  assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
-  assert.match(sidebarSourceText, /openDraftChatWindow\(\{/);
+test("mission workbench header opens the draft window without a sidebar agent dropdown", () => {
+  // 新建任务入口收敛到工作台 header，Agent 选择在小窗口内完成。
+  assert.doesNotMatch(sidebarSourceText, />\s*＋\s*<\/Button>/);
+  assert.match(worktreeSourceText, /const openNewTaskFromWorkbench = \(projectId: string\) =>/);
+  assert.match(worktreeSourceText, /openDraftChatWindow\(\{/);
   assert.doesNotMatch(sidebarSourceText, /mission-tree-agent-menu/);
   assert.doesNotMatch(sidebarSourceText, /setAgentPickerOpen\(true\)/);
   assert.match(composerShellSourceText, /aria-label="打开任务设置"/);

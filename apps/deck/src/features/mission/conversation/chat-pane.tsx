@@ -46,6 +46,10 @@ import {
 
 type MissionChatPaneCopy = (typeof UI_COPY)[Locale];
 type MissionToolActivity = MissionToolLoadingState["activity"];
+type MissionProjectOption = {
+  id: string;
+  name: string;
+};
 
 // 距底部小于该像素阈值时视为"贴底"，流式与工具加载才自动跟随；超过则尊重用户上滑。
 const STICK_TO_BOTTOM_THRESHOLD = 80;
@@ -94,10 +98,13 @@ type MissionChatPaneProps = {
   inspectorCollapsed: boolean;
   sidebarCollapsed: boolean;
   showThinking: boolean;
+  canToggleDisplay: boolean;
+  projectOptions: MissionProjectOption[];
   onExpandSidebar: () => void;
   onToggleDisplay: () => void;
   onToggleInspector: () => void;
   onToggleThinking: () => void;
+  onCreateTask: (projectId: string) => void;
   onFocusSession: (sessionId: string) => void;
   onSelectDraftWindow?: (draftWindowId: string) => void;
   onSelectDraftAgent?: (agentId: string) => void;
@@ -154,10 +161,13 @@ export function MissionChatPane({
   inspectorCollapsed,
   sidebarCollapsed,
   showThinking,
+  canToggleDisplay,
+  projectOptions,
   onExpandSidebar,
   onToggleDisplay,
   onToggleInspector,
   onToggleThinking,
+  onCreateTask,
   onFocusSession,
   onSelectDraftWindow,
   onSelectDraftAgent,
@@ -175,10 +185,13 @@ export function MissionChatPane({
   onDeleteQueuedPrompt,
   children,
 }: MissionChatPaneProps) {
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const sessionGridRef = useRef<HTMLDivElement | null>(null);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
+  const canCreateTask = projectOptions.length > 0;
   const sessionStateSources = {
     activeSessionId: activeSession?.id ?? null,
     activeSessionMessages,
@@ -339,17 +352,21 @@ export function MissionChatPane({
   }, [draftWindow, openSessions.length]);
 
   useEffect(() => {
-    if (!menuOpen) {
+    if (!menuOpen && !projectMenuOpen) {
       return;
     }
     const handlePointerDown = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
+      if (projectMenuRef.current && !projectMenuRef.current.contains(event.target as Node)) {
+        setProjectMenuOpen(false);
+      }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setMenuOpen(false);
+        setProjectMenuOpen(false);
       }
     };
     window.addEventListener("mousedown", handlePointerDown);
@@ -358,7 +375,7 @@ export function MissionChatPane({
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, projectMenuOpen]);
 
   useEffect(() => {
     if (!shouldLockChatMainScroll) {
@@ -513,6 +530,55 @@ export function MissionChatPane({
           {openSessions.length ? `${openSessions.length} 会话` : "0 会话"}
         </span>
         <div className="flex-1" />
+        <div ref={projectMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setProjectMenuOpen((current) => !current);
+              setMenuOpen(false);
+            }}
+            disabled={!canCreateTask}
+            className={cn(
+              "grid h-6 w-6 place-items-center rounded transition-colors",
+              projectMenuOpen
+                ? "bg-surface-emphasis text-foreground"
+                : canCreateTask
+                  ? "text-muted-foreground hover:bg-surface-sunken hover:text-primary"
+                  : "cursor-not-allowed text-muted-foreground/35",
+            )}
+            aria-haspopup="menu"
+            aria-expanded={projectMenuOpen}
+            aria-label="新建任务"
+            title={canCreateTask ? "选择项目创建任务" : "没有可用项目"}
+          >
+            <Icon name="plus" size={12} />
+          </button>
+          {projectMenuOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
+              style={{
+                background: "var(--popover-glass)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+                animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              {projectOptions.map((project) => (
+                <MenuItem
+                  key={project.id}
+                  icon="folder"
+                  onClick={() => {
+                    onCreateTask(project.id);
+                    setProjectMenuOpen(false);
+                  }}
+                >
+                  {project.name}
+                </MenuItem>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div ref={menuRef} className="relative">
           <button
             type="button"
@@ -540,30 +606,13 @@ export function MissionChatPane({
               }}
             >
               <MenuItem
-                onClick={() => {
-                  if (activeSession) {
-                    onRenameSession(activeSession);
-                  }
-                  setMenuOpen(false);
-                }}
-              >
-                重命名
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  if (activeSession) {
-                    onFocusSession(activeSession.id);
-                  }
-                  setMenuOpen(false);
-                }}
-              >
-                生成摘要
-              </MenuItem>
-              <div className="mx-1 my-1 h-px bg-border-ghost" />
-              <MenuItem
                 checked={!displayCollapsed}
+                disabled={!canToggleDisplay}
                 icon="terminal"
                 onClick={() => {
+                  if (!canToggleDisplay) {
+                    return;
+                  }
                   onToggleDisplay();
                   setMenuOpen(false);
                 }}
@@ -589,21 +638,6 @@ export function MissionChatPane({
                 }}
               >
                 Thinking
-              </MenuItem>
-              <div className="mx-1 my-1 h-px bg-border-ghost" />
-              <MenuItem onClick={() => setMenuOpen(false)} kbd="⌘E">
-                导出对话
-              </MenuItem>
-              <MenuItem
-                tone="destructive"
-                onClick={() => {
-                  if (activeSession) {
-                    onClearSession(activeSession);
-                  }
-                  setMenuOpen(false);
-                }}
-              >
-                清理会话
               </MenuItem>
             </div>
           ) : null}

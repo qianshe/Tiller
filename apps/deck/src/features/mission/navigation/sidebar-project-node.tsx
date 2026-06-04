@@ -1,11 +1,10 @@
 import type {
-  AcpAgentProvider,
   ProjectSummary,
   SessionStatus,
   SessionSummary,
 } from "@tiller/shared";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { Button, Icon } from "../../../shared/ui";
+import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { MissionMobilePane } from "../hooks/layout";
 import { resolveSessionProjectId } from "../utils/session-derivations";
@@ -18,17 +17,6 @@ type SidebarProjectNodeProps = {
   selectedProject: boolean;
   projectExpanded: boolean;
   sessionCountsByProject: Record<string, number>;
-  agents: AcpAgentProvider[];
-  selectedAgentId: string | null;
-  agentPickerOpen: boolean;
-  selectDraftAgent: (agentId: string) => void;
-  openDraftChatWindow: (input: { projectId: string; cwd: string | null; agentId?: string | null }) => void;
-  setSelectedMissionHelmId: Dispatch<SetStateAction<string | null>>;
-  setSelectedProjectId: Dispatch<SetStateAction<string | null>>;
-  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
-  setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
-  setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
-  setExpandedMissionProjectIds: Dispatch<SetStateAction<Set<string>>>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
   copy: { status: Record<SessionStatus, string> };
@@ -56,17 +44,6 @@ export function SidebarProjectNode({
   selectedProject,
   projectExpanded,
   sessionCountsByProject,
-  agents,
-  selectedAgentId,
-  agentPickerOpen,
-  selectDraftAgent,
-  openDraftChatWindow,
-  setSelectedMissionHelmId,
-  setSelectedProjectId,
-  setSelectedCwd,
-  setSelectedAgentId,
-  setAgentPickerOpen,
-  setExpandedMissionProjectIds,
   setActiveSessionId,
   statuses,
   copy,
@@ -91,7 +68,7 @@ export function SidebarProjectNode({
     <div key={project.id} className="mission-tree-group grid gap-1" role="group">
       <div
         className={cn(
-          "mission-tree-project-row group/project relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1",
+          "mission-tree-project-row relative grid items-center",
           selectedProject && "active bg-surface-emphasis/50",
         )}
       >
@@ -118,32 +95,6 @@ export function SidebarProjectNode({
             {sessionCountsByProject[project.id] ?? 0}
           </span>
         </button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="mission-tree-new-inline shrink-0 rounded text-muted-foreground opacity-80 hover:text-primary group-hover/project:opacity-100"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            setSelectedMissionHelmId(project.helmId);
-            openDraftChatWindow({
-              projectId: project.id,
-              cwd: project.path ?? project.worktrees?.[0]?.path ?? null,
-              agentId: null,
-            });
-            setSelectedProjectId(project.id);
-            setSelectedCwd(project.path ?? project.worktrees?.[0]?.path ?? null);
-            setSelectedAgentId(null);
-            setExpandedMissionProjectIds(
-              (current) => new Set([...current, project.id]),
-            );
-            setActiveSessionId(null);
-          }}
-          aria-label={`在 ${project.name} 下新建任务`}
-          title="新建任务"
-        >
-          ＋
-        </Button>
       </div>
       {projectExpanded ? (
         <div

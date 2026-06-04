@@ -521,6 +521,7 @@ export function App() {
   }
   function openDiffDetail(path: string) {
     panelPages.openDiffFile(path);
+    layout.setMissionDisplayCollapsed(false);
     layout.setSelectedMissionMobilePane("display");
   }
   function toggleExpandedMessage(messageId: string) {

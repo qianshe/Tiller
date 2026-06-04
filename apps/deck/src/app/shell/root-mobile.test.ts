@@ -9,5 +9,8 @@ const rootSource = readFileSync(resolve(currentDir, "root.tsx"), "utf8");
 
 test("mobile diff selection moves the mission worktree to the display pane", () => {
   assert.match(rootSource, /function openDiffDetail\(path: string\)/);
-  assert.match(rootSource, /panelPages\.openDiffFile\(path\);\s*layout\.setSelectedMissionMobilePane\("display"\);/s);
+  assert.match(
+    rootSource,
+    /panelPages\.openDiffFile\(path\);\s*layout\.setMissionDisplayCollapsed\(false\);\s*layout\.setSelectedMissionMobilePane\("display"\);/s,
+  );
 });

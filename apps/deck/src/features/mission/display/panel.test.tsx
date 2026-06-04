@@ -133,3 +133,34 @@ test("mission display panel keeps the v6 empty diff viewer chrome", () => {
   assert.doesNotMatch(html, /Diff 详情/);
   assert.match(html, /还没有文件变更。/);
 });
+
+test("mission display panel hides stale file paths when there are no diffs", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "diff-detail", title: "Diff 详情" }],
+      selectedPage: { id: "diff-detail", title: "Diff 详情" },
+      openedDiffFilePaths: ["apps/deck/src/features/mission/conversation/chat-pane.tsx"],
+      overviewItems: [],
+      runtimeOverviewItems: [],
+      selectedDiffFilePath: "apps/deck/src/features/mission/conversation/chat-pane.tsx",
+      diffs: [],
+      noDiffSummary: "还没有文件变更。",
+      logbookContent: null,
+      onAddPage: noop,
+      onSelectPage: noop,
+      onDragStart: noop,
+      onDrop: noop,
+      onRenamePage: noop,
+      onMovePage: noop,
+      onDeletePage: noop,
+      onOpenDiffDetail: noop,
+      onCloseDiffFile: noop,
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, /还没有文件变更。/);
+  assert.match(html, /未选择文件/);
+  assert.doesNotMatch(html, /chat-pane\.tsx/);
+});

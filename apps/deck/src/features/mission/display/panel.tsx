@@ -72,8 +72,8 @@ export function MissionDisplayPanel({
   const renderSelectedPage = () => {
     return renderDiffDetailPage({ selectedDiffFilePath: selectedDisplayFilePath, diffs, noDiffSummary });
   };
-  const displayFilePath = selectedDisplayFilePath ?? "未选择文件";
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDisplayFilePath);
+  const displayFilePath = selectedDisplayDiff ? selectedDisplayFilePath : "未选择文件";
   const displayTabs = resolveDisplayTabs(diffs, openedDiffFilePaths, selectedDisplayFilePath, selectedPage);
   return (
     <aside
