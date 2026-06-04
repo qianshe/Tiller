@@ -14,7 +14,10 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     agentPickerRef: { current: null },
     agentPickerOpen: false,
     setAgentPickerOpen: () => undefined,
+    selectedProjectId: "tiller",
     selectedProjectName: "Tiller",
+    draftProjectOptions: [],
+    selectDraftProject: () => undefined,
     selectedWorktreeName: "main",
     draftWorktreeOptions: [],
     selectedCwd: "D:/repo",
@@ -110,7 +113,12 @@ test("composer shows project in folder chip and switches worktree from branch ch
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     activeSession: null,
     contextSession: null,
+    selectedProjectId: "tiller",
     selectedProjectName: "Tiller",
+    draftProjectOptions: [
+      { id: "tiller", name: "Tiller", path: "D:/myProject/tools/Tiller" },
+      { id: "sandbox", name: "Sandbox", path: "D:/myProject/tools/tiller-test-sandbox" },
+    ],
     selectedWorktreeName: "feature/0.1.6",
     currentGitBranch: "feature/0.1.6",
     worktreePickerOpen: true,
@@ -120,12 +128,13 @@ test("composer shows project in folder chip and switches worktree from branch ch
     ],
   })));
 
-  assert.match(html, /title="Tiller"/);
+  assert.match(html, /title="选择项目"/);
+  assert.match(html, /aria-label="选择项目"/);
   assert.match(html, /title="选择 Worktree"/);
   assert.match(html, /aria-label="选择 Worktree"/);
   assert.match(html, /feature\/menu/);
   assert.ok(
-    html.indexOf('title="Tiller"') < html.indexOf('title="选择 Worktree"'),
+    html.indexOf('title="选择项目"') < html.indexOf('title="选择 Worktree"'),
     "project chip should render before the branch worktree picker",
   );
 });

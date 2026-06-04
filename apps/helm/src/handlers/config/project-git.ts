@@ -140,11 +140,26 @@ export async function refreshProjectGitBranches(
       }
       const gitRoot = await resolveGitRoot(root);
       const gitInfo = await listGitBranches(gitRoot);
+      let nextProject = project;
       if (
         gitInfo.currentBranch !== project.gitCurrentBranch ||
         gitInfo.branches.join("\0") !== (project.gitBranches ?? []).join("\0")
       ) {
         persistProjectGitInfo(project, gitInfo, root, configPath);
+        nextProject = {
+          ...project,
+          gitBranches: gitInfo.branches,
+          gitCurrentBranch: gitInfo.currentBranch,
+        };
+        updated += 1;
+      }
+      const gitWorktreeWorktrees = await listGitWorktreeWorktrees(nextProject, gitRoot);
+      const projectWithDiscoveredWorktrees = persistDiscoveredWorktrees(
+        nextProject,
+        gitWorktreeWorktrees,
+        configPath,
+      );
+      if (projectWithDiscoveredWorktrees !== nextProject) {
         updated += 1;
       }
     } catch (error) {
@@ -152,6 +167,23 @@ export async function refreshProjectGitBranches(
     }
   }
   return { updated, failures };
+}
+
+export function persistDiscoveredWorktrees(
+  project: ProjectSummary,
+  worktrees: WorktreeSummary[],
+  configPath: string,
+) {
+  const preserved = (project.worktrees ?? []).filter((worktree) => worktree.kind !== "git-worktree");
+  const nextWorktrees = mergeWorktrees(preserved, worktrees);
+  const currentSnapshot = (project.worktrees ?? []).map(worktreeFingerprint).join("\0");
+  const nextSnapshot = nextWorktrees.map(worktreeFingerprint).join("\0");
+  if (currentSnapshot === nextSnapshot) {
+    return project;
+  }
+  const nextProject = { ...project, worktrees: nextWorktrees };
+  saveProjectYaml(stripRuntimeProjectSummary(nextProject), configPath);
+  return nextProject;
 }
 
 export async function createProjectWorktree(
@@ -189,6 +221,15 @@ function mergeWorktrees(left: WorktreeSummary[], right: WorktreeSummary[]) {
 
 function normalizePath(path: string | undefined) {
   return path?.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
+}
+
+function worktreeFingerprint(worktree: WorktreeSummary) {
+  return [
+    normalizePath(worktree.path) ?? "",
+    worktree.name ?? "",
+    worktree.branch ?? "",
+    worktree.kind ?? "",
+  ].join("\u001f");
 }
 
 function stripRuntimeProjectSummary(project: ProjectSummary): ProjectSummary {

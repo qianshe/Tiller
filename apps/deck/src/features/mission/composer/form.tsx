@@ -17,6 +17,7 @@ import type {
   AcpAgentProvider,
   AgentPromptImageContent,
   AvailableCommand,
+  ProjectSummary,
   SessionConfigOption,
   SessionReasoningEffort,
   SessionSummary,
@@ -42,7 +43,10 @@ type MissionComposerProps = {
   agentPickerRef: MutableRefObject<HTMLDivElement | null>;
   agentPickerOpen: boolean;
   setAgentPickerOpen: Dispatch<SetStateAction<boolean>>;
+  selectedProjectId?: string | null;
   selectedProjectName?: string | null;
+  draftProjectOptions: ProjectSummary[];
+  selectDraftProject: (projectId: string) => void;
   selectedWorktreeName: string;
   draftWorktreeOptions: WorktreeSummary[];
   selectedCwd: string | null;
@@ -126,7 +130,10 @@ export function MissionComposer({
   agentPickerRef,
   agentPickerOpen,
   setAgentPickerOpen,
+  selectedProjectId,
   selectedProjectName,
+  draftProjectOptions,
+  selectDraftProject,
   selectedWorktreeName,
   draftWorktreeOptions,
   selectedCwd,
@@ -187,6 +194,7 @@ export function MissionComposer({
   canSend,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [contextPicker, setContextPicker] = useState<"project" | "worktree" | null>("worktree");
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const activeSessionModelKnown = Boolean(activeSession?.model?.trim());
   const modelConfigMissing = activeSession
@@ -206,7 +214,16 @@ export function MissionComposer({
     ? composerSession.worktreeName?.trim() || currentGitBranch || null
     : selectedWorktreeName.trim() || null;
   const composerAgentLabel = composerSession?.agentName ?? selectedDraftAgent?.name ?? "未选择 ACP";
+  const projectPickerAvailable = !composerSession && draftProjectOptions.length > 0;
   const worktreePickerAvailable = !composerSession && draftWorktreeOptions.length > 0;
+  const projectPickerOpen = worktreePickerOpen && contextPicker === "project";
+  const draftWorktreePickerOpen = worktreePickerOpen && contextPicker === "worktree";
+  const toggleContextPicker = (picker: "project" | "worktree") => {
+    const shouldOpen = contextPicker !== picker || !worktreePickerOpen;
+    setAgentPickerOpen(false);
+    setContextPicker(shouldOpen ? picker : null);
+    setWorktreePickerOpen(shouldOpen);
+  };
 
   return (
     <div
@@ -220,15 +237,52 @@ export function MissionComposer({
         data-testid="composer-form"
       >
         <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
-          <span
-            className="h-5 px-1.5 rounded text-2xs bg-surface flex items-center gap-1 min-w-0"
-            title={composerProjectLabel}
-          >
-            <Icon name="folder" size={10} />
-            <span className="truncate">{composerProjectLabel}</span>
-          </span>
+          <div ref={worktreePickerRef} className="flex min-w-0 items-center gap-1.5">
+            <div className="relative min-w-0">
+              <button
+                type="button"
+                className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0"
+                onClick={() => {
+                  if (!projectPickerAvailable) {
+                    return;
+                  }
+                  toggleContextPicker("project");
+                }}
+                aria-haspopup={projectPickerAvailable ? "listbox" : undefined}
+                aria-expanded={projectPickerAvailable ? projectPickerOpen : undefined}
+                aria-label={projectPickerAvailable ? "选择项目" : undefined}
+                title={projectPickerAvailable ? "选择项目" : composerProjectLabel}
+              >
+                <Icon name="folder" size={10} />
+                <span className="truncate">{composerProjectLabel}</span>
+              </button>
+              {projectPickerAvailable && projectPickerOpen ? (
+                <div
+                  className="absolute bottom-full left-0 z-50 mb-2 grid max-h-64 min-w-56 gap-1 overflow-auto rounded-lg border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
+                  role="listbox"
+                  aria-label="选择项目"
+                >
+                  {draftProjectOptions.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      role="option"
+                      aria-selected={project.id === selectedProjectId}
+                      className={`rounded-md px-2.5 py-1.5 text-left text-section transition hover:bg-primary-soft hover:text-primary ${project.id === selectedProjectId ? "bg-primary-soft text-primary" : "text-foreground"}`}
+                      onClick={() => {
+                        selectDraftProject(project.id);
+                        setContextPicker(null);
+                      }}
+                    >
+                      <strong className="block truncate">{project.name}</strong>
+                      <span className="block truncate font-mono text-2xs text-muted-foreground">{project.path}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           {composerWorktreeLabel ? (
-            <div ref={worktreePickerRef} className="relative min-w-0">
+            <div className="relative min-w-0">
               <button
                 type="button"
                 className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0"
@@ -236,18 +290,17 @@ export function MissionComposer({
                   if (!worktreePickerAvailable) {
                     return;
                   }
-                  setAgentPickerOpen(false);
-                  setWorktreePickerOpen((current) => !current);
+                  toggleContextPicker("worktree");
                 }}
                 aria-haspopup={worktreePickerAvailable ? "listbox" : undefined}
-                aria-expanded={worktreePickerAvailable ? worktreePickerOpen : undefined}
+                aria-expanded={worktreePickerAvailable ? draftWorktreePickerOpen : undefined}
                 aria-label={worktreePickerAvailable ? "选择 Worktree" : undefined}
                 title={worktreePickerAvailable ? "选择 Worktree" : composerWorktreeLabel}
               >
                 <Icon name="branch" size={10} />
                 <span className="truncate">{composerWorktreeLabel}</span>
               </button>
-              {worktreePickerAvailable && worktreePickerOpen ? (
+              {worktreePickerAvailable && draftWorktreePickerOpen ? (
                 <div
                   className="absolute bottom-full left-0 z-50 mb-2 grid max-h-64 min-w-48 gap-1 overflow-auto rounded-lg border border-border-ghost bg-popover-glass p-1 shadow-ambient backdrop-blur-2xl"
                   role="listbox"
@@ -260,7 +313,10 @@ export function MissionComposer({
                       role="option"
                       aria-selected={worktree.path === selectedCwd}
                       className={`rounded-md px-2.5 py-1.5 text-left text-section transition hover:bg-primary-soft hover:text-primary ${worktree.path === selectedCwd ? "bg-primary-soft text-primary" : "text-foreground"}`}
-                      onClick={() => selectDraftWorktree(worktree.path)}
+                      onClick={() => {
+                        selectDraftWorktree(worktree.path);
+                        setContextPicker(null);
+                      }}
                     >
                       <strong className="block truncate">{worktree.name ?? worktree.path}</strong>
                       <span className="block truncate font-mono text-2xs text-muted-foreground">{worktree.path}</span>
@@ -270,6 +326,7 @@ export function MissionComposer({
               ) : null}
             </div>
           ) : null}
+          </div>
           <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
             <Icon name="server" size={10} />
             <span className="truncate">{composerAgentLabel}</span>

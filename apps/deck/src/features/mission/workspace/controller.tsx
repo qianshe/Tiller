@@ -102,6 +102,7 @@ export function MissionWorktree(props: any) {
     activeProfileId,
     connection,
     toggleMissionHelmNode,
+    selectProject,
     missionSelectedProjectId,
     expandedMissionProjectIds,
     sessions,
@@ -331,6 +332,39 @@ export function MissionWorktree(props: any) {
     selectDraftAgent,
     submitPrompt,
   });
+  const selectDraftWorktreeForFocusedWindow = (worktreePath: string) => {
+    selectDraftWorktree(worktreePath);
+    if (!focusedDraftWindow) {
+      return;
+    }
+    setDraftChatWindow?.((current: any) =>
+      current?.id === focusedDraftWindow.id ? { ...current, cwd: worktreePath } : current,
+    );
+  };
+  const selectDraftProjectForFocusedWindow = (projectId: string) => {
+    const project = (projects as any[]).find((item) => item.id === projectId);
+    if (!project) {
+      return;
+    }
+    const worktreePaths = ((project.worktrees ?? []) as any[])
+      .map((worktree) => worktree.path)
+      .filter(Boolean);
+    const currentCwd = focusedDraftWindow?.cwd ?? selectedCwd;
+    const nextCwd = worktreePaths.includes(currentCwd ?? "")
+      ? currentCwd
+      : (project.path ?? worktreePaths[0] ?? null);
+    selectProject(projectId);
+    if (!focusedDraftWindow) {
+      return;
+    }
+    const nextDraftWindowId = `draft:${projectId}`;
+    setDraftChatWindow?.((current: any) =>
+      current?.id === focusedDraftWindow.id
+        ? { ...current, id: nextDraftWindowId, projectId, cwd: nextCwd, agentId: null }
+        : current,
+    );
+    setFocusedChatWindowId(nextDraftWindowId);
+  };
   const onToggleDisplay = () => {
     if (!hasSelectedDisplayDiff) {
       return;
@@ -688,11 +722,14 @@ export function MissionWorktree(props: any) {
               agentPickerRef={agentPickerRef}
               agentPickerOpen={agentPickerOpen}
               setAgentPickerOpen={setAgentPickerOpen}
+              selectedProjectId={effectiveSelectedProjectId}
               selectedProjectName={effectiveSelectedProjectName}
+              draftProjectOptions={missionProjects}
+              selectDraftProject={selectDraftProjectForFocusedWindow}
               selectedWorktreeName={effectiveSelectedWorktreeName}
               draftWorktreeOptions={draftWorktreeOptions}
               selectedCwd={effectiveSelectedCwd}
-              selectDraftWorktree={selectDraftWorktree}
+              selectDraftWorktree={selectDraftWorktreeForFocusedWindow}
               currentGitBranch={currentGitBranch}
               copy={copy}
               agentLocked={agentLocked}

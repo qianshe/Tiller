@@ -84,6 +84,117 @@ test("config RPC lists only the requested project's worktrees", async () => {
   assert.deepEqual(result.worktrees.map((worktree) => worktree.path), ["D:/repo-one"]);
 });
 
+test("config RPC list worktrees discovers external git worktrees", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-discover-"));
+  const repoPath = join(tempRoot, "repo");
+  const worktreePath = join(repoPath, ".worktrees", "test-worktree");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "test-worktree", worktreePath], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  let cachedProjects: any[] = [];
+  let cachedWorktrees: any[] = [];
+  const context = {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    setWorktrees: (items: any[]) => {
+      cachedWorktrees = items;
+    },
+    getProjects: () => cachedProjects,
+    resolveProjectById: (id: string, projects: any[]) => projects.find((project) => project.id === id),
+  } as any;
+
+  const result = await handleConfigRpcRequest(
+    "project/list_worktrees",
+    { projectId: "p1" },
+    context,
+  ) as { worktrees: Array<{ path: string }> };
+
+  const discoveredPath = worktreePath.replace(/\\/g, "/");
+  const savedProject = readProjectYaml("p1", configPath);
+  assert.equal(result.worktrees.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(savedProject.worktrees?.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(cachedWorktrees.some((worktree) => worktree.path === discoveredPath), true);
+});
+
+test("config RPC list projects discovers external git worktrees", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-worktree-discover-"));
+  const repoPath = join(tempRoot, "repo");
+  const worktreePath = join(repoPath, ".worktrees", "test-worktree");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "test-worktree", worktreePath], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  let cachedProjects: any[] = [];
+  let cachedWorktrees: any[] = [];
+  const result = await handleConfigRpcRequest("project/list", {}, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    setWorktrees: (items: any[]) => {
+      cachedWorktrees = items;
+    },
+    logError: () => undefined,
+  } as any) as { projects: Array<{ worktrees?: Array<{ path: string }> }> };
+
+  const discoveredPath = worktreePath.replace(/\\/g, "/");
+  assert.equal(result.projects[0]?.worktrees?.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(
+    cachedProjects[0]?.worktrees?.some((worktree: { path: string }) => worktree.path === discoveredPath),
+    true,
+  );
+  assert.equal(cachedWorktrees.some((worktree: { path: string }) => worktree.path === discoveredPath), true);
+  assert.equal(
+    readProjectYaml("p1", configPath).worktrees?.some((worktree: { path: string }) => worktree.path === discoveredPath),
+    true,
+  );
+});
+
 test("config RPC list projects refreshes the root worktree branch", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-list-git-"));
   const repoPath = join(tempRoot, "repo");

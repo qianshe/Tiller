@@ -65,6 +65,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     activeProfileId,
     connection,
     toggleMissionHelmNode,
+    selectProject,
     missionSelectedProjectId,
     expandedMissionProjectIds,
     sessions,
@@ -250,6 +251,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       activeProfileId={activeProfileId}
       connection={connection}
       toggleMissionHelmNode={toggleMissionHelmNode}
+      selectProject={selectProject}
       missionSelectedProjectId={missionSelectedProjectId}
       expandedMissionProjectIds={expandedMissionProjectIds}
       sessions={sessions}

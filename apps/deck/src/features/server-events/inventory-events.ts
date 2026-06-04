@@ -22,10 +22,65 @@ function collectProjectWorktrees(projects: Array<{ worktrees?: WorktreeSummary[]
   const byPath = new Map<string, WorktreeSummary>();
   for (const project of projects) {
     for (const worktree of project.worktrees ?? []) {
-      byPath.set(worktree.path.replace(/\\/g, "/").toLowerCase(), worktree);
+      byPath.set(normalizeWorktreePath(worktree.path), worktree);
     }
   }
   return Array.from(byPath.values());
+}
+
+function replaceProjectWorktrees<TProject extends { id: string; worktrees?: WorktreeSummary[] }>(
+  projects: TProject[],
+  projectId: string,
+  worktrees: WorktreeSummary[],
+) {
+  return projects.map((project) =>
+    project.id === projectId ? { ...project, worktrees } : project,
+  );
+}
+
+function mergeProjectWorktrees(
+  current: WorktreeSummary[],
+  projects: Array<{ id: string; path?: string; worktrees?: WorktreeSummary[] }>,
+  projectId: string,
+  worktrees: WorktreeSummary[],
+) {
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) {
+    return dedupeWorktrees(worktrees);
+  }
+  return dedupeWorktrees([
+    ...current.filter((worktree) => !isProjectWorktree(project, worktree)),
+    ...worktrees,
+  ]);
+}
+
+function dedupeWorktrees(worktrees: WorktreeSummary[]) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const worktree of worktrees) {
+    byPath.set(normalizeWorktreePath(worktree.path), worktree);
+  }
+  return Array.from(byPath.values());
+}
+
+function isProjectWorktree(
+  project: { path?: string; worktrees?: WorktreeSummary[] },
+  worktree: WorktreeSummary,
+) {
+  const worktreePath = normalizeWorktreePath(worktree.path);
+  const projectPath = normalizeWorktreePath(project.path ?? "");
+  const configuredPaths = new Set(
+    (project.worktrees ?? []).map((item) => normalizeWorktreePath(item.path)),
+  );
+  return Boolean(
+    configuredPaths.has(worktreePath) ||
+      (projectPath && worktreePath === projectPath) ||
+      (projectPath && worktreePath.startsWith(`${projectPath}/.worktrees/`)) ||
+      (projectPath && worktreePath.startsWith(`${projectPath}/.tiller/worktrees/`)),
+  );
+}
+
+function normalizeWorktreePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
 }
 
 function applyConfigStateToOptions(
@@ -189,11 +244,46 @@ export function applyInventoryResult(
       }));
       return true;
     }
-    case "project/list_worktrees":
+    case "project/list_worktrees": {
+      const nextProjectWorktrees = payload.worktrees ?? [];
+      const currentState = useDeckStore.getState();
+      const currentHelmProjects = currentState.projects;
+      const nextCurrentHelmProjects = replaceProjectWorktrees(
+        currentHelmProjects,
+        payload.projectId,
+        nextProjectWorktrees,
+      );
+      const inventory = currentState.helmInventories[sourceHelmKey];
+      const inventoryProjects = sourceIsCurrentHelm
+        ? nextCurrentHelmProjects
+        : replaceProjectWorktrees(
+            inventory?.projects ?? [],
+            payload.projectId,
+            nextProjectWorktrees,
+          );
+      const inventoryWorktrees = mergeProjectWorktrees(
+        inventory?.worktrees ?? currentState.worktrees,
+        inventoryProjects,
+        payload.projectId,
+        nextProjectWorktrees,
+      );
+      store.applyHelmInventory(sourceHelmKey, {
+        projects: inventoryProjects,
+        worktrees: inventoryWorktrees,
+      });
       if (sourceIsCurrentHelm) {
-        store.setWorktrees(payload.worktrees);
+        store.setProjects(nextCurrentHelmProjects);
+        store.setWorktrees((current) =>
+          mergeProjectWorktrees(
+            current,
+            nextCurrentHelmProjects,
+            payload.projectId,
+            nextProjectWorktrees,
+          ),
+        );
       }
       return true;
+    }
     case "project/git/list_branches":
     case "project/git/create_worktree":
       store.setWorktreeGitByProject((current) => ({
@@ -206,7 +296,20 @@ export function applyInventoryResult(
         },
       }));
       if (sourceIsCurrentHelm && payload.worktrees.length) {
-        store.setWorktrees(payload.worktrees);
+        const nextCurrentHelmProjects = replaceProjectWorktrees(
+          useDeckStore.getState().projects,
+          payload.projectId,
+          payload.worktrees,
+        );
+        store.setProjects(nextCurrentHelmProjects);
+        store.setWorktrees((current) =>
+          mergeProjectWorktrees(
+            current,
+            nextCurrentHelmProjects,
+            payload.projectId,
+            payload.worktrees,
+          ),
+        );
       }
       if (payload.selectedCwd) {
         setSelectedCwd(payload.selectedCwd);

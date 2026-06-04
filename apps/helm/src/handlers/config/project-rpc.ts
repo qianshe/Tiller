@@ -9,6 +9,7 @@ import {
   createProjectWorktree,
   listGitBranches,
   listGitWorktreeWorktrees,
+  persistDiscoveredWorktrees,
   persistProjectGitInfo,
   persistProjectGitInfoIfAvailable,
   projectWorktreeItems,
@@ -157,12 +158,39 @@ export async function listProjectWorktrees(
       message: "Project not found",
     };
   }
-  return {
-    ok: true,
-    projectId: project.id,
-    worktrees: projectWorktreeItems(project, worktrees),
-    message: "Project worktrees loaded",
-  };
+  try {
+    const projectRoot = resolveProjectRoot(project, worktrees);
+    const gitRoot = projectRoot ? await resolveGitRoot(projectRoot) : undefined;
+    const gitWorktreeWorktrees = gitRoot
+      ? await listGitWorktreeWorktrees(project, gitRoot)
+      : [];
+    const nextProject = persistDiscoveredWorktrees(
+      project,
+      gitWorktreeWorktrees,
+      context.configPath,
+    );
+    if (nextProject !== project) {
+      context.setProjects(await context.loadAvailableProjectsWithSemanticSummaries());
+      context.setWorktrees(context.loadAvailableWorktrees());
+    }
+    const refreshedWorktrees = context.loadAvailableWorktrees();
+    const refreshedProject = context.resolveProjectById(params.projectId, context.getProjects()) ?? nextProject;
+    const configuredWorktrees = projectWorktreeItems(refreshedProject, refreshedWorktrees);
+    return {
+      ok: true,
+      projectId: project.id,
+      worktrees: mergeWorktreeItems(configuredWorktrees, gitWorktreeWorktrees),
+      message: gitRoot ? "Git worktrees loaded" : "Project worktrees loaded",
+    };
+  } catch {
+    const configuredWorktrees = projectWorktreeItems(project, worktrees);
+    return {
+      ok: true,
+      projectId: project.id,
+      worktrees: configuredWorktrees,
+      message: "Project worktrees loaded",
+    };
+  }
 }
 
 export async function listBranches(params: { projectId: string }, context: HelmHandlerContext) {
@@ -287,21 +315,4 @@ function mergeWorktreeItems(
   const byId = new Map(configuredWorktrees.map((worktree) => [worktree.path, worktree]));
   gitWorktreeWorktrees.forEach((worktree) => byId.set(worktree.path, worktree));
   return Array.from(byId.values());
-}
-
-function persistDiscoveredWorktrees(
-  project: ProjectSummary,
-  worktrees: WorktreeSummary[],
-  configPath: string,
-) {
-  const preserved = (project.worktrees ?? []).filter((worktree) => worktree.kind !== "git-worktree");
-  const nextWorktrees = mergeWorktreeItems(preserved, worktrees);
-  const currentKeys = (project.worktrees ?? []).map((worktree) => worktree.path).join("\0");
-  const nextKeys = nextWorktrees.map((worktree) => worktree.path).join("\0");
-  if (currentKeys !== nextKeys) {
-    const nextProject = { ...project, worktrees: nextWorktrees };
-    saveProjectToConfig(nextProject, configPath);
-    return nextProject;
-  }
-  return project;
 }

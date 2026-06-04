@@ -1011,6 +1011,58 @@ test("project list refreshes current helm worktrees from project inventory", () 
   );
 });
 
+test("project worktree refresh merges the requested project without dropping other projects", () => {
+  resetStore();
+  useDeckStore.setState({
+    projects: [
+      {
+        id: "p1",
+        name: "Tiller",
+        helmId: "helm-1",
+        worktrees: [{ name: "feature/0.1.6", path: "D:/myProject/tools/Tiller" }],
+      },
+      {
+        id: "p2",
+        name: "sandbox",
+        helmId: "helm-1",
+        worktrees: [{ name: "main", path: "D:/myProject/tools/tiller-test-sandbox" }],
+      },
+    ],
+    worktrees: [
+      { name: "feature/0.1.6", path: "D:/myProject/tools/Tiller" },
+      { name: "main", path: "D:/myProject/tools/tiller-test-sandbox" },
+    ],
+  });
+
+  const handled = applyInventoryResult(
+    "project/list_worktrees",
+    {
+      projectId: "p2",
+      worktrees: [
+        { name: "main", path: "D:/myProject/tools/tiller-test-sandbox", kind: "root" },
+        {
+          name: "test-worktree",
+          path: "D:/myProject/tools/tiller-test-sandbox/.worktrees/test-worktree",
+          kind: "git-worktree",
+        },
+      ],
+    },
+    "helm-1",
+    true,
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().worktrees.map((worktree) => worktree.path),
+    [
+      "D:/myProject/tools/Tiller",
+      "D:/myProject/tools/tiller-test-sandbox",
+      "D:/myProject/tools/tiller-test-sandbox/.worktrees/test-worktree",
+    ],
+  );
+});
+
 test("git worktree inventory replaces stale current helm worktrees", () => {
   resetStore();
   useDeckStore.setState({
