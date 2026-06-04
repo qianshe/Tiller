@@ -8,9 +8,12 @@ import {
   deleteProjectYaml,
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
+  listAvailableProviders,
   listAvailableProjects,
   readTillerConfig,
   readProjectYaml,
+  saveLoggingToConfig,
+  saveProviderToConfig,
   saveProjectYaml,
 } from "./registry.js";
 
@@ -60,6 +63,82 @@ test("readTillerConfig preserves logging options", () => {
   });
 });
 
+test("saveLoggingToConfig omits empty global arrays", () => {
+  const configPath = createConfigPath();
+
+  saveLoggingToConfig({ level: "warn", format: "pretty", acpTrace: "off" }, configPath);
+
+  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+    logging: { level: "warn", format: "pretty", acpTrace: "off" },
+  });
+});
+
+test("saveProviderToConfig omits generated provider defaults and legacy install hints", () => {
+  const configPath = createConfigPath();
+
+  saveProviderToConfig(
+    ({
+      id: "codex",
+      name: "Codex",
+      kind: "custom",
+      command: "codex-acp",
+      args: [],
+      transport: "stdio",
+      protocol: "acp",
+      installHint: "请确认命令 `codex-acp` 可以在终端运行。",
+      capabilities: {
+        sessionConfig: {
+          model: "startup",
+          reasoningEffort: "startup",
+          modelFormat: "model",
+        },
+      },
+    } as Parameters<typeof saveProviderToConfig>[0] & { installHint: string }),
+    configPath,
+  );
+
+  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).agents, [
+    {
+      id: "codex",
+      name: "Codex",
+      kind: "custom",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    },
+  ]);
+  assert.deepEqual(listAvailableProviders(configPath)[0]?.capabilities?.sessionConfig, {
+    model: "startup",
+    reasoningEffort: "startup",
+    modelFormat: "model",
+  });
+});
+
+test("saveProviderToConfig preserves non-default capabilities", () => {
+  const configPath = createConfigPath();
+
+  saveProviderToConfig(
+    {
+      id: "custom-agent",
+      name: "Custom Agent",
+      kind: "custom",
+      command: "custom-acp",
+      transport: "stdio",
+      protocol: "acp",
+      capabilities: {
+        sessionLoad: true,
+        imageInput: true,
+      },
+    },
+    configPath,
+  );
+
+  assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).agents[0]?.capabilities, {
+    sessionLoad: true,
+    imageInput: true,
+  });
+});
+
 test("saveProjectYaml stores generic project ids under the project name", () => {
   const configPath = createConfigPath();
 
@@ -71,6 +150,48 @@ test("saveProjectYaml stores generic project ids under the project name", () => 
   assert.equal(result.configPath, join(dirname(configPath), "projects", "Tiller", "project.yaml"));
   assert.equal(existsSync(join(dirname(configPath), "projects", "project-1", "project.yaml")), false);
   assert.equal(readProjectYaml("project-1", configPath).name, "Tiller");
+});
+
+test("saveProjectYaml strips generated semantic summaries", () => {
+  const configPath = createConfigPath();
+  const generatedSummary = [
+    "Project: Tiller",
+    "",
+    "Configured summary: Project: Tiller Worktree: main Path: D:/repo README.md: # Tiller",
+    "",
+    "Worktree: main",
+    "",
+    "Path: D:/repo",
+    "",
+    "README.md:",
+    "# Tiller",
+  ].join("\n");
+
+  const generated = saveProjectYaml(
+    {
+      id: "project-2",
+      name: "Tiller",
+      helmId: "local-helm",
+      path: "D:/repo",
+      summary: generatedSummary,
+    },
+    configPath,
+  );
+  assert.equal(generated.project.summary, undefined);
+  assert.equal(readProjectYaml("project-2", configPath).summary, undefined);
+
+  const configured = saveProjectYaml(
+    {
+      id: "project-4",
+      name: "tiller-test-sandbox",
+      helmId: "local-helm",
+      path: "D:/sandbox",
+      summary:
+        "Project: tiller-test-sandbox Configured summary: 用于 Tiller 测试的空项目。 Worktree: main Path: D:/sandbox README.md: # sandbox",
+    },
+    configPath,
+  );
+  assert.equal(configured.project.summary, "用于 Tiller 测试的空项目。");
 });
 
 test("saveProjectYaml migrates an existing generic project id directory to the project name", () => {

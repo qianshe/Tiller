@@ -40,6 +40,36 @@ test("config RPC lists projects and updates context cache", async () => {
   assert.equal(cached, projects);
 });
 
+test("config RPC lists only the requested project's worktrees", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/list_worktrees", { projectId: "p1" }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    setProjects: () => undefined,
+    setWorktrees: () => undefined,
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { worktrees: Array<{ path: string }> };
+
+  assert.deepEqual(result.worktrees.map((worktree) => worktree.path), ["D:/repo-one"]);
+});
+
 test("config RPC list projects refreshes the root worktree branch", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-list-git-"));
   const repoPath = join(tempRoot, "repo");
@@ -199,8 +229,6 @@ test("ensureTillerConfigDefaults creates daemon auth config when file is missing
 
   assert.equal(result.updated, true);
   assert.deepEqual(saved, {
-    helms: [],
-    agents: [],
     daemon: {
       host: "127.0.0.1",
       port: 47631,

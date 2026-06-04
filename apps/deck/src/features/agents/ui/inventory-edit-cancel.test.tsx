@@ -18,7 +18,12 @@ function findButtonByText(node: ReactNode, text: string): ReactElement<{ onClick
 
   const children = element.props.children;
   const candidates = Array.isArray(children) ? children : [children];
-  for (const child of candidates) {
+  for (const child of [
+    ...candidates,
+    ...Object.entries(element.props)
+      .filter(([key]) => key !== "children")
+      .flatMap(([, value]) => Array.isArray(value) ? value : [value]),
+  ]) {
     if (isValidElement(child)) {
       try {
         return findButtonByText(child, text);

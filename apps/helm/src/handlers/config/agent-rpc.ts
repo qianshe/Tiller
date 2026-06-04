@@ -26,7 +26,6 @@ export async function saveAgent(params: { provider: AcpAgentProvider }, context:
     defaultAgent: params.provider.defaultAgent,
     transport: "stdio" as const,
     protocol: "acp" as const,
-    installHint: params.provider.installHint,
   };
   const result = saveProviderToConfig(provider, context.configPath);
   context.setAgents(listAvailableProviders(context.configPath));

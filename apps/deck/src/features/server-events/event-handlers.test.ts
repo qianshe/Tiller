@@ -971,6 +971,96 @@ test("inventory RPC results hydrate projects for the current helm", () => {
   assert.equal(useDeckStore.getState().projects[0]?.id, "p1");
 });
 
+test("project list refreshes current helm worktrees from project inventory", () => {
+  resetStore();
+  useDeckStore.setState({
+    worktrees: [{ name: "worktree", path: "D:/myProject/tools/Tiller/apps/helm" }],
+  });
+
+  const handled = applyInventoryResult(
+    "project/list",
+    {
+      projects: [
+        {
+          id: "p1",
+          name: "Tiller",
+          helmId: "helm-1",
+          worktrees: [{ name: "feature/0.1.6", path: "D:/myProject/tools/Tiller" }],
+        },
+        {
+          id: "p2",
+          name: "Tiller-Pro",
+          helmId: "helm-1",
+          worktrees: [{ name: "main", path: "D:/myProject/tools/Tiller-Pro" }],
+        },
+      ],
+    },
+    "helm-1",
+    true,
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().worktrees.map((worktree) => worktree.path),
+    ["D:/myProject/tools/Tiller", "D:/myProject/tools/Tiller-Pro"],
+  );
+  assert.deepEqual(
+    useDeckStore.getState().helmInventories["helm-1"]?.worktrees.map((worktree) => worktree.path),
+    ["D:/myProject/tools/Tiller", "D:/myProject/tools/Tiller-Pro"],
+  );
+});
+
+test("git worktree inventory replaces stale current helm worktrees", () => {
+  resetStore();
+  useDeckStore.setState({
+    worktrees: [
+      { name: "worktree", path: "D:/myProject/tools/Tiller/apps/helm" },
+      {
+        name: "feature/0.1.6",
+        path: "D:/myProject/tools/Tiller",
+        branch: "feature/0.1.6",
+        kind: "root",
+      },
+    ],
+  });
+
+  const handled = applyInventoryResult(
+    "project/git/list_branches",
+    {
+      projectId: "project-2",
+      branches: ["feature/0.1.6"],
+      currentBranch: "feature/0.1.6",
+      worktrees: [
+        {
+          name: "feature/0.1.6",
+          path: "D:/myProject/tools/Tiller",
+          branch: "feature/0.1.6",
+          kind: "root",
+        },
+        {
+          name: "main",
+          path: "D:/myProject/tools/Tiller-Pro",
+          branch: "main",
+          kind: "root",
+        },
+      ],
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedCwd: () => undefined,
+      setWorktreePickerOpen: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().worktrees.map((worktree) => worktree.path),
+    ["D:/myProject/tools/Tiller", "D:/myProject/tools/Tiller-Pro"],
+  );
+});
+
 test("inventory RPC results hydrate logging settings for the source helm", () => {
   resetStore();
   const handled = applyInventoryResult(

@@ -36,10 +36,37 @@ test("agents overview layout uses shared UI and Tailwind classes", () => {
   assert.match(agentsTree, /StatusDot/);
   assert.match(agentsTree, /flex h-6 w-full items-center gap-1\.5 rounded px-1\.5/);
   assert.match(helmDetail, /font-mono text-2xs tabular text-foreground/);
-  assert.match(helmDetail, /import \{ AgentIcon, Badge, Button, Icon, StatusDot \} from "@\/shared\/ui"/);
+  assert.match(helmDetail, /import \{ Badge, Button, Icon, StatusDot \} from "@\/shared\/ui"/);
+  assert.doesNotMatch(helmDetail, /AgentIcon/);
   assert.match(helmDetail, /Agents \(\$\{selectedHelmAgents.length\}\)/);
   assert.match(helmDetail, /h-full min-h-0/);
-  assert.match(helmDetail, /wb-pane-sunken/);
+  assert.match(readUiFile("inventory-table.tsx"), /wb-pane-sunken/);
+});
+
+test("agents tab uses the shared inventory layout", () => {
+  const helmDetail = readUiFile("helm-detail-section.tsx");
+
+  assert.match(
+    helmDetail,
+    /activeTab === "agents" \? \(\s*<div className="grid gap-3">\s*<AgentInventorySection/s,
+  );
+  assert.doesNotMatch(helmDetail, /selectedHelmAgents\.map\(\(agent\) =>/);
+  assert.doesNotMatch(helmDetail, /注册新 ACP Agent/);
+});
+
+test("helm inventory tabs share the inventory table UI", () => {
+  const helmDetail = readUiFile("helm-detail-section.tsx");
+  const agentInventory = readUiFile("agent-inventory-section.tsx");
+  const projectInventory = readUiFile("project-inventory-section.tsx");
+  const trustedDevices = readUiFile("trusted-devices-panel.tsx");
+  const inventoryTable = readUiFile("inventory-table.tsx");
+
+  assert.match(inventoryTable, /export function InventoryTable/);
+  assert.match(agentInventory, /<InventoryTable/);
+  assert.match(projectInventory, /<InventoryTable/);
+  assert.match(trustedDevices, /<InventoryTable/);
+  assert.match(helmDetail, /<InventoryTable/);
+  assert.doesNotMatch(helmDetail, /<article key=\{worktree\.path\}/);
 });
 
 test("agents feature no longer depends on feature CSS class hooks", () => {
@@ -78,6 +105,7 @@ test("project and agent inventory expose edit and delete RPC actions", () => {
   assert.match(agentInventory, /aria-label=\{`编辑 ACP/);
   assert.match(agentInventory, /aria-label=\{`删除 ACP/);
   assert.match(agentInventory, /"agent\/delete"/);
+  assert.match(agentInventory, /AgentIcon/);
 });
 
 test("fleet project detail favors worktree and hides branch and default agent", () => {

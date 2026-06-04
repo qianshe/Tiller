@@ -45,6 +45,5 @@ export type AgentProviderDescriptor = {
   defaultAgent?: string;
   transport: AgentTransport;
   protocol: "acp";
-  installHint?: string;
   capabilities?: Partial<AgentCapabilities>;
 };

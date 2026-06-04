@@ -107,7 +107,6 @@ export function writeDraftToConfig(context: WriteDraftContext) {
       kind: "custom",
       command: agentDraft.command,
       args: splitArgs(agentDraft.args),
-      installHint: `请确认命令 \`${agentDraft.command} ${agentDraft.args}\` 可以在终端运行。`,
     },
   });
 }

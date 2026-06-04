@@ -18,6 +18,16 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
+function collectProjectWorktrees(projects: Array<{ worktrees?: WorktreeSummary[] }>) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const project of projects) {
+    for (const worktree of project.worktrees ?? []) {
+      byPath.set(worktree.path.replace(/\\/g, "/").toLowerCase(), worktree);
+    }
+  }
+  return Array.from(byPath.values());
+}
+
 function applyConfigStateToOptions(
   options: SessionConfigOption[],
   state: AgentModelOptionsEntry["state"],
@@ -155,12 +165,18 @@ export function applyInventoryResult(
     case "helm/list":
       store.setHelms(payload.helms);
       return true;
-    case "project/list":
-      store.applyHelmInventory(sourceHelmKey, { projects: payload.projects });
+    case "project/list": {
+      const projectWorktrees = collectProjectWorktrees(payload.projects ?? []);
+      store.applyHelmInventory(sourceHelmKey, {
+        projects: payload.projects,
+        worktrees: projectWorktrees,
+      });
       if (sourceIsCurrentHelm) {
         store.setProjects(payload.projects);
+        store.setWorktrees(projectWorktrees);
       }
       return true;
+    }
     case "project/list_files": {
       const key = projectFilesKey(payload.projectId, payload.cwd);
       setProjectFilesByScope((current) => ({
@@ -190,15 +206,7 @@ export function applyInventoryResult(
         },
       }));
       if (sourceIsCurrentHelm && payload.worktrees.length) {
-        store.setWorktrees((current) => {
-          const nextById = new Map(
-            current.map((worktree) => [worktree.path, worktree]),
-          );
-          payload.worktrees.forEach((worktree: WorktreeSummary) =>
-            nextById.set(worktree.path, worktree),
-          );
-          return Array.from(nextById.values());
-        });
+        store.setWorktrees(payload.worktrees);
       }
       if (payload.selectedCwd) {
         setSelectedCwd(payload.selectedCwd);

@@ -11,6 +11,7 @@ import {
   resolveProjectDisplayId,
   resolveProjectWorktrees,
 } from "../utils/fleet-helpers";
+import { InventoryTable } from "./inventory-table";
 
 export type FleetProjectDraft = { id?: string; name: string; path: string };
 
@@ -49,9 +50,9 @@ export function ProjectInventorySection({
   }
 
   return (
-    <section className="grid content-start gap-3">
-      <div className="grid min-h-[var(--control-h-md)] grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <h3 className="m-0 text-base font-semibold text-foreground">项目列表</h3>
+    <InventoryTable
+      title="项目列表"
+      action={(
         <Button
           variant="outline"
           size="icon"
@@ -63,8 +64,8 @@ export function ProjectInventorySection({
         >
           +
         </Button>
-      </div>
-      {formOpen ? (
+      )}
+      form={formOpen ? (
         <form
           className="grid w-full gap-3 rounded-md bg-surface-sunken p-3 sm:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.4fr)_auto_auto] sm:items-center"
           onSubmit={(event) => {
@@ -136,99 +137,85 @@ export function ProjectInventorySection({
           </Button>
         </form>
       ) : null}
-      {selectedHelmProjects.length ? (
-        <ul className="m-0 grid list-none divide-y divide-border-ghost border-t border-border-ghost p-0">
-          {selectedHelmProjects.map((project) => (
-            <li key={project.id} className="py-3">
-              <details className="group grid gap-2">
-                <summary className="grid cursor-pointer list-none grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-baseline gap-3 marker:hidden max-md:grid-cols-1 max-md:gap-1 [&::-webkit-details-marker]:hidden">
-                  <strong className="text-sm font-semibold text-foreground group-open:text-primary group-hover:text-primary">
-                    {project.name}
-                  </strong>
-                  <span className="[overflow-wrap:anywhere] text-sm text-muted-foreground">
-                    {project.path
-                      ? `路径 · ${project.path}`
-                      : `项目 · ${project.id}`}
-                  </span>
-                </summary>
-                <dl className="m-0 grid gap-2 rounded-md bg-surface-sunken p-3 text-sm">
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Project ID</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {resolveProjectDisplayId(project, selectedHelmProjects)}
-                    </dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Path</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.path ?? "-"}</dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Helm ID</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Git Branch</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {project.gitCurrentBranch ?? "-"}
-                    </dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Worktrees</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      <ProjectWorktreeList
-                        project={project}
-                        worktrees={selectedHelmWorktrees}
-                      />
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      disabled={!connected}
-                      aria-label={`编辑项目 ${project.name}`}
-                      onClick={() => {
-                        setDraft({
-                          id: project.id,
-                          name: project.name,
-                          path: project.path ?? "",
-                        });
-                        setFormOpen(true);
-                      }}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      disabled={!connected || !selectedHelmRpcClient}
-                      aria-label={`删除项目 ${project.name}`}
-                      onClick={() => {
-                        if (!selectedHelmRpcClient) {
-                          return;
-                        }
-                        setSaveMessage(`正在删除项目：${project.name}...`);
-                        void dispatch(selectedHelmRpcClient, "project/delete", {
-                          projectId: project.id,
-                        });
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </dl>
-              </details>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="grid min-h-16 place-items-center rounded-md bg-surface-sunken px-4 text-sm text-muted-foreground">
-          {connected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"}
-        </div>
-      )}
-    </section>
+      rows={selectedHelmProjects.map((project) => ({
+        key: project.id,
+        title: project.name,
+        subtitle: project.path
+          ? `路径 · ${project.path}`
+          : `项目 · ${project.id}`,
+        details: (
+          <dl className="m-0 grid gap-2 text-sm">
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Project ID</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                {resolveProjectDisplayId(project, selectedHelmProjects)}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Path</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.path ?? "-"}</dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Helm ID</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{project.helmId}</dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Git Branch</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                {project.gitCurrentBranch ?? "-"}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Worktrees</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                <ProjectWorktreeList
+                  project={project}
+                  worktrees={selectedHelmWorktrees}
+                />
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!connected}
+                aria-label={`编辑项目 ${project.name}`}
+                onClick={() => {
+                  setDraft({
+                    id: project.id,
+                    name: project.name,
+                    path: project.path ?? "",
+                  });
+                  setFormOpen(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!connected || !selectedHelmRpcClient}
+                aria-label={`删除项目 ${project.name}`}
+                onClick={() => {
+                  if (!selectedHelmRpcClient) {
+                    return;
+                  }
+                  setSaveMessage(`正在删除项目：${project.name}...`);
+                  void dispatch(selectedHelmRpcClient, "project/delete", {
+                    projectId: project.id,
+                  });
+                }}
+              >
+                删除
+              </Button>
+            </div>
+          </dl>
+        ),
+      }))}
+      emptyLabel={connected ? "当前 Helm 暂无项目数据" : "请先连接该 Helm 后加载项目"}
+    />
   );
 }
 

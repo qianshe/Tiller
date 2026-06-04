@@ -12,9 +12,8 @@ import type {
   SetStateAction,
 } from "react";
 import { useState } from "react";
-import { AgentIcon, Badge, Button, Icon, StatusDot } from "@/shared/ui";
+import { Badge, Button, Icon, StatusDot } from "@/shared/ui";
 import {
-  formatConnectionStatus,
   type DaemonProfile,
   type DeckRpcClient,
   type DispatchToHelm,
@@ -26,6 +25,7 @@ import {
 } from "./agent-inventory-section";
 import { HelmActions } from "./helm-actions";
 import type { HelmCard } from "./helm-hub";
+import { InventoryTable } from "./inventory-table";
 import {
   ProjectInventorySection,
   type FleetProjectDraft,
@@ -199,86 +199,18 @@ export function HelmDetailSection({
 
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {activeTab === "agents" ? (
-          <div className="grid gap-2">
-            {fleetAgentFormOpen ? (
-              <AgentInventorySection
-                connected={selectedHelmIsConnected}
-                draft={fleetAgentDraft}
-                emptyLabel={copy.noAgents}
-                formOpen={fleetAgentFormOpen}
-                dispatch={dispatch}
-                selectedHelmAgents={selectedHelmAgents}
-                selectedHelmRpcClient={selectedHelmRpcClient}
-                setDraft={setFleetAgentDraft}
-                setFormOpen={setFleetAgentFormOpen}
-              />
-            ) : null}
-
-            {selectedHelmAgents.map((agent) => (
-              <article key={agent.id} className="wb-pane-sunken flex items-center gap-2.5 p-2.5">
-                <AgentIcon name={agent.name} size={24} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-section font-medium text-foreground">{agent.name}</span>
-                    <StatusDot tone={selectedHelmIsConnected ? "active" : "idle"} pulse={selectedHelmIsConnected} size={5} />
-                    <span className="font-mono text-meta tabular text-muted-foreground">
-                      {selectedHelmIsConnected ? "ready" : formatConnectionStatus(selectedHelmConnection)}
-                    </span>
-                  </div>
-                  <p className="m-0 truncate font-mono text-meta tabular text-muted-foreground">
-                    {`${agent.command} ${(agent.args ?? []).join(" ")}`.trim() || agent.id}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  disabled={!selectedHelmIsConnected}
-                  onClick={() => {
-                    setFleetAgentDraft({
-                      id: agent.id,
-                      name: agent.name,
-                      command: agent.command,
-                      args: agent.args?.length ? agent.args : [""],
-                    });
-                    setFleetAgentFormOpen(true);
-                  }}
-                >
-                  配置
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  disabled={!selectedHelmIsConnected || !selectedHelmRpcClient}
-                  aria-label={`删除 ACP ${agent.name}`}
-                  onClick={() => {
-                    if (!selectedHelmRpcClient) {
-                      return;
-                    }
-                    void dispatch(selectedHelmRpcClient, "agent/delete", { providerId: agent.id });
-                  }}
-                >
-                  <Icon name="more" size={12} className="text-muted-foreground" />
-                </Button>
-              </article>
-            ))}
-
-            <button
-              type="button"
-              className="wb-pane-sunken flex items-center gap-2 border-dashed p-2.5 text-muted-foreground hover:text-foreground"
-              disabled={!selectedHelmIsConnected}
-              onClick={() => setFleetAgentFormOpen((current) => !current)}
-            >
-              <Icon name="plus" size={14} />
-              <span className="text-section">注册新 ACP Agent</span>
-            </button>
-
-            {!selectedHelmAgents.length ? (
-              <div className="grid min-h-16 place-items-center rounded bg-surface-sunken px-4 text-sm text-muted-foreground">
-                {selectedHelmIsConnected ? copy.noAgents : "请先连接该 Helm 后加载舰员"}
-              </div>
-            ) : null}
+          <div className="grid gap-3">
+            <AgentInventorySection
+              connected={selectedHelmIsConnected}
+              draft={fleetAgentDraft}
+              emptyLabel={copy.noAgents}
+              formOpen={fleetAgentFormOpen}
+              dispatch={dispatch}
+              selectedHelmAgents={selectedHelmAgents}
+              selectedHelmRpcClient={selectedHelmRpcClient}
+              setDraft={setFleetAgentDraft}
+              setFormOpen={setFleetAgentFormOpen}
+            />
           </div>
         ) : null}
 
@@ -307,24 +239,18 @@ export function HelmDetailSection({
         {activeTab === "devices" ? renderTrustedDevicesPanel(selectedHelmTrustedDevices, selectedHelmSocket, selectedHelm.name) : null}
 
         {activeTab === "worktrees" ? (
-          <section className="grid gap-2">
-            {selectedHelmWorktrees.length ? (
-              selectedHelmWorktrees.map((worktree) => (
-                <article key={worktree.path} className="wb-pane-sunken grid gap-1 p-2.5">
-                  <div className="flex items-center gap-2">
-                    <Icon name="branch" size={12} className="text-muted-foreground" />
-                    <strong className="truncate text-section text-foreground">{worktree.branch || "worktree"}</strong>
-                    <Badge variant="secondary" className="ml-auto">工作区</Badge>
-                  </div>
-                  <p className="m-0 truncate font-mono text-meta tabular text-muted-foreground">{worktree.path}</p>
-                </article>
-              ))
-            ) : (
-              <div className="grid min-h-16 place-items-center rounded bg-surface-sunken px-4 text-sm text-muted-foreground">
-                {selectedHelm.name} 暂无工作区。
-              </div>
-            )}
-          </section>
+          <InventoryTable
+            title="工作区"
+            countLabel={`${selectedHelmWorktrees.length}`}
+            rows={selectedHelmWorktrees.map((worktree) => ({
+              key: worktree.path,
+              icon: <Icon name="branch" size={12} className="text-muted-foreground" />,
+              title: worktree.branch || "worktree",
+              subtitle: worktree.path,
+              badge: <Badge variant="secondary">工作区</Badge>,
+            }))}
+            emptyLabel={`${selectedHelm.name} 暂无工作区。`}
+          />
         ) : null}
 
         {activeTab === "logs" ? (

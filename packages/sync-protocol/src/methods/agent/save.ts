@@ -15,7 +15,6 @@ export const ParamsSchema = z.object({
       | "args"
       | "env"
       | "cwd"
-      | "installHint"
       | "initializeTimeoutMs"
       | "defaultAgent"
     >

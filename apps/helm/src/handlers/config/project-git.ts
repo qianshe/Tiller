@@ -17,7 +17,7 @@ function safeWorktreeSlug(input: string) {
 }
 
 export function resolveProjectRoot(project: ProjectSummary, worktrees: WorktreeSummary[]) {
-  return project.path ?? worktrees[0]?.path;
+  return project.path ?? projectWorktreeItems(project, worktrees)[0]?.path;
 }
 
 export async function resolveGitRoot(cwd: string) {
@@ -68,7 +68,24 @@ function toWorktree(project: ProjectSummary, path: string, branch?: string): Wor
 }
 
 export function projectWorktreeItems(project: ProjectSummary, worktrees: WorktreeSummary[]) {
-  return mergeWorktrees(project.worktrees ?? [], worktrees);
+  if (project.worktrees?.length) {
+    return mergeWorktrees([], project.worktrees);
+  }
+  if (!project.path) {
+    return [];
+  }
+  const matchedRoot = worktrees.filter(
+    (worktree) => normalizePath(worktree.path) === normalizePath(project.path),
+  );
+  if (matchedRoot.length) {
+    return mergeWorktrees([], matchedRoot);
+  }
+  return [{
+    name: project.gitCurrentBranch ?? basename(project.path),
+    path: project.path.replace(/\\/g, "/"),
+    branch: project.gitCurrentBranch,
+    kind: "root" as const,
+  }];
 }
 
 export function persistProjectGitInfo(
