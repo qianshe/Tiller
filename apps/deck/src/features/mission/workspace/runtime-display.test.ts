@@ -16,6 +16,7 @@ test("acpReconnectKey builds stable keys with fallbacks", () => {
 test("formatRuntimeSessionCount includes active count only when different", () => {
   assert.equal(formatRuntimeSessionCount(2), "2 个会话");
   assert.equal(formatRuntimeSessionCount(2, 2), "2 个会话");
+  assert.equal(formatRuntimeSessionCount(2, 0), "2 个会话");
   assert.equal(formatRuntimeSessionCount(2, 1), "2 个会话 · 1 活跃");
 });
 

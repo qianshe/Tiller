@@ -88,7 +88,8 @@ test("mission message history loading also advances artifact history for thinkin
 test("mission chat history state includes activity history for thinking-only pages", () => {
   assert.match(worktreeSource, /activityHistoryState=\{activityHistoryState\}/);
   assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
-  assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryState\}/);
+  assert.match(chatPaneSource, /const activityHistoryStateBySession = useMemo/);
+  assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryStateBySession\}/);
   assert.match(messageTimelineSource, /resolveConversationHistoryState/);
   assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore && messageHistoryState\.nextCursor/);
   assert.match(messageTimelineSource, /messageHistoryState\?\.timelineHasMore && messageHistoryState\.timelineNextCursor/);
@@ -98,8 +99,8 @@ test("mission chat history state includes activity history for thinking-only pag
 test("mission chat renders permission drawers inside matching session cards", () => {
   const permissionDrawerSource = readFileSync(resolve(currentDir, "../conversation/permission-drawer.tsx"), "utf8");
 
-  assert.match(chatPaneSource, /sessionPendingApprovals/);
-  assert.match(chatPaneSource, /approval\.sessionId === session\.id/);
+  assert.match(chatPaneSource, /pendingApprovalsBySession/);
+  assert.match(chatPaneSource, /pendingApprovals=\{pendingApprovalsBySession\[session\.id\]/);
   assert.match(chatPaneSource, /<MissionPermissionDrawer/);
   assert.match(permissionDrawerSource, /sticky/);
   assert.match(permissionDrawerSource, /top-2/);
@@ -116,10 +117,11 @@ test("mission chat renders ACP plan drawer outside normal tool calls", () => {
   assert.match(chatPaneSource, /MissionPlanDrawer/);
   assert.match(chatPaneSource, /sessionPlansById/);
     assert.match(chatPaneSource, /activeSessionPlan/);
-    assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(singleSession\)\}/);
-    assert.match(chatPaneSource, /plan=\{resolveSessionPlan\(session\)\}/);
+    assert.match(chatPaneSource, /<MissionChatSessionCard/);
+    assert.match(chatPaneSource, /const visiblePlan =/);
     assert.match(chatPaneSource, /dismissedCompletedSessionPlanKeys/);
     assert.match(chatPaneSource, /createAgentPlanDismissalKey\(plan\)/);
+    assert.match(chatPaneSource, /plan=\{visiblePlan\}/);
     assert.match(chatPaneSource, /data-plan-dock="session"/);
   assert.match(chatPaneSource, /data-plan-session-id=\{session\.id\}/);
   assert.match(chatPaneSource, /placement="floating"/);
@@ -132,6 +134,8 @@ test("mission chat renders ACP plan drawer outside normal tool calls", () => {
 
 test("mission message timeline keeps chat list props stable for unchanged messages", () => {
   assert.match(messageTimelineSource, /memo\(function MissionMessageTimeline/);
+  assert.match(chatPaneComponentSource, /memo\(function MissionChatSessionCard/);
+  assert.doesNotMatch(chatPaneComponentSource, /renderSessionStream\(session\)/);
   assert.match(messageTimelineSource, /useCallback/);
   assert.doesNotMatch(messageTimelineSource, /onLoadOlderMessages=\{\(\) => \{/);
 });
@@ -267,7 +271,7 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
   assert.match(runtimeOverviewSource, /canReconnect: !reconnectPending/);
   assert.match(runtimeOverviewSource, /canConnect: reconnectPending/);
   assert.match(runtimeOverviewSource, /agentOrder/);
-  assert.match(runtimeOverviewSource, /return dedupeRuntimeOverviewItems\(items\)\.sort/);
+  assert.match(runtimeOverviewSource, /return mergeRuntimeOverviewItemsByAgent\(items\)\.sort/);
 });
 
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {
@@ -310,10 +314,11 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
     /shouldAnchorActiveParallelCard: cardCount > 2/,
   );
   assert.match(chatPaneSource, /\[contain:layout_paint\]/);
-  assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSession\?\.id/);
+  assert.match(chatPaneSource, /!shouldAnchorActiveParallelCard \|\| !activeSessionId/);
   assert.match(chatPaneSource, /gridAutoRows: parallelGridFillsContainer \? "minmax\(0, 1fr\)" : "minmax\(360px, min\(52vh, 560px\)\)"/);
   assert.match(chatPaneSource, /parallelGridFillsContainer \? "h-full min-h-0 overflow-hidden" : "min-h-full"/);
   assert.match(chatPaneSource, /ResizeObserverCtor/);
+  assert.match(chatPaneSource, /\}, \[chatMainRef, openSessions\.length, shouldLockChatMainScroll\]\);/);
   assert.match(chatPaneSource, /mission-session-grid grid box-border gap-2 p-2/);
   assert.match(chatPaneSource, /gridTemplateColumns: "repeat\(auto-fit, minmax\(min\(100%, 360px\), 1fr\)\)"/);
   assert.match(chatPaneSource, /"h-full min-h-0 cursor-default rounded-\[8px\] border bg-surface transition-all"/);
@@ -321,7 +326,9 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.doesNotMatch(chatPaneSource, /boxShadow: active\s*\?\s*"inset 0 0 0 1px var\(--primary\)/);
   assert.match(chatPaneSource, /sessionMessagesById\[session\.id\]/);
   assert.match(chatPaneSource, /sessionToolCallsById\[session\.id\]/);
-  assert.match(chatPaneSource, /renderSessionStream\(session\)/);
+  assert.match(chatPaneSource, /sessionMessages=\{/);
+  assert.match(chatPaneSource, /sessionToolCalls=\{/);
+  assert.match(chatPaneSource, /memo\(function MissionChatSessionCard/);
   assert.match(chatPaneSource, /data-session-card-body=\{session\.id\}/);
   assert.match(chatPaneSource, /changedSessionIds\.forEach/);
   assert.match(chatPaneSource, /if \(messageCount > 0 \|\| timelineCount > 0 \|\| toolCallCount > 0\)/);
@@ -329,27 +336,31 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
   assert.doesNotMatch(chatPaneSource, /scrollBottom/);
   assert.match(chatPaneSource, /ResizeObserverCtor/);
-  assert.match(chatPaneSource, /onBodyScroll=\{\(event\) => \{/);
+  assert.match(chatPaneSource, /const handleBodyScroll = useCallback/);
+  assert.match(chatPaneSource, /onBodyScroll=\{handleBodyScroll\}/);
   assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
   assert.match(chatPaneSource, /selectedSessionId: string \| null/);
   assert.match(chatPaneSource, /active=\{session\.id === selectedSessionId\}/);
   assert.match(chatPaneSource, /data-active-session-card=\{active \? "true" : undefined\}/);
-  assert.match(chatPaneSource, /chatMain\.scrollTop \+= activeCardTop - chatMainTop/);
+  assert.match(chatPaneSource, /const activeCardRect = activeCard\.getBoundingClientRect\(\)/);
+  assert.match(chatPaneSource, /const cardFullyVisible =/);
+  assert.match(chatPaneSource, /if \(cardFullyVisible\) \{/);
+  assert.match(chatPaneSource, /chatMain\.scrollTop \+= activeCardRect\.top - chatMainRect\.top/);
   assert.match(chatPaneSource, /requestAnimationFrame\(anchorActiveCard\)/);
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 160\)/);
   assert.match(chatPaneSource, /setTimeout\(anchorActiveCard, 800\)/);
   assert.match(chatPaneSource, /AgentIcon name=\{session\.agentName\}/);
   assert.match(chatPaneSource, /MissionToolLoadingTitle/);
   assert.match(chatPaneSource, /<MissionToolLoadingTitle \{\.\.\.toolLoading\} \/>/);
-  assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(singleSession\)\}/);
-  assert.match(chatPaneSource, /toolLoading=\{resolveSessionToolLoading\(session\)\}/);
+  assert.match(chatPaneSource, /const toolLoading = resolveChatSessionToolLoading/);
+  assert.match(chatPaneSource, /pendingToolPresent=\{session\.id === activeSessionId \? pendingToolPresent : false\}/);
   assert.match(chatPaneSource, /<StatusDot tone=\{statusTone\} \/>/);
   // 普通状态走与工具执行中同款的状态框（pill），而非裸文字
   assert.match(chatPaneSource, /<SessionStatusPill status=\{session\.status\} \/>/);
   assert.match(chatPaneSource, /mission-session-status-pill/);
   assert.match(chatPaneSource, /data-session-status-label/);
-  assert.match(chatPaneSource, /onRename=\{onRenameSession\}/);
-  assert.match(chatPaneSource, /onClear=\{onClearSession\}/);
+  assert.match(chatPaneSource, /onRename=\{handleRenameSession\}/);
+  assert.match(chatPaneSource, /onClear=\{handleClearSession\}/);
   assert.doesNotMatch(chatPaneSource, /isSingleSession && isActiveSession && activityLoading/);
   assert.doesNotMatch(chatPaneSource, /<MissionToolLoading\s/);
   assert.doesNotMatch(chatPaneSource, /聚焦会话/);
@@ -415,6 +426,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /focusedRealSessionId,/);
   assert.match(chatWindowActionsSource, /const selectChatSession = \(sessionId: string\) =>/);
   assert.match(chatWindowActionsSource, /setFocusedChatWindowId\(`session:\$\{sessionId\}`\)/);
+  assert.match(chatWindowActionsSource, /current\.includes\(sessionId\) \? current : addChatSessionIdToFront\(current, sessionId\)/);
+  assert.match(chatWindowActionsSource, /addChatSessionIdToFront\(current, attachedSessionId\)/);
   assert.doesNotMatch(chatWindowActionsSource, /const selectChatSession = \(sessionId: string\) => \{[\s\S]*?setActiveSessionId\(sessionId\)/);
   assert.match(worktreeSource, /useOpenSessionStreams\(\{/);
   assert.match(openSessionStreamsSource, /const hydrateOpenSessionStreams = \(sessionIds: string\[\]\) =>/);
@@ -550,7 +563,9 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-new-inline/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
+  assert.match(sidebarSource, /border-success\/50 bg-success\/20 text-success/);
 });
 
 test("mission sidebar rows stay compact and session actions open below rows", () => {
@@ -566,10 +581,13 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 });
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
   assert.match(sessionRowSource, /highlightedSessionId: string \| null/);
   assert.match(sessionRowSource, /const isOpenSession = openSessionIds\.has\(session\.id\)/);
   assert.match(sessionRowSource, /const isHighlighted = isFocused \|\| isOpenSession/);
+  assert.doesNotMatch(sessionRowSource, /cursor-grab|active:cursor-grabbing|draggable/);
+  assert.match(sessionRowSource, /cursor-default/);
   assert.match(sessionRowSource, /before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0\.5 before:rounded-full before:bg-primary/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-caret/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);

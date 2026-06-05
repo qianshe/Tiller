@@ -21,7 +21,9 @@ export function shouldImportAuthoritativeProviderHistory({
   currentState,
   localMessages,
 }: AuthoritativeProviderHistoryImportOptions): boolean {
-  return Boolean(currentState) || localMessages.length === 0;
+  return Boolean(currentState) ||
+    localMessages.length === 0 ||
+    !localMessages.some((message) => message.role === "user");
 }
 
 export function planProviderHistorySync({

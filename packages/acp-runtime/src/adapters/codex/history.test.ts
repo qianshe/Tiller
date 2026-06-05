@@ -213,6 +213,39 @@ test("parseCodexJsonlHistory classifies spawned agents as subagent tool calls", 
   );
 });
 
+test("parseCodexJsonlHistory derives the latest update_plan tool as a plan", () => {
+  const history = parseCodexJsonlHistory(
+    [
+      JSON.stringify({
+        timestamp: "2026-05-31T06:38:59.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "update_plan",
+          namespace: "functions",
+          arguments: JSON.stringify({
+            plan: [
+              { step: "检查历史导入", status: "completed" },
+              { step: "恢复 Codex plan", status: "in_progress" },
+            ],
+          }),
+          call_id: "call-plan",
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-05-31T06:39:00.000Z",
+        type: "response_item",
+        payload: { type: "function_call_output", call_id: "call-plan", output: "ok" },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(history.plan?.entries, [
+    { content: "检查历史导入", priority: "medium", status: "completed" },
+    { content: "恢复 Codex plan", priority: "medium", status: "in_progress" },
+  ]);
+});
+
 test("parseCodexJsonlHistory preserves image-only user prompts", () => {
   const history = parseCodexJsonlHistory(
     JSON.stringify({

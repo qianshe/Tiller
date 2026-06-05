@@ -37,7 +37,7 @@ export function buildSessionStreamHydrationPlan({
   const uniqueSessionIds = [...new Set(sessionIds)];
   return {
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
-      !messageHistoryState[sessionId] && !(sessionTimelineBySession?.[sessionId]?.length)
+      !messageHistoryState[sessionId]
     )),
     activitySessionIds: uniqueSessionIds.filter((sessionId) => {
       const toolCalls = toolCallsBySession?.[sessionId] ?? [];

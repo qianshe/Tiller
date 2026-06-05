@@ -36,6 +36,7 @@ export function useMissionEffects(ctx: any) {
     missionPromptRef,
     imagePasteNotice,
     prompt,
+    openChatSessionIds,
     promptImages,
     fleetAddHelmModalOpen,
     fleetAddHelmStage,
@@ -71,6 +72,9 @@ export function useMissionEffects(ctx: any) {
 useMissionSelectionEffects(source);
 useEffect(() => {
   if (activeView !== "sessions") {
+    return;
+  }
+  if ((openChatSessionIds?.length ?? 0) > 1) {
     return;
   }
   const chatMain = chatMainRef.current;
@@ -117,6 +121,7 @@ useEffect(() => {
   activeView,
   activeSessionId,
   activeSessionMessages.length,
+  openChatSessionIds?.length,
   messageHistoryState,
   sessionOpenScrollTick,
 ]);
@@ -126,6 +131,7 @@ useEffect(() => {
 useEffect(() => {
   if (
     !activeSessionId ||
+    (openChatSessionIds?.length ?? 0) > 1 ||
     pairingState !== "paired" ||
     !rpcClientRef.current ||
     rpcClientRef.current.socket.readyState !== WebSocket.OPEN
@@ -152,7 +158,7 @@ useEffect(() => {
   void dispatch(rpcClientRef.current, "session/check_resume", {
     sessionId: activeSessionId,
   });
-}, [activeSessionId, pairingState]);
+}, [activeSessionId, openChatSessionIds?.length, pairingState]);
 usePromptAutosize({
   activeView,
   activeSessionId,

@@ -45,8 +45,8 @@ test("chat window model falls back to active session and includes it in visible 
 
   assert.equal(model.focusedDraftWindow, null);
   assert.equal(model.focusedRealSessionId, null);
-  assert.deepEqual(model.visibleChatSessionIds, ["session-2", "session-1"]);
-  assert.deepEqual(model.openSessions.map((item) => item.id), ["session-2", "session-1"]);
+  assert.deepEqual(model.visibleChatSessionIds, ["session-1", "session-2"]);
+  assert.deepEqual(model.openSessions.map((item) => item.id), ["session-1", "session-2"]);
   assert.equal(model.openSessionIdSet.has("session-2"), true);
   assert.equal(model.selectedComposerSession?.id, "session-1");
 });

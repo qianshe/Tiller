@@ -44,3 +44,23 @@ test("mission effects leaves session topic subscriptions to the open session gri
   assert.doesNotMatch(missionEffectsSourceText, /subscribeToSessionTopic/);
   assert.doesNotMatch(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
 });
+
+test("mission effects does not force chat-main bottom scrolling for parallel session cards", () => {
+  assert.match(missionEffectsSourceText, /openChatSessionIds,/);
+  assert.match(
+    missionEffectsSourceText,
+    /if \(\(openChatSessionIds\?\.length \?\? 0\) > 1\) \{\s*return;\s*\}/,
+  );
+  assert.match(missionEffectsSourceText, /openChatSessionIds\?\.length/);
+});
+
+test("mission effects leaves active-session history refresh to open session streams in parallel card mode", () => {
+  assert.match(
+    missionEffectsSourceText,
+    /!\s*activeSessionId\s*\|\|\s*\(openChatSessionIds\?\.length \?\? 0\) > 1\s*\|\|\s*pairingState !== "paired"/,
+  );
+  assert.match(
+    missionEffectsSourceText,
+    /\}, \[activeSessionId, openChatSessionIds\?\.length, pairingState\]\);/,
+  );
+});

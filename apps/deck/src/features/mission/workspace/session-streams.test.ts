@@ -65,7 +65,7 @@ test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
     checkedResumeSessionIds: new Set([idleSession.id]),
   });
 
-  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
   assert.deepEqual(plan.activitySessionIds, []);
   assert.deepEqual(plan.resumeCheckSessionIds, []);
 });
@@ -85,7 +85,7 @@ test("buildSessionStreamHydrationPlan hydrates cached todo activity when the pla
     checkedResumeSessionIds: new Set(),
   });
 
-  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
   assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
 });
 
@@ -127,7 +127,7 @@ test("buildSessionStreamHydrationPlan hydrates messages when timeline is missing
   assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
 });
 
-test("buildSessionStreamHydrationPlan skips message hydration when timeline is cached", () => {
+test("buildSessionStreamHydrationPlan hydrates messages when timeline is cached but history state is missing", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],
     sessionById: new Map([[idleSession.id, idleSession]]),
@@ -139,5 +139,5 @@ test("buildSessionStreamHydrationPlan skips message hydration when timeline is c
     checkedResumeSessionIds: new Set(),
   });
 
-  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
 });

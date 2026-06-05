@@ -15,7 +15,7 @@ import type {
   RefObject,
   UIEventHandler,
 } from "react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
@@ -25,11 +25,7 @@ import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import { resolveSessionStreamContentLength, splitMissionToolCalls } from "./chat-pane-model";
-import {
-  resolveChatSessionMessages,
-  resolveChatSessionToolCalls,
-  resolveChatSessionToolLoading,
-} from "./chat-session-state";
+import { resolveChatSessionToolLoading } from "./chat-session-state";
 import {
   createAgentPlanDismissalKey,
   isAgentPlanComplete,
@@ -53,10 +49,20 @@ type MissionProjectOption = {
 
 // 距底部小于该像素阈值时视为"贴底"，流式与工具加载才自动跟随；超过则尊重用户上滑。
 const STICK_TO_BOTTOM_THRESHOLD = 80;
+const EMPTY_MESSAGES: AgentMessage[] = [];
+const EMPTY_TIMELINE_ITEMS: SessionTimelineEntry[] = [];
+const EMPTY_TOOL_CALLS: AgentToolCall[] = [];
+const EMPTY_PENDING_APPROVALS: MissionPendingApproval[] = [];
 
 type HistoryState = {
   hasMore: boolean;
   loading: boolean;
+};
+
+type MissionPendingApproval = {
+  sessionId: string;
+  request: PermissionRequest;
+  resolving: boolean;
 };
 
 type MissionChatPaneProps = {
@@ -192,84 +198,26 @@ export function MissionChatPane({
   const [menuOpen, setMenuOpen] = useState(false);
   const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
   const canCreateTask = projectOptions.length > 0;
-  const sessionStateSources = {
-    activeSessionId: activeSession?.id ?? null,
-    activeSessionMessages,
-    activeSessionToolCalls,
-    sessionMessagesById,
-    sessionToolCallsById,
-    activityLoading,
-    pendingToolPresent,
-    pendingApprovals,
-  };
-  const resolveSessionMessages = (session: SessionSummary) =>
-    resolveChatSessionMessages(session, sessionStateSources);
-  const resolveSessionToolCalls = (session: SessionSummary) =>
-    resolveChatSessionToolCalls(session, sessionStateSources);
-  const resolveSessionToolLoading = (session: SessionSummary): MissionToolLoadingState | undefined =>
-    resolveChatSessionToolLoading(session, sessionStateSources);
-  const resolveSessionPlan = (session: SessionSummary) => {
-    const plan = sessionPlansById[session.id] ?? (session.id === activeSession?.id ? activeSessionPlan : null);
-    if (
-      plan &&
-      isAgentPlanComplete(plan) &&
-      dismissedCompletedSessionPlanKeys[session.id] === createAgentPlanDismissalKey(plan)
-    ) {
-      return null;
-    }
-    return plan;
-  };
-  const renderSessionStream = (session: SessionSummary) => {
-    const sessionMessages = resolveSessionMessages(session);
-    const timelineItems = sessionTimelineById[session.id] ?? [];
-    const sessionToolCalls = resolveSessionToolCalls(session);
-    const sessionTimeline = splitMissionToolCalls(sessionToolCalls);
-    const sessionPendingApprovals = pendingApprovals.filter(
-      (approval) => approval.sessionId === session.id,
-    );
-    const isActiveSession = session.id === activeSession?.id;
-    const approvalStack = sessionPendingApprovals.length > 0 ? (
-      <div className="mission-approval-stack grid gap-2">
-        {sessionPendingApprovals.map((approval) => (
-          <MissionPermissionDrawer
-            key={approval.request.id}
-            request={approval.request}
-            copy={copy}
-            showWorktree={showPermissionWorktree}
-            fallbackToolTitle={pendingToolTitle}
-            resolving={approval.resolving}
-            onRespond={(decision) => onRespondToPermission(approval.request.id, decision)}
-          />
-        ))}
-      </div>
-    ) : null;
-
-    return (
-      <>
-        {approvalStack}
-        {sessionMessages.length || timelineItems.length ? (
-          <MissionMessageTimeline
-            items={sessionMessages}
-            timelineItems={timelineItems}
-            thinkingToolCalls={sessionTimeline.thinkingToolCalls}
-            toolCalls={sessionTimeline.timelineToolCalls}
-            showThinking={showThinking}
-            boundaryTimestamps={sessionTimeline.boundaryTimestamps}
-            sessionId={session.id}
-            assistantLabel={session.agentName}
-            copy={copy}
-            expandedMessageIds={expandedMessageIds}
-            historyStateBySession={messageHistoryState}
-            activityHistoryStateBySession={activityHistoryState}
-            onLoadOlderMessages={onLoadOlderMessages}
-            onToggleExpandedMessage={onToggleExpandedMessage}
-          />
-        ) : (
-          <SessionPreviewMessages session={session} restoring={isActiveSession} />
-        )}
-      </>
-    );
-  };
+  const activeSessionId = activeSession?.id ?? null;
+  const handleSelectSessionView = useStableEvent(onSelectSessionView);
+  const handleRenameSession = useStableEvent(onRenameSession);
+  const handleCloseSessionView = useStableEvent(onCloseSessionView);
+  const handleClearSession = useStableEvent(onClearSession);
+  const handleReimportSessionHistory = useStableEvent(onReimportSessionHistory);
+  const handleDismissCompletedSessionPlan = useStableEvent(
+    (sessionId: string, planKey: string) =>
+      onDismissCompletedSessionPlan?.(sessionId, planKey),
+  );
+  const handleRespondToPermission = useStableEvent(onRespondToPermission);
+  const handleLoadOlderMessages = useStableEvent(onLoadOlderMessages);
+  const handleToggleExpandedMessage = useStableEvent(onToggleExpandedMessage);
+  const pendingApprovalsBySession = useMemo(() => {
+    const next: Record<string, MissionPendingApproval[]> = {};
+    pendingApprovals.forEach((approval) => {
+      (next[approval.sessionId] ??= []).push(approval);
+    });
+    return next;
+  }, [pendingApprovals]);
   const {
     isSingleSession,
     parallelGridFillsContainer,
@@ -396,19 +344,19 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSession?.id, chatMainRef, openSessions.length, shouldLockChatMainScroll]);
+  }, [chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
   const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
-  const recordSessionBodyScroll = (sessionId: string, body: HTMLDivElement) => {
+  const recordSessionBodyScroll = useCallback((sessionId: string, body: HTMLDivElement) => {
     sessionBodyScrollPositionRef.current[sessionId] = {
       scrollTop: body.scrollTop,
       scrollHeight: body.scrollHeight,
     };
     sessionBodyStickToBottomRef.current[sessionId] =
       body.scrollHeight - body.scrollTop - body.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
-  };
+  }, []);
   const draftCard = draftWindow ? (
     <DraftSessionCard
       draftWindow={draftWindow}
@@ -429,13 +377,19 @@ export function MissionChatPane({
     const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number }> = {};
 
     openSessions.forEach((session) => {
-      const messageCount = sessionMessagesById[session.id]?.length ?? 0;
+      const sessionMessages =
+        sessionMessagesById[session.id] ??
+        (session.id === activeSessionId ? activeSessionMessages : undefined);
+      const sessionToolCalls =
+        sessionToolCallsById[session.id] ??
+        (session.id === activeSessionId ? activeSessionToolCalls : undefined);
       const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
-      const toolCallCount = sessionToolCallsById[session.id]?.length ?? 0;
+      const messageCount = sessionMessages?.length ?? 0;
+      const toolCallCount = sessionToolCalls?.length ?? 0;
       const contentLength = resolveSessionStreamContentLength({
-        messages: sessionMessagesById[session.id],
+        messages: sessionMessages,
         timeline: sessionTimelineById[session.id],
-        toolCalls: sessionToolCallsById[session.id],
+        toolCalls: sessionToolCalls,
       });
       const previous = sessionBodyScrollSnapshotRef.current[session.id];
       nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount, contentLength };
@@ -485,10 +439,10 @@ export function MissionChatPane({
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [chatMainRef, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
-    if (!shouldAnchorActiveParallelCard || !activeSession?.id) {
+    if (!shouldAnchorActiveParallelCard || !activeSessionId) {
       return;
     }
     const anchorActiveCard = () => {
@@ -497,9 +451,15 @@ export function MissionChatPane({
       if (!chatMain || !activeCard) {
         return;
       }
-      const chatMainTop = chatMain.getBoundingClientRect().top;
-      const activeCardTop = activeCard.getBoundingClientRect().top;
-      chatMain.scrollTop += activeCardTop - chatMainTop;
+      const chatMainRect = chatMain.getBoundingClientRect();
+      const activeCardRect = activeCard.getBoundingClientRect();
+      const cardFullyVisible =
+        activeCardRect.top >= chatMainRect.top &&
+        activeCardRect.bottom <= chatMainRect.bottom;
+      if (cardFullyVisible) {
+        return;
+      }
+      chatMain.scrollTop += activeCardRect.top - chatMainRect.top;
     };
     const frame = window.requestAnimationFrame(anchorActiveCard);
     const timeout = window.setTimeout(anchorActiveCard, 160);
@@ -509,7 +469,7 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSession?.id, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
+  }, [activeSessionId, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
@@ -668,26 +628,50 @@ export function MissionChatPane({
         ) : null}{" "}
         {openSessions.length || draftCard ? (
           isSingleSession && singleSession && !draftCard ? (
-            <SessionCard
+            <MissionChatSessionCard
               session={singleSession}
               active={singleSession.id === selectedSessionId}
               flat
+              isRuntimeActive={singleSession.id === activeSessionId}
+              sessionMessages={
+                sessionMessagesById[singleSession.id] ??
+                (singleSession.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
+              }
+              timelineItems={sessionTimelineById[singleSession.id] ?? EMPTY_TIMELINE_ITEMS}
+              sessionToolCalls={
+                sessionToolCallsById[singleSession.id] ??
+                (singleSession.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
+              }
+              pendingApprovals={pendingApprovalsBySession[singleSession.id] ?? EMPTY_PENDING_APPROVALS}
+              messageHistoryState={messageHistoryState[singleSession.id]}
+              activityHistoryState={activityHistoryState[singleSession.id]}
               bodyScrollSnapshot={sessionBodyScrollPositionRef.current[singleSession.id]}
-              onBodyScroll={(event) => {
-                recordSessionBodyScroll(singleSession.id, event.currentTarget);
-              }}
-              onFocus={onSelectSessionView}
-              onRename={onRenameSession}
-              onClear={onClearSession}
-              onReimportHistory={onReimportSessionHistory}
-              onClose={onCloseSessionView}
-              onDismissCompletedPlan={onDismissCompletedSessionPlan}
+              onBodyScroll={recordSessionBodyScroll}
+              onFocus={handleSelectSessionView}
+              onRename={handleRenameSession}
+              onClear={handleClearSession}
+              onReimportHistory={handleReimportSessionHistory}
+              onClose={handleCloseSessionView}
+              onDismissCompletedPlan={handleDismissCompletedSessionPlan}
               restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
-              toolLoading={resolveSessionToolLoading(singleSession)}
-              plan={resolveSessionPlan(singleSession)}
-            >
-              {renderSessionStream(singleSession)}
-            </SessionCard>
+              plan={
+                sessionPlansById[singleSession.id] ??
+                (singleSession.id === activeSessionId ? activeSessionPlan : null)
+              }
+              dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[singleSession.id]}
+              activityLoading={singleSession.id === activeSessionId ? activityLoading : null}
+              pendingToolPresent={singleSession.id === activeSessionId ? pendingToolPresent : false}
+              pendingToolTitle={
+                pendingApprovalsBySession[singleSession.id]?.length ? pendingToolTitle : null
+              }
+              copy={copy}
+              expandedMessageIds={expandedMessageIds}
+              showThinking={showThinking}
+              showPermissionWorktree={showPermissionWorktree}
+              onLoadOlderMessages={handleLoadOlderMessages}
+              onToggleExpandedMessage={handleToggleExpandedMessage}
+              onRespondToPermission={handleRespondToPermission}
+            />
           ) : (
             <div
               ref={sessionGridRef}
@@ -699,26 +683,50 @@ export function MissionChatPane({
             >
               {draftCard}
               {openSessions.map((session) => (
-                <SessionCard
+                <MissionChatSessionCard
                   key={session.id}
                   session={session}
                   active={session.id === selectedSessionId}
+                  isRuntimeActive={session.id === activeSessionId}
+                  sessionMessages={
+                    sessionMessagesById[session.id] ??
+                    (session.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
+                  }
+                  timelineItems={sessionTimelineById[session.id] ?? EMPTY_TIMELINE_ITEMS}
+                  sessionToolCalls={
+                    sessionToolCallsById[session.id] ??
+                    (session.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
+                  }
+                  pendingApprovals={pendingApprovalsBySession[session.id] ?? EMPTY_PENDING_APPROVALS}
+                  messageHistoryState={messageHistoryState[session.id]}
+                  activityHistoryState={activityHistoryState[session.id]}
                   bodyScrollSnapshot={sessionBodyScrollPositionRef.current[session.id]}
-                  onBodyScroll={(event) => {
-                    recordSessionBodyScroll(session.id, event.currentTarget);
-                  }}
-                  onFocus={onSelectSessionView}
-                  onRename={onRenameSession}
-                  onClear={onClearSession}
-                  onReimportHistory={onReimportSessionHistory}
-                  onClose={onCloseSessionView}
-                  onDismissCompletedPlan={onDismissCompletedSessionPlan}
+                  onBodyScroll={recordSessionBodyScroll}
+                  onFocus={handleSelectSessionView}
+                  onRename={handleRenameSession}
+                  onClear={handleClearSession}
+                  onReimportHistory={handleReimportSessionHistory}
+                  onClose={handleCloseSessionView}
+                  onDismissCompletedPlan={handleDismissCompletedSessionPlan}
                   restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
-                  toolLoading={resolveSessionToolLoading(session)}
-                  plan={resolveSessionPlan(session)}
-                >
-                  {renderSessionStream(session)}
-                </SessionCard>
+                  plan={
+                    sessionPlansById[session.id] ??
+                    (session.id === activeSessionId ? activeSessionPlan : null)
+                  }
+                  dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[session.id]}
+                  activityLoading={session.id === activeSessionId ? activityLoading : null}
+                  pendingToolPresent={session.id === activeSessionId ? pendingToolPresent : false}
+                  pendingToolTitle={
+                    pendingApprovalsBySession[session.id]?.length ? pendingToolTitle : null
+                  }
+                  copy={copy}
+                  expandedMessageIds={expandedMessageIds}
+                  showThinking={showThinking}
+                  showPermissionWorktree={showPermissionWorktree}
+                  onLoadOlderMessages={handleLoadOlderMessages}
+                  onToggleExpandedMessage={handleToggleExpandedMessage}
+                  onRespondToPermission={handleRespondToPermission}
+                />
               ))}
             </div>
           )
@@ -734,4 +742,171 @@ export function MissionChatPane({
       {children}
     </div>
   );
+}
+
+type MissionChatSessionCardProps = {
+  active: boolean;
+  activityHistoryState?: HistoryState;
+  activityLoading: MissionToolActivity | null;
+  bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
+  copy: MissionChatPaneCopy;
+  dismissedCompletedPlanKey?: string;
+  expandedMessageIds: ReadonlySet<string>;
+  flat?: boolean;
+  isRuntimeActive: boolean;
+  messageHistoryState?: HistoryState;
+  onBodyScroll: (sessionId: string, body: HTMLDivElement) => void;
+  onClear: (session: SessionSummary) => void;
+  onClose: (session: SessionSummary) => void;
+  onDismissCompletedPlan: (sessionId: string, planKey: string) => void;
+  onFocus: (sessionId: string) => void;
+  onLoadOlderMessages: (sessionId: string) => void;
+  onReimportHistory: (session: SessionSummary) => void;
+  onRename: (session: SessionSummary) => void;
+  onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
+  onToggleExpandedMessage: (messageId: string) => void;
+  pendingApprovals: ReadonlyArray<MissionPendingApproval>;
+  pendingToolPresent: boolean;
+  pendingToolTitle: string | null;
+  plan?: AgentPlan | null;
+  restoreNotice?: SessionRestoreNotice;
+  session: SessionSummary;
+  sessionMessages: AgentMessage[];
+  sessionToolCalls: AgentToolCall[];
+  showPermissionWorktree: boolean;
+  showThinking: boolean;
+  timelineItems: SessionTimelineEntry[];
+};
+
+const MissionChatSessionCard = memo(function MissionChatSessionCard({
+  active,
+  activityHistoryState,
+  activityLoading,
+  bodyScrollSnapshot,
+  copy,
+  dismissedCompletedPlanKey,
+  expandedMessageIds,
+  flat = false,
+  isRuntimeActive,
+  messageHistoryState,
+  onBodyScroll,
+  onClear,
+  onClose,
+  onDismissCompletedPlan,
+  onFocus,
+  onLoadOlderMessages,
+  onReimportHistory,
+  onRename,
+  onRespondToPermission,
+  onToggleExpandedMessage,
+  pendingApprovals,
+  pendingToolPresent,
+  pendingToolTitle,
+  plan,
+  restoreNotice,
+  session,
+  sessionMessages,
+  sessionToolCalls,
+  showPermissionWorktree,
+  showThinking,
+  timelineItems,
+}: MissionChatSessionCardProps) {
+  const sessionTimeline = useMemo(
+    () => splitMissionToolCalls(sessionToolCalls),
+    [sessionToolCalls],
+  );
+  const historyStateBySession = useMemo(
+    () => ({ [session.id]: messageHistoryState }),
+    [messageHistoryState, session.id],
+  );
+  const activityHistoryStateBySession = useMemo(
+    () => ({ [session.id]: activityHistoryState }),
+    [activityHistoryState, session.id],
+  );
+  const handleBodyScroll = useCallback<UIEventHandler<HTMLDivElement>>(
+    (event) => onBodyScroll(session.id, event.currentTarget),
+    [onBodyScroll, session.id],
+  );
+  const visiblePlan =
+    plan &&
+    !(
+      isAgentPlanComplete(plan) &&
+      dismissedCompletedPlanKey === createAgentPlanDismissalKey(plan)
+    )
+      ? plan
+      : null;
+  const toolLoading = resolveChatSessionToolLoading(session, {
+    activeSessionId: isRuntimeActive ? session.id : null,
+    activeSessionMessages: sessionMessages,
+    activeSessionToolCalls: sessionToolCalls,
+    sessionMessagesById: { [session.id]: sessionMessages },
+    sessionToolCallsById: { [session.id]: sessionToolCalls },
+    activityLoading,
+    pendingToolPresent,
+    pendingApprovals,
+  });
+  const approvalStack = pendingApprovals.length > 0 ? (
+    <div className="mission-approval-stack grid gap-2">
+      {pendingApprovals.map((approval) => (
+        <MissionPermissionDrawer
+          key={approval.request.id}
+          request={approval.request}
+          copy={copy}
+          showWorktree={showPermissionWorktree}
+          fallbackToolTitle={pendingToolTitle}
+          resolving={approval.resolving}
+          onRespond={(decision) => onRespondToPermission(approval.request.id, decision)}
+        />
+      ))}
+    </div>
+  ) : null;
+
+  return (
+    <SessionCard
+      session={session}
+      active={active}
+      bodyScrollSnapshot={bodyScrollSnapshot}
+      onBodyScroll={handleBodyScroll}
+      onFocus={onFocus}
+      onRename={onRename}
+      onClear={onClear}
+      onReimportHistory={onReimportHistory}
+      onClose={onClose}
+      onDismissCompletedPlan={onDismissCompletedPlan}
+      restoreNotice={restoreNotice}
+      toolLoading={toolLoading}
+      plan={visiblePlan}
+      flat={flat}
+    >
+      {approvalStack}
+      {sessionMessages.length || timelineItems.length ? (
+        <MissionMessageTimeline
+          items={sessionMessages}
+          timelineItems={timelineItems}
+          thinkingToolCalls={sessionTimeline.thinkingToolCalls}
+          toolCalls={sessionTimeline.timelineToolCalls}
+          showThinking={showThinking}
+          boundaryTimestamps={sessionTimeline.boundaryTimestamps}
+          sessionId={session.id}
+          assistantLabel={session.agentName}
+          copy={copy}
+          expandedMessageIds={expandedMessageIds}
+          historyStateBySession={historyStateBySession}
+          activityHistoryStateBySession={activityHistoryStateBySession}
+          onLoadOlderMessages={onLoadOlderMessages}
+          onToggleExpandedMessage={onToggleExpandedMessage}
+        />
+      ) : (
+        <SessionPreviewMessages session={session} restoring={isRuntimeActive} />
+      )}
+    </SessionCard>
+  );
+});
+
+function useStableEvent<T extends (...args: any[]) => unknown>(handler: T): T {
+  const handlerRef = useRef(handler);
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
+  return useCallback(((...args: Parameters<T>) => handlerRef.current(...args)) as T, []);
 }

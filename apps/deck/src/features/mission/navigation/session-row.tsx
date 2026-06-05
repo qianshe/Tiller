@@ -3,7 +3,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import type { SessionStatus, SessionSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionStatus, SessionSummary } from "@tiller/shared";
 import {
   Badge,
   Button,
@@ -11,6 +11,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Icon,
 } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 
@@ -25,6 +26,7 @@ type SessionRowProps = {
   resolveDisplayTitle: (session: SessionSummary) => string;
   regenerateSessionTitle: (session: SessionSummary) => void;
   isRegenerating: boolean;
+  project: ProjectSummary;
   session: SessionSummary;
   sessionStatus: SessionStatus;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
@@ -41,13 +43,15 @@ export function SessionRow({
   resolveDisplayTitle,
   regenerateSessionTitle,
   isRegenerating,
+  project,
   session,
   sessionStatus,
   setPendingSessionCleanup,
 }: SessionRowProps) {
   const sessionPending = isSessionExecutionPending(sessionStatus);
   const title = resolveDisplayTitle(session);
-  const worktreeLabel = resolveSessionWorktreeLabel(session);
+  const worktreeLabel = resolveSessionWorktreeLabel(session, project);
+  const relativeUpdatedAt = formatRelativeTime(session.updatedAt);
   const isFocused = session.id === (highlightedSessionId ?? activeSessionId);
   const isOpenSession = openSessionIds.has(session.id);
   const isHighlighted = isFocused || isOpenSession;
@@ -55,22 +59,18 @@ export function SessionRow({
   return (
     <div
       className={cn(
-        "mission-tree-session-row group/session relative grid grid-cols-[minmax(0,1fr)_28px] items-center gap-0.5 overflow-visible",
+        "mission-tree-session-row group/session relative grid grid-cols-[minmax(0,1fr)_24px] items-center gap-0.5 overflow-visible rounded-sm text-foreground transition hover:bg-surface-emphasis/60",
+        isHighlighted && "active bg-surface-emphasis/70 text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary",
+        isOpenSession && !isFocused && "bg-surface-emphasis/35 text-foreground",
         sessionPending && "is-running",
       )}
     >
       <button
         type="button"
         className={cn(
-          "mission-tree-row mission-tree-row-session grid min-w-0 grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 h-5 text-left text-action text-foreground transition hover:bg-surface-emphasis/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 cursor-grab active:cursor-grabbing",
-          isHighlighted && "active relative bg-surface-emphasis/70 pl-2 text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary",
-          isOpenSession && !isFocused && "bg-surface-emphasis/35 text-foreground",
+          "mission-tree-row mission-tree-row-session grid min-w-0 cursor-default grid-cols-[14px_minmax(0,1fr)_14px_auto] items-center gap-1.5 px-1.5 h-5 text-left text-action text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          isHighlighted && "pl-2",
         )}
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData("application/x-tiller-session-id", session.id);
-          event.dataTransfer.effectAllowed = "copy";
-        }}
         onClick={() => openSession(session.id)}
         role="treeitem"
         aria-level={3}
@@ -85,6 +85,16 @@ export function SessionRow({
         <span className="mission-tree-main flex min-w-0 items-center">
           <span className="min-w-0 truncate text-action leading-none">{title}</span>
         </span>
+        {worktreeLabel ? (
+          <span
+            className="mission-tree-worktree-icon grid size-3.5 place-items-center text-muted-foreground/80"
+            title={`Worktree：${worktreeLabel}`}
+          >
+            <Icon name="branch" size={10} />
+          </span>
+        ) : (
+          <span aria-hidden="true" className="size-3.5" />
+        )}
         <span className="mission-tree-session-side flex shrink-0 items-center gap-1">
           {sessionPending ? (
             <Badge
@@ -97,8 +107,12 @@ export function SessionRow({
               {copy.status[sessionStatus]}
             </Badge>
           ) : (
-            <span className="mission-tree-time shrink-0 text-right font-mono text-2xs tabular text-muted-foreground">
-              {formatRelativeTime(session.updatedAt)}
+            <span
+              className="mission-tree-time shrink-0 text-right font-mono text-2xs tabular text-muted-foreground"
+              title={`最后更新：${relativeUpdatedAt}`}
+              aria-label={`最后更新：${relativeUpdatedAt}`}
+            >
+              {relativeUpdatedAt}
             </span>
           )}
         </span>
@@ -109,7 +123,7 @@ export function SessionRow({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger shrink-0 rounded text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
+            className="session-inline-action mission-tree-cleanup mission-tree-actions-trigger mr-0.5 shrink-0 rounded text-muted-foreground opacity-70 hover:text-foreground group-hover/session:opacity-100"
             aria-label={`${title} 的操作`}
             title="任务操作"
             onPointerDown={(event) => event.stopPropagation()}
@@ -142,14 +156,38 @@ export function SessionRow({
   );
 }
 
-function resolveSessionWorktreeLabel(session: SessionSummary) {
-  if (!isWorktreeSession(session)) {
+function resolveSessionWorktreeLabel(session: SessionSummary, project: ProjectSummary) {
+  if (!isWorktreeSession(session, project)) {
     return null;
   }
   return session.worktreeName || session.cwd || null;
 }
 
-function isWorktreeSession(session: SessionSummary) {
+function isWorktreeSession(session: SessionSummary, project: ProjectSummary) {
+  const normalizedCwd = normalizeWorktreePath(session.cwd);
+  const normalizedProjectPath = normalizeWorktreePath(project.path);
+  if (normalizedCwd && normalizedProjectPath && normalizedCwd === normalizedProjectPath) {
+    return false;
+  }
+
+  const matchedWorktree = normalizedCwd
+    ? project.worktrees?.find(
+        (worktree) => normalizeWorktreePath(worktree.path) === normalizedCwd,
+      )
+    : undefined;
+  if (matchedWorktree) {
+    return normalizeWorktreePath(matchedWorktree.path) !== normalizedProjectPath;
+  }
+
+  const worktreeName = session.worktreeName?.trim();
+  if (
+    worktreeName &&
+    worktreeName !== session.projectName?.trim() &&
+    worktreeName.toLowerCase() !== "main"
+  ) {
+    return true;
+  }
+
   const normalizedWorktree = `${session.cwd} ${session.worktreeName ?? ""}`.toLowerCase();
   return (
     normalizedWorktree.includes("-worktree-") ||
@@ -158,25 +196,8 @@ function isWorktreeSession(session: SessionSummary) {
   );
 }
 
-function WorktreeIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="size-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.6"
-    >
-      <circle cx="5" cy="3.5" r="1.8" />
-      <circle cx="5" cy="12.5" r="1.8" />
-      <circle cx="12" cy="8" r="1.8" />
-      <path d="M5 5.3v5.4" />
-      <path d="M6.5 4.4h2.1A3.4 3.4 0 0 1 12 7.8" />
-    </svg>
-  );
+function normalizeWorktreePath(path: string | undefined) {
+  return path?.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
 function isSessionExecutionPending(status: SessionStatus) {

@@ -86,7 +86,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
       if (!activeSession?.id || retained.includes(activeSession.id)) {
         return retained.length === current.length ? current : retained;
       }
-      return [...retained, activeSession.id];
+      return [activeSession.id, ...retained];
     });
   }, [activeSession?.id, sessions]);
 
@@ -112,30 +112,32 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
   }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
 
   const openChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatWindowId(`session:${sessionId}`);
+    setOpenChatSessionIds((current: string[]) => addChatSessionIdToFront(current, sessionId));
     hydrateOpenSessionStreams([sessionId]);
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
+    setFocusedChatWindowId(`session:${sessionId}`);
   };
 
   const selectChatSession = (sessionId: string) => {
-    setOpenChatSessionIds((current: string[]) => (current.includes(sessionId) ? current : [...current, sessionId]));
-    setFocusedChatWindowId(`session:${sessionId}`);
+    setOpenChatSessionIds((current: string[]) =>
+      current.includes(sessionId) ? current : addChatSessionIdToFront(current, sessionId),
+    );
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
+    setFocusedChatWindowId(`session:${sessionId}`);
   };
 
   const closeChatSession = (session: SessionSummary) => {
     setOpenChatSessionIds((current: string[]) => {
       const next = current.filter((sessionId) => sessionId !== session.id);
       if (focusedRealSessionId === session.id) {
-        setFocusedChatWindowId(next.at(-1) ? `session:${next.at(-1)}` : null);
+        setFocusedChatWindowId(next[0] ? `session:${next[0]}` : null);
       }
       if (activeSessionId === session.id) {
-        const nextActiveSessionId = next.at(-1) ?? null;
+        const nextActiveSessionId = next[0] ?? null;
         if (nextActiveSessionId) {
           openSession(nextActiveSessionId);
         } else {
@@ -198,9 +200,9 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     const attachedSessionId = activeSession.id;
     pendingDraftWindowRef.current = null;
     setDraftChatWindow?.(null);
-    setOpenChatSessionIds((current: string[]) => (
-      current.includes(attachedSessionId) ? current : [...current, attachedSessionId]
-    ));
+    setOpenChatSessionIds((current: string[]) =>
+      addChatSessionIdToFront(current, attachedSessionId),
+    );
     setFocusedChatWindowId(`session:${attachedSessionId}`);
   }, [activeSession?.id, activeSession?.projectId, activeSession?.cwd, activeSession?.agentId, draftChatWindow]);
 
@@ -212,4 +214,11 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     selectAgentForDraftWindow,
     submitPromptFromFocusedWindow,
   };
+}
+
+export function addChatSessionIdToFront(current: string[], sessionId: string) {
+  if (current.includes(sessionId)) {
+    return current;
+  }
+  return [sessionId, ...current.filter((item) => item !== sessionId)];
 }

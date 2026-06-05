@@ -20,11 +20,13 @@ import { SidebarProjectNode } from "./sidebar-project-node";
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
 type MissionRuntimeOverviewChild = {
+  activeSessionCount?: number;
   branchName: string;
   id: string;
   model?: string | null;
   projectName: string;
   reasoningEffort?: string | null;
+  sessionCount?: number;
   status: string;
 };
 
@@ -355,28 +357,37 @@ export function MissionSidebar({
                       <span className="min-w-0 truncate font-medium text-foreground">
                         {item.label}
                       </span>
-                      <span className="ml-auto shrink-0 rounded-sm bg-surface-emphasis px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">
+                      <Badge
+                        variant={resolveRuntimeOverviewStatusVariant(item.status)}
+                        className={cn(
+                          "ml-auto shrink-0 rounded-sm border border-transparent px-1.5 py-0 text-[10px] font-medium",
+                          item.status === "已连接" &&
+                            "border-success/50 bg-success/20 text-success font-semibold",
+                        )}
+                      >
                         {item.status}
-                      </span>
+                      </Badge>
                     </summary>
                     <div className="mt-1 grid gap-0.5 pl-4 text-[10px] leading-snug text-muted-foreground">
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="min-w-0 truncate">{item.meta}</span>
-                        <span className="shrink-0 font-mono tabular">{item.runtimeSessionId}</span>
-                      </div>
+                      {!item.children?.length ? (
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <span className="min-w-0 truncate">{item.meta}</span>
+                          <span className="shrink-0 font-mono tabular">{item.runtimeSessionId}</span>
+                        </div>
+                      ) : null}
                       {item.children?.length ? (
                         <div className="grid gap-0.5">
                           {item.children.slice(0, 3).map((child) => (
-                            <div key={child.id} className="flex min-w-0 items-center gap-1.5">
-                              <span className="shrink-0 rounded bg-surface-emphasis px-1 py-0.5 font-mono text-[9px] text-muted-foreground">
-                                {child.status}
-                              </span>
+                            <div
+                              key={child.id}
+                              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5"
+                              title={child.branchName ? `Worktree：${child.branchName}` : undefined}
+                            >
                               <span className="min-w-0 truncate text-foreground/80">
                                 {child.projectName}
                               </span>
-                              <span className="shrink-0 text-muted-foreground/60">·</span>
-                              <span className="min-w-0 truncate text-muted-foreground/80">
-                                {child.branchName}
+                              <span className="shrink-0 rounded bg-surface-emphasis px-1 py-0.5 font-mono text-[9px] text-muted-foreground">
+                                {formatRuntimeOverviewChildStatus(child)}
                               </span>
                             </div>
                           ))}
@@ -397,6 +408,30 @@ export function MissionSidebar({
       {resizer}
     </>
   );
+}
+
+function resolveRuntimeOverviewStatusVariant(status: string) {
+  if (status === "已连接") {
+    return "success" as const;
+  }
+  if (status === "连接中") {
+    return "warning" as const;
+  }
+  return "secondary" as const;
+}
+
+function formatRuntimeOverviewChildStatus(child: MissionRuntimeOverviewChild) {
+  if (typeof child.sessionCount !== "number") {
+    return child.status.replaceAll(" 个会话", " 会话").replace(" · 0 活跃", "");
+  }
+  if (
+    typeof child.activeSessionCount === "number" &&
+    child.activeSessionCount > 0 &&
+    child.activeSessionCount !== child.sessionCount
+  ) {
+    return `${child.sessionCount} 会话 · ${child.activeSessionCount} 活跃`;
+  }
+  return `${child.sessionCount} 会话`;
 }
 
 function matchesMissionSidebarSearch(

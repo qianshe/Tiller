@@ -16,7 +16,11 @@ export function normalizeWorktreePath(path: string | undefined | null) {
 
 export function formatRuntimeSessionCount(sessionCount: number, activeSessionCount?: number) {
   const base = `${sessionCount} 个会话`;
-  if (activeSessionCount === undefined || activeSessionCount === sessionCount) {
+  if (
+    activeSessionCount === undefined ||
+    activeSessionCount === 0 ||
+    activeSessionCount === sessionCount
+  ) {
     return base;
   }
   return `${base} · ${activeSessionCount} 活跃`;

@@ -166,8 +166,11 @@ test("planProviderHistorySync skips unchanged empty provider history", () => {
   assert.equal(decision.nextState.messageCount, 0);
 });
 
-test("shouldImportAuthoritativeProviderHistory keeps local history as the source once local messages exist", () => {
-  const localMessages = [baseMessage("session-1-msg-s0", "本地流式消息")];
+test("shouldImportAuthoritativeProviderHistory keeps local history as the source once local user messages exist", () => {
+  const localMessages: AgentMessage[] = [
+    { ...baseMessage("session-1-user", "本地用户消息"), role: "user" },
+    baseMessage("session-1-msg-s0", "本地流式消息"),
+  ];
 
   assert.equal(
     shouldImportAuthoritativeProviderHistory({
@@ -175,6 +178,18 @@ test("shouldImportAuthoritativeProviderHistory keeps local history as the source
       currentState: undefined,
     }),
     false,
+  );
+});
+
+test("shouldImportAuthoritativeProviderHistory imports provider history when local cache has only assistant fragments", () => {
+  const localMessages = [baseMessage("session-1-msg-s0", "本地流式消息")];
+
+  assert.equal(
+    shouldImportAuthoritativeProviderHistory({
+      localMessages,
+      currentState: undefined,
+    }),
+    true,
   );
 });
 

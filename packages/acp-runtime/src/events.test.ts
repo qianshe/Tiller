@@ -691,6 +691,51 @@ test("mapSessionUpdateNotification maps ACP plan updates", () => {
   ]);
 });
 
+test("mapSessionUpdateNotification maps Codex update_plan tools into plan updates", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-plan",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-plan",
+          title: "update_plan",
+          status: "completed",
+          rawInput: {
+            plan: [
+              { step: "检查同步链路", status: "completed" },
+              { step: "修复 Codex plan 投影", status: "in_progress" },
+              { step: "跑回归测试", status: "pending" },
+            ],
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.equal(mapped?.event.type, "plan-update");
+  if (mapped?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(mapped.event.plan.entries, [
+    { content: "检查同步链路", priority: "medium", status: "completed" },
+    { content: "修复 Codex plan 投影", priority: "medium", status: "in_progress" },
+    { content: "跑回归测试", priority: "medium", status: "pending" },
+  ]);
+});
+
 test("mapSessionUpdateNotification classifies agent tool calls as subagent", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

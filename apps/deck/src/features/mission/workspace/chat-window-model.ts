@@ -33,7 +33,7 @@ export function buildChatWindowModel(input: BuildChatWindowModelInput): ChatWind
     : null;
   const persistedOpenChatSessionIds = input.openChatSessionIds;
   const visibleChatSessionIds = input.activeSession?.id && !persistedOpenChatSessionIds.includes(input.activeSession.id)
-    ? [...persistedOpenChatSessionIds, input.activeSession.id]
+    ? [input.activeSession.id, ...persistedOpenChatSessionIds]
     : persistedOpenChatSessionIds;
   const openSessions = visibleChatSessionIds
     .map((sessionId) => sessionById.get(sessionId))

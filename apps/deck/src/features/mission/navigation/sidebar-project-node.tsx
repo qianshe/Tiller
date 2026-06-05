@@ -117,6 +117,7 @@ export function SidebarProjectNode({
                   resolveDisplayTitle={resolveDisplaySessionTitle}
                   regenerateSessionTitle={regenerateSessionTitle}
                   isRegenerating={regeneratingIds.has(session.id)}
+                  project={project}
                   session={session}
                   sessionStatus={sessionStatus}
                   setPendingSessionCleanup={setPendingSessionCleanup}

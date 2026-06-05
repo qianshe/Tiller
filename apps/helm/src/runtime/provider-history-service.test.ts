@@ -98,6 +98,89 @@ test("authoritative provider history drops stale local thinking after final mess
   assert.deepEqual(storedToolCalls.map((toolCall) => toolCall.id), ["tool-read"]);
 });
 
+test("authoritative provider history imports when local cache has only assistant fragments", () => {
+  const sessionId = "session-assistant-only-local-history";
+  const localMessagesBySession = new Map<string, AgentMessage[]>([
+    [
+      sessionId,
+      [
+        {
+          id: "local-assistant-fragment",
+          role: "assistant",
+          text: "本地只有 assistant 流片段",
+          timestamp: "2026-05-17T09:34:38.000Z",
+        },
+      ],
+    ],
+  ]);
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id: string) => localMessagesBySession.get(id) ?? [],
+      replace: (id: string, messages: AgentMessage[]) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id: string, message: AgentMessage) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+      replaceToolCalls: () => {},
+    },
+    sessionRuntimeStore: {
+      get: () => undefined,
+      upsert: () => {},
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  service.applyAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    } as any,
+    "runtime-1",
+    createHistorySnapshot({
+      source: "adapter-authoritative-history",
+      messages: [
+        {
+          id: "provider-user",
+          role: "user",
+          text: "用户原始请求",
+          timestamp: "2026-05-17T09:34:37.000Z",
+        },
+        {
+          id: "provider-assistant",
+          role: "assistant",
+          text: "最终回复",
+          timestamp: "2026-05-17T09:34:39.000Z",
+        },
+      ],
+      toolCalls: [],
+      outputs: [],
+      diffs: [],
+    }),
+  );
+
+  assert.deepEqual(
+    localMessagesBySession.get(sessionId)?.map((message) => [message.role, message.text]),
+    [
+      ["user", "用户原始请求"],
+      ["assistant", "最终回复"],
+    ],
+  );
+});
+
 test("authoritative provider history skips assistant-only snapshots that would drop local user prompts", () => {
   const sessionId = "session-incomplete-provider-history";
   const localMessages: AgentMessage[] = [

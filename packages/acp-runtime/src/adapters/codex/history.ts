@@ -13,6 +13,7 @@ import {
 } from "../history-events";
 import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
+import { extractCodexPlanFromToolCall } from "./plan-events";
 
 export const codexHistoryReader: ProviderHistoryReader<string> = {
   read: ({ runtimeSessionId }) => readCodexHistorySource(runtimeSessionId),
@@ -30,7 +31,18 @@ export async function loadCodexHistory(
 }
 
 export function parseCodexJsonlHistory(raw: string): AcpAuthoritativeHistory {
-  return buildAuthoritativeHistoryFromEvents(parseCodexJsonlEvents(raw));
+  return buildCodexAuthoritativeHistoryFromEvents(parseCodexJsonlEvents(raw));
+}
+
+export function buildCodexAuthoritativeHistoryFromEvents(
+  events: HistoryEvent[],
+): AcpAuthoritativeHistory {
+  const history = buildAuthoritativeHistoryFromEvents(events);
+  const plan = history.toolCalls
+    .map((toolCall) => extractCodexPlanFromToolCall(toolCall))
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .at(-1);
+  return plan ? { ...history, plan } : history;
 }
 
 function parseCodexJsonlEvents(raw: string): HistoryEvent[] {
