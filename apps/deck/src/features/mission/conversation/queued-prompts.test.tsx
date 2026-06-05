@@ -27,15 +27,21 @@ test("MissionQueuedPrompts renders queued items and actions", () => {
   );
 
   assert.match(html, /Prompt 队列/);
+  assert.match(html, /data-prompt-queue-details/);
+  assert.match(html, /data-prompt-queue-summary/);
   assert.match(html, /next prompt/);
   assert.match(html, /mission-prompt-queue[^\"]*p-1/);
   assert.match(html, /mission-queued-prompt-text[^\"]*text-xs/);
-  assert.match(html, /h-6/);
+  assert.match(html, /aria-label="编辑队列 Prompt"/);
+  assert.match(html, /aria-label="删除队列 Prompt"/);
+  assert.match(html, /size-3/);
+  assert.doesNotMatch(html, /排队 #/);
+  assert.doesNotMatch(html, /ACP 完成当前 Prompt 后自动发送队首/);
   assert.doesNotMatch(html, /<input/);
   assert.doesNotMatch(html, /<textarea/);
-  assert.match(html, /编辑/);
+  assert.doesNotMatch(html, />编辑</);
   assert.doesNotMatch(html, />保存</);
-  assert.match(html, /删除/);
+  assert.doesNotMatch(html, />删除</);
 });
 
 test("MissionQueuedPrompts hides in-flight prompts when nothing is queued", () => {

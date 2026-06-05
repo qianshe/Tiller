@@ -24,6 +24,13 @@ test("createMissionVisualFixture can build a two-window mission fixture", () => 
   assert.equal(fixture.focusedChatWindowId, "session:visual-session");
   assert.ok(fixture.sessionPlans["visual-session"]);
   assert.ok(fixture.sessionPlans["visual-session-secondary"]);
+  const promptQueue = fixture.promptQueues["visual-session"];
+  assert.ok(promptQueue);
+  assert.equal(promptQueue.queued.length, 2);
+  assert.deepEqual(fixture.pendingApprovalIdsBySession["visual-session"], [
+    "visual-permission-1",
+  ]);
+  assert.ok(fixture.approvalItemsById["visual-permission-1"]);
 });
 
 test("createMissionVisualFixture can simulate dashboard status colors", () => {

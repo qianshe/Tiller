@@ -47,7 +47,13 @@ export type SessionCardScrollSnapshot = {
   scrollHeight: number;
 };
 
+type SessionDockPanel = "promptQueue" | "plan";
+
 const SCROLL_TO_BOTTOM_THRESHOLD = 80;
+const PLAN_DOCK_BODY_PADDING = "78px";
+const PLAN_DOCK_SCROLL_BUTTON_BOTTOM = "85px";
+const PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING;
+const PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM = PLAN_DOCK_SCROLL_BUTTON_BOTTOM;
 
 export function shouldShowSessionScrollToBottom({
   scrollHeight,
@@ -64,27 +70,34 @@ export function shouldShowSessionScrollToBottom({
 function ScrollToBottomButton({
   visible,
   position = "bottom",
+  dockBottomOffset,
   onClick,
 }: {
   visible: boolean;
-  position?: "bottom" | "above-plan";
+  position?: "bottom" | "above-dock";
+  dockBottomOffset?: string;
   onClick: () => void;
 }) {
   if (!visible) {
     return null;
   }
+  const buttonStyle =
+    position === "above-dock" && dockBottomOffset
+      ? { bottom: dockBottomOffset }
+      : undefined;
 
   return (
     <button
       type="button"
       className={cn(
         "absolute right-3 z-10 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-        position === "above-plan" ? "bottom-14" : "bottom-3",
+        position === "above-dock" ? "bottom-24" : "bottom-3",
       )}
       aria-label="回到底部"
       title="回到底部"
       data-session-scroll-bottom
       data-session-scroll-bottom-position={position}
+      style={buttonStyle}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -186,6 +199,8 @@ export function SessionCard({
   restoreNotice,
   toolLoading,
   plan,
+  promptQueuePanel,
+  blockingOverlay,
   flat = false,
   children,
 }: {
@@ -202,6 +217,8 @@ export function SessionCard({
   restoreNotice?: SessionRestoreNotice;
   toolLoading?: MissionToolLoadingState;
   plan?: AgentPlan | null;
+  promptQueuePanel?: ReactNode;
+  blockingOverlay?: ReactNode;
   flat?: boolean;
   children: ReactNode;
 }) {
@@ -218,6 +235,7 @@ export function SessionCard({
     sessionId: string;
     planKey: string;
   } | null>(null);
+  const [dockPanelPreference, setDockPanelPreference] = useState<SessionDockPanel | null>(null);
   const planKey = plan ? createAgentPlanDismissalKey(plan) : null;
   const visiblePlan =
     plan &&
@@ -228,7 +246,29 @@ export function SessionCard({
     )
       ? plan
       : null;
-  const hasFloatingPlan = Boolean(visiblePlan?.entries.length);
+  const hasPromptQueueDock = Boolean(promptQueuePanel);
+  const hasPlanDock = Boolean(visiblePlan?.entries.length);
+  const hasFloatingDock = hasPromptQueueDock || hasPlanDock;
+  const activeDockPanel: SessionDockPanel | null = hasPromptQueueDock
+    ? dockPanelPreference === "plan" && hasPlanDock
+      ? "plan"
+      : "promptQueue"
+    : hasPlanDock
+      ? "plan"
+      : null;
+  const bodyBottomPaddingClass = hasFloatingDock ? "pb-16" : "pb-9";
+  const floatingDockPadding =
+    activeDockPanel === "promptQueue"
+      ? PROMPT_QUEUE_DOCK_BODY_PADDING
+      : activeDockPanel === "plan"
+        ? PLAN_DOCK_BODY_PADDING
+        : undefined;
+  const floatingDockButtonBottom =
+    activeDockPanel === "promptQueue"
+      ? PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM
+      : activeDockPanel === "plan"
+        ? PLAN_DOCK_SCROLL_BUTTON_BOTTOM
+        : undefined;
   const dismissPlan = useCallback(() => {
     if (!plan || !planKey) {
       return;
@@ -239,6 +279,15 @@ export function SessionCard({
     }
     setDismissedTransientPlan({ sessionId: session.id, planKey });
   }, [onDismissCompletedPlan, plan, planKey, session.id]);
+
+  useEffect(() => {
+    if (
+      (dockPanelPreference === "promptQueue" && !hasPromptQueueDock) ||
+      (dockPanelPreference === "plan" && !hasPlanDock)
+    ) {
+      setDockPanelPreference(null);
+    }
+  }, [dockPanelPreference, hasPlanDock, hasPromptQueueDock]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -410,29 +459,87 @@ export function SessionCard({
           }}
           className={cn(
             "flex h-full min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            flat ? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2.5",
+            flat
+              ? cn("px-4 pt-3", bodyBottomPaddingClass)
+              : cn("px-3 pt-2.5", bodyBottomPaddingClass),
           )}
+          style={floatingDockPadding ? { paddingBottom: floatingDockPadding } : undefined}
           data-session-card-body={session.id}
         >
           <div className="space-y-3">{children}</div>
         </div>
       </div>
+      {blockingOverlay ? (
+        <div
+          className="pointer-events-none absolute inset-x-3 top-1/2 z-30 -translate-y-1/2"
+          data-session-blocking-overlay={session.id}
+        >
+          <div className="pointer-events-auto mx-auto max-h-[min(60vh,calc(100vh_-_8rem))] max-w-[min(100%,640px)] overflow-y-auto">
+            {blockingOverlay}
+          </div>
+        </div>
+      ) : null}
       <ScrollToBottomButton
         visible={showScrollToBottom}
-        position={hasFloatingPlan ? "above-plan" : "bottom"}
+        position={hasFloatingDock ? "above-dock" : "bottom"}
+        dockBottomOffset={hasFloatingDock ? floatingDockButtonBottom : undefined}
         onClick={scrollToBottom}
       />
-      {hasFloatingPlan ? (
+      {activeDockPanel ? (
         <div
           className="mission-plan-dock pointer-events-none absolute inset-x-2 bottom-2 z-20"
           data-plan-dock="session"
           data-plan-session-id={session.id}
         >
-          <MissionPlanDrawer
-            plan={visiblePlan}
-            placement="floating"
-            onDismiss={dismissPlan}
-          />
+          {hasPromptQueueDock && hasPlanDock ? (
+            <div
+              className="pointer-events-auto mb-1 flex w-fit max-w-full items-center gap-0.5 rounded-md border border-border-ghost bg-surface/95 p-0.5 text-2xs shadow-ambient"
+              data-session-dock-tabs
+            >
+              <button
+                type="button"
+                className={cn(
+                  "rounded px-2 py-1 font-medium transition-colors",
+                  activeDockPanel === "promptQueue"
+                    ? "bg-primary-soft/30 text-primary"
+                    : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+                )}
+                data-session-dock-option="prompt-queue"
+                aria-pressed={activeDockPanel === "promptQueue"}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDockPanelPreference("promptQueue");
+                }}
+              >
+                Prompt 队列
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "rounded px-2 py-1 font-medium transition-colors",
+                  activeDockPanel === "plan"
+                    ? "bg-primary-soft/30 text-primary"
+                    : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+                )}
+                data-session-dock-option="plan"
+                aria-pressed={activeDockPanel === "plan"}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDockPanelPreference("plan");
+                }}
+              >
+                Plan
+              </button>
+            </div>
+          ) : null}
+          {activeDockPanel === "promptQueue" ? promptQueuePanel : null}
+          {activeDockPanel === "plan" ? (
+            <MissionPlanDrawer
+              plan={visiblePlan}
+              placement="floating"
+              onDismiss={dismissPlan}
+            />
+          ) : null}
         </div>
       ) : null}
     </article>

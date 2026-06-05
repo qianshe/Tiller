@@ -16,6 +16,10 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 
+type DeckApprovalItem = {
+  request: PermissionRequest;
+};
+
 type DaemonProfilesState<TProfile> = {
   daemonProfiles: TProfile[];
 };
@@ -72,10 +76,16 @@ export function useDeckData(missionVisualFixture: any) {
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
-  const approvalItemsById = useDeckStore((state) => state.approvalItemsById);
-  const pendingApprovalIdsBySession = useDeckStore(
+  const storedApprovalItemsById = useDeckStore((state) => state.approvalItemsById);
+  const approvalItemsById = (missionVisualFixture?.approvalItemsById ?? storedApprovalItemsById) as Record<
+    string,
+    DeckApprovalItem
+  >;
+  const storedPendingApprovalIdsBySession = useDeckStore(
     (state) => state.pendingApprovalIdsBySession,
   );
+  const pendingApprovalIdsBySession = (missionVisualFixture?.pendingApprovalIdsBySession ??
+    storedPendingApprovalIdsBySession) as Record<string, string[]>;
   const derivedPermissionRequests = useMemo<Record<string, PermissionRequest | null>>(() => {
     const result: Record<string, PermissionRequest | null> = {};
     for (const [sessionId, ids] of Object.entries(pendingApprovalIdsBySession)) {
@@ -123,7 +133,11 @@ export function useDeckData(missionVisualFixture: any) {
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
   const sessionAvailableCommands = useDeckStore((state) => state.sessionAvailableCommands);
   const setSessionAvailableCommands = useDeckStore((state) => state.setSessionAvailableCommands);
-  const promptQueues = useDeckStore((state) => state.promptQueues) as Record<
+  const storedPromptQueues = useDeckStore((state) => state.promptQueues) as Record<
+    string,
+    SessionPromptQueueSnapshot
+  >;
+  const promptQueues = (missionVisualFixture?.promptQueues ?? storedPromptQueues) as Record<
     string,
     SessionPromptQueueSnapshot
   >;

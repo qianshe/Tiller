@@ -145,15 +145,23 @@ test("session scroll-to-bottom affordance appears only when content is away from
 test("session scroll-to-bottom affordance stays available in flat and card modes", () => {
   assert.match(sessionCardsSource, /data-session-scroll-frame/);
   assert.match(sessionCardsSource, /className="relative min-h-0 flex-1"/);
-  assert.match(sessionCardsSource, /flat \? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2\.5"/);
+  assert.match(sessionCardsSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
+  assert.match(sessionCardsSource, /paddingBottom: floatingDockPadding/);
+  assert.match(sessionCardsSource, /PLAN_DOCK_BODY_PADDING = "78px"/);
+  assert.match(sessionCardsSource, /PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING/);
+  assert.doesNotMatch(sessionCardsSource, /ResizeObserver/);
+  assert.doesNotMatch(sessionCardsSource, /getBoundingClientRect\(\)\.height/);
   assert.doesNotMatch(sessionCardsSource, /!\s*flat\s*\?\s*\(\s*<ScrollToBottomButton/);
 });
 
-test("session scroll-to-bottom affordance moves above the floating plan", () => {
-  assert.match(sessionCardsSource, /const hasFloatingPlan = Boolean\(visiblePlan\?\.entries\.length\);/);
+test("session scroll-to-bottom affordance moves above the floating dock", () => {
+  assert.match(sessionCardsSource, /const hasFloatingDock = hasPromptQueueDock \|\| hasPlanDock;/);
   assert.match(sessionCardsSource, /visible=\{showScrollToBottom\}/);
-  assert.match(sessionCardsSource, /position=\{hasFloatingPlan \? "above-plan" : "bottom"\}/);
-  assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingPlan\}/);
+  assert.match(sessionCardsSource, /position=\{hasFloatingDock \? "above-dock" : "bottom"\}/);
+  assert.match(sessionCardsSource, /dockBottomOffset=\{hasFloatingDock \? floatingDockButtonBottom : undefined\}/);
+  assert.match(sessionCardsSource, /PLAN_DOCK_SCROLL_BUTTON_BOTTOM = "85px"/);
+  assert.match(sessionCardsSource, /PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM = PLAN_DOCK_SCROLL_BUTTON_BOTTOM/);
+  assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingDock\}/);
 });
 
 test("SessionCard menu omits redundant focus action and closes on outside pointer", () => {
@@ -183,7 +191,61 @@ test("SessionCard keeps a completed plan visible as a collapsed dock", () => {
   assert.match(html, /data-plan-dock="session"/);
   assert.match(html, /data-plan-drawer-placement="floating"/);
   assert.match(html, /已完成 2 个任务（共 2 个）/);
+  assert.match(html, /pb-16[^>]*data-session-card-body="session-1"/);
   assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
+test("SessionCard defaults to the prompt queue dock when queue and plan are both available", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      plan={completedPlan}
+      promptQueuePanel={<div data-prompt-queue-dock>Prompt 队列正文</div>}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-session-dock-tabs/);
+  assert.match(html, /data-session-dock-option="prompt-queue"/);
+  assert.match(html, /aria-pressed="true"/);
+  assert.match(html, /data-prompt-queue-dock/);
+  assert.match(html, /pb-16[^>]*data-session-card-body="session-1"/);
+  assert.doesNotMatch(html, /已完成 2 个任务（共 2 个）/);
+});
+
+test("SessionCard centers blocking overlays inside the session window", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      blockingOverlay={<div data-permission-overlay>权限请求</div>}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  const bodyIndex = html.indexOf('data-session-card-body="session-1"');
+  const overlayIndex = html.indexOf('data-session-blocking-overlay="session-1"');
+
+  assert.ok(bodyIndex >= 0);
+  assert.ok(overlayIndex > bodyIndex);
+  assert.match(html, /absolute inset-x-3 top-1\/2 z-30/);
+  assert.match(html, /-translate-y-1\/2/);
+  assert.match(html, /data-permission-overlay/);
 });
 
 test("SessionCard wires plan dismissal through the session dock", () => {

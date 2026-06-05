@@ -449,8 +449,8 @@ body[data-density="cozy"] {
     bottom: 0.75rem;
   }
 
-  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-plan"] {
-    bottom: 3.5rem;
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-dock"] {
+    bottom: 6rem;
   }
 
   .mission-responsive-mode .mission-pane-resizer,

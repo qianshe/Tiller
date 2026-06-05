@@ -658,6 +658,7 @@ export function MissionChatPane({
                 sessionPlansById[singleSession.id] ??
                 (singleSession.id === activeSessionId ? activeSessionPlan : null)
               }
+              promptQueue={singleSession.id === activeSessionId ? promptQueue : undefined}
               dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[singleSession.id]}
               activityLoading={singleSession.id === activeSessionId ? activityLoading : null}
               pendingToolPresent={singleSession.id === activeSessionId ? pendingToolPresent : false}
@@ -670,6 +671,8 @@ export function MissionChatPane({
               showPermissionWorktree={showPermissionWorktree}
               onLoadOlderMessages={handleLoadOlderMessages}
               onToggleExpandedMessage={handleToggleExpandedMessage}
+              onUpdateQueuedPrompt={onUpdateQueuedPrompt}
+              onDeleteQueuedPrompt={onDeleteQueuedPrompt}
               onRespondToPermission={handleRespondToPermission}
             />
           ) : (
@@ -713,6 +716,7 @@ export function MissionChatPane({
                     sessionPlansById[session.id] ??
                     (session.id === activeSessionId ? activeSessionPlan : null)
                   }
+                  promptQueue={session.id === activeSessionId ? promptQueue : undefined}
                   dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[session.id]}
                   activityLoading={session.id === activeSessionId ? activityLoading : null}
                   pendingToolPresent={session.id === activeSessionId ? pendingToolPresent : false}
@@ -725,6 +729,8 @@ export function MissionChatPane({
                   showPermissionWorktree={showPermissionWorktree}
                   onLoadOlderMessages={handleLoadOlderMessages}
                   onToggleExpandedMessage={handleToggleExpandedMessage}
+                  onUpdateQueuedPrompt={onUpdateQueuedPrompt}
+                  onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
                 />
               ))}
@@ -732,13 +738,6 @@ export function MissionChatPane({
           )
         ) : null}{" "}
       </div>{" "}
-      {activeSession ? (
-        <MissionQueuedPrompts
-          queue={promptQueue}
-          onUpdate={onUpdateQueuedPrompt}
-          onDelete={onDeleteQueuedPrompt}
-        />
-      ) : null}
       {children}
     </div>
   );
@@ -765,10 +764,13 @@ type MissionChatSessionCardProps = {
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
+  onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
   pendingApprovals: ReadonlyArray<MissionPendingApproval>;
   pendingToolPresent: boolean;
   pendingToolTitle: string | null;
   plan?: AgentPlan | null;
+  promptQueue?: SessionPromptQueueSnapshot;
   restoreNotice?: SessionRestoreNotice;
   session: SessionSummary;
   sessionMessages: AgentMessage[];
@@ -799,10 +801,13 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
+  onUpdateQueuedPrompt,
+  onDeleteQueuedPrompt,
   pendingApprovals,
   pendingToolPresent,
   pendingToolTitle,
   plan,
+  promptQueue,
   restoreNotice,
   session,
   sessionMessages,
@@ -860,6 +865,14 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       ))}
     </div>
   ) : null;
+  const promptQueuePanel = promptQueue?.queued.length ? (
+    <MissionQueuedPrompts
+      queue={promptQueue}
+      placement="floating"
+      onUpdate={onUpdateQueuedPrompt}
+      onDelete={onDeleteQueuedPrompt}
+    />
+  ) : null;
 
   return (
     <SessionCard
@@ -876,9 +889,10 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       restoreNotice={restoreNotice}
       toolLoading={toolLoading}
       plan={visiblePlan}
+      promptQueuePanel={promptQueuePanel}
+      blockingOverlay={approvalStack}
       flat={flat}
     >
-      {approvalStack}
       {sessionMessages.length || timelineItems.length ? (
         <MissionMessageTimeline
           items={sessionMessages}

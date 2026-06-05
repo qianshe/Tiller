@@ -9,6 +9,7 @@ import type {
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
+  SessionPromptQueueSnapshot,
   SessionStatus,
   SessionSummary,
   WorktreeSummary,
@@ -25,8 +26,16 @@ type MissionVisualFixture = {
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
   sessionPlans: Record<string, AgentPlan>;
+  promptQueues: Record<string, SessionPromptQueueSnapshot>;
   diffs: Record<string, FileDiffSummary[]>;
   permissionRequests: Record<string, PermissionRequest>;
+  approvalItemsById: Record<string, {
+    sessionId: string;
+    request: PermissionRequest;
+    createdAt: string;
+    resolving: boolean;
+  }>;
+  pendingApprovalIdsBySession: Record<string, string[]>;
   activeSessionId: string;
   openChatSessionIds: string[];
   focusedChatWindowId: string | null;
@@ -173,6 +182,50 @@ export function createMissionVisualFixture({
       updatedAt: now,
     };
   }
+  const promptQueues: Record<string, SessionPromptQueueSnapshot> = {
+    [sessionId]: {
+      sessionId,
+      inFlight: {
+        id: "visual-prompt-0",
+        sessionId,
+        text: "当前正在执行的 Prompt。",
+        clientMessageId: "visual-client-0",
+        createdAt: now,
+        updatedAt: now,
+        status: "sending",
+      },
+      queued: [
+        {
+          id: "visual-prompt-1",
+          sessionId,
+          text: "复核 Prompt 队列是否显示在小窗口内部。",
+          clientMessageId: "visual-client-1",
+          createdAt: now,
+          updatedAt: now,
+          status: "queued",
+        },
+        {
+          id: "visual-prompt-2",
+          sessionId,
+          text: "确认队列与 Plan 通过小窗口选项二选一展示。",
+          clientMessageId: "visual-client-2",
+          createdAt: now,
+          updatedAt: now,
+          status: "queued",
+        },
+      ],
+    },
+  };
+  const permissionRequest: PermissionRequest = {
+    id: "visual-permission-1",
+    command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
+    reason: "需要读取代码上下文以完成 UI 复核。",
+    cwd: "D:/myProject/tools/Tiller",
+    options: [
+      { decision: "allow", label: "同意" },
+      { decision: "deny", label: "取消" },
+    ],
+  };
 
   return {
     helms: [
@@ -286,6 +339,7 @@ flowchart LR
       ],
     },
     sessionPlans,
+    promptQueues,
     diffs: {
       [sessionId]: [
         {
@@ -329,16 +383,18 @@ flowchart LR
       ],
     },
     permissionRequests: {
-      [sessionId]: {
-        id: "visual-permission-1",
-        command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
-        reason: "需要读取代码上下文以完成 UI 复核。",
-        cwd: "D:/myProject/tools/Tiller",
-        options: [
-          { decision: "allow", label: "同意" },
-          { decision: "deny", label: "取消" },
-        ],
+      [sessionId]: permissionRequest,
+    },
+    approvalItemsById: {
+      [permissionRequest.id]: {
+        sessionId,
+        request: permissionRequest,
+        createdAt: now,
+        resolving: false,
       },
+    },
+    pendingApprovalIdsBySession: {
+      [sessionId]: [permissionRequest.id],
     },
   };
 }

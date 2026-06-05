@@ -1,5 +1,5 @@
 import type { SessionPromptQueueSnapshot, SessionQueuedPrompt } from "@tiller/shared";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Dialog,
@@ -8,24 +8,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Icon,
   Textarea,
 } from "../../../shared/ui";
+import { cn } from "../../../shared/utils/cn";
 
 type QueuedPromptsProps = {
   queue?: SessionPromptQueueSnapshot;
+  placement?: "inline" | "floating";
   onUpdate: (sessionId: string, queueItemId: string, text: string) => void;
   onDelete: (sessionId: string, queueItemId: string) => void;
 };
-
-function queueItemLabel(item: SessionQueuedPrompt, index: number) {
-  if (item.status === "sending") {
-    return "发送中";
-  }
-  if (item.status === "failed") {
-    return "失败";
-  }
-  return `排队 #${index + 1}`;
-}
 
 function toSingleLine(text: string) {
   return text.replace(/\s+/gu, " ").trim();
@@ -33,6 +26,7 @@ function toSingleLine(text: string) {
 
 export function MissionQueuedPrompts({
   queue,
+  placement = "inline",
   onUpdate,
   onDelete,
 }: QueuedPromptsProps) {
@@ -40,10 +34,25 @@ export function MissionQueuedPrompts({
     () => queue?.queued ?? [],
     [queue?.queued],
   );
+  const queueStateKey = items.map((item) => `${item.id}:${item.status}:${item.updatedAt}`).join("\u001f");
+  const [drawerState, setDrawerState] = useState(() => ({
+    key: queueStateKey,
+    open: true,
+  }));
+  const open = drawerState.key === queueStateKey ? drawerState.open : true;
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const editingItem = items.find((item) => item.id === editingItemId) ?? null;
   const editDraftChanged = Boolean(editingItem && editDraft.trim() !== editingItem.text.trim());
+
+  useEffect(() => {
+    setDrawerState((current) => {
+      if (current.key === queueStateKey) {
+        return current;
+      }
+      return { key: queueStateKey, open: true };
+    });
+  }, [queueStateKey]);
 
   function openEditor(item: SessionQueuedPrompt) {
     setEditingItemId(item.id);
@@ -69,22 +78,35 @@ export function MissionQueuedPrompts({
   }
 
   return (
-    <div className="mission-prompt-queue border-t border-border-ghost bg-surface/95 p-1">
-      <div className="mb-0.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">Prompt 队列</strong>
-        <span className="truncate">ACP 完成当前 Prompt 后自动发送队首</span>
-      </div>
-      <div className="rounded-md border border-border-ghost bg-surface-sunken px-1.5 py-0.5">
-        {items.map((item, index) => {
+    <details
+      className={cn(
+        "mission-prompt-queue bg-surface/95 p-1",
+        placement === "floating"
+          ? "pointer-events-auto max-h-[min(32vh,260px)] overflow-y-auto rounded-[8px] border border-border-ghost shadow-[0_-14px_32px_rgb(0_0_0/0.18)]"
+          : "border-t border-border-ghost",
+      )}
+      data-prompt-queue-placement={placement}
+      data-prompt-queue-details
+      open={open}
+      onToggle={(event) => setDrawerState({ key: queueStateKey, open: event.currentTarget.open })}
+    >
+      <summary
+        className="flex min-w-0 cursor-pointer list-none items-center gap-2 px-1 py-1 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden"
+        data-prompt-queue-summary
+      >
+        <Icon name="check" size={14} className="text-primary" />
+        <span className="min-w-0 truncate">Prompt 队列</span>
+        <span className="ml-auto text-muted-foreground">{items.length} 条</span>
+        <Icon name="chevronDown" size={12} className="text-muted-foreground/70" />
+      </summary>
+      <div className="mt-1 rounded-md border border-border-ghost bg-surface-sunken px-1.5 py-0.5">
+        {items.map((item) => {
           const editingDisabled = item.status === "sending";
           return (
             <div
               key={item.id}
               className="flex min-w-0 items-center gap-1.5 border-b border-border-ghost py-0.5 last:border-b-0"
             >
-              <div className="w-14 shrink-0 text-xs text-muted-foreground">
-                <span>{queueItemLabel(item, index)}</span>
-              </div>
               <span
                 title={item.text}
                 className="mission-queued-prompt-text min-w-0 flex-1 truncate text-xs text-foreground"
@@ -99,22 +121,26 @@ export function MissionQueuedPrompts({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                className="h-6 shrink-0 px-1.5"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
                 disabled={editingDisabled}
+                aria-label="编辑队列 Prompt"
+                title="编辑"
                 onClick={() => openEditor(item)}
               >
-                编辑
+                <Icon name="pencil" size={12} />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                className="h-6 shrink-0 px-1.5"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground hover:text-destructive"
                 disabled={editingDisabled}
+                aria-label="删除队列 Prompt"
+                title="删除"
                 onClick={() => onDelete(item.sessionId, item.id)}
               >
-                删除
+                <Icon name="trash" size={12} />
               </Button>
             </div>
           );
@@ -148,6 +174,6 @@ export function MissionQueuedPrompts({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </details>
   );
 }

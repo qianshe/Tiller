@@ -102,8 +102,12 @@ test("mission chat renders permission drawers inside matching session cards", ()
   assert.match(chatPaneSource, /pendingApprovalsBySession/);
   assert.match(chatPaneSource, /pendingApprovals=\{pendingApprovalsBySession\[session\.id\]/);
   assert.match(chatPaneSource, /<MissionPermissionDrawer/);
-  assert.match(permissionDrawerSource, /sticky/);
-  assert.match(permissionDrawerSource, /top-2/);
+  assert.match(chatPaneSource, /blockingOverlay=\{approvalStack\}/);
+  assert.match(chatPaneSource, /data-session-blocking-overlay/);
+  assert.match(chatPaneSource, /top-1\/2/);
+  assert.match(chatPaneSource, /-translate-y-1\/2/);
+  assert.doesNotMatch(permissionDrawerSource, /sticky/);
+  assert.doesNotMatch(permissionDrawerSource, /top-2/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-2/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\]\]/);
   assert.doesNotMatch(shellStylesSource, /mission-responsive-mode \.mission-permission-drawer/);
@@ -180,7 +184,9 @@ test("plain conversation text uses compact small-pane typography", () => {
   assert.match(plainMessagesSource, /messageBodyClassName\} min-w-0 text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-thinking-content[^\n]+text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+text-\[12\.5px\]/);
-  assert.match(chatPaneSource, /flat \? "px-4 pb-9 pt-3" : "px-3 pb-9 pt-2\.5"/);
+  assert.match(chatPaneSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
+  assert.match(chatPaneSource, /paddingBottom: floatingDockPadding/);
+  assert.match(chatPaneSource, /dockBottomOffset=\{hasFloatingDock \? floatingDockButtonBottom : undefined\}/);
   assert.match(chatPaneSource, /overflow-auto px-3 pb-9 pt-2\.5/);
 });
 
@@ -901,7 +907,7 @@ test("session scroll-to-bottom button stays absolute inside responsive panes", (
     );
     assert.match(
       shellStylesSource,
-      /\[data-session-scroll-bottom-position="above-plan"\]\s*{[^}]*bottom:\s*3\.5rem;/s,
+      /\[data-session-scroll-bottom-position="above-dock"\]\s*{[^}]*bottom:\s*6rem;/s,
     );
   });
 

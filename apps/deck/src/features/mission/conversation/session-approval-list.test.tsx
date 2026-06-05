@@ -41,6 +41,7 @@ const baseProps = {
   pendingApprovals: [],
   pendingToolTitle: null,
   showPermissionWorktree: false,
+  projectOptions: [],
   onSelectDraftWindow: () => undefined,
   onSelectDraftAgent: () => undefined,
   onCloseDraftWindow: () => undefined,
@@ -146,7 +147,7 @@ test("chat pane renders approvals inside their matching session windows", () => 
   assert.ok(secondBodyIndex < secondApprovalIndex);
 });
 
-test("chat pane keeps approvals in the upper area of the session window", () => {
+test("chat pane renders approvals in a centered blocking overlay", () => {
   const session = buildSession("s1", "Session One");
   const html = renderToStaticMarkup(
     createElement(MissionChatPane, {
@@ -172,12 +173,15 @@ test("chat pane keeps approvals in the upper area of the session window", () => 
   );
 
   const bodyIndex = html.indexOf('data-session-card-body="s1"');
+  const overlayIndex = html.indexOf('data-session-blocking-overlay="s1"');
   const approvalIndex = html.indexOf("Run A");
   const messageIndex = html.indexOf("审批下方的会话正文");
 
   assert.ok(bodyIndex >= 0);
-  assert.ok(bodyIndex < approvalIndex);
-  assert.ok(approvalIndex < messageIndex);
+  assert.ok(messageIndex > bodyIndex);
+  assert.ok(overlayIndex > messageIndex);
+  assert.ok(approvalIndex > overlayIndex);
+  assert.match(html, /absolute inset-x-3 top-1\/2 z-30/);
 });
 
 test("chat pane anchors plans to their matching session windows", () => {
