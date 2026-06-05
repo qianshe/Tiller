@@ -44,6 +44,8 @@ const MERMAID_LANGUAGE = "mermaid";
 const OPEN_MERMAID_FENCE_LINE = /^([ \t]{0,3})(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/iu;
 const OPEN_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})(?:[ \t].*)?$/u;
 const CLOSE_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/u;
+const MARKDOWN_INLINE_CODE_CLASS =
+  "markdown-inline-code box-decoration-clone break-words rounded-[5px] border border-border-ghost bg-surface-emphasis/70 px-1.5 py-[1px] text-[0.92em] font-semibold text-foreground";
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
@@ -200,12 +202,11 @@ const markdownComponents: Components = {
     return (
       <code
         {...props}
-        className={[
-          className,
-          "rounded bg-surface-sunken px-1 py-0.5 text-[0.95em] font-medium text-foreground",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={
+          className
+            ? `${className} ${MARKDOWN_INLINE_CODE_CLASS}`
+            : MARKDOWN_INLINE_CODE_CLASS
+        }
       >
         {children}
       </code>

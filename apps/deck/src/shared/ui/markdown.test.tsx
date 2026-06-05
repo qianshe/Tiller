@@ -62,12 +62,16 @@ test("markdown keeps labeled paragraphs as paragraphs instead of generated table
   assert.match(html, /<strong>产物<\/strong>：apps\/deck\/src\/features\/logbook\/message-history\.ts/);
 });
 
-test("inline code keeps the surrounding reading font instead of forcing monospace", () => {
+test("inline code renders with a dedicated compact code marker", () => {
   const html = renderToStaticMarkup(
     <MarkdownMessage text="路径 `apps/deck/src/App.tsx` 已更新。" />,
   );
 
-  assert.match(html, /rounded bg-surface-sunken/);
+  assert.match(html, /markdown-inline-code/);
+  assert.match(html, /border-border-ghost/);
+  assert.match(html, /bg-surface-emphasis\/70/);
+  assert.match(html, /box-decoration-clone/);
+  assert.match(html, /break-words/);
   assert.doesNotMatch(html, /font-mono/);
 });
 
