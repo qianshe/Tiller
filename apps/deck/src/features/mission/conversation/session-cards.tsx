@@ -8,7 +8,6 @@ import {
 } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
-  formatSessionPreviewTime,
   resolveSessionStatusLabel,
   resolveSessionStatusTone,
 } from "./chat-pane-model";
@@ -50,10 +49,9 @@ export type SessionCardScrollSnapshot = {
 type SessionDockPanel = "promptQueue" | "plan";
 
 const SCROLL_TO_BOTTOM_THRESHOLD = 80;
-const PLAN_DOCK_BODY_PADDING = "78px";
-const PLAN_DOCK_SCROLL_BUTTON_BOTTOM = "85px";
+const PLAN_DOCK_BODY_PADDING = "48px";
+const TABBED_DOCK_BODY_PADDING = "72px";
 const PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING;
-const PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM = PLAN_DOCK_SCROLL_BUTTON_BOTTOM;
 
 export function shouldShowSessionScrollToBottom({
   scrollHeight,
@@ -70,34 +68,27 @@ export function shouldShowSessionScrollToBottom({
 function ScrollToBottomButton({
   visible,
   position = "bottom",
-  dockBottomOffset,
   onClick,
 }: {
   visible: boolean;
-  position?: "bottom" | "above-dock";
-  dockBottomOffset?: string;
+  position?: "bottom" | "dock-top";
   onClick: () => void;
 }) {
   if (!visible) {
     return null;
   }
-  const buttonStyle =
-    position === "above-dock" && dockBottomOffset
-      ? { bottom: dockBottomOffset }
-      : undefined;
 
   return (
     <button
       type="button"
       className={cn(
-        "absolute right-3 z-10 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-        position === "above-dock" ? "bottom-24" : "bottom-3",
+        "pointer-events-auto absolute z-30 grid h-7 w-7 place-items-center rounded-full border border-border-ghost bg-surface/95 text-muted-foreground shadow-ambient backdrop-blur transition hover:border-primary/50 hover:bg-surface-emphasis hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+        position === "dock-top" ? "-top-8 right-1" : "bottom-3 right-3",
       )}
       aria-label="回到底部"
       title="回到底部"
       data-session-scroll-bottom
       data-session-scroll-bottom-position={position}
-      style={buttonStyle}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -202,6 +193,7 @@ export function SessionCard({
   promptQueuePanel,
   blockingOverlay,
   flat = false,
+  reserveFloatingDockSpace = false,
   children,
 }: {
   session: SessionSummary;
@@ -220,6 +212,7 @@ export function SessionCard({
   promptQueuePanel?: ReactNode;
   blockingOverlay?: ReactNode;
   flat?: boolean;
+  reserveFloatingDockSpace?: boolean;
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
@@ -256,18 +249,15 @@ export function SessionCard({
     : hasPlanDock
       ? "plan"
       : null;
+  const hasDockTabs = hasPromptQueueDock && hasPlanDock;
   const bodyBottomPaddingClass = hasFloatingDock ? "pb-16" : "pb-9";
   const floatingDockPadding =
-    activeDockPanel === "promptQueue"
+    hasDockTabs
+      ? TABBED_DOCK_BODY_PADDING
+      : activeDockPanel === "promptQueue"
       ? PROMPT_QUEUE_DOCK_BODY_PADDING
       : activeDockPanel === "plan"
         ? PLAN_DOCK_BODY_PADDING
-        : undefined;
-  const floatingDockButtonBottom =
-    activeDockPanel === "promptQueue"
-      ? PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM
-      : activeDockPanel === "plan"
-        ? PLAN_DOCK_SCROLL_BUTTON_BOTTOM
         : undefined;
   const dismissPlan = useCallback(() => {
     if (!plan || !planKey) {
@@ -466,7 +456,17 @@ export function SessionCard({
           style={floatingDockPadding ? { paddingBottom: floatingDockPadding } : undefined}
           data-session-card-body={session.id}
         >
-          <div className="space-y-3">{children}</div>
+          <div className="flex min-h-full flex-col space-y-3" data-session-card-content={session.id}>
+            {children}
+            {reserveFloatingDockSpace && floatingDockPadding ? (
+              <div
+                aria-hidden="true"
+                className="shrink-0"
+                style={{ height: floatingDockPadding }}
+                data-session-floating-dock-spacer={session.id}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
       {blockingOverlay ? (
@@ -479,18 +479,24 @@ export function SessionCard({
           </div>
         </div>
       ) : null}
-      <ScrollToBottomButton
-        visible={showScrollToBottom}
-        position={hasFloatingDock ? "above-dock" : "bottom"}
-        dockBottomOffset={hasFloatingDock ? floatingDockButtonBottom : undefined}
-        onClick={scrollToBottom}
-      />
+      {!hasFloatingDock ? (
+        <ScrollToBottomButton
+          visible={showScrollToBottom}
+          position="bottom"
+          onClick={scrollToBottom}
+        />
+      ) : null}
       {activeDockPanel ? (
         <div
           className="mission-plan-dock pointer-events-none absolute inset-x-2 bottom-2 z-20"
           data-plan-dock="session"
           data-plan-session-id={session.id}
         >
+          <ScrollToBottomButton
+            visible={showScrollToBottom}
+            position="dock-top"
+            onClick={scrollToBottom}
+          />
           {hasPromptQueueDock && hasPlanDock ? (
             <div
               className="pointer-events-auto mb-1 flex w-fit max-w-full items-center gap-0.5 rounded-md border border-border-ghost bg-surface/95 p-0.5 text-2xs shadow-ambient"
@@ -660,20 +666,41 @@ export function DraftSessionCard({
 }
 
 export function SessionPreviewMessages({ session, restoring = false }: { session: SessionSummary; restoring?: boolean }) {
-  return (
-    <div className="space-y-3 text-section leading-relaxed">
-      <article>
-        <header className="mb-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground tabular">
-          <span className="font-medium text-foreground">operator</span>
-          <span>·</span>
-          <span>{formatSessionPreviewTime(session.updatedAt)}</span>
-        </header>
-        <div className="wb-pane-sunken p-3 text-section leading-relaxed">
-          {session.title?.trim() || "恢复这个任务"}
+  const sessionTitle = session.title?.trim();
+
+  if (restoring) {
+    return (
+      <div
+        className="flex min-h-full flex-1 items-center justify-center px-6 py-10 text-center"
+        data-session-preview-state="restoring"
+      >
+        <div className="mx-auto grid max-w-sm gap-3">
+          <div className="mx-auto grid size-9 place-items-center rounded-full border border-primary/30 bg-primary-soft/20 text-primary">
+            <StatusDot tone="primary" pulse size={8} />
+          </div>
+          <div className="grid gap-1">
+            <p className="text-section font-semibold text-foreground">正在恢复任务</p>
+            <p className="text-meta leading-5 text-muted-foreground">
+              正在重连 {session.agentName} 并同步历史消息，恢复后会继续显示最新输出。
+            </p>
+          </div>
+          {sessionTitle ? (
+            <div className="mx-auto max-w-full truncate rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-meta text-foreground">
+              {sessionTitle}
+            </div>
+          ) : null}
         </div>
-      </article>
-      <article>
-        <header className="mb-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground tabular">
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex min-h-full flex-1 items-center justify-center px-6 py-10 text-center"
+      data-session-preview-state="idle"
+    >
+      <div className="mx-auto grid max-w-sm gap-3">
+        <div className="mx-auto flex items-center gap-2 rounded-full border border-border-ghost bg-surface-sunken px-3 py-1 font-mono text-2xs text-muted-foreground tabular">
           <AgentIcon name={session.agentName} size={11} />
           <span className="font-medium text-foreground">{session.agentName}</span>
           {session.model ? (
@@ -682,14 +709,16 @@ export function SessionPreviewMessages({ session, restoring = false }: { session
               <span>{session.model}</span>
             </>
           ) : null}
-          <span>·</span>
-          <span>{restoring ? "restoring" : "idle"}</span>
-          {restoring ? <StatusDot tone="primary" pulse size={5} /> : null}
-        </header>
-        <div className="space-y-2 text-section leading-relaxed text-muted-foreground">
-          <p>{restoring ? "正在加载 ACP 信息流，恢复成功后会继续同步输出。" : "此任务的信息流已保留在并行卡片中，切换焦点不会丢失当前上下文。"}</p>
         </div>
-      </article>
+        <div className="grid gap-1">
+          <p className="text-section font-semibold text-foreground">
+            {sessionTitle || "恢复这个任务"}
+          </p>
+          <p className="text-meta leading-5 text-muted-foreground">
+            此任务的信息流已保留在并行卡片中，切换焦点不会丢失当前上下文。
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

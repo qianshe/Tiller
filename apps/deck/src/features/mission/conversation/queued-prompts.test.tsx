@@ -32,14 +32,17 @@ test("MissionQueuedPrompts renders queued items and actions", () => {
   assert.match(html, /next prompt/);
   assert.match(html, /mission-prompt-queue[^\"]*p-1/);
   assert.match(html, /mission-queued-prompt-text[^\"]*text-xs/);
+  assert.match(html, /aria-label="直接发送队列 Prompt（待接入）"/);
   assert.match(html, /aria-label="编辑队列 Prompt"/);
   assert.match(html, /aria-label="删除队列 Prompt"/);
+  assert.match(html, /disabled=""/);
   assert.match(html, /size-3/);
   assert.doesNotMatch(html, /排队 #/);
   assert.doesNotMatch(html, /ACP 完成当前 Prompt 后自动发送队首/);
   assert.doesNotMatch(html, /<input/);
   assert.doesNotMatch(html, /<textarea/);
   assert.doesNotMatch(html, />编辑</);
+  assert.doesNotMatch(html, />直接发送</);
   assert.doesNotMatch(html, />保存</);
   assert.doesNotMatch(html, />删除</);
 });

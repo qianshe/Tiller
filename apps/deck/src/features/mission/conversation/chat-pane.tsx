@@ -873,6 +873,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onDelete={onDeleteQueuedPrompt}
     />
   ) : null;
+  const hasSessionContent = sessionMessages.length > 0 || timelineItems.length > 0;
 
   return (
     <SessionCard
@@ -892,8 +893,9 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       promptQueuePanel={promptQueuePanel}
       blockingOverlay={approvalStack}
       flat={flat}
+      reserveFloatingDockSpace={hasSessionContent}
     >
-      {sessionMessages.length || timelineItems.length ? (
+      {hasSessionContent ? (
         <MissionMessageTimeline
           items={sessionMessages}
           timelineItems={timelineItems}

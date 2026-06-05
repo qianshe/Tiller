@@ -122,6 +122,17 @@ export function MissionQueuedPrompts({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
+                className="shrink-0 text-muted-foreground/45"
+                disabled
+                aria-label="直接发送队列 Prompt（待接入）"
+                title="直接发送（待接入）"
+              >
+                <Icon name="send" size={12} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className="shrink-0 text-muted-foreground hover:text-foreground"
                 disabled={editingDisabled}
                 aria-label="编辑队列 Prompt"

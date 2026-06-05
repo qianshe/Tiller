@@ -75,6 +75,10 @@ function shouldUseVisualStatusDemo(search: string) {
   return new URLSearchParams(search).get("visualStatusDemo") === "1";
 }
 
+function shouldUseVisualRestoreDemo(search: string) {
+  return new URLSearchParams(search).get("visualRestore") === "1";
+}
+
 export function createMissionVisualFixture({
   defaultDaemonHost,
   defaultDaemonPort,
@@ -95,6 +99,9 @@ export function createMissionVisualFixture({
   const idleSessionId = "visual-session-idle";
   const visualSessionCount = resolveMissionVisualSessionCount(visualSearch);
   const visualStatusDemo = shouldUseVisualStatusDemo(visualSearch);
+  const visualRestoreDemo = shouldUseVisualRestoreDemo(visualSearch);
+  const activeVisualSessionId =
+    visualRestoreDemo && visualSessionCount >= 2 ? secondarySessionId : sessionId;
   const session: SessionSummary = {
     id: sessionId,
     projectId,
@@ -216,6 +223,31 @@ export function createMissionVisualFixture({
       ],
     },
   };
+  if (visualRestoreDemo && visualSessionCount >= 2) {
+    promptQueues[secondarySessionId] = {
+      sessionId: secondarySessionId,
+      queued: [
+        {
+          id: "visual-secondary-prompt-1",
+          sessionId: secondarySessionId,
+          text: "恢复窗口中复核 Prompt 队列与 Plan 同时出现。",
+          clientMessageId: "visual-secondary-client-1",
+          createdAt: now,
+          updatedAt: now,
+          status: "queued",
+        },
+        {
+          id: "visual-secondary-prompt-2",
+          sessionId: secondarySessionId,
+          text: "切换到 Plan 后确认浮层仍不参与布局。",
+          clientMessageId: "visual-secondary-client-2",
+          createdAt: now,
+          updatedAt: now,
+          status: "queued",
+        },
+      ],
+    };
+  }
   const permissionRequest: PermissionRequest = {
     id: "visual-permission-1",
     command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
@@ -265,11 +297,11 @@ export function createMissionVisualFixture({
         [idleSessionId]: "idle",
       }
       : Object.fromEntries(sessions.map((item) => [item.id, "running" as const])),
-    activeSessionId: sessionId,
+    activeSessionId: activeVisualSessionId,
     openChatSessionIds: visualStatusDemo
       ? [sessionId, secondarySessionId, errorSessionId]
       : sessions.map((item) => item.id),
-    focusedChatWindowId: `session:${sessionId}`,
+    focusedChatWindowId: `session:${activeVisualSessionId}`,
     selectedProjectId: projectId,
     selectedCwd: cwd,
     selectedAgentId: agentId,
@@ -307,6 +339,35 @@ flowchart LR
           role: "user",
           text: "继续执行 diff 渲染与权限审核复核。",
           attachments: VISUAL_PROMPT_IMAGES.map((image) => ({ ...image })),
+          timestamp: now,
+        },
+        {
+          id: "visual-assistant-2",
+          role: "assistant",
+          text: `为了复核浮层与滚动行为，这里追加一段较长的视觉夹具内容。
+
+- 第一段：确认权限审核卡片仍然位于会话中部，不影响底部 dock。
+- 第二段：确认 Markdown 内容向上滚动后，底部的 Prompt 队列浮层不会遮住最后一行。
+- 第三段：当用户向上滚动离开底部时，回到底部按钮应该显示在 dock 上方。
+
+这段内容只用于 \`visual=mission\` 开发夹具，真实会话不会受到影响。`,
+          timestamp: now,
+        },
+        {
+          id: "visual-user-3",
+          role: "user",
+          text: "继续追加几行内容，方便测试滚动到底部后的安全距离。",
+          timestamp: now,
+        },
+        {
+          id: "visual-assistant-3",
+          role: "assistant",
+          text: `底部安全距离检查：
+
+1. 最后一段文本应能滚到 Prompt 队列或 Plan 浮层上方。
+2. 浮层继续保持 absolute overlay，不参与小窗口布局。
+3. 收起和展开都使用固定预留，不按展开高度重新计算。
+4. 回到底部按钮应避开底部浮层。`,
           timestamp: now,
         },
       ],

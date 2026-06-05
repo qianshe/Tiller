@@ -186,7 +186,9 @@ test("plain conversation text uses compact small-pane typography", () => {
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+text-\[12\.5px\]/);
   assert.match(chatPaneSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
   assert.match(chatPaneSource, /paddingBottom: floatingDockPadding/);
-  assert.match(chatPaneSource, /dockBottomOffset=\{hasFloatingDock \? floatingDockButtonBottom : undefined\}/);
+  assert.match(chatPaneSource, /reserveFloatingDockSpace=\{hasSessionContent\}/);
+  assert.match(chatPaneSource, /data-session-floating-dock-spacer/);
+  assert.match(chatPaneSource, /position="dock-top"/);
   assert.match(chatPaneSource, /overflow-auto px-3 pb-9 pt-2\.5/);
 });
 
@@ -893,23 +895,12 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
 });
 
 test("session scroll-to-bottom button stays absolute inside responsive panes", () => {
-    assert.match(
-      shellStylesSource,
-      /\.mission-responsive-mode \[data-mission-mobile-pane\] \[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;/s,
-    );
-    assert.match(
-      shellStylesSource,
-      /\[data-session-scroll-bottom\]\s*{[^}]*position:\s*absolute;[^}]*right:\s*0\.75rem;/s,
-    );
-    assert.match(
-      shellStylesSource,
-      /\[data-session-scroll-bottom-position="bottom"\]\s*{[^}]*bottom:\s*0\.75rem;/s,
-    );
-    assert.match(
-      shellStylesSource,
-      /\[data-session-scroll-bottom-position="above-dock"\]\s*{[^}]*bottom:\s*6rem;/s,
-    );
-  });
+  assert.match(chatPaneSource, /data-session-scroll-bottom-position=\{position\}/);
+  assert.match(chatPaneSource, /position === "dock-top" \? "-top-8 right-1" : "bottom-3 right-3"/);
+  assert.match(chatPaneSource, /pointer-events-auto absolute z-30/);
+  assert.match(chatPaneSource, /position="bottom"/);
+  assert.match(chatPaneSource, /position="dock-top"/);
+});
 
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);

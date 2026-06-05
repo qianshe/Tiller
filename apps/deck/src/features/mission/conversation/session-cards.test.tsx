@@ -49,7 +49,24 @@ test("SessionPreviewMessages renders session preview and restoring state", () =>
 
   assert.match(html, /Build feature/);
   assert.match(html, /Codex/);
-  assert.match(html, /restoring/);
+  assert.match(html, /data-session-preview-state="restoring"/);
+  assert.match(html, /min-h-full[^"]*items-center[^"]*justify-center/);
+  assert.match(html, /正在恢复任务/);
+  assert.match(html, /正在重连 Codex 并同步历史消息/);
+  assert.doesNotMatch(html, />restoring</);
+  assert.doesNotMatch(html, /正在加载 ACP 信息流/);
+});
+
+test("SessionPreviewMessages centers idle restore guidance", () => {
+  const html = renderToStaticMarkup(
+    <SessionPreviewMessages session={session()} />,
+  );
+
+  assert.match(html, /data-session-preview-state="idle"/);
+  assert.match(html, /min-h-full[^"]*items-center[^"]*justify-center/);
+  assert.match(html, /Build feature/);
+  assert.match(html, /此任务的信息流已保留在并行卡片中/);
+  assert.doesNotMatch(html, /operator/);
 });
 
 test("SessionRestoreNotice shows only the status word and keeps detail in tooltip", () => {
@@ -147,20 +164,25 @@ test("session scroll-to-bottom affordance stays available in flat and card modes
   assert.match(sessionCardsSource, /className="relative min-h-0 flex-1"/);
   assert.match(sessionCardsSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
   assert.match(sessionCardsSource, /paddingBottom: floatingDockPadding/);
-  assert.match(sessionCardsSource, /PLAN_DOCK_BODY_PADDING = "78px"/);
+  assert.match(sessionCardsSource, /PLAN_DOCK_BODY_PADDING = "48px"/);
+  assert.match(sessionCardsSource, /TABBED_DOCK_BODY_PADDING = "72px"/);
   assert.match(sessionCardsSource, /PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING/);
+  assert.match(sessionCardsSource, /data-session-card-content/);
+  assert.match(sessionCardsSource, /data-session-floating-dock-spacer/);
   assert.doesNotMatch(sessionCardsSource, /ResizeObserver/);
   assert.doesNotMatch(sessionCardsSource, /getBoundingClientRect\(\)\.height/);
   assert.doesNotMatch(sessionCardsSource, /!\s*flat\s*\?\s*\(\s*<ScrollToBottomButton/);
 });
 
-test("session scroll-to-bottom affordance moves above the floating dock", () => {
+test("session dock remains a floating overlay with scroll padding reserved", () => {
   assert.match(sessionCardsSource, /const hasFloatingDock = hasPromptQueueDock \|\| hasPlanDock;/);
   assert.match(sessionCardsSource, /visible=\{showScrollToBottom\}/);
-  assert.match(sessionCardsSource, /position=\{hasFloatingDock \? "above-dock" : "bottom"\}/);
-  assert.match(sessionCardsSource, /dockBottomOffset=\{hasFloatingDock \? floatingDockButtonBottom : undefined\}/);
-  assert.match(sessionCardsSource, /PLAN_DOCK_SCROLL_BUTTON_BOTTOM = "85px"/);
-  assert.match(sessionCardsSource, /PROMPT_QUEUE_SCROLL_BUTTON_BOTTOM = PLAN_DOCK_SCROLL_BUTTON_BOTTOM/);
+  assert.match(sessionCardsSource, /position="dock-top"/);
+  assert.match(sessionCardsSource, /position === "dock-top" \? "-top-8 right-1" : "bottom-3 right-3"/);
+  assert.match(sessionCardsSource, /className="mission-plan-dock pointer-events-none absolute inset-x-2 bottom-2 z-20"/);
+  assert.match(sessionCardsSource, /const hasDockTabs = hasPromptQueueDock && hasPlanDock;/);
+  assert.doesNotMatch(sessionCardsSource, /dockBottomOffset/);
+  assert.doesNotMatch(sessionCardsSource, /SCROLL_BUTTON_BOTTOM/);
   assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingDock\}/);
 });
 
@@ -193,6 +215,48 @@ test("SessionCard keeps a completed plan visible as a collapsed dock", () => {
   assert.match(html, /已完成 2 个任务（共 2 个）/);
   assert.match(html, /pb-16[^>]*data-session-card-body="session-1"/);
   assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
+test("SessionCard can reserve message scroll space below floating docks", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      plan={completedPlan}
+      reserveFloatingDockSpace
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-session-floating-dock-spacer="session-1"/);
+  assert.match(html, /style="height:48px"/);
+});
+
+test("SessionCard does not reserve dock spacer for restore previews by default", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      plan={completedPlan}
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <SessionPreviewMessages session={session()} restoring />
+    </SessionCard>,
+  );
+
+  assert.doesNotMatch(html, /data-session-floating-dock-spacer/);
 });
 
 test("SessionCard defaults to the prompt queue dock when queue and plan are both available", () => {
