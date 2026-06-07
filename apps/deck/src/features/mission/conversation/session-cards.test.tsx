@@ -140,6 +140,49 @@ test("session cards use real borders so scroll content cannot cover the frame", 
   assert.doesNotMatch(draft, /inset 0 0 0 1px var\(--border-ghost\)/);
 });
 
+test("SessionCard keeps bottom breathing room when no dock is visible", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /pb-8[^>]*data-session-card-body="session-1"/);
+  assert.doesNotMatch(html, /data-plan-dock="session"/);
+  assert.doesNotMatch(html, /data-session-dock-tabs/);
+});
+
+test("SessionCard can reserve message scroll space without floating docks", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      reserveFloatingDockSpace
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onReimportHistory={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-session-bottom-spacer="session-1"/);
+  assert.match(html, /style="height:20px"/);
+  assert.doesNotMatch(html, /data-plan-dock="session"/);
+});
+
 test("session scroll-to-bottom affordance appears only when content is away from bottom", () => {
   assert.equal(
     shouldShowSessionScrollToBottom({
@@ -162,8 +205,10 @@ test("session scroll-to-bottom affordance appears only when content is away from
 test("session scroll-to-bottom affordance stays available in flat and card modes", () => {
   assert.match(sessionCardsSource, /data-session-scroll-frame/);
   assert.match(sessionCardsSource, /className="relative min-h-0 flex-1"/);
-  assert.match(sessionCardsSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
+  assert.match(sessionCardsSource, /reserveFloatingDockSpace \? "pb-0" : "pb-8"/);
+  assert.match(sessionCardsSource, /hasFloatingDock \? "pb-16" : noDockBottomPaddingClass/);
   assert.match(sessionCardsSource, /paddingBottom: floatingDockPadding/);
+  assert.match(sessionCardsSource, /SESSION_BODY_BOTTOM_PADDING = "20px"/);
   assert.match(sessionCardsSource, /PLAN_DOCK_BODY_PADDING = "48px"/);
   assert.match(sessionCardsSource, /TABBED_DOCK_BODY_PADDING = "72px"/);
   assert.match(sessionCardsSource, /PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING/);

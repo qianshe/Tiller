@@ -49,6 +49,7 @@ export type SessionCardScrollSnapshot = {
 type SessionDockPanel = "promptQueue" | "plan";
 
 const SCROLL_TO_BOTTOM_THRESHOLD = 80;
+const SESSION_BODY_BOTTOM_PADDING = "20px";
 const PLAN_DOCK_BODY_PADDING = "48px";
 const TABBED_DOCK_BODY_PADDING = "72px";
 const PROMPT_QUEUE_DOCK_BODY_PADDING = PLAN_DOCK_BODY_PADDING;
@@ -250,7 +251,8 @@ export function SessionCard({
       ? "plan"
       : null;
   const hasDockTabs = hasPromptQueueDock && hasPlanDock;
-  const bodyBottomPaddingClass = hasFloatingDock ? "pb-16" : "pb-9";
+  const noDockBottomPaddingClass = reserveFloatingDockSpace ? "pb-0" : "pb-8";
+  const bodyBottomPaddingClass = hasFloatingDock ? "pb-16" : noDockBottomPaddingClass;
   const floatingDockPadding =
     hasDockTabs
       ? TABBED_DOCK_BODY_PADDING
@@ -259,6 +261,9 @@ export function SessionCard({
       : activeDockPanel === "plan"
         ? PLAN_DOCK_BODY_PADDING
         : undefined;
+  const bottomSpacerHeight = reserveFloatingDockSpace
+    ? floatingDockPadding ?? SESSION_BODY_BOTTOM_PADDING
+    : undefined;
   const dismissPlan = useCallback(() => {
     if (!plan || !planKey) {
       return;
@@ -458,12 +463,13 @@ export function SessionCard({
         >
           <div className="flex min-h-full flex-col space-y-3" data-session-card-content={session.id}>
             {children}
-            {reserveFloatingDockSpace && floatingDockPadding ? (
+            {bottomSpacerHeight ? (
               <div
                 aria-hidden="true"
                 className="shrink-0"
-                style={{ height: floatingDockPadding }}
-                data-session-floating-dock-spacer={session.id}
+                style={{ height: bottomSpacerHeight }}
+                data-session-bottom-spacer={session.id}
+                data-session-floating-dock-spacer={floatingDockPadding ? session.id : undefined}
               />
             ) : null}
           </div>

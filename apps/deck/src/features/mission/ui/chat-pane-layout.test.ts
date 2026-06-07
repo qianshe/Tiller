@@ -184,8 +184,10 @@ test("plain conversation text uses compact small-pane typography", () => {
   assert.match(plainMessagesSource, /messageBodyClassName\} min-w-0 text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-thinking-content[^\n]+text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+text-\[12\.5px\]/);
-  assert.match(chatPaneSource, /hasFloatingDock \? "pb-16" : "pb-9"/);
+  assert.match(chatPaneSource, /reserveFloatingDockSpace \? "pb-0" : "pb-8"/);
+  assert.match(chatPaneSource, /hasFloatingDock \? "pb-16" : noDockBottomPaddingClass/);
   assert.match(chatPaneSource, /paddingBottom: floatingDockPadding/);
+  assert.match(chatPaneSource, /data-session-bottom-spacer/);
   assert.match(chatPaneSource, /reserveFloatingDockSpace=\{hasSessionContent\}/);
   assert.match(chatPaneSource, /data-session-floating-dock-spacer/);
   assert.match(chatPaneSource, /position="dock-top"/);
