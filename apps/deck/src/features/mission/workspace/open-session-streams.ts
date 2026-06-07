@@ -17,9 +17,107 @@ type MutableRefLike<T> = {
 };
 
 type SessionStateSetter = (updater: (current: any) => any) => void;
+type PlanHydrationRetryScheduler = (
+  handler: () => void,
+  delayMs: number,
+) => unknown;
+
+const PLAN_HYDRATION_RETRY_DELAY_MS = 1_500;
+const MAX_PLAN_HYDRATION_RETRIES = 5;
+
+export function handlePlanHydrationRequestFailure({
+  sessionId,
+  planActivitySessionIds,
+  checkedPlanSessionIds,
+  setActivityHistoryState,
+}: {
+  sessionId: string;
+  planActivitySessionIds: ReadonlySet<string>;
+  checkedPlanSessionIds: Set<string>;
+  setActivityHistoryState: SessionStateSetter;
+}) {
+  if (!planActivitySessionIds.has(sessionId)) {
+    return;
+  }
+  clearPlanHydrationLoading({
+    sessionId,
+    checkedPlanSessionIds,
+    setActivityHistoryState,
+  });
+}
+
+export function handlePlanHydrationRequestResult({
+  sessionId,
+  result,
+  planActivitySessionIds,
+  checkedPlanSessionIds,
+  retryCounts,
+  setActivityHistoryState,
+  scheduleRetry = (handler, delayMs) => window.setTimeout(handler, delayMs),
+  retryDelayMs = PLAN_HYDRATION_RETRY_DELAY_MS,
+  maxRetries = MAX_PLAN_HYDRATION_RETRIES,
+}: {
+  sessionId: string;
+  result: unknown;
+  planActivitySessionIds: ReadonlySet<string>;
+  checkedPlanSessionIds: Set<string>;
+  retryCounts: Map<string, number>;
+  setActivityHistoryState: SessionStateSetter;
+  scheduleRetry?: PlanHydrationRetryScheduler;
+  retryDelayMs?: number;
+  maxRetries?: number;
+}) {
+  if (!planActivitySessionIds.has(sessionId)) {
+    return;
+  }
+  if (hasAgentPlanPayload((result as { plan?: unknown } | null)?.plan)) {
+    checkedPlanSessionIds.delete(sessionId);
+    retryCounts.delete(sessionId);
+    return;
+  }
+  const nextRetryCount = (retryCounts.get(sessionId) ?? 0) + 1;
+  if (nextRetryCount > maxRetries) {
+    retryCounts.delete(sessionId);
+    clearPlanHydrationLoading({
+      sessionId,
+      checkedPlanSessionIds,
+      setActivityHistoryState,
+    });
+    return;
+  }
+  retryCounts.set(sessionId, nextRetryCount);
+  scheduleRetry(() => {
+    clearPlanHydrationLoading({
+      sessionId,
+      checkedPlanSessionIds,
+      setActivityHistoryState,
+    });
+  }, retryDelayMs);
+}
+
+function clearPlanHydrationLoading({
+  sessionId,
+  checkedPlanSessionIds,
+  setActivityHistoryState,
+}: {
+  sessionId: string;
+  checkedPlanSessionIds: Set<string>;
+  setActivityHistoryState: SessionStateSetter;
+}) {
+  checkedPlanSessionIds.delete(sessionId);
+  setActivityHistoryState((current: any) => ({
+    ...current,
+    [sessionId]: {
+      hasMore: current[sessionId]?.hasMore ?? false,
+      ...current[sessionId],
+      loading: false,
+    },
+  }));
+}
 
 export type OpenSessionStreamsOptions = {
   pairingState: string;
+  connection: string;
   rpcClientRef: MutableRefLike<DeckRpcClient | null>;
   dispatch: DispatchToHelm;
   openSessions: SessionSummary[];
@@ -38,6 +136,7 @@ export type OpenSessionStreamsOptions = {
 export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
   const {
     pairingState,
+    connection,
     rpcClientRef,
     dispatch,
     openSessions,
@@ -53,6 +152,8 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     setActivityHistoryState,
   } = options;
   const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
+  const openSessionPlanHydrationRef = useRef<Set<string>>(new Set());
+  const openSessionPlanRetryCountsRef = useRef<Map<string, number>>(new Map());
   const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
   const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
 
@@ -60,9 +161,12 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     const client = rpcClientRef.current;
     if (
       pairingState !== "paired" ||
+      connection !== "connected" ||
       !client ||
       client.socket.readyState !== WebSocket.OPEN
     ) {
+      openSessionPlanHydrationRef.current.clear();
+      openSessionPlanRetryCountsRef.current.clear();
       return;
     }
     const nextSessionIds = new Set(openSessions.map((session) => session.id));
@@ -71,6 +175,8 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     subscribedSessionIds.forEach((sessionId) => {
       if (!nextSessionIds.has(sessionId)) {
         subscribedSessionIds.delete(sessionId);
+        openSessionPlanHydrationRef.current.delete(sessionId);
+        openSessionPlanRetryCountsRef.current.delete(sessionId);
         void unsubscribeFromSessionTopic(client, sessionId, dispatch);
       }
     });
@@ -87,23 +193,29 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
           void unsubscribeFromSessionTopic(client, sessionId, dispatch);
         }
         subscribedSessionIds.delete(sessionId);
+        openSessionPlanHydrationRef.current.delete(sessionId);
+        openSessionPlanRetryCountsRef.current.delete(sessionId);
       });
     };
-  }, [openSessionStreamKey, pairingState]);
+  }, [openSessionStreamKey, pairingState, connection]);
 
   const hydrateOpenSessionStreams = (sessionIds: string[]) => {
     const client = rpcClientRef.current;
     if (
       pairingState !== "paired" ||
+      connection !== "connected" ||
       !client ||
       client.socket.readyState !== WebSocket.OPEN
     ) {
+      openSessionPlanHydrationRef.current.clear();
+      openSessionPlanRetryCountsRef.current.clear();
       return;
     }
     const sessionById = new Map(sessions.map((session) => [session.id, session]));
     const {
       messageSessionIds,
       activitySessionIds,
+      planActivitySessionIds,
       resumeCheckSessionIds,
     } = buildSessionStreamHydrationPlan({
       sessionIds,
@@ -116,6 +228,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
       toolCallsBySession,
       sessionPlansBySession,
       checkedResumeSessionIds: openSessionResumeCheckRef.current,
+      checkedPlanSessionIds: openSessionPlanHydrationRef.current,
     });
 
     if (messageSessionIds.length > 0) {
@@ -137,6 +250,10 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     }
 
     if (activitySessionIds.length > 0) {
+      const planActivitySessionIdSet = new Set(planActivitySessionIds);
+      planActivitySessionIds.forEach((sessionId) => {
+        openSessionPlanHydrationRef.current.add(sessionId);
+      });
       setActivityHistoryState((current: any) => {
         const next = { ...current };
         activitySessionIds.forEach((sessionId) => {
@@ -147,10 +264,36 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
         return next;
       });
       activitySessionIds.forEach((sessionId) => {
-        void dispatch(client, "session/get_artifacts", {
+        const isPlanHydration = planActivitySessionIdSet.has(sessionId);
+        const request = dispatch(client, "session/get_artifacts", {
           sessionId,
           limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
-        });
+        }, isPlanHydration
+          ? {
+              onResult: (_method, result) => {
+                handlePlanHydrationRequestResult({
+                  sessionId,
+                  result,
+                  planActivitySessionIds: planActivitySessionIdSet,
+                  checkedPlanSessionIds: openSessionPlanHydrationRef.current,
+                  retryCounts: openSessionPlanRetryCountsRef.current,
+                  setActivityHistoryState,
+                });
+              },
+            }
+          : undefined);
+        if (isPlanHydration) {
+          void request.catch(() => {
+            handlePlanHydrationRequestFailure({
+              sessionId,
+              planActivitySessionIds: planActivitySessionIdSet,
+              checkedPlanSessionIds: openSessionPlanHydrationRef.current,
+              setActivityHistoryState,
+            });
+          });
+        } else {
+          void request;
+        }
       });
     }
 
@@ -173,7 +316,17 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     toolCallsBySession,
     sessionPlansBySession,
     sessions,
+    connection,
   ]);
 
   return hydrateOpenSessionStreams;
+}
+
+function hasAgentPlanPayload(value: unknown) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Array.isArray((value as { entries?: unknown }).entries),
+  );
 }

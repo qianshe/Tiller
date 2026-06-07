@@ -24,6 +24,7 @@ export type TillerIconName =
   | "x"
   | "pencil"
   | "trash"
+  | "copy"
   | "check"
   | "search"
   | "globe"
@@ -118,6 +119,12 @@ const ICONS: Record<TillerIconName, ReactNode> = {
       <path d="m19 6-1 16H6L5 6" />
       <path d="M10 11v6" />
       <path d="M14 11v6" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </>
   ),
   check: <path d="m5 12 4 4L19 6" />,

@@ -593,7 +593,7 @@ test("prompt transport close marks the connection as errored", async () => {
 test("child exit broadcasts an error to active sessions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-exit-"));
   try {
-    const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitAfterMs: 80 });
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitAfterMs: 500 });
     const connection = await AcpConnection.open({
       provider: createProvider("node", [agentPath]),
       worktree: { ...worktree, path: tempDir },
@@ -606,7 +606,7 @@ test("child exit broadcasts an error to active sessions", async () => {
       kind: "new",
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await new Promise((resolve) => setTimeout(resolve, 700));
 
     assert.equal(connection.inventory().status, "error");
     assert.equal(events.some((event) => event.type === "error" && event.message?.includes("ACP process exited")), true);

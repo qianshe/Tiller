@@ -8,6 +8,7 @@ type HistoryState = {
 export type WorkspaceSessionStreamHydrationPlan = {
   messageSessionIds: string[];
   activitySessionIds: string[];
+  planActivitySessionIds: string[];
   resumeCheckSessionIds: string[];
 };
 
@@ -22,6 +23,7 @@ export type WorkspaceSessionStreamHydrationInput = {
   toolCallsBySession?: Record<string, AgentToolCall[] | undefined>;
   sessionPlansBySession?: Record<string, AgentPlan | undefined>;
   checkedResumeSessionIds: ReadonlySet<string>;
+  checkedPlanSessionIds?: ReadonlySet<string>;
 };
 
 export function buildSessionStreamHydrationPlan({
@@ -35,29 +37,46 @@ export function buildSessionStreamHydrationPlan({
   toolCallsBySession,
   sessionPlansBySession,
   checkedResumeSessionIds,
+  checkedPlanSessionIds,
 }: WorkspaceSessionStreamHydrationInput): WorkspaceSessionStreamHydrationPlan {
   const uniqueSessionIds = [...new Set(sessionIds)];
+  const activitySessionIds: string[] = [];
+  const planActivitySessionIds: string[] = [];
+
+  for (const sessionId of uniqueSessionIds) {
+    const toolCalls = toolCallsBySession?.[sessionId] ?? [];
+    const hasCachedActivity = Boolean(
+      outputsBySession?.[sessionId]?.length || toolCalls.length,
+    );
+    const needsCachedPlan = Boolean(
+      !sessionPlansBySession?.[sessionId] &&
+        toolCalls.some(isPlanCapableToolCall),
+    );
+    const activityState = activityHistoryState[sessionId];
+    if (needsCachedPlan) {
+      if (!checkedPlanSessionIds?.has(sessionId)) {
+        activitySessionIds.push(sessionId);
+        planActivitySessionIds.push(sessionId);
+      }
+      continue;
+    }
+    if (!activityState && !hasCachedActivity) {
+      activitySessionIds.push(sessionId);
+    }
+  }
+
   return {
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
       !messageHistoryState[sessionId] ||
       hasIncompleteCachedMessageHistory({
         cachedMessages: messagesBySession?.[sessionId],
+        hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
         historyState: messageHistoryState[sessionId],
         session: sessionById.get(sessionId),
       })
     )),
-    activitySessionIds: uniqueSessionIds.filter((sessionId) => {
-      const toolCalls = toolCallsBySession?.[sessionId] ?? [];
-      const hasCachedActivity = Boolean(
-        outputsBySession?.[sessionId]?.length || toolCalls.length,
-      );
-      const needsCachedPlan = Boolean(
-        !sessionPlansBySession?.[sessionId] &&
-          toolCalls.some(isPlanCapableToolCall),
-      );
-      return !activityHistoryState[sessionId] &&
-        (!hasCachedActivity || needsCachedPlan);
-    }),
+    activitySessionIds,
+    planActivitySessionIds,
     resumeCheckSessionIds: uniqueSessionIds.filter((sessionId) => {
       const session = sessionById.get(sessionId);
       return Boolean(
@@ -80,10 +99,12 @@ function isPlanCapableToolCall(toolCall: AgentToolCall) {
 
 function hasIncompleteCachedMessageHistory({
   cachedMessages,
+  hasTimelineCache,
   historyState,
   session,
 }: {
   cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
+  hasTimelineCache: boolean;
   historyState: HistoryState | undefined;
   session: SessionSummary | undefined;
 }) {
@@ -91,5 +112,13 @@ function hasIncompleteCachedMessageHistory({
     return false;
   }
   const cachedUserCount = cachedMessages?.filter((message) => message.role === "user").length ?? 0;
-  return session.messageCount > cachedUserCount;
+  return session.messageCount > cachedUserCount ||
+    (!hasTimelineCache && Boolean(cachedMessages?.length || session.messageCount > 0));
+}
+
+function hasOwnSessionCache<T>(
+  cache: Record<string, T | undefined> | undefined,
+  sessionId: string,
+) {
+  return Boolean(cache && Object.prototype.hasOwnProperty.call(cache, sessionId));
 }

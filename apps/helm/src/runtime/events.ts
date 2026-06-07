@@ -25,6 +25,21 @@ import type { TillerLogFields } from "../logging/logger";
 const liveEventSequenceBySession = new Map<string, number>();
 const runtimeStreamLog = createRuntimeStreamLogController();
 const ignoredUserEchoSummaryBySession = new Map<string, IgnoredUserEchoSummary>();
+const runtimePlanLogStateBySession = new Map<string, RuntimePlanLogState>();
+const commandOutputSummaryBySession = new Map<string, Map<string, CommandOutputSummary>>();
+
+type RuntimePlanLogState = {
+  lastEntryCount: number;
+};
+
+type CommandOutputSummary = {
+  chars: number;
+  chunks: number;
+  commandId: string;
+  firstSeq: number;
+  lastSeq: number;
+  stream: string;
+};
 
 type IgnoredUserEchoSummary = {
   count: number;
@@ -117,6 +132,85 @@ export function flushRuntimeUserEchoLogSummaryForTest(
   flushIgnoredUserEchoSummary(sessionId, context);
 }
 
+function flushAssistantStreamSummary(sessionId: string, context: HelmHandlerContext) {
+  runtimeStreamLog.closeAssistantStreamLog(
+    sessionId,
+    context,
+    nextLiveEventSequence,
+    runtimeLogFields,
+  );
+}
+
+function logRuntimePlanUpdate(
+  sessionId: string,
+  event: Extract<SessionRuntimeEvent, { type: "plan-update" }>,
+  context: HelmHandlerContext,
+) {
+  const entries = event.plan.entries.length;
+  const previousEntries = runtimePlanLogStateBySession.get(sessionId)?.lastEntryCount ?? 0;
+  runtimePlanLogStateBySession.set(sessionId, { lastEntryCount: entries });
+  if (entries > 0) {
+    logRuntimeDebug(context, "runtime.plan.updated", {
+      ...runtimeLogFields(sessionId, context),
+      seq: nextLiveEventSequence(sessionId),
+      entries,
+    });
+    return;
+  }
+  if (previousEntries > 0) {
+    logRuntimeDebug(context, "runtime.plan.cleared", {
+      ...runtimeLogFields(sessionId, context),
+      seq: nextLiveEventSequence(sessionId),
+      previousEntries,
+    });
+  }
+}
+
+function recordCommandOutputSummary(
+  sessionId: string,
+  chunk: Extract<SessionRuntimeEvent, { type: "command-output" }>["chunk"],
+  timelineSequence: number,
+) {
+  const summaries = commandOutputSummaryBySession.get(sessionId) ?? new Map<string, CommandOutputSummary>();
+  commandOutputSummaryBySession.set(sessionId, summaries);
+  const key = `${chunk.commandId}\u001f${chunk.stream}`;
+  const current = summaries.get(key);
+  if (!current) {
+    summaries.set(key, {
+      chars: chunk.text.length,
+      chunks: 1,
+      commandId: chunk.commandId,
+      firstSeq: timelineSequence,
+      lastSeq: timelineSequence,
+      stream: chunk.stream,
+    });
+    return;
+  }
+  current.chars += chunk.text.length;
+  current.chunks += 1;
+  current.lastSeq = timelineSequence;
+}
+
+function flushCommandOutputSummaries(sessionId: string, context: HelmHandlerContext) {
+  const summaries = commandOutputSummaryBySession.get(sessionId);
+  if (!summaries?.size) {
+    return;
+  }
+  commandOutputSummaryBySession.delete(sessionId);
+  for (const summary of summaries.values()) {
+    logRuntimeDebug(context, "runtime.command_output.summary", {
+      ...runtimeLogFields(sessionId, context),
+      seq: nextLiveEventSequence(sessionId),
+      commandId: summary.commandId,
+      stream: summary.stream,
+      chunks: summary.chunks,
+      chars: summary.chars,
+      firstSeq: summary.firstSeq,
+      lastSeq: summary.lastSeq,
+    });
+  }
+}
+
 export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
   const message = context.liveMessageBuffer.finalize(sessionId);
   if (!message) {
@@ -157,6 +251,9 @@ export function handleRuntimeEvent(
   if (!isRuntimeUserMessageEvent(event)) {
     flushIgnoredUserEchoSummary(sessionId, context);
   }
+  if (event.type !== "command-output") {
+    flushCommandOutputSummaries(sessionId, context);
+  }
 
   switch (event.type) {
     case "status":
@@ -166,7 +263,7 @@ export function handleRuntimeEvent(
         meta: { status: event.status },
       });
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
       } else {
@@ -194,7 +291,7 @@ export function handleRuntimeEvent(
       return;
     case "message":
       if (event.message.role === "user") {
-        runtimeStreamLog.closeAssistantStreamLog(sessionId);
+        flushAssistantStreamSummary(sessionId, context);
         startNextAssistantResponseSegment(sessionId);
         if (shouldIgnoreRuntimeUserMessage(sessionId, event.message, context)) {
           recordIgnoredUserEcho(sessionId, event.message);
@@ -228,7 +325,7 @@ export function handleRuntimeEvent(
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       logRuntimeInfo(context, "runtime.permission.requested", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -245,11 +342,7 @@ export function handleRuntimeEvent(
       );
       return;
     case "plan-update":
-      logRuntimeDebug(context, "runtime.plan.updated", {
-        ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
-        entries: event.plan.entries.length,
-      });
+      logRuntimePlanUpdate(sessionId, event, context);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "plan_update",
         plan: event.plan,
@@ -270,7 +363,7 @@ export function handleRuntimeEvent(
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       bumpAssistantStreamSegment(sessionId);
       const orderedToolCall = {
         ...event.toolCall,
@@ -285,19 +378,13 @@ export function handleRuntimeEvent(
         meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
       });
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       bumpAssistantStreamSegment(sessionId);
-      logRuntimeDebug(context, "runtime.command_output.chunk", {
-        ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
-        commandId: event.chunk.commandId,
-        stream: event.chunk.stream,
-        chars: event.chunk.text.length,
-      });
       const orderedChunk = {
         ...event.chunk,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
+      recordCommandOutputSummary(sessionId, event.chunk, orderedChunk.timelineSequence);
       publishRuntimeCommandOutput(
         context,
         sessionId,
@@ -312,7 +399,7 @@ export function handleRuntimeEvent(
       return;
     case "diff-update":
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       logRuntimeInfo(context, "runtime.diff.updated", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -323,7 +410,7 @@ export function handleRuntimeEvent(
       return;
     case "config-options": {
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       const current = context.sessions.get(sessionId)?.summary ??
         context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
       const resolvedModel = current?.model ?? event.state.model;
@@ -373,7 +460,7 @@ export function handleRuntimeEvent(
     }
     case "model-options": {
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       logRuntimeDebug(context, "runtime.model_options.received", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -401,7 +488,7 @@ export function handleRuntimeEvent(
     }
     case "available-commands": {
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       logRuntimeDebug(context, "runtime.available_commands.received", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -426,7 +513,7 @@ export function handleRuntimeEvent(
     }
     case "error":
       flushLiveAssistantMessage(sessionId, context);
-      runtimeStreamLog.closeAssistantStreamLog(sessionId);
+      flushAssistantStreamSummary(sessionId, context);
       logRuntimeError(context, "runtime.error", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),

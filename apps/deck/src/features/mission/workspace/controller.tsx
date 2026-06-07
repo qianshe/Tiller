@@ -276,6 +276,7 @@ export function MissionWorktree(props: any) {
   });
   const hydrateOpenSessionStreams = useOpenSessionStreams({
     pairingState,
+    connection,
     rpcClientRef,
     dispatch,
     openSessions,

@@ -112,6 +112,82 @@ test("buildSessionStreamHydrationPlan hydrates cached Claude task activity when 
   assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
 });
 
+test("buildSessionStreamHydrationPlan rehydrates Claude task activity when stale activity state has no plan", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {
+      [idleSession.id]: [{
+        id: "toolu_task_1",
+        kind: "tool",
+        title: "TaskCreate",
+      }] as AgentToolCall[],
+    },
+    sessionPlansBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan rehydrates Claude task plans past stale loading state", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: true },
+    },
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {
+      [idleSession.id]: [{
+        id: "toolu_task_1",
+        kind: "tool",
+        title: "TaskCreate",
+      }] as AgentToolCall[],
+    },
+    sessionPlansBySession: {},
+    checkedResumeSessionIds: new Set(),
+    checkedPlanSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
+  assert.deepEqual(plan.planActivitySessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan skips stale plan rehydration after the plan was checked", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    activityHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {
+      [idleSession.id]: [{
+        id: "toolu_task_1",
+        kind: "tool",
+        title: "TaskCreate",
+      }] as AgentToolCall[],
+    },
+    sessionPlansBySession: {},
+    checkedResumeSessionIds: new Set(),
+    checkedPlanSessionIds: new Set([idleSession.id]),
+  });
+
+  assert.deepEqual(plan.activitySessionIds, []);
+  assert.deepEqual(plan.planActivitySessionIds, []);
+});
+
 test("buildSessionStreamHydrationPlan skips cached todo activity when a plan exists", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],
@@ -163,6 +239,65 @@ test("buildSessionStreamHydrationPlan hydrates messages when timeline is cached 
   });
 
   assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan hydrates cached messages when timeline cache is missing", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([
+      [
+        idleSession.id,
+        {
+          ...idleSession,
+          messageCount: 1,
+        },
+      ],
+    ]),
+    messageHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    activityHistoryState: {},
+    messagesBySession: {
+      [idleSession.id]: [
+        { id: "user-1", role: "user" },
+        { id: "assistant-1", role: "assistant" },
+      ] as AgentMessage[],
+    },
+    sessionTimelineBySession: {},
+    outputsBySession: {},
+    toolCallsBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan keeps empty timeline cache as hydrated", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([
+      [
+        idleSession.id,
+        {
+          ...idleSession,
+          messageCount: 1,
+        },
+      ],
+    ]),
+    messageHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    activityHistoryState: {},
+    messagesBySession: {
+      [idleSession.id]: [{ id: "user-1", role: "user" }] as AgentMessage[],
+    },
+    sessionTimelineBySession: { [idleSession.id]: [] },
+    outputsBySession: {},
+    toolCallsBySession: {},
+    checkedResumeSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
 });
 
 test("buildSessionStreamHydrationPlan compares cached users with the summary send count", () => {

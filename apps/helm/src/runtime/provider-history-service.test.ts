@@ -742,6 +742,159 @@ test("authoritative provider history leaves timeline untouched for unchanged sna
   assert.equal(replacedTimeline, false);
 });
 
+test("forced provider history import replaces replay cache with adapter timeline", async () => {
+  const sessionId = "session-forced-provider-history-import";
+  const localMessagesBySession = new Map<string, AgentMessage[]>([
+    [
+      sessionId,
+      [
+        {
+          id: "user-1",
+          role: "user",
+          text: "做一个 plan",
+          timestamp: "2026-05-17T09:34:37.000Z",
+        },
+        {
+          id: "assistant-final#p0",
+          role: "assistant",
+          text: "最终回复",
+          timestamp: "2026-05-17T09:34:42.000Z",
+        },
+      ],
+    ],
+  ]);
+  let storedToolCalls: AgentToolCall[] = [
+    {
+      id: "tool-read",
+      commandId: "tool-read",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      output: "file content",
+      timestamp: "2026-05-17T09:34:39.000Z",
+      updatedAt: "2026-05-17T09:34:39.000Z",
+    },
+  ];
+  let storedTimeline: SessionTimelineEntry[] = [];
+
+  const service = createProviderHistoryService({
+    sessions: new Map(),
+    sessionStore: { list: () => [] },
+    sessionMessageStore: {
+      list: (id) => localMessagesBySession.get(id) ?? [],
+      replace: (id, messages) => {
+        localMessagesBySession.set(id, messages);
+      },
+      append: (id, message) => {
+        localMessagesBySession.set(id, [...(localMessagesBySession.get(id) ?? []), message]);
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({ toolCalls: storedToolCalls, outputs: [], diffs: [] }),
+      replaceToolCalls: (_id, toolCalls) => {
+        storedToolCalls = toolCalls;
+      },
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "codex",
+        runtimeSessionId: "runtime-1",
+        lastSeenAt: "2026-05-17T09:34:37.000Z",
+        state: "resumeable",
+      }),
+      upsert: () => {},
+    },
+    sessionTimelineStore: {
+      replace: (_id, entries) => {
+        storedTimeline = entries;
+        return entries;
+      },
+    },
+    getAgents: () => [],
+    getWorktrees: () => [],
+    loadAdapterHistoryContent: async () => ({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "做一个 plan",
+          timestamp: "2026-05-17T09:34:37.000Z",
+          timelineSequence: 1,
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "我先检查",
+          timestamp: "2026-05-17T09:34:38.000Z",
+          timelineSequence: 2,
+        },
+        {
+          id: "assistant-final",
+          role: "assistant",
+          text: "最终回复",
+          timestamp: "2026-05-17T09:34:42.000Z",
+          timelineSequence: 4,
+        },
+      ],
+      toolCalls: [
+        {
+          id: "tool-read",
+          commandId: "tool-read",
+          kind: "read",
+          title: "Read",
+          status: "completed",
+          output: "file content",
+          timestamp: "2026-05-17T09:34:39.000Z",
+          updatedAt: "2026-05-17T09:34:39.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      outputs: [],
+      diffs: [],
+    }),
+    logInfo: () => {},
+    logError: () => {},
+  });
+
+  const imported = await service.importAuthoritativeProviderHistory(
+    sessionId,
+    {
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    },
+    "runtime-1",
+    "D:/repo",
+    { forceReplace: true },
+  );
+
+  assert.equal(imported, true);
+  assert.deepEqual(
+    localMessagesBySession.get(sessionId)?.map((message) => [
+      message.id,
+      message.text,
+      message.timelineSequence,
+    ]),
+    [
+      ["user-1", "做一个 plan", 1],
+      ["assistant-1#p0", "我先检查", 2],
+      ["assistant-final#p0", "最终回复", 4],
+    ],
+  );
+  assert.deepEqual(
+    storedTimeline.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    [
+      ["user_message", "user-1", 1],
+      ["assistant_message", "assistant-1#p0", 2],
+      ["tool_call", "tool:tool-read", 3],
+      ["assistant_message", "assistant-final#p0", 4],
+    ],
+  );
+});
+
 test("authoritative provider history does not log unchanged skip decisions", () => {
   const sessionId = "session-provider-history-skip-log";
   const providerMessages: AgentMessage[] = [

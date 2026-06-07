@@ -327,6 +327,21 @@ test("plain user messages use a golden-ratio responsive measure", () => {
   assert.match(html, /plain-message-body[^"]*max-w-\[min\(680px,61\.8%\)\]/);
 });
 
+test("plain short user messages size to their content before wrapping", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-short",
+        role: "user",
+        text: "你好",
+        timestamp: "2026-06-01T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-message-body[^"]*min-w-14[^"]*w-fit[^"]*break-words[^"]*max-w-\[min\(680px,61\.8%\)\]/);
+});
+
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

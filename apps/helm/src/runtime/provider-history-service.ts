@@ -76,6 +76,10 @@ type ProviderHistoryServiceOptions = {
   logError(message: string): void;
 };
 
+type ProviderHistoryImportOptions = {
+  forceReplace?: boolean;
+};
+
 export function createProviderHistoryService(options: ProviderHistoryServiceOptions) {
   const providerHistoryRefreshes = new Map<string, number>();
   const providerHistoryRefreshInFlight = new Map<string, Promise<void>>();
@@ -86,6 +90,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     agent: AcpAgentProvider,
     runtimeSessionId: string,
     cwd: string,
+    importOptions: ProviderHistoryImportOptions = {},
   ) {
     try {
       const historySnapshot = await resolveProviderHistorySnapshot([
@@ -97,7 +102,13 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       if (!historySnapshot) {
         return false;
       }
-      applyAuthoritativeProviderHistory(sessionId, agent, runtimeSessionId, historySnapshot);
+      applyAuthoritativeProviderHistory(
+        sessionId,
+        agent,
+        runtimeSessionId,
+        historySnapshot,
+        importOptions,
+      );
       return true;
     } catch (error) {
       logProviderHistoryError("runtime.provider_history.export_failed", {
@@ -185,11 +196,14 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     agent: AcpAgentProvider,
     runtimeSessionId: string,
     history: ProviderHistorySnapshot,
+    importOptions: ProviderHistoryImportOptions = {},
   ) {
     const descriptor = options.sessionRuntimeStore.get(sessionId);
     const localMessages = options.sessionMessageStore.list(sessionId);
+    const forceReplace = importOptions.forceReplace === true;
     recordProviderHistoryPlan(sessionId, history.plan);
     if (
+      !forceReplace &&
       !shouldImportAuthoritativeProviderHistory({
         currentState: descriptor?.providerHistory,
         localMessages,
@@ -242,11 +256,18 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       return;
     }
 
-    const syncDecision = planProviderHistorySync({
+    const plannedSyncDecision = planProviderHistorySync({
       currentState: descriptor?.providerHistory,
       providerMessages: history.messages,
       syncedAt: history.syncedAt,
     });
+    const syncDecision = forceReplace
+      ? {
+          action: "replace" as const,
+          messages: toParagraphMessages(history.messages),
+          nextState: plannedSyncDecision.nextState,
+        }
+      : plannedSyncDecision;
 
     let localMessageCount = syncDecision.action === "skip" ? 0 : syncDecision.messages.length;
     let logAction: "append" | "repair" | "replace" | "skip" = syncDecision.action;

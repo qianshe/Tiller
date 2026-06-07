@@ -118,11 +118,12 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
         input: undefined,
         output: undefined,
         status: "completed",
+        timelineSequence: 1,
         updatedAt: "2026-05-08T08:00:01.000Z",
       },
-      { ...output.toolCall, input: undefined, output: undefined },
+      { ...output.toolCall, input: undefined, output: undefined, timelineSequence: 2 },
     ],
-    outputs: [output.chunk],
+    outputs: [{ ...output.chunk, timelineSequence: 2 }],
     diffs: diff.files,
   });
   assert.equal(stores.toolCalls.length, 0);
@@ -194,6 +195,40 @@ test("restore replay buffer preserves user and assistant messages when replay id
     [
       ["user_message", 1],
       ["assistant_message", 2],
+    ],
+  );
+});
+
+test("restore replay buffer gives colliding unsequenced message roles distinct timeline slots", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "message",
+    message: {
+      id: "replay-msg",
+      role: "user",
+      text: "用户历史消息",
+      timestamp: "2026-05-08T08:00:00.000Z",
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "replay-msg",
+      role: "assistant",
+      text: "助手历史消息",
+      timestamp: "2026-05-08T08:00:01.000Z",
+    },
+  });
+
+  buffer.flush();
+
+  assert.deepEqual(
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    [
+      ["user_message", "replay-msg", 1],
+      ["assistant_message", "replay-msg:assistant", 2],
     ],
   );
 });
@@ -290,8 +325,55 @@ test("restore replay buffer keeps stronger tool-call classification across updat
       updatedAt: "2026-05-08T08:00:01.000Z",
       input: JSON.stringify({ code: "nodeRepl.write('ok')", timeout_ms: 10000 }),
       output: undefined,
+      timelineSequence: 1,
     },
   ]);
+});
+
+test("restore replay buffer assigns timeline order when replay timestamps are collapsed", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "message",
+    message: {
+      id: "user-1",
+      role: "user",
+      text: "重导入历史",
+      timestamp: "2026-06-07T13:09:18.204Z",
+    },
+  });
+  buffer.add({
+    type: "tool-call",
+    toolCall: {
+      id: "tool-1",
+      kind: "shell",
+      title: "git status --short",
+      status: "completed",
+      timestamp: "2026-06-07T13:09:18.207Z",
+      updatedAt: "2026-06-07T13:09:18.207Z",
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "assistant-1",
+      role: "assistant",
+      text: "工具后继续输出",
+      timestamp: "2026-06-07T13:09:18.206Z",
+    },
+  });
+
+  buffer.flush();
+
+  assert.deepEqual(
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    [
+      ["user_message", "user-1", 1],
+      ["tool_call", "tool:tool-1", 2],
+      ["assistant_message", "assistant-1", 3],
+    ],
+  );
 });
 
 test("restore replay buffer persists ordered local timeline entries", () => {

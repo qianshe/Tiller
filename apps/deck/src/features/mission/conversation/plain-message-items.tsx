@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
@@ -209,6 +209,51 @@ export const PlainMessageItem = memo(function PlainMessageItem({
       ? "plain-message-body plain-message-body-collapsed"
       : "plain-message-body";
   const [previewImage, setPreviewImage] = useState<PlainMessageImagePreview | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyResetTimeoutRef = useRef<number | null>(null);
+  const hasCopyableUserText = message.role === "user" && Boolean(message.text.trim());
+  const hasUserMessageActions = hasCopyableUserText || isCollapsible;
+  const copyLabel = copyState === "copied"
+    ? "已复制用户消息"
+    : copyState === "failed"
+      ? "复制用户消息失败"
+      : "复制用户消息";
+
+  useEffect(() => () => {
+    if (copyResetTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+  }, []);
+
+  function resetCopyStateAfter(delayMs: number) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (copyResetTimeoutRef.current !== null) {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+    copyResetTimeoutRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      copyResetTimeoutRef.current = null;
+    }, delayMs);
+  }
+
+  async function copyUserMessage() {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    if (!hasCopyableUserText || !clipboard?.writeText) {
+      setCopyState("failed");
+      resetCopyStateAfter(1800);
+      return;
+    }
+    try {
+      await clipboard.writeText(message.text);
+      setCopyState("copied");
+      resetCopyStateAfter(1400);
+    } catch {
+      setCopyState("failed");
+      resetCopyStateAfter(1800);
+    }
+  }
 
   return (
     <article
@@ -263,23 +308,52 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             ))}
           </div>
         ) : null}
-        <div
-          className={cn(
-            `${messageBodyClassName} min-w-0 text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
-            message.role === "user" && "max-w-[min(680px,61.8%)] rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
-          )}
-        >
-          {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
-        </div>
-        {isCollapsible ? (
-          <Button
-            className="plain-message-expand w-fit px-3 py-1.5 text-xs"
-            type="button"
-            variant="outline"
-            onClick={() => onToggleExpandedMessage(message.id)}
+        {message.role === "user" ? (
+          <div className="plain-message-user-row flex max-w-full items-start justify-end gap-1.5">
+            <div
+              className={cn(
+                `${messageBodyClassName} min-w-14 w-fit break-words text-[12.5px] leading-[1.5]`,
+                "max-w-[min(680px,61.8%)] rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
+              )}
+            >
+              {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              `${messageBodyClassName} min-w-0 text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
+            )}
           >
-            {isExpanded ? "收起消息" : "展开完整消息"}
-          </Button>
+            {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
+          </div>
+        )}
+        {message.role === "user" && hasUserMessageActions ? (
+          <div className="plain-message-actions flex max-w-[min(680px,61.8%)] flex-wrap items-center justify-end gap-1.5 justify-self-end">
+            {isCollapsible ? (
+              <Button
+                className="plain-message-expand w-fit px-3 py-1.5 text-xs"
+                type="button"
+                variant="outline"
+                onClick={() => onToggleExpandedMessage(message.id)}
+              >
+                {isExpanded ? "收起消息" : "展开完整消息"}
+              </Button>
+            ) : null}
+            {hasCopyableUserText ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="plain-message-copy shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
+                aria-label={copyLabel}
+                title={copyLabel}
+                onClick={copyUserMessage}
+              >
+                <Icon name={copyState === "copied" ? "check" : "copy"} size={12} />
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {message.role !== "user" && message.attachments?.length ? (
           <div className="mission-message-attachments flex max-w-full flex-wrap justify-start gap-2">

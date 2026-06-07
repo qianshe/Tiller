@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { AgentMessage } from "@tiller/shared";
+import type { AgentMessage, SessionTimelineEntry } from "@tiller/shared";
 import {
   PlainMessages,
   INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
@@ -66,6 +66,77 @@ test("plain message timeline keeps tool and thinking rows tighter than content b
     "plain-message-block min-w-0 mt-2",
   );
   assert.match(plainMessagesSource, /gap-y-1/);
+});
+
+test("plain user messages render a copy action", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "需要复制的用户消息",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "助手回复",
+          timestamp: "2026-05-06T00:00:01.000Z",
+        },
+      ] as AgentMessage[],
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/aria-label="复制用户消息"/g)?.length, 1);
+  assert.match(html, /plain-message-copy/);
+});
+
+test("plain user message actions render below the message body", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "这是一条需要折叠的用户消息。".repeat(24),
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  const userRowIndex = html.indexOf("plain-message-user-row");
+  const actionsIndex = html.indexOf("plain-message-actions");
+  const copyIndex = html.indexOf("plain-message-copy");
+  const expandIndex = html.indexOf("plain-message-expand");
+
+  assert.ok(userRowIndex >= 0);
+  assert.ok(actionsIndex > userRowIndex);
+  assert.ok(copyIndex > actionsIndex);
+  assert.ok(expandIndex > actionsIndex);
+  assert.ok(expandIndex < copyIndex);
+  assert.doesNotMatch(html.slice(userRowIndex, actionsIndex), /plain-message-copy/);
 });
 
 test("plain message display keeps all loaded messages", () => {
@@ -270,6 +341,88 @@ test("plain message timeline orders mixed sequence history by timestamp across t
   const assistantIndex = html.indexOf("Provider 回复");
   const toolIndex = html.indexOf("Run tests");
   assert.ok(assistantIndex >= 0 && toolIndex > assistantIndex && userIndex > toolIndex);
+});
+
+test("plain message timeline interleaves assistant chunks with tool entries", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-entry",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-entry:content:before",
+          kind: "content",
+          text: "先说明。",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        {
+          id: "assistant-entry:content:after",
+          kind: "content",
+          text: "工具后继续输出。",
+          timestamp: "2026-05-17T10:00:04.000Z",
+          timelineSequence: 4,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:04.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "tool:tool-read",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      },
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:tool-search",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-search",
+        kind: "search",
+        title: "Search code",
+        status: "completed",
+        output: "search result",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        timelineSequence: 3,
+      },
+      timestamp: "2026-05-17T10:00:02.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      timelineItems,
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      assistantLabel: "CODEX",
+      roleLabels: { user: "你", assistant: "CODEX", system: "系统" },
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
+  assert.match(html, /工具调用 · 2 项/);
+  assert.ok(html.indexOf("先说明。") < html.indexOf("工具调用 · 2 项"));
+  assert.ok(html.indexOf("工具调用 · 2 项") < html.indexOf("工具后继续输出。"));
 });
 
 test("plain message timeline filters OpenCode prompt wrapper echoes", () => {

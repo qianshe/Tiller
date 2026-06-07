@@ -148,15 +148,15 @@ test("markdown table wrapper keeps horizontal scrolling without generic overflow
   assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_16px\)\)\]/);
   assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
   assert.match(plainMessagesSource, /ml-auto grid w-full justify-items-end/);
-  assert.match(plainMessagesSource, /message\.role === "user" && "max-w-\[min\(680px,61\.8%\)\]/);
+  assert.match(plainMessagesSource, /plain-message-user-row flex max-w-full items-start justify-end gap-1\.5/);
   assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
-  assert.match(plainMessagesSource, /message\.role === "user" && "max-w-\[min\(680px,61\.8%\)\] rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
+  assert.match(plainMessagesSource, /"max-w-\[min\(680px,61\.8%\)\] rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
   assert.doesNotMatch(plainMessagesSource, /rounded-2xl border border-border-ghost bg-surface-elevated/);
   assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
   assert.doesNotMatch(plainMessagesSource, /rounded-md bg-surface-emphasis\/45/);
   assert.match(plainMessagesSource, /message\.role === "user" && message\.attachments\?\.length \?/);
-  assert.match(plainMessagesSource, /mission-message-attachments[\s\S]*?\) : null\}\s*<div\s*className=\{cn\(/);
+  assert.match(plainMessagesSource, /mission-message-attachments[\s\S]*?\) : null\}\s*\{message\.role === "user" \? \(/);
   assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-x-auto/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-y-hidden/);

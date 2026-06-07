@@ -599,8 +599,9 @@ function buildPlainConversationItemsFromTimeline(
     }
   }
 
+  const sorted = items.sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(items)),
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(sorted)),
   );
 }
 

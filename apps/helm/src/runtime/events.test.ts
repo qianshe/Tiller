@@ -273,13 +273,22 @@ test("runtime session.message persists and broadcasts streaming chunks without s
 
   assert.deepEqual(
     structuredLogs(capture).map((log) => log.event),
-    ["runtime.assistant_stream.started", "runtime.status.changed"],
+    ["runtime.assistant_stream.completed", "runtime.status.changed"],
   );
-  assert.equal(findStructuredLog(capture, "runtime.assistant_stream.started")?.fields?.role, "assistant");
+  const streamLog = findStructuredLog(capture, "runtime.assistant_stream.completed");
+  assert.equal(streamLog?.level, "info");
+  assert.equal(streamLog?.fields?.role, "assistant");
+  assert.equal(streamLog?.fields?.segments, 1);
+  assert.equal(streamLog?.fields?.chunks, 2);
+  assert.equal(streamLog?.fields?.uniqueMessages, 1);
+  assert.equal(streamLog?.fields?.assistantChars, "你好\n主人".length);
+  assert.equal(typeof streamLog?.fields?.durationMs, "number");
+  assert.ok(Number(streamLog?.fields?.durationMs) >= 0);
   assert.match(
-    String(findStructuredLog(capture, "runtime.assistant_stream.started")?.fields?.messageId),
+    String(streamLog?.fields?.firstMessageId),
     /^session-1-msg-\d{6}-\d{6}-pmessage1/u,
   );
+  assert.equal(streamLog?.fields?.firstMessageId, streamLog?.fields?.lastMessageId);
   assert.equal(findStructuredLog(capture, "runtime.status.changed")?.fields?.status, "idle");
   assert.doesNotMatch(JSON.stringify(structuredLogs(capture)), /preview|text|你|好|主人/u);
   assert.deepEqual(writes, []);
@@ -478,8 +487,9 @@ test("runtime assistant stream closes before the next stage log", () => {
 
   assert.deepEqual(
     structuredLogs(capture).map((log) => log.event),
-    ["runtime.assistant_stream.started", "runtime.status.changed"],
+    ["runtime.assistant_stream.completed", "runtime.status.changed"],
   );
+  assert.equal(findStructuredLog(capture, "runtime.assistant_stream.completed")?.level, "info");
   assert.deepEqual(writes, []);
 });
 
@@ -1566,7 +1576,62 @@ test("handleRuntimeEvent broadcasts plan updates without storing a tool call", (
   assert.deepEqual(planBroadcast?.params.update.plan.entries, [
     { content: "Broadcast plan", priority: "medium", status: "in_progress" },
   ]);
+  assert.equal(findStructuredLog(capture, "runtime.plan.updated")?.fields?.entries, 1);
   assert.deepEqual(appendedToolCalls, []);
+});
+
+test("empty plan updates are broadcast without debug log noise", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const emptyPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [],
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+
+  const planBroadcasts = capture.detailBroadcasts.filter(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
+  );
+  assert.equal(planBroadcasts.length, 2);
+  assert.equal(findStructuredLog(capture, "runtime.plan.updated"), undefined);
+});
+
+test("plan clear logs once after a non-empty plan", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const filledPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [{ content: "Investigate logs", priority: "medium", status: "in_progress" }],
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+  const emptyPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [],
+      updatedAt: "2026-06-02T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+
+  handleRuntimeEvent("session-1", filledPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+
+  const planLogs = structuredLogs(capture).filter((log) => log.event.startsWith("runtime.plan."));
+  assert.deepEqual(
+    planLogs.map((log) => log.event),
+    ["runtime.plan.updated", "runtime.plan.cleared"],
+  );
+  assert.equal(planLogs[0]?.fields?.entries, 1);
+  assert.equal(planLogs[1]?.fields?.previousEntries, 1);
 });
 
 test("runtime timeline events carry arrival order when timestamps collide", () => {
@@ -1663,17 +1728,17 @@ test("runtime non-streaming event logs use structured status metadata", () => {
   assert.doesNotMatch(JSON.stringify(statusLog), /still working/u);
 });
 
-test("runtime command-output logs structured metadata without stream text", () => {
+test("runtime command-output logs summary metadata without stream text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedOutputs: unknown[] = [];
-  const context = createTestContext(logs, capture);
+  const context = createTestContext(logs, capture, "session-command-output-summary");
   context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
     appendedOutputs.push(chunk);
   };
 
   handleRuntimeEvent(
-    "session-1",
+    "session-command-output-summary",
     {
       type: "command-output",
       chunk: {
@@ -1686,16 +1751,42 @@ test("runtime command-output logs structured metadata without stream text", () =
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-command-output-summary",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-2",
+        commandId: "cmd-1",
+        stream: "stdout",
+        text: "\nmore secret output",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-command-output-summary",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
-  const commandLog = findStructuredLog(capture, "runtime.command_output.chunk");
+  const commandLog = findStructuredLog(capture, "runtime.command_output.summary");
   assert.equal(commandLog?.level, "debug");
   assert.equal(commandLog?.fields?.commandId, "cmd-1");
   assert.equal(commandLog?.fields?.stream, "stdout");
-  assert.equal(commandLog?.fields?.chars, 31);
-  assert.doesNotMatch(JSON.stringify(commandLog), /SECRET_STREAM_TEXT|with details|text|preview/u);
-  assert.equal(appendedOutputs.length, 1);
-  assert.equal(capture.broadcasts.length, 0);
-  assert.equal(capture.detailBroadcasts.length, 1);
+  assert.equal(commandLog?.fields?.chunks, 2);
+  assert.equal(commandLog?.fields?.chars, 31 + "\nmore secret output".length);
+  assert.equal(commandLog?.fields?.firstSeq, 1);
+  assert.equal(commandLog?.fields?.lastSeq, 2);
+  assert.equal(findStructuredLog(capture, "runtime.command_output.chunk"), undefined);
+  assert.doesNotMatch(JSON.stringify(commandLog), /SECRET_STREAM_TEXT|with details|more secret output|text|preview/u);
+  assert.equal(appendedOutputs.length, 2);
+  assert.equal(capture.broadcasts.length, 1);
+  assert.equal(capture.detailBroadcasts.length, 2);
 });
 
 test("runtime available-commands events persist commands on the session summary", () => {

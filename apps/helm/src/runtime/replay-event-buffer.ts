@@ -30,6 +30,7 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
   const toolCalls = new Map<string, AgentToolCall>();
   const outputs = new Map<string, CommandChunk>();
   let diffs: FileDiffSummary[] | null = null;
+  let replayTimelineSequence = 0;
 
   function snapshot() {
     return {
@@ -43,16 +44,37 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
   return {
     add(event: SessionRuntimeEvent) {
       switch (event.type) {
-        case "message":
-          upsertReplayMessage(messages, event.message);
+        case "message": {
+          const existing = messages.get(event.message.id);
+          upsertReplayMessage(
+            messages,
+            withReplayTimelineSequence(
+              event.message,
+              existing?.role === event.message.role ? existing.timelineSequence : undefined,
+            ),
+          );
           return true;
+        }
         case "tool-call":
-          upsertToolCall(toolCalls, event.toolCall);
+          upsertToolCall(
+            toolCalls,
+            withReplayTimelineSequence(event.toolCall, toolCalls.get(event.toolCall.id)?.timelineSequence),
+          );
           return true;
         case "command-output":
-          outputs.set(event.chunk.id, event.chunk);
+          const chunk = withReplayTimelineSequence(
+            event.chunk,
+            outputs.get(event.chunk.id)?.timelineSequence,
+          );
+          outputs.set(chunk.id, chunk);
           if (event.toolCall) {
-            upsertToolCall(toolCalls, event.toolCall);
+            upsertToolCall(
+              toolCalls,
+              withReplayTimelineSequence(
+                event.toolCall,
+                toolCalls.get(event.toolCall.id)?.timelineSequence ?? chunk.timelineSequence,
+              ),
+            );
           }
           return true;
         case "diff-update":
@@ -105,6 +127,21 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
       context.sessionTimelineStore.replace(sessionId, entries);
     }
   }
+
+  function withReplayTimelineSequence<T extends { timelineSequence?: number }>(
+    item: T,
+    preferredSequence?: number,
+  ): T {
+    if (isFiniteTimelineSequence(item.timelineSequence)) {
+      replayTimelineSequence = Math.max(replayTimelineSequence, item.timelineSequence);
+      return item;
+    }
+    if (isFiniteTimelineSequence(preferredSequence)) {
+      return { ...item, timelineSequence: preferredSequence };
+    }
+    replayTimelineSequence += 1;
+    return { ...item, timelineSequence: replayTimelineSequence };
+  }
 }
 
 function upsertReplayMessage(messages: Map<string, AgentMessage>, next: AgentMessage) {
@@ -140,9 +177,14 @@ function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCa
     kind: resolveToolCallKind(current?.kind, next.kind),
     title: resolveToolCallTitle(current?.title, next.title, next.id),
     timestamp: current?.timestamp ?? next.timestamp,
+    timelineSequence: current?.timelineSequence ?? next.timelineSequence,
     input: next.input ?? current?.input,
     output: `${current?.output ?? ""}${next.output ?? ""}` || undefined,
   });
+}
+
+function isFiniteTimelineSequence(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function resolveToolCallKind(

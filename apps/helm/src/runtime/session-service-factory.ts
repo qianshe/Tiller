@@ -236,9 +236,23 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
           activeRecord.agent,
           activeRecord.runtime.runtimeSessionId,
           activeRecord.worktree.path,
+          { forceReplace: true },
         );
         if (!imported) {
           throw new Error(resume.message);
+        }
+      } else {
+        const restoredRecord = options.sessions.get(sessionId) ?? activeRecord;
+        if (restoredRecord) {
+          // Reimport has already cleared the local cache; prefer adapter history
+          // over ACP replay so provider timeline sequence metadata survives.
+          await providerHistory.importAuthoritativeProviderHistory(
+            sessionId,
+            restoredRecord.agent,
+            restoredRecord.runtime.runtimeSessionId,
+            restoredRecord.worktree.path,
+            { forceReplace: true },
+          );
         }
       }
       preservePreviousUserPromptsAfterReimport({

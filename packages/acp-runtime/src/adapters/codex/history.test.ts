@@ -228,6 +228,41 @@ test("parseCodexJsonlHistory reads Codex ACP visible user messages", () => {
   ]);
 });
 
+test("parseCodexJsonlHistory hides injected AGENTS instructions from visible messages", () => {
+  const history = parseCodexJsonlHistory(
+    [
+      JSON.stringify({
+        timestamp: "2026-06-07T12:01:29.468Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "# AGENTS.md instructions for D:\\myProject\\tools\\Tiller\n\n<INSTRUCTIONS>...",
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-06-07T12:01:31.389Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "client-user-1",
+          message: "我准备开始做 commit",
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(
+    history.messages.map((message) => [message.id, message.role, message.text]),
+    [["client-user-1", "user", "我准备开始做 commit"]],
+  );
+});
+
 test("parseCodexJsonlHistory deduplicates matching response and event user messages", () => {
   const history = parseCodexJsonlHistory(
     [
@@ -428,6 +463,69 @@ test("loadAdapterAuthoritativeHistory uses local Codex rollout history", async (
     );
 
     assert.equal(history?.messages[0]?.text, "加载 Codex 历史");
+  } finally {
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
+    }
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("loadAdapterAuthoritativeHistory finds Codex rollout files by session id suffix", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tiller-codex-history-"));
+  const previousUserProfile = process.env.USERPROFILE;
+  const previousHome = process.env.HOME;
+  process.env.USERPROFILE = home;
+  process.env.HOME = home;
+  try {
+    const sessionDir = join(home, ".codex", "sessions", "2026", "06", "07");
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, "rollout-2026-06-07T19-59-34-019ea1f3-cc55-7233-a126-394d0c2b1751.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-06-07T13:58:27.000Z",
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            client_id: "client-user-1",
+            message: "加载 Codex 后缀历史",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-06-07T13:58:28.000Z",
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            name: "update_plan",
+            namespace: "functions",
+            arguments: JSON.stringify({
+              plan: [{ step: "随历史加载 Codex plan", status: "in_progress" }],
+            }),
+            call_id: "call-plan",
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const history = await loadAdapterAuthoritativeHistory(
+      { id: "codex", name: "Codex", command: "codex-acp", transport: "stdio", protocol: "acp" },
+      "019ea1f3-cc55-7233-a126-394d0c2b1751",
+      "D:/repo",
+    );
+
+    assert.equal(history?.messages[0]?.text, "加载 Codex 后缀历史");
+    assert.deepEqual(history?.plan?.entries, [
+      { content: "随历史加载 Codex plan", priority: "medium", status: "in_progress" },
+    ]);
   } finally {
     if (previousUserProfile === undefined) {
       delete process.env.USERPROFILE;

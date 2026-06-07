@@ -97,6 +97,9 @@ function parseCodexJsonlEvents(raw: string): HistoryEvent[] {
       if (!role) {
         continue;
       }
+      if (isInjectedCodexInstructionsMessage(payload, role)) {
+        continue;
+      }
       const id = stringFrom(payload.id ?? payload.message_id) ?? `codex:message:${lineIndex}`;
       appendCodexMessage({
         events,
@@ -160,6 +163,17 @@ function parseCodexJsonlEvents(raw: string): HistoryEvent[] {
   return events;
 }
 
+function isInjectedCodexInstructionsMessage(
+  payload: Record<string, unknown>,
+  role: "user" | "assistant" | "system",
+) {
+  if (role !== "user") {
+    return false;
+  }
+  const text = collectCodexText(payload.content);
+  return text.startsWith("# AGENTS.md instructions for ") && text.includes("<INSTRUCTIONS>");
+}
+
 async function readCodexHistorySource(runtimeSessionId: string) {
   const historyPath = resolveCodexHistoryPath(runtimeSessionId);
   if (!historyPath) {
@@ -172,12 +186,15 @@ function resolveCodexHistoryPath(runtimeSessionId: string) {
   const fileName = runtimeSessionId.endsWith(".jsonl")
     ? runtimeSessionId
     : `${runtimeSessionId}.jsonl`;
+  const rolloutFileSuffix = `-${fileName}`;
   const configDir = resolveCodexConfigDir();
   for (const historyDir of [join(configDir, "sessions"), join(configDir, "archived_sessions")]) {
     if (!existsSync(historyDir)) {
       continue;
     }
-    const historyPath = findFileNamed(historyDir, fileName);
+    const historyPath =
+      findFileNamed(historyDir, (name) => name === fileName) ??
+      findFileNamed(historyDir, (name) => name.endsWith(rolloutFileSuffix));
     if (historyPath) {
       return historyPath;
     }
@@ -194,7 +211,7 @@ function resolveCodexConfigDir() {
         : join(homedir(), ".codex"));
 }
 
-function findFileNamed(root: string, fileName: string) {
+function findFileNamed(root: string, matchesFileName: (fileName: string) => boolean) {
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop()!;
@@ -204,7 +221,7 @@ function findFileNamed(root: string, fileName: string) {
         stack.push(path);
         continue;
       }
-      if (entry.isFile() && entry.name === fileName) {
+      if (entry.isFile() && matchesFileName(entry.name)) {
         return path;
       }
     }

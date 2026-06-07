@@ -57,6 +57,9 @@ type SessionResumeServiceOptions = {
   protocolLogging?: AcpProtocolLoggingOptions;
 };
 
+const RESTORE_REPLAY_SETTLE_MS = 100;
+const RESTORE_REPLAY_MAX_WAIT_MS = 2_000;
+
 export function createSessionResumeService(options: SessionResumeServiceOptions) {
   async function startSessionResume(
     sessionId: string,
@@ -140,6 +143,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         sessionId,
         options.createHandlerContext(),
       );
+      let lastRestoreReplayEventAt = 0;
       logResumeInfo(options, "runtime.restore_replay.opened", { sessionId });
       const runtime = await options.providerLifecycle.createRuntime({
         sessionId,
@@ -157,10 +161,12 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         protocolLogging: options.protocolLogging,
         onEvent: (event) => options.handleRuntimeEvent(sessionId, event),
         onRestoreReplayEvent: (event) => {
+          lastRestoreReplayEventAt = Date.now();
           restoreReplayBuffer.add(event);
         },
         onConnectionLifecycleEvent: options.logConnectionLifecycle,
       });
+      await waitForRestoreReplayToSettle(() => lastRestoreReplayEventAt);
       const replaySnapshot = restoreReplayBuffer.snapshot();
       if (replaySnapshot.messages.length) {
         options.sessionMessageStore.replace(sessionId, []);
@@ -266,6 +272,27 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
   }
 
   return { startSessionResume };
+}
+
+async function waitForRestoreReplayToSettle(getLastEventAt: () => number) {
+  const startedAt = Date.now();
+  while (true) {
+    const now = Date.now();
+    const lastEventAt = getLastEventAt();
+    const quietFor = lastEventAt ? now - lastEventAt : now - startedAt;
+    const elapsed = now - startedAt;
+    if (quietFor >= RESTORE_REPLAY_SETTLE_MS || elapsed >= RESTORE_REPLAY_MAX_WAIT_MS) {
+      return;
+    }
+    await sleep(Math.min(
+      RESTORE_REPLAY_SETTLE_MS - quietFor,
+      RESTORE_REPLAY_MAX_WAIT_MS - elapsed,
+    ));
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
 function logResumeInfo(
