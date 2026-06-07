@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1759
+- Total lines: 1764
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 727
-- Top-level selectors: 148
+- Lines: 732
+- Top-level selectors: 150
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -76,7 +76,9 @@ Selectors:
 - `.mission-responsive-mode .mission-session-overview-content`
 - `.mission-responsive-mode .mission-session-overview-header`
 - `.mission-responsive-mode [data-mission-mobile-pane]`
-- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-frame] > [data-session-scroll-bottom]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-dock"]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="bottom"]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [role="button"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] a`
 - `.mission-responsive-mode [data-mission-mobile-pane] button`

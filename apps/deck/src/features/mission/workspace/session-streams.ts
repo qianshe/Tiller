@@ -1,4 +1,4 @@
-import type { AgentPlan, AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, AgentPlan, AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 
 type HistoryState = {
   hasMore: boolean;
@@ -16,6 +16,7 @@ export type WorkspaceSessionStreamHydrationInput = {
   sessionById: ReadonlyMap<string, SessionSummary>;
   messageHistoryState: Record<string, HistoryState | undefined>;
   activityHistoryState: Record<string, HistoryState | undefined>;
+  messagesBySession?: Record<string, Pick<AgentMessage, "id" | "role">[] | undefined>;
   sessionTimelineBySession?: Record<string, SessionTimelineEntry[] | undefined>;
   outputsBySession?: Record<string, unknown[] | undefined>;
   toolCallsBySession?: Record<string, AgentToolCall[] | undefined>;
@@ -28,6 +29,7 @@ export function buildSessionStreamHydrationPlan({
   sessionById,
   messageHistoryState,
   activityHistoryState,
+  messagesBySession,
   sessionTimelineBySession,
   outputsBySession,
   toolCallsBySession,
@@ -37,19 +39,24 @@ export function buildSessionStreamHydrationPlan({
   const uniqueSessionIds = [...new Set(sessionIds)];
   return {
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
-      !messageHistoryState[sessionId]
+      !messageHistoryState[sessionId] ||
+      hasIncompleteCachedMessageHistory({
+        cachedMessages: messagesBySession?.[sessionId],
+        historyState: messageHistoryState[sessionId],
+        session: sessionById.get(sessionId),
+      })
     )),
     activitySessionIds: uniqueSessionIds.filter((sessionId) => {
       const toolCalls = toolCallsBySession?.[sessionId] ?? [];
       const hasCachedActivity = Boolean(
         outputsBySession?.[sessionId]?.length || toolCalls.length,
       );
-      const needsCachedTodoPlan = Boolean(
+      const needsCachedPlan = Boolean(
         !sessionPlansBySession?.[sessionId] &&
-          toolCalls.some((toolCall) => toolCall.kind === "todo"),
+          toolCalls.some(isPlanCapableToolCall),
       );
       return !activityHistoryState[sessionId] &&
-        (!hasCachedActivity || needsCachedTodoPlan);
+        (!hasCachedActivity || needsCachedPlan);
     }),
     resumeCheckSessionIds: uniqueSessionIds.filter((sessionId) => {
       const session = sessionById.get(sessionId);
@@ -61,4 +68,28 @@ export function buildSessionStreamHydrationPlan({
       );
     }),
   };
+}
+
+function isPlanCapableToolCall(toolCall: AgentToolCall) {
+  if (toolCall.kind === "todo") {
+    return true;
+  }
+  const title = (toolCall.title ?? "").trim().toLowerCase().replace(/[^a-z0-9]/gu, "");
+  return title === "taskcreate" || title === "taskupdate" || title === "todowrite";
+}
+
+function hasIncompleteCachedMessageHistory({
+  cachedMessages,
+  historyState,
+  session,
+}: {
+  cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
+  historyState: HistoryState | undefined;
+  session: SessionSummary | undefined;
+}) {
+  if (!session || !historyState || historyState.loading || historyState.hasMore) {
+    return false;
+  }
+  const cachedUserCount = cachedMessages?.filter((message) => message.role === "user").length ?? 0;
+  return session.messageCount > cachedUserCount;
 }

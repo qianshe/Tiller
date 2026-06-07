@@ -44,7 +44,7 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
     add(event: SessionRuntimeEvent) {
       switch (event.type) {
         case "message":
-          messages.set(event.message.id, event.message);
+          upsertReplayMessage(messages, event.message);
           return true;
         case "tool-call":
           upsertToolCall(toolCalls, event.toolCall);
@@ -104,6 +104,31 @@ export function createRestoreReplayBuffer(sessionId: string, context: ReplayBuff
     if (entries.length) {
       context.sessionTimelineStore.replace(sessionId, entries);
     }
+  }
+}
+
+function upsertReplayMessage(messages: Map<string, AgentMessage>, next: AgentMessage) {
+  const current = messages.get(next.id);
+  if (!current || current.role === next.role) {
+    messages.set(next.id, next);
+    return;
+  }
+
+  const collisionId = resolveRoleScopedMessageId(messages, next);
+  messages.set(collisionId, { ...next, id: collisionId });
+}
+
+function resolveRoleScopedMessageId(messages: Map<string, AgentMessage>, message: AgentMessage) {
+  const baseId = `${message.id}:${message.role}`;
+  let candidateId = baseId;
+  let suffix = 2;
+  while (true) {
+    const current = messages.get(candidateId);
+    if (!current || current.role === message.role) {
+      return candidateId;
+    }
+    candidateId = `${baseId}:${suffix}`;
+    suffix += 1;
   }
 }
 

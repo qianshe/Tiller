@@ -270,6 +270,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         plan: providerHistory.readSessionPlan(sessionId),
         sessionMessageStore: options.sessionMessageStore,
         sessionArtifactStore: options.sessionArtifactStore,
+        sessionTimelineStore: options.sessionTimelineStore,
       });
     } catch (error) {
       restorePreviousLocalHistory();
@@ -293,6 +294,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
           plan: providerHistory.readSessionPlan(sessionId),
           sessionMessageStore: options.sessionMessageStore,
           sessionArtifactStore: options.sessionArtifactStore,
+          sessionTimelineStore: options.sessionTimelineStore,
         });
       }
       throw error;

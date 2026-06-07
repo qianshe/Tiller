@@ -63,6 +63,16 @@ export type BuildSessionTimelineInput = {
   toolCalls?: AgentToolCall[];
 };
 
+const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
+
+type TimelineUserMessageAnchor = {
+  id: string;
+  entryId: string;
+  text: string;
+  timestamp: string;
+  timelineSequence?: number;
+};
+
 export function buildSessionTimelineFromLegacy({
   messages,
   outputs = [],
@@ -83,6 +93,25 @@ export function buildSessionTimelineFromLegacy({
   return sortSessionTimelineEntries(entries);
 }
 
+export function resolveTimelineRepresentedUserMessageIds(
+  entries: SessionTimelineEntry[],
+  messages: AgentMessage[],
+): Set<string> {
+  const candidates = messages.filter(isRepresentableUserMessage);
+  const represented = new Set<string>();
+  for (const anchor of collectTimelineUserMessageAnchors(entries)) {
+    const matchIndex = findRepresentedUserMessageIndex(candidates, anchor);
+    if (matchIndex === -1) {
+      continue;
+    }
+    const [match] = candidates.splice(matchIndex, 1);
+    if (match) {
+      represented.add(match.id);
+    }
+  }
+  return represented;
+}
+
 export function appendMessageToSessionTimeline(
   entries: SessionTimelineEntry[],
   message: AgentMessage,
@@ -101,6 +130,71 @@ export function appendToolCallToSessionTimeline(
     return upsertThinkingChunk(entries, toolCall);
   }
   return upsertToolCallEntry(entries, toolCall);
+}
+
+function collectTimelineUserMessageAnchors(
+  entries: SessionTimelineEntry[],
+): TimelineUserMessageAnchor[] {
+  return entries.flatMap((entry) => {
+    if (entry.kind !== "user_message") {
+      return [];
+    }
+    return [{
+      id: entry.message.id,
+      entryId: entry.id,
+      text: entry.message.text.trim(),
+      timestamp: entry.message.timestamp,
+      timelineSequence: entry.message.timelineSequence ?? entry.timelineSequence,
+    }];
+  });
+}
+
+function isRepresentableUserMessage(message: AgentMessage) {
+  return message.role === "user" && Boolean(message.text.trim());
+}
+
+function findRepresentedUserMessageIndex(
+  candidates: AgentMessage[],
+  anchor: TimelineUserMessageAnchor,
+) {
+  const idMatchIndex = candidates.findIndex(
+    (message) => message.id === anchor.id || message.id === anchor.entryId,
+  );
+  if (idMatchIndex !== -1) {
+    return idMatchIndex;
+  }
+
+  let nearestIndex = -1;
+  let nearestDelta = Number.POSITIVE_INFINITY;
+  let textFallbackIndex = -1;
+  for (const [index, message] of candidates.entries()) {
+    if (message.text.trim() !== anchor.text) {
+      continue;
+    }
+    if (textFallbackIndex === -1) {
+      textFallbackIndex = index;
+    }
+    if (hasSameUserPromptSequence(anchor, message)) {
+      return index;
+    }
+    const delta = Math.abs(Date.parse(anchor.timestamp) - Date.parse(message.timestamp));
+    if (
+      Number.isFinite(delta) &&
+      delta <= USER_PROMPT_REPRESENTATION_WINDOW_MS &&
+      delta < nearestDelta
+    ) {
+      nearestDelta = delta;
+      nearestIndex = index;
+    }
+  }
+
+  return nearestIndex === -1 ? textFallbackIndex : nearestIndex;
+}
+
+function hasSameUserPromptSequence(anchor: TimelineUserMessageAnchor, message: AgentMessage) {
+  return typeof anchor.timelineSequence === "number" &&
+    typeof message.timelineSequence === "number" &&
+    anchor.timelineSequence === message.timelineSequence;
 }
 
 export function sortSessionTimelineEntries(

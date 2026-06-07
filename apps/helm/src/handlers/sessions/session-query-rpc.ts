@@ -1,7 +1,15 @@
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { pageSessionTimeline } from "@tiller/persistence";
-import { buildSessionTimelineFromLegacy } from "@tiller/shared";
-import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
+import {
+  buildSessionTimelineFromLegacy,
+  resolveTimelineRepresentedUserMessageIds,
+} from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionSummary,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -81,7 +89,7 @@ export async function listMessages(
     limit: params.limit,
     before: params.before,
   });
-  const timelinePage = listSessionTimelinePage(params, context);
+  const timelinePage = listSessionTimelinePage(params, context, page.messages);
   return {
     sessionId: params.sessionId,
     messages: page.messages,
@@ -181,6 +189,7 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
 function listSessionTimelinePage(
   params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
   context: HelmHandlerContext,
+  visibleMessages: AgentMessage[] = [],
 ) {
   if (!context.sessionTimelineStore) {
     return { entries: [], hasMore: false };
@@ -194,11 +203,22 @@ function listSessionTimelinePage(
   };
   const persistedPage = context.sessionTimelineStore.listPage?.(params.sessionId, options);
   if (persistedPage && isAuthoritativeTimelinePage(persistedPage, options.before)) {
-    return persistedPage;
+    if (
+      options.before ||
+      !isTimelineMissingVisibleUserAnchors(persistedPage.entries, visibleMessages)
+    ) {
+      return persistedPage;
+    }
   }
 
   const existing = persistedPage ? [] : (context.sessionTimelineStore.list?.(params.sessionId) ?? []);
-  if (existing.length) {
+  if (
+    existing.length &&
+    (
+      options.before ||
+      !isTimelineMissingVisibleUserAnchors(existing, visibleMessages)
+    )
+  ) {
     return pageSessionTimeline(existing, options);
   }
 
@@ -216,6 +236,22 @@ function isAuthoritativeTimelinePage(
   before: string | undefined,
 ) {
   return Boolean(before) || page.hasMore || page.entries.length > 0;
+}
+
+function isTimelineMissingVisibleUserAnchors(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+) {
+  const visibleUsers = visibleMessages.filter(isVisibleUserMessage);
+  if (!visibleUsers.length) {
+    return false;
+  }
+  const representedUserIds = resolveTimelineRepresentedUserMessageIds(entries, visibleUsers);
+  return representedUserIds.size < visibleUsers.length;
+}
+
+function isVisibleUserMessage(message: AgentMessage) {
+  return message.role === "user" && Boolean(message.text.trim());
 }
 
 function rebuildSessionTimelineFromLegacy(sessionId: string, context: HelmHandlerContext) {

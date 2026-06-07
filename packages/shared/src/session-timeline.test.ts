@@ -5,6 +5,7 @@ import type { SessionTimelineEntry } from "./session-timeline";
 import {
   appendToolCallToSessionTimeline,
   buildSessionTimelineFromLegacy,
+  resolveTimelineRepresentedUserMessageIds,
 } from "./session-timeline";
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
@@ -70,6 +71,42 @@ test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by ti
   assert.deepEqual(
     timeline.map((entry) => entry.kind),
     ["user_message", "tool_call", "assistant_message"],
+  );
+});
+
+test("resolveTimelineRepresentedUserMessageIds consumes repeated user prompt anchors one-to-one", () => {
+  const localUsers = [
+    {
+      id: "local-user-1",
+      role: "user" as const,
+      text: "继续",
+      timestamp: at(1),
+    },
+    {
+      id: "local-user-2",
+      role: "user" as const,
+      text: "继续",
+      timestamp: at(4),
+    },
+  ];
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "provider-user-2",
+      kind: "user_message",
+      message: {
+        id: "provider-user-2",
+        role: "user",
+        text: "继续",
+        timestamp: at(4),
+      },
+      timestamp: at(4),
+      updatedAt: at(4),
+    },
+  ];
+
+  assert.deepEqual(
+    [...resolveTimelineRepresentedUserMessageIds(timeline, localUsers)],
+    ["local-user-2"],
   );
 });
 

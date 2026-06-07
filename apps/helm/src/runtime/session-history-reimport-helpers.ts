@@ -4,9 +4,11 @@ import type {
   CommandChunk,
   FileDiffSummary,
   SessionHistoryReimportResult,
+  SessionTimelineEntry,
   SessionSummary,
   AgentToolCall,
 } from "@tiller/shared";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import { mergeAuthoritativeMessagesWithLocalUserPrompts } from "../sessions/provider-history-sync.js";
 
 type MessagePage = {
@@ -30,7 +32,16 @@ type ReimportMessageStore = {
 };
 
 type ReimportArtifactStore = {
+  get(sessionId: string): {
+    outputs: CommandChunk[];
+    diffs: FileDiffSummary[];
+    toolCalls: AgentToolCall[];
+  };
   getPage(sessionId: string, options: { limit?: number }): ArtifactPage;
+};
+
+type ReimportTimelineStore = {
+  replace(sessionId: string, entries: SessionTimelineEntry[]): SessionTimelineEntry[];
 };
 
 export function chooseRecoverySummary(
@@ -55,12 +66,15 @@ export function readReimportedHistoryPage(input: {
   plan?: AgentPlan;
   sessionMessageStore: ReimportMessageStore;
   sessionArtifactStore: ReimportArtifactStore;
+  sessionTimelineStore?: ReimportTimelineStore;
 }): SessionHistoryReimportResult {
   const messagePage = input.sessionMessageStore.listPage(input.sessionId, { limit: input.limit });
   const artifactPage = input.sessionArtifactStore.getPage(input.sessionId, { limit: input.limit });
+  const timeline = replaceReimportedHistoryTimeline(input);
   return {
     sessionId: input.sessionId,
     messages: messagePage.messages,
+    timeline,
     outputs: artifactPage.outputs,
     diffs: artifactPage.diffs,
     toolCalls: artifactPage.toolCalls,
@@ -71,6 +85,22 @@ export function readReimportedHistoryPage(input: {
     activityHasMore: artifactPage.hasMore,
     message: input.message,
   };
+}
+
+export function replaceReimportedHistoryTimeline(input: {
+  sessionId: string;
+  sessionMessageStore: Pick<ReimportMessageStore, "list">;
+  sessionArtifactStore: Pick<ReimportArtifactStore, "get">;
+  sessionTimelineStore?: ReimportTimelineStore;
+}): SessionTimelineEntry[] {
+  const messages = input.sessionMessageStore.list(input.sessionId);
+  const artifacts = input.sessionArtifactStore.get(input.sessionId);
+  const timeline = buildSessionTimelineFromLegacy({
+    messages,
+    outputs: artifacts.outputs,
+    toolCalls: artifacts.toolCalls,
+  });
+  return input.sessionTimelineStore?.replace(input.sessionId, timeline) ?? timeline;
 }
 
 export function preservePreviousUserPromptsAfterReimport(input: {

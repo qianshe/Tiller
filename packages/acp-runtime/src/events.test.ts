@@ -792,6 +792,90 @@ test("mapSessionUpdateNotification classifies Claude task tools in the Claude ad
   assert.equal(mapped.event.toolCall.title, "Task");
 });
 
+test("mapSessionUpdateNotification maps Claude task tools into plan updates", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-agent-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const sessionId = "session-claude-task-plan-live";
+
+  const created = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "toolu_task_1",
+          toolName: "TaskCreate",
+          status: "in_progress",
+          rawInput: { subject: "恢复实时 Claude plan" },
+        },
+      },
+    },
+    { provider, providerId: "claudecode" },
+  );
+  assert.equal(created?.event.type, "plan-update");
+  if (created?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(created.event.plan.entries, [
+    { content: "恢复实时 Claude plan", priority: "medium", status: "pending" },
+  ]);
+
+  const createdOutput = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "toolu_task_1",
+          rawOutput: "Task #1 created successfully: 恢复实时 Claude plan",
+        },
+      },
+    },
+    { provider, providerId: "claudecode" },
+  );
+  assert.equal(createdOutput?.event.type, "plan-update");
+  if (createdOutput?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(createdOutput.event.plan.entries, [
+    { content: "恢复实时 Claude plan", priority: "medium", status: "pending" },
+  ]);
+
+  const updated = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "toolu_update_1",
+          toolName: "TaskUpdate",
+          status: "completed",
+          rawInput: { taskId: "1", status: "in_progress" },
+        },
+      },
+    },
+    { provider, providerId: "claudecode" },
+  );
+  assert.equal(updated?.event.type, "plan-update");
+  if (updated?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(updated.event.plan.entries, [
+    { content: "恢复实时 Claude plan", priority: "medium", status: "in_progress" },
+  ]);
+});
+
 test("mapSessionUpdateNotification classifies Codex spawned agents in the Codex adapter", () => {
   const mapped = mapSessionUpdateNotification(
     {

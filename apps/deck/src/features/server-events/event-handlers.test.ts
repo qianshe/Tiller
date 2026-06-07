@@ -3,6 +3,7 @@ import test from "node:test";
 import type { MutableRefObject } from "react";
 import type {
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   PermissionRequest,
   SessionConfigOption,
@@ -151,9 +152,56 @@ test("session/reimport_history replaces local session history caches", () => {
     outputs: { "session-1": [{ id: "local-output", commandId: "cmd", text: "old", stream: "stdout", timestamp: "2026-05-24T09:59:01.000Z" }] },
     diffs: { "session-1": [{ path: "old.ts", status: "modified", additions: 1, deletions: 1 }] },
     toolCalls: toolCallsRef.current,
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "local-assistant",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "local-assistant:content",
+              kind: "content",
+              text: "本地错乱时间线",
+              timestamp: "2026-05-24T09:59:00.000Z",
+            },
+          ],
+          timestamp: "2026-05-24T09:59:00.000Z",
+          updatedAt: "2026-05-24T09:59:00.000Z",
+        },
+      ],
+    },
     messageHistoryState: { "session-1": { nextCursor: "old", hasMore: true, loading: true } },
     activityHistoryState: { "session-1": { nextCursor: "old-artifact", hasMore: true, loading: true } },
   });
+
+  const providerTimeline: SessionTimelineEntry[] = [
+    {
+      id: "provider-user",
+      kind: "user_message",
+      message: {
+        id: "provider-user",
+        role: "user",
+        text: "真实用户消息",
+        timestamp: "2026-05-24T10:00:00.000Z",
+      },
+      timestamp: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:00.000Z",
+    },
+    {
+      id: "provider-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "provider-assistant:content",
+          kind: "content",
+          text: "真实助手消息",
+          timestamp: "2026-05-24T10:00:02.000Z",
+        },
+      ],
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+    },
+  ];
 
   const handled = applySessionResult(
     "session/reimport_history",
@@ -185,6 +233,7 @@ test("session/reimport_history replaces local session history caches", () => {
           updatedAt: "2026-05-24T10:00:03.000Z",
         },
       ],
+      timeline: providerTimeline,
       nextCursor: "older-message",
       hasMore: true,
       activityNextCursor: "older-activity",
@@ -202,6 +251,7 @@ test("session/reimport_history replaces local session history caches", () => {
   assert.deepEqual(state.outputs["session-1"]?.map((item) => item.id), ["provider-output"]);
   assert.deepEqual(state.diffs["session-1"]?.map((item) => item.path), ["new.ts"]);
   assert.deepEqual(state.toolCalls["session-1"]?.map((item) => item.id), ["provider-tool"]);
+  assert.deepEqual(state.sessionTimeline["session-1"]?.map((item) => item.id), ["provider-user", "provider-assistant"]);
   assert.deepEqual(toolCallsRef.current["session-1"]?.map((item) => item.id), ["provider-tool"]);
   assert.deepEqual(state.messageHistoryState["session-1"], { nextCursor: "older-message", hasMore: true, loading: false });
   assert.deepEqual(state.activityHistoryState["session-1"], { nextCursor: "older-activity", hasMore: false, loading: false });
@@ -239,6 +289,118 @@ test("session/list_messages replaces initial loaded history instead of mixing wi
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().messages["session-1"], [loadedHistory]);
+});
+
+test("session/list_messages replaces initial timeline instead of mixing stale entries", () => {
+  resetStore();
+  const staleEntry: SessionTimelineEntry = {
+    id: "stale-assistant",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "stale-assistant:content",
+        kind: "content",
+        text: "刷新前残留回复",
+        timestamp: "2026-05-17T09:59:00.000Z",
+      },
+    ],
+    timestamp: "2026-05-17T09:59:00.000Z",
+    updatedAt: "2026-05-17T09:59:00.000Z",
+  };
+  const loadedEntry: SessionTimelineEntry = {
+    id: "loaded-assistant",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "loaded-assistant:content",
+        kind: "content",
+        text: "刷新后权威回复",
+        timestamp: "2026-05-17T10:01:00.000Z",
+      },
+    ],
+    timestamp: "2026-05-17T10:01:00.000Z",
+    updatedAt: "2026-05-17T10:01:00.000Z",
+  };
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": [staleEntry] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: [loadedEntry],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["loaded-assistant"],
+  );
+});
+
+test("session/list_messages preserves active local timeline entries when initial history returns late", () => {
+  resetStore();
+  const loadedEntry: SessionTimelineEntry = {
+    id: "loaded-assistant",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "loaded-assistant:content",
+        kind: "content",
+        text: "服务端历史回复",
+        timestamp: "2026-05-17T10:01:00.000Z",
+      },
+    ],
+    timestamp: "2026-05-17T10:01:00.000Z",
+    updatedAt: "2026-05-17T10:01:00.000Z",
+  };
+  const liveEntry: SessionTimelineEntry = {
+    id: "live-assistant",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "live-assistant:content",
+        kind: "content",
+        text: "实时流式回复",
+        timestamp: "2026-05-17T10:02:00.000Z",
+        streaming: true,
+      },
+    ],
+    timestamp: "2026-05-17T10:02:00.000Z",
+    updatedAt: "2026-05-17T10:02:00.000Z",
+    streaming: true,
+  };
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": [liveEntry] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: [loadedEntry],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["loaded-assistant", "live-assistant"],
+  );
 });
 
 test("session/list_messages stores unified timeline entries when provided by Helm", () => {
@@ -642,6 +804,36 @@ test("session/get_artifacts stores returned session plans", () => {
       toolCalls: [],
       diffs: [],
       plan,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
+});
+
+test("session/get_artifacts preserves existing session plans when plan is omitted", () => {
+  resetStore();
+  const plan: AgentPlan = {
+    updatedAt: "2026-06-05T14:10:22.497Z",
+    entries: [
+      { content: "恢复 Claude plan", priority: "medium", status: "in_progress" },
+    ],
+  };
+  useDeckStore.setState({
+    sessionPlans: { "session-1": plan },
+  });
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "session-1",
+      outputs: [],
+      toolCalls: [],
+      diffs: [],
       hasMore: false,
     },
     "helm-1",

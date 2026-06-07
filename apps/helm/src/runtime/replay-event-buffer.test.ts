@@ -154,6 +154,104 @@ test("restore replay buffer content detection ignores empty flushes", () => {
   );
 });
 
+test("restore replay buffer preserves user and assistant messages when replay ids collide", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "message",
+    message: {
+      id: "replay-msg",
+      role: "user",
+      text: "我想做个你的进度状态测试",
+      timestamp: "2026-05-08T08:00:00.000Z",
+      timelineSequence: 1,
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "replay-msg",
+      role: "assistant",
+      text: "已模拟一个未全部完成的进度 plan",
+      timestamp: "2026-05-08T08:00:01.000Z",
+      timelineSequence: 2,
+    },
+  });
+
+  const flushed = buffer.flush();
+
+  assert.equal(flushed.messages, 2);
+  assert.deepEqual(
+    stores.messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "我想做个你的进度状态测试"],
+      ["assistant", "已模拟一个未全部完成的进度 plan"],
+    ],
+  );
+  assert.deepEqual(
+    stores.timelineEntries.map((entry) => [entry.kind, entry.timelineSequence]),
+    [
+      ["user_message", 1],
+      ["assistant_message", 2],
+    ],
+  );
+});
+
+test("restore replay buffer keeps replayed user prompts before their assistant responses without sequences", () => {
+  const stores = createStores();
+  const buffer = createRestoreReplayBuffer("session-1", stores.context);
+
+  buffer.add({
+    type: "message",
+    message: {
+      id: "runtime-session-msg-100",
+      role: "user",
+      text: "帮我在当前项目中创建一个对应Git worktree 用来测试",
+      timestamp: "2026-06-07T07:25:37.507Z",
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "runtime-session-msg-101",
+      role: "assistant",
+      text: "测试用 Git worktree 已创建完成",
+      timestamp: "2026-06-07T07:25:37.525Z",
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "runtime-session-msg-200",
+      role: "user",
+      text: "我想做个你的进度状态测试，帮我模拟一个进度plan，然后不用全部完成",
+      timestamp: "2026-06-07T07:25:37.642Z",
+    },
+  });
+  buffer.add({
+    type: "message",
+    message: {
+      id: "runtime-session-msg-201",
+      role: "assistant",
+      text: "已模拟一个未全部完成的进度 plan",
+      timestamp: "2026-06-07T07:25:37.705Z",
+    },
+  });
+
+  buffer.flush();
+
+  assert.deepEqual(
+    stores.timelineEntries.map((entry) => [entry.kind, entry.timestamp]),
+    [
+      ["user_message", "2026-06-07T07:25:37.507Z"],
+      ["assistant_message", "2026-06-07T07:25:37.525Z"],
+      ["user_message", "2026-06-07T07:25:37.642Z"],
+      ["assistant_message", "2026-06-07T07:25:37.705Z"],
+    ],
+  );
+});
+
 test("restore replay buffer keeps stronger tool-call classification across updates", () => {
   const stores = createStores();
   const buffer = createRestoreReplayBuffer("session-1", stores.context);

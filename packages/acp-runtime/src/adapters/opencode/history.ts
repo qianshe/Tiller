@@ -8,6 +8,7 @@ import type { AcpRuntimeProviderConfig, AgentToolCall } from "@tiller/shared";
 import { collectHistoryImageAttachments } from "../history-content";
 import {
   buildAuthoritativeHistoryFromEvents,
+  collectTextPartValues,
   normalizeHistoryMessageRole,
   stringFrom,
   stringifyHistoryPayload,
@@ -34,6 +35,7 @@ export const openCodeHistoryReader: ProviderHistoryReader<OpenCodeHistorySource>
     source.kind === "export"
       ? parseOpenCodeExportEvents(source.raw)
       : parseOpenCodeSqliteEvents(source.messageRows, source.partRows),
+  build: buildOpenCodeAuthoritativeHistoryFromEvents,
   options: { coalesceThinking: true },
 };
 
@@ -416,15 +418,6 @@ function collectMessageText(parts: unknown, role: "user" | "assistant" | "system
     return normalizeOpenCodeUserTextParts(textParts);
   }
   return textParts.join("");
-}
-
-function collectTextPartValues(parts: unknown) {
-  if (!Array.isArray(parts)) {
-    return [];
-  }
-  return parts
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text);
 }
 
 function normalizeOpenCodeUserTextParts(textParts: string[]) {

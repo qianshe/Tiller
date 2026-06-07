@@ -242,6 +242,175 @@ test("session/list_messages treats existing timeline as the primary history", as
   assert.equal(replacedTimeline, false);
 });
 
+test("session/list_messages repairs timelines missing visible user anchors", async () => {
+  const sessionId = "session-missing-user-anchor";
+  const messages = [
+    {
+      id: "user-1",
+      role: "user" as const,
+      text: "帮我检查历史排序",
+      timestamp: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1#p0",
+      role: "assistant" as const,
+      text: "已检查",
+      timestamp: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  const staleTimeline = [
+    {
+      id: "assistant-1#p0",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-1#p0:content",
+          kind: "content" as const,
+          text: "已检查",
+          timestamp: "2026-05-24T10:00:02.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => messages,
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: staleTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; kind: string }> };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["assistant_message", "assistant-1#p0"],
+    ],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["assistant_message", "assistant-1#p0"],
+    ],
+  );
+});
+
+test("session/list_messages repairs repeated prompts when one visible user anchor is missing", async () => {
+  const sessionId = "session-repeated-user-anchor";
+  const messages = [
+    {
+      id: "user-1",
+      role: "user" as const,
+      text: "继续",
+      timestamp: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "user-2",
+      role: "user" as const,
+      text: "继续",
+      timestamp: "2026-05-24T10:00:03.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "assistant-1#p0",
+      role: "assistant" as const,
+      text: "已继续",
+      timestamp: "2026-05-24T10:00:04.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const staleTimeline = [
+    {
+      id: "user-2",
+      kind: "user_message" as const,
+      message: messages[1]!,
+      timestamp: "2026-05-24T10:00:03.000Z",
+      updatedAt: "2026-05-24T10:00:03.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "assistant-1#p0",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-1#p0:content",
+          kind: "content" as const,
+          text: "已继续",
+          timestamp: "2026-05-24T10:00:04.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:04.000Z",
+      updatedAt: "2026-05-24T10:00:04.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => messages,
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: staleTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; kind: string }> };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["user_message", "user-2"],
+      ["assistant_message", "assistant-1#p0"],
+    ],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["user_message", "user-2"],
+      ["assistant_message", "assistant-1#p0"],
+    ],
+  );
+});
+
 test("session/list_messages keeps partial persisted timelines as primary history", async () => {
   const sessionId = "session-partial-timeline";
   const messages = [

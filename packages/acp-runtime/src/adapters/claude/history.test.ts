@@ -407,6 +407,128 @@ test("parseClaudeCodeJsonlHistory classifies common Claude Code tools", () => {
   );
 });
 
+test("parseClaudeCodeJsonlHistory derives Claude tasks as the latest plan", () => {
+  const history = parseClaudeCodeJsonlHistory(
+    [
+      JSON.stringify({
+        uuid: "msg-task-1",
+        timestamp: "2026-06-05T14:09:50.766Z",
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_task_1",
+              name: "TaskCreate",
+              input: {
+                subject: "梳理并行聊天窗口的状态管理逻辑",
+                description: "阅读 deck-data.ts 和 chat-pane.tsx",
+              },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-result-1",
+        timestamp: "2026-06-05T14:09:51.168Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_task_1",
+              content: "Task #1 created successfully: 梳理并行聊天窗口的状态管理逻辑",
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-task-2",
+        timestamp: "2026-06-05T14:09:50.775Z",
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_task_2",
+              name: "TaskCreate",
+              input: {
+                subject: "修复会话历史同步的边界情况",
+              },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-result-2",
+        timestamp: "2026-06-05T14:09:51.471Z",
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_task_2",
+              content: "Task #2 created successfully: 修复会话历史同步的边界情况",
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-update-1",
+        timestamp: "2026-06-05T14:10:21.024Z",
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_update_1",
+              name: "TaskUpdate",
+              input: { taskId: "1", status: "completed" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        uuid: "msg-update-2",
+        timestamp: "2026-06-05T14:10:22.184Z",
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_update_2",
+              name: "TaskUpdate",
+              input: { taskId: "2", status: "in_progress" },
+            },
+          ],
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(history.plan, {
+    updatedAt: "2026-06-05T14:10:22.184Z",
+    entries: [
+      {
+        content: "梳理并行聊天窗口的状态管理逻辑",
+        priority: "medium",
+        status: "completed",
+      },
+      {
+        content: "修复会话历史同步的边界情况",
+        priority: "medium",
+        status: "in_progress",
+      },
+    ],
+  });
+});
+
 test("loadClaudeCodeHistory reads cwd-scoped Claude project jsonl", async () => {
   const configDir = mkdtempSync(join(tmpdir(), "tiller-claude-history-"));
   const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
@@ -447,12 +569,45 @@ test("loadAdapterAuthoritativeHistory uses Claude Code history for Claude provid
     mkdirSync(projectDir, { recursive: true });
     writeFileSync(
       join(projectDir, "runtime-2.jsonl"),
-      JSON.stringify({
-        uuid: "msg-user",
-        timestamp: "2026-05-17T09:34:35.000Z",
-        type: "user",
-        message: { role: "user", content: "加载历史" },
-      }),
+      [
+        JSON.stringify({
+          uuid: "msg-user",
+          timestamp: "2026-05-17T09:34:35.000Z",
+          type: "user",
+          message: { role: "user", content: "加载历史" },
+        }),
+        JSON.stringify({
+          uuid: "msg-task",
+          timestamp: "2026-05-17T09:34:36.000Z",
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_task",
+                name: "TaskCreate",
+                input: { subject: "恢复 Claude plan" },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          uuid: "msg-task-result",
+          timestamp: "2026-05-17T09:34:37.000Z",
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "toolu_task",
+                content: "Task #1 created successfully: 恢复 Claude plan",
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
       "utf8",
     );
 
@@ -463,6 +618,9 @@ test("loadAdapterAuthoritativeHistory uses Claude Code history for Claude provid
     );
 
     assert.equal(history?.messages[0]?.text, "加载历史");
+    assert.deepEqual(history?.plan?.entries, [
+      { content: "恢复 Claude plan", priority: "medium", status: "pending" },
+    ]);
   } finally {
     if (previousConfigDir === undefined) {
       delete process.env.CLAUDE_CONFIG_DIR;

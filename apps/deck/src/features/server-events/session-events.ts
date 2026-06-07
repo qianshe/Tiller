@@ -304,12 +304,18 @@ export function applySessionResult(
         }));
       }
       if (Array.isArray(payload.timeline)) {
+        const shouldReplaceTimeline = !payload.before && !payload.timelineBefore;
         store.setSessionTimeline((current) => ({
           ...current,
-          [payload.sessionId]: mergeTimelineEntries(
-            payload.timeline as SessionTimelineEntry[],
-            current[payload.sessionId] ?? [],
-          ),
+          [payload.sessionId]: shouldReplaceTimeline
+            ? replaceInitialTimelineHistory(
+                current[payload.sessionId] ?? [],
+                payload.timeline as SessionTimelineEntry[],
+              )
+            : mergeTimelineEntries(
+                payload.timeline as SessionTimelineEntry[],
+                current[payload.sessionId] ?? [],
+              ),
         }));
       }
       store.setMessageHistoryState((current) => ({
@@ -586,6 +592,31 @@ function mergeTimelineEntries(
     ...incoming,
     ...current.filter((entry) => !seenIds.has(entry.id)),
   ];
+}
+
+function replaceInitialTimelineHistory(
+  current: SessionTimelineEntry[],
+  incoming: SessionTimelineEntry[],
+) {
+  const incomingIds = new Set(incoming.map((entry) => entry.id));
+  const activeLocalEntries = current.filter((entry) =>
+    !incomingIds.has(entry.id) && isActiveTimelineEntry(entry)
+  );
+  return activeLocalEntries.length ? [...incoming, ...activeLocalEntries] : [...incoming];
+}
+
+function isActiveTimelineEntry(entry: SessionTimelineEntry) {
+  if (entry.kind === "assistant_message") {
+    return entry.streaming ||
+      entry.chunks.some((chunk) =>
+        (chunk.kind === "content" && chunk.streaming) ||
+        (chunk.kind === "thinking" && chunk.status === "running")
+      );
+  }
+  if (entry.kind === "tool_call") {
+    return entry.toolCall.status === "running";
+  }
+  return Boolean(entry.message.streaming);
 }
 
 function appendTimelineMessage(

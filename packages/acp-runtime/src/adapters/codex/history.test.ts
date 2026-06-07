@@ -193,6 +193,100 @@ test("codexHistoryReader.toEvents emits message thinking tool and result events"
   );
 });
 
+test("parseCodexJsonlHistory reads Codex ACP visible user messages", () => {
+  const history = parseCodexJsonlHistory(
+    [
+      JSON.stringify({
+        timestamp: "2026-06-05T16:35:56.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "client-user-1",
+          message: "继续检查 Codex 历史",
+          images: [{ type: "input_image", image_url: "data:image/png;base64,img" }],
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(history.messages, [
+    {
+      id: "client-user-1",
+      role: "user",
+      text: "继续检查 Codex 历史",
+      timestamp: "2026-06-05T16:35:56.000Z",
+      timelineSequence: 1,
+      attachments: [
+        {
+          type: "image",
+          data: "img",
+          mimeType: "image/png",
+          name: "client-user-1-image-1.png",
+        },
+      ],
+    },
+  ]);
+});
+
+test("parseCodexJsonlHistory deduplicates matching response and event user messages", () => {
+  const history = parseCodexJsonlHistory(
+    [
+      JSON.stringify({
+        timestamp: "2026-06-05T16:35:56.371Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "继续检查 Codex 历史" }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-06-05T16:35:56.372Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "client-user-1",
+          message: "继续检查 Codex 历史",
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.equal(history.messages.length, 1);
+  assert.equal(history.messages[0]?.role, "user");
+  assert.equal(history.messages[0]?.text, "继续检查 Codex 历史");
+});
+
+test("parseCodexJsonlHistory keeps repeated visible messages outside the duplicate window", () => {
+  const history = parseCodexJsonlHistory(
+    [
+      JSON.stringify({
+        timestamp: "2026-06-05T16:35:56.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "user-1",
+          message: "继续",
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-06-05T16:35:56.500Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "user-2",
+          message: "继续",
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.deepEqual(
+    history.messages.map((message) => message.id),
+    ["user-1", "user-2"],
+  );
+});
+
 test("parseCodexJsonlHistory classifies spawned agents as subagent tool calls", () => {
   const history = parseCodexJsonlHistory(
     JSON.stringify({
@@ -213,9 +307,18 @@ test("parseCodexJsonlHistory classifies spawned agents as subagent tool calls", 
   );
 });
 
-test("parseCodexJsonlHistory derives the latest update_plan tool as a plan", () => {
+test("parseCodexJsonlHistory derives the latest update_plan tool as a plan without polluting message history", () => {
   const history = parseCodexJsonlHistory(
     [
+      JSON.stringify({
+        timestamp: "2026-05-31T06:38:58.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          client_id: "client-user-1",
+          message: "检查 Codex plan 展示",
+        },
+      }),
       JSON.stringify({
         timestamp: "2026-05-31T06:38:59.000Z",
         type: "response_item",
@@ -237,9 +340,26 @@ test("parseCodexJsonlHistory derives the latest update_plan tool as a plan", () 
         type: "response_item",
         payload: { type: "function_call_output", call_id: "call-plan", output: "ok" },
       }),
+      JSON.stringify({
+        timestamp: "2026-05-31T06:39:01.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "消息和 plan 都正常" }],
+        },
+      }),
     ].join("\n"),
   );
 
+  assert.deepEqual(
+    history.messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "检查 Codex plan 展示"],
+      ["assistant", "消息和 plan 都正常"],
+    ],
+  );
+  assert.deepEqual(history.toolCalls, []);
   assert.deepEqual(history.plan?.entries, [
     { content: "检查历史导入", priority: "medium", status: "completed" },
     { content: "恢复 Codex plan", priority: "medium", status: "in_progress" },

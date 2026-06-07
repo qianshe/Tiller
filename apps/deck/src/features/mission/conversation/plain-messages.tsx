@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import { resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -613,8 +614,15 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     showThinking,
   );
   const timelineMessageIds = collectTimelineMessageIds(timelineItems);
+  const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
+    timelineItems,
+    messages,
+  );
   const liveMessageItems = messages.flatMap((message, index) => {
-    if (timelineMessageIds.has(message.id)) {
+    if (
+      timelineMessageIds.has(message.id) ||
+      representedLiveUserMessageIds.has(message.id)
+    ) {
       return [];
     }
     const text = normalizeLocalCommandMessageText(message.text);

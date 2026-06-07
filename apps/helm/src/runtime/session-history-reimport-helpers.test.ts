@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  SessionSummary,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import {
   chooseRecoverySummary,
+  readReimportedHistoryPage,
   recoverUserPromptFromSessionSummary,
 } from "./session-history-reimport-helpers.js";
 
@@ -56,4 +64,68 @@ test("recoverUserPromptFromSessionSummary inserts a prompt before provider messa
   assert.equal(messages[0]?.role, "user");
   assert.equal(messages[0]?.text, "Original prompt");
   assert.equal(messages[0]?.timestamp, "2026-05-28T00:00:09.999Z");
+});
+
+test("readReimportedHistoryPage returns and persists rebuilt timeline", () => {
+  const messages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "重新导入",
+      timestamp: "2026-05-28T00:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "导入完成",
+      timestamp: "2026-05-28T00:00:02.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const outputs: CommandChunk[] = [];
+  const diffs: FileDiffSummary[] = [];
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "tool-1",
+      kind: "shell",
+      title: "pnpm test",
+      status: "completed",
+      timestamp: "2026-05-28T00:00:01.000Z",
+      updatedAt: "2026-05-28T00:00:01.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  let storedTimeline: SessionTimelineEntry[] = [];
+
+  const result = readReimportedHistoryPage({
+    sessionId: "session-1",
+    message: "历史已从 ACP 重新导入。",
+    sessionMessageStore: {
+      list: () => messages,
+      replace: () => undefined,
+      listPage: () => ({ messages, hasMore: false }),
+    },
+    sessionArtifactStore: {
+      get: () => ({ outputs, diffs, toolCalls }),
+      getPage: () => ({ outputs, diffs, toolCalls, hasMore: false }),
+    },
+    sessionTimelineStore: {
+      replace: (_sessionId, entries) => {
+        storedTimeline = entries;
+        return entries;
+      },
+    },
+  });
+
+  assert.deepEqual(result.timeline?.map((entry) => entry.kind), [
+    "user_message",
+    "tool_call",
+    "assistant_message",
+  ]);
+  assert.deepEqual(storedTimeline.map((entry) => entry.id), [
+    "user-1",
+    "tool:tool-1",
+    "assistant-1",
+  ]);
 });

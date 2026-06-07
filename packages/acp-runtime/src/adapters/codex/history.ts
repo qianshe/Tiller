@@ -14,10 +14,15 @@ import {
 import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
 import { extractCodexPlanFromToolCall } from "./plan-events";
+import {
+  appendCodexHistoryMessageEvent,
+  visibleCodexHistoryMessageEventFromPayload,
+} from "./visible-messages";
 
 export const codexHistoryReader: ProviderHistoryReader<string> = {
   read: ({ runtimeSessionId }) => readCodexHistorySource(runtimeSessionId),
   toEvents: (raw) => parseCodexJsonlEvents(raw),
+  build: buildCodexAuthoritativeHistoryFromEvents,
 };
 
 export async function loadCodexHistory(
@@ -38,11 +43,24 @@ export function buildCodexAuthoritativeHistoryFromEvents(
   events: HistoryEvent[],
 ): AcpAuthoritativeHistory {
   const history = buildAuthoritativeHistoryFromEvents(events);
-  const plan = history.toolCalls
-    .map((toolCall) => extractCodexPlanFromToolCall(toolCall))
+  const toolCallsWithPlans = history.toolCalls.map((toolCall) => ({
+    toolCall,
+    plan: extractCodexPlanFromToolCall(toolCall),
+  }));
+  const plan = toolCallsWithPlans
+    .map(({ plan }) => plan)
     .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
     .at(-1);
-  return plan ? { ...history, plan } : history;
+  if (!plan) {
+    return history;
+  }
+  return {
+    ...history,
+    toolCalls: toolCallsWithPlans
+      .filter(({ plan }) => !plan)
+      .map(({ toolCall }) => toolCall),
+    plan,
+  };
 }
 
 function parseCodexJsonlEvents(raw: string): HistoryEvent[] {
@@ -50,12 +68,27 @@ function parseCodexJsonlEvents(raw: string): HistoryEvent[] {
 
   for (const [lineIndex, line] of raw.split(/\r?\n/u).entries()) {
     const entry = parseJsonLine(line);
-    if (!entry || entry.type !== "response_item") {
+    if (!entry) {
       continue;
     }
     const payload = entry.payload;
     const timestamp = stringFrom(entry.timestamp);
     if (!timestamp) {
+      continue;
+    }
+
+    if (entry.type === "event_msg") {
+      const messageEvent = visibleCodexHistoryMessageEventFromPayload(payload, {
+        fallbackId: `codex:event-message:${lineIndex}`,
+        timestamp,
+      });
+      if (messageEvent) {
+        appendCodexHistoryMessageEvent(events, messageEvent);
+      }
+      continue;
+    }
+
+    if (entry.type !== "response_item") {
       continue;
     }
 
@@ -194,10 +227,7 @@ function appendCodexMessage({
 }) {
   const text = collectCodexText(payload.content);
   const attachments = role === "user" ? collectHistoryImageAttachments(payload.content, id) : [];
-  if (!text && !attachments.length) {
-    return;
-  }
-  events.push({
+  appendCodexHistoryMessageEvent(events, {
     kind: "message",
     id,
     role,

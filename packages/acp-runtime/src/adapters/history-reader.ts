@@ -4,6 +4,7 @@ import type { AcpAuthoritativeHistory, AcpHistoryContext } from "./types";
 export type ProviderHistoryReader<TSource> = {
   read(context: AcpHistoryContext): Promise<TSource | null>;
   toEvents(source: TSource, context: AcpHistoryContext): HistoryEvent[];
+  build?: (events: HistoryEvent[]) => AcpAuthoritativeHistory;
   options?: BuildAuthoritativeHistoryOptions;
 };
 
@@ -15,5 +16,8 @@ export async function loadProviderAuthoritativeHistory<TSource>(
   if (!source) {
     return null;
   }
-  return buildAuthoritativeHistoryFromEvents(reader.toEvents(source, context), reader.options);
+  const events = reader.toEvents(source, context);
+  return reader.build
+    ? reader.build(events)
+    : buildAuthoritativeHistoryFromEvents(events, reader.options);
 }

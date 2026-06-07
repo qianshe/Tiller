@@ -1,3 +1,5 @@
+import type { SessionTimelineEntry } from "./session-timeline";
+
 export type AgentTransport = "stdio";
 export type AcpProviderKind = "native-acp" | "adapter-acp" | "custom";
 export type SessionStatus = "starting" | "running" | "waiting_for_permission" | "idle" | "error" | "cancelled";
@@ -449,6 +451,7 @@ export type FileDiffSummary = {
 export type SessionHistoryReimportResult = {
   sessionId: string;
   messages: AgentMessage[];
+  timeline?: SessionTimelineEntry[];
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
   toolCalls: AgentToolCall[];

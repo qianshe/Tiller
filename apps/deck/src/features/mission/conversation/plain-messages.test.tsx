@@ -130,6 +130,93 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(answerIndex > thinkingIndex);
 });
 
+test("plain messages does not append live user prompts already represented by timeline", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "provider-user-1",
+      kind: "user_message",
+      message: {
+        id: "provider-user-1",
+        role: "user",
+        text: "继续检查历史",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 1,
+      },
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "已检查",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:02.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+
+  const html = renderPlainMessages({
+    timelineItems,
+    items: [
+      {
+        id: "local-user-1",
+        role: "user",
+        text: "继续检查历史",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/继续检查历史/g)?.length, 1);
+});
+
+test("plain messages keeps repeated live user prompts not represented by timeline", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "provider-user-2",
+      kind: "user_message",
+      message: {
+        id: "provider-user-2",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-17T10:00:03.000Z",
+      },
+      timestamp: "2026-05-17T10:00:03.000Z",
+      updatedAt: "2026-05-17T10:00:03.000Z",
+    },
+  ];
+
+  const html = renderPlainMessages({
+    timelineItems,
+    items: [
+      {
+        id: "local-user-1",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+      {
+        id: "local-user-2",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-17T10:00:03.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/继续/g)?.length, 2);
+});
+
 test("plain messages renders persisted image attachment URIs", () => {
   const html = renderPlainMessages({
     items: [

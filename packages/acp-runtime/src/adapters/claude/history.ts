@@ -14,10 +14,12 @@ import {
 } from "../history-events";
 import type { ProviderHistoryReader } from "../history-reader";
 import type { AcpAuthoritativeHistory } from "../types";
+import { extractClaudePlanFromToolCalls } from "./plan-events";
 
 export const claudeCodeHistoryReader: ProviderHistoryReader<string> = {
   read: ({ runtimeSessionId, cwd }) => readClaudeCodeHistorySource(runtimeSessionId, cwd),
   toEvents: (raw) => parseClaudeCodeJsonlEvents(raw),
+  build: buildClaudeAuthoritativeHistoryFromEvents,
 };
 
 export async function loadClaudeCodeHistory(
@@ -32,7 +34,15 @@ export async function loadClaudeCodeHistory(
 }
 
 export function parseClaudeCodeJsonlHistory(raw: string): AcpAuthoritativeHistory {
-  return buildAuthoritativeHistoryFromEvents(parseClaudeCodeJsonlEvents(raw));
+  return buildClaudeAuthoritativeHistoryFromEvents(parseClaudeCodeJsonlEvents(raw));
+}
+
+export function buildClaudeAuthoritativeHistoryFromEvents(
+  events: HistoryEvent[],
+): AcpAuthoritativeHistory {
+  const history = buildAuthoritativeHistoryFromEvents(events);
+  const plan = extractClaudePlanFromToolCalls(history.toolCalls);
+  return plan ? { ...history, plan } : history;
 }
 
 function parseClaudeCodeJsonlEvents(raw: string): HistoryEvent[] {

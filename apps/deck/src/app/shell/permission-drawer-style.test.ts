@@ -14,10 +14,10 @@ const shellStylesSource = readFileSync(resolve(currentDir, "styles.css"), "utf8"
 
 test("mission permission drawer uses an in-pane solid elevated review card", () => {
   assert.match(permissionDrawerSource, /grid-rows-\[auto_auto\]/);
-  assert.match(permissionDrawerSource, /sticky/);
-  assert.match(permissionDrawerSource, /top-2/);
+  assert.doesNotMatch(permissionDrawerSource, /sticky/);
+  assert.doesNotMatch(permissionDrawerSource, /top-2/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-2/);
-  assert.match(permissionDrawerSource, /z-30/);
+  assert.doesNotMatch(permissionDrawerSource, /z-30/);
   assert.doesNotMatch(permissionDrawerSource, /absolute/);
   assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
   assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
