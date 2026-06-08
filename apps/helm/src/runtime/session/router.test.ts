@@ -1,0 +1,771 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import type {
+  AgentMessage,
+  PromptTraceEvent,
+  SessionSummary,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
+import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { HelmHandlerContext } from "../../handlers/context";
+import { sendPromptToSession, drainPromptQueue } from "./router";
+import { createSessionPromptQueueManager } from "./prompt-queue";
+import { createLiveMessageBuffer } from "../live-message-buffer";
+import { flushLiveAssistantMessage, handleRuntimeEvent } from "../events";
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function flushPromises() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+async function waitForPromptSettled(context: HelmHandlerContext, sessionId: string) {
+  for (let attempt = 0; attempt < 10 && context.promptQueue.hasInFlight(sessionId); attempt += 1) {
+    await flushPromises();
+  }
+}
+
+function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: "session-1",
+    projectId: "project-1",
+    projectName: "Project One",
+    helmId: "helm-1",
+    cwd: "worktree-1",
+    worktreeName: "Worktree One",
+    agentId: "codex",
+    agentName: "Codex",
+    status: "idle",
+    createdAt: "2026-05-10T00:00:00.000Z",
+    updatedAt: "2026-05-10T00:00:00.000Z",
+    messageCount: 0,
+    runtimeSessionId: "runtime-1",
+    ...overrides,
+  };
+}
+
+function createContext(options: {
+  activeRuntime?: {
+    prompt: (text: string, content?: any[]) => Promise<void>;
+    sessionCapabilities?: { imageInput?: boolean };
+  };
+  restoreRuntime?: {
+    prompt: (text: string, content?: any[]) => Promise<void>;
+    sessionCapabilities?: { imageInput?: boolean };
+  };
+  restoreOk?: boolean;
+  summary?: Partial<SessionSummary>;
+} = {}) {
+  const summary = createSummary(options.summary);
+  const persisted: AgentMessage[] = [];
+  const sessionUpdates: SessionUpdateRecord[] = [];
+  const timelineEntries: SessionTimelineEntry[] = [];
+  const broadcasts: Array<{ method: string; params: any }> = [];
+  const traceEvents: PromptTraceEvent[] = [];
+  const subscriptions: string[] = [];
+  let currentSummary = summary;
+  const sessions = new Map<string, any>();
+  if (options.activeRuntime) {
+    sessions.set("session-1", {
+      summary,
+      agent: { id: "codex" },
+      worktree: { id: "worktree-1", path: "D:/repo" },
+      runtime: options.activeRuntime,
+    });
+  }
+  const context = {
+    socketId: "socket-1",
+    sessions,
+    promptQueue: createSessionPromptQueueManager(),
+    liveMessageBuffer: createLiveMessageBuffer(),
+    drainPromptQueue: async (sessionId: string) => {
+      await drainPromptQueue(sessionId, context as unknown as HelmHandlerContext);
+    },
+    logInfo: () => undefined,
+    logError: () => undefined,
+    promptTrace: { emit: (event: PromptTraceEvent) => traceEvents.push(event) },
+    persistSessionMessage: (_sessionId: string, message: AgentMessage) => persisted.push(message),
+    sessionUpdateStore: {
+      append: (update: SessionUpdateRecord) => {
+        sessionUpdates.push(update);
+      },
+    },
+    sessionTimelineStore: {
+      append: (_sessionId: string, entry: SessionTimelineEntry) => {
+        const index = timelineEntries.findIndex((candidate) => candidate.id === entry.id);
+        if (index === -1) {
+          timelineEntries.push(entry);
+        } else {
+          timelineEntries[index] = entry;
+        }
+        return timelineEntries;
+      },
+      replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+        timelineEntries.splice(0, timelineEntries.length, ...entries);
+        return timelineEntries;
+      },
+      list: () => timelineEntries,
+      listPage: () => ({ entries: timelineEntries, hasMore: false }),
+      remove: () => timelineEntries.splice(0, timelineEntries.length),
+    },
+    updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
+      currentSummary = mutate(currentSummary);
+      const record = sessions.get(_sessionId);
+      if (record) {
+        record.summary = currentSummary;
+      }
+      return currentSummary;
+    },
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    sessionStore: { list: () => [currentSummary] },
+    broadcastNotification: (method: string, params: any) => broadcasts.push({ method, params }),
+    broadcastSessionTopic: (_sessionId: string, method: string, params: any) => {
+      broadcasts.push({ method, params });
+    },
+    subscribeSessionTopic: (socketId: string, sessionId: string) => {
+      subscriptions.push(`${socketId}:${sessionId}`);
+    },
+    unsubscribeSessionTopic: () => undefined,
+    removeSocketSessionTopics: () => undefined,
+    startSessionResume: async () => {
+      if (!options.restoreOk || !options.restoreRuntime) {
+        return {
+          ok: false,
+          resume: { restoreMethod: "ui-history" },
+          message: "restore unavailable",
+        };
+      }
+      sessions.set("session-1", {
+        summary,
+        agent: { id: "codex" },
+        worktree: { id: "worktree-1", path: "D:/repo" },
+        runtime: options.restoreRuntime,
+      });
+      return {
+        ok: true,
+        resume: { restoreMethod: "session/load" },
+        message: "restored",
+      };
+    },
+  } as unknown as HelmHandlerContext;
+  return { context, persisted, sessionUpdates, timelineEntries, broadcasts, sessions, traceEvents, subscriptions };
+}
+
+test("sendPromptToSession dispatches through an active runtime", async () => {
+  const prompted: string[] = [];
+  const { context, persisted, sessionUpdates, traceEvents } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "你好", clientMessageId: "client-1" },
+    context,
+  );
+
+  await flushPromises();
+  assert.deepEqual(prompted, ["你好"]);
+  assert.equal(result.accepted, "sent");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.id, "client-1");
+  assert.equal(typeof persisted[0]?.timelineSequence, "number");
+  assert.deepEqual(sessionUpdates.map((update) => [update.source, update.updateType, update.sequence]), [
+    ["acp_live", "message", persisted[0]?.timelineSequence],
+  ]);
+  assert.deepEqual(traceEvents.map((event) => event.phase).filter((phase) => phase.startsWith("helm.prompt.")), [
+    "helm.prompt.ack",
+    "helm.prompt.send_start",
+    "helm.prompt.runtime_accepted",
+  ]);
+});
+
+test("sendPromptToSession records the local user prompt as a timeline entry before runtime dispatch", async () => {
+  const snapshotsDuringPrompt: string[][] = [];
+  const { context, timelineEntries } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        snapshotsDuringPrompt.push(timelineEntries.map((entry) => entry.kind));
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "先记录我", clientMessageId: "client-timeline" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(snapshotsDuringPrompt, [["user_message"]]);
+  assert.deepEqual(
+    timelineEntries.map((entry) => entry.kind),
+    ["user_message"],
+  );
+  assert.equal(timelineEntries[0]?.id, "client-timeline");
+});
+
+test("sendPromptToSession subscribes the prompting socket before runtime dispatch", async () => {
+  const subscriptionsDuringPrompt: string[][] = [];
+  const { context, subscriptions } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        subscriptionsDuringPrompt.push([...subscriptions]);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请实时展示", clientMessageId: "client-subscribe" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(subscriptionsDuringPrompt, [["socket-1:session-1"]]);
+});
+
+test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "延迟到 prompt 完成后 flush 的回复",
+          timestamp: "2026-05-15T10:00:00.000Z",
+        });
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复", clientMessageId: "client-flush" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复"],
+      ["assistant", "延迟到 prompt 完成后 flush 的回复"],
+    ],
+  );
+});
+
+test("sendPromptToSession does not duplicate assistant text already flushed by status handling", async () => {
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        context.liveMessageBuffer.append("session-1", {
+          id: "session-1-msg-s0",
+          role: "assistant",
+          text: "已由 status 路径 flush 的回复",
+          timestamp: "2026-05-15T10:01:00.000Z",
+        });
+        flushLiveAssistantMessage("session-1", context);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "请回复一次", clientMessageId: "client-no-dup" },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(
+    persisted.map((message) => [message.role, message.text]),
+    [
+      ["user", "请回复一次"],
+      ["assistant", "已由 status 路径 flush 的回复"],
+    ],
+  );
+});
+
+test("sendPromptToSession acknowledges before a long ACP prompt completes", async () => {
+  const gate = deferred<void>();
+  const prompted: string[] = [];
+  const { context } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+        await gate.promise;
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "long prompt", clientMessageId: "client-long" },
+    context,
+  );
+
+  await flushPromises();
+  assert.equal(result.accepted, "sent");
+  assert.deepEqual(prompted, ["long prompt"]);
+  assert.equal(context.promptQueue.hasInFlight("session-1"), true);
+
+  gate.resolve();
+  await flushPromises();
+  assert.equal(context.promptQueue.hasInFlight("session-1"), false);
+});
+
+test("sendPromptToSession accepts new runtime status after a previous error", async () => {
+  const { context, broadcasts } = createContext({
+    summary: { status: "error" },
+    activeRuntime: {
+      prompt: async () => {
+        handleRuntimeEvent(
+          "session-1",
+          {
+            type: "status",
+            status: "running",
+            message: "retry started",
+          } satisfies SessionRuntimeEvent,
+          context,
+        );
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "重新执行", clientMessageId: "client-retry" },
+    context,
+  );
+  await waitForPromptSettled(context, "session-1");
+
+  assert.equal(
+    broadcasts.some(
+      (item) => item.method === "session/update"
+        && item.params.update.kind === "status_change"
+        && item.params.update.status === "running",
+    ),
+    true,
+  );
+});
+
+test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    summary: { availableCommands: [{ name: "review" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await assert.rejects(
+    sendPromptToSession({ sessionId: "session-1", text: "/unknown please" }, context),
+    /command is not supported/u,
+  );
+
+  assert.deepEqual(prompted, []);
+  assert.equal(persisted.length, 0);
+});
+
+test("sendPromptToSession allows supported slash commands as ACP text prompts", async () => {
+  const prompted: string[] = [];
+  const { context } = createContext({
+    summary: { availableCommands: [{ name: "review" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession({ sessionId: "session-1", text: "/review branch" }, context);
+
+  await flushPromises();
+  assert.deepEqual(prompted, ["/review branch"]);
+});
+
+test("sendPromptToSession allows scoped slash command invocations", async () => {
+  const prompted: string[] = [];
+  const { context } = createContext({
+    summary: { availableCommands: [{ name: "frontend-design", scope: "skills" }] },
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession({ sessionId: "session-1", text: "/skills:frontend-design hero" }, context);
+
+  await flushPromises();
+  assert.deepEqual(prompted, ["/skills:frontend-design hero"]);
+});
+
+test("sendPromptToSession restores a stale session before dispatch", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    restoreOk: true,
+    restoreRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "恢复后发送", clientMessageId: "client-restore" },
+    context,
+  );
+
+  await flushPromises();
+  assert.deepEqual(prompted, ["恢复后发送"]);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.text, "恢复后发送");
+});
+
+test("sendPromptToSession queues behind an active in-flight prompt", async () => {
+  const { context, persisted, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        throw new Error("should not send while in-flight");
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  context.promptQueue.markInFlight({
+    sessionId: "session-1",
+    text: "first",
+    clientMessageId: "client-1",
+  });
+
+  const result = await sendPromptToSession(
+    { sessionId: "session-1", text: "second", clientMessageId: "client-2" },
+    context,
+  );
+
+  assert.equal(result.accepted, "queued");
+  assert.equal(persisted.length, 0);
+  assert.equal(context.promptQueue.snapshot("session-1").queued[0]?.text, "second");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "prompt_queue");
+});
+
+test("drainPromptQueue sends queued prompts in FIFO order", async () => {
+  const prompted: string[] = [];
+  const { context, persisted } = createContext({
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  context.promptQueue.enqueue({ sessionId: "session-1", text: "second", clientMessageId: "client-2" });
+  context.promptQueue.enqueue({ sessionId: "session-1", text: "third", clientMessageId: "client-3" });
+
+  await drainPromptQueue("session-1", context);
+
+  assert.deepEqual(prompted, ["second", "third"]);
+  assert.deepEqual(persisted.map((message) => message.text), ["second", "third"]);
+});
+
+test("sendPromptToSession fails when no runtime can be restored", async () => {
+  const { context, persisted } = createContext({ restoreOk: false });
+
+  await assert.rejects(
+    sendPromptToSession({ sessionId: "session-1", text: "失败" }, context),
+    /Session runtime is not available/u,
+  );
+  assert.equal(persisted.length, 0);
+});
+
+test("configureSessionRuntime applies config through an active runtime", async () => {
+  const configured: any[] = [];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async (next: any) => {
+        configured.push(next);
+        return {
+          runtimeApplied: true,
+          state: { model: next.model, reasoningEffort: next.reasoningEffort },
+          modelState: { currentModelId: next.model, options: [{ id: next.model, name: next.model }] },
+        };
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "gpt-5.5", reasoningEffort: "high" },
+    context,
+  );
+
+  assert.equal(configured[0]?.model, "gpt-5.5");
+  assert.equal(configured[0]?.reasoningEffort, "high");
+  assert.equal(configured[0]?.agentMode, undefined);
+  assert.equal(result.message, "Session config updated.");
+  assert.equal(result.state.model, "gpt-5.5");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "session_updated");
+});
+
+test("configureSessionRuntime persists explicit model over runtime default state", async () => {
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "gpt-5.5", reasoningEffort: "medium" },
+        modelState: {
+          currentModelId: "gpt-5.5",
+          options: [{ id: "gpt-5.4", name: "gpt-5.4" }, { id: "gpt-5.5", name: "gpt-5.5" }],
+        },
+      }),
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "gpt-5.4", reasoningEffort: "medium" },
+    context,
+  );
+
+  assert.equal(result.state.model, "gpt-5.4");
+  assert.equal(broadcasts.at(-1)?.params.update.session.model, "gpt-5.4");
+});
+
+test("configureSessionRuntime applies arbitrary ACP config option to the session runtime", async () => {
+  const configured: any[] = [];
+  const runtimeOptions = [
+    {
+      id: "approval-mode",
+      name: "Approval Mode",
+      category: "approval",
+      currentValue: "auto",
+      options: [
+        { value: "on-request", label: "On Request" },
+        { value: "auto", label: "Auto" },
+      ],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async (next: any) => {
+        configured.push(next);
+        return {
+          runtimeApplied: true,
+          state: {},
+          modelState: undefined,
+          options: runtimeOptions,
+        };
+      },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", configId: "approval-mode", value: "auto" },
+    context,
+  );
+
+  assert.deepEqual(configured[0], {
+    agentMode: undefined,
+    model: undefined,
+    reasoningEffort: undefined,
+    configId: "approval-mode",
+    value: "auto",
+  });
+  assert.deepEqual(result.options, runtimeOptions);
+  assert.deepEqual(broadcasts.at(-1)?.params.update.session.configOptions, runtimeOptions);
+});
+
+test("configureSessionRuntime omits reasoning when config options do not support it", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    summary: { reasoningEffort: "medium" },
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "claude-haiku-4-5", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "claude-haiku-4-5" },
+    context,
+  );
+
+  assert.equal(result.state.model, "claude-haiku-4-5");
+  assert.equal(result.state.reasoningEffort, undefined);
+  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, undefined);
+});
+
+test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "opencode/haiku",
+      options: [{ value: "opencode/haiku", label: "opencode/haiku" }],
+    },
+    {
+      id: "thought_level",
+      name: "Reasoning",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "opencode/haiku", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "opencode/haiku" },
+    context,
+  );
+
+  assert.equal(result.state.model, "opencode/haiku");
+  assert.equal(result.state.reasoningEffort, "medium");
+  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, "medium");
+  assert.equal(
+    result.options.some((option) => option.category === "thought_level"),
+    true,
+  );
+});
+
+test("configureSessionRuntime ignores stale default options for a different selected model", async () => {
+  const runtimeOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-opus-4-7",
+      options: [
+        { value: "claude-opus-4-7", label: "claude-opus-4-7" },
+        { value: "claude-haiku-4-5", label: "claude-haiku-4-5" },
+      ],
+    },
+    {
+      id: "thought_level",
+      name: "Reasoning",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const previousOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "claude-haiku-4-5",
+      options: [{ value: "claude-haiku-4-5", label: "claude-haiku-4-5" }],
+    },
+  ];
+  const { context } = createContext({
+    summary: { model: "claude-haiku-4-5", configOptions: previousOptions },
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "claude-opus-4-7", reasoningEffort: "medium" },
+        options: runtimeOptions,
+      }),
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "claude-haiku-4-5" },
+    context,
+  );
+
+  assert.equal(result.state.model, "claude-haiku-4-5");
+  assert.equal(result.state.reasoningEffort, undefined);
+  assert.deepEqual(result.options, previousOptions);
+});
+
+test("configureSessionRuntime saves config when no runtime is active", async () => {
+  const { context } = createContext();
+  const { configureSessionRuntime } = await import("./router");
+
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", agentMode: "bypass", model: "provider-default" },
+    context,
+  );
+
+  assert.equal(result.message, "Session config saved.");
+  assert.equal(result.state.agentMode, "bypass");
+  assert.equal(result.state.model, "provider-default");
+});
+
+test("cancelSessionRuntime cancels and clears an active runtime", async () => {
+  let cancelled = false;
+  const { context, sessions } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      cancel: () => {
+        cancelled = true;
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const handled = await cancelSessionRuntime("session-1", context);
+
+  assert.equal(handled, true);
+  assert.equal(cancelled, true);
+  assert.equal(sessions.has("session-1"), false);
+});
+
+test("cancelSessionRuntime broadcasts an error when the runtime is missing", async () => {
+  const { context, broadcasts } = createContext();
+  const { cancelSessionRuntime } = await import("./router");
+
+  const handled = await cancelSessionRuntime("missing-session", context);
+
+  assert.equal(handled, true);
+  assert.equal(broadcasts.at(-1)?.method, "error/raised");
+  assert.equal(broadcasts.at(-1)?.params.message, "Session not found");
+});

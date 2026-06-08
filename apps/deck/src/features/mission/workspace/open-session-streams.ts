@@ -78,10 +78,11 @@ export function handlePlanHydrationRequestResult({
   const nextRetryCount = (retryCounts.get(sessionId) ?? 0) + 1;
   if (nextRetryCount > maxRetries) {
     retryCounts.delete(sessionId);
-    clearPlanHydrationLoading({
+    finishPlanHydrationLoading({
       sessionId,
       checkedPlanSessionIds,
       setActivityHistoryState,
+      allowRetry: false,
     });
     return;
   }
@@ -104,7 +105,28 @@ function clearPlanHydrationLoading({
   checkedPlanSessionIds: Set<string>;
   setActivityHistoryState: SessionStateSetter;
 }) {
-  checkedPlanSessionIds.delete(sessionId);
+  finishPlanHydrationLoading({
+    sessionId,
+    checkedPlanSessionIds,
+    setActivityHistoryState,
+    allowRetry: true,
+  });
+}
+
+function finishPlanHydrationLoading({
+  sessionId,
+  checkedPlanSessionIds,
+  setActivityHistoryState,
+  allowRetry,
+}: {
+  sessionId: string;
+  checkedPlanSessionIds: Set<string>;
+  setActivityHistoryState: SessionStateSetter;
+  allowRetry: boolean;
+}) {
+  if (allowRetry) {
+    checkedPlanSessionIds.delete(sessionId);
+  }
   setActivityHistoryState((current: any) => ({
     ...current,
     [sessionId]: {
@@ -323,10 +345,9 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
 }
 
 function hasAgentPlanPayload(value: unknown) {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Array.isArray((value as { entries?: unknown }).entries),
-  );
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const entries = (value as { entries?: unknown }).entries;
+  return Array.isArray(entries) && entries.length > 0;
 }

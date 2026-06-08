@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
-import { createSessionPromptQueueManager } from "../../runtime/session-prompt-queue";
+import { createSessionPromptQueueManager } from "../../runtime/session/prompt-queue";
 
 function createPromptQueueContextExtras() {
   const promptQueue = createSessionPromptQueueManager();

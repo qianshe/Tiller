@@ -78,5 +78,6 @@ export type AcpAgentAdapter = {
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
   mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
-  loadAuthoritativeHistory?(context: AcpHistoryContext): Promise<AcpAuthoritativeHistory | null>;
+  readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
+  readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
 };

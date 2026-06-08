@@ -15,7 +15,7 @@ export function extractAgentPlan(
   const entries = Array.isArray(update?.entries)
     ? update.entries.flatMap(normalizePlanEntry)
     : [];
-  return { entries, updatedAt: now };
+  return entries.length ? { entries, updatedAt: now } : null;
 }
 
 function normalizePlanEntry(entry: unknown) {

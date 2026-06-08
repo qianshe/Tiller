@@ -45,25 +45,25 @@ import {
   applyUserPromptToSummary,
   resolveSessionCleanupOutcome,
 } from "./sessions/facade";
-import { createHelmServerStores } from "./app/server-composition";
-import { createHelmServerEnvironment } from "./app/server-environment";
-import { createHelmContextState } from "./app/server-context";
+import { createHelmServerStores } from "./app/server/composition";
+import { createHelmServerEnvironment } from "./app/server/environment";
+import { createHelmContextState } from "./app/server/context";
 import { createHelmRuntimeComposition } from "./app/runtime-composition";
 import { attachHelmRpcConnection } from "./app/transport-composition";
 import { createStaticDeckHandler } from "./app/static-deck-handler";
 import { createHelmAuthComposition } from "./app/auth-composition";
-import { createHandlerCatalogContext } from "./app/handler-catalog-context";
-import { createHandlerNotificationContext } from "./app/handler-notification-context";
-import { createHandlerSessionContextFactory } from "./app/handler-session-context";
+import { createHandlerCatalogContext } from "./app/handler-context/catalog";
+import { createHandlerNotificationContext } from "./app/handler-context/notification";
+import { createHandlerSessionContextFactory } from "./app/handler-context/session";
 import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
-import { createProjectCatalog } from "./runtime/project-catalog";
+import { createProjectCatalog } from "./runtime/project/catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createPromptTraceEmitter } from "./runtime/prompt-trace";
-import { drainPromptQueue } from "./runtime/session-router";
-import { createSessionTopicRegistry } from "./runtime/session-topics";
+import { drainPromptQueue } from "./runtime/session/router";
+import { createSessionTopicRegistry } from "./runtime/session/topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
@@ -116,6 +116,7 @@ const {
   sessionAttachmentStore,
   sessionRuntimeStore,
   sessionTimelineStore,
+  sessionUpdateStore,
   trustedDeviceStore,
 } = createHelmServerStores({
   environment: serverEnvironment,
@@ -167,6 +168,7 @@ const runtimeComposition = createHelmRuntimeComposition({
   sessionAttachmentStore,
   sessionRuntimeStore,
   sessionTimelineStore,
+  sessionUpdateStore,
   getAgents: contextState.getAgents,
   getProjects: contextState.getProjects,
   getWorktrees: contextState.getWorktrees,
@@ -210,6 +212,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessionAttachmentStore,
   sessionRuntimeStore,
   sessionTimelineStore,
+  sessionUpdateStore,
   liveMessageBuffer,
   promptQueue,
   createHandlerContext,

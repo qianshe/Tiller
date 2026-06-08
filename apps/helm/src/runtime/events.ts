@@ -3,14 +3,14 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
-import { createSessionEventPublisher } from "./session-event-publisher";
-import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session-event-effects";
-import { persistTimelineMessage } from "./session-timeline-effects";
+import { createSessionEventPublisher } from "./session/event/publisher";
+import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session/event/effects";
+import { persistTimelineMessage } from "./session/timeline-effects";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
-} from "./session-config-options";
+} from "./session/config-options";
 import {
   clearActiveRuntimeThinking,
   bumpAssistantStreamSegment,
@@ -21,6 +21,7 @@ import {
 } from "./segment-state";
 import { createRuntimeStreamLogController } from "./stream-log";
 import type { TillerLogFields } from "../logging/logger";
+import { createSessionUpdateRecord } from "./session-updates/reducer";
 
 const liveEventSequenceBySession = new Map<string, number>();
 const runtimeStreamLog = createRuntimeStreamLogController();
@@ -130,6 +131,50 @@ export function flushRuntimeUserEchoLogSummaryForTest(
   context: HelmHandlerContext,
 ) {
   flushIgnoredUserEchoSummary(sessionId, context);
+}
+
+export function persistRuntimeSessionUpdate(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: HelmHandlerContext,
+  sequence?: number,
+) {
+  if (!context.sessionUpdateStore?.append) {
+    return;
+  }
+  const record = context.sessions.get(sessionId);
+  const summary = record?.summary ?? context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
+  const resolvedSequence = sequence ?? sequenceFromRuntimeEvent(event) ?? nextLiveEventSequence(sessionId);
+  try {
+    context.sessionUpdateStore.append(createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: record?.runtime?.runtimeSessionId ?? summary?.runtimeSessionId ?? sessionId,
+      providerId: record?.agent?.id ?? summary?.agentId ?? "unknown",
+      sequence: resolvedSequence,
+      source: "acp_live",
+      event,
+    }));
+  } catch (error) {
+    logRuntimeError(context, "runtime.session_update.persist_failed", {
+      ...runtimeLogFields(sessionId, context),
+      seq: resolvedSequence,
+      type: event.type,
+      message: error instanceof Error ? error.message : "Failed to persist session update.",
+    });
+  }
+}
+
+function sequenceFromRuntimeEvent(event: SessionRuntimeEvent) {
+  switch (event.type) {
+    case "message":
+      return event.message.timelineSequence;
+    case "tool-call":
+      return event.toolCall.timelineSequence;
+    case "command-output":
+      return event.chunk.timelineSequence;
+    default:
+      return undefined;
+  }
 }
 
 function flushAssistantStreamSummary(sessionId: string, context: HelmHandlerContext) {
@@ -306,6 +351,7 @@ export function handleRuntimeEvent(
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
         timelineSequence: nextLiveEventSequence(sessionId),
       };
+      persistRuntimeSessionUpdate(sessionId, { ...event, message }, context, message.timelineSequence);
       emitFirstHelmPromptTrace(context, {
         sessionId,
         phase: "helm.runtime.first_message",
@@ -342,6 +388,7 @@ export function handleRuntimeEvent(
       );
       return;
     case "plan-update":
+      persistRuntimeSessionUpdate(sessionId, event, context);
       logRuntimePlanUpdate(sessionId, event, context);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "plan_update",
@@ -359,6 +406,7 @@ export function handleRuntimeEvent(
           ...event.toolCall,
           timelineSequence: nextLiveEventSequence(sessionId),
         });
+        persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context, toolCall.timelineSequence);
         publishRuntimeToolCall(context, sessionId, toolCall);
         return;
       }
@@ -369,6 +417,7 @@ export function handleRuntimeEvent(
         ...event.toolCall,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
+      persistRuntimeSessionUpdate(sessionId, { ...event, toolCall: orderedToolCall }, context, orderedToolCall.timelineSequence);
       publishRuntimeToolCall(context, sessionId, orderedToolCall);
       return;
     case "command-output":
@@ -384,6 +433,21 @@ export function handleRuntimeEvent(
         ...event.chunk,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
+      persistRuntimeSessionUpdate(
+        sessionId,
+        {
+          ...event,
+          chunk: orderedChunk,
+          toolCall: event.toolCall
+            ? {
+                ...event.toolCall,
+                timelineSequence: orderedChunk.timelineSequence,
+              }
+            : undefined,
+        },
+        context,
+        orderedChunk.timelineSequence,
+      );
       recordCommandOutputSummary(sessionId, event.chunk, orderedChunk.timelineSequence);
       publishRuntimeCommandOutput(
         context,
@@ -398,6 +462,7 @@ export function handleRuntimeEvent(
       );
       return;
     case "diff-update":
+      persistRuntimeSessionUpdate(sessionId, event, context);
       flushLiveAssistantMessage(sessionId, context);
       flushAssistantStreamSummary(sessionId, context);
       logRuntimeInfo(context, "runtime.diff.updated", {
@@ -613,6 +678,7 @@ function publishRuntimeUserMessage(
     ...message,
     timelineSequence: nextLiveEventSequence(sessionId),
   };
+  persistRuntimeSessionUpdate(sessionId, { type: "message", message: userMessage }, context, userMessage.timelineSequence);
   context.persistSessionMessage(sessionId, userMessage);
   persistTimelineMessage(context, sessionId, userMessage);
   context.updateSessionSummary(sessionId, (current) =>

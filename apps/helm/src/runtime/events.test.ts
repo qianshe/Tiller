@@ -8,6 +8,7 @@ import type {
   PromptTraceEvent,
   SessionSummary,
   SessionTimelineEntry,
+  SessionUpdateRecord,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import type { LogLevel, TillerLogger } from "../logging/logger";
@@ -25,6 +26,7 @@ type TestContextCapture = {
   persisted: AgentMessage[];
   summaryUpdates?: SessionSummary[];
   timelineEntries?: SessionTimelineEntry[];
+  sessionUpdates?: SessionUpdateRecord[];
   traceEvents?: PromptTraceEvent[];
   structuredLogs?: CapturedLog[];
 };
@@ -106,7 +108,7 @@ function createTestContext(
         {
           agent: { id: "opencode" },
           worktree: { id: "worktree-1" },
-          summary,
+          summary: { ...summary, runtimeSessionId: "runtime-1" },
         },
       ],
     ]),
@@ -166,6 +168,11 @@ function createTestContext(
         capture.timelineEntries = [];
       },
     },
+    sessionUpdateStore: {
+      append: (update: SessionUpdateRecord) => {
+        capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
+      },
+    },
     publishDiffUpdate: async () => undefined,
     hydrateSessionSummary: (item: SessionSummary) => item,
   } as unknown as HelmHandlerContext;
@@ -182,6 +189,38 @@ test("live event sequence ignores invalid persisted values", () => {
   seedLiveEventSequenceForSession("session-invalid", [undefined, Number.NaN, -1, 0, 2]);
 
   assert.equal(nextLiveEventSequenceForTest("session-invalid"), 3);
+});
+
+test("runtime message events persist source-neutral session update records", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "record-session");
+
+  handleRuntimeEvent(
+    "record-session",
+    {
+      type: "message",
+      message: {
+        id: "assistant-record",
+        role: "assistant",
+        text: "hello",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.sessionUpdates?.length, 1);
+  assert.equal(capture.sessionUpdates?.[0]?.source, "acp_live");
+  assert.equal(capture.sessionUpdates?.[0]?.providerId, "opencode");
+  assert.equal(capture.sessionUpdates?.[0]?.runtimeSessionId, "runtime-1");
+  assert.equal(capture.sessionUpdates?.[0]?.updateType, "message");
+  assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").message.text, "hello");
 });
 
 test("runtime events emit first runtime and broadcast prompt trace markers", () => {

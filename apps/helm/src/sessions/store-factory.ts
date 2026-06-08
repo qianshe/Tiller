@@ -4,6 +4,7 @@ import {
   createSqliteSessionMessageStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
+  createSqliteSessionUpdateStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
@@ -13,6 +14,7 @@ import {
   type SessionRuntimeStore,
   type SessionSummaryStore,
   type SessionTimelineStore,
+  type SessionUpdateStore,
   type StoredSessionArtifacts,
 } from "@tiller/persistence";
 import { createModeAwareSessionTimelineStore } from "./timeline-store-mode";
@@ -25,6 +27,7 @@ export type {
   SessionRuntimeStore,
   SessionSummaryStore,
   SessionTimelineStore,
+  SessionUpdateStore,
   StoredSessionArtifacts,
 };
 
@@ -69,5 +72,6 @@ export function createHelmSessionStores(
       mode: options.timelineBlockMode,
       logDebug: options.logDebug,
     }),
+    sessionUpdateStore: createSqliteSessionUpdateStore(options.sqlitePath),
   };
 }

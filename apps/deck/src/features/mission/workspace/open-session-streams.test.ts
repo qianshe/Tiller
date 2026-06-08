@@ -92,6 +92,33 @@ test("handlePlanHydrationRequestResult retries when plan hydration returns no pl
   });
 });
 
+test("handlePlanHydrationRequestResult retries when plan hydration returns an empty plan", () => {
+  const checkedPlanSessionIds = new Set(["session-1"]);
+  const retryCounts = new Map<string, number>();
+  const scheduled: Array<() => void> = [];
+
+  handlePlanHydrationRequestResult({
+    sessionId: "session-1",
+    result: {
+      sessionId: "session-1",
+      plan: { updatedAt: "2026-06-08T01:00:00.000Z", entries: [] },
+    },
+    planActivitySessionIds: new Set(["session-1"]),
+    checkedPlanSessionIds,
+    retryCounts,
+    setActivityHistoryState: () => {
+      throw new Error("empty plan should wait for the retry timer");
+    },
+    scheduleRetry: (handler) => {
+      scheduled.push(handler);
+    },
+  });
+
+  assert.equal(checkedPlanSessionIds.has("session-1"), true);
+  assert.equal(retryCounts.get("session-1"), 1);
+  assert.equal(scheduled.length, 1);
+});
+
 test("handlePlanHydrationRequestResult stops retrying once a plan is returned", () => {
   const checkedPlanSessionIds = new Set(["session-1"]);
   const retryCounts = new Map([["session-1", 1]]);
@@ -122,7 +149,7 @@ test("handlePlanHydrationRequestResult stops retrying once a plan is returned", 
   assert.equal(scheduled, false);
 });
 
-test("handlePlanHydrationRequestResult clears loading after missing-plan retries hit the cap", () => {
+test("handlePlanHydrationRequestResult stops requeueing after missing-plan retries hit the cap", () => {
   const checkedPlanSessionIds = new Set(["session-1"]);
   const retryCounts = new Map([["session-1", 3]]);
   let scheduled = false;
@@ -145,7 +172,7 @@ test("handlePlanHydrationRequestResult clears loading after missing-plan retries
     },
   });
 
-  assert.equal(checkedPlanSessionIds.has("session-1"), false);
+  assert.equal(checkedPlanSessionIds.has("session-1"), true);
   assert.equal(retryCounts.has("session-1"), false);
   assert.equal(scheduled, false);
   assert.deepEqual(activityState["session-1"], {

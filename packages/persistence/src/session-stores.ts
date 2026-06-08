@@ -4,6 +4,8 @@ import type {
   CommandChunk,
   FileDiffSummary,
   SessionTimelineEntry,
+  SessionUpdateRecord,
+  SessionUpdateRecordPage,
   SessionSummary,
 } from "@tiller/shared";
 import type { SessionArtifactPage, SessionArtifactPageOptions } from "./artifact-store";
@@ -59,6 +61,13 @@ export type SessionTimelineStore = {
   remove: (sessionId: string) => void;
 };
 
+export type SessionUpdateStore = {
+  append: (update: SessionUpdateRecord) => void;
+  replaceSession: (sessionId: string, updates: SessionUpdateRecord[]) => void;
+  listPage: (sessionId: string, options?: { limit?: number; before?: string }) => SessionUpdateRecordPage;
+  remove: (sessionId: string) => void;
+};
+
 export type SessionStores = {
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
@@ -66,6 +75,7 @@ export type SessionStores = {
   sessionAttachmentStore: SessionAttachmentStore;
   sessionRuntimeStore: SessionRuntimeStore;
   sessionTimelineStore: SessionTimelineStore;
+  sessionUpdateStore: SessionUpdateStore;
 };
 
 export type HelmSessionStores = SessionStores;

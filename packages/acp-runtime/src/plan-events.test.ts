@@ -24,7 +24,7 @@ test("extractAgentPlan maps ACP plan entries", () => {
   });
 });
 
-test("extractAgentPlan keeps empty plan updates so clients can clear the drawer", () => {
+test("extractAgentPlan ignores empty plan updates", () => {
   const plan = extractAgentPlan(
     "plan",
     {
@@ -34,10 +34,7 @@ test("extractAgentPlan keeps empty plan updates so clients can clear the drawer"
     "2026-06-02T00:00:00.000Z",
   );
 
-  assert.deepEqual(plan, {
-    entries: [],
-    updatedAt: "2026-06-02T00:00:00.000Z",
-  });
+  assert.equal(plan, null);
 });
 
 test("extractAgentPlan ignores non-plan updates", () => {

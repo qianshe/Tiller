@@ -1,8 +1,8 @@
 import type { AcpAgentAdapter } from "../types";
-import { loadProviderAuthoritativeHistory } from "../history-reader";
 import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
-import { claudeCodeHistoryReader } from "./history";
 import { createClaudePlanUpdateMapper } from "./plan-events";
+import { readClaudeTranscriptMessagesFromDisk } from "./transcript/history";
+import { readClaudeTranscriptPlanFromDisk } from "./transcript/plan";
 
 const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
 
@@ -25,7 +25,9 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
     mapSessionUpdate: createClaudePlanUpdateMapper(),
-    loadAuthoritativeHistory: (context) =>
-      loadProviderAuthoritativeHistory(claudeCodeHistoryReader, context),
+    readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
+      readClaudeTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
+    readTranscriptMessages: ({ runtimeSessionId, cwd }) =>
+      readClaudeTranscriptMessagesFromDisk({ runtimeSessionId, cwd }),
   };
 }

@@ -1,0 +1,294 @@
+import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import {
+  type AgentMessage,
+  type AgentPlan,
+  type AgentToolCall,
+  type AgentToolCallKind,
+  type CommandChunk,
+  type FileDiffSummary,
+} from "@tiller/shared";
+import type { HelmHandlerContext } from "../../handlers/context";
+import {
+  applySessionUpdateRecordToState,
+  createEmptySessionUpdateReducerState,
+  createSessionUpdateRecord,
+} from "../session-updates/reducer";
+
+type ReplayBufferContext = Pick<
+  HelmHandlerContext,
+  "sessionMessageStore" | "sessionArtifactStore" | "sessionTimelineStore" | "sessionUpdateStore"
+>;
+
+type ReplayBufferMetadata = {
+  runtimeSessionId?: string;
+  providerId?: string;
+};
+
+export type RestoreReplayFlushCounts = {
+  messages: number;
+  toolCalls: number;
+  outputs: number;
+  diffs: number;
+  plans: number;
+};
+
+export function hasRestoreReplayContent(counts: RestoreReplayFlushCounts) {
+  return counts.messages > 0 ||
+    counts.toolCalls > 0 ||
+    counts.outputs > 0 ||
+    counts.diffs > 0 ||
+    counts.plans > 0;
+}
+
+export function createRestoreReplayBuffer(
+  sessionId: string,
+  context: ReplayBufferContext,
+  metadata: ReplayBufferMetadata = {},
+) {
+  const messages = new Map<string, AgentMessage>();
+  const toolCalls = new Map<string, AgentToolCall>();
+  const outputs = new Map<string, CommandChunk>();
+  let diffs: FileDiffSummary[] | null = null;
+  let plan: AgentPlan | undefined;
+  let replayTimelineSequence = 0;
+  const updates: ReturnType<typeof createSessionUpdateRecord>[] = [];
+
+  function snapshot() {
+    return {
+      messages: Array.from(messages.values()),
+      toolCalls: Array.from(toolCalls.values()),
+      outputs: Array.from(outputs.values()),
+      diffs: diffs ?? [],
+      ...(plan ? { plan } : {}),
+    };
+  }
+
+  return {
+    add(event: SessionRuntimeEvent) {
+      switch (event.type) {
+        case "message": {
+          const message = withReplayTimelineSequence(
+            event.message,
+            undefined,
+          );
+          upsertReplayMessage(messages, message);
+          recordReplayUpdate(
+            {
+              ...event,
+              message,
+            },
+            message.timelineSequence,
+          );
+          return true;
+        }
+        case "tool-call": {
+          const toolCall = withReplayTimelineSequence(event.toolCall, toolCalls.get(event.toolCall.id)?.timelineSequence);
+          upsertToolCall(toolCalls, toolCall);
+          recordReplayUpdate(
+            {
+              ...event,
+              toolCall,
+            },
+            toolCall.timelineSequence,
+          );
+          return true;
+        }
+        case "command-output":
+          const chunk = withReplayTimelineSequence(
+            event.chunk,
+            outputs.get(event.chunk.id)?.timelineSequence,
+          );
+          outputs.set(chunk.id, chunk);
+          let toolCall = event.toolCall
+            ? withReplayTimelineSequence(
+                event.toolCall,
+                toolCalls.get(event.toolCall.id)?.timelineSequence ?? chunk.timelineSequence,
+              )
+            : undefined;
+          if (event.toolCall) {
+            upsertToolCall(toolCalls, toolCall!);
+          }
+          recordReplayUpdate({ ...event, chunk, toolCall }, chunk.timelineSequence);
+          return true;
+        case "diff-update":
+          diffs = event.files;
+          recordReplayUpdate(event);
+          return true;
+        case "plan-update":
+          plan = event.plan;
+          recordReplayUpdate(event);
+          return true;
+        default:
+          return false;
+      }
+    },
+    snapshot,
+    flush(): RestoreReplayFlushCounts {
+      for (const message of messages.values()) {
+        context.sessionMessageStore.append(sessionId, message);
+      }
+      for (const output of outputs.values()) {
+        context.sessionArtifactStore.appendOutput(sessionId, output);
+      }
+      for (const toolCall of toolCalls.values()) {
+        context.sessionArtifactStore.appendToolCall(sessionId, toolCall);
+      }
+      if (diffs) {
+        context.sessionArtifactStore.replaceDiffs(sessionId, diffs);
+      }
+      context.sessionUpdateStore?.replaceSession?.(sessionId, [...updates]);
+      persistReplayTimeline();
+      const counts = {
+        messages: messages.size,
+        toolCalls: toolCalls.size,
+        outputs: outputs.size,
+        diffs: diffs?.length ?? 0,
+        plans: plan ? 1 : 0,
+      };
+      messages.clear();
+      toolCalls.clear();
+      outputs.clear();
+      diffs = null;
+      plan = undefined;
+      updates.splice(0, updates.length);
+      return counts;
+    },
+  };
+
+  function persistReplayTimeline() {
+    if (!context.sessionTimelineStore) {
+      return;
+    }
+
+    const entries = updates.reduce(
+      applySessionUpdateRecordToState,
+      createEmptySessionUpdateReducerState(),
+    ).entries;
+    if (entries.length) {
+      context.sessionTimelineStore.replace(sessionId, entries);
+    }
+  }
+
+  function withReplayTimelineSequence<T extends { timelineSequence?: number }>(
+    item: T,
+    preferredSequence?: number,
+  ): T {
+    if (isFiniteTimelineSequence(item.timelineSequence)) {
+      replayTimelineSequence = Math.max(replayTimelineSequence, item.timelineSequence);
+      return item;
+    }
+    if (isFiniteTimelineSequence(preferredSequence)) {
+      return { ...item, timelineSequence: preferredSequence };
+    }
+    replayTimelineSequence += 1;
+    return { ...item, timelineSequence: replayTimelineSequence };
+  }
+
+  function recordReplayUpdate(event: SessionRuntimeEvent, sequence?: number) {
+    updates.push(createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: metadata.runtimeSessionId ?? sessionId,
+      providerId: metadata.providerId ?? "unknown",
+      sequence: sequence ?? nextReplaySequence(),
+      source: "acp_load_replay",
+      event,
+    }));
+  }
+
+  function nextReplaySequence() {
+    replayTimelineSequence += 1;
+    return replayTimelineSequence;
+  }
+}
+
+function upsertReplayMessage(messages: Map<string, AgentMessage>, next: AgentMessage) {
+  const current = messages.get(next.id);
+  if (!current || current.role === next.role) {
+    messages.set(next.id, next);
+    return;
+  }
+
+  const collisionId = resolveRoleScopedMessageId(messages, next);
+  messages.set(collisionId, { ...next, id: collisionId });
+}
+
+function resolveRoleScopedMessageId(messages: Map<string, AgentMessage>, message: AgentMessage) {
+  const baseId = `${message.id}:${message.role}`;
+  let candidateId = baseId;
+  let suffix = 2;
+  while (true) {
+    const current = messages.get(candidateId);
+    if (!current || current.role === message.role) {
+      return candidateId;
+    }
+    candidateId = `${baseId}:${suffix}`;
+    suffix += 1;
+  }
+}
+
+function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCall) {
+  const current = toolCalls.get(next.id);
+  toolCalls.set(next.id, {
+    ...current,
+    ...next,
+    kind: resolveToolCallKind(current?.kind, next.kind),
+    title: resolveToolCallTitle(current?.title, next.title, next.id),
+    timestamp: current?.timestamp ?? next.timestamp,
+    timelineSequence: current?.timelineSequence ?? next.timelineSequence,
+    input: next.input ?? current?.input,
+    output: `${current?.output ?? ""}${next.output ?? ""}` || undefined,
+  });
+}
+
+function isFiniteTimelineSequence(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function resolveToolCallKind(
+  currentKind: AgentToolCallKind | undefined,
+  incomingKind: AgentToolCallKind,
+) {
+  if (!currentKind) return incomingKind;
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCallKind,
+  currentKind: AgentToolCallKind,
+) {
+  const rank: Record<AgentToolCallKind, number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 2,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
+function resolveToolCallTitle(
+  currentTitle: string | undefined,
+  incomingTitle: string,
+  id: string,
+) {
+  if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
+    return incomingTitle;
+  }
+  return currentTitle || incomingTitle || id;
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
+}

@@ -48,10 +48,15 @@ export function buildSessionStreamHydrationPlan({
     const hasCachedActivity = Boolean(
       outputsBySession?.[sessionId]?.length || toolCalls.length,
     );
-    const needsCachedPlan = Boolean(
-      !sessionPlansBySession?.[sessionId] &&
-        toolCalls.some(isPlanCapableToolCall),
-    );
+    const needsCachedPlan = needsPlanHydration({
+      sessionId,
+      session: sessionById.get(sessionId),
+      messageHistoryState,
+      messagesBySession,
+      sessionTimelineBySession,
+      sessionPlansBySession,
+      toolCalls,
+    });
     const activityState = activityHistoryState[sessionId];
     if (needsCachedPlan) {
       if (!checkedPlanSessionIds?.has(sessionId)) {
@@ -95,6 +100,33 @@ function isPlanCapableToolCall(toolCall: AgentToolCall) {
   }
   const title = (toolCall.title ?? "").trim().toLowerCase().replace(/[^a-z0-9]/gu, "");
   return title === "taskcreate" || title === "taskupdate" || title === "todowrite";
+}
+
+function needsPlanHydration({
+  sessionId,
+  session,
+  messageHistoryState,
+  messagesBySession,
+  sessionTimelineBySession,
+  sessionPlansBySession,
+  toolCalls,
+}: {
+  sessionId: string;
+  session: SessionSummary | undefined;
+  messageHistoryState: Record<string, HistoryState | undefined>;
+  messagesBySession: Record<string, Pick<AgentMessage, "id" | "role">[] | undefined> | undefined;
+  sessionTimelineBySession: Record<string, SessionTimelineEntry[] | undefined> | undefined;
+  sessionPlansBySession: Record<string, AgentPlan | undefined> | undefined;
+  toolCalls: AgentToolCall[];
+}) {
+  if (!sessionPlansBySession || sessionPlansBySession[sessionId]) {
+    return false;
+  }
+  return toolCalls.some(isPlanCapableToolCall) ||
+    hasOwnSessionCache(sessionTimelineBySession, sessionId) ||
+    Boolean(messagesBySession?.[sessionId]?.length) ||
+    Boolean(messageHistoryState[sessionId]) ||
+    Boolean(session?.messageCount);
 }
 
 function hasIncompleteCachedMessageHistory({

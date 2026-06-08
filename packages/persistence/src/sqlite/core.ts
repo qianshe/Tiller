@@ -72,6 +72,18 @@ export function openSessionDatabase(dbPath: string) {
       PRIMARY KEY(session_id, id)
     );
 
+    CREATE TABLE IF NOT EXISTS session_updates(
+      session_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      runtime_session_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      update_type TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, sequence)
+    );
+
     CREATE TABLE IF NOT EXISTS session_timeline_blocks(
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -129,6 +141,7 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
     CREATE INDEX IF NOT EXISTS idx_session_timeline_entries_page ON session_timeline_entries(session_id, position, id);
+    CREATE INDEX IF NOT EXISTS idx_session_updates_page ON session_updates(session_id, sequence);
     CREATE INDEX IF NOT EXISTS idx_session_timeline_blocks_latest ON session_timeline_blocks(session_id, last_position DESC);
     CREATE INDEX IF NOT EXISTS idx_session_timeline_block_entries_block ON session_timeline_block_entries(block_id);
     CREATE INDEX IF NOT EXISTS idx_session_attachments_session_message ON session_attachments(session_id, message_id);
