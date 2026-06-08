@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PermissionRequest } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import type { SessionServicesOptions } from "../runtime/session-services";
+import type { SessionServicesOptions } from "../runtime/session/services";
 import { createHelmRuntimeComposition } from "./runtime-composition";
 
 function createSessionStore(): SessionServicesOptions["sessionStore"] {
@@ -73,6 +73,15 @@ function createSessionTimelineStore(): SessionServicesOptions["sessionTimelineSt
   };
 }
 
+function createSessionUpdateStore(): SessionServicesOptions["sessionUpdateStore"] {
+  return {
+    append: () => undefined,
+    replaceSession: () => undefined,
+    listPage: () => ({ updates: [], hasMore: false }),
+    remove: () => undefined,
+  };
+}
+
 test("createHelmRuntimeComposition owns runtime maps queue and services", () => {
   const composition = createHelmRuntimeComposition({
     sessionStore: createSessionStore(),
@@ -81,6 +90,7 @@ test("createHelmRuntimeComposition owns runtime maps queue and services", () => 
     sessionAttachmentStore: createSessionAttachmentStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
     sessionTimelineStore: createSessionTimelineStore(),
+    sessionUpdateStore: createSessionUpdateStore(),
     getAgents: () => [],
     getProjects: () => [],
     getWorktrees: () => [],

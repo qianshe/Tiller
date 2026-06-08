@@ -3,8 +3,8 @@ import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifica
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
-} from "../../runtime/session-config-options";
-import { sendPromptToSession } from "../../runtime/session-router";
+} from "../../runtime/session/config-options";
+import { sendPromptToSession } from "../../runtime/session/router";
 import type { HelmHandlerContext } from "../context";
 
 export type SessionPromptParams = {

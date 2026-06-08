@@ -4,7 +4,7 @@ import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifica
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
-} from "../../runtime/session-config-options";
+} from "../../runtime/session/config-options";
 import type { HelmHandlerContext } from "../context";
 import { resolveProjectSessionWorktree } from "./session-worktree";
 

@@ -15,7 +15,7 @@ import type { TillerLogger } from "../logging/logger";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
-} from "./session-config-options";
+} from "./session/config-options";
 
 const RUNTIME_DRAFT_TTL_MS = 3 * 60_000;
 

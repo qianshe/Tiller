@@ -246,8 +246,15 @@ function upsertAssistantContent(
   entries: SessionTimelineEntry[],
   message: AgentMessage,
 ): SessionTimelineEntry[] {
+  const chunkId = resolveAssistantChunkId({
+    entries,
+    assistantEntryId: message.id,
+    baseChunkId: `${message.id}:content`,
+    kind: "content",
+    timelineSequence: message.timelineSequence,
+  });
   const chunk: SessionTimelineContentChunk = {
-    id: `${message.id}:content`,
+    id: chunkId,
     kind: "content",
     text: message.text,
     timestamp: message.timestamp,
@@ -264,8 +271,16 @@ function upsertThinkingChunk(
   entries: SessionTimelineEntry[],
   toolCall: AgentToolCall,
 ): SessionTimelineEntry[] {
+  const assistantEntryId = resolveAssistantEntryIdFromThinking(toolCall);
+  const chunkId = resolveAssistantChunkId({
+    entries,
+    assistantEntryId,
+    baseChunkId: toolCall.id,
+    kind: "thinking",
+    timelineSequence: toolCall.timelineSequence,
+  });
   const chunk: SessionTimelineThinkingChunk = {
-    id: toolCall.id,
+    id: chunkId,
     kind: "thinking",
     text: toolCall.output ?? toolCall.input ?? "",
     title: toolCall.title,
@@ -274,11 +289,57 @@ function upsertThinkingChunk(
     updatedAt: toolCall.updatedAt,
     timelineSequence: toolCall.timelineSequence,
   };
-  const assistantEntryId = resolveAssistantEntryIdFromThinking(toolCall);
   const entry = findOrCreateAssistantEntry(entries, assistantEntryId, chunk.timestamp, chunk.timelineSequence);
   entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
   applyAssistantEntryBounds(entry);
   return entries;
+}
+
+function resolveAssistantChunkId(input: {
+  entries: SessionTimelineEntry[];
+  assistantEntryId: string;
+  baseChunkId: string;
+  kind: SessionAssistantTimelineChunk["kind"];
+  timelineSequence?: number;
+}) {
+  const entry = input.entries.find((candidate): candidate is SessionTimelineAssistantEntry =>
+    candidate.kind === "assistant_message" && candidate.id === input.assistantEntryId,
+  );
+  const matchingChunks = entry?.chunks.filter((chunk) =>
+    chunk.kind === input.kind && isSameAssistantChunkIdentity(chunk.id, input.baseChunkId),
+  ) ?? [];
+  if (!matchingChunks.length) {
+    return input.baseChunkId;
+  }
+  const reusable = [...matchingChunks].reverse().find((chunk) =>
+    !hasTimelineBoundaryBetween(input.entries, chunk.timelineSequence, input.timelineSequence),
+  );
+  if (reusable) {
+    return reusable.id;
+  }
+  return `${input.baseChunkId}:${input.timelineSequence ?? matchingChunks.length + 1}`;
+}
+
+function isSameAssistantChunkIdentity(chunkId: string, baseChunkId: string) {
+  return chunkId === baseChunkId || chunkId.startsWith(`${baseChunkId}:`);
+}
+
+function hasTimelineBoundaryBetween(
+  entries: SessionTimelineEntry[],
+  leftSequence: number | undefined,
+  rightSequence: number | undefined,
+) {
+  if (leftSequence === undefined || rightSequence === undefined) {
+    return false;
+  }
+  const start = Math.min(leftSequence, rightSequence);
+  const end = Math.max(leftSequence, rightSequence);
+  return entries.some((entry) =>
+    entry.kind !== "assistant_message" &&
+    typeof entry.timelineSequence === "number" &&
+    entry.timelineSequence > start &&
+    entry.timelineSequence < end,
+  );
 }
 
 function upsertToolCallEntry(

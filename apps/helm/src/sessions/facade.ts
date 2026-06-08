@@ -24,6 +24,7 @@ export {
   type SessionMessageStore,
   type SessionRuntimeStore,
   type SessionSummaryStore,
+  type SessionUpdateStore,
   type StoredSessionArtifacts,
 } from "./store-factory";
 export {

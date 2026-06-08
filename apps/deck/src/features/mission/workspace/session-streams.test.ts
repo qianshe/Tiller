@@ -136,6 +136,28 @@ test("buildSessionStreamHydrationPlan rehydrates Claude task activity when stale
   assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
 });
 
+test("buildSessionStreamHydrationPlan rehydrates plans when ACP replay omitted task tools", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    activityHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: false },
+    },
+    sessionTimelineBySession: { [idleSession.id]: [{ id: "timeline-1" }] as SessionTimelineEntry[] },
+    outputsBySession: {},
+    toolCallsBySession: {},
+    sessionPlansBySession: {},
+    checkedResumeSessionIds: new Set(),
+    checkedPlanSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.activitySessionIds, [idleSession.id]);
+  assert.deepEqual(plan.planActivitySessionIds, [idleSession.id]);
+});
+
 test("buildSessionStreamHydrationPlan rehydrates Claude task plans past stale loading state", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],

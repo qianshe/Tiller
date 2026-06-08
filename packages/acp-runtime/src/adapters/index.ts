@@ -4,7 +4,7 @@ import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
+import type { AcpAgentAdapter, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -47,18 +47,12 @@ export function mapAdapterSessionUpdate(
     : null;
 }
 
-export function loadAdapterAuthoritativeHistory(
-  provider: AcpRuntimeProviderConfig,
-  runtimeSessionId: string,
-  cwd: string,
-) {
-  return (
-    resolveAcpAgentAdapter(provider).loadAuthoritativeHistory?.({
-      provider,
-      runtimeSessionId,
-      cwd,
-    }) ?? Promise.resolve(null)
-  );
+export function readAdapterTranscriptPlan(context: AcpHistoryContext) {
+  return resolveAcpAgentAdapter(context.provider).readTranscriptPlan?.(context) ?? null;
+}
+
+export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
+  return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
 }
 
 export { createClaudeAcpAdapter } from "./claude/index";

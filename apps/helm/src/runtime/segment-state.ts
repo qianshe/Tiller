@@ -4,7 +4,7 @@ import {
   isRuntimeGeneratedMessageId,
   mergeAssistantStreamText,
   shouldStartNewRuntimeAssistantSegment,
-} from "./session-event-normalizer";
+} from "./session/event/normalizer";
 
 const messageSegmentIds = createMessageSegmentIdAllocator();
 const activeAssistantRuntimeMessageBySession = new Map<

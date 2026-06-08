@@ -691,6 +691,22 @@ test("mapSessionUpdateNotification maps ACP plan updates", () => {
   ]);
 });
 
+test("mapSessionUpdateNotification ignores empty ACP plan updates", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-empty-plan",
+      update: {
+        sessionUpdate: "plan",
+        entries: [],
+      },
+    },
+  });
+
+  assert.equal(mapped, null);
+});
+
 test("mapSessionUpdateNotification maps Codex update_plan tools into plan updates", () => {
   const mapped = mapSessionUpdateNotification(
     {

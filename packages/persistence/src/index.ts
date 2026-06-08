@@ -22,4 +22,5 @@ export {
 } from "./sqlite/store";
 export { createSqliteSessionAttachmentStore } from "./sqlite/attachment-store";
 export { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
+export { createSqliteSessionUpdateStore } from "./sqlite/session-update-store";
 export { createSqliteTimelineBlockStore } from "./sqlite/timeline-block-store";

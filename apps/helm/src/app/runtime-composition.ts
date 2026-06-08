@@ -1,8 +1,8 @@
-import { createSessionPromptQueueManager } from "../runtime/session-prompt-queue";
+import { createSessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import {
   createSessionServices,
   type SessionServicesOptions,
-} from "../runtime/session-services";
+} from "../runtime/session/services";
 
 export type HelmRuntimeCompositionOptions = Omit<
   SessionServicesOptions,

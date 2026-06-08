@@ -202,6 +202,14 @@ test("session/reimport_history replaces local session history caches", () => {
       updatedAt: "2026-05-24T10:00:02.000Z",
     },
   ];
+  const providerPlan: AgentPlan = {
+    updatedAt: "2026-06-08T11:37:23.217Z",
+    entries: [
+      { content: "梳理并行聊天窗口的状态管理逻辑", priority: "medium", status: "completed" },
+      { content: "修复会话历史同步的边界情况", priority: "medium", status: "completed" },
+      { content: "为 queued-prompts 补充单元测试", priority: "medium", status: "in_progress" },
+    ],
+  };
 
   const handled = applySessionResult(
     "session/reimport_history",
@@ -234,6 +242,7 @@ test("session/reimport_history replaces local session history caches", () => {
         },
       ],
       timeline: providerTimeline,
+      plan: providerPlan,
       nextCursor: "older-message",
       hasMore: true,
       activityNextCursor: "older-activity",
@@ -252,6 +261,7 @@ test("session/reimport_history replaces local session history caches", () => {
   assert.deepEqual(state.diffs["session-1"]?.map((item) => item.path), ["new.ts"]);
   assert.deepEqual(state.toolCalls["session-1"]?.map((item) => item.id), ["provider-tool"]);
   assert.deepEqual(state.sessionTimeline["session-1"]?.map((item) => item.id), ["provider-user", "provider-assistant"]);
+  assert.deepEqual(state.sessionPlans["session-1"], providerPlan);
   assert.deepEqual(toolCallsRef.current["session-1"]?.map((item) => item.id), ["provider-tool"]);
   assert.deepEqual(state.messageHistoryState["session-1"], { nextCursor: "older-message", hasMore: true, loading: false });
   assert.deepEqual(state.activityHistoryState["session-1"], { nextCursor: "older-activity", hasMore: false, loading: false });

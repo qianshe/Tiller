@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { broadcastPromptTrace, broadcastSessionUpdate } from "./notifications.js";
-import { createSessionEventPublisher } from "../runtime/session-event-publisher";
+import { createSessionEventPublisher } from "../runtime/session/event/publisher";
 
 const detailUpdates = [
   {
