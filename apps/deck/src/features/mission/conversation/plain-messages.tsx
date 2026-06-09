@@ -23,8 +23,6 @@ type PlainMessagesProps = {
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
   emptyText: string;
-  assistantLabel: string;
-  roleLabels: Record<AgentMessage["role"], string>;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
   historyState?: { hasMore: boolean; loading: boolean };
@@ -40,8 +38,6 @@ export function PlainMessages({
   toolCalls = [],
   showThinking = true,
   emptyText,
-  assistantLabel,
-  roleLabels,
   expandedMessageIds,
   boundaryTimestamps = [],
   historyState,
@@ -244,15 +240,9 @@ export function PlainMessages({
         return (
           <div key={renderItem.renderKey} className={spacingClassName}>
             <PlainMessageItem
-              isContinuation={renderItem.isContinuation}
               isExpanded={isExpanded}
               message={renderItem.message}
               onToggleExpandedMessage={onToggleExpandedMessage}
-              roleLabel={resolveMessageRoleLabel(
-                renderItem.message,
-                assistantLabel,
-                roleLabels,
-              )}
             />
           </div>
         );
@@ -892,16 +882,6 @@ function extractOpenCodeWrapperOriginalPrompt(text: string) {
     return null;
   }
   return text.split(/\n---\n/u).at(-1)?.trim() || null;
-}
-
-function resolveMessageRoleLabel(
-  message: AgentMessage,
-  assistantLabel: string,
-  roleLabels: Record<AgentMessage["role"], string>,
-) {
-  return message.role === "assistant"
-    ? assistantLabel
-    : roleLabels[message.role];
 }
 
 function comparePlainConversationItems(left: PlainConversationItem, right: PlainConversationItem) {

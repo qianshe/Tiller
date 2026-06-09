@@ -904,7 +904,6 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           showThinking={showThinking}
           boundaryTimestamps={sessionTimeline.boundaryTimestamps}
           sessionId={session.id}
-          assistantLabel={session.agentName}
           copy={copy}
           expandedMessageIds={expandedMessageIds}
           historyStateBySession={historyStateBySession}

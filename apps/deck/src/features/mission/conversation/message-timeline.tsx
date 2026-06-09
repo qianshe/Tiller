@@ -12,7 +12,6 @@ type MessageHistoryState = {
 
 type MissionMessageTimelineCopy = {
   waitingForAgent: string;
-  role: Record<AgentMessage["role"], string>;
 };
 
 type MissionMessageTimelineProps = {
@@ -22,7 +21,6 @@ type MissionMessageTimelineProps = {
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
   sessionId?: string;
-  assistantLabel?: string;
   copy: MissionMessageTimelineCopy;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
@@ -42,7 +40,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   toolCalls = [],
   showThinking = true,
   sessionId,
-  assistantLabel,
   copy,
   expandedMessageIds,
   boundaryTimestamps = [],
@@ -71,8 +68,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       toolCalls={toolCalls}
       showThinking={showThinking}
       emptyText={copy.waitingForAgent}
-      assistantLabel={assistantLabel ?? copy.role.assistant}
-      roleLabels={copy.role}
       expandedMessageIds={expandedMessageIds}
       boundaryTimestamps={boundaryTimestamps}
       historyState={historyState}

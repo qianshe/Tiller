@@ -19,6 +19,7 @@ const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
+const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
 
 type MessageImageSourceEnvironment = {
   location?: Pick<Location, "protocol" | "hostname" | "port">;
@@ -186,19 +187,15 @@ function shouldCollapsePlainMessage(text: string) {
 }
 
 type PlainMessageItemProps = {
-  isContinuation: boolean;
   isExpanded: boolean;
   message: AgentMessage;
   onToggleExpandedMessage: (messageId: string) => void;
-  roleLabel: string;
 };
 
 export const PlainMessageItem = memo(function PlainMessageItem({
-  isContinuation,
   isExpanded,
   message,
   onToggleExpandedMessage,
-  roleLabel,
 }: PlainMessageItemProps) {
   const isAssistant = message.role === "assistant";
   const isStreaming = isAssistant && message.streaming;
@@ -284,16 +281,6 @@ export const PlainMessageItem = memo(function PlainMessageItem({
           message.role === "user" && "w-full justify-items-end",
         )}
       >
-        {message.role === "user" ? null : (
-          <span
-            className={cn(
-              "plain-message-role text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-              isContinuation && "sr-only",
-            )}
-          >
-            {roleLabel}
-          </span>
-        )}
         {message.role === "user" && message.attachments?.length ? (
           <div className="mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end">
             {message.attachments.map((image, index) => (
@@ -309,11 +296,11 @@ export const PlainMessageItem = memo(function PlainMessageItem({
           </div>
         ) : null}
         {message.role === "user" ? (
-          <div className="plain-message-user-row flex max-w-full items-start justify-end gap-1.5">
+          <div className="plain-message-user-row flex w-full max-w-full items-start justify-end gap-1.5">
             <div
               className={cn(
-                `${messageBodyClassName} min-w-14 w-fit break-words text-[12.5px] leading-[1.5]`,
-                "max-w-[min(680px,61.8%)] rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
+                `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} break-words text-[12.5px] leading-[1.5]`,
+                "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
               )}
             >
               {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
@@ -329,7 +316,12 @@ export const PlainMessageItem = memo(function PlainMessageItem({
           </div>
         )}
         {message.role === "user" && hasUserMessageActions ? (
-          <div className="plain-message-actions flex max-w-[min(680px,61.8%)] flex-wrap items-center justify-end gap-1.5 justify-self-end">
+          <div
+            className={cn(
+              "plain-message-actions flex flex-wrap items-center justify-end gap-1.5 justify-self-end",
+              USER_MESSAGE_RAIL_CLASS,
+            )}
+          >
             {isCollapsible ? (
               <Button
                 className="plain-message-expand w-fit px-3 py-1.5 text-xs"

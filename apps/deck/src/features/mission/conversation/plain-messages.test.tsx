@@ -14,8 +14,6 @@ function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]>
       thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -49,8 +47,6 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -58,7 +54,7 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
     }),
   );
 
-  assert.match(html, /Assistant/);
+  assert.doesNotMatch(html, /plain-message-role/);
   assert.match(html, /先给一个结论。/);
   assert.match(html, /Thinking/);
   assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
@@ -311,7 +307,7 @@ test("plain message image attachments wrap right and expose preview buttons", ()
   assert.doesNotMatch(html, /overflow-x-auto/);
 });
 
-test("plain user messages use a golden-ratio responsive measure", () => {
+test("plain user messages cap at the wide reading rail", () => {
   const html = renderPlainMessages({
     items: [
       {
@@ -323,8 +319,12 @@ test("plain user messages use a golden-ratio responsive measure", () => {
     ],
   });
 
-  assert.match(html, /plain-user[^"]*w-full[^"]*justify-items-end/);
-  assert.match(html, /plain-message-body[^"]*max-w-\[min\(680px,61\.8%\)\]/);
+  assert.match(html, /plain-user[^\"]*w-full[^\"]*justify-items-end/);
+  assert.match(html, /plain-message-user-row[^"]*w-full[^"]*max-w-full/);
+  assert.match(
+    html,
+    /plain-message-body[^"]*w-fit[^"]*max-w-\[min\(56rem,76%\)\]/,
+  );
 });
 
 test("plain short user messages size to their content before wrapping", () => {
@@ -339,7 +339,11 @@ test("plain short user messages size to their content before wrapping", () => {
     ],
   });
 
-  assert.match(html, /plain-message-body[^"]*min-w-14[^"]*w-fit[^"]*break-words[^"]*max-w-\[min\(680px,61\.8%\)\]/);
+  assert.match(
+    html,
+    /plain-message-body[^"]*w-fit[^"]*max-w-\[min\(56rem,76%\)\][^"]*break-words/,
+  );
+  assert.doesNotMatch(html, /plain-message-body[^"]*(?:min-w-14|\sw-\[min\()/);
 });
 
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
@@ -730,8 +734,6 @@ test("plain messages avoids duplicated generic thinking titles", () => {
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -761,8 +763,6 @@ test("plain messages auto-expands running thinking and collapses completed think
           },
         ],
         emptyText: "等待回复",
-        assistantLabel: "Assistant",
-        roleLabels: { assistant: "Assistant", system: "System", user: "User" },
         expandedMessageIds: new Set<string>(),
         historyState: { hasMore: false, loading: false },
         onLoadOlderMessages: () => {},
@@ -805,8 +805,6 @@ test("plain messages collapses still-running thinking once newer content follows
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -845,8 +843,6 @@ test("plain messages collapses merged thinking when the latest chunk completes",
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -884,8 +880,6 @@ test("plain messages keeps merged thinking open while the latest chunk is runnin
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -906,8 +900,6 @@ test("plain messages does not render a manual load-more history button", () => {
       ],
       thinkingToolCalls: [],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: true, loading: false },
       onLoadOlderMessages: () => {},
@@ -968,8 +960,6 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -1009,8 +999,6 @@ test("plain messages keeps adjacent thinking tool calls separate when ids differ
         },
       ],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
@@ -1435,8 +1423,6 @@ test("plain messages hides local command wrappers and model switch stdout", () =
       ],
       thinkingToolCalls: [],
       emptyText: "等待回复",
-      assistantLabel: "Assistant",
-      roleLabels: { assistant: "Assistant", system: "System", user: "User" },
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
       onLoadOlderMessages: () => {},
