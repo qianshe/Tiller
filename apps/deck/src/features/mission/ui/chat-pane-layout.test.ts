@@ -154,7 +154,7 @@ test("markdown table wrapper keeps horizontal scrolling without generic overflow
   assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /USER_MESSAGE_RAIL_CLASS = "w-fit max-w-\[min\(56rem,76%\)\]"/);
   assert.match(plainMessagesSource, /\$\{messageBodyClassName\} \$\{USER_MESSAGE_RAIL_CLASS\} min-w-0 break-words/);
-  assert.match(plainMessagesSource, /"rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
+  assert.match(plainMessagesSource, /"rounded-\[14px\] border border-primary\/30 bg-primary-soft\/35 px-3 py-2/);
   assert.doesNotMatch(plainMessagesSource, /rounded-2xl border border-border-ghost bg-surface-elevated/);
   assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
   assert.doesNotMatch(plainMessagesSource, /rounded-md bg-surface-emphasis\/45/);

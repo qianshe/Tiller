@@ -221,6 +221,8 @@ export function PlainMessages({
         const spacingClassName = resolvePlainConversationItemSpacingClass(
           renderItem.kind,
           previousRenderItem?.kind,
+          resolvePlainConversationMessageRole(renderItem),
+          resolvePlainConversationMessageRole(previousRenderItem),
         );
 
         if (renderItem.kind === "thinking") {
@@ -304,14 +306,31 @@ type PlainMessageRenderItem =
 
 export type PlainConversationRenderKind = PlainMessageRenderItem["kind"];
 
+function resolvePlainConversationMessageRole(
+  item: PlainMessageRenderItem | undefined,
+) {
+  return item?.kind === "message" ? item.message.role : undefined;
+}
+
 export function resolvePlainConversationItemSpacingClass(
   itemKind: PlainConversationRenderKind,
   previousKind?: PlainConversationRenderKind,
+  itemRole?: AgentMessage["role"],
+  previousRole?: AgentMessage["role"],
 ) {
+  const isMessageRoleBoundary =
+    itemKind === "message" &&
+    previousKind === "message" &&
+    Boolean(itemRole) &&
+    Boolean(previousRole) &&
+    itemRole !== previousRole;
   const touchesMessage = Boolean(previousKind) && (
     itemKind === "message" || previousKind === "message"
   );
-  return cn("plain-message-block min-w-0", touchesMessage && "mt-2");
+  return cn(
+    "plain-message-block min-w-0",
+    isMessageRoleBoundary ? "mt-4" : touchesMessage && "mt-2",
+  );
 }
 
 export function resolvePlainMessageRenderItems(

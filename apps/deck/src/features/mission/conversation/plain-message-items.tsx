@@ -301,7 +301,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             <div
               className={cn(
                 `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} min-w-0 break-words text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
-                "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
+                "rounded-[14px] border border-primary/30 bg-primary-soft/35 px-3 py-2 shadow-[0_10px_28px_rgb(0_0_0/0.16)]",
               )}
             >
               {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}

@@ -65,6 +65,18 @@ test("plain message timeline keeps tool and thinking rows tighter than content b
     resolvePlainConversationItemSpacingClass("thinking", "message"),
     "plain-message-block min-w-0 mt-2",
   );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "assistant", "user"),
+    "plain-message-block min-w-0 mt-4",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "user", "assistant"),
+    "plain-message-block min-w-0 mt-4",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "assistant", "assistant"),
+    "plain-message-block min-w-0 mt-2",
+  );
   assert.match(plainMessagesSource, /gap-y-1/);
 });
 
