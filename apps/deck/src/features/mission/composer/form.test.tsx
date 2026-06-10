@@ -109,6 +109,17 @@ test("composer follows the focused session context labels", () => {
   assert.doesNotMatch(html, /→ 活动会话/);
 });
 
+test("composer hides the session title hint in mobile mode", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    isMobile: true,
+    activeSession: { id: "mobile-session", title: "移动端会话", projectName: "Project A", agentName: "Codex" },
+  })));
+
+  assert.match(html, /Project A/);
+  assert.doesNotMatch(html, /Codex/);
+  assert.doesNotMatch(html, /→ 移动端会话/);
+});
+
 test("composer shows project in folder chip and switches worktree from branch chip", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     activeSession: null,

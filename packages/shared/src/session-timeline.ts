@@ -65,6 +65,11 @@ export type BuildSessionTimelineInput = {
 
 const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
 
+type LegacyTimelineSource =
+  | { kind: "message"; message: AgentMessage; timestamp: string; timelineSequence?: number }
+  | { kind: "tool_call"; toolCall: AgentToolCall; timestamp: string; timelineSequence?: number }
+  | { kind: "output"; output: CommandChunk; timestamp: string; timelineSequence?: number };
+
 type TimelineUserMessageAnchor = {
   id: string;
   entryId: string;
@@ -79,18 +84,51 @@ export function buildSessionTimelineFromLegacy({
   toolCalls = [],
 }: BuildSessionTimelineInput): SessionTimelineEntry[] {
   const entries: SessionTimelineEntry[] = [];
-  for (const message of messages) {
-    appendMessageToSessionTimeline(entries, message);
-  }
-  for (const toolCall of toolCalls) {
-    appendToolCallToSessionTimeline(entries, toolCall);
-  }
-  for (const output of outputs) {
-    if (!toolCalls.some((toolCall) => matchesCommandOutput(toolCall, output))) {
-      appendToolCallToSessionTimeline(entries, commandOutputToToolCall(output));
+  const sources = buildLegacyTimelineSources({ messages, outputs, toolCalls });
+  for (const source of sources) {
+    if (source.kind === "message") {
+      appendMessageToSessionTimeline(entries, source.message);
+      continue;
     }
+    if (source.kind === "tool_call") {
+      appendToolCallToSessionTimeline(entries, source.toolCall);
+      continue;
+    }
+    appendToolCallToSessionTimeline(entries, commandOutputToToolCall(source.output));
   }
   return sortSessionTimelineEntries(entries);
+}
+
+function buildLegacyTimelineSources({
+  messages,
+  outputs,
+  toolCalls,
+}: Required<BuildSessionTimelineInput>) {
+  return [
+    ...messages.map((message): LegacyTimelineSource => ({
+      kind: "message",
+      message,
+      timestamp: message.timestamp,
+      timelineSequence: message.timelineSequence,
+    })),
+    ...toolCalls.map((toolCall): LegacyTimelineSource => ({
+      kind: "tool_call",
+      toolCall,
+      timestamp: toolCall.timestamp,
+      timelineSequence: toolCall.timelineSequence,
+    })),
+    ...outputs
+      .filter((output) => !toolCalls.some((toolCall) => matchesCommandOutput(toolCall, output)))
+      .map((output): LegacyTimelineSource => ({
+        kind: "output",
+        output,
+        timestamp: output.timestamp,
+        timelineSequence: output.timelineSequence,
+      })),
+  ]
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => compareTimelineItems(left, right))
+    .map(({ item }) => item);
 }
 
 export function resolveTimelineRepresentedUserMessageIds(
@@ -200,15 +238,26 @@ function hasSameUserPromptSequence(anchor: TimelineUserMessageAnchor, message: A
 export function sortSessionTimelineEntries(
   entries: SessionTimelineEntry[],
 ): SessionTimelineEntry[] {
-  return entries
+  return splitSessionTimelineAssistantEntriesAtBoundaries(entries)
     .map((entry, index) => ({
-      item: entry.kind === "assistant_message"
-        ? { ...entry, chunks: sortAssistantTimelineChunks(entry.chunks) }
-        : entry,
+      item: entry,
       index,
     }))
     .sort((left, right) => compareTimelineItems(left, right))
     .map(({ item }) => item);
+}
+
+export function splitSessionTimelineAssistantEntriesAtBoundaries(
+  entries: SessionTimelineEntry[],
+): SessionTimelineEntry[] {
+  const normalized = entries.map((entry) =>
+    entry.kind === "assistant_message"
+      ? { ...entry, chunks: sortAssistantTimelineChunks(entry.chunks) }
+      : entry
+  );
+  return sortTimelineEntriesByDefinedSequence(
+    splitAssistantEntriesAtTimelineBoundaries(normalized),
+  );
 }
 
 export function sortAssistantTimelineChunks(
@@ -253,18 +302,40 @@ function upsertAssistantContent(
     kind: "content",
     timelineSequence: message.timelineSequence,
   });
+  const entry = findOrCreateAssistantEntry(entries, message.id, message.timestamp, message.timelineSequence);
   const chunk: SessionTimelineContentChunk = {
     id: chunkId,
     kind: "content",
-    text: message.text,
+    text: resolveContentChunkText(entry, `${message.id}:content`, chunkId, message.text),
     timestamp: message.timestamp,
     timelineSequence: message.timelineSequence,
     streaming: message.streaming,
   };
-  const entry = findOrCreateAssistantEntry(entries, message.id, chunk.timestamp, chunk.timelineSequence);
   entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
   applyAssistantEntryBounds(entry);
   return entries;
+}
+
+function resolveContentChunkText(
+  entry: SessionTimelineAssistantEntry,
+  baseChunkId: string,
+  chunkId: string,
+  incomingText: string,
+) {
+  const updatesExistingChunk = entry.chunks.some((chunk) =>
+    chunk.kind === "content" && chunk.id === chunkId
+  );
+  if (updatesExistingChunk) {
+    return incomingText;
+  }
+  const previousText = entry.chunks
+    .filter((chunk) => chunk.kind === "content" && isSameAssistantChunkIdentity(chunk.id, baseChunkId))
+    .map((chunk) => chunk.text)
+    .join("");
+  if (!previousText || !incomingText.startsWith(previousText)) {
+    return incomingText;
+  }
+  return incomingText.slice(previousText.length);
 }
 
 function upsertThinkingChunk(
@@ -340,6 +411,85 @@ function hasTimelineBoundaryBetween(
     entry.timelineSequence > start &&
     entry.timelineSequence < end,
   );
+}
+
+function splitAssistantEntriesAtTimelineBoundaries(
+  entries: SessionTimelineEntry[],
+): SessionTimelineEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.kind !== "assistant_message" || entry.chunks.length < 2) {
+      return [entry];
+    }
+    const groups: SessionAssistantTimelineChunk[][] = [];
+    for (const chunk of entry.chunks) {
+      const currentGroup = groups.at(-1);
+      const previousChunk = currentGroup?.at(-1);
+      if (
+        currentGroup &&
+        previousChunk &&
+        hasTimelineEntryBoundaryBetweenChunks(entries, previousChunk, chunk)
+      ) {
+        groups.push([chunk]);
+        continue;
+      }
+      if (currentGroup) {
+        currentGroup.push(chunk);
+        continue;
+      }
+      groups.push([chunk]);
+    }
+    if (groups.length < 2) {
+      return [entry];
+    }
+    return groups.map((chunks, index) => {
+      const segment: SessionTimelineAssistantEntry = {
+        ...entry,
+        id: resolveAssistantSegmentEntryId(entry.id, index),
+        chunks,
+      };
+      applyAssistantEntryBounds(segment);
+      return segment;
+    });
+  });
+}
+
+function hasTimelineEntryBoundaryBetweenChunks(
+  entries: SessionTimelineEntry[],
+  leftChunk: SessionAssistantTimelineChunk,
+  rightChunk: SessionAssistantTimelineChunk,
+) {
+  return entries.some((entry) =>
+    entry.kind !== "assistant_message" &&
+    isTimelineItemBetween(entry, leftChunk, rightChunk)
+  );
+}
+
+function isTimelineItemBetween(
+  item: { timelineSequence?: number; timestamp: string },
+  left: { timelineSequence?: number; timestamp: string },
+  right: { timelineSequence?: number; timestamp: string },
+) {
+  return compareTimelineItems({ item, index: 0 }, { item: left, index: -1 }) > 0 &&
+    compareTimelineItems({ item, index: 0 }, { item: right, index: 1 }) < 0;
+}
+
+function resolveAssistantSegmentEntryId(baseId: string, segmentIndex: number) {
+  return segmentIndex === 0 ? baseId : `${baseId}#p${segmentIndex}`;
+}
+
+function sortTimelineEntriesByDefinedSequence(
+  entries: SessionTimelineEntry[],
+) {
+  return entries
+    .map((entry, index) => ({ item: entry, index }))
+    .sort((left, right) => {
+      const sequenceDelta = compareOptionalTimelineSequence(
+        left.item.timelineSequence,
+        right.item.timelineSequence,
+      );
+      return sequenceDelta ?? left.index - right.index;
+    })
+    .map(({ item }) => item);
 }
 
 function upsertToolCallEntry(

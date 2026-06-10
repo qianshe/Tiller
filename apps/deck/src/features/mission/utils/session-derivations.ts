@@ -194,11 +194,6 @@ export function resolveSessionTitle(session: SessionSummary, preview = session.l
   return title || `${session.projectName} 任务`;
 }
 
-export function resolvePromptPlaceholder(agent?: { command?: string; args?: string[] } | null) {
-  const rawCommand = agent?.command?.trim();
-  const command = rawCommand
-    ?.replace(/^.*[\\/]/u, "")
-    .replace(/\.(cmd|exe|bat|ps1)$/iu, "")
-    .trim();
-  return `向 ${command || "ACP 舰员"} 下达指令；/ 调用命令`;
+export function resolvePromptPlaceholder(_agent?: { command?: string; args?: string[] } | null) {
+  return "Enter 发送消息 · Shift+Enter 换行 · / 命令 · Esc 取消";
 }

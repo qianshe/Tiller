@@ -57,6 +57,7 @@ const chatPaneSource = [
   readFileSync(resolve(currentDir, "../conversation/chat-pane-layout-model.ts"), "utf8"),
 ].join("\n");
 const composerSource = readFileSync(resolve(currentDir, "../composer/form.tsx"), "utf8");
+const promptAutosizeSource = readFileSync(resolve(currentDir, "../hooks/prompt-autosize.ts"), "utf8");
 const sessionCommandActionsSource = readFileSync(
   resolve(currentDir, "../actions/session-command-actions.ts"),
   "utf8",
@@ -145,14 +146,14 @@ test("mission message timeline keeps chat list props stable for unchanged messag
 });
 
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
-  assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_16px\)\)\]/);
+  assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_8px\)\)\]/);
   assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
   assert.match(plainMessagesSource, /ml-auto grid w-full justify-items-end/);
-  assert.match(plainMessagesSource, /plain-message-user-row flex w-full max-w-full items-start justify-end gap-1\.5/);
+  assert.match(plainMessagesSource, /plain-message-user-row flex w-full min-w-0 max-w-full items-start justify-end gap-1\.5/);
   assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
   assert.match(plainMessagesSource, /USER_MESSAGE_RAIL_CLASS = "w-fit max-w-\[min\(56rem,76%\)\]"/);
-  assert.match(plainMessagesSource, /\$\{messageBodyClassName\} \$\{USER_MESSAGE_RAIL_CLASS\} break-words/);
+  assert.match(plainMessagesSource, /\$\{messageBodyClassName\} \$\{USER_MESSAGE_RAIL_CLASS\} min-w-0 break-words/);
   assert.match(plainMessagesSource, /"rounded-\[14px\] border border-primary\/20 bg-primary-soft\/25 px-3 py-2/);
   assert.doesNotMatch(plainMessagesSource, /rounded-2xl border border-border-ghost bg-surface-elevated/);
   assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
@@ -176,14 +177,16 @@ test("assistant markdown uses readable prose styling without paragraph marker bu
   assert.match(markdownSource, /markdown-message space-y-1\.5 text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(markdownSource, /markdown-heading my-1\.5 text-\[15px\]/);
   assert.match(markdownSource, /className="my-1\.5 list-disc space-y-0\.5 pl-4/);
-  assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12\.5px\]/);
+  assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12\.5px\] text-foreground/);
   assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
   assert.match(markdownSource, /className="overflow-x-auto/);
   assert.match(markdownSource, /className="not-prose flex items-center justify-between/);
 });
 
 test("plain conversation text uses compact small-pane typography", () => {
-  assert.match(plainMessagesSource, /messageBodyClassName\} min-w-0 text-\[12\.5px\] leading-\[1\.5\]/);
+  assert.match(plainMessagesSource, /grid-cols-\[0\.375rem_minmax\(0,1fr\)\][^\n]+gap-x-1/);
+  assert.doesNotMatch(plainMessagesSource, /grid-cols-\[0\.75rem_minmax\(0,1fr\)\][^\n]+gap-x-2\.5/);
+  assert.match(plainMessagesSource, /messageBodyClassName\} min-w-0 max-w-full overflow-hidden text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-thinking-content[^\n]+text-\[12\.5px\] leading-\[1\.5\]/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+text-\[12\.5px\]/);
   assert.match(chatPaneSource, /reserveFloatingDockSpace \? "pb-0" : "pb-8"/);
@@ -193,7 +196,7 @@ test("plain conversation text uses compact small-pane typography", () => {
   assert.match(chatPaneSource, /reserveFloatingDockSpace=\{hasSessionContent\}/);
   assert.match(chatPaneSource, /data-session-floating-dock-spacer/);
   assert.match(chatPaneSource, /position="dock-top"/);
-  assert.match(chatPaneSource, /overflow-auto px-3 pb-9 pt-2\.5/);
+  assert.match(chatPaneSource, /overflow-y-auto overflow-x-hidden px-2\.5 pb-9 pt-2\.5/);
 });
 
 test("markdown normalizes text only when the source changes", () => {
@@ -924,11 +927,20 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*min-height:\s*1\.5rem;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*padding:\s*2px 2px 10px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*caret-color:\s*var\(--primary\);/s);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*padding:\s*8px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*padding:\s*0;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*box-shadow:\s*none;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*background:\s*transparent;/s);
   assert.match(composerSource, /mission-composer-deck[^\n]+wb-pane-sunken/);
   assert.doesNotMatch(composerSource, /mission-order-editor[^\n]+bg-surface-sunken/);
   assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
   assert.match(shellStylesSource, /\.mission-mobile-mode \.mission-sidebar-toggle\s*{[^}]*display:\s*none;/s);
+});
+
+test("mission prompt autosize respects the textarea CSS max height", () => {
+  assert.match(promptAutosizeSource, /const textareaStyles = window\.getComputedStyle\(textarea\)/);
+  assert.match(promptAutosizeSource, /Number\.parseFloat\(textareaStyles\.maxHeight/);
+  assert.match(promptAutosizeSource, /maxHeight = Math\.min\(maxHeight, cssMaxHeight\)/);
+  assert.match(promptAutosizeSource, /textarea\.scrollHeight > maxHeight \? "auto" : "hidden"/);
 });
 
 test("mission wide headers truncate long titles instead of consuming layout", () => {

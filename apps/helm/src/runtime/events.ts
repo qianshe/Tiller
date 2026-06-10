@@ -19,12 +19,10 @@ import {
   normalizeRuntimeThinkingToolCall,
   startNextAssistantResponseSegment,
 } from "./segment-state";
-import { createRuntimeStreamLogController } from "./stream-log";
 import type { TillerLogFields } from "../logging/logger";
 import { createSessionUpdateRecord } from "./session-updates/reducer";
 
 const liveEventSequenceBySession = new Map<string, number>();
-const runtimeStreamLog = createRuntimeStreamLogController();
 const ignoredUserEchoSummaryBySession = new Map<string, IgnoredUserEchoSummary>();
 const runtimePlanLogStateBySession = new Map<string, RuntimePlanLogState>();
 const commandOutputSummaryBySession = new Map<string, Map<string, CommandOutputSummary>>();
@@ -177,14 +175,6 @@ function sequenceFromRuntimeEvent(event: SessionRuntimeEvent) {
   }
 }
 
-function flushAssistantStreamSummary(sessionId: string, context: HelmHandlerContext) {
-  runtimeStreamLog.closeAssistantStreamLog(
-    sessionId,
-    context,
-    nextLiveEventSequence,
-    runtimeLogFields,
-  );
-}
 
 function logRuntimePlanUpdate(
   sessionId: string,
@@ -308,7 +298,6 @@ export function handleRuntimeEvent(
         meta: { status: event.status },
       });
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
       } else {
@@ -336,7 +325,6 @@ export function handleRuntimeEvent(
       return;
     case "message":
       if (event.message.role === "user") {
-        flushAssistantStreamSummary(sessionId, context);
         startNextAssistantResponseSegment(sessionId);
         if (shouldIgnoreRuntimeUserMessage(sessionId, event.message, context)) {
           recordIgnoredUserEcho(sessionId, event.message);
@@ -361,7 +349,6 @@ export function handleRuntimeEvent(
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
       }
-      runtimeStreamLog.ensureAssistantStreamLogStarted(sessionId, message, context, nextLiveEventSequence, runtimeLogFields);
       const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "agent_message",
@@ -371,7 +358,6 @@ export function handleRuntimeEvent(
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       logRuntimeInfo(context, "runtime.permission.requested", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -411,7 +397,6 @@ export function handleRuntimeEvent(
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       bumpAssistantStreamSegment(sessionId);
       const orderedToolCall = {
         ...event.toolCall,
@@ -427,7 +412,6 @@ export function handleRuntimeEvent(
         meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
       });
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       bumpAssistantStreamSegment(sessionId);
       const orderedChunk = {
         ...event.chunk,
@@ -464,7 +448,6 @@ export function handleRuntimeEvent(
     case "diff-update":
       persistRuntimeSessionUpdate(sessionId, event, context);
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       logRuntimeInfo(context, "runtime.diff.updated", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -475,7 +458,6 @@ export function handleRuntimeEvent(
       return;
     case "config-options": {
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       const current = context.sessions.get(sessionId)?.summary ??
         context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
       const resolvedModel = current?.model ?? event.state.model;
@@ -525,7 +507,6 @@ export function handleRuntimeEvent(
     }
     case "model-options": {
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       logRuntimeDebug(context, "runtime.model_options.received", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -553,7 +534,6 @@ export function handleRuntimeEvent(
     }
     case "available-commands": {
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       logRuntimeDebug(context, "runtime.available_commands.received", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -578,7 +558,6 @@ export function handleRuntimeEvent(
     }
     case "error":
       flushLiveAssistantMessage(sessionId, context);
-      flushAssistantStreamSummary(sessionId, context);
       logRuntimeError(context, "runtime.error", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),

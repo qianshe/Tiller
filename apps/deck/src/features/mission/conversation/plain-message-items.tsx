@@ -15,10 +15,11 @@ import {
 } from "./plain-tool-model";
 import { splitStreamingMarkdown } from "./streaming-markdown";
 
-const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
-const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
+const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
+const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
 
 type MessageImageSourceEnvironment = {
@@ -179,7 +180,7 @@ function PlainMessageImageLightbox({
 }
 
 function shouldCollapsePlainMessage(text: string) {
-  const lineCount = text.split(/\r?\n/).length;
+  const lineCount = text.split(/\r?\n/u).length;
   return (
     lineCount > COLLAPSED_MESSAGE_LINE_LIMIT ||
     text.length > COLLAPSED_MESSAGE_CHAR_LIMIT
@@ -259,7 +260,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         `plain-${message.role}`,
         isStreaming && "plain-message-streaming",
         isAssistant
-          ? "mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5"
+          ? `mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
           : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
@@ -296,10 +297,10 @@ export const PlainMessageItem = memo(function PlainMessageItem({
           </div>
         ) : null}
         {message.role === "user" ? (
-          <div className="plain-message-user-row flex w-full max-w-full items-start justify-end gap-1.5">
+          <div className="plain-message-user-row flex w-full min-w-0 max-w-full items-start justify-end gap-1.5">
             <div
               className={cn(
-                `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} break-words text-[12.5px] leading-[1.5]`,
+                `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} min-w-0 break-words text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
                 "rounded-[14px] border border-primary/20 bg-primary-soft/25 px-3 py-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]",
               )}
             >
@@ -309,7 +310,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         ) : (
           <div
             className={cn(
-              `${messageBodyClassName} min-w-0 text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
+              `${messageBodyClassName} min-w-0 max-w-full overflow-hidden text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
             )}
           >
             {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
@@ -415,7 +416,7 @@ export function PlainThinkingItem({
   }, [shouldAutoOpen]);
 
   return (
-    <div className="plain-thinking-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+    <div className={`plain-thinking-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-thinking min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -473,7 +474,7 @@ export function PlainToolGroupItem({
   }, [hasNewerContent, isRunning]);
 
   return (
-    <div className="plain-tool-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+    <div className={`plain-tool-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-tool-group min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -536,7 +537,7 @@ export function PlainSubagentItem({
   }, [shouldAutoOpen]);
 
   return (
-    <div className="plain-subagent-row mr-auto grid w-full max-w-full grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-2.5 text-muted-foreground">
+    <div className={`plain-subagent-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-subagent min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"

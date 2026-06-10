@@ -27,6 +27,11 @@ export function usePromptAutosize({
     }
     const textarea = promptRef.current;
     let maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.5));
+    const textareaStyles = window.getComputedStyle(textarea);
+    const cssMaxHeight = Number.parseFloat(textareaStyles.maxHeight || "");
+    if (Number.isFinite(cssMaxHeight) && cssMaxHeight > 0) {
+      maxHeight = Math.min(maxHeight, cssMaxHeight);
+    }
     const draftForm = textarea.closest<HTMLFormElement>(
       ".mission-draft-chat .mission-order-editor",
     );

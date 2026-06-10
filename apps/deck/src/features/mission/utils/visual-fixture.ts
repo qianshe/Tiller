@@ -258,6 +258,29 @@ export function createMissionVisualFixture({
       { decision: "deny", label: "取消" },
     ],
   };
+  const permissionRequests: PermissionRequest[] = [
+    permissionRequest,
+    {
+      id: "visual-permission-2",
+      command: "shell_command: pnpm --filter @tiller/deck test -- src/features/dashboard/ui/page.test.tsx",
+      reason: "需要运行 Dashboard 页面测试确认活动流改动。",
+      cwd,
+      options: [
+        { decision: "allow_session", label: "本会话允许" },
+        { decision: "deny", label: "取消" },
+      ],
+    },
+    {
+      id: "visual-permission-3",
+      command: "file.write apps/deck/src/features/dashboard/ui/activity-stream.tsx",
+      reason: "需要写入 Dashboard 活动流组件。",
+      cwd,
+      options: [
+        { decision: "allow", label: "同意" },
+        { decision: "deny", label: "取消" },
+      ],
+    },
+  ];
 
   return {
     helms: [
@@ -443,19 +466,19 @@ flowchart LR
         },
       ],
     },
-    permissionRequests: {
-      [sessionId]: permissionRequest,
-    },
-    approvalItemsById: {
-      [permissionRequest.id]: {
+    permissionRequests: Object.fromEntries(
+      permissionRequests.map((request) => [request.id, request]),
+    ),
+    approvalItemsById: Object.fromEntries(
+      permissionRequests.map((request) => [request.id, {
         sessionId,
-        request: permissionRequest,
+        request,
         createdAt: now,
         resolving: false,
-      },
-    },
+      }]),
+    ),
     pendingApprovalIdsBySession: {
-      [sessionId]: [permissionRequest.id],
+      [sessionId]: permissionRequests.map((request) => request.id),
     },
   };
 }

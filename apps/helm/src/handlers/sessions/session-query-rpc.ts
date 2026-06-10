@@ -3,17 +3,22 @@ import { pageSessionTimeline } from "@tiller/persistence";
 import {
   buildSessionTimelineFromLegacy,
   resolveTimelineRepresentedUserMessageIds,
+  splitSessionTimelineAssistantEntriesAtBoundaries,
 } from "@tiller/shared";
 import type {
   AgentMessage,
   AgentToolCall,
   SessionSummary,
   SessionTimelineEntry,
+  SessionUpdateRecord,
 } from "@tiller/shared";
+import { reduceSessionUpdateRecords } from "../../runtime/session-updates/records";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
 const TIMELINE_ENTRY_PAGE_LIMIT = 96;
+const TIMELINE_UPDATE_REPAIR_PAGE_LIMIT = 200;
+const TIMELINE_UPDATE_REPAIR_RECORD_LIMIT = 1_000;
 
 function logSessionDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
   if (context.logger) {
@@ -202,21 +207,43 @@ function listSessionTimelinePage(
     window: "message" as const,
   };
   const persistedPage = context.sessionTimelineStore.listPage?.(params.sessionId, options);
-  if (persistedPage && isAuthoritativeTimelinePage(persistedPage, options.before)) {
+  const normalizedPersistedPage = persistedPage
+    ? {
+        ...persistedPage,
+        entries: splitSessionTimelineAssistantEntriesAtBoundaries(persistedPage.entries),
+      }
+    : undefined;
+  const repairedPersistedTimeline = !options.before && normalizedPersistedPage
+    ? repairTimelineFromSessionUpdates(params.sessionId, context, normalizedPersistedPage.entries)
+    : undefined;
+  if (repairedPersistedTimeline) {
+    const stored = context.sessionTimelineStore.replace(params.sessionId, repairedPersistedTimeline);
+    return pageSessionTimeline(stored, options);
+  }
+  if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
     if (
       options.before ||
-      !isTimelineMissingVisibleUserAnchors(persistedPage.entries, visibleMessages)
+      !isTimelineMissingVisibleHistoryAnchors(normalizedPersistedPage.entries, visibleMessages)
     ) {
-      return persistedPage;
+      return normalizedPersistedPage;
     }
   }
 
-  const existing = persistedPage ? [] : (context.sessionTimelineStore.list?.(params.sessionId) ?? []);
+  const existing = persistedPage
+    ? []
+    : splitSessionTimelineAssistantEntriesAtBoundaries(context.sessionTimelineStore.list?.(params.sessionId) ?? []);
+  const repairedExistingTimeline = !options.before && existing.length
+    ? repairTimelineFromSessionUpdates(params.sessionId, context, existing)
+    : undefined;
+  if (repairedExistingTimeline) {
+    const stored = context.sessionTimelineStore.replace(params.sessionId, repairedExistingTimeline);
+    return pageSessionTimeline(stored, options);
+  }
   if (
     existing.length &&
     (
       options.before ||
-      !isTimelineMissingVisibleUserAnchors(existing, visibleMessages)
+      !isTimelineMissingVisibleHistoryAnchors(existing, visibleMessages)
     )
   ) {
     return pageSessionTimeline(existing, options);
@@ -229,6 +256,85 @@ function listSessionTimelinePage(
 
   const stored = context.sessionTimelineStore.replace(params.sessionId, rebuilt);
   return pageSessionTimeline(stored, options);
+}
+
+function repairTimelineFromSessionUpdates(
+  sessionId: string,
+  context: HelmHandlerContext,
+  entries: SessionTimelineEntry[],
+) {
+  if (!shouldInspectSessionUpdateRepair(entries) || !context.sessionUpdateStore?.listPage) {
+    return undefined;
+  }
+  const replayed = rebuildSessionTimelineFromUpdates(sessionId, context);
+  return shouldReplaceTimelineWithUpdateReplay(entries, replayed) ? replayed : undefined;
+}
+
+function shouldInspectSessionUpdateRepair(entries: SessionTimelineEntry[]) {
+  return entries.some((entry) => entry.kind === "tool_call") &&
+    entries.some((entry) =>
+      entry.kind === "assistant_message" &&
+      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim())
+    );
+}
+
+function rebuildSessionTimelineFromUpdates(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const records = listSessionUpdateRecordsForRepair(sessionId, context);
+  if (!records.length) {
+    return [];
+  }
+  return splitSessionTimelineAssistantEntriesAtBoundaries(
+    reduceSessionUpdateRecords(records).entries,
+  );
+}
+
+function listSessionUpdateRecordsForRepair(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const records: SessionUpdateRecord[] = [];
+  let before: string | undefined;
+  do {
+    const page = context.sessionUpdateStore.listPage(sessionId, {
+      limit: TIMELINE_UPDATE_REPAIR_PAGE_LIMIT,
+      before,
+    });
+    records.push(...(page.updates ?? []));
+    before = page.hasMore ? page.nextCursor : undefined;
+  } while (before && records.length < TIMELINE_UPDATE_REPAIR_RECORD_LIMIT);
+  return records
+    .slice(0, TIMELINE_UPDATE_REPAIR_RECORD_LIMIT)
+    .sort((left, right) => left.sequence - right.sequence);
+}
+
+function shouldReplaceTimelineWithUpdateReplay(
+  current: SessionTimelineEntry[],
+  replayed: SessionTimelineEntry[],
+) {
+  if (!replayed.length || !shouldInspectSessionUpdateRepair(replayed)) {
+    return false;
+  }
+  const currentSequences = collectAssistantContentSequences(current);
+  return Array.from(collectAssistantContentSequences(replayed))
+    .some((sequence) => !currentSequences.has(sequence));
+}
+
+function collectAssistantContentSequences(entries: SessionTimelineEntry[]) {
+  const sequences = new Set<number>();
+  for (const entry of entries) {
+    if (entry.kind !== "assistant_message") {
+      continue;
+    }
+    for (const chunk of entry.chunks) {
+      if (chunk.kind === "content" && typeof chunk.timelineSequence === "number") {
+        sequences.add(chunk.timelineSequence);
+      }
+    }
+  }
+  return sequences;
 }
 
 function isAuthoritativeTimelinePage(
@@ -250,8 +356,93 @@ function isTimelineMissingVisibleUserAnchors(
   return representedUserIds.size < visibleUsers.length;
 }
 
+function isTimelineMissingVisibleHistoryAnchors(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+) {
+  return isTimelineMissingVisibleUserAnchors(entries, visibleMessages) ||
+    isTimelineMissingVisibleAssistantToolBoundaries(entries, visibleMessages);
+}
+
+function isTimelineMissingVisibleAssistantToolBoundaries(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+) {
+  if (
+    !entries.some((entry) => entry.kind === "assistant_message") ||
+    !entries.some((entry) => entry.kind === "tool_call")
+  ) {
+    return false;
+  }
+  const visibleAssistantMessages = visibleMessages.filter(isVisibleAssistantMessage);
+  if (!visibleAssistantMessages.length) {
+    return false;
+  }
+  const representedSnapshots = collectTimelineAssistantContentSnapshots(entries);
+  return visibleAssistantMessages.some((message) =>
+    !representedSnapshots.some((snapshot) => representsAssistantMessage(snapshot, message))
+  );
+}
+
 function isVisibleUserMessage(message: AgentMessage) {
   return message.role === "user" && Boolean(message.text.trim());
+}
+
+function isVisibleAssistantMessage(message: AgentMessage) {
+  return message.role === "assistant" && Boolean(message.text.trim());
+}
+
+type AssistantContentSnapshot = {
+  text: string;
+  timestamp: string;
+  timelineSequence?: number;
+};
+
+function collectTimelineAssistantContentSnapshots(
+  entries: SessionTimelineEntry[],
+): AssistantContentSnapshot[] {
+  const snapshots: AssistantContentSnapshot[] = [];
+  const cumulativeTextByEntryKey = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.kind !== "assistant_message") {
+      continue;
+    }
+    const entryKey = resolveAssistantSnapshotEntryKey(entry.id);
+    let cumulativeText = cumulativeTextByEntryKey.get(entryKey) ?? "";
+    for (const chunk of entry.chunks) {
+      if (chunk.kind !== "content") {
+        continue;
+      }
+      cumulativeText += chunk.text;
+      snapshots.push({
+        text: cumulativeText.trim(),
+        timestamp: chunk.timestamp,
+        timelineSequence: chunk.timelineSequence,
+      });
+    }
+    cumulativeTextByEntryKey.set(entryKey, cumulativeText);
+  }
+  return snapshots;
+}
+
+function resolveAssistantSnapshotEntryKey(entryId: string) {
+  return entryId.replace(/#p\d+$/u, "");
+}
+
+function representsAssistantMessage(
+  snapshot: AssistantContentSnapshot,
+  message: AgentMessage,
+) {
+  if (snapshot.text !== message.text.trim()) {
+    return false;
+  }
+  if (
+    typeof snapshot.timelineSequence === "number" &&
+    typeof message.timelineSequence === "number"
+  ) {
+    return snapshot.timelineSequence === message.timelineSequence;
+  }
+  return snapshot.timestamp === message.timestamp;
 }
 
 function rebuildSessionTimelineFromLegacy(sessionId: string, context: HelmHandlerContext) {

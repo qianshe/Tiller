@@ -74,6 +74,48 @@ test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by ti
   );
 });
 
+test("buildSessionTimelineFromLegacy splits cumulative assistant text around tool boundaries", () => {
+  const timeline = buildSessionTimelineFromLegacy({
+    messages: [
+      message({ id: "assistant-1", role: "assistant", text: "先说明。", timelineSequence: 1 }),
+      message({ id: "assistant-1", role: "assistant", text: "先说明。工具后继续。", timelineSequence: 3 }),
+    ],
+    toolCalls: [
+      toolCall({
+        id: "tool-1",
+        commandId: "tool-1",
+        kind: "search",
+        output: "result",
+        status: "completed",
+        title: "Search",
+        timelineSequence: 2,
+      }),
+    ],
+    outputs: [],
+  });
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:tool-1"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+  assert.deepEqual(
+    timeline.map((entry) =>
+      entry.kind === "assistant_message"
+        ? entry.chunks.map((chunk) => [chunk.text, chunk.timelineSequence])
+        : [entry.id, entry.timelineSequence],
+    ),
+    [
+      [["先说明。", 1]],
+      ["tool:tool-1", 2],
+      [["工具后继续。", 3]],
+    ],
+  );
+});
+
 test("resolveTimelineRepresentedUserMessageIds consumes repeated user prompt anchors one-to-one", () => {
   const localUsers = [
     {

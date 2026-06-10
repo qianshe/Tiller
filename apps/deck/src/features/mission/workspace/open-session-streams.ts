@@ -21,9 +21,35 @@ type PlanHydrationRetryScheduler = (
   handler: () => void,
   delayMs: number,
 ) => unknown;
+type HydrationHistoryEntry = {
+  hasMore: boolean;
+  loading: boolean;
+  [key: string]: unknown;
+};
+type HydrationHistoryState = Record<string, HydrationHistoryEntry | undefined>;
 
 const PLAN_HYDRATION_RETRY_DELAY_MS = 1_500;
 const MAX_PLAN_HYDRATION_RETRIES = 5;
+
+export function markSessionHistoryEntriesLoading(
+  current: HydrationHistoryState,
+  sessionIds: readonly string[],
+): HydrationHistoryState {
+  let next: HydrationHistoryState | null = null;
+  sessionIds.forEach((sessionId) => {
+    const currentEntry = current[sessionId];
+    if (currentEntry?.loading) {
+      return;
+    }
+    next ??= { ...current };
+    next[sessionId] = (
+      currentEntry
+        ? { ...currentEntry, loading: true }
+        : { hasMore: false, loading: true }
+    );
+  });
+  return next ?? current;
+}
 
 export function handlePlanHydrationRequestFailure({
   sessionId,
@@ -255,13 +281,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
 
     if (messageSessionIds.length > 0) {
       setMessageHistoryState((current: any) => {
-        const next = { ...current };
-        messageSessionIds.forEach((sessionId) => {
-          if (!next[sessionId]) {
-            next[sessionId] = { hasMore: false, loading: true };
-          }
-        });
-        return next;
+        return markSessionHistoryEntriesLoading(current, messageSessionIds);
       });
       messageSessionIds.forEach((sessionId) => {
         void dispatch(client, "session/list_messages", {
@@ -277,13 +297,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
         openSessionPlanHydrationRef.current.add(sessionId);
       });
       setActivityHistoryState((current: any) => {
-        const next = { ...current };
-        activitySessionIds.forEach((sessionId) => {
-          if (!next[sessionId]) {
-            next[sessionId] = { hasMore: false, loading: true };
-          }
-        });
-        return next;
+        return markSessionHistoryEntriesLoading(current, activitySessionIds);
       });
       activitySessionIds.forEach((sessionId) => {
         const isPlanHydration = planActivitySessionIdSet.has(sessionId);

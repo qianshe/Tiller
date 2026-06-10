@@ -37,6 +37,7 @@ import { SlashCommandPopup } from "./slash-command-popup";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
   contextSession?: SessionSummary | null;
+  isMobile?: boolean;
   worktreePickerRef: MutableRefObject<HTMLDivElement | null>;
   worktreePickerOpen: boolean;
   setWorktreePickerOpen: Dispatch<SetStateAction<boolean>>;
@@ -124,6 +125,7 @@ type MissionComposerProps = {
 export function MissionComposer({
   activeSession,
   contextSession,
+  isMobile = false,
   worktreePickerRef,
   worktreePickerOpen,
   setWorktreePickerOpen,
@@ -327,13 +329,19 @@ export function MissionComposer({
             </div>
           ) : null}
           </div>
-          <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
-            <Icon name="server" size={10} />
-            <span className="truncate">{composerAgentLabel}</span>
-          </button>
-          <span className="ml-1 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground tabular">
-            → {composerSession?.title ?? draftPromptPlaceholder}
-          </span>
+          {isMobile ? null : (
+            <button type="button" className="h-5 px-1.5 rounded text-2xs bg-surface hover:bg-surface-emphasis flex items-center gap-1 min-w-0">
+              <Icon name="server" size={10} />
+              <span className="truncate">{composerAgentLabel}</span>
+            </button>
+          )}
+          {isMobile ? (
+            <span className="min-w-0 flex-1" aria-hidden="true" />
+          ) : (
+            <span className="ml-1 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground tabular">
+              → {composerSession?.title ?? draftPromptPlaceholder}
+            </span>
+          )}
         </div>
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments

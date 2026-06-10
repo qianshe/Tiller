@@ -14,6 +14,7 @@ import { PlainMessageItem, PlainSubagentItem, PlainThinkingItem, PlainToolGroupI
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
+const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
 
 type PlainMessagesProps = {
   sessionId: string | null;
@@ -50,6 +51,10 @@ export function PlainMessages({
   const pendingRemoteHistoryRevealRef = useRef(false);
   const previousDisplayItemsLengthRef = useRef(0);
   const renderRevealRequestedRef = useRef(false);
+  const timelineCacheRef = useRef<{
+    items: SessionTimelineEntry[];
+    sessionId: string | null;
+  }>({ items: [], sessionId: null });
   const [visibleItemLimit, setVisibleItemLimit] = useState(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
 
   useEffect(() => {
@@ -58,26 +63,39 @@ export function PlainMessages({
     previousDisplayItemsLengthRef.current = 0;
     renderRevealRequestedRef.current = false;
     localScrollSnapshotRef.current = null;
+    timelineCacheRef.current = { items: [], sessionId };
     setVisibleItemLimit(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
   }, [sessionId]);
+
+  if (timelineCacheRef.current.sessionId !== sessionId) {
+    timelineCacheRef.current = { items: [], sessionId };
+  }
+  if (timelineItems.length > 0) {
+    timelineCacheRef.current = { items: timelineItems, sessionId };
+  }
+  const effectiveTimelineItems =
+    timelineItems.length > 0 || !historyState?.loading
+      ? timelineItems
+      : timelineCacheRef.current.items;
 
   const displayMessages = useMemo(
     () => resolvePlainDisplayMessages(items, boundaryTimestamps),
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
-    () => timelineItems.length
+    () => effectiveTimelineItems.length
       ? buildPlainConversationItemsFromTimelineWithLiveMessages(
-          timelineItems,
+          effectiveTimelineItems,
           displayMessages,
           showThinking,
+          Boolean(historyState?.hasMore),
         )
       : buildPlainConversationItems(
           displayMessages,
           showThinking ? thinkingToolCalls : [],
           toolCalls,
         ),
-    [displayMessages, showThinking, thinkingToolCalls, timelineItems, toolCalls],
+    [displayMessages, effectiveTimelineItems, showThinking, thinkingToolCalls, toolCalls],
   );
   const visibleItems = useMemo(
     () => resolveVisiblePlainConversationItems(displayItems, visibleItemLimit),
@@ -190,7 +208,7 @@ export function PlainMessages({
   );
 
   return (
-    <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_16px))] gap-y-1">
+    <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_8px))] gap-y-1">
       {startsInsideEarlierContext ? (
         <div className="plain-history-boundary mx-auto flex w-full max-w-[min(620px,72%)] items-center gap-2 text-xs text-muted-foreground/70">
           <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-border-ghost" />
@@ -599,6 +617,7 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   timelineItems: SessionTimelineEntry[],
   messages: AgentMessage[],
   showThinking: boolean,
+  omitMessagesBeforeTimelineWindow: boolean,
 ): PlainConversationItem[] {
   const timelineConversationItems = buildPlainConversationItemsFromTimeline(
     timelineItems,
@@ -609,10 +628,15 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     timelineItems,
     messages,
   );
+  const timelineWindowLowerBound = resolveTimelineWindowLowerBound(timelineItems);
   const liveMessageItems = messages.flatMap((message, index) => {
     if (
       timelineMessageIds.has(message.id) ||
-      representedLiveUserMessageIds.has(message.id)
+      representedLiveUserMessageIds.has(message.id) ||
+      (
+        omitMessagesBeforeTimelineWindow &&
+        isMessageBeforeTimelineWindow(message, timelineWindowLowerBound)
+      )
     ) {
       return [];
     }
@@ -632,12 +656,68 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     return timelineConversationItems;
   }
 
-  const sorted = [...timelineConversationItems, ...liveMessageItems].sort(
-    comparePlainConversationItems,
+  const sequencedLiveMessageItems = liveMessageItems.filter(
+    (item) => typeof item.timelineSequence === "number",
   );
-  return mergeAdjacentToolItems(
+  const unsequencedLiveMessageItems = liveMessageItems.filter(
+    (item) => typeof item.timelineSequence !== "number",
+  );
+  const sorted = [...timelineConversationItems, ...sequencedLiveMessageItems].sort(comparePlainConversationItems);
+  const mergedSequencedItems = mergeAdjacentToolItems(
     mergeAdjacentThinkingItems(mergeAdjacentMessageItems(sorted)),
   );
+  return [...mergedSequencedItems, ...unsequencedLiveMessageItems];
+}
+
+type TimelineWindowLowerBound = {
+  timestamp?: string;
+  timelineSequence?: number;
+};
+
+function resolveTimelineWindowLowerBound(
+  timelineItems: SessionTimelineEntry[],
+): TimelineWindowLowerBound | undefined {
+  const first = timelineItems[0];
+  if (!first) {
+    return undefined;
+  }
+  if (first.kind === "assistant_message") {
+    const firstChunk = first.chunks[0];
+    return {
+      timestamp: firstChunk?.timestamp ?? first.timestamp,
+      timelineSequence: firstChunk?.timelineSequence ?? first.timelineSequence,
+    };
+  }
+  if (first.kind === "tool_call") {
+    return {
+      timestamp: first.timestamp,
+      timelineSequence: first.timelineSequence ?? first.toolCall.timelineSequence,
+    };
+  }
+  return {
+    timestamp: first.timestamp,
+    timelineSequence: first.timelineSequence ?? first.message.timelineSequence,
+  };
+}
+
+function isMessageBeforeTimelineWindow(
+  message: AgentMessage,
+  lowerBound: TimelineWindowLowerBound | undefined,
+) {
+  if (!lowerBound) {
+    return false;
+  }
+  if (
+    typeof message.timelineSequence === "number" &&
+    typeof lowerBound.timelineSequence === "number"
+  ) {
+    return message.timelineSequence < lowerBound.timelineSequence;
+  }
+  const messageTime = Date.parse(message.timestamp);
+  const lowerBoundTime = lowerBound.timestamp ? Date.parse(lowerBound.timestamp) : Number.NaN;
+  return Number.isFinite(messageTime) &&
+    Number.isFinite(lowerBoundTime) &&
+    messageTime < lowerBoundTime;
 }
 
 function collectTimelineMessageIds(timelineItems: SessionTimelineEntry[]) {
@@ -885,14 +965,21 @@ function extractOpenCodeWrapperOriginalPrompt(text: string) {
 }
 
 function comparePlainConversationItems(left: PlainConversationItem, right: PlainConversationItem) {
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
   const timelineDelta = compareOptionalTimelineSequence(
     left.timelineSequence,
     right.timelineSequence,
   );
   if (timelineDelta !== null) {
+    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
+      timelineDelta,
+      timestampDelta,
+    );
+    if (sequenceResetTimestampDelta !== null) {
+      return sequenceResetTimestampDelta;
+    }
     return timelineDelta;
   }
-  const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
   if (timestampDelta !== 0) {
     return timestampDelta;
   }
@@ -908,6 +995,30 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
+}
+
+function compareSequenceResetTimestampDelta(
+  timelineDelta: number,
+  timestampDelta: number,
+) {
+  if (
+    timestampDelta === 0 ||
+    Math.abs(timestampDelta) < TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS
+  ) {
+    return null;
+  }
+  return Math.sign(timelineDelta) === Math.sign(timestampDelta)
+    ? null
+    : timestampDelta;
+}
+
+function comparePlainItemTimestamps(leftTimestamp: string, rightTimestamp: string) {
+  const leftTime = Date.parse(leftTimestamp);
+  const rightTime = Date.parse(rightTimestamp);
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
+    return 0;
+  }
+  return leftTime - rightTime;
 }
 
 function plainConversationKindRank(item: PlainConversationItem) {

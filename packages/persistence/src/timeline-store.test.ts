@@ -123,7 +123,7 @@ test("sqlite timeline upsertMessage updates one entry without moving its persist
   }
 });
 
-test("sqlite timeline upsertMessage updates one row in a 20k-entry fixture", () => {
+test("sqlite timeline upsertMessage updates one entry in a 20k-entry fixture", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-large-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const store = createSqliteSessionTimelineStore(dbPath);
@@ -195,6 +195,53 @@ test("sqlite timeline upsertToolCall merges thinking into one assistant entry", 
         ? persisted[0].chunks.map((chunk) => chunk.kind)
         : [],
       ["thinking", "content"],
+    );
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline upsertMessage splits assistant entries across tool boundaries", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "先说明。", timelineSequence: 1 }));
+    store.upsertToolCall("session-1", toolCall({
+      id: "tool-1",
+      kind: "read",
+      status: "completed",
+      title: "Read",
+      timelineSequence: 2,
+    }));
+    const updated = store.upsertMessage(
+      "session-1",
+      message({ id: "assistant-1", role: "assistant", text: "先说明。工具后继续。", timelineSequence: 3 }),
+    );
+
+    assert.equal(updated?.id, "assistant-1#p1");
+    const persisted = store.list("session-1");
+    assert.deepEqual(
+      persisted.map((entry) => [entry.kind, entry.id]),
+      [
+        ["assistant_message", "assistant-1"],
+        ["tool_call", "tool:tool-1"],
+        ["assistant_message", "assistant-1#p1"],
+      ],
+    );
+    assert.deepEqual(
+      persisted.map((entry) =>
+        entry.kind === "assistant_message"
+          ? entry.chunks.map((chunk) => chunk.kind === "content" ? chunk.text : chunk.kind)
+          : entry.id
+      ),
+      [
+        ["先说明。"],
+        "tool:tool-1",
+        ["工具后继续。"],
+      ],
     );
   } finally {
     store.close();

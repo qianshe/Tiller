@@ -140,6 +140,12 @@ test("session cards use real borders so scroll content cannot cover the frame", 
   assert.doesNotMatch(draft, /inset 0 0 0 1px var\(--border-ghost\)/);
 });
 
+test("session card bodies do not expose horizontal scrolling", () => {
+  assert.match(sessionCardsSource, /overflow-y-auto overflow-x-hidden \[scrollbar-width:none\]/);
+  assert.match(sessionCardsSource, /overflow-y-auto overflow-x-hidden px-2\.5 pb-9 pt-2\.5/);
+  assert.doesNotMatch(sessionCardsSource, /overflow-auto/);
+});
+
 test("SessionCard keeps bottom breathing room when no dock is visible", () => {
   const html = renderToStaticMarkup(
     <SessionCard
@@ -217,6 +223,13 @@ test("session scroll-to-bottom affordance stays available in flat and card modes
   assert.doesNotMatch(sessionCardsSource, /ResizeObserver/);
   assert.doesNotMatch(sessionCardsSource, /getBoundingClientRect\(\)\.height/);
   assert.doesNotMatch(sessionCardsSource, /!\s*flat\s*\?\s*\(\s*<ScrollToBottomButton/);
+});
+
+test("session scroll visibility measurement does not enqueue unchanged layout state", () => {
+  assert.match(sessionCardsSource, /const showScrollToBottomRef = useRef\(false\)/);
+  assert.match(sessionCardsSource, /showScrollToBottomRef\.current === next/);
+  assert.match(sessionCardsSource, /setScrollToBottomVisible\(next\)/);
+  assert.doesNotMatch(sessionCardsSource, /setShowScrollToBottom\(\(current\) =>/);
 });
 
 test("session dock remains a floating overlay with scroll padding reserved", () => {

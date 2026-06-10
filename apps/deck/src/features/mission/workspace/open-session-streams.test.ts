@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   handlePlanHydrationRequestFailure,
   handlePlanHydrationRequestResult,
+  markSessionHistoryEntriesLoading,
 } from "./open-session-streams";
 
 const openSessionStreamsSourceText = readFileSync(
@@ -179,6 +180,42 @@ test("handlePlanHydrationRequestResult stops requeueing after missing-plan retri
     hasMore: false,
     loading: false,
   });
+});
+
+test("markSessionHistoryEntriesLoading marks existing entries as loading", () => {
+  const current = {
+    "session-1": {
+      nextCursor: "cursor-1",
+      hasMore: true,
+      timelineHasMore: true,
+      loading: false,
+    },
+  };
+
+  const next = markSessionHistoryEntriesLoading(current, ["session-1", "session-2"]);
+
+  assert.notEqual(next, current);
+  assert.deepEqual(next["session-1"], {
+    nextCursor: "cursor-1",
+    hasMore: true,
+    timelineHasMore: true,
+    loading: true,
+  });
+  assert.deepEqual(next["session-2"], {
+    hasMore: false,
+    loading: true,
+  });
+});
+
+test("markSessionHistoryEntriesLoading avoids unchanged loading updates", () => {
+  const current = {
+    "session-1": {
+      hasMore: false,
+      loading: true,
+    },
+  };
+
+  assert.equal(markSessionHistoryEntriesLoading(current, ["session-1"]), current);
 });
 
 test("open session stream hydration reruns when Helm reconnects", () => {

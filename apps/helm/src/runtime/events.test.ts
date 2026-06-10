@@ -312,22 +312,8 @@ test("runtime session.message persists and broadcasts streaming chunks without s
 
   assert.deepEqual(
     structuredLogs(capture).map((log) => log.event),
-    ["runtime.assistant_stream.completed", "runtime.status.changed"],
+    ["runtime.status.changed"],
   );
-  const streamLog = findStructuredLog(capture, "runtime.assistant_stream.completed");
-  assert.equal(streamLog?.level, "info");
-  assert.equal(streamLog?.fields?.role, "assistant");
-  assert.equal(streamLog?.fields?.segments, 1);
-  assert.equal(streamLog?.fields?.chunks, 2);
-  assert.equal(streamLog?.fields?.uniqueMessages, 1);
-  assert.equal(streamLog?.fields?.assistantChars, "你好\n主人".length);
-  assert.equal(typeof streamLog?.fields?.durationMs, "number");
-  assert.ok(Number(streamLog?.fields?.durationMs) >= 0);
-  assert.match(
-    String(streamLog?.fields?.firstMessageId),
-    /^session-1-msg-\d{6}-\d{6}-pmessage1/u,
-  );
-  assert.equal(streamLog?.fields?.firstMessageId, streamLog?.fields?.lastMessageId);
   assert.equal(findStructuredLog(capture, "runtime.status.changed")?.fields?.status, "idle");
   assert.doesNotMatch(JSON.stringify(structuredLogs(capture)), /preview|text|你|好|主人/u);
   assert.deepEqual(writes, []);
@@ -526,9 +512,8 @@ test("runtime assistant stream closes before the next stage log", () => {
 
   assert.deepEqual(
     structuredLogs(capture).map((log) => log.event),
-    ["runtime.assistant_stream.completed", "runtime.status.changed"],
+    ["runtime.status.changed"],
   );
-  assert.equal(findStructuredLog(capture, "runtime.assistant_stream.completed")?.level, "info");
   assert.deepEqual(writes, []);
 });
 

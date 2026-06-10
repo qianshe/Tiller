@@ -52,6 +52,7 @@ function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary 
 }
 
 function createContext(options: {
+  sessionId?: string;
   activeRuntime?: {
     prompt: (text: string, content?: any[]) => Promise<void>;
     sessionCapabilities?: { imageInput?: boolean };
@@ -63,7 +64,8 @@ function createContext(options: {
   restoreOk?: boolean;
   summary?: Partial<SessionSummary>;
 } = {}) {
-  const summary = createSummary(options.summary);
+  const sessionId = options.sessionId ?? "session-1";
+  const summary = createSummary({ id: sessionId, ...options.summary });
   const persisted: AgentMessage[] = [];
   const sessionUpdates: SessionUpdateRecord[] = [];
   const timelineEntries: SessionTimelineEntry[] = [];
@@ -73,7 +75,7 @@ function createContext(options: {
   let currentSummary = summary;
   const sessions = new Map<string, any>();
   if (options.activeRuntime) {
-    sessions.set("session-1", {
+    sessions.set(sessionId, {
       summary,
       agent: { id: "codex" },
       worktree: { id: "worktree-1", path: "D:/repo" },
@@ -142,7 +144,7 @@ function createContext(options: {
           message: "restore unavailable",
         };
       }
-      sessions.set("session-1", {
+      sessions.set(sessionId, {
         summary,
         agent: { id: "codex" },
         worktree: { id: "worktree-1", path: "D:/repo" },
@@ -213,6 +215,55 @@ test("sendPromptToSession records the local user prompt as a timeline entry befo
     ["user_message"],
   );
   assert.equal(timelineEntries[0]?.id, "client-timeline");
+});
+
+test("sendPromptToSession appends prompts after restored timeline history", async () => {
+  const prompted: string[] = [];
+  const { context, persisted, timelineEntries } = createContext({
+    sessionId: "session-seeded-prompt",
+    activeRuntime: {
+      prompt: async (text) => {
+        prompted.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  timelineEntries.push({
+    id: "old-final",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "old-final:content",
+        kind: "content",
+        text: "旧回复结尾",
+        timestamp: "2026-06-10T09:00:00.000Z",
+        timelineSequence: 237,
+      },
+    ],
+    timestamp: "2026-06-10T09:00:00.000Z",
+    updatedAt: "2026-06-10T09:00:00.000Z",
+    timelineSequence: 237,
+  });
+
+  await sendPromptToSession(
+    {
+      sessionId: "session-seeded-prompt",
+      text: "新的审核 prompt",
+      clientMessageId: "client-after-history",
+    },
+    context,
+  );
+  await flushPromises();
+
+  assert.deepEqual(prompted, ["新的审核 prompt"]);
+  assert.equal(persisted[0]?.timelineSequence, 238);
+  assert.deepEqual(
+    timelineEntries.map((entry) => [entry.kind, entry.timelineSequence]),
+    [
+      ["assistant_message", 237],
+      ["user_message", 238],
+    ],
+  );
 });
 
 test("sendPromptToSession subscribes the prompting socket before runtime dispatch", async () => {

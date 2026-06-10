@@ -75,7 +75,7 @@ export function buildSessionStreamHydrationPlan({
       !messageHistoryState[sessionId] ||
       hasIncompleteCachedMessageHistory({
         cachedMessages: messagesBySession?.[sessionId],
-        hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
+        hasTimelineCache: hasNonEmptySessionTimelineCache(sessionTimelineBySession, sessionId),
         historyState: messageHistoryState[sessionId],
         session: sessionById.get(sessionId),
       })
@@ -153,4 +153,11 @@ function hasOwnSessionCache<T>(
   sessionId: string,
 ) {
   return Boolean(cache && Object.prototype.hasOwnProperty.call(cache, sessionId));
+}
+
+function hasNonEmptySessionTimelineCache(
+  cache: Record<string, SessionTimelineEntry[] | undefined> | undefined,
+  sessionId: string,
+) {
+  return Boolean(cache?.[sessionId]?.length);
 }

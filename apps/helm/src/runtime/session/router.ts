@@ -1,9 +1,13 @@
 import type {
+  AgentMessage,
   AgentPromptContent,
+  AgentToolCall,
+  CommandChunk,
   SessionConfigOptionValue,
   SessionQueuedPrompt,
   SessionReasoningEffort,
   SessionSummary,
+  SessionTimelineEntry,
 } from "@tiller/shared";
 import { SendPromptUseCase } from "@tiller/core";
 import {
@@ -12,7 +16,12 @@ import {
 } from "@tiller/shared";
 import { applyUserPromptToSummary } from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
-import { allocateLiveEventSequence, flushLiveAssistantMessage, persistRuntimeSessionUpdate } from "../events";
+import {
+  allocateLiveEventSequence,
+  flushLiveAssistantMessage,
+  persistRuntimeSessionUpdate,
+  seedLiveEventSequenceForSession,
+} from "../events";
 import type { HelmHandlerContext } from "../../handlers/context";
 import { emitHelmPromptTrace } from "../prompt-trace";
 import { persistTimelineMessage } from "./timeline-effects";
@@ -134,6 +143,45 @@ function applyDispatchingUserPromptToSummary(
   };
 }
 
+function seedPromptTimelineSequence(sessionId: string, context: HelmHandlerContext) {
+  seedLiveEventSequenceForSession(sessionId, collectPersistedTimelineSequences(sessionId, context));
+}
+
+function collectPersistedTimelineSequences(
+  sessionId: string,
+  context: HelmHandlerContext,
+): Array<number | undefined> {
+  const sequences: Array<number | undefined> = [];
+  try {
+    for (const entry of (context.sessionTimelineStore?.list?.(sessionId) ?? []) as SessionTimelineEntry[]) {
+      sequences.push(entry.timelineSequence);
+      if (entry.kind === "assistant_message") {
+        sequences.push(...entry.chunks.map((chunk) => chunk.timelineSequence));
+      } else if (entry.kind === "tool_call") {
+        sequences.push(entry.toolCall.timelineSequence);
+      } else {
+        sequences.push(entry.message.timelineSequence);
+      }
+    }
+  } catch {
+    // Best-effort seeding. If timeline storage is unavailable, fall back to
+    // message/artifact stores below and let normal prompt dispatch continue.
+  }
+  try {
+    sequences.push(...(context.sessionMessageStore?.list?.(sessionId) ?? []).map((message: AgentMessage) => message.timelineSequence));
+  } catch {
+    // Ignore unavailable legacy message storage.
+  }
+  try {
+    const artifacts = context.sessionArtifactStore?.get?.(sessionId);
+    sequences.push(...(artifacts?.toolCalls ?? []).map((toolCall: AgentToolCall) => toolCall.timelineSequence));
+    sequences.push(...(artifacts?.outputs ?? []).map((output: CommandChunk) => output.timelineSequence));
+  } catch {
+    // Ignore unavailable artifact storage.
+  }
+  return sequences;
+}
+
 export async function sendPromptImmediately(
   item: SessionQueuedPrompt,
   context: HelmHandlerContext,
@@ -148,6 +196,7 @@ export async function sendPromptImmediately(
   }
 
   subscribePromptingSocketToSession(item.sessionId, context);
+  seedPromptTimelineSequence(item.sessionId, context);
 
   const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
   logRuntimeInfo(context, "runtime.prompt.send_started", {
@@ -332,6 +381,7 @@ export async function sendPromptToSession(
   );
 
   subscribePromptingSocketToSession(params.sessionId, context);
+  seedPromptTimelineSequence(params.sessionId, context);
 
   const useCase = new SendPromptUseCase<SessionQueuedPrompt, ReturnType<typeof context.promptQueue.snapshot>, ReturnType<typeof createUserPromptMessage>, AgentPromptContent>({
     runtime: {

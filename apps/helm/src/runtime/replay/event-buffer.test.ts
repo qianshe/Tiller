@@ -481,7 +481,7 @@ test("restore replay buffer persists ordered local timeline entries", () => {
   );
 });
 
-test("restore replay buffer keeps same assistant id content around tools as separate timeline chunks", () => {
+test("restore replay buffer splits same assistant id content around tools as separate timeline entries", () => {
   const stores = createStores();
   const buffer = createRestoreReplayBuffer("session-1", stores.context);
 
@@ -530,15 +530,24 @@ test("restore replay buffer keeps same assistant id content around tools as sepa
     [
       ["assistant_message", "assistant-1", 1],
       ["tool_call", "tool:tool-read", 2],
+      ["assistant_message", "assistant-1#p1", 3],
     ],
   );
   const assistantEntry = stores.timelineEntries.find((entry) => entry.id === "assistant-1");
+  const secondAssistantEntry = stores.timelineEntries.find((entry) => entry.id === "assistant-1#p1");
   assert.deepEqual(
     assistantEntry?.kind === "assistant_message"
       ? assistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.timelineSequence])
       : [],
     [
       ["content", "工具前说明。", 1],
+    ],
+  );
+  assert.deepEqual(
+    secondAssistantEntry?.kind === "assistant_message"
+      ? secondAssistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.timelineSequence])
+      : [],
+    [
       ["content", "工具后继续。", 3],
     ],
   );

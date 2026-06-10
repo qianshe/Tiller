@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
 import { createSessionPromptQueueManager } from "../../runtime/session/prompt-queue";
+import { createSessionUpdateRecord } from "../../runtime/session-updates/reducer";
 
 function createPromptQueueContextExtras() {
   const promptQueue = createSessionPromptQueueManager();
@@ -408,6 +409,384 @@ test("session/list_messages repairs repeated prompts when one visible user ancho
       ["user_message", "user-2"],
       ["assistant_message", "assistant-1#p0"],
     ],
+  );
+});
+
+test("session/list_messages repairs timelines with assistant chunks collapsed across tool calls", async () => {
+  const sessionId = "session-collapsed-tool-boundary";
+  const messages = [
+    {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "先说明。",
+      timestamp: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "先说明。工具后继续。",
+      timestamp: "2026-05-24T10:00:03.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const toolCalls = [
+    {
+      id: "tool-1",
+      kind: "search" as const,
+      title: "Search",
+      status: "completed" as const,
+      output: "result",
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  const staleTimeline = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content" as const,
+          text: "先说明。工具后继续。",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 1,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:01.000Z",
+      updatedAt: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call" as const,
+      toolCall: toolCalls[0],
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => messages,
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls }),
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: staleTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as {
+    timeline: Array<{
+      id: string;
+      kind: string;
+      timelineSequence?: number;
+      chunks?: Array<{ text: string; timelineSequence?: number }>;
+    }>;
+  };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:tool-1"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+  assert.deepEqual(
+    result.timeline.map((entry) =>
+      entry.kind === "assistant_message"
+        ? entry.chunks?.map((chunk) => [chunk.text, chunk.timelineSequence])
+        : [entry.id, entry.timelineSequence],
+    ),
+    [
+      [["先说明。", 1]],
+      ["tool:tool-1", 2],
+      [["工具后继续。", 3]],
+    ],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:tool-1"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+});
+
+test("session/list_messages normalizes persisted assistant entries crossing tool boundaries", async () => {
+  const sessionId = "session-persisted-crossing-tool-boundary";
+  const messages = [
+    {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "先说明。",
+      timestamp: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "先说明。工具后继续。",
+      timestamp: "2026-05-24T10:00:03.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const persistedTimeline = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content" as const,
+          text: "先说明。",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 1,
+        },
+        {
+          id: "assistant-1:content:3",
+          kind: "content" as const,
+          text: "工具后继续。",
+          timestamp: "2026-05-24T10:00:03.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:01.000Z",
+      updatedAt: "2026-05-24T10:00:03.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call" as const,
+      toolCall: {
+        id: "tool-1",
+        kind: "search" as const,
+        title: "Search",
+        status: "completed" as const,
+        output: "result",
+        timestamp: "2026-05-24T10:00:02.000Z",
+        updatedAt: "2026-05-24T10:00:02.000Z",
+        timelineSequence: 2,
+      },
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => {
+          throw new Error("authoritative persisted timeline should not rebuild legacy messages");
+        },
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => {
+          throw new Error("authoritative persisted timeline should not rebuild artifacts");
+        },
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: persistedTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; kind: string }> };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:tool-1"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+  assert.deepEqual(replacedTimeline, []);
+});
+
+test("session/list_messages repairs persisted timelines missing assistant updates from replay records", async () => {
+  const sessionId = "session-persisted-missing-assistant-updates";
+  const runtimeSessionId = "runtime-1";
+  const providerId = "codex";
+  const messages = [
+    {
+      id: "user-1",
+      role: "user" as const,
+      text: "开始",
+      timestamp: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-collapsed",
+      role: "assistant" as const,
+      text: "先说明。工具后继续。",
+      timestamp: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  const toolCall = {
+    id: "tool-1",
+    kind: "search" as const,
+    title: "Search",
+    status: "completed" as const,
+    output: "result",
+    timestamp: "2026-05-24T10:00:02.000Z",
+    updatedAt: "2026-05-24T10:00:02.000Z",
+    timelineSequence: 3,
+  };
+  const persistedTimeline = [
+    {
+      id: "user-1",
+      kind: "user_message" as const,
+      message: messages[0],
+      timestamp: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-collapsed",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-collapsed:content",
+          kind: "content" as const,
+          text: "先说明。工具后继续。",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+      ],
+      timestamp: "2026-05-24T10:00:01.000Z",
+      updatedAt: "2026-05-24T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:tool-1",
+      kind: "tool_call" as const,
+      toolCall,
+      timestamp: "2026-05-24T10:00:02.000Z",
+      updatedAt: "2026-05-24T10:00:02.000Z",
+      timelineSequence: 3,
+    },
+  ];
+  const replayRecords = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 1,
+      event: { type: "message", message: messages[0] },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 2,
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-before",
+          role: "assistant" as const,
+          text: "先说明。",
+          timestamp: "2026-05-24T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 3,
+      event: { type: "tool-call", toolCall },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 4,
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-after",
+          role: "assistant" as const,
+          text: "工具后继续。",
+          timestamp: "2026-05-24T10:00:03.000Z",
+          timelineSequence: 4,
+        },
+      },
+    }),
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => {
+          throw new Error("repair should use session update replay before legacy rebuild");
+        },
+        listPage: () => ({ messages, hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => {
+          throw new Error("repair should not read legacy artifacts");
+        },
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: persistedTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+      sessionUpdateStore: {
+        listPage: () => ({ updates: replayRecords, hasMore: false }),
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string; kind: string; timelineSequence?: number }> };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    [
+      ["user_message", "user-1", 1],
+      ["assistant_message", "assistant-before", 2],
+      ["tool_call", "tool:tool-1", 3],
+      ["assistant_message", "assistant-after", 4],
+    ],
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    result.timeline.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
   );
 });
 

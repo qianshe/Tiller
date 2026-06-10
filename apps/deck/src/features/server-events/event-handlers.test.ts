@@ -356,6 +356,449 @@ test("session/list_messages replaces initial timeline instead of mixing stale en
   );
 });
 
+test("session/list_messages keeps artifact tool calls when initial history returns late", () => {
+  resetStore();
+  const loadedEntry: SessionTimelineEntry = {
+    id: "loaded-assistant",
+    kind: "assistant_message",
+    chunks: [
+      {
+        id: "loaded-assistant:content",
+        kind: "content",
+        text: "服务端历史回复",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+    ],
+    timestamp: "2026-05-17T10:00:00.000Z",
+    updatedAt: "2026-05-17T10:00:00.000Z",
+    timelineSequence: 1,
+  };
+  const artifactToolCall: SessionTimelineEntry = {
+    id: "tool:call-1",
+    kind: "tool_call",
+    toolCall: {
+      id: "call-1",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+    timestamp: "2026-05-17T10:00:01.000Z",
+    updatedAt: "2026-05-17T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": [loadedEntry, artifactToolCall] },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: [loadedEntry],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["loaded-assistant", "tool:call-1"],
+  );
+});
+
+test("session/get_artifacts keeps existing timeline reference for unchanged tool calls", () => {
+  resetStore();
+  const toolCall: AgentToolCall = {
+    id: "call-1",
+    kind: "shell",
+    title: "Shell",
+    status: "completed",
+    output: "stdout",
+    timestamp: "2026-05-17T10:00:01.000Z",
+    updatedAt: "2026-05-17T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  const existingTimeline: SessionTimelineEntry[] = [{
+    id: "tool:call-1",
+    kind: "tool_call",
+    toolCall,
+    timestamp: toolCall.timestamp,
+    updatedAt: toolCall.updatedAt,
+    timelineSequence: toolCall.timelineSequence,
+  }];
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": existingTimeline },
+  });
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "session-1",
+      outputs: [],
+      diffs: [],
+      toolCalls: [toolCall],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+});
+
+test("session/get_artifacts waits for initial history before projecting tool calls", () => {
+  resetStore();
+  const toolCall: AgentToolCall = {
+    id: "call-1",
+    kind: "shell",
+    title: "Shell",
+    status: "completed",
+    output: "stdout",
+    timestamp: "2026-05-17T10:00:01.000Z",
+    updatedAt: "2026-05-17T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  useDeckStore.setState({
+    messageHistoryState: {
+      "session-1": { loading: true, hasMore: false },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "session-1",
+      outputs: [],
+      diffs: [],
+      toolCalls: [toolCall],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
+});
+
+test("session/list_messages preserves richer cached tool metadata", () => {
+  resetStore();
+  const richToolCall: AgentToolCall = {
+    id: "call-1",
+    kind: "shell",
+    title: "Shell",
+    status: "completed",
+    output: "stdout",
+    timestamp: "2026-05-17T10:00:01.000Z",
+    updatedAt: "2026-05-17T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  const rawToolCall: AgentToolCall = {
+    ...richToolCall,
+    kind: "tool",
+    title: "Tool call call-1",
+  };
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [{
+        id: "tool:call-1",
+        kind: "tool_call",
+        toolCall: richToolCall,
+        timestamp: richToolCall.timestamp,
+        updatedAt: richToolCall.updatedAt,
+        timelineSequence: richToolCall.timelineSequence,
+      }],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: [{
+        id: "tool:call-1",
+        kind: "tool_call",
+        toolCall: rawToolCall,
+        timestamp: rawToolCall.timestamp,
+        updatedAt: rawToolCall.updatedAt,
+        timelineSequence: rawToolCall.timelineSequence,
+      }],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+
+  assert.equal(handled, true);
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "shell");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "Shell");
+});
+
+test("session/list_messages keeps richer split timeline when equivalent coarse history arrives later", () => {
+  resetStore();
+  const toolCall: AgentToolCall = {
+    id: "call-1",
+    kind: "shell",
+    title: "Shell",
+    status: "completed",
+    timestamp: "2026-05-17T10:00:02.000Z",
+    updatedAt: "2026-05-17T10:00:02.000Z",
+    timelineSequence: 3,
+  };
+  const splitTimeline: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: {
+        id: "user-1",
+        role: "user",
+        text: "开始",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "先检查。",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall,
+      timestamp: "2026-05-17T10:00:02.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      timelineSequence: 3,
+    },
+    {
+      id: "assistant-1#p1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content:4",
+        kind: "content",
+        text: "再总结。",
+        timestamp: "2026-05-17T10:00:03.000Z",
+        timelineSequence: 4,
+      }],
+      timestamp: "2026-05-17T10:00:03.000Z",
+      updatedAt: "2026-05-17T10:00:03.000Z",
+      timelineSequence: 4,
+    },
+  ];
+  const coarseTimeline: SessionTimelineEntry[] = [
+    splitTimeline[0]!,
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        ...(splitTimeline[1]!.kind === "assistant_message" ? splitTimeline[1]!.chunks : []),
+        ...(splitTimeline[3]!.kind === "assistant_message" ? splitTimeline[3]!.chunks : []),
+      ],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:03.000Z",
+      timelineSequence: 2,
+    },
+    splitTimeline[2]!,
+  ];
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": splitTimeline },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: coarseTimeline,
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
+});
+
+test("session/list_messages keeps split timeline when coarse history coalesces assistant text and drops tool sequences", () => {
+  resetStore();
+  const firstTool: AgentToolCall = {
+    id: "call-1",
+    kind: "shell",
+    title: "Shell 1",
+    status: "completed",
+    timestamp: "2026-05-17T10:00:02.000Z",
+    updatedAt: "2026-05-17T10:00:02.000Z",
+    timelineSequence: 3,
+  };
+  const secondTool: AgentToolCall = {
+    id: "call-2",
+    kind: "read",
+    title: "Read 2",
+    status: "completed",
+    timestamp: "2026-05-17T10:00:04.000Z",
+    updatedAt: "2026-05-17T10:00:04.000Z",
+    timelineSequence: 5,
+  };
+  const splitTimeline: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: {
+        id: "user-1",
+        role: "user",
+        text: "开始",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-turn",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-turn:content",
+        kind: "content",
+        text: "先检查。",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: firstTool,
+      timestamp: firstTool.timestamp,
+      updatedAt: firstTool.updatedAt,
+      timelineSequence: firstTool.timelineSequence,
+    },
+    {
+      id: "assistant-turn#p1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-turn:content:4",
+        kind: "content",
+        text: "再读取。",
+        timestamp: "2026-05-17T10:00:03.000Z",
+        timelineSequence: 4,
+      }],
+      timestamp: "2026-05-17T10:00:03.000Z",
+      updatedAt: "2026-05-17T10:00:03.000Z",
+      timelineSequence: 4,
+    },
+    {
+      id: "tool:call-2",
+      kind: "tool_call",
+      toolCall: secondTool,
+      timestamp: secondTool.timestamp,
+      updatedAt: secondTool.updatedAt,
+      timelineSequence: secondTool.timelineSequence,
+    },
+    {
+      id: "assistant-turn#p2",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-turn:content:6",
+        kind: "content",
+        text: "最后总结。",
+        timestamp: "2026-05-17T10:00:05.000Z",
+        timelineSequence: 6,
+      }],
+      timestamp: "2026-05-17T10:00:05.000Z",
+      updatedAt: "2026-05-17T10:00:05.000Z",
+      timelineSequence: 6,
+    },
+  ];
+  const coarseTimeline: SessionTimelineEntry[] = [
+    splitTimeline[0]!,
+    {
+      id: "assistant-turn",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-turn:content",
+        kind: "content",
+        text: "先检查。再读取。最后总结。",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        timelineSequence: 2,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:05.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: { ...firstTool, timelineSequence: undefined },
+      timestamp: firstTool.timestamp,
+      updatedAt: firstTool.updatedAt,
+    },
+    {
+      id: "tool:call-2",
+      kind: "tool_call",
+      toolCall: { ...secondTool, timelineSequence: undefined },
+      timestamp: secondTool.timestamp,
+      updatedAt: secondTool.updatedAt,
+    },
+  ];
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": splitTimeline },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: coarseTimeline,
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
+});
+
 test("session/list_messages preserves active local timeline entries when initial history returns late", () => {
   resetStore();
   const loadedEntry: SessionTimelineEntry = {

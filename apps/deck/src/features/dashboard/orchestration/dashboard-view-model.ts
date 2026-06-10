@@ -35,6 +35,13 @@ type DashboardPlanSummary = {
   label: string;
 };
 
+const DASHBOARD_APPROVAL_DECISIONS: PermissionDecision[] = [
+  "deny",
+  "allow",
+  "allow_session",
+  "allow_always",
+];
+
 function dashboardText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -80,6 +87,10 @@ export function resolveDashboardApprovalDecision(
     ?? "allow";
 }
 
+export function resolveDashboardApprovalDecisions(): PermissionDecision[] {
+  return [...DASHBOARD_APPROVAL_DECISIONS];
+}
+
 export function buildDashboardViewModel(input: DashboardInput) {
   const activeHelmLabel = input.activeHelm
     ? `${input.activeHelm.name ?? "Local Helm"} · ${input.activeHelm.host ?? input.defaultDaemonHost}:${input.activeHelm.port ?? input.defaultDaemonPort}`
@@ -116,7 +127,10 @@ export function buildDashboardViewModel(input: DashboardInput) {
         ?? dashboardText(request.url)
         ?? "权限请求",
       allowDecision: resolveDashboardApprovalDecision(request.options),
+      decisions: resolveDashboardApprovalDecisions(),
       agentName: session?.agentName ?? request.agentName ?? request.agentId,
+      projectName: session?.projectName,
+      worktreeName: session?.worktreeName,
       sessionName: session
         ? input.resolveDisplaySessionTitle(session)
         : dashboardText(sessionId) ?? "未知会话",
@@ -132,6 +146,8 @@ export function buildDashboardViewModel(input: DashboardInput) {
   const sessions = input.sessions.map((session) => ({
     id: session.id,
     title: input.resolveDisplaySessionTitle(session),
+    projectName: session.projectName,
+    worktreeName: session.worktreeName,
     agentName: session.agentName,
     status: input.statuses?.[session.id] ?? session.status,
     updatedAt: session.updatedAt,

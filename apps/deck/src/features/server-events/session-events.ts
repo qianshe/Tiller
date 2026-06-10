@@ -305,18 +305,38 @@ export function applySessionResult(
       }
       if (Array.isArray(payload.timeline)) {
         const shouldReplaceTimeline = !payload.before && !payload.timelineBefore;
-        store.setSessionTimeline((current) => ({
-          ...current,
-          [payload.sessionId]: shouldReplaceTimeline
+        store.setSessionTimeline((current) => {
+          const currentEntries = current[payload.sessionId] ?? [];
+          const incomingEntries = payload.timeline as SessionTimelineEntry[];
+          const nextEntries = shouldReplaceTimeline
             ? replaceInitialTimelineHistory(
-                current[payload.sessionId] ?? [],
-                payload.timeline as SessionTimelineEntry[],
+                currentEntries,
+                incomingEntries,
               )
             : mergeTimelineEntries(
-                payload.timeline as SessionTimelineEntry[],
-                current[payload.sessionId] ?? [],
-              ),
-        }));
+                incomingEntries,
+                currentEntries,
+              );
+          debugTimelineTransition(
+            payload.sessionId,
+            shouldReplaceTimeline ? "session/list_messages:replace" : "session/list_messages:merge",
+            currentEntries,
+            incomingEntries,
+            nextEntries,
+            {
+              before: payload.before,
+              timelineBefore: payload.timelineBefore,
+              keptCurrent: nextEntries === currentEntries,
+            },
+          );
+          if (nextEntries === currentEntries) {
+            return current;
+          }
+          return {
+            ...current,
+            [payload.sessionId]: nextEntries,
+          };
+        });
       }
       store.setMessageHistoryState((current) => ({
         ...current,
@@ -352,7 +372,9 @@ export function applySessionResult(
         ...outputToolCalls,
         ...(payload.toolCalls ?? []),
       ]);
-      appendToolCallsToSessionTimeline(store, payload.sessionId, artifactToolCalls);
+      if (shouldAppendArtifactToolCallsToTimeline(store, payload.sessionId)) {
+        appendToolCallsToSessionTimeline(store, payload.sessionId, artifactToolCalls);
+      }
       applySessionPlanPayload(store, payload.sessionId, payload.plan);
       store.setDiffs((current) => ({
         ...current,
@@ -528,6 +550,17 @@ export function applySessionResult(
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
 
+function shouldAppendArtifactToolCallsToTimeline(
+  store: DeckStore,
+  sessionId: string,
+) {
+  const currentTimeline = store.sessionTimeline[sessionId] ?? [];
+  if (currentTimeline.length > 0) {
+    return true;
+  }
+  return !store.messageHistoryState[sessionId]?.loading;
+}
+
 function appendToolCallsToSessionTimeline(
   store: DeckStore,
   sessionId: string,
@@ -537,15 +570,69 @@ function appendToolCallsToSessionTimeline(
     return;
   }
   store.setSessionTimeline((current) => {
-    const entries = [...(current[sessionId] ?? [])];
+    const currentEntries = current[sessionId] ?? [];
+    const entries = [...currentEntries];
     for (const toolCall of toolCalls) {
       appendToolCallToSessionTimeline(entries, toolCall);
     }
+    const nextEntries = sortSessionTimelineEntries(entries);
+    debugTimelineTransition(
+      sessionId,
+      "session/get_artifacts:tool-projection",
+      currentEntries,
+      toolCalls.map((toolCall) => ({
+        id: `tool:${toolCall.id}`,
+        kind: "tool_call" as const,
+        toolCall,
+        timestamp: toolCall.timestamp,
+        updatedAt: toolCall.updatedAt,
+        timelineSequence: toolCall.timelineSequence,
+      })),
+      nextEntries,
+      { toolCallCount: toolCalls.length },
+    );
+    if (sessionTimelineEntriesEqual(currentEntries, nextEntries)) {
+      return current;
+    }
     return {
       ...current,
-      [sessionId]: sortSessionTimelineEntries(entries),
+      [sessionId]: nextEntries,
     };
   });
+}
+
+function sessionTimelineEntriesEqual(
+  left: SessionTimelineEntry[],
+  right: SessionTimelineEntry[],
+) {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) =>
+    stableJsonValue(entry) === stableJsonValue(right[index])
+  );
+}
+
+function stableJsonValue(value: unknown): string {
+  return JSON.stringify(normalizeJsonValue(value));
+}
+
+function normalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeJsonValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(([key, entryValue]) => [key, normalizeJsonValue(entryValue)]),
+  );
 }
 
 function applySessionPlanPayload(
@@ -598,11 +685,290 @@ function replaceInitialTimelineHistory(
   current: SessionTimelineEntry[],
   incoming: SessionTimelineEntry[],
 ) {
-  const incomingIds = new Set(incoming.map((entry) => entry.id));
-  const activeLocalEntries = current.filter((entry) =>
-    !incomingIds.has(entry.id) && isActiveTimelineEntry(entry)
+  if (shouldKeepRicherCurrentTimeline(current, incoming)) {
+    return current;
+  }
+  const currentToolEntriesById = new Map(
+    current
+      .filter((entry): entry is Extract<SessionTimelineEntry, { kind: "tool_call" }> =>
+        entry.kind === "tool_call"
+      )
+      .map((entry) => [entry.id, entry] as const),
   );
-  return activeLocalEntries.length ? [...incoming, ...activeLocalEntries] : [...incoming];
+  const enrichedIncoming = incoming.map((entry) =>
+    entry.kind === "tool_call"
+      ? mergeIncomingToolTimelineEntry(entry, currentToolEntriesById.get(entry.id))
+      : entry
+  );
+  const incomingIds = new Set(enrichedIncoming.map((entry) => entry.id));
+  const retainedToolEntries = current.filter((entry) =>
+    !incomingIds.has(entry.id) && entry.kind === "tool_call"
+  );
+  const activeLocalEntries = current.filter((entry) =>
+    !incomingIds.has(entry.id) &&
+    entry.kind !== "tool_call" &&
+    isActiveTimelineEntry(entry)
+  );
+  const mergedHistory = retainedToolEntries.length
+    ? sortSessionTimelineEntries([...enrichedIncoming, ...retainedToolEntries])
+    : [...enrichedIncoming];
+  return activeLocalEntries.length ? [...mergedHistory, ...activeLocalEntries] : mergedHistory;
+}
+
+function shouldKeepRicherCurrentTimeline(
+  current: SessionTimelineEntry[],
+  incoming: SessionTimelineEntry[],
+) {
+  if (!incoming.length || current.length <= incoming.length) {
+    return false;
+  }
+  return sameStringMultiset(
+    collectTimelineMessageKeys(current),
+    collectTimelineMessageKeys(incoming),
+  ) &&
+    sameStringMultiset(
+      collectTimelineToolIdentityKeys(current),
+      collectTimelineToolIdentityKeys(incoming),
+    ) &&
+    (
+      sameStringMultiset(
+        collectTimelineAssistantChunkKeys(current),
+        collectTimelineAssistantChunkKeys(incoming),
+      ) ||
+      hasSameAssistantContentTranscript(current, incoming)
+    );
+}
+
+function collectTimelineMessageKeys(entries: SessionTimelineEntry[]) {
+  return entries.flatMap((entry) =>
+    entry.kind === "user_message" || entry.kind === "system_message"
+      ? [`${entry.kind}:${entry.message.id}:${entry.message.timelineSequence ?? ""}:${entry.message.text}`]
+      : []
+  );
+}
+
+function collectTimelineToolIdentityKeys(entries: SessionTimelineEntry[]) {
+  return entries.flatMap((entry) =>
+    entry.kind === "tool_call"
+      ? [entry.toolCall.id]
+      : []
+  );
+}
+
+function collectTimelineAssistantChunkKeys(entries: SessionTimelineEntry[]) {
+  return entries.flatMap((entry) => {
+    if (entry.kind !== "assistant_message") {
+      return [];
+    }
+    return entry.chunks.map((chunk) => {
+      if (chunk.kind === "content") {
+        return `content:${chunk.id}:${chunk.timelineSequence ?? ""}:${chunk.text}`;
+      }
+      return `thinking:${chunk.id}:${chunk.timelineSequence ?? ""}:${chunk.status}:${chunk.text}`;
+    });
+  });
+}
+
+function sameStringMultiset(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const counts = new Map<string, number>();
+  for (const item of left) {
+    counts.set(item, (counts.get(item) ?? 0) + 1);
+  }
+  for (const item of right) {
+    const count = counts.get(item);
+    if (!count) {
+      return false;
+    }
+    if (count === 1) {
+      counts.delete(item);
+    } else {
+      counts.set(item, count - 1);
+    }
+  }
+  return counts.size === 0;
+}
+
+function hasSameAssistantContentTranscript(
+  current: SessionTimelineEntry[],
+  incoming: SessionTimelineEntry[],
+) {
+  const currentText = collectAssistantContentTranscript(current);
+  if (!currentText) {
+    return false;
+  }
+  return currentText === collectAssistantContentTranscript(incoming);
+}
+
+function collectAssistantContentTranscript(entries: SessionTimelineEntry[]) {
+  return entries
+    .flatMap((entry) =>
+      entry.kind === "assistant_message"
+        ? entry.chunks.flatMap((chunk) => chunk.kind === "content" ? [chunk.text] : [])
+        : []
+    )
+    .join("");
+}
+
+const TIMELINE_DEBUG_STORAGE_KEY = "tillerTimelineDebug";
+
+function debugTimelineTransition(
+  sessionId: string,
+  source: string,
+  current: SessionTimelineEntry[],
+  incoming: SessionTimelineEntry[],
+  next: SessionTimelineEntry[],
+  extra: Record<string, unknown> = {},
+) {
+  if (!shouldDebugTimeline(sessionId)) {
+    return;
+  }
+  globalThis.console.debug("[tiller:timeline]", {
+    sessionId,
+    source,
+    ...extra,
+    current: summarizeTimelineForDebug(current),
+    incoming: summarizeTimelineForDebug(incoming),
+    next: summarizeTimelineForDebug(next),
+  });
+}
+
+function shouldDebugTimeline(sessionId: string) {
+  if (typeof globalThis.localStorage === "undefined") {
+    return false;
+  }
+  const value = globalThis.localStorage.getItem(TIMELINE_DEBUG_STORAGE_KEY);
+  if (!value) {
+    return false;
+  }
+  return value === "*" || value.split(/[,\s]+/u).includes(sessionId);
+}
+
+function summarizeTimelineForDebug(entries: SessionTimelineEntry[]) {
+  return {
+    length: entries.length,
+    kinds: entries.map((entry) => entry.kind),
+    assistantContentChunks: entries.reduce((count, entry) =>
+      entry.kind === "assistant_message"
+        ? count + entry.chunks.filter((chunk) => chunk.kind === "content").length
+        : count,
+    0),
+    toolIds: entries.flatMap((entry) => entry.kind === "tool_call" ? [entry.toolCall.id] : []),
+    contentLength: collectAssistantContentTranscript(entries).length,
+    tail: entries.slice(-8).map((entry) => summarizeTimelineEntryForDebug(entry)),
+  };
+}
+
+function summarizeTimelineEntryForDebug(entry: SessionTimelineEntry) {
+  if (entry.kind === "tool_call") {
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      seq: entry.timelineSequence ?? entry.toolCall.timelineSequence,
+      title: entry.toolCall.title,
+      toolKind: entry.toolCall.kind,
+    };
+  }
+  if (entry.kind === "assistant_message") {
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      seq: entry.timelineSequence,
+      chunks: entry.chunks.map((chunk) => ({
+        id: chunk.id,
+        kind: chunk.kind,
+        seq: chunk.timelineSequence,
+        textLength: chunk.text.length,
+        textStart: chunk.text.slice(0, 32),
+      })),
+    };
+  }
+  return {
+    id: entry.id,
+    kind: entry.kind,
+    seq: entry.timelineSequence ?? entry.message.timelineSequence,
+    textStart: entry.message.text.slice(0, 32),
+  };
+}
+
+function mergeIncomingToolTimelineEntry(
+  incoming: Extract<SessionTimelineEntry, { kind: "tool_call" }>,
+  current: Extract<SessionTimelineEntry, { kind: "tool_call" }> | undefined,
+) {
+  if (!current) {
+    return incoming;
+  }
+  const incomingTool = incoming.toolCall;
+  const currentTool = current.toolCall;
+  return {
+    ...incoming,
+    toolCall: {
+      ...currentTool,
+      ...incomingTool,
+      commandId: incomingTool.commandId ?? currentTool.commandId,
+      input: incomingTool.input ?? currentTool.input,
+      kind: strongerToolKind(incomingTool.kind, currentTool.kind),
+      output: incomingTool.output ?? currentTool.output,
+      status: mergedToolStatus(incomingTool.status, currentTool.status),
+      title: strongerToolTitle(incomingTool, currentTool),
+    },
+  };
+}
+
+function strongerToolKind(
+  incoming: AgentToolCall["kind"],
+  current: AgentToolCall["kind"],
+) {
+  return toolKindRank(current) > toolKindRank(incoming) ? current : incoming;
+}
+
+function toolKindRank(kind: AgentToolCall["kind"]) {
+  const ranks: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 3,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return ranks[kind];
+}
+
+function mergedToolStatus(
+  incoming: AgentToolCall["status"],
+  current: AgentToolCall["status"],
+) {
+  if ((current === "completed" || current === "failed") && incoming === "running") {
+    return current;
+  }
+  return incoming;
+}
+
+function strongerToolTitle(
+  incoming: AgentToolCall,
+  current: AgentToolCall,
+) {
+  if (isWeakToolTitle(incoming.title, incoming) && !isWeakToolTitle(current.title, current)) {
+    return current.title;
+  }
+  return incoming.title || current.title;
+}
+
+function isWeakToolTitle(title: string, toolCall: AgentToolCall) {
+  const normalizedTitle = title.trim().toLowerCase();
+  return !normalizedTitle ||
+    normalizedTitle === "tool" ||
+    normalizedTitle === toolCall.id.toLowerCase() ||
+    normalizedTitle === toolCall.commandId?.toLowerCase() ||
+    normalizedTitle.startsWith("tool call ");
 }
 
 function isActiveTimelineEntry(entry: SessionTimelineEntry) {

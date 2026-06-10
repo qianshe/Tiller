@@ -718,6 +718,7 @@ export function MissionWorktree(props: any) {
             <MissionComposer
               activeSession={activeSession}
               contextSession={selectedComposerSession}
+              isMobile={isMissionMobile}
               worktreePickerRef={worktreePickerRef}
               worktreePickerOpen={worktreePickerOpen}
               setWorktreePickerOpen={setWorktreePickerOpen}

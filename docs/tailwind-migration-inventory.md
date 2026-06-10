@@ -5,13 +5,13 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1764
+- Total lines: 1767
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 732
+- Lines: 735
 - Top-level selectors: 150
 - Hard-coded color tokens: 1
 

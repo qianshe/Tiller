@@ -161,31 +161,26 @@ function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
     .map(normalizePersistedTimelineEntry);
 }
 
-function getSessionTimelineEntry(
-  db: DatabaseSync,
-  sessionId: string,
-  entryId: string,
-) {
-  const row = db
-    .prepare("SELECT payload_json FROM session_timeline_entries WHERE session_id = ? AND id = ?")
-    .get(sessionId, entryId) as { payload_json: string } | undefined;
-  const parsed = row ? parseJson<SessionTimelineEntry>(row.payload_json) : null;
-  return parsed ? normalizePersistedTimelineEntry(parsed) : undefined;
-}
-
 function upsertSessionTimelineMessage(
   db: DatabaseSync,
   sessionId: string,
   message: AgentMessage,
 ) {
-  const existing = getSessionTimelineEntry(db, sessionId, message.id);
-  const entries = appendMessageToSessionTimeline(existing ? [existing] : [], message);
-  const entry = entries.find((candidate) => candidate.id === message.id);
-  if (!entry) {
-    return undefined;
+  const entries = listSessionTimelineEntries(db, sessionId);
+  const inPlaceEntry = findInPlaceMessageUpdateEntry(entries, message);
+  if (inPlaceEntry) {
+    const updatedEntries = appendMessageToSessionTimeline([inPlaceEntry], message);
+    const updated = findMessageTimelineEntry(updatedEntries, message);
+    if (updated) {
+      upsertSessionTimelineEntry(db, sessionId, updated);
+      return normalizePersistedTimelineEntry(updated);
+    }
   }
-  upsertSessionTimelineEntry(db, sessionId, entry);
-  return normalizePersistedTimelineEntry(entry);
+
+  appendMessageToSessionTimeline(entries, message);
+  const next = sortSessionTimelineEntries(entries);
+  replaceSessionTimelineEntries(db, sessionId, next);
+  return findMessageTimelineEntry(next, message);
 }
 
 function upsertSessionTimelineToolCall(
@@ -193,27 +188,114 @@ function upsertSessionTimelineToolCall(
   sessionId: string,
   toolCall: AgentToolCall,
 ) {
-  const entryId = resolveToolCallTimelineEntryId(toolCall);
-  const existing = getSessionTimelineEntry(db, sessionId, entryId);
-  const entries = appendToolCallToSessionTimeline(existing ? [existing] : [], toolCall);
-  const entry = entries.find((candidate) => candidate.id === entryId);
-  if (!entry) {
-    return undefined;
-  }
-  upsertSessionTimelineEntry(db, sessionId, entry);
-  return normalizePersistedTimelineEntry(entry);
-}
-
-function resolveToolCallTimelineEntryId(toolCall: AgentToolCall) {
-  if (toolCall.kind === "think") {
-    const sourceId = toolCall.commandId ?? toolCall.id;
-    return stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
-  }
-  return `tool:${toolCall.id}`;
+  const entries = listSessionTimelineEntries(db, sessionId);
+  appendToolCallToSessionTimeline(entries, toolCall);
+  const next = sortSessionTimelineEntries(entries);
+  replaceSessionTimelineEntries(db, sessionId, next);
+  return findToolCallTimelineEntry(next, toolCall);
 }
 
 function stripThinkingSuffix(value: string) {
   return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
+}
+
+function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: AgentMessage) {
+  if (message.role !== "assistant") {
+    const kind = message.role === "system" ? "system_message" : "user_message";
+    return entries.find((entry) => entry.kind === kind && entry.id === message.id);
+  }
+
+  if (typeof message.timelineSequence === "number") {
+    const sequenced = entries.find((entry) =>
+      entry.kind === "assistant_message" &&
+      entry.chunks.some((chunk) =>
+        chunk.kind === "content" && chunk.timelineSequence === message.timelineSequence
+      )
+    );
+    if (sequenced) {
+      return sequenced;
+    }
+  }
+
+  const contentChunkId = `${message.id}:content`;
+  return entries.find((entry) =>
+    entry.kind === "assistant_message" &&
+    entry.chunks.some((chunk) =>
+      chunk.kind === "content" && matchesTimelineChunkId(chunk.id, contentChunkId)
+    )
+  ) ?? entries.find((entry) =>
+    entry.kind === "assistant_message" &&
+    (entry.id === message.id || entry.id.startsWith(`${message.id}#p`))
+  );
+}
+
+function findToolCallTimelineEntry(entries: SessionTimelineEntry[], toolCall: AgentToolCall) {
+  if (toolCall.kind !== "think") {
+    const entryId = `tool:${toolCall.id}`;
+    return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId);
+  }
+
+  const sourceId = toolCall.commandId ?? toolCall.id;
+  const assistantEntryId = stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
+  return entries.find((entry) =>
+    entry.kind === "assistant_message" &&
+    entry.chunks.some((chunk) =>
+      chunk.kind === "thinking" && matchesTimelineChunkId(chunk.id, toolCall.id)
+    )
+  ) ?? entries.find((entry) =>
+    entry.kind === "assistant_message" &&
+    (entry.id === assistantEntryId || entry.id.startsWith(`${assistantEntryId}#p`))
+  );
+}
+
+function matchesTimelineChunkId(chunkId: string, baseId: string) {
+  return chunkId === baseId || chunkId.startsWith(`${baseId}:`);
+}
+
+function findInPlaceMessageUpdateEntry(entries: SessionTimelineEntry[], message: AgentMessage) {
+  if (message.role !== "assistant") {
+    const kind = message.role === "system" ? "system_message" : "user_message";
+    return entries.find((entry) => entry.kind === kind && entry.id === message.id);
+  }
+
+  const existing = entries.find((entry): entry is Extract<SessionTimelineEntry, { kind: "assistant_message" }> =>
+    entry.kind === "assistant_message" && entry.id === message.id
+  );
+  if (!existing || hasToolCallBoundaryBeforeAssistantUpdate(entries, existing, message)) {
+    return undefined;
+  }
+  return existing;
+}
+
+function hasToolCallBoundaryBeforeAssistantUpdate(
+  entries: SessionTimelineEntry[],
+  existing: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
+  message: AgentMessage,
+) {
+  if (typeof message.timelineSequence !== "number") {
+    return false;
+  }
+  const messageSequence = message.timelineSequence;
+  const contentChunkId = `${message.id}:content`;
+  return existing.chunks.some((chunk) => {
+    if (
+      chunk.kind !== "content" ||
+      !matchesTimelineChunkId(chunk.id, contentChunkId) ||
+      typeof chunk.timelineSequence !== "number"
+    ) {
+      return false;
+    }
+    const chunkSequence = chunk.timelineSequence;
+    return entries.some((entry) =>
+      entry.kind === "tool_call" &&
+      typeof entry.timelineSequence === "number" &&
+      isSequenceBetween(entry.timelineSequence, chunkSequence, messageSequence)
+    );
+  });
+}
+
+function isSequenceBetween(value: number, left: number, right: number) {
+  return value > Math.min(left, right) && value < Math.max(left, right);
 }
 
 function upsertSessionTimelineEntry(

@@ -103,9 +103,17 @@ function ScrollToBottomButton({
 function useSessionCardScrollControls() {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const showScrollToBottomRef = useRef(false);
+  const setScrollToBottomVisible = useCallback((next: boolean) => {
+    if (showScrollToBottomRef.current === next) {
+      return;
+    }
+    showScrollToBottomRef.current = next;
+    setShowScrollToBottom(next);
+  }, []);
   const updateScrollToBottomVisibility = useCallback((body = bodyRef.current) => {
     if (!body) {
-      setShowScrollToBottom(false);
+      setScrollToBottomVisible(false);
       return;
     }
     const next = shouldShowSessionScrollToBottom({
@@ -113,16 +121,16 @@ function useSessionCardScrollControls() {
       scrollTop: body.scrollTop,
       clientHeight: body.clientHeight,
     });
-    setShowScrollToBottom((current) => (current === next ? current : next));
-  }, []);
+    setScrollToBottomVisible(next);
+  }, [setScrollToBottomVisible]);
   const scrollToBottom = useCallback(() => {
     const body = bodyRef.current;
     if (!body) {
       return;
     }
     body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
-    setShowScrollToBottom(false);
-  }, []);
+    setScrollToBottomVisible(false);
+  }, [setScrollToBottomVisible]);
 
   return {
     bodyRef,
@@ -453,10 +461,10 @@ export function SessionCard({
             updateScrollToBottomVisibility(event.currentTarget);
           }}
           className={cn(
-            "flex h-full min-h-0 flex-col gap-3 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
             flat
               ? cn("px-4 pt-3", bodyBottomPaddingClass)
-              : cn("px-3 pt-2.5", bodyBottomPaddingClass),
+              : cn("px-2.5 pt-2.5", bodyBottomPaddingClass),
           )}
           style={floatingDockPadding ? { paddingBottom: floatingDockPadding } : undefined}
           data-session-card-body={session.id}
@@ -633,7 +641,7 @@ export function DraftSessionCard({
       <div className="relative min-h-0 flex-1" data-session-scroll-frame={draftWindow.id}>
         <div
           ref={bodyRef}
-          className="flex h-full min-h-0 flex-col gap-3 overflow-auto px-3 pb-9 pt-2.5"
+          className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden px-2.5 pb-9 pt-2.5"
           onScroll={(event) => updateScrollToBottomVisibility(event.currentTarget)}
         >
           <div className="space-y-2 rounded-lg border border-border-ghost bg-surface-sunken p-3 text-section text-muted-foreground">

@@ -36,8 +36,12 @@ test("createMissionVisualFixture can build a two-window mission fixture", () => 
   assert.equal(promptQueue.queued.length, 2);
   assert.deepEqual(fixture.pendingApprovalIdsBySession["visual-session"], [
     "visual-permission-1",
+    "visual-permission-2",
+    "visual-permission-3",
   ]);
   assert.ok(fixture.approvalItemsById["visual-permission-1"]);
+  assert.match(fixture.approvalItemsById["visual-permission-2"]?.request.command ?? "", /shell_command/);
+  assert.match(fixture.approvalItemsById["visual-permission-3"]?.request.command ?? "", /file\.write/);
 });
 
 test("createMissionVisualFixture can focus a restoring visual window", () => {

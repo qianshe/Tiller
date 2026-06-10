@@ -294,7 +294,7 @@ test("buildSessionStreamHydrationPlan hydrates cached messages when timeline cac
   assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
 });
 
-test("buildSessionStreamHydrationPlan keeps empty timeline cache as hydrated", () => {
+test("buildSessionStreamHydrationPlan hydrates cached messages when timeline cache is empty", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],
     sessionById: new Map([
@@ -319,7 +319,7 @@ test("buildSessionStreamHydrationPlan keeps empty timeline cache as hydrated", (
     checkedResumeSessionIds: new Set(),
   });
 
-  assert.deepEqual(plan.messageSessionIds, []);
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
 });
 
 test("buildSessionStreamHydrationPlan compares cached users with the summary send count", () => {

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PermissionRequestOption, SessionSummary } from "@tiller/shared";
-import { buildDashboardViewModel, resolveDashboardApprovalDecision } from "./dashboard-view-model";
+import {
+  buildDashboardViewModel,
+  resolveDashboardApprovalDecision,
+  resolveDashboardApprovalDecisions,
+} from "./dashboard-view-model";
 
 test("resolveDashboardApprovalDecision prefers allow options", () => {
   const options: PermissionRequestOption[] = [
@@ -12,6 +16,15 @@ test("resolveDashboardApprovalDecision prefers allow options", () => {
   assert.equal(resolveDashboardApprovalDecision(options), "allow_session");
 });
 
+test("resolveDashboardApprovalDecisions exposes compact dashboard actions", () => {
+  assert.deepEqual(resolveDashboardApprovalDecisions(), [
+    "deny",
+    "allow",
+    "allow_session",
+    "allow_always",
+  ]);
+});
+
 test("buildDashboardViewModel derives helm rows and approval rows", () => {
   const sessions: SessionSummary[] = [
     {
@@ -20,6 +33,7 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
       projectName: "Tiller",
       helmId: "local",
       cwd: "D:/myProject/tools/Tiller",
+      worktreeName: "main",
       title: "Review plan",
       agentId: "codex",
       agentName: "Codex",
@@ -89,9 +103,19 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.completedPlanSessionCount, 0);
   assert.equal(model.helms[0]?.endpoint, "127.0.0.1:47631");
   assert.equal(model.approvals[0]?.kind, "file.write");
+  assert.deepEqual(model.approvals[0]?.decisions, [
+    "deny",
+    "allow",
+    "allow_session",
+    "allow_always",
+  ]);
   assert.equal(model.approvals[0]?.sessionName, "Review plan");
+  assert.equal(model.approvals[0]?.projectName, "Tiller");
+  assert.equal(model.approvals[0]?.worktreeName, "main");
   assert.equal(model.sessions[0]?.status, "waiting_for_permission");
   assert.equal(model.sessions[0]?.selected, true);
+  assert.equal(model.sessions[0]?.projectName, "Tiller");
+  assert.equal(model.sessions[0]?.worktreeName, "main");
   assert.deepEqual(model.sessions[0]?.planSummary, {
     completed: 1,
     total: 2,

@@ -59,7 +59,7 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /Thinking/);
   assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
   assert.match(html, /完整 Thinking 内容/);
-  assert.match(html, /plain-thinking-row[^"]*grid-cols-\[0\.75rem_minmax\(0,1fr\)\]/);
+  assert.match(html, /plain-thinking-row[^"]*grid-cols-\[0\.375rem_minmax\(0,1fr\)\][^"]*gap-x-1/);
   assert.match(html, /plain-thinking[^"]*rounded-\[8px\][^"]*bg-surface-sunken\/55/);
   assert.match(html, /plain-thinking-content[^"]*border-l/);
   assert.match(html, /aria-label="展开 Thinking"/);
@@ -124,6 +124,71 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(userIndex >= 0);
   assert.ok(thinkingIndex > userIndex);
   assert.ok(answerIndex > thinkingIndex);
+});
+
+test("plain messages keeps restored prompt turns after older history when live sequence resets", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "new-user",
+      kind: "user_message",
+      message: {
+        id: "new-user",
+        role: "user",
+        text: "新的 prompt",
+        timestamp: "2026-06-10T10:19:22.000Z",
+        timelineSequence: 2,
+      },
+      timestamp: "2026-06-10T10:19:22.000Z",
+      updatedAt: "2026-06-10T10:19:22.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "new-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "new-assistant:content",
+          kind: "content",
+          text: "新回复开始",
+          timestamp: "2026-06-10T10:19:40.000Z",
+          timelineSequence: 4,
+        },
+      ],
+      timestamp: "2026-06-10T10:19:40.000Z",
+      updatedAt: "2026-06-10T10:19:40.000Z",
+      timelineSequence: 4,
+    },
+    {
+      id: "old-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "old-assistant:content",
+          kind: "content",
+          text: "旧回复结尾",
+          timestamp: "2026-06-10T09:28:50.000Z",
+          timelineSequence: 87,
+        },
+      ],
+      timestamp: "2026-06-10T09:28:50.000Z",
+      updatedAt: "2026-06-10T09:28:50.000Z",
+      timelineSequence: 87,
+    },
+  ];
+
+  const html = renderPlainMessages({
+    timelineItems,
+    items: [],
+    thinkingToolCalls: [],
+    toolCalls: [],
+  } as any);
+
+  const oldIndex = html.indexOf("旧回复结尾");
+  const promptIndex = html.indexOf("新的 prompt");
+  const replyIndex = html.indexOf("新回复开始");
+  assert.ok(oldIndex >= 0);
+  assert.ok(promptIndex > oldIndex);
+  assert.ok(replyIndex > promptIndex);
 });
 
 test("plain messages does not append live user prompts already represented by timeline", () => {
@@ -320,7 +385,7 @@ test("plain user messages cap at the wide reading rail", () => {
   });
 
   assert.match(html, /plain-user[^\"]*w-full[^\"]*justify-items-end/);
-  assert.match(html, /plain-message-user-row[^"]*w-full[^"]*max-w-full/);
+  assert.match(html, /plain-message-user-row[^"]*w-full[^"]*min-w-0[^"]*max-w-full/);
   assert.match(
     html,
     /plain-message-body[^"]*w-fit[^"]*max-w-\[min\(56rem,76%\)\]/,
@@ -344,6 +409,68 @@ test("plain short user messages size to their content before wrapping", () => {
     /plain-message-body[^"]*w-fit[^"]*max-w-\[min\(56rem,76%\)\][^"]*break-words/,
   );
   assert.doesNotMatch(html, /plain-message-body[^"]*(?:min-w-14|\sw-\[min\()/);
+});
+
+test("plain user messages allow long tokens to wrap inside the bubble", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-long-token",
+        role: "user",
+        text: "审核 `docs/superpowers/plans/2026-06-09-git-commit-workflow.md` 对照 checklist",
+        timestamp: "2026-06-01T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-message-body[^"]*min-w-0/);
+  assert.match(html, /plain-message-body[^"]*\[overflow-wrap:anywhere\]/);
+});
+
+test("plain long user prompt messages collapse without losing actions", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "user-long-prompt",
+        role: "user",
+        text: [
+          "审核 docs/superpowers/plans/2026-06-09-git-commit-workflow.md",
+          "对照 checklist",
+          "确认 plan 是否完整",
+          "最后一行需要直接可见",
+        ].join("\n"),
+        timestamp: "2026-06-01T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /最后一行需要直接可见/);
+  assert.match(html, /plain-message-user-row[^"]*min-w-0/);
+  assert.match(html, /plain-message-body[^"]*plain-message-body-collapsed/);
+  assert.match(html, /plain-message-text-collapsed/);
+  assert.match(html, /line-clamp-3/);
+  assert.match(html, /展开完整消息/);
+  assert.match(html, /plain-message-copy/);
+});
+
+test("plain assistant markdown keeps horizontal overflow inside the message body", () => {
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "assistant-table",
+        role: "assistant",
+        text: "| 文件 | 改动 |\n|---|---|\n| `very/long/path/that/should/not/stretch/the/session/card/body.tsx` | `extremely-long-token-without-breaks-that-belongs-inside-the-table-scroll` |",
+        timestamp: "2026-06-01T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(
+    html,
+    /plain-message-body[^"]*max-w-full[^"]*overflow-hidden/,
+  );
+  assert.match(html, /markdown-table-scroll/);
+  assert.match(html, /overflow-x-auto/);
 });
 
 test("plain messages keeps loaded content visible when timeline has many tool and thinking entries", () => {
@@ -585,6 +712,195 @@ test("plain messages keep optimistic live messages visible when timeline history
   assert.match(html, /历史问题/);
   assert.match(html, /新的 OpenCode prompt/);
   assert.ok(html.indexOf("历史问题") < html.indexOf("新的 OpenCode prompt"));
+});
+
+test("plain messages append live prompts after restored timeline history", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "history-user",
+        kind: "user_message",
+        message: {
+          id: "history-user",
+          role: "user",
+          text: "历史问题",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          timelineSequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+      {
+        id: "history-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "history-assistant:content",
+            kind: "content",
+            text: "旧回复历史",
+            timestamp: "2026-05-17T10:10:00.000Z",
+            timelineSequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:00.000Z",
+        updatedAt: "2026-05-17T10:10:00.000Z",
+        timelineSequence: 2,
+      },
+    ],
+    items: [
+      {
+        id: "client-new-user",
+        role: "user",
+        text: "刚发送的新消息",
+        timestamp: "2026-05-17T10:05:00.000Z",
+      },
+    ],
+  });
+
+  const historyUserIndex = html.indexOf("历史问题");
+  const historyAssistantIndex = html.indexOf("旧回复历史");
+  const liveUserIndex = html.indexOf("刚发送的新消息");
+  assert.ok(historyUserIndex >= 0);
+  assert.ok(historyAssistantIndex > historyUserIndex);
+  assert.ok(liveUserIndex > historyAssistantIndex);
+});
+
+test("plain messages append live prompts after a paged restored timeline", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "paged-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "paged-assistant:content",
+            kind: "content",
+            text: "旧会话窗口里的回复",
+            timestamp: "2026-05-17T10:10:00.000Z",
+            timelineSequence: 50,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:00.000Z",
+        updatedAt: "2026-05-17T10:10:00.000Z",
+        timelineSequence: 50,
+      },
+    ],
+    items: [
+      {
+        id: "client-new-user",
+        role: "user",
+        text: "刚发送到旧会话的新消息",
+        timestamp: "2026-05-17T10:20:00.000Z",
+      },
+    ],
+    historyState: { hasMore: true, loading: false },
+  });
+
+  const historyAssistantIndex = html.indexOf("旧会话窗口里的回复");
+  const liveUserIndex = html.indexOf("刚发送到旧会话的新消息");
+  assert.ok(historyAssistantIndex >= 0);
+  assert.ok(liveUserIndex > historyAssistantIndex);
+});
+
+test("plain messages do not append legacy messages older than the loaded timeline window", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "loaded-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "loaded-assistant:content",
+            kind: "content",
+            text: "已加载窗口里的回复",
+            timestamp: "2026-05-17T10:10:00.000Z",
+            timelineSequence: 50,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:00.000Z",
+        updatedAt: "2026-05-17T10:10:00.000Z",
+        timelineSequence: 50,
+      },
+    ],
+    items: [
+      {
+        id: "legacy-user-before-window",
+        role: "user",
+        text: "最早的用户消息不应追加到末尾",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 1,
+      },
+    ],
+    historyState: { hasMore: true, loading: false },
+  });
+
+  assert.match(html, /已加载窗口里的回复/);
+  assert.doesNotMatch(html, /最早的用户消息不应追加到末尾/);
+});
+
+test("plain messages sort fallback messages with the restored timeline window", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "latest-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "latest-assistant:content",
+            kind: "content",
+            text: "底部窗口里较新的助手回复",
+            timestamp: "2026-05-17T10:30:00.000Z",
+            timelineSequence: 116,
+          },
+        ],
+        timestamp: "2026-05-17T10:30:00.000Z",
+        updatedAt: "2026-05-17T10:30:00.000Z",
+        timelineSequence: 116,
+      },
+    ],
+    items: [
+      {
+        id: "legacy-user-first",
+        role: "user",
+        text: "旧的用户问题一",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        timelineSequence: 49,
+      },
+      {
+        id: "legacy-assistant-first",
+        role: "assistant",
+        text: "旧的助手回复一",
+        timestamp: "2026-05-17T10:01:00.000Z",
+        timelineSequence: 50,
+      },
+      {
+        id: "legacy-user-second",
+        role: "user",
+        text: "旧的用户问题二",
+        timestamp: "2026-05-17T10:02:00.000Z",
+        timelineSequence: 63,
+      },
+      {
+        id: "legacy-assistant-second",
+        role: "assistant",
+        text: "旧的助手回复二",
+        timestamp: "2026-05-17T10:03:00.000Z",
+        timelineSequence: 64,
+      },
+    ],
+  });
+
+  const firstUserIndex = html.indexOf("旧的用户问题一");
+  const firstAssistantIndex = html.indexOf("旧的助手回复一");
+  const secondUserIndex = html.indexOf("旧的用户问题二");
+  const secondAssistantIndex = html.indexOf("旧的助手回复二");
+  const latestAssistantIndex = html.indexOf("底部窗口里较新的助手回复");
+  assert.ok(firstUserIndex >= 0);
+  assert.ok(firstAssistantIndex > firstUserIndex);
+  assert.ok(secondUserIndex > firstAssistantIndex);
+  assert.ok(secondAssistantIndex > secondUserIndex);
+  assert.ok(latestAssistantIndex > secondAssistantIndex);
 });
 
 test("plain messages counts coalesced provider paragraphs as one green-dot message block", () => {

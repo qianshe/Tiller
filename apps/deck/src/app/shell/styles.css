@@ -547,14 +547,17 @@ body[data-density="cozy"] {
     bottom: 0;
     z-index: 6;
     margin: 0;
-    padding: 6px;
-    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+    border-radius: 0;
     background: var(--color-surface);
   }
 
   .mission-responsive-mode .mission-composer-deck {
-    gap: 8px;
-    padding: 8px;
+    gap: 6px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .mission-responsive-mode #mission-prompt-input {
