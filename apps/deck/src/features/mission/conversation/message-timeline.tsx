@@ -22,6 +22,9 @@ type MissionMessageTimelineProps = {
   showThinking?: boolean;
   sessionId?: string;
   copy: MissionMessageTimelineCopy;
+  canHandoffAssistantMessage?: boolean;
+  assistantHandoffBusy?: boolean;
+  onHandoffAssistantMessage?: (assistantBlockText: string) => void;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
@@ -41,6 +44,9 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   showThinking = true,
   sessionId,
   copy,
+  canHandoffAssistantMessage = false,
+  assistantHandoffBusy = false,
+  onHandoffAssistantMessage,
   expandedMessageIds,
   boundaryTimestamps = [],
   historyStateBySession,
@@ -67,6 +73,9 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       thinkingToolCalls={thinkingToolCalls}
       toolCalls={toolCalls}
       showThinking={showThinking}
+      canHandoffAssistantMessage={canHandoffAssistantMessage}
+      assistantHandoffBusy={assistantHandoffBusy}
+      onHandoffAssistantMessage={onHandoffAssistantMessage}
       emptyText={copy.waitingForAgent}
       expandedMessageIds={expandedMessageIds}
       boundaryTimestamps={boundaryTimestamps}

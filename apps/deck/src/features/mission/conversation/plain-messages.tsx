@@ -23,6 +23,9 @@ type PlainMessagesProps = {
   thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
+  canHandoffAssistantMessage?: boolean;
+  assistantHandoffBusy?: boolean;
+  onHandoffAssistantMessage?: (assistantBlockText: string) => void;
   emptyText: string;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
@@ -38,6 +41,9 @@ export function PlainMessages({
   thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
+  canHandoffAssistantMessage = false,
+  assistantHandoffBusy = false,
+  onHandoffAssistantMessage,
   emptyText,
   expandedMessageIds,
   boundaryTimestamps = [],
@@ -206,6 +212,7 @@ export function PlainMessages({
     visibleRenderMessages,
     startsInsideEarlierContext,
   );
+  const assistantActionTarget = resolveFinalAssistantActionTarget(renderMessages);
 
   return (
     <div ref={listRef} className="plain-message-list conversation-timeline mx-auto grid w-full max-w-[min(1120px,calc(100%_-_8px))] gap-y-1">
@@ -260,6 +267,16 @@ export function PlainMessages({
         return (
           <div key={renderItem.renderKey} className={spacingClassName}>
             <PlainMessageItem
+              assistantActions={
+                assistantActionTarget?.renderKey === renderItem.renderKey
+                  ? {
+                      canHandoff: canHandoffAssistantMessage,
+                      copyText: assistantActionTarget.copyText,
+                      handoffBusy: assistantHandoffBusy,
+                      onHandoff: onHandoffAssistantMessage,
+                    }
+                  : undefined
+              }
               isExpanded={isExpanded}
               message={renderItem.message}
               onToggleExpandedMessage={onToggleExpandedMessage}
@@ -281,7 +298,7 @@ type PlainConversationItem =
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
-type PlainMessageRenderItem =
+export type PlainMessageRenderItem =
   | {
       isContinuation: boolean;
       kind: "message";
@@ -394,6 +411,26 @@ function resolveRenderablePlainMessageItems(
   }
   const firstMessageIndex = items.findIndex((item) => item.kind === "message");
   return firstMessageIndex >= 0 ? items.slice(firstMessageIndex) : [];
+}
+
+export function resolveFinalAssistantActionTarget(
+  items: PlainMessageRenderItem[],
+) {
+  const finalItem = items.at(-1);
+  if (
+    finalItem?.kind !== "message" ||
+    finalItem.message.role !== "assistant" ||
+    finalItem.message.streaming ||
+    !finalItem.message.text.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    copyText: finalItem.message.text,
+    messageId: finalItem.message.id,
+    renderKey: finalItem.renderKey,
+  };
 }
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {

@@ -153,6 +153,17 @@ export type PromptEnhancerContext = {
   sessionSummary?: string | null;
 };
 
+export type AssistantHandoffContext = PromptEnhancerContext & {
+  assistantBlockText: string;
+};
+
+export const DEFAULT_ASSISTANT_HANDOFF_SYSTEM_PROMPT = [
+  "You generate an editable next user prompt for continuing an agent conversation.",
+  "Synthesize the relevant conversation context into a concise, actionable prompt.",
+  "Use the latest assistant block only as the direction anchor, not as text to copy.",
+  "Return only the next user prompt, with no commentary, markdown fence, or preamble.",
+].join(" ");
+
 export type PromptEnhancerModelOption = {
   id: string;
   ownedBy: string;
@@ -273,6 +284,97 @@ export async function enhancePromptWithLlm(
     throw new Error("Prompt enhancer LLM returned empty content");
   }
   return enhanced;
+}
+
+export function isPromptEnhancerLlmConfigured(
+  llm: PromptEnhancerLlmConfig | null | undefined,
+) {
+  return Boolean(llm?.enabled && llm.baseUrl.trim() && llm.model.trim());
+}
+
+export async function generateAssistantHandoffPrompt(
+  context: AssistantHandoffContext,
+  preferences: PromptEnhancerPreferences,
+  fetcher: FetchLike = fetch,
+) {
+  const llm = preferences.llm;
+  if (!isPromptEnhancerLlmConfigured(llm)) {
+    throw new Error("Prompt enhancer LLM is not configured");
+  }
+
+  const response = await fetcher(resolveChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim()
+        ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: DEFAULT_ASSISTANT_HANDOFF_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: buildAssistantHandoffPromptInput(context),
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prompt enhancer LLM failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const handoffPrompt = normalizeEnhancedPrompt(
+    data.choices?.[0]?.message?.content,
+  );
+  if (!handoffPrompt) {
+    throw new Error("Prompt enhancer LLM returned empty content");
+  }
+  return handoffPrompt;
+}
+
+export function buildAssistantHandoffPromptInput(
+  context: AssistantHandoffContext,
+) {
+  const reference = compactPrivateReference(
+    [
+      context.projectName ? `Project: ${context.projectName}` : null,
+      context.worktreeName ? `Worktree: ${context.worktreeName}` : null,
+      context.projectSummary ? `Project summary: ${context.projectSummary}` : null,
+      context.worktreeSummary
+        ? `Worktree summary: ${context.worktreeSummary}`
+        : null,
+      context.sessionStatus ? `Session status: ${context.sessionStatus}` : null,
+      context.sessionSummary
+        ? `Conversation summary: ${context.sessionSummary}`
+        : null,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n"),
+  );
+
+  return [
+    "Create the next user prompt for continuing this work.",
+    "The prompt should preserve useful project/session context, current constraints, and unresolved next steps.",
+    "Do not merely copy or paraphrase the latest assistant block; use it as the direction and priority anchor.",
+    "Write in the same language as the conversation when clear.",
+    "<conversation_context>",
+    reference,
+    "</conversation_context>",
+    "<latest_assistant_direction_anchor>",
+    context.assistantBlockText.trim() || "(empty)",
+    "</latest_assistant_direction_anchor>",
+    "Output only the editable next user prompt.",
+  ].join("\n");
 }
 
 export async function testPromptEnhancerConnectivity(

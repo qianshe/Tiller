@@ -35,6 +35,7 @@ export type TillerIconName =
   | "activity"
   | "terminal"
   | "branch"
+  | "handoff"
   | "fileText"
   | "inspect"
   | "panel"
@@ -171,6 +172,14 @@ const ICONS: Record<TillerIconName, ReactNode> = {
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
       <path d="M18 9a9 9 0 0 1-9 9" />
+    </>
+  ),
+  handoff: (
+    <>
+      <path d="M4 7h8a4 4 0 0 1 4 4v1" />
+      <path d="m13 9 3 3-3 3" />
+      <path d="M20 17h-8a4 4 0 0 1-4-4v-1" />
+      <path d="m11 15-3-3 3-3" />
     </>
   ),
   fileText: (

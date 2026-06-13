@@ -1,5 +1,9 @@
-import type { FileDiffSummary, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, FileDiffSummary, SessionSummary } from "@tiller/shared";
 import { useState } from "react";
+import {
+  canGenerateAssistantHandoff,
+  generateAssistantHandoffDraft,
+} from "../../prompt-enhancer";
 import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
@@ -31,6 +35,7 @@ import {
   isManagedWorktreeWorktree,
   normalizeWorktreePath,
 } from "./runtime-display";
+import { summarizeSessionContext } from "../utils/composer-options";
 import {
   buildSelectedSessionWorktreeItems,
   formatInspectorWorktreeSummaryLabel,
@@ -198,6 +203,7 @@ export function MissionWorktree(props: any) {
     deckPreferences,
     enhancePromptDraft,
     promptEnhancerBusy,
+    setPromptEnhancerStatus,
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
@@ -223,6 +229,47 @@ export function MissionWorktree(props: any) {
     agentModelOptions = {},
   } = props;
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
+  const [assistantHandoffBusy, setAssistantHandoffBusy] = useState(false);
+  const canHandoffAssistantMessage =
+    canGenerateAssistantHandoff(deckPreferences.promptEnhancer) &&
+    typeof setPrompt === "function" &&
+    typeof setPromptEnhancerStatus === "function";
+  const handleAssistantHandoff = async (
+    session: SessionSummary,
+    assistantBlockText: string,
+    sessionMessagesForHandoff: AgentMessage[],
+  ) => {
+    if (!canHandoffAssistantMessage || assistantHandoffBusy) {
+      return;
+    }
+
+    setAssistantHandoffBusy(true);
+    try {
+      await generateAssistantHandoffDraft({
+        assistantBlockText,
+        session,
+        sessionSummary: summarizeSessionContext(
+          session,
+          sessionMessagesForHandoff,
+        ),
+        promptEnhancer: deckPreferences.promptEnhancer,
+        projects,
+        worktrees,
+        selectedCwd,
+        activeSessionProject,
+        draftProject,
+        setPrompt,
+        setPromptEnhancerStatus,
+      });
+      missionPromptRef.current?.focus?.();
+    } catch (error) {
+      setPromptEnhancerStatus(
+        error instanceof Error ? error.message : "Handoff 草稿生成失败",
+      );
+    } finally {
+      setAssistantHandoffBusy(false);
+    }
+  };
   const {
     canSend,
     activeSessionRestoreGate,
@@ -672,6 +719,9 @@ export function MissionWorktree(props: any) {
             activeSessionToolCalls={activeToolCalls}
           sessionToolCallsById={toolCalls ?? {}}
           copy={copy}
+          canHandoffAssistantMessage={canHandoffAssistantMessage}
+          assistantHandoffBusy={assistantHandoffBusy}
+          onHandoffAssistantMessage={handleAssistantHandoff}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
           activityHistoryState={activityHistoryState}

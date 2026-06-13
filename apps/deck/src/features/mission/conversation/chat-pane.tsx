@@ -86,6 +86,13 @@ type MissionChatPaneProps = {
   activeSessionToolCalls: AgentToolCall[];
   sessionToolCallsById: Record<string, AgentToolCall[] | undefined>;
   copy: MissionChatPaneCopy;
+  canHandoffAssistantMessage?: boolean;
+  assistantHandoffBusy?: boolean;
+  onHandoffAssistantMessage?: (
+    session: SessionSummary,
+    assistantBlockText: string,
+    sessionMessages: AgentMessage[],
+  ) => void;
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, HistoryState | undefined>;
   activityHistoryState: Record<string, HistoryState | undefined>;
@@ -152,6 +159,9 @@ export function MissionChatPane({
   activeSessionToolCalls,
   sessionToolCallsById,
   copy,
+  canHandoffAssistantMessage = false,
+  assistantHandoffBusy = false,
+  onHandoffAssistantMessage,
   openSessions,
   expandedMessageIds,
   messageHistoryState,
@@ -666,6 +676,9 @@ export function MissionChatPane({
                 pendingApprovalsBySession[singleSession.id]?.length ? pendingToolTitle : null
               }
               copy={copy}
+              canHandoffAssistantMessage={canHandoffAssistantMessage}
+              assistantHandoffBusy={assistantHandoffBusy}
+              onHandoffAssistantMessage={onHandoffAssistantMessage}
               expandedMessageIds={expandedMessageIds}
               showThinking={showThinking}
               showPermissionWorktree={showPermissionWorktree}
@@ -724,6 +737,9 @@ export function MissionChatPane({
                     pendingApprovalsBySession[session.id]?.length ? pendingToolTitle : null
                   }
                   copy={copy}
+                  canHandoffAssistantMessage={canHandoffAssistantMessage}
+                  assistantHandoffBusy={assistantHandoffBusy}
+                  onHandoffAssistantMessage={onHandoffAssistantMessage}
                   expandedMessageIds={expandedMessageIds}
                   showThinking={showThinking}
                   showPermissionWorktree={showPermissionWorktree}
@@ -748,6 +764,8 @@ type MissionChatSessionCardProps = {
   activityHistoryState?: HistoryState;
   activityLoading: MissionToolActivity | null;
   bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
+  canHandoffAssistantMessage?: boolean;
+  assistantHandoffBusy?: boolean;
   copy: MissionChatPaneCopy;
   dismissedCompletedPlanKey?: string;
   expandedMessageIds: ReadonlySet<string>;
@@ -766,6 +784,11 @@ type MissionChatSessionCardProps = {
   onToggleExpandedMessage: (messageId: string) => void;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
   onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
+  onHandoffAssistantMessage?: (
+    session: SessionSummary,
+    assistantBlockText: string,
+    sessionMessages: AgentMessage[],
+  ) => void;
   pendingApprovals: ReadonlyArray<MissionPendingApproval>;
   pendingToolPresent: boolean;
   pendingToolTitle: string | null;
@@ -785,6 +808,8 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   activityHistoryState,
   activityLoading,
   bodyScrollSnapshot,
+  canHandoffAssistantMessage = false,
+  assistantHandoffBusy = false,
   copy,
   dismissedCompletedPlanKey,
   expandedMessageIds,
@@ -803,6 +828,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onToggleExpandedMessage,
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
+  onHandoffAssistantMessage,
   pendingApprovals,
   pendingToolPresent,
   pendingToolTitle,
@@ -905,6 +931,15 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           boundaryTimestamps={sessionTimeline.boundaryTimestamps}
           sessionId={session.id}
           copy={copy}
+          canHandoffAssistantMessage={canHandoffAssistantMessage}
+          assistantHandoffBusy={assistantHandoffBusy}
+          onHandoffAssistantMessage={(assistantBlockText) =>
+            onHandoffAssistantMessage?.(
+              session,
+              assistantBlockText,
+              sessionMessages,
+            )
+          }
           expandedMessageIds={expandedMessageIds}
           historyStateBySession={historyStateBySession}
           activityHistoryStateBySession={activityHistoryStateBySession}

@@ -50,6 +50,7 @@ export function buildAppRouteContext(input: any) {
     promptEnhancerSettings: input.promptEnhancerSettings,
     promptEnhancerBusy: input.promptEnhancerSettings.busy,
     promptEnhancerStatus: input.promptEnhancerSettings.status,
+    setPromptEnhancerStatus: input.promptEnhancerSettings.setStatus,
     promptEnhancerModels: input.promptEnhancerSettings.models,
     promptEnhancerModelFilter: input.promptEnhancerSettings.modelFilter,
     setPromptEnhancerModelFilter: input.promptEnhancerSettings.setModelFilter,

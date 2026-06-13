@@ -188,12 +188,21 @@ function shouldCollapsePlainMessage(text: string) {
 }
 
 type PlainMessageItemProps = {
+  assistantActions?: AssistantMessageActions;
   isExpanded: boolean;
   message: AgentMessage;
   onToggleExpandedMessage: (messageId: string) => void;
 };
 
+type AssistantMessageActions = {
+  canHandoff?: boolean;
+  copyText: string;
+  handoffBusy?: boolean;
+  onHandoff?: (assistantBlockText: string) => void;
+};
+
 export const PlainMessageItem = memo(function PlainMessageItem({
+  assistantActions,
   isExpanded,
   message,
   onToggleExpandedMessage,
@@ -210,12 +219,13 @@ export const PlainMessageItem = memo(function PlainMessageItem({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyResetTimeoutRef = useRef<number | null>(null);
   const hasCopyableUserText = message.role === "user" && Boolean(message.text.trim());
+  const hasCopyableAssistantText = isAssistant && Boolean(assistantActions?.copyText.trim());
+  const hasAssistantHandoff =
+    hasCopyableAssistantText &&
+    Boolean(assistantActions?.canHandoff && assistantActions.onHandoff);
   const hasUserMessageActions = hasCopyableUserText || isCollapsible;
-  const copyLabel = copyState === "copied"
-    ? "已复制用户消息"
-    : copyState === "failed"
-      ? "复制用户消息失败"
-      : "复制用户消息";
+  const userCopyLabel = resolveCopyLabel(copyState, "用户消息");
+  const assistantCopyLabel = resolveCopyLabel(copyState, "回复");
 
   useEffect(() => () => {
     if (copyResetTimeoutRef.current !== null && typeof window !== "undefined") {
@@ -236,21 +246,34 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     }, delayMs);
   }
 
-  async function copyUserMessage() {
+  async function copyMessageText(text: string) {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
-    if (!hasCopyableUserText || !clipboard?.writeText) {
-      setCopyState("failed");
-      resetCopyStateAfter(1800);
-      return;
-    }
     try {
-      await clipboard.writeText(message.text);
+      await writeClipboardText(text, clipboard);
       setCopyState("copied");
       resetCopyStateAfter(1400);
     } catch {
       setCopyState("failed");
       resetCopyStateAfter(1800);
     }
+  }
+
+  async function copyUserMessage() {
+    if (!hasCopyableUserText) {
+      setCopyState("failed");
+      resetCopyStateAfter(1800);
+      return;
+    }
+    await copyMessageText(message.text);
+  }
+
+  async function copyAssistantMessage() {
+    if (!hasCopyableAssistantText || !assistantActions) {
+      setCopyState("failed");
+      resetCopyStateAfter(1800);
+      return;
+    }
+    await copyMessageText(assistantActions.copyText);
   }
 
   return (
@@ -339,8 +362,8 @@ export const PlainMessageItem = memo(function PlainMessageItem({
                 variant="ghost"
                 size="icon-xs"
                 className="plain-message-copy shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
-                aria-label={copyLabel}
-                title={copyLabel}
+                aria-label={userCopyLabel}
+                title={userCopyLabel}
                 onClick={copyUserMessage}
               >
                 <Icon name={copyState === "copied" ? "check" : "copy"} size={12} />
@@ -362,6 +385,43 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             ))}
           </div>
         ) : null}
+        {hasCopyableAssistantText ? (
+          <div className="plain-assistant-actions mt-0.5 flex max-w-full items-center gap-1 border-t border-border-ghost/70 pt-1.5 text-muted-foreground">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="plain-assistant-copy shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
+              aria-label={assistantCopyLabel}
+              title={assistantCopyLabel}
+              onClick={copyAssistantMessage}
+            >
+              <Icon name={copyState === "copied" ? "check" : "copy"} size={12} />
+            </Button>
+            {hasAssistantHandoff ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="plain-assistant-handoff shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
+                aria-label={
+                  assistantActions?.handoffBusy
+                    ? "正在生成 Handoff"
+                    : "生成 Handoff"
+                }
+                title={
+                  assistantActions?.handoffBusy
+                    ? "正在生成 Handoff"
+                    : "生成 Handoff"
+                }
+                disabled={assistantActions?.handoffBusy}
+                onClick={() => assistantActions?.onHandoff?.(assistantActions.copyText)}
+              >
+                <Icon name="handoff" size={12} />
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {previewImage ? (
           <PlainMessageImageLightbox
             image={previewImage}
@@ -372,6 +432,29 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     </article>
   );
 });
+
+export async function writeClipboardText(
+  text: string,
+  clipboard: Pick<Clipboard, "writeText"> | undefined,
+) {
+  if (!text.trim() || !clipboard?.writeText) {
+    throw new Error("Clipboard unavailable");
+  }
+  await clipboard.writeText(text);
+}
+
+function resolveCopyLabel(
+  state: "idle" | "copied" | "failed",
+  targetLabel: string,
+) {
+  if (state === "copied") {
+    return `已复制${targetLabel}`;
+  }
+  if (state === "failed") {
+    return `复制${targetLabel}失败`;
+  }
+  return `复制${targetLabel}`;
+}
 
 function PlainThinkingIcon() {
   return (

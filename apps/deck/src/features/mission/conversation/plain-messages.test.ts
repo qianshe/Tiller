@@ -9,6 +9,7 @@ import {
   INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
   PLAIN_MESSAGE_RENDER_LOAD_STEP,
   resolveNextPlainConversationRenderLimit,
+  resolveFinalAssistantActionTarget,
   resolvePlainConversationItemSpacingClass,
   resolvePlainDisplayMessages,
   resolvePlainMessageRenderItems,
@@ -110,6 +111,162 @@ test("plain user messages render a copy action", () => {
 
   assert.equal(html.match(/aria-label="复制用户消息"/g)?.length, 1);
   assert.match(html, /plain-message-copy/);
+});
+
+test("plain assistant actions target only the final stable assistant block", () => {
+  const renderItems = resolvePlainMessageRenderItems([
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "上一段 assistant",
+      timestamp: "2026-05-06T00:00:00.000Z",
+    },
+    {
+      id: "assistant-2",
+      role: "assistant",
+      text: "最后一段 assistant",
+      timestamp: "2026-05-06T00:00:01.000Z",
+    },
+  ]);
+
+  assert.deepEqual(resolveFinalAssistantActionTarget(renderItems), {
+    copyText: "最后一段 assistant",
+    messageId: "assistant-2",
+    renderKey: "assistant-2",
+  });
+});
+
+test("plain assistant actions skip streaming or non-final assistant blocks", () => {
+  assert.equal(
+    resolveFinalAssistantActionTarget(
+      resolvePlainMessageRenderItems([
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: "还在输出",
+          streaming: true,
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ]),
+    ),
+    null,
+  );
+  assert.equal(
+    resolveFinalAssistantActionTarget(
+      resolvePlainMessageRenderItems([
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "不是最终 item",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+        {
+          id: "user-1",
+          role: "user",
+          text: "后面还有用户消息",
+          timestamp: "2026-05-06T00:00:01.000Z",
+        },
+      ]),
+    ),
+    null,
+  );
+});
+
+test("plain assistant actions render copy and configured Handoff under final assistant", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "可复制的最后回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      canHandoffAssistantMessage: true,
+      assistantHandoffBusy: false,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/plain-assistant-actions/g)?.length, 1);
+  assert.equal(html.match(/aria-label=\"复制回复\"/g)?.length, 1);
+  assert.equal(html.match(/aria-label=\"生成 Handoff\"/g)?.length, 1);
+  assert.match(html, /border-t/);
+});
+
+test("plain assistant actions hide Handoff when LLM is not configured", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "可复制的最后回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      canHandoffAssistantMessage: false,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/aria-label=\"复制回复\"/g)?.length, 1);
+  assert.doesNotMatch(html, /生成 Handoff/);
+});
+
+test("plain assistant actions do not backtrack when final rendered item is a tool group", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "工具前回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      toolCalls: [
+        {
+          id: "tool-1",
+          kind: "shell",
+          title: "Run tests",
+          status: "completed",
+          output: "ok",
+          timestamp: "2026-05-06T00:00:01.000Z",
+          updatedAt: "2026-05-06T00:00:01.000Z",
+        },
+      ],
+      canHandoffAssistantMessage: true,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /aria-label=\"复制回复\"/);
+  assert.doesNotMatch(html, /生成 Handoff/);
 });
 
 test("plain user message actions render below the message body", () => {

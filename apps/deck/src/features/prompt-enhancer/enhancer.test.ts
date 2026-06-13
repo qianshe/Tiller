@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAssistantHandoffPromptInput,
   DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   enhancePromptWithLlm,
+  generateAssistantHandoffPrompt,
+  isPromptEnhancerLlmConfigured,
   listPromptEnhancerModels,
   testPromptEnhancerConnectivity,
   type PromptEnhancerPreferences,
@@ -19,6 +22,73 @@ const basePreferences: PromptEnhancerPreferences = {
     instructionTemplate: DEFAULT_PROMPT_ENHANCER_INSTRUCTION_TEMPLATE,
   },
 };
+
+test("isPromptEnhancerLlmConfigured requires enabled base URL and model", () => {
+  assert.equal(isPromptEnhancerLlmConfigured(basePreferences.llm), true);
+  assert.equal(
+    isPromptEnhancerLlmConfigured({ ...basePreferences.llm, enabled: false }),
+    false,
+  );
+  assert.equal(
+    isPromptEnhancerLlmConfigured({ ...basePreferences.llm, baseUrl: " " }),
+    false,
+  );
+  assert.equal(
+    isPromptEnhancerLlmConfigured({ ...basePreferences.llm, model: " " }),
+    false,
+  );
+});
+
+test("buildAssistantHandoffPromptInput treats the final assistant block as a direction anchor", () => {
+  const prompt = buildAssistantHandoffPromptInput({
+    assistantBlockText: "结论：只做复制按钮和 Handoff 草稿。",
+    projectName: "Tiller",
+    sessionStatus: "running",
+    sessionSummary: "用户要求不要把 Handoff 变成原文复制。",
+  });
+
+  assert.match(prompt, /<conversation_context>/);
+  assert.match(prompt, /Project: Tiller/);
+  assert.match(prompt, /用户要求不要把 Handoff 变成原文复制/);
+  assert.match(prompt, /<latest_assistant_direction_anchor>/);
+  assert.match(prompt, /结论：只做复制按钮和 Handoff 草稿/);
+  assert.match(prompt, /Do not merely copy or paraphrase/);
+});
+
+test("generateAssistantHandoffPrompt calls the prompt enhancer LLM with context and anchor", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: "请基于当前计划继续实现 Copy + Handoff。" } }],
+      }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  const handoff = await generateAssistantHandoffPrompt(
+    {
+      assistantBlockText: "最后回复：Handoff 要整理会话上下文，不是原文复制。",
+      projectName: "Tiller",
+      worktreeName: "Deck",
+      projectSummary: "Tiller is a local-first command deck.",
+      sessionStatus: "running",
+      sessionSummary: "用户希望最后 assistant 块下方显示 Copy 和 Handoff。",
+    },
+    basePreferences,
+    fetcher,
+  );
+
+  assert.equal(handoff, "请基于当前计划继续实现 Copy + Handoff。");
+  assert.equal(calls[0]?.url, "https://example.test/v1/chat/completions");
+  const body = String(calls[0]?.init.body);
+  assert.match(body, /prompt-model/);
+  assert.match(body, /latest assistant block only as the direction anchor/);
+  assert.match(body, /Do not merely copy or paraphrase/);
+  assert.match(body, /Tiller is a local-first command deck/);
+  assert.match(body, /Handoff 要整理会话上下文，不是原文复制/);
+});
 
 test("enhancePromptWithLlm calls an OpenAI-compatible endpoint when configured", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
