@@ -333,7 +333,7 @@ export function MissionSidebar({
           </div>
         )}
         <div className="border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
-          <details className="group rounded border border-border-ghost bg-surface-sunken/60 px-2 py-1">
+          <details open className="group rounded border border-border-ghost bg-surface-sunken/60 px-2 py-1">
             <summary className="flex cursor-pointer list-none items-center gap-1.5 text-foreground/80 outline-none [&::-webkit-details-marker]:hidden">
               <Icon name="server" size={10} />
               <span className="font-medium">ACP</span>
