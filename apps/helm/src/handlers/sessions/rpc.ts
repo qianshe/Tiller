@@ -28,6 +28,7 @@ import {
   subscribeSession,
   unsubscribeSession,
 } from "./session-query-rpc";
+import { listSessionUpdates } from "./session-updates-rpc";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 
 export { resolveProjectSessionWorktree } from "./session-worktree";
@@ -47,6 +48,11 @@ export async function handleSessionRpcRequest(
     case "session/list_messages":
       return listMessages(
         params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
+        context,
+      );
+    case "session/list_updates":
+      return listSessionUpdates(
+        params as { sessionId: string; limit?: number; before?: string },
         context,
       );
     case "session/get_artifacts":

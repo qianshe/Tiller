@@ -3,6 +3,7 @@ import test from "node:test";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
 import { createSessionPromptQueueManager } from "../../runtime/session/prompt-queue";
 import { createSessionUpdateRecord } from "../../runtime/session-updates/reducer";
+import type { SessionUpdateRecord } from "@tiller/shared";
 
 function createPromptQueueContextExtras() {
   const promptQueue = createSessionPromptQueueManager();
@@ -1998,4 +1999,83 @@ test("session/draft preserves explicit reasoning until authoritative config opti
 
   assert.equal(draftSessionConfig.reasoningEffort, "medium");
   assert.equal(draftSessionConfig.model, "claude-haiku-4-5");
+});
+
+test("session/list_updates returns paged raw session updates", async () => {
+  const callOrder: string[] = [];
+  const calls: Array<{ sessionId: string; options: { limit?: number; before?: string } }> = [];
+  const result = await handleSessionRpcRequest(
+    "session/list_updates",
+    { sessionId: "session-1", limit: 2, before: "sequence\t5" },
+    {
+      refreshAuthoritativeSessionHistory: async (sessionId: string) => {
+        callOrder.push(`refresh:${sessionId}`);
+      },
+      sessionUpdateStore: {
+        listPage: (sessionId: string, options: { limit?: number; before?: string }) => {
+          callOrder.push(`list:${sessionId}`);
+          calls.push({ sessionId, options });
+          return {
+            updates: [
+              {
+                sessionId,
+                runtimeSessionId: "runtime-1",
+                providerId: "codex",
+                sequence: 3,
+                source: "acp_load_replay" as const,
+                updateType: "message",
+                receivedAt: "2026-06-13T10:00:00.000Z",
+                payloadJson: "{\"type\":\"message\"}",
+              },
+              {
+                sessionId,
+                runtimeSessionId: "runtime-1",
+                providerId: "codex",
+                sequence: 4,
+                source: "acp_load_replay" as const,
+                updateType: "tool-call",
+                receivedAt: "2026-06-13T10:00:01.000Z",
+                payloadJson: "{\"type\":\"tool-call\"}",
+              },
+            ] as SessionUpdateRecord[],
+            nextCursor: "sequence\t3",
+            hasMore: true,
+          };
+        },
+      },
+    } as any,
+  ) as {
+    ok: boolean;
+    sessionId: string;
+    updates: Array<{ sequence: number }>;
+    nextCursor?: string;
+    hasMore: boolean;
+  };
+
+  assert.deepEqual(callOrder, ["refresh:session-1", "list:session-1"]);
+  assert.deepEqual(calls, [
+    { sessionId: "session-1", options: { limit: 2, before: "sequence\t5" } },
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.sessionId, "session-1");
+  assert.deepEqual(result.updates.map((update) => update.sequence), [3, 4]);
+  assert.equal(result.nextCursor, "sequence\t3");
+  assert.equal(result.hasMore, true);
+});
+
+test("session/list_updates reports unavailable raw update store", async () => {
+  const result = await handleSessionRpcRequest(
+    "session/list_updates",
+    { sessionId: "session-1", limit: 2 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionUpdateStore: undefined,
+    } as any,
+  ) as { ok: boolean; sessionId: string; updates: unknown[]; hasMore: boolean; message?: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.sessionId, "session-1");
+  assert.deepEqual(result.updates, []);
+  assert.equal(result.hasMore, false);
+  assert.equal(result.message, "Session update store not available");
 });
