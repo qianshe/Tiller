@@ -2,11 +2,15 @@ import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "../../../shared/ui";
 import { MissionPanelLoadingBadge } from "./panel-header";
+import type { SessionSummary } from "@tiller/shared";
 
 type MissionInspectorProps = {
   collapsed: boolean;
   style: CSSProperties;
   activeSessionPresent: boolean;
+  activeSession?: SessionSummary | null;
+  dispatch?: any;
+  rpcClient?: any;
   worktreeCount: number;
   worktreeSummaryLabel: string;
   loading?: boolean;
@@ -22,6 +26,9 @@ export function MissionInspector({
   collapsed,
   style,
   activeSessionPresent,
+  activeSession,
+  dispatch,
+  rpcClient,
   worktreeCount,
   worktreeSummaryLabel,
   loading,
@@ -38,6 +45,49 @@ export function MissionInspector({
   const commitScopeLabel = selectedDiffCount > 0 ? `${selectedDiffCount}/${diffCount} Diff` : `${diffCount} Diff`;
   const generateCommitMessage = () => {
     setCommitMessage(selectedDiffCount > 0 ? `chore：更新 ${selectedDiffCount} 个选中文件` : `chore：更新 ${diffCount} 个文件`);
+  };
+
+  const handleDebugUpdates = async () => {
+    if (!activeSession || !dispatch || !rpcClient) {
+      console.warn("⚠️ Debug Updates: No active session or RPC client available");
+      return;
+    }
+
+    try {
+      const result: any = await dispatch(rpcClient, "session/list_updates", {
+        sessionId: activeSession.id,
+        limit: 100,
+      });
+
+      if (result?.ok) {
+        console.group("📊 Session Updates Debug Report");
+        console.log("━".repeat(60));
+        console.log(`Session ID: ${result.sessionId}`);
+        console.log(`Total: ${result.updates.length} updates | Has More: ${result.hasMore}`);
+        if (result.nextCursor) {
+          console.log(`Next Cursor: ${result.nextCursor}`);
+        }
+        console.log("━".repeat(60));
+
+        // 格式化表格
+        console.table(
+          result.updates.map((u: any) => ({
+            Seq: u.sequence,
+            Source: u.source,
+            Type: u.updateType,
+            Time: new Date(u.receivedAt).toLocaleTimeString(),
+          }))
+        );
+
+        console.log("\n💡 Expand the array below to view full update details:");
+        console.log(result.updates);
+        console.groupEnd();
+      } else {
+        console.error("❌ Failed to fetch session updates:", result?.message ?? "Unknown error");
+      }
+    } catch (error) {
+      console.error("❌ Debug Updates Error:", error);
+    }
   };
 
   return (
@@ -58,6 +108,17 @@ export function MissionInspector({
             </span>
             <div className="flex-1" />
             {loading ? <MissionPanelLoadingBadge /> : null}
+            {activeSessionPresent ? (
+              <button
+                type="button"
+                className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis"
+                title="调试会话更新（输出到 Console）"
+                aria-label="调试会话更新"
+                onClick={handleDebugUpdates}
+              >
+                <Icon name="inspect" size={11} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis"

@@ -918,6 +918,9 @@ export function MissionWorktree(props: any) {
           collapsed={isMissionMobile ? false : effectiveInspectorCollapsed}
           style={missionInspectorPaneStyle}
           activeSessionPresent={Boolean(activeSession)}
+          activeSession={activeSession}
+          dispatch={dispatch}
+          rpcClient={rpcClientRef.current}
           worktreeCount={inspectorWorktreeCount}
           worktreeSummaryLabel={inspectorWorktreeSummaryLabel}
           worktreeList={renderWorktreeList()}

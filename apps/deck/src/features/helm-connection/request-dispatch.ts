@@ -6,7 +6,7 @@ export type DispatchToHelm = (
   method: string,
   params: unknown,
   options?: { onResult?: (method: string, result: unknown) => void },
-) => Promise<void>;
+) => Promise<unknown>;
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
   "session/new": 180_000,
@@ -35,6 +35,7 @@ export async function dispatchWithTrace(
     timeoutMs: REQUEST_TIMEOUT_OVERRIDES_MS[method],
   });
   onResult?.(method, result);
+  return result;
 }
 
 export async function requestInitialSync(
