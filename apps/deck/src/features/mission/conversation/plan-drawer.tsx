@@ -15,13 +15,13 @@ export function MissionPlanDrawer({ plan, placement = "inline", onDismiss }: Mis
   const planStateKey = entries.map((entry) => `${entry.status}:${entry.content}`).join("\u001f");
   const [drawerState, setDrawerState] = useState(() => ({
     key: planStateKey,
-    open: !complete,
+    open: false,
   }));
-  const open = drawerState.key === planStateKey ? drawerState.open : !complete;
+  const open = drawerState.key === planStateKey ? drawerState.open : false;
 
   useEffect(() => {
     setDrawerState((current) => {
-      const nextOpen = !complete;
+      const nextOpen = false;
       if (current.key === planStateKey && current.open === nextOpen) {
         return current;
       }
