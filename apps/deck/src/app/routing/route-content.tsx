@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { useDeckStore } from "../../store";
 import { buildDashboardViewModel } from "../../features/dashboard";
 import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
@@ -36,6 +37,7 @@ const MissionRoute = lazy(() =>
 export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   const viewport = useEffectiveViewport();
   const isMobile = viewport === "mobile";
+  const helmHealthStatus = useDeckStore((state) => state.helmHealthStatus);
 
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
@@ -153,6 +155,7 @@ function renderOverview() {
       isMobile={isMobile}
       copy={copy}
       connection={connection}
+      helmHealthStatus={helmHealthStatus}
       activeHelm={activeHelm}
       daemonHost={daemonHost}
       daemonPort={daemonPort}

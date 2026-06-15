@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useEffect } from "react";
+import { useDeckStore } from "../../../store";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
@@ -15,6 +16,7 @@ import { buildMissionEffectsSource } from "./mission-effects-source";
 
 export function useMissionEffects(ctx: any) {
   const source = buildMissionEffectsSource(ctx);
+  const setHelmHealthStatus = useDeckStore((state) => state.setHelmHealthStatus);
   const {
     projects,
     pairingState,
@@ -228,5 +230,6 @@ useReconnectEffects({
   autoConnectAttemptRef,
   manualDisconnectRef,
   connectToDaemon,
+  setHelmHealthStatus,
 });
 }

@@ -545,6 +545,7 @@ export function PlainToolGroupItem({
   const groupLabels = resolveToolGroupLabels(group);
   const summaryTitle = summarizeToolGroupTitle(groupLabels);
   const groupBadgeLabel = resolveToolGroupBadgeLabel(groupLabels);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isRunning) {
@@ -555,6 +556,31 @@ export function PlainToolGroupItem({
       setOpen(false);
     }
   }, [hasNewerContent, isRunning]);
+
+  // 自动滚动到底部：当工具组打开且有新工具调用时
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const content = contentRef.current;
+    if (!content) {
+      return;
+    }
+
+    const scrollToBottom = () => {
+      content.scrollTop = content.scrollHeight;
+    };
+
+    // 使用 requestAnimationFrame 确保 DOM 更新后滚动
+    // 双重 rAF 确保布局和渲染都完成
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToBottom);
+    });
+    
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [group.length, open]);
 
   return (
     <div className={`plain-tool-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
@@ -591,7 +617,11 @@ export function PlainToolGroupItem({
             )}
           />
         </summary>
-        <div className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground" data-mission-swipe-lock="true">
+        <div 
+          ref={contentRef}
+          className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground" 
+          data-mission-swipe-lock="true"
+        >
           {group.map((item) => (
             <PlainToolCallItem key={item.id} item={item} />
           ))}

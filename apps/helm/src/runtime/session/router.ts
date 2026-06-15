@@ -196,7 +196,6 @@ export async function sendPromptImmediately(
   }
 
   subscribePromptingSocketToSession(item.sessionId, context);
-  seedPromptTimelineSequence(item.sessionId, context);
 
   const imageAttachments = item.content?.filter((content) => content.type === "image") ?? [];
   logRuntimeInfo(context, "runtime.prompt.send_started", {
@@ -211,41 +210,6 @@ export async function sendPromptImmediately(
     phase: "helm.prompt.send_start",
     meta: { queued: true, chars: item.text.length, images: imageAttachments.length },
   });
-  const timestamp = new Date().toISOString();
-  const userMessage = {
-    id: item.clientMessageId,
-    role: "user" as const,
-    text: item.text,
-    timestamp,
-    timelineSequence: allocateLiveEventSequence(item.sessionId),
-    ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
-  };
-  const storedUserMessage = persistMessageImageAttachments({
-    sessionId: item.sessionId,
-    message: userMessage,
-    attachments: context.sessionAttachmentStore,
-  });
-  context.persistSessionMessage(item.sessionId, storedUserMessage);
-  persistRuntimeSessionUpdate(
-    item.sessionId,
-    { type: "message", message: storedUserMessage },
-    context,
-    storedUserMessage.timelineSequence,
-  );
-  persistTimelineMessage(context, item.sessionId, storedUserMessage);
-  createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
-    kind: "user_message",
-    message: storedUserMessage,
-  });
-  const updated = context.updateSessionSummary(item.sessionId, (current) =>
-    applyDispatchingUserPromptToSummary(current, item.text, timestamp),
-  );
-  if (updated) {
-    createSessionEventPublisher(context).sessionUpdate(item.sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
 
   await record.runtime.prompt(item.text, item.content);
   emitHelmPromptTrace(context, {
@@ -336,6 +300,18 @@ export async function drainPromptQueue(sessionId: string, context: HelmHandlerCo
       }
       const inFlight = context.promptQueue.setInFlight(next);
       broadcastPromptQueue(context, sessionId);
+      
+      // 在发送前先将消息写入聊天
+      const timestamp = new Date().toISOString();
+      const userMessage = createUserPromptMessage({
+        sessionId: next.sessionId,
+        text: next.text,
+        content: next.content,
+        clientMessageId: next.clientMessageId,
+        timestamp,
+      });
+      await appendUserPromptMessage(sessionId, userMessage, context);
+      
       try {
         await sendPromptImmediately(inFlight, context);
       } catch (error) {
@@ -447,6 +423,10 @@ export async function sendPromptToSession(
       context.promptQueue.clearInFlight(sessionId, queueItem.id);
       broadcastPromptQueue(context, sessionId);
       void context.drainPromptQueue(sessionId);
+    },
+    shouldQueue: (sessionId) => {
+      const summary = context.sessions.get(sessionId)?.summary;
+      return summary?.status === "running" || summary?.status === "waiting_for_permission";
     },
   });
 

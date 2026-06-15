@@ -834,6 +834,7 @@ export function MissionWorktree(props: any) {
               deckPreferences={deckPreferences}
               enhancePromptDraft={enhancePromptDraft}
               promptEnhancerBusy={promptEnhancerBusy}
+              promptEnhancerStatus={props.promptEnhancerStatus || ""}
               sessionCanCancel={sessionExecutionPending && activeSessionStatus !== "starting"}
               cancelSession={cancelSession}
               canSend={canSend}

@@ -18,7 +18,7 @@ import {
   resolveSessionConfigHint,
   splitModelReasoning,
 } from "../utils/composer-options";
-import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId } from "../utils/session-derivations";
+import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitlePlaceholder } from "../utils/session-derivations";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../../shared/config/deck-runtime";
 
 export function useMissionViewModel(ctx: any) {
@@ -200,6 +200,7 @@ const draftReasoningEffort = activeSession
   ? (activeSession.reasoningEffort ?? "medium")
   : selectedReasoningEffort;
 const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
+const draftSessionTitlePlaceholder = resolveSessionTitlePlaceholder(draftAgent);
 const draftConfigHint = resolveSessionConfigHint(
   activeSession,
   agents,
@@ -364,6 +365,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     draftModel,
     draftReasoningEffort,
     draftPromptPlaceholder,
+    draftSessionTitlePlaceholder,
     draftConfigHint,
     draftModelPlaceholder,
     draftAgentModelOptionsKey,

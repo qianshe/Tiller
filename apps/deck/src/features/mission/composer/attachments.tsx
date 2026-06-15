@@ -22,14 +22,15 @@ export function ComposerAttachments({
           {promptImages.map((image, index) => (
             <span
               key={`${image.uri ?? image.name}-${index}`}
-              className="mission-composer-attachment mission-attachment-chip"
+              className="mission-composer-attachment mission-attachment-chip inline-flex items-center gap-1 rounded border border-border-ghost bg-surface-emphasis px-2 py-1 text-xs"
             >
-              image {index + 1}
+              <span className="text-muted-foreground">📎</span>
+              <span>图片 {index + 1}</span>
               <button
                 type="button"
-                className="mission-composer-attachment-remove"
+                className="mission-composer-attachment-remove ml-1 flex h-4 w-4 items-center justify-center rounded hover:bg-surface-sunken"
                 onClick={() => removePromptImage(index)}
-                aria-label={`移除 image ${index + 1}`}
+                aria-label={`移除图片 ${index + 1}`}
                 title="移除"
               >
                 ×

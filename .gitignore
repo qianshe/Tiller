@@ -63,3 +63,4 @@ output/
 tmd/
 .rule/
 .agent-issues/
+.claude/analysis/

@@ -19,9 +19,12 @@ export function isActiveToolStatus(status: AgentToolCall["status"]) {
   return status === "pending" || status === "running" || status === "waiting_for_permission";
 }
 
-export function resolveToolStatusLabel(status: AgentToolCall["status"]) {
+export function resolveToolStatusLabel(
+  status: AgentToolCall["status"],
+  output?: string | null,
+) {
   if (status === "completed") {
-    return "完成";
+    return "已完成";
   }
   if (status === "failed") {
     return "失败";
@@ -29,7 +32,11 @@ export function resolveToolStatusLabel(status: AgentToolCall["status"]) {
   if (status === "waiting_for_permission") {
     return "等待授权";
   }
-  return "运行中";
+  if (status === "cancelled") {
+    return "已取消";
+  }
+  // pending, running
+  return "执行中";
 }
 
 export function formatToolInputPreview(input: string) {

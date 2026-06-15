@@ -7,6 +7,7 @@ import type {
 } from "@tiller/shared";
 import type { Locale, UI_COPY } from "../../../shared/utils/copy";
 import type { AppView } from "../../../shared/utils/routes";
+import type { HelmHealthStatus } from "../../helm-connection";
 import { AgentIcon, StatusDot } from "../../../shared/ui";
 import "./page.css";
 
@@ -35,6 +36,7 @@ function GithubLink({ className = "" }: { className?: string }) {
 type OverviewPageProps = {
   copy: (typeof UI_COPY)[Locale];
   connection: "connecting" | "connected" | "disconnected";
+  helmHealthStatus: HelmHealthStatus;
   activeHelm: HelmSummary | null;
   daemonHost: string;
   daemonPort: string;
@@ -53,6 +55,7 @@ type OverviewPageProps = {
 
 export function OverviewPage({
   connection,
+  helmHealthStatus,
   activeHelm,
   daemonHost,
   daemonPort,
@@ -67,6 +70,18 @@ export function OverviewPage({
     ? `${activeHelm.name} · ${activeHelm.host}:${activeHelm.port}`
     : `${daemonHost.trim() || defaultDaemonHost}:${daemonPort.trim() || defaultDaemonPort}`;
   const onlineHelmCount = connection === "connected" ? 1 : 0;
+  
+  // 解析 Helm 健康状态显示
+  const HELM_STATUS_CONFIG = {
+    connected: { label: "已连接", color: "success" },
+    healthy: { label: "在线（未连接）", color: "warning" },
+    unhealthy: { label: "离线", color: "error" },
+    unknown: { label: "未知", color: "muted" },
+  } as const;
+  
+  const helmStatusKey = connection === "connected" ? "connected" : helmHealthStatus;
+  const { label: helmStatusLabel, color: helmStatusColor } = HELM_STATUS_CONFIG[helmStatusKey];
+  
   const landingStats = [
     { label: "在线 HELM", value: String(onlineHelmCount), suffix: "台" },
     { label: "项目", value: String(projects.length), suffix: "个" },
@@ -123,6 +138,16 @@ export function OverviewPage({
       </div>
 
       <span className="sr-only">当前 Helm: {activeHelmLabel}</span>
+      
+      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+        <span 
+          className="size-2 rounded-full" 
+          style={{ 
+            background: `var(--${helmStatusColor})` 
+          }} 
+        />
+        <span>Helm: {helmStatusLabel}</span>
+      </div>
 
       <div className="landing-ship-hotspots" aria-label="战舰快捷导航">
         <button

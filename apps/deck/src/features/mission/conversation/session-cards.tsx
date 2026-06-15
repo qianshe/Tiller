@@ -128,7 +128,8 @@ function useSessionCardScrollControls() {
     if (!body) {
       return;
     }
-    body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+    // 直接滚动到底部，简单可靠
+    body.scrollTop = body.scrollHeight;
     setScrollToBottomVisible(false);
   }, [setScrollToBottomVisible]);
 

@@ -4,6 +4,8 @@ import type { TrustedDeviceCache } from "../../features/auth";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 
+export type HelmHealthStatus = "unknown" | "healthy" | "unhealthy";
+
 export type DebugTrace = {
   connectClicks: number;
   pairClicks: number;
@@ -15,12 +17,14 @@ type Updater<T> = T | ((current: T) => T);
 
 export type ConnectionSlice = {
   connection: ConnectionState;
+  helmHealthStatus: HelmHealthStatus;
   daemonHost: string;
   daemonPort: string;
   trustedDevice: TrustedDeviceCache | null;
   trustedDevices: TrustedDeviceSummary[];
   debugTrace: DebugTrace;
   setConnection: (updater: Updater<ConnectionState>) => void;
+  setHelmHealthStatus: (status: HelmHealthStatus) => void;
   setEndpoint: (endpoint: { host: string; port: string }) => void;
   setDaemonHost: (host: string) => void;
   setDaemonPort: (port: string) => void;
@@ -38,6 +42,7 @@ const DEFAULT_DEBUG_TRACE: DebugTrace = {
 
 export const createConnectionSlice: StateCreator<ConnectionSlice> = (set) => ({
   connection: "disconnected",
+  helmHealthStatus: "unknown",
   daemonHost: "127.0.0.1",
   daemonPort: "47631",
   trustedDevice: null,
@@ -48,6 +53,7 @@ export const createConnectionSlice: StateCreator<ConnectionSlice> = (set) => ({
       connection:
         typeof updater === "function" ? updater(state.connection) : updater,
     })),
+  setHelmHealthStatus: (helmHealthStatus) => set({ helmHealthStatus }),
   setEndpoint: ({ host, port }) => set({ daemonHost: host, daemonPort: port }),
   setDaemonHost: (daemonHost) => set({ daemonHost }),
   setDaemonPort: (daemonPort) => set({ daemonPort }),

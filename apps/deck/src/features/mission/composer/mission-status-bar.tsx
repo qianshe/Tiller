@@ -2,6 +2,7 @@ type MissionStatusBarProps = {
   className?: string;
   modelLoading: boolean;
   promptEnhancing: boolean;
+  promptEnhancerStatus?: string;
 };
 
 const MODEL_LOADING_LABEL = "模型加载中...";
@@ -11,10 +12,16 @@ export function MissionStatusBar({
   className = "",
   modelLoading,
   promptEnhancing,
+  promptEnhancerStatus,
 }: MissionStatusBarProps) {
   const items: string[] = [];
   if (modelLoading) items.push(MODEL_LOADING_LABEL);
   if (promptEnhancing) items.push(PROMPT_ENHANCING_LABEL);
+  
+  // 如果有具体的增强器状态消息（包括错误和成功消息），显示它
+  if (!promptEnhancing && promptEnhancerStatus?.trim()) {
+    items.push(promptEnhancerStatus.trim());
+  }
 
   if (items.length === 0) {
     return null;

@@ -568,6 +568,15 @@ export function App() {
     deckData.helmConnectionStates,
   ]);
 
+  // 离开设置页面时清空 promptEnhancer 状态消息
+  useEffect(() => {
+    if (route.activeView === "settings") {
+      return;
+    }
+    // 当从设置页面切换到其他页面时，清空状态消息
+    promptEnhancerSettings.setStatus("");
+  }, [route.activeView, promptEnhancerSettings]);
+
   const appShell = (
     <main className={shellClassName}>
       <AppRoutes

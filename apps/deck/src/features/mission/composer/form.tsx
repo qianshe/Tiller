@@ -118,6 +118,7 @@ type MissionComposerProps = {
   deckPreferences: DeckPreferences;
   enhancePromptDraft: () => void;
   promptEnhancerBusy: boolean;
+  promptEnhancerStatus: string;
   sessionCanCancel: boolean;
   cancelSession: (sessionId: string) => void;
   canSend: boolean;
@@ -191,6 +192,7 @@ export function MissionComposer({
   deckPreferences,
   enhancePromptDraft,
   promptEnhancerBusy,
+  promptEnhancerStatus,
   sessionCanCancel,
   cancelSession,
   canSend,
@@ -339,7 +341,7 @@ export function MissionComposer({
             <span className="min-w-0 flex-1" aria-hidden="true" />
           ) : (
             <span className="ml-1 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground tabular">
-              → {composerSession?.title ?? draftPromptPlaceholder}
+              → {composerSession?.title ?? "新会话"}
             </span>
           )}
         </div>
@@ -472,6 +474,7 @@ export function MissionComposer({
             className="col-start-2 self-center justify-self-center pointer-events-none flex h-6 w-fit max-w-[min(18rem,50%)] items-center rounded bg-surface-sunken/80 px-2 py-0 text-center shadow-sm"
             modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
+            promptEnhancerStatus={promptEnhancerStatus}
           />
           <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (

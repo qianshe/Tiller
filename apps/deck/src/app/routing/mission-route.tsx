@@ -161,6 +161,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     enhancePromptDraft,
     promptEnhancerBusy,
     setPromptEnhancerStatus,
+    promptEnhancerSettings,
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
@@ -347,6 +348,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       deckPreferences={deckPreferences}
       enhancePromptDraft={enhancePromptDraft}
       promptEnhancerBusy={promptEnhancerBusy}
+      promptEnhancerStatus={promptEnhancerSettings.status}
       setPromptEnhancerStatus={setPromptEnhancerStatus}
       cancelSession={cancelSession}
       missionDisplayPaneStyle={missionDisplayPaneStyle}

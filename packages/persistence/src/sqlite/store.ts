@@ -278,7 +278,9 @@ function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: A
       INSERT OR REPLACE INTO session_messages(session_id, id, position, role, timestamp, payload_json)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
-    for (const [position, message] of normalizeSessionMessages(messages).entries()) {
+    // Sort messages by timeline before writing to ensure position reflects chronological order
+    const sortedMessages = sortMessagesByTimeline(normalizeSessionMessages(messages));
+    for (const [position, message] of sortedMessages.entries()) {
       insert.run(
         sessionId,
         message.id,
@@ -289,6 +291,28 @@ function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: A
       );
     }
   });
+}
+
+function sortMessagesByTimeline(messages: AgentMessage[]): AgentMessage[] {
+  return messages
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      // 1. Priority: timelineSequence (authoritative order from ACP)
+      const leftSeq = left.message.timelineSequence;
+      const rightSeq = right.message.timelineSequence;
+      if (leftSeq !== undefined && rightSeq !== undefined) {
+        const seqDelta = leftSeq - rightSeq;
+        if (seqDelta !== 0) return seqDelta;
+      }
+      
+      // 2. Secondary: timestamp
+      const timeDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+      if (timeDelta !== 0) return timeDelta;
+      
+      // 3. Fallback: original index (stable sort)
+      return left.index - right.index;
+    })
+    .map(entry => entry.message);
 }
 
 function upsertCommandChunk(db: DatabaseSync, sessionId: string, chunk: CommandChunk) {

@@ -38,6 +38,7 @@ export type SendPromptUseCaseDependencies<QueueItem = unknown, QueueSnapshot = u
   onQueueChanged(sessionId: string, snapshot: QueueSnapshot): Promise<void> | void;
   onPromptFailed(sessionId: string, error: unknown): Promise<void> | void;
   onPromptSettled(sessionId: string, queueItem: QueueItem): Promise<void> | void;
+  shouldQueue?(sessionId: string): boolean;
   now?(): Date;
   createClientMessageId?(sessionId: string): string;
 };
@@ -56,7 +57,10 @@ export class SendPromptUseCase<QueueItem = unknown, QueueSnapshot = unknown, Mes
       clientMessageId,
     };
 
-    if (this.dependencies.promptQueue.hasInFlight(input.sessionId)) {
+    if (
+      this.dependencies.promptQueue.hasInFlight(input.sessionId) ||
+      this.dependencies.shouldQueue?.(input.sessionId)
+    ) {
       const queueItem = this.dependencies.promptQueue.enqueue(queueInput);
       await this.publishQueue(input.sessionId);
       return { accepted: "queued", queueItem };

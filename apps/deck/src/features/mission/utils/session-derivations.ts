@@ -197,3 +197,7 @@ export function resolveSessionTitle(session: SessionSummary, preview = session.l
 export function resolvePromptPlaceholder(_agent?: { command?: string; args?: string[] } | null) {
   return "Enter 发送消息 · Shift+Enter 换行 · / 命令 · Esc 取消";
 }
+
+export function resolveSessionTitlePlaceholder(_agent?: { command?: string; args?: string[] } | null) {
+  return "新会话";
+}
