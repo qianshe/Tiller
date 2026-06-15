@@ -161,7 +161,7 @@ export function PlainMessages({
     }
 
     function loadOlderWhenScrolledToTop() {
-      if (olderLoadRequestedRef.current || container.scrollTop > 48) {
+      if (olderLoadRequestedRef.current || container.scrollTop > 200) {
         return;
       }
       if (hasHiddenLoadedItems) {
@@ -194,9 +194,16 @@ export function PlainMessages({
     if (!snapshot || !scrollContainer) {
       return;
     }
-    scrollContainer.scrollTop =
-      scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
-    localScrollSnapshotRef.current = null;
+    
+    // Use requestAnimationFrame to ensure DOM is fully rendered before adjusting scroll
+    requestAnimationFrame(() => {
+      const newScrollTop = scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
+      scrollContainer.scrollTo({
+        top: newScrollTop,
+        behavior: 'instant'
+      });
+      localScrollSnapshotRef.current = null;
+    });
   }, [visibleRenderMessages.length]);
 
   if (!displayItems.length) {
