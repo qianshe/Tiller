@@ -337,5 +337,6 @@ export {
   coalesceDisplayMessages,
   mergeAgentMessages,
   mergeMessageHistory,
+  normalizeSystemMessageText,
   type MergeMessageHistoryOptions,
 } from "./message-history";

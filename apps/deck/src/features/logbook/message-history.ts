@@ -111,7 +111,7 @@ export function mergeAgentMessages(
   if (
     last.role === "system" &&
     incoming.role === "system" &&
-    last.text === incoming.text
+    normalizeSystemMessageText(last.text) === normalizeSystemMessageText(incoming.text)
   ) {
     return items;
   }
@@ -542,6 +542,10 @@ function collapseRepeatedAssistantText(text: string) {
       ? bridgeIndex
       : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
+}
+
+export function normalizeSystemMessageText(text: string) {
+  return text.replace(/\(request id: [^)]*\)/gu, "").replace(/\s+/gu, " ").trim();
 }
 
 function collapseExactRepeatedText(text: string) {
