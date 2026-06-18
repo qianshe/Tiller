@@ -75,11 +75,9 @@ test("bootstrap plan carries the initial message and artifact page requests", ()
 test("artifact projection is blocked while message history is still incomplete", () => {
   assert.equal(
     shouldProjectArtifactsIntoTimeline({
-      timelineEntryCount: 0,
       messageHistoryLoading: false,
       messageHasMore: true,
       timelineHasMore: false,
-      hasAssistantTimelineEntries: false,
       isLiveUpdate: false,
     }),
     false,
@@ -89,39 +87,33 @@ test("artifact projection is blocked while message history is still incomplete",
 test("artifact projection is blocked while message history is loading", () => {
   assert.equal(
     shouldProjectArtifactsIntoTimeline({
-      timelineEntryCount: 0,
       messageHistoryLoading: true,
       messageHasMore: false,
       timelineHasMore: false,
-      hasAssistantTimelineEntries: false,
       isLiveUpdate: false,
     }),
     false,
   );
 });
 
-test("historical artifact hydration is blocked when timeline is already authoritative", () => {
+test("historical artifact hydration allowed even when timeline already has entries (dedup handled by upsert)", () => {
   assert.equal(
     shouldProjectArtifactsIntoTimeline({
-      timelineEntryCount: 3,
       messageHistoryLoading: false,
       messageHasMore: false,
       timelineHasMore: false,
-      hasAssistantTimelineEntries: true,
       isLiveUpdate: false,
     }),
-    false,
+    true,
   );
 });
 
 test("historical artifact hydration allowed when timeline is empty and history is idle", () => {
   assert.equal(
     shouldProjectArtifactsIntoTimeline({
-      timelineEntryCount: 0,
       messageHistoryLoading: false,
       messageHasMore: false,
       timelineHasMore: false,
-      hasAssistantTimelineEntries: false,
       isLiveUpdate: false,
     }),
     true,
@@ -131,11 +123,9 @@ test("historical artifact hydration allowed when timeline is empty and history i
 test("live tool updates can still project into an existing assistant timeline", () => {
   assert.equal(
     shouldProjectArtifactsIntoTimeline({
-      timelineEntryCount: 1,
       messageHistoryLoading: false,
       messageHasMore: false,
       timelineHasMore: false,
-      hasAssistantTimelineEntries: true,
       isLiveUpdate: true,
     }),
     true,

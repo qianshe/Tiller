@@ -79,18 +79,14 @@ export function buildConversationPaginationPlan({
 }
 
 export function shouldProjectArtifactsIntoTimeline({
-  timelineEntryCount,
   messageHistoryLoading,
   messageHasMore,
   timelineHasMore,
-  hasAssistantTimelineEntries,
   isLiveUpdate,
 }: {
-  timelineEntryCount: number;
   messageHistoryLoading: boolean;
   messageHasMore: boolean;
   timelineHasMore: boolean;
-  hasAssistantTimelineEntries: boolean;
   isLiveUpdate: boolean;
 }): boolean {
   if (isLiveUpdate) {
@@ -100,9 +96,6 @@ export function shouldProjectArtifactsIntoTimeline({
     return false;
   }
   if (messageHasMore || timelineHasMore) {
-    return false;
-  }
-  if (hasAssistantTimelineEntries && timelineEntryCount > 0) {
     return false;
   }
   return true;
