@@ -26,7 +26,7 @@ function resolveMissionToolLoadingLabel({
 function resolveMissionToolLoadingTitleLabel({
   pendingToolPresent,
 }: MissionToolLoadingState) {
-  return pendingToolPresent ? "工具执行中" : "同步中";
+  return pendingToolPresent ? "工具执行中" : "执行中";
 }
 
 /**
