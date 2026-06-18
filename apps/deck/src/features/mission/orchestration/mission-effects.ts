@@ -5,7 +5,6 @@ import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
 import { useSnapshotCache } from "../hooks/snapshot-cache";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
@@ -127,40 +126,6 @@ useEffect(() => {
   messageHistoryState,
   sessionOpenScrollTick,
 ]);
-// Opening an old session is windowed: Deck asks Helm for the latest message/artifact
-// page, then starts ACP resume separately. Restore replay is handled inside Helm and
-// must not be treated as a replacement for these paged history requests.
-useEffect(() => {
-  if (
-    !activeSessionId ||
-    (openChatSessionIds?.length ?? 0) > 1 ||
-    pairingState !== "paired" ||
-    !rpcClientRef.current ||
-    rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-  setMessageHistoryState((current) => ({
-    ...current,
-    [activeSessionId]: { hasMore: false, loading: true },
-  }));
-  setActivityHistoryState((current) => ({
-    ...current,
-    [activeSessionId]: { hasMore: false, loading: true },
-  }));
-  void dispatch(rpcClientRef.current, "session/list_messages", {
-    sessionId: activeSessionId,
-    limit: DEFAULT_MESSAGE_PAGE_LIMIT,
-  });
-  void dispatch(rpcClientRef.current, "session/get_artifacts", {
-    sessionId: activeSessionId,
-    limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
-  });
-  setResumeFeedback("正在检查 ACP 会话恢复能力...");
-  void dispatch(rpcClientRef.current, "session/check_resume", {
-    sessionId: activeSessionId,
-  });
-}, [activeSessionId, openChatSessionIds?.length, pairingState]);
 usePromptAutosize({
   activeView,
   activeSessionId,
