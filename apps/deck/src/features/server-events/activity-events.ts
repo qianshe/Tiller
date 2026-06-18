@@ -80,10 +80,23 @@ export function applyActivityUpdate(
       }
       return true;
     }
-    case "tool_call":
-      mergeSessionToolCalls(sessionId, [update.toolCall]);
-      appendToolCallTimelineEntry(store, sessionId, update.toolCall);
+    case "tool_call": {
+      const toolCall = update.toolCall;
+      const isAlreadySettled = toolCall.status === "completed" || toolCall.status === "failed";
+      if (isAlreadySettled) {
+        const runningSnapshot = { ...toolCall, status: "running" as const };
+        mergeSessionToolCalls(sessionId, [runningSnapshot]);
+        appendToolCallTimelineEntry(store, sessionId, runningSnapshot);
+        requestAnimationFrame(() => {
+          mergeSessionToolCalls(sessionId, [toolCall]);
+          appendToolCallTimelineEntry(useDeckStore.getState(), sessionId, toolCall);
+        });
+      } else {
+        mergeSessionToolCalls(sessionId, [toolCall]);
+        appendToolCallTimelineEntry(store, sessionId, toolCall);
+      }
       return true;
+    }
     case "plan_update":
       // Plan updates are session-scoped state carried over the activity update transport.
       store.setSessionPlans((current) =>
