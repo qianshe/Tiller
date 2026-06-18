@@ -139,16 +139,6 @@ export function OverviewPage({
 
       <span className="sr-only">当前 Helm: {activeHelmLabel}</span>
       
-      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
-        <span 
-          className="size-2 rounded-full" 
-          style={{ 
-            background: `var(--${helmStatusColor})` 
-          }} 
-        />
-        <span>Helm: {helmStatusLabel}</span>
-      </div>
-
       <div className="landing-ship-hotspots" aria-label="战舰快捷导航">
         <button
           type="button"
