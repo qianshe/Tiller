@@ -34,8 +34,8 @@ function createDependencies(overrides: Record<string, unknown> = {}) {
   return { dependencies, dispatched, traces, cleared, appended };
 }
 
-test("submitPromptRequest dispatches existing-session prompts with a matching trace id", () => {
-  const { dependencies, dispatched, traces, cleared } = createDependencies();
+test("submitPromptRequest dispatches existing-session prompts with a matching trace id", async () => {
+  const { dependencies, dispatched, traces, cleared, appended } = createDependencies();
 
   const submitted = submitPromptRequest(
     {
@@ -55,6 +55,11 @@ test("submitPromptRequest dispatches existing-session prompts with a matching tr
       imageCount: 0,
     },
   ]);
+  assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
+  assert.deepEqual(appended, []);
+
+  await flushPromises();
+
   assert.deepEqual(dispatched, [
     {
       method: "session/prompt",
@@ -66,7 +71,9 @@ test("submitPromptRequest dispatches existing-session prompts with a matching tr
       },
     },
   ]);
-  assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
+  assert.deepEqual(appended, [
+    { sessionId: "session-1", text: "hello", id: "client-session-1", images: [] },
+  ]);
 });
 
 test("submitPromptRequest prepares an existing image session before dispatching the prompt", async () => {
@@ -112,17 +119,17 @@ test("submitPromptRequest prepares an existing image session before dispatching 
   );
 
   assert.equal(submitted, true);
-  assert.deepEqual(calls, ["append:session-1:看这张图:client-session-1:1", "prepare:session-1"]);
+  assert.deepEqual(calls, ["prepare:session-1"]);
   assert.deepEqual(dispatched, []);
 
   releasePrepare();
   await flushPromises();
 
   assert.deepEqual(calls, [
-    "append:session-1:看这张图:client-session-1:1",
     "prepare:session-1",
     "prepared:session-1",
     "dispatch:session/prompt",
+    "append:session-1:看这张图:client-session-1:1",
   ]);
   assert.deepEqual(dispatched, [
     {
@@ -160,6 +167,25 @@ test("submitPromptRequest preserves the no-session create path", () => {
   assert.deepEqual(dispatched, []);
   assert.deepEqual(traces, []);
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
+});
+
+test("submitPromptRequest does not append user message when prompt is queued", async () => {
+  const { dependencies, appended } = createDependencies({
+    dispatch: () => Promise.resolve({ accepted: "queued" }),
+  });
+
+  const submitted = submitPromptRequest(
+    {
+      prompt: "queued message",
+      promptImages: [],
+      activeSessionId: "session-1",
+    },
+    dependencies,
+  );
+
+  assert.equal(submitted, true);
+  await flushPromises();
+  assert.deepEqual(appended, []);
 });
 
 test("submitPromptRequest does not dispatch when chat is restore-gated", () => {
