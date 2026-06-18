@@ -191,6 +191,7 @@ type PlainMessageItemProps = {
   assistantActions?: AssistantMessageActions;
   isExpanded: boolean;
   message: AgentMessage;
+  onDismiss?: (messageId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
 };
 
@@ -205,8 +206,10 @@ export const PlainMessageItem = memo(function PlainMessageItem({
   assistantActions,
   isExpanded,
   message,
+  onDismiss,
   onToggleExpandedMessage,
 }: PlainMessageItemProps) {
+  const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
   const isStreaming = isAssistant && message.streaming;
   const isCollapsible =
@@ -282,9 +285,11 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         "plain-message min-w-0 text-foreground",
         `plain-${message.role}`,
         isStreaming && "plain-message-streaming",
-        isAssistant
-          ? `mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
-          : "ml-auto grid w-full justify-items-end gap-2 text-left",
+        isSystem
+          ? "mr-auto grid w-full max-w-full items-start"
+          : isAssistant
+            ? `mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
+            : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
     >
@@ -319,7 +324,24 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             ))}
           </div>
         ) : null}
-        {message.role === "user" ? (
+        {isSystem ? (
+          <div className="flex min-w-0 items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] leading-[1.5] text-foreground/80">
+            <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
+              {renderPlainMessageContent(message, false, false)}
+            </div>
+            {onDismiss ? (
+              <button
+                type="button"
+                className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-surface-sunken hover:text-foreground"
+                onClick={() => onDismiss(message.id)}
+                aria-label="关闭提示"
+                title="关闭"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            ) : null}
+          </div>
+        ) : message.role === "user" ? (
           <div className="plain-message-user-row flex w-full min-w-0 max-w-full items-start justify-end gap-1.5">
             <div
               className={cn(

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
@@ -62,6 +62,7 @@ export function PlainMessages({
     sessionId: string | null;
   }>({ items: [], sessionId: null });
   const [visibleItemLimit, setVisibleItemLimit] = useState(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
+  const [dismissedSystemMessageIds, setDismissedSystemMessageIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     olderLoadRequestedRef.current = false;
@@ -71,6 +72,7 @@ export function PlainMessages({
     localScrollSnapshotRef.current = null;
     timelineCacheRef.current = { items: [], sessionId };
     setVisibleItemLimit(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
+    setDismissedSystemMessageIds(new Set());
   }, [sessionId]);
 
   if (timelineCacheRef.current.sessionId !== sessionId) {
@@ -85,9 +87,13 @@ export function PlainMessages({
       : timelineCacheRef.current.items;
 
   const displayMessages = useMemo(
-    () => resolvePlainDisplayMessages(items, boundaryTimestamps),
-    [items, boundaryTimestamps],
+    () => resolvePlainDisplayMessages(items, boundaryTimestamps)
+      .filter((message) => !(message.role === "system" && dismissedSystemMessageIds.has(message.id))),
+    [items, boundaryTimestamps, dismissedSystemMessageIds],
   );
+  const dismissSystemMessage = useCallback((messageId: string) => {
+    setDismissedSystemMessageIds((current) => new Set([...current, messageId]));
+  }, []);
   const displayItems = useMemo(
     () => resolvePlainConversationDisplayItems({
       displayMessages,
@@ -309,6 +315,7 @@ export function PlainMessages({
               }
               isExpanded={isExpanded}
               message={renderItem.message}
+              onDismiss={renderItem.message.role === "system" ? dismissSystemMessage : undefined}
               onToggleExpandedMessage={onToggleExpandedMessage}
             />
           </div>
