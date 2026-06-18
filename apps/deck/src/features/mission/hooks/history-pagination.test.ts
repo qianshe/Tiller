@@ -28,7 +28,7 @@ test("loadOlderMessages requests timeline pages with the independent timeline cu
         dispatched.push({ method, params: params as Record<string, unknown> });
       },
       messageHistoryState,
-      preserveChatScrollRef: { current: null },
+
       sessionHistoryState: { hasMore: false, loading: false },
       setActivityHistoryState: () => undefined,
       setMessageHistoryState: (updater: any) => {

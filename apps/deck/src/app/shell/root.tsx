@@ -437,7 +437,6 @@ export function App() {
     chatMainRef: runtimeState.chatMainRef,
     dispatch,
     messageHistoryState: deckData.messageHistoryState,
-    preserveChatScrollRef: runtimeState.preserveChatScrollRef,
     sessionHistoryState: deckData.sessionHistoryState,
     setActivityHistoryState: deckData.setActivityHistoryState,
     setMessageHistoryState: deckData.setMessageHistoryState,
