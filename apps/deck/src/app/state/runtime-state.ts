@@ -30,7 +30,6 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
-  const preserveChatScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const stickChatToBottomRef = useRef(true);
   const lastAutoScrollSessionIdRef = useRef<string | null>(null);
   const pendingSessionScrollToBottomRef = useRef<string | null>(null);
@@ -93,7 +92,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   return {
     socketRef, rpcClientRef, helmSocketRefs, helmRpcClientRefs, requestCounter, pairInputRefs, lastPairingAttemptRef,
     pendingPromptRef, pendingPromptContentRef, promptModelPickerRef, missionPromptRef,
-    chatMainRef, preserveChatScrollRef, stickChatToBottomRef, lastAutoScrollSessionIdRef,
+    chatMainRef, stickChatToBottomRef, lastAutoScrollSessionIdRef,
     pendingSessionScrollToBottomRef, worktreePickerRef, agentPickerRef,
     pendingAddHelmProfileRef, primaryHelmKeyRef, resumeStartRequestsRef,
     expandedMessageIds, setExpandedMessageIds, sessionOpenScrollTick, setSessionOpenScrollTick,

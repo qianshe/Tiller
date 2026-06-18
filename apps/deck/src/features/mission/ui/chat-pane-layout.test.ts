@@ -79,11 +79,10 @@ test("mission message history loading also advances artifact history for thinkin
   const historyPaginationSource = readFileSync(resolve(currentDir, "../hooks/history-pagination.ts"), "utf8");
 
   assert.match(historyPaginationSource, /function loadOlderActivities/);
-  assert.match(historyPaginationSource, /const canLoadMessages =/);
-  assert.match(historyPaginationSource, /const canLoadActivities =/);
-  assert.match(historyPaginationSource, /!canLoadMessages && !canLoadActivities/);
-  assert.match(historyPaginationSource, /if \(canLoadMessages\)/);
-  assert.match(historyPaginationSource, /if \(canLoadActivities\)/);
+  assert.match(historyPaginationSource, /buildConversationPaginationPlan/);
+  assert.match(historyPaginationSource, /!plan\.listMessages && !plan\.getArtifacts/);
+  assert.match(historyPaginationSource, /if \(plan\.listMessages\)/);
+  assert.match(historyPaginationSource, /if \(plan\.getArtifacts\)/);
 });
 
 test("mission chat history state includes activity history for thinking-only pages", () => {
@@ -92,9 +91,7 @@ test("mission chat history state includes activity history for thinking-only pag
   assert.match(chatPaneSource, /const activityHistoryStateBySession = useMemo/);
   assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryStateBySession\}/);
   assert.match(messageTimelineSource, /resolveConversationHistoryState/);
-  assert.match(messageTimelineSource, /messageHistoryState\?\.hasMore && messageHistoryState\.nextCursor/);
-  assert.match(messageTimelineSource, /messageHistoryState\?\.timelineHasMore && messageHistoryState\.timelineNextCursor/);
-  assert.match(messageTimelineSource, /activityHistoryState\?\.hasMore && activityHistoryState\.nextCursor/);
+  assert.match(messageTimelineSource, /resolveConversationHistoryFlags/);
 });
 
 test("mission chat renders permission drawers inside matching session cards", () => {
@@ -159,7 +156,7 @@ test("markdown table wrapper keeps horizontal scrolling without generic overflow
   assert.doesNotMatch(plainMessagesSource, /border border-border-ghost\/70/);
   assert.doesNotMatch(plainMessagesSource, /rounded-md bg-surface-emphasis\/45/);
   assert.match(plainMessagesSource, /message\.role === "user" && message\.attachments\?\.length \?/);
-  assert.match(plainMessagesSource, /mission-message-attachments[\s\S]*?\) : null\}\s*\{message\.role === "user" \? \(/);
+  assert.match(plainMessagesSource, /mission-message-attachments[\s\S]*?\) : null\}\s*\{isSystem \? \(/);
   assert.match(plainMessagesSource, /message\.role !== "user" && message\.attachments\?\.length \?/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-x-auto/);
   assert.match(plainMessagesSource, /\[&_\.markdown-table-scroll\]:overflow-y-hidden/);
@@ -334,7 +331,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /parallelGridFillsContainer \? "h-full min-h-0 overflow-hidden" : "min-h-full"/);
   assert.match(chatPaneSource, /ResizeObserverCtor/);
   assert.match(chatPaneSource, /\}, \[chatMainRef, openSessions\.length, shouldLockChatMainScroll\]\);/);
-  assert.match(chatPaneSource, /mission-session-grid grid box-border gap-2 p-2/);
+  assert.match(chatPaneSource, /mission-session-grid grid box-border/);
   assert.match(chatPaneSource, /gridTemplateColumns: "repeat\(auto-fit, minmax\(min\(100%, 360px\), 1fr\)\)"/);
   assert.match(chatPaneSource, /"h-full min-h-0 cursor-default rounded-\[8px\] border bg-surface transition-all"/);
   assert.match(chatPaneSource, /active \? "border-primary" : "border-border-ghost"/);

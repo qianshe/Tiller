@@ -23,7 +23,6 @@ export function useMissionEffects(ctx: any) {
     dispatch,
     activeView,
     chatMainRef,
-    preserveChatScrollRef,
     activeSessionId,
     stickChatToBottomRef,
     pendingSessionScrollToBottomRef,
@@ -83,13 +82,6 @@ useEffect(() => {
     return;
   }
   requestAnimationFrame(() => {
-    const preserve = preserveChatScrollRef.current;
-    if (preserve) {
-      chatMain.scrollTop =
-        chatMain.scrollHeight - preserve.scrollHeight + preserve.scrollTop;
-      preserveChatScrollRef.current = null;
-      return;
-    }
     const sessionChanged =
       lastAutoScrollSessionIdRef.current !== activeSessionId;
     const shouldForceSessionBottom = Boolean(

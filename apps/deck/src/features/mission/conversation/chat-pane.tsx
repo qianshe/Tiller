@@ -637,62 +637,11 @@ export function MissionChatPane({
           </div>
         ) : null}{" "}
         {openSessions.length || draftCard ? (
-          isSingleSession && singleSession && !draftCard ? (
-            <MissionChatSessionCard
-              session={singleSession}
-              active={singleSession.id === selectedSessionId}
-              flat
-              isRuntimeActive={singleSession.id === activeSessionId}
-              sessionMessages={
-                sessionMessagesById[singleSession.id] ??
-                (singleSession.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
-              }
-              timelineItems={sessionTimelineById[singleSession.id] ?? EMPTY_TIMELINE_ITEMS}
-              sessionToolCalls={
-                sessionToolCallsById[singleSession.id] ??
-                (singleSession.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
-              }
-              pendingApprovals={pendingApprovalsBySession[singleSession.id] ?? EMPTY_PENDING_APPROVALS}
-              messageHistoryState={messageHistoryState[singleSession.id]}
-              activityHistoryState={activityHistoryState[singleSession.id]}
-              bodyScrollSnapshot={sessionBodyScrollPositionRef.current[singleSession.id]}
-              onBodyScroll={recordSessionBodyScroll}
-              onFocus={handleSelectSessionView}
-              onRename={handleRenameSession}
-              onClear={handleClearSession}
-              onReimportHistory={handleReimportSessionHistory}
-              onClose={handleCloseSessionView}
-              onDismissCompletedPlan={handleDismissCompletedSessionPlan}
-              restoreNotice={singleSession.id === selectedSessionId ? restoreNotice : undefined}
-              plan={
-                sessionPlansById[singleSession.id] ??
-                (singleSession.id === activeSessionId ? activeSessionPlan : null)
-              }
-              promptQueue={singleSession.id === activeSessionId ? promptQueue : undefined}
-              dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[singleSession.id]}
-              activityLoading={singleSession.id === activeSessionId ? activityLoading : null}
-              pendingToolPresent={singleSession.id === activeSessionId ? pendingToolPresent : false}
-              pendingToolTitle={
-                pendingApprovalsBySession[singleSession.id]?.length ? pendingToolTitle : null
-              }
-              copy={copy}
-              canHandoffAssistantMessage={canHandoffAssistantMessage}
-              assistantHandoffBusy={assistantHandoffBusy}
-              onHandoffAssistantMessage={onHandoffAssistantMessage}
-              expandedMessageIds={expandedMessageIds}
-              showThinking={showThinking}
-              showPermissionWorktree={showPermissionWorktree}
-              onLoadOlderMessages={handleLoadOlderMessages}
-              onToggleExpandedMessage={handleToggleExpandedMessage}
-              onUpdateQueuedPrompt={onUpdateQueuedPrompt}
-              onDeleteQueuedPrompt={onDeleteQueuedPrompt}
-              onRespondToPermission={handleRespondToPermission}
-            />
-          ) : (
             <div
               ref={sessionGridRef}
               className={cn(
-                "mission-session-grid grid box-border gap-2 p-2",
+                "mission-session-grid grid box-border",
+                openSessions.length === 1 && !draftCard ? "" : "gap-2 p-2",
                 parallelGridFillsContainer ? "h-full min-h-0 overflow-hidden" : "min-h-full",
               )}
               style={parallelGridStyle}
@@ -703,6 +652,7 @@ export function MissionChatPane({
                   key={session.id}
                   session={session}
                   active={session.id === selectedSessionId}
+                  flat={openSessions.length === 1 && !draftCard}
                   isRuntimeActive={session.id === activeSessionId}
                   sessionMessages={
                     sessionMessagesById[session.id] ??
@@ -751,7 +701,6 @@ export function MissionChatPane({
                 />
               ))}
             </div>
-          )
         ) : null}{" "}
       </div>{" "}
       {children}
