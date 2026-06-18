@@ -108,8 +108,12 @@ function mergeSessionPlanUpdate(
   sessionId: string,
   incoming: AgentPlan,
 ) {
-  if (incoming.entries.length === 0 && isAgentPlanComplete(current[sessionId])) {
-    return current;
+  if (incoming.entries.length === 0) {
+    if (!current[sessionId]) {
+      return current;
+    }
+    const { [sessionId]: _removed, ...rest } = current;
+    return rest;
   }
   return {
     ...current,

@@ -1453,7 +1453,7 @@ test("activity update stores ACP plan updates by session", () => {
   ]);
 });
 
-test("activity update preserves completed plans when an empty plan update arrives", () => {
+test("activity update clears completed plans when an empty plan update arrives", () => {
   resetStore();
   useDeckStore.setState({
     sessionPlans: {
@@ -1487,10 +1487,7 @@ test("activity update preserves completed plans when an empty plan update arrive
   );
 
   assert.equal(emptyHandled, true);
-  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
-    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
-    { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
-  ]);
+  assert.equal(useDeckStore.getState().sessionPlans.s1, undefined);
 
   const replacementHandled = applyActivityUpdate(
     {
