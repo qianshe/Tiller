@@ -29,7 +29,7 @@ type PlainMessagesProps = {
   emptyText: string;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
-  historyState?: { hasMore: boolean; loading: boolean };
+  historyState?: { hasMore: boolean; canLoadMore?: boolean; loading: boolean };
   onLoadOlderMessages: () => void;
   onToggleExpandedMessage: (messageId: string) => void;
 };
@@ -55,7 +55,7 @@ export function PlainMessages({
   const localScrollSnapshotRef = useRef<ScrollSnapshot | null>(null);
   const olderLoadRequestedRef = useRef(false);
   const pendingRemoteHistoryRevealRef = useRef(false);
-  const previousDisplayItemsLengthRef = useRef(0);
+  const remoteHistoryRevealBaselineRef = useRef<RemoteHistoryRevealBaseline | null>(null);
   const renderRevealRequestedRef = useRef(false);
   const timelineCacheRef = useRef<{
     items: SessionTimelineEntry[];
@@ -66,7 +66,7 @@ export function PlainMessages({
   useEffect(() => {
     olderLoadRequestedRef.current = false;
     pendingRemoteHistoryRevealRef.current = false;
-    previousDisplayItemsLengthRef.current = 0;
+    remoteHistoryRevealBaselineRef.current = null;
     renderRevealRequestedRef.current = false;
     localScrollSnapshotRef.current = null;
     timelineCacheRef.current = { items: [], sessionId };
@@ -89,19 +89,15 @@ export function PlainMessages({
     [items, boundaryTimestamps],
   );
   const displayItems = useMemo(
-    () => effectiveTimelineItems.length
-      ? buildPlainConversationItemsFromTimelineWithLiveMessages(
-          effectiveTimelineItems,
-          displayMessages,
-          showThinking,
-          Boolean(historyState?.hasMore),
-        )
-      : buildPlainConversationItems(
-          displayMessages,
-          showThinking ? thinkingToolCalls : [],
-          toolCalls,
-        ),
-    [displayMessages, effectiveTimelineItems, showThinking, thinkingToolCalls, toolCalls],
+    () => resolvePlainConversationDisplayItems({
+      displayMessages,
+      timelineItems: effectiveTimelineItems,
+      showThinking,
+      thinkingToolCalls,
+      toolCalls,
+      timelineHasMore: Boolean(historyState?.hasMore),
+    }),
+    [displayMessages, effectiveTimelineItems, historyState?.hasMore, showThinking, thinkingToolCalls, toolCalls],
   );
   const visibleItems = useMemo(
     () => resolveVisiblePlainConversationItems(displayItems, visibleItemLimit),
@@ -112,14 +108,35 @@ export function PlainMessages({
     () => resolvePlainMessageRenderItems(visibleItems),
     [visibleItems],
   );
+  const visibleRenderSignature = useMemo(
+    () => resolvePlainMessageRenderSignature(visibleRenderMessages),
+    [visibleRenderMessages],
+  );
 
   useEffect(() => {
-    const previousDisplayItemsLength = previousDisplayItemsLengthRef.current;
-    previousDisplayItemsLengthRef.current = displayItems.length;
+    const currentBaseline = {
+      displayItemsLength: displayItems.length,
+      visibleRenderSignature,
+    };
+    const revealBaseline = resolveRemoteHistoryRevealBaseline({
+      previousBaseline: remoteHistoryRevealBaselineRef.current,
+      pendingRemoteHistoryReveal: pendingRemoteHistoryRevealRef.current,
+      displayItemsLength: currentBaseline.displayItemsLength,
+      visibleRenderSignature: currentBaseline.visibleRenderSignature,
+    });
+    remoteHistoryRevealBaselineRef.current = revealBaseline;
     if (!pendingRemoteHistoryRevealRef.current || historyState?.loading) {
       return;
     }
-    if (displayItems.length <= previousDisplayItemsLength || visibleItemLimit >= displayItems.length) {
+    remoteHistoryRevealBaselineRef.current = currentBaseline;
+    const revealAction = resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: revealBaseline.displayItemsLength,
+      nextDisplayItemsLength: displayItems.length,
+      previousVisibleRenderSignature: revealBaseline.visibleRenderSignature,
+      nextVisibleRenderSignature: visibleRenderSignature,
+      visibleItemLimit,
+    });
+    if (revealAction === "clear-pending") {
       pendingRemoteHistoryRevealRef.current = false;
       olderLoadRequestedRef.current = false;
       localScrollSnapshotRef.current = null;
@@ -128,11 +145,13 @@ export function PlainMessages({
     pendingRemoteHistoryRevealRef.current = false;
     olderLoadRequestedRef.current = false;
     renderRevealRequestedRef.current = true;
-    setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
-      currentLimit,
-      displayItems.length,
-    ));
-  }, [displayItems.length, historyState?.loading, visibleItemLimit]);
+    if (revealAction === "reveal-more") {
+      setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
+        currentLimit,
+        displayItems.length,
+      ));
+    }
+  }, [displayItems.length, historyState?.loading, visibleItemLimit, visibleRenderSignature]);
 
   useEffect(() => {
     const scrollContainer = resolvePlainMessageScrollContainer(listRef.current);
@@ -168,12 +187,16 @@ export function PlainMessages({
         revealOlderLoadedItems();
         return;
       }
-      if (!historyState?.hasMore) {
+      if (!(historyState?.canLoadMore ?? historyState?.hasMore)) {
         return;
       }
       captureScrollSnapshot();
       olderLoadRequestedRef.current = true;
       pendingRemoteHistoryRevealRef.current = true;
+      remoteHistoryRevealBaselineRef.current = {
+        displayItemsLength: displayItems.length,
+        visibleRenderSignature,
+      };
       onLoadOlderMessages();
     }
 
@@ -185,7 +208,7 @@ export function PlainMessages({
       loadOlderWhenScrolledToTop();
     }
     return () => container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
-  }, [displayItems.length, hasHiddenLoadedItems, historyState?.hasMore, historyState?.loading, onLoadOlderMessages]);
+  }, [displayItems.length, hasHiddenLoadedItems, historyState?.canLoadMore, historyState?.hasMore, historyState?.loading, onLoadOlderMessages, visibleRenderSignature]);
 
   useEffect(() => {
     renderRevealRequestedRef.current = false;
@@ -204,7 +227,7 @@ export function PlainMessages({
       });
       localScrollSnapshotRef.current = null;
     });
-  }, [visibleRenderMessages.length]);
+  }, [visibleRenderMessages.length, visibleRenderSignature]);
 
   if (!displayItems.length) {
     return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
@@ -296,6 +319,11 @@ export function PlainMessages({
 }
 
 type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
+
+export type RemoteHistoryRevealBaseline = {
+  displayItemsLength: number;
+  visibleRenderSignature: string;
+};
 
 type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
@@ -407,6 +435,66 @@ export function resolvePlainMessageRenderItems(
       renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
     };
   });
+}
+
+export function resolvePlainMessageRenderSignature(
+  items: PlainMessageRenderItem[],
+) {
+  return items.map(resolvePlainMessageRenderSignaturePart).join("|");
+}
+
+function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
+  if (item.kind === "message") {
+    return [
+      item.renderKey,
+      item.message.role,
+      item.message.timestamp,
+      item.message.streaming ? "streaming" : "stable",
+      item.message.text.length,
+    ].join(":");
+  }
+  if (item.kind === "thinking") {
+    return resolveToolRenderSignaturePart(
+      item.renderKey,
+      item.toolCall,
+      item.toolCall.output ?? "",
+      item.toolCall.input ?? "",
+    );
+  }
+  if (item.kind === "subagent") {
+    return resolveToolRenderSignaturePart(
+      item.renderKey,
+      item.toolCall,
+      item.toolCall.text,
+      item.toolCall.input,
+    );
+  }
+  return [
+    item.renderKey,
+    ...item.group.map((toolCall) => resolveToolRenderSignaturePart(
+      toolCall.id,
+      toolCall,
+      toolCall.text,
+      toolCall.input,
+    )),
+  ].join(":");
+}
+
+function resolveToolRenderSignaturePart(
+  renderKey: string,
+  toolCall: AgentToolCall | ConversationToolCallItem,
+  outputText: string,
+  inputText: string,
+) {
+  const updatedAt = "updatedAt" in toolCall ? toolCall.updatedAt : "";
+  return [
+    renderKey,
+    toolCall.status,
+    toolCall.timestamp,
+    updatedAt,
+    outputText.length,
+    inputText.length,
+  ].join(":");
 }
 
 function resolveRenderablePlainMessageItems(
@@ -527,6 +615,79 @@ export function resolveNextPlainConversationRenderLimit(
     return safeTotal;
   }
   return Math.min(safeTotal, safeCurrent + safeStep);
+}
+
+export function resolvePlainConversationDisplayItems({
+  displayMessages,
+  timelineItems,
+  showThinking,
+  thinkingToolCalls,
+  toolCalls,
+  timelineHasMore,
+}: {
+  displayMessages: AgentMessage[];
+  timelineItems: SessionTimelineEntry[];
+  showThinking: boolean;
+  thinkingToolCalls: AgentToolCall[];
+  toolCalls: AgentToolCall[];
+  timelineHasMore: boolean;
+}) {
+  return timelineItems.length
+    ? buildPlainConversationItemsFromTimelineWithLiveMessages(
+        timelineItems,
+        displayMessages,
+        showThinking,
+        timelineHasMore,
+      )
+    : buildPlainConversationItems(
+        displayMessages,
+        showThinking ? thinkingToolCalls : [],
+        toolCalls,
+      );
+}
+
+export function resolveRemoteHistoryRevealAction({
+  previousDisplayItemsLength,
+  nextDisplayItemsLength,
+  previousVisibleRenderSignature,
+  nextVisibleRenderSignature,
+  visibleItemLimit,
+}: {
+  previousDisplayItemsLength: number;
+  nextDisplayItemsLength: number;
+  previousVisibleRenderSignature: string;
+  nextVisibleRenderSignature: string;
+  visibleItemLimit: number;
+}): "reveal-more" | "preserve-scroll" | "clear-pending" {
+  const loadedOlderItems = nextDisplayItemsLength > previousDisplayItemsLength;
+  const visibleWindowShifted =
+    previousVisibleRenderSignature.length > 0 &&
+    previousVisibleRenderSignature !== nextVisibleRenderSignature;
+  if (loadedOlderItems && visibleItemLimit < nextDisplayItemsLength) {
+    return "reveal-more";
+  }
+  if (loadedOlderItems || visibleWindowShifted) {
+    return "preserve-scroll";
+  }
+  return "clear-pending";
+}
+
+export function resolveRemoteHistoryRevealBaseline({
+  previousBaseline,
+  pendingRemoteHistoryReveal,
+  displayItemsLength,
+  visibleRenderSignature,
+}: {
+  previousBaseline: RemoteHistoryRevealBaseline | null;
+  pendingRemoteHistoryReveal: boolean;
+  displayItemsLength: number;
+  visibleRenderSignature: string;
+}) {
+  const currentBaseline = { displayItemsLength, visibleRenderSignature };
+  if (!pendingRemoteHistoryReveal) {
+    return currentBaseline;
+  }
+  return previousBaseline ?? currentBaseline;
 }
 
 function normalizePlainMessageRenderSource(

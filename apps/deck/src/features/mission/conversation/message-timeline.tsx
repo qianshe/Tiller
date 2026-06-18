@@ -3,6 +3,7 @@ import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
+  canLoadMore?: boolean;
   nextCursor?: string;
   hasMore: boolean;
   timelineNextCursor?: string;
@@ -103,7 +104,8 @@ export function resolveConversationHistoryState(
     activityHistoryState?.hasMore && activityHistoryState.nextCursor,
   );
   return {
-    hasMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
+    hasMore: hasLoadableMessages || hasLoadableTimeline,
+    canLoadMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
     loading: Boolean(messageHistoryState?.loading || activityHistoryState?.loading),
   };
 }

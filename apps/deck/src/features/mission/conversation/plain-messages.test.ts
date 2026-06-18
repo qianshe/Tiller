@@ -8,12 +8,16 @@ import {
   PlainMessages,
   INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
   PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  resolveRemoteHistoryRevealAction,
   resolveNextPlainConversationRenderLimit,
   resolveFinalAssistantActionTarget,
   resolvePlainConversationItemSpacingClass,
   resolvePlainDisplayMessages,
+  resolvePlainConversationDisplayItems,
+  resolvePlainMessageRenderSignature,
   resolvePlainMessageRenderItems,
   resolvePlainMessageScrollContainer,
+  resolveRemoteHistoryRevealBaseline,
   resolveVisiblePlainConversationItems,
   shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
@@ -435,6 +439,154 @@ test("plain message remote history requests reset so repeated top scroll can loa
     ),
     -1,
   );
+});
+
+test("plain message remote history preserves scroll when compact shifts the visible window without growing total items", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: 120,
+      nextDisplayItemsLength: 120,
+      previousVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      nextVisibleRenderSignature: "assistant-11|assistant-12|assistant-13|assistant-14",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "preserve-scroll",
+  );
+});
+
+test("plain message remote history expands the render window when an older page increases loaded items", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      nextDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+      previousVisibleRenderSignature: "assistant-1|assistant-2",
+      nextVisibleRenderSignature: "assistant-1|assistant-2",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "reveal-more",
+  );
+});
+
+test("plain message remote history keeps the request baseline while loading commits new items", () => {
+  const requestBaseline = {
+    displayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    visibleRenderSignature: "assistant-10|assistant-11",
+  };
+  const loadingBaseline = resolveRemoteHistoryRevealBaseline({
+    previousBaseline: requestBaseline,
+    pendingRemoteHistoryReveal: true,
+    displayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+    visibleRenderSignature: "assistant-2|assistant-10|assistant-11",
+  });
+
+  assert.deepEqual(loadingBaseline, requestBaseline);
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: loadingBaseline.displayItemsLength,
+      nextDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+      previousVisibleRenderSignature: loadingBaseline.visibleRenderSignature,
+      nextVisibleRenderSignature: "assistant-2|assistant-10|assistant-11",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "reveal-more",
+  );
+});
+
+test("plain message remote history clears pending state only when neither size nor visible window changed", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: 120,
+      nextDisplayItemsLength: 120,
+      previousVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      nextVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "clear-pending",
+  );
+});
+
+test("plain message render signature changes when the same render key changes height", () => {
+  const before = resolvePlainMessageRenderItems([
+    {
+      ...message(1),
+      id: "assistant-same-key",
+      role: "assistant",
+      text: "短回复",
+    },
+  ]);
+  const after = resolvePlainMessageRenderItems([
+    {
+      ...message(1),
+      id: "assistant-same-key",
+      role: "assistant",
+      text: "短回复\n补充一行会改变高度",
+    },
+  ]);
+
+  assert.notEqual(
+    resolvePlainMessageRenderSignature(before),
+    resolvePlainMessageRenderSignature(after),
+  );
+});
+
+test("plain message display recomputes the timeline boundary when hasMore changes", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking",
+          text: "先思考",
+          title: "Thinking",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          timelineSequence: 2,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "最终回答",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          timelineSequence: 3,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      timelineSequence: 2,
+    },
+  ];
+  const liveMessages: AgentMessage[] = [
+    {
+      id: "assistant-live-older",
+      role: "assistant",
+      text: "更早的 fallback 回复",
+      timestamp: "2026-05-17T10:00:00.500Z",
+      timelineSequence: 1,
+    },
+  ];
+
+  const whilePaged = resolvePlainConversationDisplayItems({
+    displayMessages: liveMessages,
+    timelineItems,
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+    timelineHasMore: true,
+  });
+  const afterBoundaryResolved = resolvePlainConversationDisplayItems({
+    displayMessages: liveMessages,
+    timelineItems,
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+    timelineHasMore: false,
+  });
+
+  assert.equal(whilePaged.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), false);
+  assert.equal(afterBoundaryResolved.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), true);
 });
 
 test("plain message display uses chronological order from newest-first pages", () => {

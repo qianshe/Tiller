@@ -8,7 +8,7 @@ test("conversation history only advertises more context when a cursor is loadabl
       { hasMore: true, timelineHasMore: true, loading: false },
       { hasMore: true, loading: false },
     ),
-    { hasMore: false, loading: false },
+    { hasMore: false, canLoadMore: false, loading: false },
   );
 
   assert.deepEqual(
@@ -21,7 +21,7 @@ test("conversation history only advertises more context when a cursor is loadabl
       },
       undefined,
     ),
-    { hasMore: true, loading: false },
+    { hasMore: true, canLoadMore: true, loading: false },
   );
 
   assert.deepEqual(
@@ -29,6 +29,16 @@ test("conversation history only advertises more context when a cursor is loadabl
       undefined,
       { hasMore: true, nextCursor: "activity-cursor", loading: true },
     ),
-    { hasMore: true, loading: true },
+    { hasMore: false, canLoadMore: true, loading: true },
+  );
+});
+
+test("conversation history keeps activity-only pagination loadable without showing message context", () => {
+  assert.deepEqual(
+    resolveConversationHistoryState(
+      undefined,
+      { hasMore: true, nextCursor: "activity-cursor", loading: false },
+    ),
+    { hasMore: false, canLoadMore: true, loading: false },
   );
 });
