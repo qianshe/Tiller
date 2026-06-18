@@ -1,5 +1,6 @@
 import { memo, useCallback } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import { resolveConversationHistoryFlags } from "../history/model";
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
@@ -91,21 +92,6 @@ export function resolveConversationHistoryState(
   messageHistoryState?: MessageHistoryState,
   activityHistoryState?: MessageHistoryState,
 ): MessageHistoryState | undefined {
-  if (!messageHistoryState && !activityHistoryState) {
-    return undefined;
-  }
-  const hasLoadableMessages = Boolean(
-    messageHistoryState?.hasMore && messageHistoryState.nextCursor,
-  );
-  const hasLoadableTimeline = Boolean(
-    messageHistoryState?.timelineHasMore && messageHistoryState.timelineNextCursor,
-  );
-  const hasLoadableActivities = Boolean(
-    activityHistoryState?.hasMore && activityHistoryState.nextCursor,
-  );
-  return {
-    hasMore: hasLoadableMessages || hasLoadableTimeline,
-    canLoadMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
-    loading: Boolean(messageHistoryState?.loading || activityHistoryState?.loading),
-  };
+  return resolveConversationHistoryFlags(messageHistoryState, activityHistoryState) as
+    MessageHistoryState | undefined;
 }
