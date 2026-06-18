@@ -26,6 +26,7 @@ function createSessionMessageStore(): SessionServicesOptions["sessionMessageStor
 function createSessionArtifactStore(): SessionServicesOptions["sessionArtifactStore"] {
   return {
     appendOutput: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+    replaceOutputs: () => ({ outputs: [], diffs: [], toolCalls: [] }),
     replaceDiffs: () => ({ outputs: [], diffs: [], toolCalls: [] }),
     appendToolCall: () => ({ outputs: [], diffs: [], toolCalls: [] }),
     replaceToolCalls: () => ({ outputs: [], diffs: [], toolCalls: [] }),

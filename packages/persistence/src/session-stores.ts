@@ -36,6 +36,7 @@ export type SessionMessageStore = {
 
 export type SessionArtifactStore = {
   appendOutput: (sessionId: string, chunk: CommandChunk) => StoredSessionArtifacts;
+  replaceOutputs: (sessionId: string, outputs: CommandChunk[]) => StoredSessionArtifacts;
   replaceDiffs: (sessionId: string, diffs: FileDiffSummary[]) => StoredSessionArtifacts;
   appendToolCall: (sessionId: string, toolCall: AgentToolCall) => StoredSessionArtifacts;
   replaceToolCalls: (sessionId: string, toolCalls: AgentToolCall[]) => StoredSessionArtifacts;

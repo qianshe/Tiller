@@ -129,6 +129,132 @@ export function preservePreviousUserPromptsAfterReimport(input: {
   }
 }
 
+const RECOVERED_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
+
+export function sanitizeRecoveredHistorySequenceResets(
+  entries: SessionTimelineEntry[],
+) {
+  const observations = entries
+    .map((entry, index) => {
+      const sequence = resolveEntryTimelineSequence(entry);
+      const timestamp = Date.parse(entry.timestamp);
+      return Number.isFinite(timestamp) && typeof sequence === "number"
+        ? { entryId: entry.id, sequence, timestamp, index }
+        : null;
+    })
+    .filter((entry): entry is {
+      entryId: string;
+      sequence: number;
+      timestamp: number;
+      index: number;
+    } => Boolean(entry))
+    .sort((left, right) =>
+      left.timestamp === right.timestamp ? left.index - right.index : left.timestamp - right.timestamp
+    );
+
+  const staleEntryIds = new Set<string>();
+  let maxSequence = Number.NEGATIVE_INFINITY;
+  let maxSequenceTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const observation of observations) {
+    if (
+      observation.sequence < maxSequence &&
+      observation.timestamp - maxSequenceTimestamp > RECOVERED_SEQUENCE_RESET_TIMESTAMP_GAP_MS
+    ) {
+      staleEntryIds.add(observation.entryId);
+      continue;
+    }
+    if (observation.sequence > maxSequence) {
+      maxSequence = observation.sequence;
+      maxSequenceTimestamp = observation.timestamp;
+      continue;
+    }
+    if (observation.timestamp > maxSequenceTimestamp) {
+      maxSequenceTimestamp = observation.timestamp;
+    }
+  }
+
+  if (!staleEntryIds.size) {
+    return {
+      entries,
+      clearedMessageIds: new Set<string>(),
+      clearedToolCallIds: new Set<string>(),
+    };
+  }
+
+  const clearedMessageIds = new Set<string>();
+  const clearedToolCallIds = new Set<string>();
+  const sanitizedEntries = entries.map((entry) => {
+    if (!staleEntryIds.has(entry.id)) {
+      return entry;
+    }
+    if (entry.kind === "tool_call") {
+      clearedToolCallIds.add(entry.toolCall.id);
+      return {
+        ...entry,
+        timelineSequence: undefined,
+        toolCall: {
+          ...entry.toolCall,
+          timelineSequence: undefined,
+        },
+      };
+    }
+    if (entry.kind === "assistant_message") {
+      clearedMessageIds.add(entry.id);
+      return {
+        ...entry,
+        timelineSequence: undefined,
+        chunks: entry.chunks.map((chunk) => ({
+          ...chunk,
+          timelineSequence: undefined,
+        })),
+      };
+    }
+    clearedMessageIds.add(entry.message.id);
+    return {
+      ...entry,
+      timelineSequence: undefined,
+      message: {
+        ...entry.message,
+        timelineSequence: undefined,
+      },
+    };
+  });
+
+  return { entries: sanitizedEntries, clearedMessageIds, clearedToolCallIds };
+}
+
+export function clearRecoveredArtifactTimelineSequences(input: {
+  outputs: CommandChunk[];
+  toolCalls: AgentToolCall[];
+  clearedToolCallIds: ReadonlySet<string>;
+}) {
+  if (!input.clearedToolCallIds.size) {
+    return { outputs: input.outputs, toolCalls: input.toolCalls };
+  }
+  const outputs = input.outputs.map((output) =>
+    input.clearedToolCallIds.has(output.commandId) || input.clearedToolCallIds.has(output.id)
+      ? { ...output, timelineSequence: undefined }
+      : output
+  );
+  const toolCalls = input.toolCalls.map((toolCall) =>
+    input.clearedToolCallIds.has(toolCall.id) && typeof toolCall.timelineSequence === "number"
+      ? { ...toolCall, timelineSequence: undefined }
+      : toolCall
+  );
+  return { outputs, toolCalls };
+}
+
+function resolveEntryTimelineSequence(entry: SessionTimelineEntry) {
+  if (entry.kind === "tool_call") {
+    return entry.timelineSequence ?? entry.toolCall.timelineSequence;
+  }
+  if (entry.kind === "assistant_message") {
+    return entry.timelineSequence ?? entry.chunks[0]?.timelineSequence;
+  }
+  return entry.timelineSequence ?? entry.message.timelineSequence;
+}
+
 export function findAcpReplayCoverageGap(input: {
   previousMessages: AgentMessage[];
   replayMessages: AgentMessage[];

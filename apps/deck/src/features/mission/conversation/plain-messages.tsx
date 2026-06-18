@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
+import { looksLikeContinuationSummary } from "../../../shared/utils/continuation-summary";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -29,7 +30,12 @@ type PlainMessagesProps = {
   emptyText: string;
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
-  historyState?: { hasMore: boolean; canLoadMore?: boolean; loading: boolean };
+  historyState?: {
+    hasMore: boolean;
+    canLoadMore?: boolean;
+    timelineHasMore?: boolean;
+    loading: boolean;
+  };
   onLoadOlderMessages: () => void;
   onToggleExpandedMessage: (messageId: string) => void;
 };
@@ -96,14 +102,15 @@ export function PlainMessages({
   }, []);
   const displayItems = useMemo(
     () => resolvePlainConversationDisplayItems({
+      sessionId,
       displayMessages,
       timelineItems: effectiveTimelineItems,
       showThinking,
       thinkingToolCalls,
       toolCalls,
-      timelineHasMore: Boolean(historyState?.hasMore),
+      timelineHasMore: Boolean(historyState?.timelineHasMore),
     }),
-    [displayMessages, effectiveTimelineItems, historyState?.hasMore, showThinking, thinkingToolCalls, toolCalls],
+    [displayMessages, effectiveTimelineItems, historyState?.timelineHasMore, showThinking, thinkingToolCalls, toolCalls],
   );
   const visibleItems = useMemo(
     () => resolveVisiblePlainConversationItems(displayItems, visibleItemLimit),
@@ -625,6 +632,7 @@ export function resolveNextPlainConversationRenderLimit(
 }
 
 export function resolvePlainConversationDisplayItems({
+  sessionId,
   displayMessages,
   timelineItems,
   showThinking,
@@ -632,6 +640,7 @@ export function resolvePlainConversationDisplayItems({
   toolCalls,
   timelineHasMore,
 }: {
+  sessionId?: string | null;
   displayMessages: AgentMessage[];
   timelineItems: SessionTimelineEntry[];
   showThinking: boolean;
@@ -641,6 +650,7 @@ export function resolvePlainConversationDisplayItems({
 }) {
   return timelineItems.length
     ? buildPlainConversationItemsFromTimelineWithLiveMessages(
+        sessionId,
         timelineItems,
         displayMessages,
         showThinking,
@@ -838,13 +848,13 @@ function buildPlainConversationItemsFromTimeline(
     }
   }
 
-  const sorted = items.sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(sorted)),
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(items)),
   );
 }
 
 function buildPlainConversationItemsFromTimelineWithLiveMessages(
+  sessionId: string | null | undefined,
   timelineItems: SessionTimelineEntry[],
   messages: AgentMessage[],
   showThinking: boolean,
@@ -858,6 +868,11 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
     timelineItems,
     messages,
+  );
+  const continuationPrefaceMessageIds = resolveContinuationPrefaceMessageIds(messages);
+  const continuationPrefaceAnchor = resolveContinuationPrefaceAnchor(
+    messages,
+    continuationPrefaceMessageIds,
   );
   const timelineWindowLowerBound = resolveTimelineWindowLowerBound(timelineItems);
   const liveMessageItems = messages.flatMap((message, index) => {
@@ -882,22 +897,192 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
         }]
       : [];
   });
+  const continuationPrefaceItems = continuationPrefaceAnchor
+    ? liveMessageItems.filter(
+        (item) => item.kind === "message" &&
+          continuationPrefaceMessageIds.has(item.message.id),
+      )
+    : [];
+  const regularLiveMessageItems = continuationPrefaceItems.length
+    ? liveMessageItems.filter(
+        (item) => item.kind !== "message" ||
+          !continuationPrefaceMessageIds.has(item.message.id),
+      )
+    : liveMessageItems;
 
-  if (!liveMessageItems.length) {
+  if (!regularLiveMessageItems.length && !continuationPrefaceItems.length) {
     return timelineConversationItems;
   }
 
-  const sequencedLiveMessageItems = liveMessageItems.filter(
+  const sequencedLiveMessageItems = regularLiveMessageItems.filter(
     (item) => typeof item.timelineSequence === "number",
   );
-  const unsequencedLiveMessageItems = liveMessageItems.filter(
+  const unsequencedLiveMessageItems = regularLiveMessageItems.filter(
     (item) => typeof item.timelineSequence !== "number",
   );
-  const sorted = [...timelineConversationItems, ...sequencedLiveMessageItems].sort(comparePlainConversationItems);
-  const mergedSequencedItems = mergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(sorted)),
+  const optimisticUnsequencedLiveMessageItems = unsequencedLiveMessageItems.filter(
+    (item) => item.kind === "message" && isOptimisticLiveMessage(sessionId, item.message),
   );
-  return [...mergedSequencedItems, ...unsequencedLiveMessageItems];
+  const historicalUnsequencedLiveMessageItems = unsequencedLiveMessageItems.filter(
+    (item) => item.kind !== "message" || !isOptimisticLiveMessage(sessionId, item.message),
+  );
+  const mergedSequencedTimelineItems = mergeSequencedLiveMessageItemsIntoTimeline(
+    timelineConversationItems,
+    sequencedLiveMessageItems,
+  );
+  const mergedTimelineAndLiveItems = mergeUnsequencedLiveMessageItemsIntoTimeline(
+    mergedSequencedTimelineItems,
+    historicalUnsequencedLiveMessageItems,
+  );
+  const mergedSequencedItems = mergeAdjacentToolItems(
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(mergedTimelineAndLiveItems)),
+  );
+  const itemsWithContinuationPreface = continuationPrefaceItems.length
+    ? insertContinuationPrefaceItems(
+        mergedSequencedItems,
+        continuationPrefaceItems,
+        continuationPrefaceAnchor,
+      )
+    : mergedSequencedItems;
+  return [...itemsWithContinuationPreface, ...optimisticUnsequencedLiveMessageItems];
+}
+
+function isOptimisticLiveMessage(
+  sessionId: string | null | undefined,
+  message: AgentMessage,
+) {
+  if (!sessionId) {
+    return false;
+  }
+  if (message.role === "user") {
+    return message.id.startsWith(`${sessionId}-user-`);
+  }
+  return message.role === "assistant" && message.streaming === true;
+}
+
+function mergeSequencedLiveMessageItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveItems: PlainConversationItem[],
+) {
+  if (!timelineItems.length) {
+    return [...liveItems].sort(compareSequencedPlainConversationItems);
+  }
+  if (!liveItems.length) {
+    return timelineItems;
+  }
+
+  const merged = [...timelineItems];
+  const sortedLiveItems = [...liveItems].sort(compareSequencedPlainConversationItems);
+  for (const liveItem of sortedLiveItems) {
+    const insertIndex = resolveSequencedLiveMessageInsertIndex(merged, liveItem);
+    merged.splice(insertIndex, 0, liveItem);
+  }
+  return merged;
+}
+
+function mergeUnsequencedLiveMessageItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveItems: PlainConversationItem[],
+) {
+  if (!timelineItems.length) {
+    return [...liveItems].sort(compareUnsequencedPlainConversationItems);
+  }
+  if (!liveItems.length) {
+    return timelineItems;
+  }
+
+  const merged = [...timelineItems];
+  const sortedLiveItems = [...liveItems].sort(compareUnsequencedPlainConversationItems);
+  for (const liveItem of sortedLiveItems) {
+    const insertIndex = resolveUnsequencedLiveMessageInsertIndex(merged, liveItem);
+    merged.splice(insertIndex, 0, liveItem);
+  }
+  return merged;
+}
+
+function resolveSequencedLiveMessageInsertIndex(
+  items: PlainConversationItem[],
+  liveItem: PlainConversationItem,
+) {
+  const liveSequence = liveItem.timelineSequence;
+  if (typeof liveSequence !== "number") {
+    return items.length;
+  }
+
+  let fallbackIndex = items.length;
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) {
+      continue;
+    }
+    const currentSequence = currentItem.timelineSequence;
+    if (typeof currentSequence !== "number") {
+      continue;
+    }
+    if (currentSequence > liveSequence) {
+      return index;
+    }
+    if (currentSequence === liveSequence) {
+      const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
+      if (timestampDelta > 0) {
+        return index;
+      }
+    }
+    fallbackIndex = index + 1;
+  }
+  return fallbackIndex;
+}
+
+function compareSequencedPlainConversationItems(
+  left: PlainConversationItem,
+  right: PlainConversationItem,
+) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.timelineSequence,
+    right.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return plainConversationKindRank(left) - plainConversationKindRank(right);
+}
+
+function resolveUnsequencedLiveMessageInsertIndex(
+  items: PlainConversationItem[],
+  liveItem: PlainConversationItem,
+) {
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) {
+      continue;
+    }
+    const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
+    if (timestampDelta > 0) {
+      return index;
+    }
+    if (
+      timestampDelta === 0 &&
+      plainConversationKindRank(currentItem) > plainConversationKindRank(liveItem)
+    ) {
+      return index;
+    }
+  }
+  return items.length;
+}
+
+function compareUnsequencedPlainConversationItems(
+  left: PlainConversationItem,
+  right: PlainConversationItem,
+) {
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return plainConversationKindRank(left) - plainConversationKindRank(right);
 }
 
 type TimelineWindowLowerBound = {
@@ -929,6 +1114,91 @@ function resolveTimelineWindowLowerBound(
     timestamp: first.timestamp,
     timelineSequence: first.timelineSequence ?? first.message.timelineSequence,
   };
+}
+
+function resolveContinuationPrefaceMessageIds(messages: AgentMessage[]) {
+  const markerIndex = messages.findIndex((message) =>
+    looksLikeContinuationSummary(message.text)
+  );
+  if (markerIndex === -1) {
+    return new Set<string>();
+  }
+  const ids = new Set<string>();
+  for (let index = markerIndex; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    if (index > markerIndex && typeof message.timelineSequence === "number") {
+      break;
+    }
+    ids.add(message.id);
+  }
+  return ids;
+}
+
+function resolveContinuationPrefaceAnchor(
+  messages: AgentMessage[],
+  continuationPrefaceMessageIds: ReadonlySet<string>,
+) {
+  return messages.find((message) =>
+    !continuationPrefaceMessageIds.has(message.id) &&
+    typeof message.timelineSequence === "number"
+  );
+}
+
+function insertContinuationPrefaceItems(
+  items: PlainConversationItem[],
+  continuationPrefaceItems: PlainConversationItem[],
+  anchor: AgentMessage | undefined,
+) {
+  if (!continuationPrefaceItems.length || !anchor) {
+    return items;
+  }
+  const insertIndex = resolveContinuationPrefaceInsertIndex(items, anchor);
+  const next = [...items];
+  next.splice(
+    insertIndex,
+    0,
+    ...continuationPrefaceItems.sort(compareUnsequencedPlainConversationItems),
+  );
+  return next;
+}
+
+function resolveContinuationPrefaceInsertIndex(
+  items: PlainConversationItem[],
+  anchor: AgentMessage,
+) {
+  const anchorSequence = anchor.timelineSequence;
+  if (typeof anchorSequence === "number") {
+    for (let index = 0; index < items.length; index += 1) {
+      const currentItem = items[index];
+      if (currentItem?.timelineSequence === anchorSequence) {
+        return index;
+      }
+    }
+    for (let index = 0; index < items.length; index += 1) {
+      const currentItem = items[index];
+      if (
+        typeof currentItem?.timelineSequence === "number" &&
+        currentItem.timelineSequence > anchorSequence
+      ) {
+        return index;
+      }
+    }
+  }
+  const anchorTime = Date.parse(anchor.timestamp);
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) {
+      continue;
+    }
+    const currentTime = Date.parse(currentItem.timestamp);
+    if (Number.isFinite(currentTime) && currentTime >= anchorTime) {
+      return index;
+    }
+  }
+  return 0;
 }
 
 function isMessageBeforeTimelineWindow(

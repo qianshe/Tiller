@@ -117,6 +117,10 @@ export function createSqliteSessionArtifactStore(dbPath: string) {
       upsertCommandChunk(db, sessionId, chunk);
       return getSessionArtifacts(db, sessionId);
     },
+    replaceOutputs(sessionId: string, outputs: CommandChunk[]) {
+      replaceSessionOutputs(db, sessionId, outputs);
+      return getSessionArtifacts(db, sessionId);
+    },
     replaceDiffs(sessionId: string, diffs: FileDiffSummary[]) {
       replaceSessionDiffs(db, sessionId, diffs);
       return getSessionArtifacts(db, sessionId);

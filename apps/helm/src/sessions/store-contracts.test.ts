@@ -164,6 +164,13 @@ test("SessionArtifactStore contract supports outputs diffs tool calls paging and
     );
     assert.equal(store.getPage("session-1", { limit: 1 }).hasMore, true);
 
+    store.replaceOutputs("session-1", [
+      createOutput("out-3", "2026-05-29T10:00:04.000Z"),
+    ]);
+    assert.deepEqual(
+      store.get("session-1").outputs.map((output) => output.id),
+      ["out-3"],
+    );
     store.replaceToolCalls("session-1", [
       createToolCall("tool-2", "2026-05-29T10:00:03.000Z"),
     ]);

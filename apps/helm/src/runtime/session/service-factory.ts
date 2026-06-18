@@ -19,6 +19,7 @@ import type {
   WorktreeSummary,
   SessionConfigOptionValue,
 } from "@tiller/shared";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
 import {
   createHelmSessionStores,
@@ -37,11 +38,13 @@ import { createSessionDiffHydrationService } from "./diff-hydration";
 import { createSessionSummaryHydrationService } from "./summary-hydration";
 import { createRuntimeDescriptorService } from "../descriptor-service";
 import {
+  clearRecoveredArtifactTimelineSequences,
   chooseRecoverySummary,
   findAcpReplayCoverageGap,
   preservePreviousUserPromptsAfterReimport,
   readReimportedHistoryPage,
   recoverUserPromptFromSessionSummary,
+  sanitizeRecoveredHistorySequenceResets,
 } from "../history-reimport/helpers";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
 import {
@@ -92,6 +95,38 @@ type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
 
 export function createSessionServiceGraph(options: SessionServicesOptions) {
+  function sanitizeRecoveredHistoryOrdering(sessionId: string) {
+    const messages = options.sessionMessageStore.list(sessionId);
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    const currentTimeline = options.sessionTimelineStore.list(sessionId);
+    const baseTimeline = currentTimeline.length
+      ? currentTimeline
+      : buildSessionTimelineFromLegacy({
+        messages,
+        outputs: artifacts.outputs,
+        toolCalls: artifacts.toolCalls,
+      });
+    const sanitized = sanitizeRecoveredHistorySequenceResets(baseTimeline);
+    if (!sanitized.clearedMessageIds.size && !sanitized.clearedToolCallIds.size) {
+      return;
+    }
+
+    const sanitizedMessages = messages.map((message) =>
+      sanitized.clearedMessageIds.has(message.id) && typeof message.timelineSequence === "number"
+        ? { ...message, timelineSequence: undefined }
+        : message
+    );
+    const sanitizedArtifacts = clearRecoveredArtifactTimelineSequences({
+      outputs: artifacts.outputs,
+      toolCalls: artifacts.toolCalls,
+      clearedToolCallIds: sanitized.clearedToolCallIds,
+    });
+
+    options.sessionMessageStore.replace(sessionId, sanitizedMessages);
+    options.sessionArtifactStore.replaceOutputs(sessionId, sanitizedArtifacts.outputs);
+    options.sessionArtifactStore.replaceToolCalls(sessionId, sanitizedArtifacts.toolCalls);
+    options.sessionTimelineStore.replace(sessionId, sanitized.entries);
+  }
 
   function resolveStoredSessionWorktree(summary: SessionSummary) {
     return resolveStoredSessionWorktreeFromSummary({
@@ -335,6 +370,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         throw new Error("ACP did not return any history content for this session.");
       }
 
+      sanitizeRecoveredHistoryOrdering(sessionId);
       return readReimportedHistoryPage({
         sessionId,
         limit: reimportOptions.limit,
