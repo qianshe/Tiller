@@ -14,6 +14,7 @@ import {
   appendToolCallToSessionTimeline,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
+import { shouldProjectArtifactsIntoTimeline } from "../mission/history/model";
 import { toast } from "../toast";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
@@ -372,8 +373,30 @@ export function applySessionResult(
         ...outputToolCalls,
         ...(payload.toolCalls ?? []),
       ]);
-      if (shouldAppendArtifactToolCallsToTimeline(store, payload.sessionId)) {
-        appendToolCallsToSessionTimeline(store, payload.sessionId, artifactToolCalls);
+      {
+        const timeline = store.sessionTimeline[payload.sessionId] ?? [];
+        const messageState = store.messageHistoryState[payload.sessionId];
+        const activeToolCalls = artifactToolCalls.filter((toolCall) =>
+          toolCall.status === "running" || toolCall.status === "pending",
+        );
+        const historicalToolCalls = artifactToolCalls.filter((toolCall) =>
+          toolCall.status !== "running" && toolCall.status !== "pending",
+        );
+        const canProjectHistorical = shouldProjectArtifactsIntoTimeline({
+          timelineEntryCount: timeline.length,
+          messageHistoryLoading: Boolean(messageState?.loading),
+          messageHasMore: Boolean(messageState?.hasMore),
+          timelineHasMore: Boolean(messageState?.timelineHasMore),
+          hasAssistantTimelineEntries: timeline.some((entry) => entry.kind === "assistant_message"),
+          isLiveUpdate: false,
+        });
+        const projected = [
+          ...activeToolCalls,
+          ...(canProjectHistorical ? historicalToolCalls : []),
+        ];
+        if (projected.length > 0) {
+          appendToolCallsToSessionTimeline(store, payload.sessionId, projected);
+        }
       }
       applySessionPlanPayload(store, payload.sessionId, payload.plan);
       store.setDiffs((current) => ({
@@ -549,17 +572,6 @@ export function applySessionResult(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
-
-function shouldAppendArtifactToolCallsToTimeline(
-  store: DeckStore,
-  sessionId: string,
-) {
-  const currentTimeline = store.sessionTimeline[sessionId] ?? [];
-  if (currentTimeline.length > 0) {
-    return true;
-  }
-  return !store.messageHistoryState[sessionId]?.loading;
-}
 
 function appendToolCallsToSessionTimeline(
   store: DeckStore,
