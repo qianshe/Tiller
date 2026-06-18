@@ -1,5 +1,5 @@
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
-import { pageSessionTimeline } from "@tiller/persistence";
+import { isFallbackToolCallTitle, pageSessionTimeline } from "@tiller/persistence";
 import {
   buildSessionTimelineFromLegacy,
   resolveTimelineRepresentedUserMessageIds,
@@ -484,7 +484,12 @@ function repairProviderToolCall(
     },
     { providerId },
   );
-  return mapped?.event.type === "tool-call" ? mapped.event.toolCall : toolCall;
+  if (mapped?.event.type !== "tool-call") return toolCall;
+  const repaired = mapped.event.toolCall;
+  if (isFallbackToolCallTitle(repaired.title) && !isFallbackToolCallTitle(toolCall.title)) {
+    return { ...repaired, title: toolCall.title };
+  }
+  return repaired;
 }
 
 function repairCompletedThinkingToolCall(

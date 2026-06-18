@@ -20,7 +20,7 @@ test("both message and activity cursors contribute to flags", () => {
       { hasMore: true, nextCursor: "m1", timelineHasMore: true, timelineNextCursor: "t1", loading: false },
       { hasMore: true, nextCursor: "a1", loading: false },
     ),
-    { hasMore: true, canLoadMore: true, loading: false },
+    { hasMore: true, canLoadMore: true, timelineHasMore: true, loading: false },
   );
 });
 

@@ -26,7 +26,6 @@ import {
   shouldUseMissionVisualFixture,
   MissionAgentIcon,
   SessionCleanupConfirmDialog,
-  SessionHistoryReimportConfirmDialog,
   useHistoryPagination,
   useMissionEffects,
   useMissionLayout,
@@ -624,15 +623,6 @@ export function App() {
         onConfirm={(sessionId) => {
           controllers.cleanupSession(sessionId);
           runtimeState.setPendingSessionCleanup(null);
-        }}
-      />
-      <SessionHistoryReimportConfirmDialog
-        session={runtimeState.pendingSessionHistoryReimport}
-        resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
-        onCancel={() => runtimeState.setPendingSessionHistoryReimport(null)}
-        onConfirm={(sessionId) => {
-          controllers.reimportSessionHistory(sessionId);
-          runtimeState.setPendingSessionHistoryReimport(null);
         }}
       />
       <ApprovalToastStackContainer

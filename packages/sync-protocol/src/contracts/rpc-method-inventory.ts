@@ -11,6 +11,7 @@ export type RpcMethodFamily =
   | "agent"
   | "approval"
   | "daemon"
+  | "debug"
   | "device"
   | "error"
   | "helm"
@@ -59,6 +60,7 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
     value === "agent" ||
     value === "approval" ||
     value === "daemon" ||
+    value === "debug" ||
     value === "device" ||
     value === "error" ||
     value === "helm" ||

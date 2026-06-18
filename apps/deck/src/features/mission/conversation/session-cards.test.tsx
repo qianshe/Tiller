@@ -112,7 +112,6 @@ test("session cards use real borders so scroll content cannot cover the frame", 
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -146,6 +145,11 @@ test("session card bodies do not expose horizontal scrolling", () => {
   assert.doesNotMatch(sessionCardsSource, /overflow-auto/);
 });
 
+test("session card menu no longer exposes history reimport", () => {
+  assert.doesNotMatch(sessionCardsSource, /重新导入历史/);
+  assert.doesNotMatch(sessionCardsSource, /onReimportHistory/);
+});
+
 test("SessionCard keeps bottom breathing room when no dock is visible", () => {
   const html = renderToStaticMarkup(
     <SessionCard
@@ -155,7 +159,6 @@ test("SessionCard keeps bottom breathing room when no dock is visible", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -177,7 +180,6 @@ test("SessionCard can reserve message scroll space without floating docks", () =
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -261,7 +263,6 @@ test("SessionCard keeps a completed plan visible as a collapsed dock", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -286,7 +287,6 @@ test("SessionCard can reserve message scroll space below floating docks", () => 
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -307,7 +307,6 @@ test("SessionCard does not reserve dock spacer for restore previews by default",
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <SessionPreviewMessages session={session()} restoring />
@@ -328,7 +327,6 @@ test("SessionCard defaults to the prompt queue dock when queue and plan are both
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -353,7 +351,6 @@ test("SessionCard centers blocking overlays inside the session window", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -381,7 +378,6 @@ test("SessionCard wires plan dismissal through the session dock", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -411,7 +407,6 @@ test("SessionCard does not duplicate project name when worktree echoes it (any c
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -430,7 +425,6 @@ test("SessionCard shows distinct worktree name alongside project", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -449,7 +443,6 @@ test("SessionCard renders the plain status inside a framed, tone-colored pill", 
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -471,7 +464,6 @@ test("SessionCard renders the plain status inside a framed, tone-colored pill", 
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -495,7 +487,6 @@ test("SessionCard keeps title order while shrinking project metadata before stat
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>
@@ -528,7 +519,6 @@ test("SessionCard renders running tool status in the title bar", () => {
       onFocus={() => undefined}
       onRename={() => undefined}
       onClear={() => undefined}
-      onReimportHistory={() => undefined}
       onClose={() => undefined}
     >
       <div>会话正文</div>

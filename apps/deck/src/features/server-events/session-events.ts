@@ -19,6 +19,7 @@ import { toast } from "../toast";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
+import { looksLikeContinuationSummary } from "../../shared/utils/continuation-summary";
 import {
   pruneSessionScopedMap,
   resolveActiveSessionId,
@@ -36,10 +37,7 @@ import {
   type SessionConfigSelection,
 } from "./session-config-selection";
 import { deriveSessionListResult } from "./session-list-result";
-import {
-  deriveSessionReimportState,
-  resolveSessionCleanupToast,
-} from "./session-result-effects";
+import { resolveSessionCleanupToast } from "./session-result-effects";
 import {
   pendingInitialPromptMessageId,
   pendingPromptImages,
@@ -306,6 +304,8 @@ export function applySessionResult(
       }
       if (Array.isArray(payload.timeline)) {
         const shouldReplaceTimeline = !payload.before && !payload.timelineBefore;
+        const shouldForceIncomingTimeline = shouldReplaceTimeline &&
+          payload.messages.some((message: AgentMessage) => looksLikeContinuationSummary(message.text));
         store.setSessionTimeline((current) => {
           const currentEntries = current[payload.sessionId] ?? [];
           const incomingEntries = payload.timeline as SessionTimelineEntry[];
@@ -313,6 +313,7 @@ export function applySessionResult(
             ? replaceInitialTimelineHistory(
                 currentEntries,
                 incomingEntries,
+                { forceIncoming: shouldForceIncomingTimeline },
               )
             : mergeTimelineEntries(
                 incomingEntries,
@@ -398,54 +399,6 @@ export function applySessionResult(
           loading: false,
         },
       }));
-      return true;
-    }
-    case "session/reimport_history": {
-      const reimportState = deriveSessionReimportState(payload as any);
-      store.setMessages((current) => ({
-        ...current,
-        [payload.sessionId]: reimportState.messages,
-      }));
-      if (Array.isArray(payload.timeline)) {
-        store.setSessionTimeline((current) => ({
-          ...current,
-          [payload.sessionId]: payload.timeline as SessionTimelineEntry[],
-        }));
-      }
-      store.setMessageHistoryState((current) => ({
-        ...current,
-        [payload.sessionId]: reimportState.messageHistoryState,
-      }));
-      store.setOutputs((current) => ({
-        ...current,
-        [payload.sessionId]: reimportState.outputs,
-      }));
-      store.setToolCalls((current) => {
-        const next = {
-          ...current,
-          [payload.sessionId]: reimportState.toolCalls,
-        };
-        toolCallsRef.current = next;
-        return next;
-      });
-      store.setSessionPlans((current) =>
-        reimportState.plan
-          ? { ...current, [payload.sessionId]: reimportState.plan }
-          : removeSessionRecord(current, payload.sessionId),
-      );
-      store.setDiffs((current) => ({
-        ...current,
-        [payload.sessionId]: reimportState.diffs,
-      }));
-      store.setActivityHistoryState((current) => ({
-        ...current,
-        [payload.sessionId]: reimportState.activityHistoryState,
-      }));
-      if (reimportState.toast.tone === "warning") {
-        toast.warning(reimportState.toast.message);
-      } else {
-        toast.success(reimportState.toast.message);
-      }
       return true;
     }
     case "session/check_resume":
@@ -683,8 +636,11 @@ function mergeTimelineEntries(
 function replaceInitialTimelineHistory(
   current: SessionTimelineEntry[],
   incoming: SessionTimelineEntry[],
+  options: {
+    forceIncoming?: boolean;
+  } = {},
 ) {
-  if (shouldKeepRicherCurrentTimeline(current, incoming)) {
+  if (!options.forceIncoming && shouldKeepRicherCurrentTimeline(current, incoming)) {
     return current;
   }
   const currentToolEntriesById = new Map(

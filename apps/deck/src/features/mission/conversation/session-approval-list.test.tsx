@@ -49,7 +49,6 @@ const baseProps = {
   onRenameSession: () => undefined,
   onCloseSessionView: () => undefined,
   onClearSession: () => undefined,
-  onReimportSessionHistory: () => undefined,
   promptQueue: undefined,
   restoreNotice: undefined,
   onUpdateQueuedPrompt: () => undefined,

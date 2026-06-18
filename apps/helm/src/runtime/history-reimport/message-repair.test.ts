@@ -159,6 +159,66 @@ test("applyTranscriptMessageRepair inserts missing assistant replies from transc
   assert.equal(JSON.parse(appendedUpdates[0]?.payloadJson ?? "{}").message.text, "你好喵~ 主人！");
 });
 
+test("applyTranscriptMessageRepair preserves existing tool-call interleaving", () => {
+  const sessionId = "session-claude-repair-interleaving";
+  let messages: AgentMessage[] = [
+    message("user-1", "user", "先看一眼当前状态", 1),
+    message("user-2", "user", "继续下一步", 20),
+    message("assistant-2", "assistant", "已经继续处理", 21),
+  ];
+  let timeline: SessionTimelineEntry[] = [];
+
+  const repaired = applyTranscriptMessageRepair({
+    sessionId,
+    summary: createSummary(sessionId),
+    agent: createClaudeAgent(),
+    transcriptMessages: [
+      message("user-1-transcript", "user", "先看一眼当前状态", 1),
+      message("assistant-1", "assistant", "我先检查仓库状态", 2),
+      message("user-2-transcript", "user", "继续下一步", 20),
+      message("assistant-2-transcript", "assistant", "已经继续处理", 21),
+    ],
+    sessionMessageStore: {
+      list: () => messages,
+      replace: (_sessionId, nextMessages) => {
+        messages = nextMessages;
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls: [thinkingCall("thinking-1", 10)],
+      }),
+    },
+    sessionTimelineStore: {
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["assistant_message", "assistant-1"],
+      ["assistant_message", "thinking-1"],
+      ["user_message", "user-2"],
+      ["assistant_message", "assistant-2-transcript"],
+    ],
+  );
+});
+
 function createSummary(sessionId: string) {
   return {
     id: sessionId,

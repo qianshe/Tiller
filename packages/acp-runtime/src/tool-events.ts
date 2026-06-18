@@ -14,7 +14,7 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
   const toolName = extractToolName(source, update);
-  const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command);
+  const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
   const title = resolveToolTitle(rawTitle, toolName, commandId, id);
   const output = stringifyToolPayload(source.output ?? source.result ?? source.rawOutput ?? source.raw_output ?? source.content ?? source.text ?? source.state?.output);
   const input = stringifyToolPayload(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command ?? source.rawInput ?? source.raw_input ?? source.state?.input);
@@ -82,7 +82,8 @@ function extractToolName(source: any, update: any) {
         source.arguments?.name ??
         source.args?.name ??
         update.toolName ??
-        update.tool_name,
+        update.tool_name ??
+        update.name,
     )
   );
 }

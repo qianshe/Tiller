@@ -122,151 +122,6 @@ test("session creation results refresh ACP connection inventory when runtime is 
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
-test("session/reimport_history replaces local session history caches", () => {
-  resetStore();
-  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
-    current: {
-      "session-1": [
-        {
-          id: "local-tool",
-          kind: "think",
-          title: "Local thinking",
-          status: "running",
-          timestamp: "2026-05-24T09:59:00.000Z",
-          updatedAt: "2026-05-24T09:59:00.000Z",
-        },
-      ],
-    },
-  };
-  useDeckStore.setState({
-    messages: {
-      "session-1": [
-        {
-          id: "local-message",
-          role: "assistant",
-          text: "本地错乱历史",
-          timestamp: "2026-05-24T09:59:00.000Z",
-        },
-      ],
-    },
-    outputs: { "session-1": [{ id: "local-output", commandId: "cmd", text: "old", stream: "stdout", timestamp: "2026-05-24T09:59:01.000Z" }] },
-    diffs: { "session-1": [{ path: "old.ts", status: "modified", additions: 1, deletions: 1 }] },
-    toolCalls: toolCallsRef.current,
-    sessionTimeline: {
-      "session-1": [
-        {
-          id: "local-assistant",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "local-assistant:content",
-              kind: "content",
-              text: "本地错乱时间线",
-              timestamp: "2026-05-24T09:59:00.000Z",
-            },
-          ],
-          timestamp: "2026-05-24T09:59:00.000Z",
-          updatedAt: "2026-05-24T09:59:00.000Z",
-        },
-      ],
-    },
-    messageHistoryState: { "session-1": { nextCursor: "old", hasMore: true, loading: true } },
-    activityHistoryState: { "session-1": { nextCursor: "old-artifact", hasMore: true, loading: true } },
-  });
-
-  const providerTimeline: SessionTimelineEntry[] = [
-    {
-      id: "provider-user",
-      kind: "user_message",
-      message: {
-        id: "provider-user",
-        role: "user",
-        text: "真实用户消息",
-        timestamp: "2026-05-24T10:00:00.000Z",
-      },
-      timestamp: "2026-05-24T10:00:00.000Z",
-      updatedAt: "2026-05-24T10:00:00.000Z",
-    },
-    {
-      id: "provider-assistant",
-      kind: "assistant_message",
-      chunks: [
-        {
-          id: "provider-assistant:content",
-          kind: "content",
-          text: "真实助手消息",
-          timestamp: "2026-05-24T10:00:02.000Z",
-        },
-      ],
-      timestamp: "2026-05-24T10:00:02.000Z",
-      updatedAt: "2026-05-24T10:00:02.000Z",
-    },
-  ];
-  const providerPlan: AgentPlan = {
-    updatedAt: "2026-06-08T11:37:23.217Z",
-    entries: [
-      { content: "梳理并行聊天窗口的状态管理逻辑", priority: "medium", status: "completed" },
-      { content: "修复会话历史同步的边界情况", priority: "medium", status: "completed" },
-      { content: "为 queued-prompts 补充单元测试", priority: "medium", status: "in_progress" },
-    ],
-  };
-
-  const handled = applySessionResult(
-    "session/reimport_history",
-    {
-      sessionId: "session-1",
-      messages: [
-        {
-          id: "provider-user",
-          role: "user",
-          text: "真实用户消息",
-          timestamp: "2026-05-24T10:00:00.000Z",
-        },
-        {
-          id: "provider-assistant",
-          role: "assistant",
-          text: "真实助手消息",
-          timestamp: "2026-05-24T10:00:02.000Z",
-        },
-      ],
-      outputs: [{ id: "provider-output", commandId: "cmd", text: "new", stream: "stdout", timestamp: "2026-05-24T10:00:01.000Z" }],
-      diffs: [{ path: "new.ts", status: "modified", additions: 2, deletions: 0 }],
-      toolCalls: [
-        {
-          id: "provider-tool",
-          kind: "shell",
-          title: "npm test",
-          status: "completed",
-          timestamp: "2026-05-24T10:00:01.000Z",
-          updatedAt: "2026-05-24T10:00:03.000Z",
-        },
-      ],
-      timeline: providerTimeline,
-      plan: providerPlan,
-      nextCursor: "older-message",
-      hasMore: true,
-      activityNextCursor: "older-activity",
-      activityHasMore: false,
-      message: "历史已从 ACP 重新导入。",
-    },
-    "helm-1",
-    true,
-    createSessionEventContext({ toolCallsRef }),
-  );
-
-  const state = useDeckStore.getState();
-  assert.equal(handled, true);
-  assert.deepEqual(state.messages["session-1"]?.map((item) => item.text), ["真实用户消息", "真实助手消息"]);
-  assert.deepEqual(state.outputs["session-1"]?.map((item) => item.id), ["provider-output"]);
-  assert.deepEqual(state.diffs["session-1"]?.map((item) => item.path), ["new.ts"]);
-  assert.deepEqual(state.toolCalls["session-1"]?.map((item) => item.id), ["provider-tool"]);
-  assert.deepEqual(state.sessionTimeline["session-1"]?.map((item) => item.id), ["provider-user", "provider-assistant"]);
-  assert.deepEqual(state.sessionPlans["session-1"], providerPlan);
-  assert.deepEqual(toolCallsRef.current["session-1"]?.map((item) => item.id), ["provider-tool"]);
-  assert.deepEqual(state.messageHistoryState["session-1"], { nextCursor: "older-message", hasMore: true, loading: false });
-  assert.deepEqual(state.activityHistoryState["session-1"], { nextCursor: "older-activity", hasMore: false, loading: false });
-});
-
 test("session/list_messages replaces initial loaded history instead of mixing with local fragments", () => {
   resetStore();
   const localFragment: AgentMessage = {
@@ -1119,6 +974,140 @@ test("session/list_messages preserves local user prompts when loaded history omi
   assert.deepEqual(useDeckStore.getState().messages["session-1"], [
     localUser,
     loadedAssistant,
+  ]);
+});
+
+test("session/list_messages prefers the authoritative compacted timeline over a richer local replay", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "current-user",
+          kind: "user_message",
+          message: {
+            id: "current-user",
+            role: "user",
+            text: "结束任务",
+            timestamp: "2026-06-18T14:01:49.292Z",
+            timelineSequence: 256,
+          },
+          timestamp: "2026-06-18T14:01:49.292Z",
+          updatedAt: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        {
+          id: "assistant-part-1",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-part-1:content",
+              kind: "content",
+              text: "好的，我来完成剩余的",
+              timestamp: "2026-06-18T14:02:15.000Z",
+              timelineSequence: 275,
+            },
+          ],
+          timestamp: "2026-06-18T14:02:15.000Z",
+          updatedAt: "2026-06-18T14:02:15.000Z",
+          timelineSequence: 275,
+        },
+        {
+          id: "assistant-part-2",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-part-2:content",
+              kind: "content",
+              text: "两处改动然后收尾。",
+              timestamp: "2026-06-18T14:02:16.000Z",
+              timelineSequence: 276,
+            },
+          ],
+          timestamp: "2026-06-18T14:02:16.000Z",
+          updatedAt: "2026-06-18T14:02:16.000Z",
+          timelineSequence: 276,
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [
+        {
+          id: "compaction-summary",
+          role: "user",
+          text: "This session is being continued from a previous conversation that ran out of context.",
+          timestamp: "2026-06-18T14:05:25.193Z",
+        },
+        {
+          id: "previous-user",
+          role: "user",
+          text: "完成了嘛？",
+          timestamp: "2026-06-18T14:05:25.197Z",
+        },
+        {
+          id: "provider-current-user",
+          role: "user",
+          text: "结束任务",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        {
+          id: "provider-current-assistant",
+          role: "assistant",
+          text: "好的，我来完成剩余的两处改动然后收尾。",
+          timestamp: "2026-06-18T14:02:16.000Z",
+          timelineSequence: 276,
+        },
+      ],
+      timeline: [
+        {
+          id: "current-user",
+          kind: "user_message",
+          message: {
+            id: "current-user",
+            role: "user",
+            text: "结束任务",
+            timestamp: "2026-06-18T14:01:49.292Z",
+            timelineSequence: 256,
+          },
+          timestamp: "2026-06-18T14:01:49.292Z",
+          updatedAt: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        {
+          id: "provider-current-assistant",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "provider-current-assistant:content",
+              kind: "content",
+              text: "好的，我来完成剩余的两处改动然后收尾。",
+              timestamp: "2026-06-18T14:02:16.000Z",
+              timelineSequence: 276,
+            },
+          ],
+          timestamp: "2026-06-18T14:02:16.000Z",
+          updatedAt: "2026-06-18T14:02:16.000Z",
+          timelineSequence: 276,
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const nextTimeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  assert.equal(handled, true);
+  assert.deepEqual(nextTimeline.map((entry) => entry.id), [
+    "current-user",
+    "provider-current-assistant",
   ]);
 });
 

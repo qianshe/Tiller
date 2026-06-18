@@ -15,7 +15,7 @@ import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
-import * as sessionReimportHistory from "./reimport-history";
+import * as debugReimportHistory from "../debug/reimport-history";
 
 test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
@@ -198,11 +198,11 @@ test("session/cleanup carries result payload", () => {
   sessionCleanup.ResultSchema.parse({ result: {} });
 });
 
-test("session/reimport_history requires session id and returns replacement history", () => {
-  assert.equal(sessionReimportHistory.method, "session/reimport_history");
-  sessionReimportHistory.ParamsSchema.parse({ sessionId: "s1", limit: 50 });
-  assert.throws(() => sessionReimportHistory.ParamsSchema.parse({}));
-  sessionReimportHistory.ResultSchema.parse({
+test("debug/reimport_history requires session id and returns replacement history", () => {
+  assert.equal(debugReimportHistory.method, "debug/reimport_history");
+  debugReimportHistory.ParamsSchema.parse({ sessionId: "s1", limit: 50 });
+  assert.throws(() => debugReimportHistory.ParamsSchema.parse({}));
+  debugReimportHistory.ResultSchema.parse({
     sessionId: "s1",
     messages: [],
     outputs: [],

@@ -64,6 +64,7 @@ export type BuildSessionTimelineInput = {
 };
 
 const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
+const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
 
 type LegacyTimelineSource =
   | { kind: "message"; message: AgentMessage; timestamp: string; timelineSequence?: number }
@@ -697,15 +698,22 @@ function compareTimelineItems<T extends { timelineSequence?: number; timestamp: 
 ) {
   const leftItem = left.item;
   const rightItem = right.item;
+  const timestampDelta = compareIsoTimestamps(leftItem.timestamp, rightItem.timestamp);
   const timelineDelta = compareOptionalTimelineSequence(leftItem.timelineSequence, rightItem.timelineSequence);
   if (timelineDelta !== null) {
+    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
+      timelineDelta,
+      timestampDelta,
+    );
+    if (sequenceResetTimestampDelta !== null) {
+      return sequenceResetTimestampDelta;
+    }
     return timelineDelta;
   }
   // When timelineSequence is absent or present on only one side, fall back to
   // chronological timestamp (then insertion index) rather than index alone, so
   // legacy history with partial sequences keeps real message/tool interleaving
   // instead of collapsing into the kind-segregated rebuild order.
-  const timestampDelta = compareIsoTimestamps(leftItem.timestamp, rightItem.timestamp);
   return timestampDelta === 0 ? left.index - right.index : timestampDelta;
 }
 
@@ -727,6 +735,21 @@ function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
     return 0;
   }
   return leftTime - rightTime;
+}
+
+function compareSequenceResetTimestampDelta(
+  timelineDelta: number,
+  timestampDelta: number,
+) {
+  if (
+    timestampDelta === 0 ||
+    Math.abs(timestampDelta) < TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS
+  ) {
+    return null;
+  }
+  return Math.sign(timelineDelta) === Math.sign(timestampDelta)
+    ? null
+    : timestampDelta;
 }
 
 function minDefined(values: Array<number | undefined>) {

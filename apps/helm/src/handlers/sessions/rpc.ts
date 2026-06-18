@@ -61,6 +61,10 @@ export async function handleSessionRpcRequest(
         context,
       );
     case "session/reimport_history":
+      throw new Error(
+        "session/reimport_history 已从公开会话 RPC 移除；仅保留 debug/reimport_history 供内部维护使用。",
+      );
+    case "debug/reimport_history":
       return reimportHistory(
         params as { sessionId: string; limit?: number },
         context,

@@ -25,6 +25,7 @@ export function resolveConversationHistoryFlags(
   return {
     hasMore: hasLoadableMessages || hasLoadableTimeline,
     canLoadMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
+    ...(hasLoadableTimeline ? { timelineHasMore: true } : {}),
     loading: Boolean(messageState?.loading || activityState?.loading),
   };
 }

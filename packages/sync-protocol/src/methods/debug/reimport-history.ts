@@ -3,7 +3,7 @@ import type { SessionHistoryReimportResult } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
-export const method = "session/reimport_history" as const;
+export const method = "debug/reimport_history" as const;
 export const ParamsSchema = z.object({
   sessionId: z.string(),
   limit: z.number().optional(),
@@ -17,5 +17,5 @@ export const descriptor = requestDescriptor({
   paramsSchema: ParamsSchema,
   resultSchema: ResultSchema,
   description:
-    "Clear Helm-local cached history for a session and reimport authoritative ACP history.",
+    "Internal/debug-only history repair that clears Helm-local cached history and reloads ACP history.",
 });

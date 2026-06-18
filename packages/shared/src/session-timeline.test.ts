@@ -6,6 +6,7 @@ import {
   appendToolCallToSessionTimeline,
   buildSessionTimelineFromLegacy,
   resolveTimelineRepresentedUserMessageIds,
+  sortSessionTimelineEntries,
 } from "./session-timeline";
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
@@ -195,6 +196,124 @@ test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks
   assert.equal(
     timeline[2]?.kind === "tool_call" ? timeline[2].toolCall.kind : undefined,
     "search",
+  );
+});
+
+test("buildSessionTimelineFromLegacy keeps compacted chronology when timelineSequence resets", () => {
+  const timeline = buildSessionTimelineFromLegacy({
+    messages: [
+      {
+        id: "old-assistant",
+        role: "assistant",
+        text: "旧回复结尾",
+        timestamp: "2026-06-10T09:28:50.000Z",
+        timelineSequence: 87,
+      },
+      {
+        id: "new-user",
+        role: "user",
+        text: "新的 prompt",
+        timestamp: "2026-06-10T10:19:22.000Z",
+        timelineSequence: 2,
+      },
+      {
+        id: "new-assistant",
+        role: "assistant",
+        text: "新回复开始",
+        timestamp: "2026-06-10T10:19:40.000Z",
+        timelineSequence: 4,
+      },
+    ],
+    toolCalls: [],
+    outputs: [],
+  });
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "old-assistant"],
+      ["user_message", "new-user"],
+      ["assistant_message", "new-assistant"],
+    ],
+  );
+});
+
+test("sortSessionTimelineEntries keeps earlier compacted history anchored when live sequenced entries arrive", () => {
+  const timeline = sortSessionTimelineEntries([
+    {
+      id: "old-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "old-assistant:content",
+          kind: "content",
+          text: "旧回复结尾",
+          timestamp: "2026-06-10T09:28:50.000Z",
+          timelineSequence: 87,
+        },
+      ],
+      timestamp: "2026-06-10T09:28:50.000Z",
+      updatedAt: "2026-06-10T09:28:50.000Z",
+      timelineSequence: 87,
+    },
+    {
+      id: "new-user",
+      kind: "user_message",
+      message: {
+        id: "new-user",
+        role: "user",
+        text: "新的 prompt",
+        timestamp: "2026-06-10T10:19:22.000Z",
+        timelineSequence: 2,
+      },
+      timestamp: "2026-06-10T10:19:22.000Z",
+      updatedAt: "2026-06-10T10:19:22.000Z",
+      timelineSequence: 2,
+    },
+    {
+      id: "new-assistant",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "new-assistant:content",
+          kind: "content",
+          text: "新回复开始",
+          timestamp: "2026-06-10T10:19:40.000Z",
+          timelineSequence: 4,
+        },
+      ],
+      timestamp: "2026-06-10T10:19:40.000Z",
+      updatedAt: "2026-06-10T10:19:40.000Z",
+      timelineSequence: 4,
+    },
+    {
+      id: "live-tool",
+      kind: "tool_call",
+      toolCall: {
+        id: "live-tool",
+        commandId: "live-tool",
+        kind: "search",
+        title: "Search",
+        status: "completed",
+        output: "result",
+        timestamp: "2026-06-10T10:19:45.000Z",
+        updatedAt: "2026-06-10T10:19:45.000Z",
+        timelineSequence: 5,
+      },
+      timestamp: "2026-06-10T10:19:45.000Z",
+      updatedAt: "2026-06-10T10:19:45.000Z",
+      timelineSequence: 5,
+    },
+  ]);
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "old-assistant"],
+      ["user_message", "new-user"],
+      ["assistant_message", "new-assistant"],
+      ["tool_call", "live-tool"],
+    ],
   );
 });
 

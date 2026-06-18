@@ -163,12 +163,12 @@ function buildRepairedVisibleMessages(
       usedReplayUserIndexes.add(replayUserIndex);
       const replayUser = replayMessages[replayUserIndex];
       if (replayUser) {
-        repaired.push(withTimelineSequence(replayUser, repaired.length + 1));
+        repaired.push({ ...replayUser });
       }
       continue;
     }
     if (transcriptMessage.role === "assistant") {
-      repaired.push(withTimelineSequence(transcriptMessage, repaired.length + 1));
+      repaired.push({ ...transcriptMessage });
     }
   }
 
@@ -177,7 +177,7 @@ function buildRepairedVisibleMessages(
     if (replayMessage.role !== "system" && isTextCovered(replayMessage.text, transcriptText)) {
       continue;
     }
-    repaired.push(withTimelineSequence(replayMessage, repaired.length + 1));
+    repaired.push({ ...replayMessage });
   }
   return repaired;
 }
@@ -230,10 +230,6 @@ function appendTranscriptRepairMessageUpdates(input: {
       payloadJson: JSON.stringify({ type: "message", message }),
     });
   }
-}
-
-function withTimelineSequence(message: AgentMessage, timelineSequence: number): AgentMessage {
-  return { ...message, timelineSequence };
 }
 
 function normalizedCombinedText(messages: AgentMessage[]) {

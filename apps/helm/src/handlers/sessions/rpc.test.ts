@@ -1268,10 +1268,22 @@ test("session/list_messages caps dense timeline entry pages", async () => {
   assert.equal(result.timelineHasMore, true);
 });
 
-test("session/reimport_history delegates to the history reimport service", async () => {
+test("session/reimport_history is no longer part of the public session RPC surface", async () => {
+  await assert.rejects(
+    () =>
+      handleSessionRpcRequest(
+        "session/reimport_history",
+        { sessionId: "s1", limit: 40 },
+        {} as any,
+      ),
+    /debug\/reimport_history/u,
+  );
+});
+
+test("debug/reimport_history delegates to the history reimport service", async () => {
   let delegated: unknown;
   const result = await handleSessionRpcRequest(
-    "session/reimport_history",
+    "debug/reimport_history",
     { sessionId: "s1", limit: 40 },
     {
       reimportSessionHistory: (sessionId: string, options: unknown) => {

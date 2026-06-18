@@ -21,7 +21,7 @@ test("conversation history only advertises more context when a cursor is loadabl
       },
       undefined,
     ),
-    { hasMore: true, canLoadMore: true, loading: false },
+    { hasMore: true, canLoadMore: true, timelineHasMore: true, loading: false },
   );
 
   assert.deepEqual(

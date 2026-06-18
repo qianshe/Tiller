@@ -254,21 +254,6 @@ export function useSessionCommandActions({
     void dispatch(client, "session/cleanup", { sessionId });
   }
 
-  function reimportSessionHistory(sessionId: string) {
-    const client = rpcClientRef.current;
-    if (!isClientOpen(client)) {
-      toast.warning("Helm 未连接，无法重新导入历史。");
-      return;
-    }
-    toast.info("正在从 ACP 重新导入历史...", {
-      id: `session-reimport-${sessionId}`,
-      duration: 2000,
-    });
-    void dispatch(client, "session/reimport_history", { sessionId }).catch((error) => {
-      toast.error(error instanceof Error ? error.message : "重新导入历史失败。");
-    });
-  }
-
   function cancelSession(sessionId: string) {
     const client = rpcClientRef.current;
     if (!isClientOpen(client)) {
@@ -292,7 +277,6 @@ export function useSessionCommandActions({
     createDraftSessionForAgent,
     createSession,
     requestSessionResumeStart,
-    reimportSessionHistory,
     respondToPermission,
     shouldAutoStartSessionResume,
     startResume,

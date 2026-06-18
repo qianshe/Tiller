@@ -144,7 +144,7 @@ async function reimport(statePath) {
   const rpc = new RpcClient(state.port);
   await rpc.open();
   try {
-    const reimported = await rpc.request("session/reimport_history", {
+    const reimported = await rpc.request("debug/reimport_history", {
       sessionId: state.sessionId,
       limit: 100,
     });

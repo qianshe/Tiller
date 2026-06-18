@@ -126,7 +126,6 @@ type MissionChatPaneProps = {
   onRenameSession: (session: SessionSummary) => void;
   onCloseSessionView: (session: SessionSummary) => void;
   onClearSession: (session: SessionSummary) => void;
-  onReimportSessionHistory: (session: SessionSummary) => void;
   onDismissCompletedSessionPlan?: (sessionId: string, planKey: string) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
@@ -192,7 +191,6 @@ export function MissionChatPane({
   onRenameSession,
   onCloseSessionView,
   onClearSession,
-  onReimportSessionHistory,
   onDismissCompletedSessionPlan,
   onRespondToPermission,
   promptQueue,
@@ -213,7 +211,6 @@ export function MissionChatPane({
   const handleRenameSession = useStableEvent(onRenameSession);
   const handleCloseSessionView = useStableEvent(onCloseSessionView);
   const handleClearSession = useStableEvent(onClearSession);
-  const handleReimportSessionHistory = useStableEvent(onReimportSessionHistory);
   const handleDismissCompletedSessionPlan = useStableEvent(
     (sessionId: string, planKey: string) =>
       onDismissCompletedSessionPlan?.(sessionId, planKey),
@@ -671,7 +668,6 @@ export function MissionChatPane({
                   onFocus={handleSelectSessionView}
                   onRename={handleRenameSession}
                   onClear={handleClearSession}
-                  onReimportHistory={handleReimportSessionHistory}
                   onClose={handleCloseSessionView}
                   onDismissCompletedPlan={handleDismissCompletedSessionPlan}
                   restoreNotice={session.id === selectedSessionId ? restoreNotice : undefined}
@@ -727,7 +723,6 @@ type MissionChatSessionCardProps = {
   onDismissCompletedPlan: (sessionId: string, planKey: string) => void;
   onFocus: (sessionId: string) => void;
   onLoadOlderMessages: (sessionId: string) => void;
-  onReimportHistory: (session: SessionSummary) => void;
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
@@ -771,7 +766,6 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onDismissCompletedPlan,
   onFocus,
   onLoadOlderMessages,
-  onReimportHistory,
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
@@ -859,7 +853,6 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onFocus={onFocus}
       onRename={onRename}
       onClear={onClear}
-      onReimportHistory={onReimportHistory}
       onClose={onClose}
       onDismissCompletedPlan={onDismissCompletedPlan}
       restoreNotice={restoreNotice}

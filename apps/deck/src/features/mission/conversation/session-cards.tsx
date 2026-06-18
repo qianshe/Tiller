@@ -194,7 +194,6 @@ export function SessionCard({
   onFocus,
   onRename,
   onClear,
-  onReimportHistory,
   onClose,
   onDismissCompletedPlan,
   restoreNotice,
@@ -213,7 +212,6 @@ export function SessionCard({
   onFocus: (sessionId: string) => void;
   onRename: (session: SessionSummary) => void;
   onClear: (session: SessionSummary) => void;
-  onReimportHistory: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
   onDismissCompletedPlan?: (sessionId: string, planKey: string) => void;
   restoreNotice?: SessionRestoreNotice;
@@ -413,15 +411,6 @@ export function SessionCard({
               >
                 重命名
               </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onReimportHistory(session);
-                  setCardMenuOpen(false);
-                }}
-              >
-                重新导入历史
-              </MenuItem>
-              <div className="mx-1 my-1 h-px bg-border-ghost" />
               <MenuItem
                 tone="destructive"
                 onClick={() => {
