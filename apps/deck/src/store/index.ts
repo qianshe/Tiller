@@ -61,6 +61,6 @@ export const useDeckStore = create<DeckStore>()(
       }),
       createDeckStorePersistOptions(),
     ),
-    { name: "tiller.deck.store" },
+    { name: "tiller.deck.store", maxAge: 25 },
   ),
 );

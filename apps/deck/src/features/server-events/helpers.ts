@@ -1,4 +1,5 @@
 import type {
+  AgentMessage,
   AvailableCommand,
   CommandChunk,
   SessionSummary,
@@ -55,6 +56,28 @@ export function mergeSessionSummaries(
     const createdDelta = right.createdAt.localeCompare(left.createdAt);
     return createdDelta === 0 ? left.id.localeCompare(right.id) : createdDelta;
   });
+}
+
+export function stripRedundantAttachmentData(message: AgentMessage): AgentMessage {
+  if (!message.attachments?.length) {
+    return message;
+  }
+  const needsStrip = message.attachments.some(
+    (att) => att.data && (att.uri || att.attachmentId),
+  );
+  if (!needsStrip) {
+    return message;
+  }
+  return {
+    ...message,
+    attachments: message.attachments.map((att) => {
+      if (att.data && (att.uri || att.attachmentId)) {
+        const { data: _, ...rest } = att;
+        return rest;
+      }
+      return att;
+    }),
+  };
 }
 
 export function mergeCommandHistory(

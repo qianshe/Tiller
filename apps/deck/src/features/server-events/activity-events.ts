@@ -7,6 +7,7 @@ import {
 } from "@tiller/shared";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
+import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
 
 const MAX_OUTPUTS_PER_SESSION = 2000;
@@ -34,9 +35,8 @@ export function applyActivityUpdate(
 
   switch (update.kind) {
     case "agent_message": {
-      const message = withStreamingState(
-        update.message,
-        update.streaming,
+      const message = stripRedundantAttachmentData(
+        withStreamingState(update.message, update.streaming),
       );
       const sessionToolCalls = clearActiveThinkingToolCalls(
         sessionId,

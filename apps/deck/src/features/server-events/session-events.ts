@@ -28,6 +28,7 @@ import {
   availableCommandListsEqual,
   mergeCommandHistory,
   removeSessionRecord,
+  stripRedundantAttachmentData,
   upsertSessionSummary,
 } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
@@ -293,13 +294,14 @@ export function applySessionResult(
     case "session/list_messages": {
       const isTimelineOnlyPage = Boolean(payload.timelineBefore && !payload.before);
       if (!isTimelineOnlyPage) {
+        const incomingMessages = payload.messages.map(stripRedundantAttachmentData);
         store.setMessages((current) => ({
           ...current,
           [payload.sessionId]: payload.before
-            ? mergeMessageHistory(current[payload.sessionId] ?? [], payload.messages, {
+            ? mergeMessageHistory(current[payload.sessionId] ?? [], incomingMessages, {
                 mode: "prepend",
               })
-            : replaceInitialMessageHistory(current[payload.sessionId] ?? [], payload.messages),
+            : replaceInitialMessageHistory(current[payload.sessionId] ?? [], incomingMessages),
         }));
       }
       if (Array.isArray(payload.timeline)) {
