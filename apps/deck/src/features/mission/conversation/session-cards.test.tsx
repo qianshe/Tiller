@@ -244,6 +244,7 @@ test("session dock remains a floating overlay with scroll padding reserved", () 
   assert.doesNotMatch(sessionCardsSource, /dockBottomOffset/);
   assert.doesNotMatch(sessionCardsSource, /SCROLL_BUTTON_BOTTOM/);
   assert.doesNotMatch(sessionCardsSource, /visible=\{showScrollToBottom && !hasFloatingDock\}/);
+  assert.doesNotMatch(sessionCardsSource, /pointer-events-auto mb-1 flex w-fit max-w-full items-center gap-0\.5 rounded-md border border-border-ghost bg-surface\/95 p-0\.5 text-2xs shadow-ambient/);
 });
 
 test("SessionCard menu omits redundant focus action and closes on outside pointer", () => {

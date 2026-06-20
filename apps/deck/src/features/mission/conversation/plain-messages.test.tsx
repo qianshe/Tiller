@@ -1877,6 +1877,29 @@ test("plain messages keeps subagents out of adjacent normal tool groups", () => 
   assert.ok(html.indexOf("background_output") < html.indexOf("工具调用 · 2 项"));
 });
 
+test("plain messages keeps tool call icon, badge, title, and status top aligned", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-search-a",
+        kind: "search",
+        title: "Search runtime async guard patterns",
+        status: "completed",
+        output: "search a",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-tool-call/);
+  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-start gap-1\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
+  assert.match(html, /class="grid size-3 shrink-0 self-start place-items-center rounded-sm/);
+  assert.match(html, /h-4 shrink-0 self-start rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium text-foreground">/);
+  assert.match(html, /class="ml-auto shrink-0 self-start text-2xs text-muted-foreground\/60"/);
+});
+
 test("plain messages surfaces subagent type and task summary when available", () => {
   const html = renderPlainMessages({
     toolCalls: [

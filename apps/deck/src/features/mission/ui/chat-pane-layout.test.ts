@@ -758,6 +758,7 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /sidebar: 248/);
   assert.match(missionLayoutHookSource, /display: 320/);
   assert.match(missionLayoutHookSource, /inspector: 280/);
+  assert.match(missionLayoutHookSource, /const \[missionInspectorCollapsed, setMissionInspectorCollapsed\] =\s*useState\(true\);/);
   assert.match(missionLayoutHookSource, /MISSION_RESIZER_WIDTH = 4/);
   assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 360/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081/);

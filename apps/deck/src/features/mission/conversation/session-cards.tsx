@@ -503,7 +503,7 @@ export function SessionCard({
           />
           {hasPromptQueueDock && hasPlanDock ? (
             <div
-              className="pointer-events-auto mb-1 flex w-fit max-w-full items-center gap-0.5 rounded-md border border-border-ghost bg-surface/95 p-0.5 text-2xs shadow-ambient"
+              className="pointer-events-auto mb-1 flex w-fit max-w-full items-center gap-0.5 rounded-md border border-border-ghost bg-surface/95 p-0.5 text-2xs"
               data-session-dock-tabs
             >
               <button

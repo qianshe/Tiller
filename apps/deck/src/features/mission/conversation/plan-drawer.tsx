@@ -39,7 +39,7 @@ export function MissionPlanDrawer({ plan, placement = "inline", onDismiss }: Mis
     <details
       className={cn(
         "mission-plan-drawer rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-3 py-2",
-        placement === "floating" && "pointer-events-auto max-h-[min(32vh,260px)] overflow-y-auto bg-surface/95 shadow-[0_-14px_32px_rgb(0_0_0/0.18)]",
+        placement === "floating" && "pointer-events-auto max-h-[min(32vh,260px)] overflow-y-auto bg-surface/95",
       )}
       data-plan-drawer-placement={placement}
       open={open}

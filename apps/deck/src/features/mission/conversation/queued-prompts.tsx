@@ -82,7 +82,7 @@ export function MissionQueuedPrompts({
       className={cn(
         "mission-prompt-queue bg-surface/95 p-1",
         placement === "floating"
-          ? "pointer-events-auto max-h-[min(32vh,260px)] overflow-y-auto rounded-[8px] border border-border-ghost shadow-[0_-14px_32px_rgb(0_0_0/0.18)]"
+          ? "pointer-events-auto max-h-[min(32vh,260px)] overflow-y-auto rounded-[8px] border border-border-ghost"
           : "border-t border-border-ghost",
       )}
       data-prompt-queue-placement={placement}

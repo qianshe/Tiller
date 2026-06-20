@@ -250,7 +250,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
   const [missionDisplayCollapsed, setMissionDisplayCollapsed] = useState(false);
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
-    useState(false);
+    useState(true);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
     useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
   const missionLayoutRef = useRef<HTMLElement | null>(null);

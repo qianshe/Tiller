@@ -26,10 +26,10 @@ test("summarizeAgentPlan counts completed entries", () => {
   });
 });
 
-test("MissionPlanDrawer renders plan entries", () => {
+test("MissionPlanDrawer renders plan entries collapsed by default", () => {
   const html = renderToStaticMarkup(<MissionPlanDrawer plan={plan} />);
 
-  assert.match(html, /<details[^>]*open/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
   assert.match(html, /已完成 1 个任务（共 3 个）/);
   assert.match(html, /完成协议映射/);
   assert.match(html, /渲染抽屉/);
@@ -48,6 +48,7 @@ test("MissionPlanDrawer marks floating placement", () => {
 
   assert.match(html, /data-plan-drawer-placement="floating"/);
   assert.match(html, /已完成 1 个任务（共 3 个）/);
+  assert.doesNotMatch(html, /shadow-\[0_-14px_32px_rgb\(0_0_0\/0\.18\)\]/);
 });
 
 test("MissionPlanDrawer renders a close affordance when dismissal is available", () => {

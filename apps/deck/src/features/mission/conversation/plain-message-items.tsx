@@ -855,20 +855,20 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
       className="plain-tool-call grid gap-0.5 py-0.5 text-muted-foreground"
       data-tool-kind={tone.label.toLowerCase()}
     >
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
-        <span aria-hidden="true" className={cn("grid size-3 place-items-center rounded-sm", tone.className)}>
+      <summary className="flex min-w-0 cursor-pointer list-none items-start gap-1.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className={cn("grid size-3 shrink-0 self-start place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
         <Badge
           variant="secondary"
-          className={cn("h-4 shrink-0 rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+          className={cn("h-4 shrink-0 self-start rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
         >
           {tone.label}
         </Badge>
-        <strong className="min-w-0 truncate font-medium text-foreground">
+        <strong className="min-w-0 flex-1 truncate font-medium text-foreground">
           {item.title}
         </strong>
-        <span className="ml-auto shrink-0 text-2xs text-muted-foreground/60">
+        <span className="ml-auto shrink-0 self-start text-2xs text-muted-foreground/60">
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>

@@ -70,3 +70,32 @@ test("MissionQueuedPrompts hides in-flight prompts when nothing is queued", () =
 
   assert.equal(html, "");
 });
+
+test("MissionQueuedPrompts floating placement keeps layout without shadow", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionQueuedPrompts, {
+      queue: {
+        sessionId: "session-1",
+        queued: [
+          {
+            id: "queue-1",
+            sessionId: "session-1",
+            text: "next prompt",
+            clientMessageId: "client-1",
+            createdAt: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:00.000Z",
+            status: "queued",
+          },
+        ],
+      },
+      placement: "floating",
+      onUpdate: () => undefined,
+      onDelete: () => undefined,
+    }),
+  );
+
+  assert.match(html, /data-prompt-queue-placement="floating"/);
+  assert.match(html, /rounded-\[8px\]/);
+  assert.match(html, /border-border-ghost/);
+  assert.doesNotMatch(html, /shadow-\[0_-14px_32px_rgb\(0_0_0\/0\.18\)\]/);
+});
