@@ -175,6 +175,8 @@ function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
   next[existingIndex] = {
     ...current,
     ...incoming,
+    kind: resolveToolCallKind(current.kind, incoming.kind),
+    title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
     timestamp: current.timestamp,
     timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
@@ -205,6 +207,54 @@ function mergeText(current: string | undefined, incoming: string | undefined) {
     return incoming;
   }
   return `${current}${incoming}`;
+}
+
+function resolveToolCallKind(
+  currentKind: AgentToolCall["kind"],
+  incomingKind: AgentToolCall["kind"],
+) {
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function isHigherConfidenceToolKind(
+  incomingKind: AgentToolCall["kind"],
+  currentKind: AgentToolCall["kind"],
+) {
+  const rank: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 2,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return rank[incomingKind] > rank[currentKind];
+}
+
+function resolveToolCallTitle(
+  currentTitle: string,
+  incomingTitle: string,
+  id: string,
+) {
+  if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
+    return incomingTitle;
+  }
+  return currentTitle || incomingTitle || id;
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string) {
+  const normalized = title?.trim();
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function isFallbackToolCallTitle(title: string | undefined) {
+  return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
 function parseSessionRuntimeEvent(payloadJson: string): SessionRuntimeEvent | null {

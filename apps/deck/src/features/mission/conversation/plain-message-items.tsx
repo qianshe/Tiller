@@ -555,13 +555,36 @@ export function PlainThinkingItem({
   );
 }
 
-export function PlainToolGroupItem({
-  group,
-  hasNewerContent = false,
-}: {
+type PlainToolGroupItemProps = {
   group: ConversationToolCallItem[];
   hasNewerContent?: boolean;
-}) {
+};
+
+function areToolGroupPropsEqual(
+  prev: PlainToolGroupItemProps,
+  next: PlainToolGroupItemProps,
+) {
+  if (prev.hasNewerContent !== next.hasNewerContent) return false;
+  if (prev.group.length !== next.group.length) return false;
+  for (let i = 0; i < prev.group.length; i++) {
+    const a = prev.group[i]!;
+    const b = next.group[i]!;
+    if (
+      a.id !== b.id ||
+      a.title !== b.title ||
+      a.status !== b.status ||
+      a.toolKind !== b.toolKind ||
+      a.text !== b.text ||
+      a.input !== b.input
+    ) return false;
+  }
+  return true;
+}
+
+export const PlainToolGroupItem = memo(function PlainToolGroupItem({
+  group,
+  hasNewerContent = false,
+}: PlainToolGroupItemProps) {
   const isRunning = group.some((item) => isActiveToolStatus(item.status));
   const [open, setOpen] = useState(() => isRunning || !hasNewerContent);
   const groupLabels = resolveToolGroupLabels(group);
@@ -598,7 +621,7 @@ export function PlainToolGroupItem({
     const frame = requestAnimationFrame(() => {
       requestAnimationFrame(scrollToBottom);
     });
-    
+
     return () => {
       cancelAnimationFrame(frame);
     };
@@ -639,9 +662,9 @@ export function PlainToolGroupItem({
             )}
           />
         </summary>
-        <div 
+        <div
           ref={contentRef}
-          className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground" 
+          className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -651,7 +674,7 @@ export function PlainToolGroupItem({
       </details>
     </div>
   );
-}
+}, areToolGroupPropsEqual)
 
 export function PlainSubagentItem({
   item,

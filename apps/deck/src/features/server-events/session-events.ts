@@ -866,7 +866,7 @@ function mergeIncomingToolTimelineEntry(
       input: incomingTool.input ?? currentTool.input,
       kind: strongerToolKind(incomingTool.kind, currentTool.kind),
       output: incomingTool.output ?? currentTool.output,
-      status: mergedToolStatus(incomingTool.status, currentTool.status),
+      status: mergedToolStatus(incomingTool, currentTool),
       title: strongerToolTitle(incomingTool, currentTool),
     },
   };
@@ -898,13 +898,32 @@ function toolKindRank(kind: AgentToolCall["kind"]) {
 }
 
 function mergedToolStatus(
-  incoming: AgentToolCall["status"],
-  current: AgentToolCall["status"],
+  incoming: AgentToolCall,
+  current: AgentToolCall,
 ) {
-  if ((current === "completed" || current === "failed") && incoming === "running") {
-    return current;
+  if (shouldKeepTerminalToolStatus(current, incoming)) {
+    return current.status;
   }
-  return incoming;
+  return incoming.status;
+}
+
+function shouldKeepTerminalToolStatus(current: AgentToolCall, incoming: AgentToolCall) {
+  if ((current.status !== "completed" && current.status !== "failed") || incoming.status !== "running") {
+    return false;
+  }
+  if (toolKindRank(incoming.kind) > toolKindRank(current.kind)) {
+    return false;
+  }
+  if (!isWeakToolTitle(incoming.title, incoming) && incoming.title !== current.title) {
+    return false;
+  }
+  if (incoming.input && incoming.input !== current.input) {
+    return false;
+  }
+  if (incoming.commandId && incoming.commandId !== current.commandId) {
+    return false;
+  }
+  return true;
 }
 
 function strongerToolTitle(

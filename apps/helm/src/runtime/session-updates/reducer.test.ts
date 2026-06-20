@@ -84,3 +84,43 @@ test("session update reducer keeps colliding user and assistant message ids dist
     ["assistant_message", "msg-1:assistant", 2],
   ]);
 });
+
+test("session update reducer keeps stronger tool classification when sparse patches arrive later", () => {
+  const finalState = [
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_01Strong",
+        kind: "mcp" as const,
+        title: "Tool: mcp_router/find_symbol",
+        status: "running" as const,
+        input: JSON.stringify({
+          server_name: "mcp_router",
+          request: { name: "find_symbol" },
+          arguments: { relative_path: "apps/deck/src/features/server-events/session-events.ts" },
+        }),
+        timestamp: at(1),
+        updatedAt: at(1),
+        timelineSequence: 1,
+      },
+    },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_01Strong",
+        kind: "tool" as const,
+        title: "Tool call toolu_01S…",
+        status: "completed" as const,
+        output: "ok",
+        timestamp: at(1),
+        updatedAt: at(2),
+        timelineSequence: 1,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.toolCalls[0]?.kind, "mcp");
+  assert.equal(finalState.toolCalls[0]?.title, "Tool: mcp_router/find_symbol");
+  assert.equal(finalState.toolCalls[0]?.status, "completed");
+  assert.equal(finalState.toolCalls[0]?.output, "ok");
+});

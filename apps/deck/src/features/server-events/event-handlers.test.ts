@@ -407,6 +407,76 @@ test("session/list_messages preserves richer cached tool metadata", () => {
   assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "Shell");
 });
 
+test("session/list_messages lets richer running tool metadata reopen a stale completed row", () => {
+  resetStore();
+  const currentToolCall: AgentToolCall = {
+    id: "call-1",
+    kind: "tool",
+    title: "Tool call call-1",
+    status: "completed",
+    timestamp: "2026-06-20T10:00:01.000Z",
+    updatedAt: "2026-06-20T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  const incomingToolCall: AgentToolCall = {
+    ...currentToolCall,
+    kind: "write",
+    title: "Write",
+    status: "running",
+    updatedAt: "2026-06-20T10:00:02.000Z",
+    input: JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+  };
+
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [{
+        id: "tool:call-1",
+        kind: "tool_call",
+        toolCall: currentToolCall,
+        timestamp: currentToolCall.timestamp,
+        updatedAt: currentToolCall.updatedAt,
+        timelineSequence: currentToolCall.timelineSequence,
+      }],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [],
+      timeline: [{
+        id: "tool:call-1",
+        kind: "tool_call",
+        toolCall: incomingToolCall,
+        timestamp: incomingToolCall.timestamp,
+        updatedAt: incomingToolCall.updatedAt,
+        timelineSequence: incomingToolCall.timelineSequence,
+      }],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+
+  assert.equal(handled, true);
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "write");
+  assert.equal(
+    entry?.kind === "tool_call" ? entry.toolCall.input : undefined,
+    JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+  );
+});
+
 test("session/list_messages keeps richer split timeline when equivalent coarse history arrives later", () => {
   resetStore();
   const toolCall: AgentToolCall = {

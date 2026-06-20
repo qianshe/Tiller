@@ -511,8 +511,20 @@ function toolNameFromInput(input: string | undefined) {
     const parsed = JSON.parse(input) as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
-    const server = primitiveStringFrom(record.server);
-    const tool = primitiveStringFrom(record.tool ?? record.name ?? record.toolName ?? record.tool_name);
+    const request = record.request && typeof record.request === "object"
+      ? record.request as Record<string, unknown>
+      : undefined;
+    const server = primitiveStringFrom(record.server ?? record.server_name ?? record.serverName);
+    const tool = primitiveStringFrom(
+      record.tool ??
+        record.name ??
+        record.toolName ??
+        record.tool_name ??
+        request?.name ??
+        request?.tool ??
+        request?.toolName ??
+        request?.tool_name,
+    );
     return server && tool ? `${server}/${tool}` : tool ?? server ?? inferToolNameFromStructuredPayload(record);
   } catch {
     return undefined;

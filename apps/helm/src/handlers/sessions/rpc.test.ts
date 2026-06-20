@@ -2091,3 +2091,212 @@ test("session/list_updates reports unavailable raw update store", async () => {
   assert.equal(result.hasMore, false);
   assert.equal(result.message, "Session update store not available");
 });
+
+test("session/list_messages repairs legacy tool calls before rebuilding the timeline", async () => {
+  const sessionId = "session-opencode-tool-repair";
+  let toolCalls = [{
+    id: "call-1",
+    kind: "tool" as const,
+    title: "Tool call call-1",
+    status: "completed" as const,
+    input: JSON.stringify({
+      path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+      code_edit: "// ... existing code ...\nconst noop = true;\n// ... existing code ...",
+    }),
+    timestamp: "2026-06-20T10:00:01.000Z",
+    updatedAt: "2026-06-20T10:00:01.000Z",
+    timelineSequence: 2,
+  }];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        list: () => [{
+          id: sessionId,
+          agentId: "opencode",
+          status: "idle",
+          updatedAt: "2026-06-20T10:00:10.000Z",
+        }],
+      },
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => [],
+        listPage: () => ({ messages: [], hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls }),
+        replaceToolCalls: (_sessionId: string, nextToolCalls: typeof toolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      sessionTimelineStore: {
+        list: () => [],
+        replace: (_sessionId: string, entries: any[]) => entries,
+        listPage: () => undefined,
+      },
+    } as any,
+  ) as { timeline: any[] };
+
+  assert.equal(result.timeline[0]?.kind, "tool_call");
+  assert.equal(result.timeline[0]?.toolCall.kind, "write");
+  assert.equal(
+    result.timeline[0]?.toolCall.title,
+    "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+  );
+});
+
+test("session/list_messages prefers replay when replayed tool metadata is stronger than persisted timeline metadata", async () => {
+  const sessionId = "session-replay-stronger-tool-metadata";
+  const runtimeSessionId = "runtime-1";
+  const providerId = "codex";
+  const userMessage = {
+    id: "user-1",
+    role: "user" as const,
+    text: "开始",
+    timestamp: "2026-06-20T10:00:00.000Z",
+    timelineSequence: 1,
+  };
+  const assistantMessage = {
+    id: "assistant-1",
+    role: "assistant" as const,
+    text: "现在给 memo 加上比较器参数。",
+    timestamp: "2026-06-20T10:00:01.000Z",
+    timelineSequence: 2,
+  };
+  const weakToolCall = {
+    id: "toolu_01CTest",
+    kind: "tool" as const,
+    title: "Tool call toolu_01CTest",
+    status: "completed" as const,
+    timestamp: "2026-06-20T10:00:02.000Z",
+    updatedAt: "2026-06-20T10:00:02.000Z",
+    timelineSequence: 3,
+  };
+  const strongToolCall = {
+    ...weakToolCall,
+    kind: "write" as const,
+    title: "Write",
+    input: JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+  };
+  const persistedTimeline = [
+    {
+      id: "user-1",
+      kind: "user_message" as const,
+      message: userMessage,
+      timestamp: userMessage.timestamp,
+      updatedAt: userMessage.timestamp,
+      timelineSequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message" as const,
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content" as const,
+        text: assistantMessage.text,
+        timestamp: assistantMessage.timestamp,
+        timelineSequence: 2,
+      }],
+      timestamp: assistantMessage.timestamp,
+      updatedAt: assistantMessage.timestamp,
+      timelineSequence: 2,
+    },
+    {
+      id: "tool:toolu_01CTest",
+      kind: "tool_call" as const,
+      toolCall: weakToolCall,
+      timestamp: weakToolCall.timestamp,
+      updatedAt: weakToolCall.updatedAt,
+      timelineSequence: 3,
+    },
+  ];
+  const replayRecords = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 1,
+      event: { type: "message", message: userMessage },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 2,
+      event: { type: "message", message: assistantMessage },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId,
+      providerId,
+      source: "acp_load_replay",
+      sequence: 3,
+      event: { type: "tool-call", toolCall: strongToolCall },
+    }),
+  ];
+  let replacedTimeline: any[] = [];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        list: () => [{
+          id: sessionId,
+          agentId: providerId,
+          status: "idle",
+          updatedAt: "2026-06-20T10:00:10.000Z",
+        }],
+      },
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        list: () => [userMessage, assistantMessage],
+        listPage: () => ({ messages: [userMessage, assistantMessage], hasMore: false }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: persistedTimeline, hasMore: false }),
+        replace: (_sessionId: string, entries: any[]) => {
+          replacedTimeline = entries;
+          return entries;
+        },
+      },
+      sessionUpdateStore: {
+        listPage: () => ({ updates: replayRecords, hasMore: false }),
+      },
+    } as any,
+  ) as { timeline: any[] };
+
+  const toolEntry = result.timeline.find((entry) => entry.kind === "tool_call");
+
+  assert.equal(toolEntry?.toolCall.kind, "write");
+  assert.equal(toolEntry?.toolCall.title, "Write");
+  assert.equal(
+    toolEntry?.toolCall.input,
+    JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+  );
+  assert.deepEqual(
+    replacedTimeline.map((entry) =>
+      entry.kind === "tool_call"
+        ? [entry.kind, entry.toolCall.kind, entry.toolCall.title]
+        : [entry.kind, entry.id],
+    ),
+    result.timeline.map((entry) =>
+      entry.kind === "tool_call"
+        ? [entry.kind, entry.toolCall.kind, entry.toolCall.title]
+        : [entry.kind, entry.id],
+    ),
+  );
+});

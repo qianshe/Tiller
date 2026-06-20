@@ -614,7 +614,7 @@ function mergeToolCallEntry(
       ...incoming.toolCall,
       id: current.toolCall.id,
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
-      status: resolveMergedToolCallStatus(current.toolCall.status, incoming.toolCall.status),
+      status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: mergeOptionalText(current.toolCall.input, incoming.toolCall.input),
       output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
       timestamp: current.toolCall.timestamp,
@@ -644,13 +644,58 @@ function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolC
 }
 
 function resolveMergedToolCallStatus(
-  current: AgentToolCall["status"],
-  incoming: AgentToolCall["status"],
+  current: AgentToolCall,
+  incoming: AgentToolCall,
 ) {
-  if ((current === "completed" || current === "failed") && incoming === "running") {
-    return current;
+  if (shouldKeepTerminalToolStatus(current, incoming)) {
+    return current.status;
   }
-  return incoming;
+  return incoming.status;
+}
+
+function shouldKeepTerminalToolStatus(current: AgentToolCall, incoming: AgentToolCall) {
+  if ((current.status !== "completed" && current.status !== "failed") || incoming.status !== "running") {
+    return false;
+  }
+  if (toolKindRank(incoming.kind) > toolKindRank(current.kind)) {
+    return false;
+  }
+  if (!isWeakMergedToolCallTitle(incoming.title, incoming) && incoming.title !== current.title) {
+    return false;
+  }
+  if (incoming.input && incoming.input !== current.input) {
+    return false;
+  }
+  if (incoming.commandId && incoming.commandId !== current.commandId) {
+    return false;
+  }
+  return true;
+}
+
+function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
+  const normalizedTitle = title.trim().toLowerCase();
+  return !normalizedTitle ||
+    normalizedTitle === toolCall.id.toLowerCase() ||
+    normalizedTitle === toolCall.commandId?.toLowerCase() ||
+    normalizedTitle.startsWith("tool call ");
+}
+
+function toolKindRank(kind: AgentToolCall["kind"]) {
+  const ranks: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 3,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return ranks[kind];
 }
 
 function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {

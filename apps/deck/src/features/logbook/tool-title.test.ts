@@ -95,6 +95,14 @@ test("resolveToolCallTone distinguishes read and write kinds", () => {
   });
 });
 
+test("resolveToolCallTone prioritizes MCP titles over generic search classification", () => {
+  assert.deepEqual(resolveToolCallTone("search", "mcp__morph__codebase_search"), {
+    label: "MCP",
+    className: "tool-call-mcp",
+    icon: "◇",
+  });
+});
+
 
 test("groupToolCalls uses structured file paths for read and write titles", () => {
   const grouped = groupToolCalls([

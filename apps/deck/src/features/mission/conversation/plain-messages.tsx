@@ -418,7 +418,7 @@ export function resolvePlainMessageRenderItems(
       };
     }
     if (item.kind === "tool-group") {
-      const baseKey = `tool-group-${item.group.map((tool) => tool.id).join("-")}`;
+      const baseKey = `tool-group-${item.group[0]?.id}`;
       const seenCount = seenKeys.get(baseKey) ?? 0;
       seenKeys.set(baseKey, seenCount + 1);
       return {

@@ -402,8 +402,13 @@ export function handleRuntimeEvent(
         ...event.toolCall,
         timelineSequence: nextLiveEventSequence(sessionId),
       };
-      persistRuntimeSessionUpdate(sessionId, { ...event, toolCall: orderedToolCall }, context, orderedToolCall.timelineSequence);
-      publishRuntimeToolCall(context, sessionId, orderedToolCall);
+      const mergedToolCall = publishRuntimeToolCall(context, sessionId, orderedToolCall);
+      persistRuntimeSessionUpdate(
+        sessionId,
+        { ...event, toolCall: mergedToolCall },
+        context,
+        orderedToolCall.timelineSequence,
+      );
       return;
     case "command-output":
       emitFirstHelmPromptTrace(context, {

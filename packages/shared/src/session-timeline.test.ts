@@ -343,3 +343,72 @@ test("appendToolCallToSessionTimeline merges tool output updates by command id",
   assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.id : undefined, "call-1");
   assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.output : undefined, "stdout");
 });
+
+test("appendToolCallToSessionTimeline lets richer running updates reopen a terminal tool row", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-1",
+    commandId: "call-1",
+    kind: "tool",
+    title: "Tool call call-1",
+    status: "completed",
+    timelineSequence: 1,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-1",
+    commandId: "call-1",
+    kind: "write",
+    title: "Write",
+    status: "running",
+    input: JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+    timelineSequence: 1,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "running",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined,
+    "write",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.input : undefined,
+    JSON.stringify({
+      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    }),
+  );
+});
+
+test("appendToolCallToSessionTimeline keeps terminal status for weak running fallback updates", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-1",
+    commandId: "command-1",
+    kind: "shell",
+    title: "Shell",
+    status: "completed",
+    output: "done",
+    timelineSequence: 1,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "tool-command-1",
+    commandId: "command-1",
+    kind: "shell",
+    title: "command-1",
+    status: "running",
+    output: "done\nstdout chunk",
+    timelineSequence: 1,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "completed",
+  );
+});

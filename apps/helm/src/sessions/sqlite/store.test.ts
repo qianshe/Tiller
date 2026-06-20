@@ -319,6 +319,37 @@ test("sqlite artifact store normalizes historical MCP tool calls from persisted 
   }
 });
 
+test("sqlite artifact store normalizes request-shaped MCP input from persisted tool calls", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-request-shaped-mcp-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("call-mcp-request", "2026-04-30T10:00:03.500Z", {
+          kind: "tool",
+          title: "Tool call toolu_01Mcp…",
+          input: JSON.stringify({
+            server_name: "mcp_router",
+            request: { name: "find_symbol" },
+            arguments: { relative_path: "apps/deck/src/features/server-events/session-events.ts" },
+          }),
+          status: "completed",
+        }),
+      );
+
+      const [toolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "mcp");
+      assert.equal(toolCall?.title, "Tool: mcp_router/find_symbol");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store preserves strong tool metadata when sparse updates arrive", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-sparse-tool-update-"));
   try {

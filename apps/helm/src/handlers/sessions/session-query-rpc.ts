@@ -90,6 +90,7 @@ export async function listMessages(
   context: HelmHandlerContext,
 ) {
   await context.refreshAuthoritativeSessionHistory(params.sessionId);
+  repairProviderToolCalls(params.sessionId, context);
   const page = context.sessionMessageStore.listPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
@@ -176,7 +177,7 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
 function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
   const summary = resolveSessionSummary(sessionId, context);
   const providerId = summary?.agentId;
-  if (!providerId) {
+  if (!providerId || !context.sessionArtifactStore?.replaceToolCalls) {
     return;
   }
 
@@ -200,13 +201,25 @@ function listSessionTimelinePage(
     return { entries: [], hasMore: false };
   }
 
+  const page = resolveRawTimelinePage(params, context, visibleMessages);
+  const projected = projectArtifactToolCallMetadata(params.sessionId, context, page.entries);
+  if (!projected) return page;
+  context.sessionTimelineStore.replace?.(params.sessionId, projected);
+  return { ...page, entries: projected };
+}
+
+function resolveRawTimelinePage(
+  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
+  context: HelmHandlerContext,
+  visibleMessages: AgentMessage[],
+) {
   const options = {
     entryLimit: TIMELINE_ENTRY_PAGE_LIMIT,
     limit: params.limit,
     before: params.timelineBefore ?? params.before,
     window: "message" as const,
   };
-  const persistedPage = context.sessionTimelineStore.listPage?.(params.sessionId, options);
+  const persistedPage = context.sessionTimelineStore!.listPage?.(params.sessionId, options);
   const normalizedPersistedPage = persistedPage
     ? {
         ...persistedPage,
@@ -217,7 +230,7 @@ function listSessionTimelinePage(
     ? repairTimelineFromSessionUpdates(params.sessionId, context, normalizedPersistedPage.entries)
     : undefined;
   if (repairedPersistedTimeline) {
-    const stored = context.sessionTimelineStore.replace(params.sessionId, repairedPersistedTimeline);
+    const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedPersistedTimeline);
     return pageSessionTimeline(stored, options);
   }
   if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
@@ -231,12 +244,12 @@ function listSessionTimelinePage(
 
   const existing = persistedPage
     ? []
-    : splitSessionTimelineAssistantEntriesAtBoundaries(context.sessionTimelineStore.list?.(params.sessionId) ?? []);
+    : splitSessionTimelineAssistantEntriesAtBoundaries(context.sessionTimelineStore!.list?.(params.sessionId) ?? []);
   const repairedExistingTimeline = !options.before && existing.length
     ? repairTimelineFromSessionUpdates(params.sessionId, context, existing)
     : undefined;
   if (repairedExistingTimeline) {
-    const stored = context.sessionTimelineStore.replace(params.sessionId, repairedExistingTimeline);
+    const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedExistingTimeline);
     return pageSessionTimeline(stored, options);
   }
   if (
@@ -254,7 +267,7 @@ function listSessionTimelinePage(
     return persistedPage ?? { entries: [], hasMore: false };
   }
 
-  const stored = context.sessionTimelineStore.replace(params.sessionId, rebuilt);
+  const stored = context.sessionTimelineStore!.replace(params.sessionId, rebuilt);
   return pageSessionTimeline(stored, options);
 }
 
@@ -318,8 +331,81 @@ function shouldReplaceTimelineWithUpdateReplay(
     return false;
   }
   const currentSequences = collectAssistantContentSequences(current);
-  return Array.from(collectAssistantContentSequences(replayed))
-    .some((sequence) => !currentSequences.has(sequence));
+  if (
+    Array.from(collectAssistantContentSequences(replayed))
+      .some((sequence) => !currentSequences.has(sequence))
+  ) {
+    return true;
+  }
+  return replayedHasStrongerToolMetadata(current, replayed);
+}
+
+function replayedHasStrongerToolMetadata(
+  current: SessionTimelineEntry[],
+  replayed: SessionTimelineEntry[],
+) {
+  const currentToolCalls = indexTimelineToolCalls(current);
+  for (const entry of replayed) {
+    if (entry.kind !== "tool_call") {
+      continue;
+    }
+    const currentTool = currentToolCalls.get(entry.toolCall.id) ??
+      (entry.toolCall.commandId ? currentToolCalls.get(entry.toolCall.commandId) : undefined);
+    if (!currentTool) {
+      return true;
+    }
+    if (isStrongerReplayedToolCall(entry.toolCall, currentTool)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function indexTimelineToolCalls(entries: SessionTimelineEntry[]) {
+  const index = new Map<string, AgentToolCall>();
+  for (const entry of entries) {
+    if (entry.kind !== "tool_call") {
+      continue;
+    }
+    index.set(entry.toolCall.id, entry.toolCall);
+    if (entry.toolCall.commandId) {
+      index.set(entry.toolCall.commandId, entry.toolCall);
+    }
+  }
+  return index;
+}
+
+function isStrongerReplayedToolCall(replayed: AgentToolCall, current: AgentToolCall) {
+  return toolMetadataRank(replayed.kind) > toolMetadataRank(current.kind) ||
+    (isWeakTimelineToolCallTitle(current.title, current) && !isWeakTimelineToolCallTitle(replayed.title, replayed)) ||
+    (!current.input && Boolean(replayed.input)) ||
+    (!current.output && Boolean(replayed.output));
+}
+
+function isWeakTimelineToolCallTitle(title: string, toolCall: AgentToolCall) {
+  const normalizedTitle = title.trim().toLowerCase();
+  return !normalizedTitle ||
+    isFallbackToolCallTitle(title) ||
+    normalizedTitle === toolCall.id.toLowerCase() ||
+    normalizedTitle === toolCall.commandId?.toLowerCase();
+}
+
+function toolMetadataRank(kind: AgentToolCall["kind"]) {
+  const ranks: Record<AgentToolCall["kind"], number> = {
+    unknown: 0,
+    tool: 1,
+    think: 2,
+    todo: 2,
+    fetch: 2,
+    search: 3,
+    read: 3,
+    write: 3,
+    shell: 3,
+    skill: 3,
+    subagent: 3,
+    mcp: 4,
+  };
+  return ranks[kind];
 }
 
 function collectAssistantContentSequences(entries: SessionTimelineEntry[]) {
@@ -461,8 +547,8 @@ function rebuildSessionTimelineFromLegacy(sessionId: string, context: HelmHandle
 
 function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {
   return (
-    context.sessions.get(sessionId)?.summary ??
-    context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId)
+    context.sessions?.get(sessionId)?.summary ??
+    context.sessionStore?.list().find((item: SessionSummary) => item.id === sessionId)
   );
 }
 
@@ -509,6 +595,32 @@ function repairCompletedThinkingToolCall(
     status: "completed" as const,
     updatedAt: summary.updatedAt,
   };
+}
+
+function projectArtifactToolCallMetadata(
+  sessionId: string,
+  context: HelmHandlerContext,
+  entries: SessionTimelineEntry[],
+): SessionTimelineEntry[] | undefined {
+  const hasWeakToolCalls = entries.some((entry) =>
+    entry.kind === "tool_call" && (entry as unknown as { toolCall: AgentToolCall }).toolCall.kind === "tool",
+  );
+  if (!hasWeakToolCalls) return undefined;
+  const artifacts = context.sessionArtifactStore?.get?.(sessionId);
+  if (!artifacts?.toolCalls?.length) return undefined;
+  const index = new Map<string, AgentToolCall>(artifacts.toolCalls.map((tc: AgentToolCall) => [tc.id, tc]));
+  let changed = false;
+  const repaired = entries.map((entry) => {
+    if (entry.kind !== "tool_call") return entry;
+    const tc = (entry as unknown as { toolCall: AgentToolCall }).toolCall;
+    const stronger = index.get(tc.id);
+    if (!stronger || !isStrongerReplayedToolCall(stronger, tc)) return entry;
+    changed = true;
+    return { ...entry, toolCall: { ...tc, kind: stronger.kind, title: stronger.title } };
+  });
+  if (!changed) return undefined;
+  context.sessionTimelineStore?.replace?.(sessionId, repaired);
+  return repaired;
 }
 
 function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {

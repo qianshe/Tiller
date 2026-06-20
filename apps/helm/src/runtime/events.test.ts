@@ -1570,6 +1570,13 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
       },
     },
   ]);
+  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
+    type?: string;
+    toolCall?: AgentToolCall;
+  };
+  assert.equal(persistedUpdatePayload.type, "tool-call");
+  assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
+  assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: node_repl/js");
 });
 
 test("handleRuntimeEvent broadcasts plan updates without storing a tool call", () => {

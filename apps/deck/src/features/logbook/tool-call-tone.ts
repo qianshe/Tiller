@@ -85,10 +85,6 @@ export function resolveToolCallTone(
 }
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
-  const labelFromKind = KIND_LABELS[kind];
-  if (labelFromKind && labelFromKind !== "Tool") {
-    return labelFromKind;
-  }
   const normalized = title.toLowerCase();
   if (
     kind === "subagent" ||
@@ -114,11 +110,12 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   ) {
     return "MCP";
   }
-  if (kind === "shell" || isShellLikeToolTitle(kind, normalized)) {
-    return "Shell";
+  const labelFromKind = KIND_LABELS[kind];
+  if (labelFromKind && labelFromKind !== "Tool") {
+    return labelFromKind;
   }
-  if (kind === "write" || kind === "read") {
-    return kind === "write" ? "Write" : "Read";
+  if (isShellLikeToolTitle(kind, normalized)) {
+    return "Shell";
   }
   if (isBuiltInTool(normalized)) {
     return "Built-in";

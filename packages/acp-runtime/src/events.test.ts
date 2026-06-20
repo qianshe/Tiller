@@ -667,6 +667,39 @@ test("mapSessionUpdateNotification classifies MCP tools from rawInput server and
   assert.equal(mapped.event.toolCall.title, "Tool: sanshu/zhi");
 });
 
+test("mapSessionUpdateNotification derives MCP tools from server_name and request.name payloads", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-mcp-request-shape",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-mcp-request-shape",
+        title: "call-mcp-request-shape",
+        status: "in_progress",
+        rawInput: {
+          server_name: "mcp_router",
+          request: { name: "find_symbol" },
+          arguments: { relative_path: "apps/deck/src/features/server-events/session-events.ts" },
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+  assert.equal(mapped.event.toolCall.input, JSON.stringify({
+    server_name: "mcp_router",
+    request: { name: "find_symbol" },
+    arguments: { relative_path: "apps/deck/src/features/server-events/session-events.ts" },
+  }));
+});
+
 test("mapSessionUpdateNotification maps ACP plan updates", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
