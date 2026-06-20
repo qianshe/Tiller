@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { buildChatWindowModel } from "./chat-window-model";
+import {
+  buildChatWindowModel,
+  MAX_OPEN_CHAT_SESSION_WINDOWS,
+} from "./chat-window-model";
 
 function session(id: string): SessionSummary {
   return {
@@ -63,4 +66,29 @@ test("chat window model resolves focused real session from prefixed window id", 
 
   assert.equal(model.focusedRealSessionId, "session-2");
   assert.equal(model.selectedComposerSession?.id, "session-2");
+});
+
+test("chat window model limits restored visible sessions to avoid oversized hydration", () => {
+  const active = session("session-1");
+  const restoredSessionIds = Array.from(
+    { length: MAX_OPEN_CHAT_SESSION_WINDOWS },
+    (_, index) => `session-${index + 2}`,
+  );
+  const model = buildChatWindowModel({
+    sessions: [active, ...restoredSessionIds.map((id) => session(id))],
+    activeSessionId: active.id,
+    activeSession: active,
+    openChatSessionIds: restoredSessionIds,
+    focusedChatWindowId: `session:${restoredSessionIds.at(-1)}`,
+    draftChatWindow: null,
+  });
+
+  assert.deepEqual(model.visibleChatSessionIds, [
+    active.id,
+    ...restoredSessionIds.slice(0, MAX_OPEN_CHAT_SESSION_WINDOWS - 1),
+  ]);
+  assert.deepEqual(
+    model.openSessions.map((item) => item.id),
+    model.visibleChatSessionIds,
+  );
 });

@@ -9,6 +9,8 @@ import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages
 import { useDeckStore } from "../../store";
 import type { SessionUpdateParams } from "./session-update-contracts";
 
+const MAX_OUTPUTS_PER_SESSION = 2000;
+
 export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
@@ -66,13 +68,16 @@ export function applyActivityUpdate(
     }
     case "command_output": {
       const chunk = update.chunk;
-      store.setOutputs((current) => ({
-        ...current,
-        [sessionId]: [
-          ...(current[sessionId] ?? []),
-          chunk,
-        ],
-      }));
+      store.setOutputs((current) => {
+        const existing = current[sessionId] ?? [];
+        const appended = [...existing, chunk];
+        return {
+          ...current,
+          [sessionId]: appended.length > MAX_OUTPUTS_PER_SESSION
+            ? appended.slice(-MAX_OUTPUTS_PER_SESSION)
+            : appended,
+        };
+      });
       {
         const toolCall = commandChunkToToolCall(chunk);
         mergeSessionToolCalls(sessionId, [toolCall]);

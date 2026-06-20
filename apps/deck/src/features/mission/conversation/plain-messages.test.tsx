@@ -404,6 +404,67 @@ test("plain messages keeps compact continuation preface ahead of the resumed win
   assert.ok(currentAssistantIndex > currentUserIndex);
 });
 
+test("plain messages keeps local continuation records visible while paged timeline still has more", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "结束任务",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        timestamp: "2026-06-18T14:01:49.292Z",
+        updatedAt: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+      {
+        id: "current-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "current-assistant:content",
+            kind: "content",
+            text: "好的，我来完成剩余的两处改动然后收尾。",
+            timestamp: "2026-06-18T14:02:15.534Z",
+            timelineSequence: 275,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:15.534Z",
+        updatedAt: "2026-06-18T14:02:15.534Z",
+        timelineSequence: 275,
+      },
+    ],
+    items: [
+      {
+        id: "compaction-summary",
+        role: "user",
+        text: "This session is being continued from a previous conversation that ran out of context.",
+        timestamp: "2026-06-18T13:55:25.193Z",
+      },
+      {
+        id: "previous-user",
+        role: "user",
+        text: "完成了嘛？",
+        timestamp: "2026-06-18T13:55:25.197Z",
+      },
+    ],
+    historyState: {
+      hasMore: true,
+      timelineHasMore: true,
+      loading: false,
+    },
+  });
+
+  assert.match(html, /This session is being continued from a previous conversation/);
+  assert.match(html, /完成了嘛？/);
+  assert.ok(html.indexOf("This session is being continued from a previous conversation") < html.indexOf("完成了嘛？"));
+  assert.ok(html.indexOf("完成了嘛？") < html.indexOf("结束任务"));
+});
+
 test("plain messages does not append live user prompts already represented by timeline", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

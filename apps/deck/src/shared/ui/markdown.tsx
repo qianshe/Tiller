@@ -46,6 +46,7 @@ const OPEN_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})(?:[ \t].*)?$/u;
 const CLOSE_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/u;
 const MARKDOWN_INLINE_CODE_CLASS =
   "markdown-inline-code box-decoration-clone break-words rounded-[5px] border border-border-ghost bg-surface-emphasis/70 px-1.5 py-[1px] text-[0.92em] font-semibold text-foreground";
+const MAX_HIGHLIGHT_CACHE_SIZE = 256;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
@@ -297,6 +298,8 @@ export async function resolveMarkdownCodeHighlight(
   const cacheKey = markdownHighlightCacheKey(code, language);
   const cached = markdownHighlightCache.get(cacheKey);
   if (cached) {
+    markdownHighlightCache.delete(cacheKey);
+    markdownHighlightCache.set(cacheKey, cached);
     return cached;
   }
 
@@ -311,6 +314,12 @@ export async function resolveMarkdownCodeHighlight(
     language: result.language ?? language,
   };
   markdownHighlightCache.set(cacheKey, highlighted);
+  if (markdownHighlightCache.size > MAX_HIGHLIGHT_CACHE_SIZE) {
+    const firstKey = markdownHighlightCache.keys().next().value;
+    if (firstKey !== undefined) {
+      markdownHighlightCache.delete(firstKey);
+    }
+  }
   return highlighted;
 }
 

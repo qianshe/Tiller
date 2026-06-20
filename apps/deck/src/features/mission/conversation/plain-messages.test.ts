@@ -19,6 +19,7 @@ import {
   resolvePlainMessageScrollContainer,
   resolveRemoteHistoryRevealBaseline,
   resolveVisiblePlainConversationItems,
+  resolveLocalHistoryRevealPlan,
   shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
 
@@ -401,6 +402,34 @@ test("plain message render window reveals local loaded items before remote histo
       INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
     ),
     INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  );
+});
+
+test("plain message local top reveal expands all loaded history without preserving scroll", () => {
+  assert.deepEqual(
+    resolveLocalHistoryRevealPlan({
+      scrollTop: 0,
+      currentLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      totalItems: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    }),
+    {
+      nextLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+      preserveScroll: false,
+    },
+  );
+});
+
+test("plain message local near-top reveal keeps stepped expansion and preserves scroll", () => {
+  assert.deepEqual(
+    resolveLocalHistoryRevealPlan({
+      scrollTop: 32,
+      currentLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      totalItems: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    }),
+    {
+      nextLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP,
+      preserveScroll: true,
+    },
   );
 });
 

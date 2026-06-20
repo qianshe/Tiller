@@ -26,15 +26,18 @@ export type ChatWindowModel = {
   selectedComposerSession: SessionSummary | null | undefined;
 };
 
+export const MAX_OPEN_CHAT_SESSION_WINDOWS = 6;
+
 export function buildChatWindowModel(input: BuildChatWindowModelInput): ChatWindowModel {
   const sessionById = new Map(input.sessions.map((session) => [session.id, session]));
   const focusedRealSessionId = input.focusedChatWindowId?.startsWith("session:")
     ? input.focusedChatWindowId.slice("session:".length)
     : null;
-  const persistedOpenChatSessionIds = input.openChatSessionIds;
-  const visibleChatSessionIds = input.activeSession?.id && !persistedOpenChatSessionIds.includes(input.activeSession.id)
-    ? [input.activeSession.id, ...persistedOpenChatSessionIds]
-    : persistedOpenChatSessionIds;
+  const persistedOpenChatSessionIds = trimOpenChatSessionIds(input.openChatSessionIds);
+  const visibleChatSessionIds = resolveVisibleChatSessionIds(
+    persistedOpenChatSessionIds,
+    input.activeSession?.id,
+  );
   const openSessions = visibleChatSessionIds
     .map((sessionId) => sessionById.get(sessionId))
     .filter((session): session is SessionSummary => Boolean(session));
@@ -55,4 +58,33 @@ export function buildChatWindowModel(input: BuildChatWindowModelInput): ChatWind
     focusedDraftWindow,
     selectedComposerSession,
   };
+}
+
+export function trimOpenChatSessionIds(sessionIds: string[]) {
+  const seen = new Set<string>();
+  const trimmed: string[] = [];
+  for (const sessionId of sessionIds) {
+    if (!sessionId || seen.has(sessionId)) {
+      continue;
+    }
+    seen.add(sessionId);
+    trimmed.push(sessionId);
+    if (trimmed.length >= MAX_OPEN_CHAT_SESSION_WINDOWS) {
+      break;
+    }
+  }
+  return trimmed;
+}
+
+function resolveVisibleChatSessionIds(
+  persistedOpenChatSessionIds: string[],
+  activeSessionId: string | null | undefined,
+) {
+  if (!activeSessionId || persistedOpenChatSessionIds.includes(activeSessionId)) {
+    return persistedOpenChatSessionIds;
+  }
+  return [
+    activeSessionId,
+    ...persistedOpenChatSessionIds.slice(0, MAX_OPEN_CHAT_SESSION_WINDOWS - 1),
+  ];
 }

@@ -184,12 +184,22 @@ export function PlainMessages({
       if (renderRevealRequestedRef.current) {
         return;
       }
-      captureScrollSnapshot();
+      const revealPlan = resolveLocalHistoryRevealPlan({
+        scrollTop: container.scrollTop,
+        currentLimit: visibleItemLimit,
+        totalItems: displayItems.length,
+      });
+      if (revealPlan.preserveScroll) {
+        captureScrollSnapshot();
+      } else {
+        localScrollSnapshotRef.current = {
+          scrollHeight: container.scrollHeight,
+          scrollTop: 0,
+          mode: "top",
+        };
+      }
       renderRevealRequestedRef.current = true;
-      setVisibleItemLimit((currentLimit) => resolveNextPlainConversationRenderLimit(
-        currentLimit,
-        displayItems.length,
-      ));
+      setVisibleItemLimit(revealPlan.nextLimit);
     }
 
     function loadOlderWhenScrolledToTop() {
@@ -233,7 +243,9 @@ export function PlainMessages({
     
     // Use requestAnimationFrame to ensure DOM is fully rendered before adjusting scroll
     requestAnimationFrame(() => {
-      const newScrollTop = scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
+      const newScrollTop = snapshot.mode === "top"
+        ? 0
+        : scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
       scrollContainer.scrollTo({
         top: newScrollTop,
         behavior: 'instant'
@@ -332,7 +344,11 @@ export function PlainMessages({
   );
 }
 
-type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
+type ScrollSnapshot = {
+  scrollHeight: number;
+  scrollTop: number;
+  mode?: "preserve" | "top";
+};
 
 export type RemoteHistoryRevealBaseline = {
   displayItemsLength: number;
@@ -631,6 +647,26 @@ export function resolveNextPlainConversationRenderLimit(
   return Math.min(safeTotal, safeCurrent + safeStep);
 }
 
+export function resolveLocalHistoryRevealPlan({
+  scrollTop,
+  currentLimit,
+  totalItems,
+  absoluteTopThreshold = 1,
+}: {
+  scrollTop: number;
+  currentLimit: number;
+  totalItems: number;
+  absoluteTopThreshold?: number;
+}) {
+  const atAbsoluteTop = scrollTop <= absoluteTopThreshold;
+  return {
+    nextLimit: atAbsoluteTop
+      ? Math.max(0, Math.floor(totalItems))
+      : resolveNextPlainConversationRenderLimit(currentLimit, totalItems),
+    preserveScroll: !atAbsoluteTop,
+  };
+}
+
 export function resolvePlainConversationDisplayItems({
   sessionId,
   displayMessages,
@@ -881,6 +917,7 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
       representedLiveUserMessageIds.has(message.id) ||
       (
         omitMessagesBeforeTimelineWindow &&
+        !continuationPrefaceMessageIds.has(message.id) &&
         isMessageBeforeTimelineWindow(message, timelineWindowLowerBound)
       )
     ) {

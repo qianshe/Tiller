@@ -1,8 +1,13 @@
 import type { SessionSummary } from "@tiller/shared";
 import type { FormEvent } from "react";
 import { useEffect, useRef } from "react";
-import type { MissionDraftChatWindow } from "./chat-window-model";
+import {
+  MAX_OPEN_CHAT_SESSION_WINDOWS,
+  trimOpenChatSessionIds,
+  type MissionDraftChatWindow,
+} from "./chat-window-model";
 import { shouldAttachDraftWindowToSession } from "./draft-window";
+import { useDeckStore } from "../../../store";
 
 type StateSetter<T> = (valueOrUpdater: T | ((current: T) => T)) => void;
 type LooseSetter = (valueOrUpdater: any) => void;
@@ -82,11 +87,13 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
   useEffect(() => {
     setOpenChatSessionIds((current: string[]) => {
       const existingSessionIds = new Set(sessions.map((session) => session.id));
-      const retained = current.filter((sessionId) => existingSessionIds.has(sessionId));
+      const retained = trimOpenChatSessionIds(
+        current.filter((sessionId) => existingSessionIds.has(sessionId)),
+      );
       if (!activeSession?.id || retained.includes(activeSession.id)) {
         return retained.length === current.length ? current : retained;
       }
-      return [activeSession.id, ...retained];
+      return addChatSessionIdToFront(retained, activeSession.id);
     });
   }, [activeSession?.id, sessions]);
 
@@ -146,6 +153,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
       }
       return next;
     });
+    releaseClosedSessionStreamData(session.id);
   };
 
   const openDraftChatWindow = ({
@@ -218,7 +226,43 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
 
 export function addChatSessionIdToFront(current: string[], sessionId: string) {
   if (current.includes(sessionId)) {
-    return current;
+    return trimOpenChatSessionIds(current);
   }
-  return [sessionId, ...current.filter((item) => item !== sessionId)];
+  return trimOpenChatSessionIds([sessionId, ...current.filter((item) => item !== sessionId)]);
 }
+
+function releaseClosedSessionStreamData(sessionId: string) {
+  const store = useDeckStore.getState();
+  store.setMessages((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+  store.setSessionTimeline((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+  store.setOutputs((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+  store.setToolCalls((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+  store.setDiffs((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+  store.setMessageHistoryState((current) => {
+    if (!(sessionId in current)) return current;
+    const { [sessionId]: _, ...rest } = current;
+    return rest;
+  });
+}
+
+export { MAX_OPEN_CHAT_SESSION_WINDOWS };
