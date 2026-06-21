@@ -329,6 +329,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   return {
     activeSession,
     activePromptQueue,
+    promptQueues,
     promptImages,
     setPromptImages,
     imagePasteNotice,

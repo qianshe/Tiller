@@ -835,8 +835,8 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(mobilePagerSource, /MissionMobilePager/);
   assert.match(mobilePagerSource, /项目/);
   assert.match(mobilePagerSource, /对话/);
-  assert.match(mobilePagerSource, /面板/);
-  assert.match(mobilePagerSource, /检视/);
+  assert.match(mobilePagerSource, /工作区/);
+  assert.match(mobilePagerSource, /展示/);
   assert.match(mobilePagerSource, /aria-label=\{item\.label\}/);
   assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*min-height:\s*3px;/s);
   assert.match(shellStylesSource, /\.mission-mobile-pager\s*{[^}]*padding:\s*2px 14px max\(2px, env\(safe-area-inset-bottom\)\);/s);
@@ -846,6 +846,23 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.match(shellStylesSource, /\.mission-mobile-pager-label\s*{[^}]*display:\s*none;/s);
   assert.match(shellStylesSource, /safe-area-inset-bottom/);
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
+});
+
+test("mission mobile session selection routes back to chat and keeps desktop thinking in the top menu", () => {
+  assert.match(chatWindowActionsSource, /isMissionMobile/);
+  assert.match(chatWindowActionsSource, /if \(isMissionMobile\) \{\s*setSelectedMissionMobilePane\("chat"\);\s*\}/s);
+  assert.match(chatPaneComponentSource, /isMissionMobile: boolean;/);
+  assert.match(chatPaneComponentSource, /!isMissionMobile \? \(\s*<div className=\"wb-pane-head\"/s);
+  assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
+  assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
+});
+
+test("mission ACP overview keeps the foldout without the extra bubble wrapper", () => {
+  assert.doesNotMatch(
+    sidebarSource,
+    /<details open className=\"group rounded border border-border-ghost bg-surface-sunken\/60 px-2 py-1\">/,
+  );
+  assert.match(sidebarSource, /<details open className=\"group[^\"]*\">/);
 });
 
 test("mission worktree renders mobile pager and hides desktop resizers in mobile mode", () => {

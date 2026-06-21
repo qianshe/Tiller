@@ -12,6 +12,7 @@ import type {
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  looksLikeContinuationSummary,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
 import { shouldProjectArtifactsIntoTimeline } from "../mission/history/model";
@@ -19,7 +20,6 @@ import { toast } from "../toast";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
-import { looksLikeContinuationSummary } from "../../shared/utils/continuation-summary";
 import {
   pruneSessionScopedMap,
   resolveActiveSessionId,

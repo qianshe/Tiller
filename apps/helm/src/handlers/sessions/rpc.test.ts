@@ -96,6 +96,45 @@ test("session/get_artifacts returns the current history plan when available", as
   assert.deepEqual(result.plan, plan);
 });
 
+test("session/get_artifacts repairs legacy subagent tool calls for history compatibility", async () => {
+  const sessionId = "session-subagent-history";
+  let toolCalls = [
+    {
+      id: "call-subagent-history",
+      kind: "tool" as const,
+      title: "spawn_agents_on_csv",
+      status: "completed" as const,
+      input: JSON.stringify({ path: "input.csv" }),
+      output: "Explorer summarized affected files.",
+      timestamp: "2026-06-21T10:00:01.000Z",
+      updatedAt: "2026-06-21T10:00:02.000Z",
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/get_artifacts",
+    { sessionId },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        list: () => [{ id: sessionId, agentId: "codex", status: "idle", updatedAt: "2026-06-21T10:00:10.000Z" }],
+      },
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls }),
+        getPage: () => ({ outputs: [], diffs: [], toolCalls, hasMore: false }),
+        replaceToolCalls: (_sessionId: string, nextToolCalls: typeof toolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      hydrateDiffsFromWorktreeGit: async (_sessionId: string, diffs: unknown[]) => diffs,
+    } as any,
+  ) as { toolCalls: typeof toolCalls };
+
+  assert.equal(result.toolCalls[0]?.kind, "subagent");
+  assert.equal(result.toolCalls[0]?.title, "spawn_agents_on_csv");
+});
+
 test("session/list_messages returns a unified timeline rebuilt from legacy stores", async () => {
   const sessionId = "session-with-legacy-timeline";
   const messages = [
@@ -1195,6 +1234,315 @@ test("session/list_messages requests message-window timeline pages from the stor
   assert.equal(result.timelineHasMore, false);
 });
 
+test("session/list_messages expands the first timeline page around compaction boundaries", async () => {
+  const sessionId = "session-compaction-boundary";
+  const fullTimeline = [
+    {
+      id: "older-user",
+      kind: "user_message" as const,
+      message: {
+        id: "older-user",
+        role: "user" as const,
+        text: "先检查历史",
+        timestamp: "2026-06-18T14:01:20.000Z",
+        timelineSequence: 254,
+      },
+      timestamp: "2026-06-18T14:01:20.000Z",
+      updatedAt: "2026-06-18T14:01:20.000Z",
+      timelineSequence: 254,
+    },
+    {
+      id: "older-assistant",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "older-assistant:content",
+          kind: "content" as const,
+          text: "还没有，之前上下文断了。",
+          timestamp: "2026-06-18T14:01:30.000Z",
+          timelineSequence: 255,
+        },
+      ],
+      timestamp: "2026-06-18T14:01:30.000Z",
+      updatedAt: "2026-06-18T14:01:30.000Z",
+      timelineSequence: 255,
+    },
+    {
+      id: "current-user",
+      kind: "user_message" as const,
+      message: {
+        id: "provider-current-user",
+        role: "user" as const,
+        text: "结束任务",
+        timestamp: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+      timestamp: "2026-06-18T14:01:49.292Z",
+      updatedAt: "2026-06-18T14:01:49.292Z",
+      timelineSequence: 256,
+    },
+    {
+      id: "tool-1",
+      kind: "tool_call" as const,
+      toolCall: {
+        id: "tool-1",
+        kind: "read" as const,
+        title: "Read task list",
+        status: "completed" as const,
+        timestamp: "2026-06-18T14:02:00.000Z",
+        updatedAt: "2026-06-18T14:02:00.000Z",
+        timelineSequence: 260,
+      },
+      timestamp: "2026-06-18T14:02:00.000Z",
+      updatedAt: "2026-06-18T14:02:00.000Z",
+      timelineSequence: 260,
+    },
+    {
+      id: "current-assistant",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "current-assistant:content",
+          kind: "content" as const,
+          text: "好的，我来完成剩余的两处改动然后收尾。",
+          timestamp: "2026-06-18T14:02:16.000Z",
+          timelineSequence: 276,
+        },
+      ],
+      timestamp: "2026-06-18T14:02:16.000Z",
+      updatedAt: "2026-06-18T14:02:16.000Z",
+      timelineSequence: 276,
+    },
+    {
+      id: "later-user",
+      kind: "user_message" as const,
+      message: {
+        id: "later-user",
+        role: "user" as const,
+        text: "继续收尾",
+        timestamp: "2026-06-18T14:04:00.000Z",
+        timelineSequence: 280,
+      },
+      timestamp: "2026-06-18T14:04:00.000Z",
+      updatedAt: "2026-06-18T14:04:00.000Z",
+      timelineSequence: 280,
+    },
+    {
+      id: "later-assistant",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "later-assistant:content",
+          kind: "content" as const,
+          text: "我再检查最后一遍。",
+          timestamp: "2026-06-18T14:04:05.000Z",
+          timelineSequence: 281,
+        },
+      ],
+      timestamp: "2026-06-18T14:04:05.000Z",
+      updatedAt: "2026-06-18T14:04:05.000Z",
+      timelineSequence: 281,
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        listPage: () => ({
+          messages: [
+            {
+              id: "compaction-summary",
+              role: "user" as const,
+              text: "This session is being continued from a previous conversation that ran out of context.",
+              timestamp: "2026-06-18T14:05:25.193Z",
+            },
+            {
+              id: "previous-user",
+              role: "user" as const,
+              text: "完成了嘛？",
+              timestamp: "2026-06-18T14:05:25.197Z",
+            },
+            {
+              id: "provider-current-user",
+              role: "user" as const,
+              text: "结束任务",
+              timestamp: "2026-06-18T14:01:49.292Z",
+              timelineSequence: 256,
+            },
+            {
+              id: "provider-current-assistant",
+              role: "assistant" as const,
+              text: "好的，我来完成剩余的两处改动然后收尾。",
+              timestamp: "2026-06-18T14:02:16.000Z",
+              timelineSequence: 276,
+            },
+          ],
+          hasMore: false,
+        }),
+      },
+      sessionTimelineStore: {
+        list: () => fullTimeline,
+        listPage: () => ({
+          entries: fullTimeline.slice(2),
+          nextCursor: "order\t2\tcurrent-user",
+          hasMore: true,
+        }),
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean; timelineNextCursor?: string };
+
+  assert.deepEqual(
+    result.timeline.map((entry) => entry.id),
+    ["older-assistant", "current-user", "tool-1", "current-assistant"],
+  );
+  assert.equal(result.timelineHasMore, true);
+  assert.equal(result.timelineNextCursor, "order\t1\tolder-assistant");
+});
+
+test("session/list_messages caps compaction bootstrap pages while preserving the compaction anchors", async () => {
+  const sessionId = "session-compaction-entry-cap";
+  const toolEntries = Array.from({ length: 120 }, (_, index) => ({
+    id: `tool-${index}`,
+    kind: "tool_call" as const,
+    toolCall: {
+      id: `tool-${index}`,
+      kind: "read" as const,
+      title: `Read chunk ${index}`,
+      status: "completed" as const,
+      timestamp: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
+      timelineSequence: 300 + index,
+    },
+    timestamp: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
+    updatedAt: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
+    timelineSequence: 300 + index,
+  }));
+  const fullTimeline = [
+    {
+      id: "older-user",
+      kind: "user_message" as const,
+      message: {
+        id: "older-user",
+        role: "user" as const,
+        text: "先检查历史",
+        timestamp: "2026-06-18T14:01:20.000Z",
+        timelineSequence: 254,
+      },
+      timestamp: "2026-06-18T14:01:20.000Z",
+      updatedAt: "2026-06-18T14:01:20.000Z",
+      timelineSequence: 254,
+    },
+    {
+      id: "older-assistant",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "older-assistant:content",
+          kind: "content" as const,
+          text: "还没有，之前上下文断了。",
+          timestamp: "2026-06-18T14:01:30.000Z",
+          timelineSequence: 255,
+        },
+      ],
+      timestamp: "2026-06-18T14:01:30.000Z",
+      updatedAt: "2026-06-18T14:01:30.000Z",
+      timelineSequence: 255,
+    },
+    {
+      id: "current-user",
+      kind: "user_message" as const,
+      message: {
+        id: "provider-current-user",
+        role: "user" as const,
+        text: "结束任务",
+        timestamp: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+      timestamp: "2026-06-18T14:01:49.292Z",
+      updatedAt: "2026-06-18T14:01:49.292Z",
+      timelineSequence: 256,
+    },
+    ...toolEntries,
+    {
+      id: "current-assistant",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "current-assistant:content",
+          kind: "content" as const,
+          text: "好的，我来完成剩余的两处改动然后收尾。",
+          timestamp: "2026-06-18T14:04:16.000Z",
+          timelineSequence: 999,
+        },
+      ],
+      timestamp: "2026-06-18T14:04:16.000Z",
+      updatedAt: "2026-06-18T14:04:16.000Z",
+      timelineSequence: 999,
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_messages",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        listPage: () => ({
+          messages: [
+            {
+              id: "compaction-summary",
+              role: "user" as const,
+              text: "This session is being continued from a previous conversation that ran out of context.",
+              timestamp: "2026-06-18T14:05:25.193Z",
+            },
+            {
+              id: "previous-user",
+              role: "user" as const,
+              text: "完成了嘛？",
+              timestamp: "2026-06-18T14:05:25.197Z",
+            },
+            {
+              id: "provider-current-user",
+              role: "user" as const,
+              text: "结束任务",
+              timestamp: "2026-06-18T14:01:49.292Z",
+              timelineSequence: 256,
+            },
+            {
+              id: "provider-current-assistant",
+              role: "assistant" as const,
+              text: "好的，我来完成剩余的两处改动然后收尾。",
+              timestamp: "2026-06-18T14:04:16.000Z",
+              timelineSequence: 999,
+            },
+          ],
+          hasMore: false,
+        }),
+      },
+      sessionTimelineStore: {
+        list: () => fullTimeline,
+        listPage: () => ({
+          entries: fullTimeline.slice(2),
+          nextCursor: "order\t2\tcurrent-user",
+          hasMore: true,
+        }),
+      },
+    } as any,
+  ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean; timelineNextCursor?: string };
+
+  assert.equal(result.timeline.length, 96);
+  assert.equal(result.timeline[0]?.id, "older-assistant");
+  assert.equal(result.timeline[1]?.id, "current-user");
+  assert.equal(result.timeline.at(-1)?.id, "current-assistant");
+  assert.equal(result.timeline.some((entry) => entry.id === "tool-0"), false);
+  assert.equal(result.timeline.some((entry) => entry.id === "tool-27"), true);
+  assert.equal(result.timelineHasMore, true);
+  assert.equal(result.timelineNextCursor, "order\t30\ttool-27");
+});
+
 test("session/list_messages caps dense timeline entry pages", async () => {
   const sessionId = "session-dense-entry-cap";
   const timeline = [
@@ -1401,10 +1749,51 @@ test("session/subscribe records a session topic subscription", async () => {
     subscribeSessionTopic: (socketId: string, sessionId: string) => {
       calls.push(`${socketId}:${sessionId}`);
     },
+    authenticatedSockets: { listAll: () => [] },
+    notify: () => undefined,
+    ...createPromptQueueContextExtras(),
   } as any);
 
   assert.deepEqual(calls, ["socket-1:s1"]);
   assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
+});
+
+test("session/subscribe replays the current prompt queue snapshot to the subscribing socket", async () => {
+  const promptQueue = createSessionPromptQueueManager();
+  promptQueue.enqueue({
+    sessionId: "s1",
+    text: "queued prompt",
+    clientMessageId: "client-1",
+  });
+  const socket = { readyState: 1 };
+  const notifications: Array<{ socket: unknown; method: string; params: unknown }> = [];
+
+  const result = await handleSessionRpcRequest("session/subscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    promptQueue,
+    subscribeSessionTopic: () => undefined,
+    authenticatedSockets: {
+      listAll: () => [{ socketId: "socket-1", socket }],
+    },
+    notify: (target: unknown, method: string, params: unknown) => {
+      notifications.push({ socket: target, method, params });
+    },
+  } as any);
+
+  assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
+  assert.deepEqual(notifications, [
+    {
+      socket,
+      method: "session/update",
+      params: {
+        sessionId: "s1",
+        update: {
+          kind: "prompt_queue",
+          queue: promptQueue.snapshot("s1"),
+        },
+      },
+    },
+  ]);
 });
 
 test("session/unsubscribe records a session topic removal", async () => {

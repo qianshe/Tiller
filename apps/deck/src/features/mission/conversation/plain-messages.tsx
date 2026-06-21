@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
-import { resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
-import { looksLikeContinuationSummary } from "../../../shared/utils/continuation-summary";
+import { looksLikeContinuationSummary, resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -16,6 +15,7 @@ import { PlainMessageItem, PlainSubagentItem, PlainThinkingItem, PlainToolGroupI
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
 const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
+const PLAIN_MESSAGE_TOP_LOAD_THRESHOLD_PX = 200;
 
 type PlainMessagesProps = {
   sessionId: string | null;
@@ -203,7 +203,10 @@ export function PlainMessages({
     }
 
     function loadOlderWhenScrolledToTop() {
-      if (olderLoadRequestedRef.current || container.scrollTop > 200) {
+      if (
+        olderLoadRequestedRef.current ||
+        container.scrollTop > PLAIN_MESSAGE_TOP_LOAD_THRESHOLD_PX
+      ) {
         return;
       }
       if (hasHiddenLoadedItems) {
@@ -224,9 +227,11 @@ export function PlainMessages({
     }
 
     container.addEventListener("scroll", loadOlderWhenScrolledToTop, { passive: true });
-    if (shouldAutoLoadOlderHistory({
+    if (shouldPrimeOlderHistoryLoad({
+      scrollTop: container.scrollTop,
       scrollHeight: container.scrollHeight,
       clientHeight: container.clientHeight,
+      canLoadMore: hasHiddenLoadedItems || Boolean(historyState?.canLoadMore ?? historyState?.hasMore),
     })) {
       loadOlderWhenScrolledToTop();
     }
@@ -580,6 +585,23 @@ export function shouldAutoLoadOlderHistory(
   threshold = 48,
 ) {
   return metrics.scrollHeight <= metrics.clientHeight + threshold;
+}
+
+export function shouldPrimeOlderHistoryLoad({
+  scrollTop,
+  scrollHeight,
+  clientHeight,
+  canLoadMore,
+}: {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  canLoadMore: boolean;
+}) {
+  return canLoadMore && (
+    scrollTop <= PLAIN_MESSAGE_TOP_LOAD_THRESHOLD_PX ||
+    shouldAutoLoadOlderHistory({ scrollHeight, clientHeight })
+  );
 }
 
 export function resolvePlainMessageScrollContainer(
@@ -1295,36 +1317,7 @@ function toPlainToolConversationItem(
 }
 
 function isSubagentToolCall(toolCall: ConversationToolCallItem) {
-  if (toolCall.toolKind === "subagent") {
-    return true;
-  }
-  const input = parseToolInputRecord(toolCall.input);
-  if (!input) {
-    return false;
-  }
-  if (typeof input.subagent_type === "string" || typeof input.subagentType === "string") {
-    return true;
-  }
-  if (typeof input.agent_type === "string" || typeof input.agentType === "string") {
-    return true;
-  }
-  return typeof input.task_id === "string" &&
-    (input.run_in_background === true || toolCall.title.startsWith("background_"));
-}
-
-function parseToolInputRecord(input: string) {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith("{")) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
+  return toolCall.toolKind === "subagent";
 }
 
 function mergeAdjacentToolItems(

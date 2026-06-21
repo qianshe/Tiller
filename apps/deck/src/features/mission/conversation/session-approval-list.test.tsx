@@ -50,6 +50,7 @@ const baseProps = {
   onCloseSessionView: () => undefined,
   onClearSession: () => undefined,
   promptQueue: undefined,
+  sessionPromptQueuesById: {},
   restoreNotice: undefined,
   onUpdateQueuedPrompt: () => undefined,
   onDeleteQueuedPrompt: () => undefined,
@@ -229,6 +230,43 @@ test("chat pane anchors plans to their matching session windows", () => {
   assert.ok(secondBodyIndex < secondPlanDockIndex);
   assert.ok(secondPlanDockIndex < secondPlanContentIndex);
   assert.ok(secondPlanContentIndex < composerIndex);
+});
+
+test("chat pane keeps queue-plus-plan tabs for the selected non-active session", () => {
+  const activeSession = buildSession("s1", "Active session");
+  const selectedSession = buildSession("s2", "Selected session", "Codex");
+  const html = renderToStaticMarkup(
+    createElement(MissionChatPane, {
+      ...baseProps,
+      activeSession,
+      openSessions: [activeSession, selectedSession],
+      selectedSessionId: "s2",
+      sessionPlansById: {
+        s2: plan,
+      },
+      sessionPromptQueuesById: {
+        s2: {
+          sessionId: "s2",
+          queued: [
+            {
+              id: "queue-1",
+              sessionId: "s2",
+              text: "等待发送的 Prompt",
+              clientMessageId: "client-1",
+              createdAt: "2026-06-21T10:00:00.000Z",
+              updatedAt: "2026-06-21T10:00:00.000Z",
+              status: "queued",
+            },
+          ],
+        },
+      },
+      onRespondToPermission: () => undefined,
+    } as any),
+  );
+
+  assert.match(html, /data-plan-session-id="s2"/);
+  assert.match(html, /data-session-dock-tabs/);
+  assert.match(html, /data-session-dock-option="prompt-queue"/);
 });
 
 test("chat pane disables actions for a resolving approval", () => {

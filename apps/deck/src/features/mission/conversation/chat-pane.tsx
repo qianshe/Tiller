@@ -68,6 +68,7 @@ type MissionPendingApproval = {
 type MissionChatPaneProps = {
   className: string;
   style: CSSProperties;
+  isMissionMobile: boolean;
   chatMainRef: RefObject<HTMLDivElement | null>;
   onChatMainScroll: UIEventHandler<HTMLDivElement>;
   helmConnected: boolean;
@@ -129,6 +130,7 @@ type MissionChatPaneProps = {
   onDismissCompletedSessionPlan?: (sessionId: string, planKey: string) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   promptQueue?: SessionPromptQueueSnapshot;
+  sessionPromptQueuesById?: Record<string, SessionPromptQueueSnapshot | undefined>;
   restoreNotice?: SessionRestoreNotice;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
   onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
@@ -141,6 +143,7 @@ type MissionChatPaneProps = {
 export function MissionChatPane({
   className,
   style,
+  isMissionMobile,
   chatMainRef,
   onChatMainScroll,
   helmConnected,
@@ -194,6 +197,7 @@ export function MissionChatPane({
   onDismissCompletedSessionPlan,
   onRespondToPermission,
   promptQueue,
+  sessionPromptQueuesById = {},
   restoreNotice,
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
@@ -480,136 +484,138 @@ export function MissionChatPane({
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
-      <div className="wb-pane-head" style={{ background: "var(--surface)" }}>
-        {sidebarCollapsed ? (
-          <button
-            type="button"
-            className="grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground"
-            onClick={onExpandSidebar}
-            aria-label="展开任务导航"
-            title="展开任务导航"
-          >
-            <Icon name="panel" size={12} />
-          </button>
-        ) : null}
-        <span className="wb-pane-head-eyebrow">工作台</span>
-        <span className="ml-1 font-mono text-meta text-muted-foreground tabular">
-          {openSessions.length ? `${openSessions.length} 会话` : "0 会话"}
-        </span>
-        <div className="flex-1" />
-        <div ref={projectMenuRef} className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              setProjectMenuOpen((current) => !current);
-              setMenuOpen(false);
-            }}
-            disabled={!canCreateTask}
-            className={cn(
-              "grid h-6 w-6 place-items-center rounded transition-colors",
-              projectMenuOpen
-                ? "bg-surface-emphasis text-foreground"
-                : canCreateTask
-                  ? "text-muted-foreground hover:bg-surface-sunken hover:text-primary"
-                  : "cursor-not-allowed text-muted-foreground/35",
-            )}
-            aria-haspopup="menu"
-            aria-expanded={projectMenuOpen}
-            aria-label="新建任务"
-            title={canCreateTask ? "选择项目创建任务" : "没有可用项目"}
-          >
-            <Icon name="plus" size={12} />
-          </button>
-          {projectMenuOpen ? (
-            <div
-              role="menu"
-              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
-              style={{
-                background: "var(--popover-glass)",
-                backdropFilter: "blur(20px)",
-                boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
-                animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-              }}
+      {!isMissionMobile ? (
+        <div className="wb-pane-head" style={{ background: "var(--surface)" }}>
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              className="grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground"
+              onClick={onExpandSidebar}
+              aria-label="展开任务导航"
+              title="展开任务导航"
             >
-              {projectOptions.map((project) => (
+              <Icon name="panel" size={12} />
+            </button>
+          ) : null}
+          <span className="wb-pane-head-eyebrow">工作台</span>
+          <span className="ml-1 font-mono text-meta text-muted-foreground tabular">
+            {openSessions.length ? `${openSessions.length} 会话` : "0 会话"}
+          </span>
+          <div className="flex-1" />
+          <div ref={projectMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setProjectMenuOpen((current) => !current);
+                setMenuOpen(false);
+              }}
+              disabled={!canCreateTask}
+              className={cn(
+                "grid h-6 w-6 place-items-center rounded transition-colors",
+                projectMenuOpen
+                  ? "bg-surface-emphasis text-foreground"
+                  : canCreateTask
+                    ? "text-muted-foreground hover:bg-surface-sunken hover:text-primary"
+                    : "cursor-not-allowed text-muted-foreground/35",
+              )}
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              aria-label="新建任务"
+              title={canCreateTask ? "选择项目创建任务" : "没有可用项目"}
+            >
+              <Icon name="plus" size={12} />
+            </button>
+            {projectMenuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
+                style={{
+                  background: "var(--popover-glass)",
+                  backdropFilter: "blur(20px)",
+                  boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+                  animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+                }}
+              >
+                {projectOptions.map((project) => (
+                  <MenuItem
+                    key={project.id}
+                    icon="folder"
+                    onClick={() => {
+                      onCreateTask(project.id);
+                      setProjectMenuOpen(false);
+                    }}
+                  >
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((current) => !current)}
+              className={cn(
+                "grid h-6 w-6 place-items-center rounded transition-colors",
+                menuOpen ? "bg-surface-emphasis text-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+              )}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="更多任务操作"
+              title="更多"
+            >
+              <Icon name="more" size={12} />
+            </button>
+            {menuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 top-[calc(100%+4px)] z-50 w-[200px] overflow-hidden rounded-[8px] py-1"
+                style={{
+                  background: "var(--popover-glass)",
+                  backdropFilter: "blur(20px)",
+                  boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+                  animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+                }}
+              >
                 <MenuItem
-                  key={project.id}
-                  icon="folder"
+                  checked={!displayCollapsed}
+                  disabled={!canToggleDisplay}
+                  icon="terminal"
                   onClick={() => {
-                    onCreateTask(project.id);
-                    setProjectMenuOpen(false);
+                    if (!canToggleDisplay) {
+                      return;
+                    }
+                    onToggleDisplay();
+                    setMenuOpen(false);
                   }}
                 >
-                  {project.name}
+                  展示栏
                 </MenuItem>
-              ))}
-            </div>
-          ) : null}
+                <MenuItem
+                  checked={!inspectorCollapsed}
+                  icon="inspect"
+                  onClick={() => {
+                    onToggleInspector();
+                    setMenuOpen(false);
+                  }}
+                >
+                  Inspector 面板
+                </MenuItem>
+                <MenuItem
+                  checked={showThinking}
+                  icon="activity"
+                  onClick={() => {
+                    onToggleThinking();
+                    setMenuOpen(false);
+                  }}
+                >
+                  Thinking
+                </MenuItem>
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div ref={menuRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((current) => !current)}
-            className={cn(
-              "grid h-6 w-6 place-items-center rounded transition-colors",
-              menuOpen ? "bg-surface-emphasis text-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
-            )}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label="更多任务操作"
-            title="更多"
-          >
-            <Icon name="more" size={12} />
-          </button>
-          {menuOpen ? (
-            <div
-              role="menu"
-              className="absolute right-0 top-[calc(100%+4px)] z-50 w-[200px] overflow-hidden rounded-[8px] py-1"
-              style={{
-                background: "var(--popover-glass)",
-                backdropFilter: "blur(20px)",
-                boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
-                animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-              }}
-            >
-              <MenuItem
-                checked={!displayCollapsed}
-                disabled={!canToggleDisplay}
-                icon="terminal"
-                onClick={() => {
-                  if (!canToggleDisplay) {
-                    return;
-                  }
-                  onToggleDisplay();
-                  setMenuOpen(false);
-                }}
-              >
-                展示栏
-              </MenuItem>
-              <MenuItem
-                checked={!inspectorCollapsed}
-                icon="inspect"
-                onClick={() => {
-                  onToggleInspector();
-                  setMenuOpen(false);
-                }}
-              >
-                Inspector 面板
-              </MenuItem>
-              <MenuItem
-                checked={showThinking}
-                icon="activity"
-                onClick={() => {
-                  onToggleThinking();
-                  setMenuOpen(false);
-                }}
-              >
-                Thinking
-              </MenuItem>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
       <div
         className={cn(
           "chat-main flex-1 w-full overflow-x-hidden min-h-0 relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
@@ -675,7 +681,10 @@ export function MissionChatPane({
                     sessionPlansById[session.id] ??
                     (session.id === activeSessionId ? activeSessionPlan : null)
                   }
-                  promptQueue={session.id === activeSessionId ? promptQueue : undefined}
+                  promptQueue={
+                    sessionPromptQueuesById[session.id] ??
+                    (session.id === activeSessionId ? promptQueue : undefined)
+                  }
                   dismissedCompletedPlanKey={dismissedCompletedSessionPlanKeys[session.id]}
                   activityLoading={session.id === activeSessionId ? activityLoading : null}
                   pendingToolPresent={session.id === activeSessionId ? pendingToolPresent : false}
@@ -694,6 +703,8 @@ export function MissionChatPane({
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
+                  showThinkingToggle={isMissionMobile}
+                  onToggleThinking={onToggleThinking}
                 />
               ))}
             </div>
@@ -733,6 +744,7 @@ type MissionChatSessionCardProps = {
     assistantBlockText: string,
     sessionMessages: AgentMessage[],
   ) => void;
+  onToggleThinking: () => void;
   pendingApprovals: ReadonlyArray<MissionPendingApproval>;
   pendingToolPresent: boolean;
   pendingToolTitle: string | null;
@@ -744,6 +756,7 @@ type MissionChatSessionCardProps = {
   sessionToolCalls: AgentToolCall[];
   showPermissionWorktree: boolean;
   showThinking: boolean;
+  showThinkingToggle: boolean;
   timelineItems: SessionTimelineEntry[];
 };
 
@@ -772,6 +785,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
   onHandoffAssistantMessage,
+  onToggleThinking,
   pendingApprovals,
   pendingToolPresent,
   pendingToolTitle,
@@ -783,6 +797,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   sessionToolCalls,
   showPermissionWorktree,
   showThinking,
+  showThinkingToggle,
   timelineItems,
 }: MissionChatSessionCardProps) {
   const sessionTimeline = useMemo(
@@ -862,6 +877,9 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       blockingOverlay={approvalStack}
       flat={flat}
       reserveFloatingDockSpace={hasSessionContent}
+      showThinkingToggle={showThinkingToggle}
+      showThinking={showThinking}
+      onToggleThinking={onToggleThinking}
     >
       {hasSessionContent ? (
         <MissionMessageTimeline

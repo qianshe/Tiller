@@ -1,6 +1,6 @@
 import type { SessionSummary } from "@tiller/shared";
 import type { FormEvent } from "react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   MAX_OPEN_CHAT_SESSION_WINDOWS,
   trimOpenChatSessionIds,
@@ -15,6 +15,7 @@ type LooseSetter = (valueOrUpdater: any) => void;
 export type UseChatWindowActionsOptions = {
   activeSessionId: string | null | undefined;
   activeSession: SessionSummary | null | undefined;
+  isMissionMobile?: boolean;
   sessions: SessionSummary[];
   focusedChatWindowId: string | null | undefined;
   focusedRealSessionId: string | null;
@@ -59,6 +60,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
   const {
     activeSessionId,
     activeSession,
+    isMissionMobile = false,
     sessions,
     focusedChatWindowId,
     focusedRealSessionId,
@@ -118,13 +120,20 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     }
   }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
 
+  const focusSessionWindow = useCallback((sessionId: string) => {
+    if (isMissionMobile) {
+      setSelectedMissionMobilePane("chat");
+    }
+    setFocusedChatWindowId(`session:${sessionId}`);
+  }, [isMissionMobile, setFocusedChatWindowId, setSelectedMissionMobilePane]);
+
   const openChatSession = (sessionId: string) => {
     setOpenChatSessionIds((current: string[]) => addChatSessionIdToFront(current, sessionId));
     hydrateOpenSessionStreams([sessionId]);
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
-    setFocusedChatWindowId(`session:${sessionId}`);
+    focusSessionWindow(sessionId);
   };
 
   const selectChatSession = (sessionId: string) => {
@@ -134,7 +143,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     if (sessionId !== activeSessionId) {
       openSession(sessionId);
     }
-    setFocusedChatWindowId(`session:${sessionId}`);
+    focusSessionWindow(sessionId);
   };
 
   const closeChatSession = (session: SessionSummary) => {
@@ -211,8 +220,15 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     setOpenChatSessionIds((current: string[]) =>
       addChatSessionIdToFront(current, attachedSessionId),
     );
-    setFocusedChatWindowId(`session:${attachedSessionId}`);
-  }, [activeSession?.id, activeSession?.projectId, activeSession?.cwd, activeSession?.agentId, draftChatWindow]);
+    focusSessionWindow(attachedSessionId);
+  }, [
+    activeSession?.id,
+    activeSession?.projectId,
+    activeSession?.cwd,
+    activeSession?.agentId,
+    draftChatWindow,
+    focusSessionWindow,
+  ]);
 
   return {
     openChatSession,

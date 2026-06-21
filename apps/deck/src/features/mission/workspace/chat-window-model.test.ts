@@ -54,6 +54,71 @@ test("chat window model falls back to active session and includes it in visible 
   assert.equal(model.selectedComposerSession?.id, "session-1");
 });
 
+test("chat window model keeps only the focused session visible in mission mobile mode", () => {
+  const active = session("session-1");
+  const focused = session("session-2");
+  const hidden = session("session-3");
+  const model = buildChatWindowModel({
+    sessions: [active, focused, hidden],
+    activeSessionId: active.id,
+    activeSession: active,
+    openChatSessionIds: [hidden.id, focused.id],
+    focusedChatWindowId: `session:${focused.id}`,
+    draftChatWindow: null,
+    isMissionMobile: true,
+  });
+
+  assert.deepEqual(model.persistedOpenChatSessionIds, [hidden.id, focused.id]);
+  assert.deepEqual(model.visibleChatSessionIds, [focused.id]);
+  assert.deepEqual(model.openSessions.map((item) => item.id), [focused.id]);
+  assert.deepEqual(Array.from(model.openSessionIdSet), [focused.id]);
+  assert.equal(model.selectedComposerSession?.id, focused.id);
+});
+
+test("chat window model hides real sessions when the focused mobile window is a draft", () => {
+  const active = session("session-1");
+  const model = buildChatWindowModel({
+    sessions: [active, session("session-2")],
+    activeSessionId: active.id,
+    activeSession: active,
+    openChatSessionIds: [active.id],
+    focusedChatWindowId: "draft:project-1",
+    draftChatWindow: {
+      id: "draft:project-1",
+      projectId: "project-1",
+      cwd: "D:/repo",
+      agentId: "codex",
+    },
+    isMissionMobile: true,
+  });
+
+  assert.equal(model.focusedDraftWindow?.id, "draft:project-1");
+  assert.deepEqual(model.visibleChatSessionIds, []);
+  assert.deepEqual(model.openSessions, []);
+  assert.deepEqual(Array.from(model.openSessionIdSet), []);
+  assert.equal(model.selectedComposerSession, null);
+});
+
+test("chat window model falls back to the active session when mobile focus points to a missing session", () => {
+  const active = session("session-1");
+  const secondary = session("session-2");
+  const model = buildChatWindowModel({
+    sessions: [active, secondary],
+    activeSessionId: active.id,
+    activeSession: active,
+    openChatSessionIds: [secondary.id],
+    focusedChatWindowId: "session:missing-session",
+    draftChatWindow: null,
+    isMissionMobile: true,
+  });
+
+  assert.equal(model.focusedRealSessionId, "missing-session");
+  assert.deepEqual(model.visibleChatSessionIds, [active.id]);
+  assert.deepEqual(model.openSessions.map((item) => item.id), [active.id]);
+  assert.deepEqual(Array.from(model.openSessionIdSet), [active.id]);
+  assert.equal(model.selectedComposerSession?.id, active.id);
+});
+
 test("chat window model resolves focused real session from prefixed window id", () => {
   const model = buildChatWindowModel({
     sessions: [session("session-1"), session("session-2")],

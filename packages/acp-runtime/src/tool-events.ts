@@ -193,9 +193,8 @@ function primitiveStringFrom(value: unknown): string | undefined {
 function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
   const toolInput = parseToolInput(source.rawInput ?? source.raw_input ?? source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input);
   const toolName = toolNameFromRawInput(toolInput);
+  const explicitKind = resolveExplicitToolCallKind(source);
   const descriptorRaw = [
-    source.kind,
-    source.type,
     source.name,
     source.toolName,
     source.tool_name,
@@ -208,8 +207,7 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
     .join(" ")
     .toLowerCase();
   const raw = [
-    source.kind,
-    source.type,
+    explicitKind,
     source.title,
     source.label,
     source.displayName,
@@ -226,8 +224,8 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
     .join(" ")
     .toLowerCase();
 
+  if (explicitKind === "subagent") return "subagent";
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
-  if (isSubagentToolInput(toolInput) || isSubagentToolDescriptor(descriptorRaw)) return "subagent";
   if (toolName?.includes("/")) return "mcp";
   if (/\b(?:read|view|list|glob)\b/u.test(raw)) return "read";
   if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
@@ -243,34 +241,36 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
   return "unknown";
 }
 
-function isSubagentToolInput(rawInput: unknown) {
-  if (!rawInput || typeof rawInput !== "object") return false;
-  const record = rawInput as Record<string, unknown>;
-  if (typeof record.subagent_type === "string" || typeof record.subagentType === "string" || typeof record.agent_type === "string" || typeof record.agentType === "string") {
-    return true;
-  }
-  if (typeof record.task_id === "string" && record.run_in_background === true) {
-    return true;
-  }
-  const raw = [
-    record.tool,
-    record.name,
-    record.toolName,
-    record.tool_name,
-    record.agent,
-    record.agentName,
-    record.agent_name,
+function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undefined {
+  const candidates = [
+    primitiveStringFrom(source.kind),
+    primitiveStringFrom(source.type),
   ]
-    .map((value) => primitiveStringFrom(value))
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return isSubagentToolDescriptor(raw);
-}
-
-function isSubagentToolDescriptor(raw: string) {
-  return /(?:^|[^a-z0-9])(?:subagents?|delegate[_-]?tasks?|spawn[_-]?agents?|background[_-]?(?:agents?|tasks?))(?:$|[^a-z0-9])/u.test(raw)
-    || /(?:^| )(?:agent|task)(?:$| )/u.test(raw);
+    .map((value) => value?.trim().toLowerCase())
+    .filter((value): value is string => Boolean(value));
+  const explicitKindMap: Record<string, AgentToolCall["kind"]> = {
+    mcp: "mcp",
+    skill: "skill",
+    read: "read",
+    write: "write",
+    search: "search",
+    shell: "shell",
+    terminal: "shell",
+    command: "shell",
+    fetch: "fetch",
+    think: "think",
+    todo: "todo",
+    subagent: "subagent",
+    tool: "tool",
+    unknown: "unknown",
+  };
+  for (const candidate of candidates) {
+    const mapped = explicitKindMap[candidate];
+    if (mapped) {
+      return mapped;
+    }
+  }
+  return undefined;
 }
 
 function isSkillToolInput(rawInput: unknown) {

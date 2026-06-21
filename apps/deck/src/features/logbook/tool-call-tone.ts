@@ -86,12 +86,7 @@ export function resolveToolCallTone(
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   const normalized = title.toLowerCase();
-  if (
-    kind === "subagent" ||
-    /\b(subagent|delegate|explore|librarian|worker|oracle|metis|momus)\b/iu.test(
-      title,
-    )
-  ) {
+  if (kind === "subagent") {
     return "Subagent";
   }
   if (

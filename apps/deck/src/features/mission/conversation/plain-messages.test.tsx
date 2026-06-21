@@ -1879,12 +1879,12 @@ test("plain messages renders subagents as standalone timeline rows", () => {
   });
 
   assert.match(html, /plain-subagent/);
-  assert.match(html, /Subagent/);
   assert.match(html, /spawn_agents_on_csv/);
+  assert.match(html, /Explorer summarized affected files\./);
   assert.doesNotMatch(html, /工具调用 · 1 项/);
   assert.doesNotMatch(html, /plain-tool-group/);
   assert.doesNotMatch(html, /data-tool-group-kind="subagent"/);
-  assert.match(html, /aria-label="展开 Subagent"/);
+  assert.match(html, /aria-label="展开 spawn_agents_on_csv"/);
   assert.ok(html.indexOf("准备委派。") < html.indexOf("spawn_agents_on_csv"));
 });
 
@@ -1980,12 +1980,13 @@ test("plain messages surfaces subagent type and task summary when available", ()
     ],
   });
 
-  assert.match(html, /Explore · trace async refresh flow/);
-  assert.match(html, /aria-label="收起 Subagent"/);
-  assert.doesNotMatch(html, /Subagent<\/span><span[^>]*>background_output/);
+  assert.match(html, /aria-label="收起 Explore"/);
+  assert.match(html, /Explore/);
+  assert.match(html, /trace async refresh flow/);
+  assert.match(html, /运行中/);
 });
 
-test("plain messages treats OpenCode task payloads as standalone subagents", () => {
+test("plain messages does not treat OpenCode task-like payloads as subagents without typed kind", () => {
   const html = renderPlainMessages({
     toolCalls: [
       {
@@ -2016,12 +2017,11 @@ test("plain messages treats OpenCode task payloads as standalone subagents", () 
     ],
   });
 
-  assert.equal(html.match(/<details class="plain-subagent/g)?.length, 1);
+  assert.equal(html.match(/<details class="plain-subagent/g)?.length ?? 0, 0);
   assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
-  assert.match(html, /oracle · Review concurrency findings/);
-  assert.match(html, /工具调用 · 1 项/);
-  assert.doesNotMatch(html, /Subagent \/ Search/);
-  assert.ok(html.indexOf("oracle · Review concurrency findings") < html.indexOf("工具调用 · 1 项"));
+  assert.match(html, /工具调用 · 2 项/);
+  assert.match(html, /Review concurrency findings/);
+  assert.doesNotMatch(html, /data-subagent-call/);
 });
 
 test("plain messages marks cancelled and failed subagent rows clearly", () => {
@@ -2050,7 +2050,8 @@ test("plain messages marks cancelled and failed subagent rows clearly", () => {
     ],
   });
 
-  assert.match(html, /background_cancel · 取消后台任务/);
+  assert.match(html, /background_cancel/);
+  assert.match(html, /取消后台任务/);
   assert.match(html, /已取消/);
   assert.match(html, /Error/);
   assert.match(html, /错误/);

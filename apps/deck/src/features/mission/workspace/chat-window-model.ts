@@ -14,6 +14,7 @@ export type BuildChatWindowModelInput = {
   openChatSessionIds: string[];
   focusedChatWindowId: string | null;
   draftChatWindow: MissionDraftChatWindow | null;
+  isMissionMobile?: boolean;
 };
 
 export type ChatWindowModel = {
@@ -33,18 +34,24 @@ export function buildChatWindowModel(input: BuildChatWindowModelInput): ChatWind
   const focusedRealSessionId = input.focusedChatWindowId?.startsWith("session:")
     ? input.focusedChatWindowId.slice("session:".length)
     : null;
+  const focusedDraftWindow = input.draftChatWindow && input.focusedChatWindowId === input.draftChatWindow.id
+    ? input.draftChatWindow
+    : null;
   const persistedOpenChatSessionIds = trimOpenChatSessionIds(input.openChatSessionIds);
   const visibleChatSessionIds = resolveVisibleChatSessionIds(
-    persistedOpenChatSessionIds,
-    input.activeSession?.id,
+    {
+      sessionById,
+      persistedOpenChatSessionIds,
+      activeSessionId: input.activeSession?.id ?? input.activeSessionId,
+      focusedRealSessionId,
+      focusedDraftWindowId: focusedDraftWindow?.id ?? null,
+      isMissionMobile: input.isMissionMobile ?? false,
+    },
   );
   const openSessions = visibleChatSessionIds
     .map((sessionId) => sessionById.get(sessionId))
     .filter((session): session is SessionSummary => Boolean(session));
   const openSessionIdSet = new Set(visibleChatSessionIds);
-  const focusedDraftWindow = input.draftChatWindow && input.focusedChatWindowId === input.draftChatWindow.id
-    ? input.draftChatWindow
-    : null;
   const selectedComposerSession = focusedDraftWindow
     ? null
     : sessionById.get(focusedRealSessionId ?? input.activeSession?.id ?? "") ?? input.activeSession;
@@ -76,10 +83,33 @@ export function trimOpenChatSessionIds(sessionIds: string[]) {
   return trimmed;
 }
 
-function resolveVisibleChatSessionIds(
-  persistedOpenChatSessionIds: string[],
-  activeSessionId: string | null | undefined,
-) {
+function resolveVisibleChatSessionIds({
+  sessionById,
+  persistedOpenChatSessionIds,
+  activeSessionId,
+  focusedRealSessionId,
+  focusedDraftWindowId,
+  isMissionMobile,
+}: {
+  sessionById: Map<string, SessionSummary>;
+  persistedOpenChatSessionIds: string[];
+  activeSessionId: string | null | undefined;
+  focusedRealSessionId: string | null;
+  focusedDraftWindowId: string | null;
+  isMissionMobile: boolean;
+}) {
+  if (isMissionMobile) {
+    if (focusedDraftWindowId) {
+      return [];
+    }
+    const effectiveFocusedSessionId = focusedRealSessionId && sessionById.has(focusedRealSessionId)
+      ? focusedRealSessionId
+      : null;
+    const visibleSessionId =
+      effectiveFocusedSessionId ?? activeSessionId ?? persistedOpenChatSessionIds[0] ?? null;
+    return visibleSessionId ? [visibleSessionId] : [];
+  }
+
   if (!activeSessionId || persistedOpenChatSessionIds.includes(activeSessionId)) {
     return persistedOpenChatSessionIds;
   }

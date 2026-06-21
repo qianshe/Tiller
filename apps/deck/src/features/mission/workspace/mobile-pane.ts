@@ -1,4 +1,4 @@
-export const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "display", "inspector"] as const;
+export const MISSION_MOBILE_PANE_ORDER = ["project", "chat", "inspector", "display"] as const;
 
 export type MissionMobilePane = typeof MISSION_MOBILE_PANE_ORDER[number];
 

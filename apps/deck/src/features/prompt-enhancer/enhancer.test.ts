@@ -47,12 +47,13 @@ test("buildAssistantHandoffPromptInput treats the final assistant block as a dir
     sessionSummary: "用户要求不要把 Handoff 变成原文复制。",
   });
 
-  assert.match(prompt, /<conversation_context>/);
+  assert.match(prompt, /<project_context>/);
   assert.match(prompt, /Project: Tiller/);
+  assert.match(prompt, /<conversation_history>/);
   assert.match(prompt, /用户要求不要把 Handoff 变成原文复制/);
-  assert.match(prompt, /<latest_assistant_direction_anchor>/);
+  assert.match(prompt, /<latest_assistant_direction>/);
   assert.match(prompt, /结论：只做复制按钮和 Handoff 草稿/);
-  assert.match(prompt, /Do not merely copy or paraphrase/);
+  assert.match(prompt, /do not merely copy or paraphrase/i);
 });
 
 test("generateAssistantHandoffPrompt calls the prompt enhancer LLM with context and anchor", async () => {
@@ -84,8 +85,8 @@ test("generateAssistantHandoffPrompt calls the prompt enhancer LLM with context 
   assert.equal(calls[0]?.url, "https://example.test/v1/chat/completions");
   const body = String(calls[0]?.init.body);
   assert.match(body, /prompt-model/);
-  assert.match(body, /latest assistant block only as the direction anchor/);
-  assert.match(body, /Do not merely copy or paraphrase/);
+  assert.match(body, /direction and priority anchor/);
+  assert.match(body, /do not merely copy or paraphrase/i);
   assert.match(body, /Tiller is a local-first command deck/);
   assert.match(body, /Handoff 要整理会话上下文，不是原文复制/);
 });

@@ -165,6 +165,14 @@ test("resolveToolCallTone displays todo as a generic built-in activity", () => {
   });
 });
 
+test("resolveToolCallTone trusts explicit kinds over subagent-like titles", () => {
+  assert.deepEqual(resolveToolCallTone("search", "Explore async refresh flow"), {
+    label: "Search",
+    className: "tool-call-mcp",
+    icon: "⌕",
+  });
+});
+
 test("groupToolCalls summarizes Codex rawInput shell command arrays", () => {
   const grouped = groupToolCalls([
     {

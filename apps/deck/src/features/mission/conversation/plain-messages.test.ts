@@ -20,6 +20,7 @@ import {
   resolveRemoteHistoryRevealBaseline,
   resolveVisiblePlainConversationItems,
   resolveLocalHistoryRevealPlan,
+  shouldPrimeOlderHistoryLoad,
   shouldAutoLoadOlderHistory,
 } from "./plain-messages.js";
 
@@ -444,6 +445,36 @@ test("plain message history auto-loads older pages when loaded content does not 
   );
 });
 
+test("plain message history primes another older-page load when the session opens already pinned to the top", () => {
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 0,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 240,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 0,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: false,
+    }),
+    false,
+  );
+});
+
 test("plain message history uses the session card body as the scroll container", () => {
   const wrapper = {} as HTMLDivElement;
   const scrollContainer = {} as HTMLDivElement;
@@ -461,12 +492,9 @@ test("plain message remote history requests reset so repeated top scroll can loa
   const resetCount = plainMessagesSource.match(/olderLoadRequestedRef\.current = false/g)?.length ?? 0;
 
   assert.ok(resetCount >= 3);
-  assert.notEqual(
-    plainMessagesSource.indexOf(
-      "pendingRemoteHistoryRevealRef.current = false;\n" +
-        "      olderLoadRequestedRef.current = false;",
-    ),
-    -1,
+  assert.match(
+    plainMessagesSource,
+    /pendingRemoteHistoryRevealRef\.current = false;\s+olderLoadRequestedRef\.current = false;/,
   );
 });
 

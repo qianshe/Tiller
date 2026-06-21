@@ -785,7 +785,7 @@ test("mapSessionUpdateNotification maps Codex update_plan tools into plan update
   ]);
 });
 
-test("mapSessionUpdateNotification classifies agent tool calls as subagent", () => {
+test("mapSessionUpdateNotification does not classify generic payload hints as subagent", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
     method: "session/update",
@@ -809,11 +809,11 @@ test("mapSessionUpdateNotification classifies agent tool calls as subagent", () 
   if (mapped?.event.type !== "tool-call") {
     throw new Error("Expected tool-call event");
   }
-  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.kind, "tool");
   assert.equal(mapped.event.toolCall.title, "Agent");
 });
 
-test("mapSessionUpdateNotification classifies Claude task tools in the Claude adapter", () => {
+test("mapSessionUpdateNotification classifies explicit source subagent kinds", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -823,10 +823,69 @@ test("mapSessionUpdateNotification classifies Claude task tools in the Claude ad
         update: {
           sessionUpdate: "tool_call",
           toolCallId: "call-task-tool",
+          kind: "subagent",
+          title: "delegate_task",
+          status: "in_progress",
+          rawInput: { prompt: "Inspect session flow" },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "delegate_task");
+});
+
+test("mapSessionUpdateNotification keeps Claude task tool calls out of subagent classification", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-task-tool",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-task-tool",
           toolName: "Task",
           title: "Task",
           status: "in_progress",
-          rawInput: { prompt: "Inspect session flow" },
+          rawInput: { prompt: "Inspect session flow", subagent_type: "Explore" },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.notEqual(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Task");
+});
+
+test("mapSessionUpdateNotification classifies Claude Agent tool as subagent", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-agent",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-agent",
+          title: "Agent",
+          status: "in_progress",
+          rawInput: {
+            prompt: "Find all API endpoints",
+            description: "Find API endpoints",
+            subagent_type: "Explore",
+          },
         },
       },
     },
@@ -838,7 +897,7 @@ test("mapSessionUpdateNotification classifies Claude task tools in the Claude ad
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
-  assert.equal(mapped.event.toolCall.title, "Task");
+  assert.equal(mapped.event.toolCall.title, "Agent");
 });
 
 test("mapSessionUpdateNotification maps Claude task tools into plan updates", () => {
@@ -925,6 +984,50 @@ test("mapSessionUpdateNotification maps Claude task tools into plan updates", ()
   ]);
 });
 
+test("mapSessionUpdateNotification maps Claude TodoWrite into plan updates (ACP title field)", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-agent-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const sessionId = "session-claude-todowrite-plan";
+
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "toolu_todo_1",
+          title: "TodoWrite",
+          status: "completed",
+          rawInput: {
+            todos: [
+              { content: "Fix plan display", status: "in_progress", activeForm: "Fixing plan display" },
+              { content: "Run tests", status: "pending", activeForm: "Running tests" },
+            ],
+          },
+        },
+      },
+    },
+    { provider, providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "plan-update");
+  if (mapped?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event from TodoWrite");
+  }
+  assert.equal(mapped.event.plan.entries.length, 2);
+  assert.deepEqual(mapped.event.plan.entries, [
+    { content: "Fix plan display", priority: "medium", status: "in_progress" },
+    { content: "Run tests", priority: "medium", status: "pending" },
+  ]);
+});
+
 test("mapSessionUpdateNotification classifies Codex spawned agents in the Codex adapter", () => {
   const mapped = mapSessionUpdateNotification(
     {
@@ -951,6 +1054,28 @@ test("mapSessionUpdateNotification classifies Codex spawned agents in the Codex 
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.title, "spawn_agents_on_csv");
+});
+
+test("mapSessionUpdateNotification keeps mode-only config updates out of plan projection", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-plan-mode-config",
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          { id: "mode", category: "mode", currentValue: "plan", selectedValue: "plan", value: "plan" },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "config-options");
+  if (mapped?.event.type !== "config-options") {
+    throw new Error("Expected config-options event");
+  }
+  assert.equal(mapped.event.state.agentMode, "plan");
 });
 
 test("mapSessionUpdateNotification does not infer subagent from task text in normal titles", () => {

@@ -203,6 +203,9 @@ export function SessionCard({
   blockingOverlay,
   flat = false,
   reserveFloatingDockSpace = false,
+  showThinkingToggle = false,
+  showThinking,
+  onToggleThinking,
   children,
 }: {
   session: SessionSummary;
@@ -221,6 +224,9 @@ export function SessionCard({
   blockingOverlay?: ReactNode;
   flat?: boolean;
   reserveFloatingDockSpace?: boolean;
+  showThinkingToggle?: boolean;
+  showThinking?: boolean;
+  onToggleThinking?: () => void;
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
@@ -236,7 +242,7 @@ export function SessionCard({
     sessionId: string;
     planKey: string;
   } | null>(null);
-  const [dockPanelPreference, setDockPanelPreference] = useState<SessionDockPanel | null>(null);
+  const lastAutoFocusedPlanKeyRef = useRef<string | null>(null);
   const planKey = plan ? createAgentPlanDismissalKey(plan) : null;
   const visiblePlan =
     plan &&
@@ -249,6 +255,9 @@ export function SessionCard({
       : null;
   const hasPromptQueueDock = Boolean(promptQueuePanel);
   const hasPlanDock = Boolean(visiblePlan?.entries.length);
+  const [dockPanelPreference, setDockPanelPreference] = useState<SessionDockPanel | null>(() =>
+    hasPromptQueueDock && hasPlanDock ? "plan" : null,
+  );
   const hasFloatingDock = hasPromptQueueDock || hasPlanDock;
   const activeDockPanel: SessionDockPanel | null = hasPromptQueueDock
     ? dockPanelPreference === "plan" && hasPlanDock
@@ -291,6 +300,18 @@ export function SessionCard({
     }
   }, [dockPanelPreference, hasPlanDock, hasPromptQueueDock]);
 
+  useEffect(() => {
+    if (!hasPlanDock || !hasPromptQueueDock || !planKey) {
+      lastAutoFocusedPlanKeyRef.current = null;
+      return;
+    }
+    if (lastAutoFocusedPlanKeyRef.current === planKey) {
+      return;
+    }
+    lastAutoFocusedPlanKeyRef.current = planKey;
+    setDockPanelPreference("plan");
+  }, [hasPlanDock, hasPromptQueueDock, planKey]);
+
   useLayoutEffect(() => {
     const body = bodyRef.current;
     if (!body) {
@@ -301,16 +322,16 @@ export function SessionCard({
         bodyScrollSnapshot.scrollTop,
         Math.max(body.scrollHeight - body.clientHeight, 0),
       );
-      updateScrollToBottomVisibility(body);
-      return;
+    } else {
+      body.scrollTop = Math.max(body.scrollHeight - body.clientHeight, 0);
     }
-    body.scrollTop = Math.max(body.scrollHeight - body.clientHeight, 0);
     updateScrollToBottomVisibility(body);
-  }, [bodyScrollSnapshot, updateScrollToBottomVisibility]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: restore scroll position once; ongoing scroll is managed by the parent effect + onScroll handler
+  }, []);
 
   useLayoutEffect(() => {
     updateScrollToBottomVisibility();
-  });
+  }, [hasFloatingDock, updateScrollToBottomVisibility]);
 
   useEffect(() => {
     if (!cardMenuOpen) {
@@ -411,6 +432,18 @@ export function SessionCard({
               >
                 重命名
               </MenuItem>
+              {showThinkingToggle && onToggleThinking ? (
+                <MenuItem
+                  checked={showThinking}
+                  icon="activity"
+                  onClick={() => {
+                    onToggleThinking();
+                    setCardMenuOpen(false);
+                  }}
+                >
+                  Thinking
+                </MenuItem>
+              ) : null}
               <MenuItem
                 tone="destructive"
                 onClick={() => {

@@ -158,11 +158,26 @@ export type AssistantHandoffContext = PromptEnhancerContext & {
 };
 
 export const DEFAULT_ASSISTANT_HANDOFF_SYSTEM_PROMPT = [
-  "You generate an editable next user prompt for continuing an agent conversation.",
-  "Synthesize the relevant conversation context into a concise, actionable prompt.",
-  "Use the latest assistant block only as the direction anchor, not as text to copy.",
-  "Return only the next user prompt, with no commentary, markdown fence, or preamble.",
-].join(" ");
+  "You are a conversation handoff specialist.",
+  "Given a full conversation history between a user and a coding agent, you generate a self-contained next-user-prompt that lets a fresh agent session continue the work without re-reading the original conversation.",
+  "",
+  "## What to preserve",
+  "- Key decisions made and their reasoning",
+  "- Technical constraints discovered during the conversation",
+  "- User requirements, preferences, and explicit instructions",
+  "- Current implementation state and what has been completed",
+  "- Unresolved next steps, open questions, and known blockers",
+  "",
+  "## What to skip",
+  "- Repetitive back-and-forth and abandoned approaches",
+  "- Tool execution details and intermediate debugging steps",
+  "- Meta-commentary about the conversation itself",
+  "",
+  "## Output rules",
+  "- Use the latest assistant block as the direction and priority anchor — it shows where work left off.",
+  "- Write in the same language as the conversation.",
+  "- Return only the editable next user prompt — no commentary, markdown fences, or preamble.",
+].join("\n");
 
 export type PromptEnhancerModelOption = {
   id: string;
@@ -345,7 +360,7 @@ export async function generateAssistantHandoffPrompt(
 export function buildAssistantHandoffPromptInput(
   context: AssistantHandoffContext,
 ) {
-  const reference = compactPrivateReference(
+  const projectReference = compactPrivateReference(
     [
       context.projectName ? `Project: ${context.projectName}` : null,
       context.worktreeName ? `Worktree: ${context.worktreeName}` : null,
@@ -354,26 +369,34 @@ export function buildAssistantHandoffPromptInput(
         ? `Worktree summary: ${context.worktreeSummary}`
         : null,
       context.sessionStatus ? `Session status: ${context.sessionStatus}` : null,
-      context.sessionSummary
-        ? `Conversation summary: ${context.sessionSummary}`
-        : null,
     ]
       .filter((line): line is string => Boolean(line))
       .join("\n"),
   );
+  const conversationHistory = context.sessionSummary?.trim();
 
   return [
-    "Create the next user prompt for continuing this work.",
-    "The prompt should preserve useful project/session context, current constraints, and unresolved next steps.",
-    "Do not merely copy or paraphrase the latest assistant block; use it as the direction and priority anchor.",
-    "Write in the same language as the conversation when clear.",
-    "<conversation_context>",
-    reference,
-    "</conversation_context>",
-    "<latest_assistant_direction_anchor>",
+    "Analyze the conversation below and create a self-contained next user prompt for a fresh agent session.",
+    "",
+    "The prompt should:",
+    "1. Summarize relevant context so the new session can work without the original conversation",
+    "2. Preserve decisions, constraints, requirements, and current implementation state",
+    "3. State unresolved next steps clearly",
+    "4. Use the latest assistant direction as the priority anchor — do not merely copy or paraphrase it",
+    "",
+    "<project_context>",
+    projectReference,
+    "</project_context>",
+    "",
+    "<conversation_history>",
+    conversationHistory || "(empty)",
+    "</conversation_history>",
+    "",
+    "<latest_assistant_direction>",
     context.assistantBlockText.trim() || "(empty)",
-    "</latest_assistant_direction_anchor>",
-    "Output only the editable next user prompt.",
+    "</latest_assistant_direction>",
+    "",
+    "Output only the editable next user prompt, in the same language as the conversation.",
   ].join("\n");
 }
 

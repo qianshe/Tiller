@@ -2,6 +2,7 @@ import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { isFallbackToolCallTitle, pageSessionTimeline } from "@tiller/persistence";
 import {
   buildSessionTimelineFromLegacy,
+  looksLikeContinuationSummary,
   resolveTimelineRepresentedUserMessageIds,
   splitSessionTimelineAssistantEntriesAtBoundaries,
 } from "@tiller/shared";
@@ -13,10 +14,12 @@ import type {
   SessionUpdateRecord,
 } from "@tiller/shared";
 import { reduceSessionUpdateRecords } from "../../runtime/session-updates/records";
+import { broadcastSessionUpdate } from "../../rpc/notifications";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
 const TIMELINE_ENTRY_PAGE_LIMIT = 96;
+const TIMELINE_ORDER_CURSOR_PREFIX = "order";
 const TIMELINE_UPDATE_REPAIR_PAGE_LIMIT = 200;
 const TIMELINE_UPDATE_REPAIR_RECORD_LIMIT = 1_000;
 
@@ -66,6 +69,7 @@ export function subscribeSession(params: { sessionId: string }, context: HelmHan
     throw new Error("Session topic subscription requires an authenticated socket");
   }
   context.subscribeSessionTopic(context.socketId, params.sessionId);
+  notifyCurrentSocketPromptQueueSnapshot(params.sessionId, context);
   return {
     ok: true,
     message: `Subscribed to session ${params.sessionId}.`,
@@ -166,12 +170,49 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
     method: result.resume.restoreMethod ?? "none",
     messageChars: result.message.length,
   });
+  if (result.ok) {
+    const queue = context.promptQueue.snapshot(params.sessionId);
+    if (queue.queued.length > 0 || queue.inFlight) {
+      broadcastSessionUpdate(context, params.sessionId, {
+        kind: "prompt_queue",
+        queue,
+      });
+    }
+  }
   return {
     sessionId: params.sessionId,
     ok: result.ok,
     resume: result.resume,
     message: result.message,
   };
+}
+
+function notifyCurrentSocketPromptQueueSnapshot(
+  sessionId: string,
+  context: Pick<
+    HelmHandlerContext,
+    "authenticatedSockets" | "notify" | "promptQueue" | "socketId"
+  >,
+) {
+  const queue = context.promptQueue.snapshot(sessionId);
+  if (queue.queued.length === 0 && !queue.inFlight) {
+    return;
+  }
+
+  const socketRecord = context.authenticatedSockets
+    ?.listAll?.()
+    ?.find((record: { socketId: string }) => record.socketId === context.socketId);
+  if (!socketRecord?.socket) {
+    return;
+  }
+
+  context.notify(socketRecord.socket, "session/update", {
+    sessionId,
+    update: {
+      kind: "prompt_queue",
+      queue,
+    },
+  });
 }
 
 function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
@@ -183,7 +224,12 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
 
   const artifacts = context.sessionArtifactStore.get(sessionId);
   const repairedToolCalls = artifacts.toolCalls.map((toolCall: AgentToolCall) =>
-    repairCompletedThinkingToolCall(summary, repairProviderToolCall(sessionId, providerId, toolCall)),
+    repairCompletedThinkingToolCall(
+      summary,
+      repairLegacySubagentToolCall(
+        repairProviderToolCall(sessionId, providerId, toolCall),
+      ),
+    ),
   );
   if (!hasToolCallChanges(artifacts.toolCalls, repairedToolCalls)) {
     return;
@@ -219,6 +265,13 @@ function resolveRawTimelinePage(
     before: params.timelineBefore ?? params.before,
     window: "message" as const,
   };
+  const shouldResolveCompactionBootstrap = !options.before &&
+    visibleMessages.some((message) => looksLikeContinuationSummary(message.text));
+  let listedTimeline: SessionTimelineEntry[] | undefined;
+  const getListedTimeline = () =>
+    listedTimeline ??= splitSessionTimelineAssistantEntriesAtBoundaries(
+      context.sessionTimelineStore!.list?.(params.sessionId) ?? [],
+    );
   const persistedPage = context.sessionTimelineStore!.listPage?.(params.sessionId, options);
   const normalizedPersistedPage = persistedPage
     ? {
@@ -231,7 +284,7 @@ function resolveRawTimelinePage(
     : undefined;
   if (repairedPersistedTimeline) {
     const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedPersistedTimeline);
-    return pageSessionTimeline(stored, options);
+    return pageTimelineEntries(stored, visibleMessages, options);
   }
   if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
     if (
@@ -241,16 +294,26 @@ function resolveRawTimelinePage(
       return normalizedPersistedPage;
     }
   }
+  if (persistedPage && shouldResolveCompactionBootstrap) {
+    const compactionBootstrapPage = resolveCompactionBootstrapTimelinePage(
+      getListedTimeline(),
+      visibleMessages,
+      options,
+    );
+    if (compactionBootstrapPage) {
+      return compactionBootstrapPage;
+    }
+  }
 
   const existing = persistedPage
     ? []
-    : splitSessionTimelineAssistantEntriesAtBoundaries(context.sessionTimelineStore!.list?.(params.sessionId) ?? []);
+    : getListedTimeline();
   const repairedExistingTimeline = !options.before && existing.length
     ? repairTimelineFromSessionUpdates(params.sessionId, context, existing)
     : undefined;
   if (repairedExistingTimeline) {
     const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedExistingTimeline);
-    return pageSessionTimeline(stored, options);
+    return pageTimelineEntries(stored, visibleMessages, options);
   }
   if (
     existing.length &&
@@ -259,7 +322,7 @@ function resolveRawTimelinePage(
       !isTimelineMissingVisibleHistoryAnchors(existing, visibleMessages)
     )
   ) {
-    return pageSessionTimeline(existing, options);
+    return pageTimelineEntries(existing, visibleMessages, options);
   }
 
   const rebuilt = rebuildSessionTimelineFromLegacy(params.sessionId, context);
@@ -268,7 +331,214 @@ function resolveRawTimelinePage(
   }
 
   const stored = context.sessionTimelineStore!.replace(params.sessionId, rebuilt);
-  return pageSessionTimeline(stored, options);
+  return pageTimelineEntries(stored, visibleMessages, options);
+}
+
+function pageTimelineEntries(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+  options: { entryLimit?: number; limit?: number; before?: string; window?: "entry" | "message" },
+) {
+  return resolveCompactionBootstrapTimelinePage(entries, visibleMessages, options) ??
+    pageSessionTimeline(entries, options);
+}
+
+function resolveCompactionBootstrapTimelinePage(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+  options: { entryLimit?: number; before?: string },
+) {
+  if (options.before) {
+    return undefined;
+  }
+  const continuationBoundary = resolveContinuationSummaryBoundary(visibleMessages);
+  if (!continuationBoundary) {
+    return undefined;
+  }
+  const resumedAnchorIndex = entries.findIndex((entry) =>
+    timelineEntryRepresentsMessage(entry, continuationBoundary.resumedMessage)
+  );
+  if (resumedAnchorIndex === -1) {
+    return undefined;
+  }
+  const endIndex = findLastTimelineMessageAnchorIndex(
+    entries,
+    visibleMessages,
+    resumedAnchorIndex,
+  );
+  if (endIndex === -1) {
+    return undefined;
+  }
+  const startIndex = findPreviousTimelineMessageAnchorIndex(
+    entries,
+    resumedAnchorIndex,
+    continuationBoundary.prefaceMessages,
+  );
+  if (startIndex === -1) {
+    return undefined;
+  }
+  const page = buildCompactionBootstrapPage(entries, {
+    startIndex,
+    resumedAnchorIndex,
+    endIndex,
+    entryLimit: Math.max(options.entryLimit ?? TIMELINE_ENTRY_PAGE_LIMIT, 1),
+  });
+  if (!page) {
+    return undefined;
+  }
+  return {
+    entries: page.entries,
+    nextCursor: page.hasMore
+      ? encodeTimelineOrderCursor(page.cursorPosition, entries[page.cursorPosition]?.id)
+      : undefined,
+    hasMore: page.hasMore,
+  };
+}
+
+function findLastTimelineMessageAnchorIndex(
+  entries: SessionTimelineEntry[],
+  visibleMessages: AgentMessage[],
+  minimumIndex: number,
+) {
+  for (let messageIndex = visibleMessages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = visibleMessages[messageIndex];
+    if (!message) {
+      continue;
+    }
+    for (let entryIndex = entries.length - 1; entryIndex >= minimumIndex; entryIndex -= 1) {
+      if (timelineEntryRepresentsMessage(entries[entryIndex]!, message)) {
+        return entryIndex;
+      }
+    }
+  }
+  return -1;
+}
+
+function buildCompactionBootstrapPage(
+  entries: SessionTimelineEntry[],
+  options: {
+    startIndex: number;
+    resumedAnchorIndex: number;
+    endIndex: number;
+    entryLimit: number;
+  },
+) {
+  const candidateEntries = entries.slice(options.startIndex, options.endIndex + 1);
+  if (candidateEntries.length === 0) {
+    return undefined;
+  }
+  if (candidateEntries.length <= options.entryLimit) {
+    return {
+      entries: candidateEntries,
+      cursorPosition: options.startIndex,
+      hasMore: options.startIndex > 0,
+    };
+  }
+
+  const preservedEntries = options.startIndex === options.resumedAnchorIndex
+    ? [entries[options.startIndex]!]
+    : [entries[options.startIndex]!, entries[options.resumedAnchorIndex]!];
+  const tailBudget = Math.max(options.entryLimit - preservedEntries.length, 0);
+  const tailStartIndex = tailBudget > 0
+    ? Math.max(options.resumedAnchorIndex + 1, options.endIndex + 1 - tailBudget)
+    : options.endIndex + 1;
+  const tailEntries = tailStartIndex <= options.endIndex
+    ? entries.slice(tailStartIndex, options.endIndex + 1)
+    : [];
+
+  return {
+    // Preserve the compaction edge, then keep the latest contiguous tail within the entry cap.
+    entries: [...preservedEntries, ...tailEntries],
+    cursorPosition: tailStartIndex <= options.endIndex ? tailStartIndex : options.resumedAnchorIndex,
+    hasMore: (tailStartIndex <= options.endIndex ? tailStartIndex : options.resumedAnchorIndex) > 0,
+  };
+}
+
+function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
+  const markerIndex = messages.findIndex((message) => looksLikeContinuationSummary(message.text));
+  if (markerIndex === -1) {
+    return undefined;
+  }
+  const prefaceMessages: AgentMessage[] = [];
+  for (let index = markerIndex; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    if (index > markerIndex && typeof message.timelineSequence === "number") {
+      return {
+        resumedMessage: message,
+        prefaceMessages,
+      };
+    }
+    prefaceMessages.push(message);
+  }
+  return undefined;
+}
+
+function findPreviousTimelineMessageAnchorIndex(
+  entries: SessionTimelineEntry[],
+  resumedAnchorIndex: number,
+  prefaceMessages: AgentMessage[],
+) {
+  for (let index = resumedAnchorIndex - 1; index >= 0; index -= 1) {
+    if (
+      isTimelineMessageAnchor(entries[index]) &&
+      !prefaceMessages.some((message) => timelineEntryRepresentsMessage(entries[index]!, message))
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function timelineEntryRepresentsMessage(entry: SessionTimelineEntry, message: AgentMessage) {
+  if (message.role === "assistant") {
+    return entry.kind === "assistant_message" && assistantEntryRepresentsMessage(entry, message);
+  }
+  const expectedKind = message.role === "user" ? "user_message" : "system_message";
+  if (entry.kind !== expectedKind) {
+    return false;
+  }
+  if (entry.message.id === message.id || entry.id === message.id) {
+    return true;
+  }
+  if (entry.message.text.trim() !== message.text.trim()) {
+    return false;
+  }
+  const entrySequence = entry.message.timelineSequence ?? entry.timelineSequence;
+  if (typeof entrySequence === "number" && typeof message.timelineSequence === "number") {
+    return entrySequence === message.timelineSequence;
+  }
+  return entry.message.timestamp === message.timestamp || entry.timestamp === message.timestamp;
+}
+
+function assistantEntryRepresentsMessage(
+  entry: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
+  message: AgentMessage,
+) {
+  if (entry.id === message.id) {
+    return true;
+  }
+  let cumulativeText = "";
+  for (const chunk of entry.chunks) {
+    if (chunk.kind !== "content") {
+      continue;
+    }
+    cumulativeText += chunk.text;
+    if (representsAssistantMessage({
+      text: cumulativeText.trim(),
+      timestamp: chunk.timestamp,
+      timelineSequence: chunk.timelineSequence,
+    }, message)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function encodeTimelineOrderCursor(position: number, id: string | undefined) {
+  return id ? `${TIMELINE_ORDER_CURSOR_PREFIX}\t${position}\t${id}` : undefined;
 }
 
 function repairTimelineFromSessionUpdates(
@@ -597,6 +867,45 @@ function repairCompletedThinkingToolCall(
   };
 }
 
+function repairLegacySubagentToolCall(toolCall: AgentToolCall) {
+  if (toolCall.kind === "subagent") {
+    return toolCall;
+  }
+  if (!looksLikeLegacySubagentToolCall(toolCall)) {
+    return toolCall;
+  }
+  return {
+    ...toolCall,
+    kind: "subagent" as const,
+  };
+}
+
+function looksLikeLegacySubagentToolCall(toolCall: AgentToolCall) {
+  if (!/^spawn_agents_/u.test(toolCall.title.trim())) {
+    return false;
+  }
+  const input = parseJsonRecord(toolCall.input);
+  return Boolean(input && typeof input.path === "string" && input.path.trim());
+}
+
+function parseJsonRecord(input: string | undefined) {
+  if (!input) {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function projectArtifactToolCallMetadata(
   sessionId: string,
   context: HelmHandlerContext,
@@ -641,9 +950,16 @@ function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
 }
 
 function hasTimelineMessageAnchor(entries: SessionTimelineEntry[]) {
-  return entries.some((entry) => (
+  return entries.some((entry) => isTimelineMessageAnchor(entry));
+}
+
+function isTimelineMessageAnchor(entry: SessionTimelineEntry | undefined) {
+  if (!entry) {
+    return false;
+  }
+  return (
     entry.kind === "user_message" ||
     entry.kind === "system_message" ||
     (entry.kind === "assistant_message" && entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim()))
-  ));
+  );
 }

@@ -480,3 +480,30 @@ function sanitizeSessionSummaryText(text: string, maxLength: number) {
     .trim();
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}…` : compact;
 }
+
+const HANDOFF_MESSAGE_MAX_CHARS = 4000;
+
+export function buildHandoffConversationTranscript(
+  messages: AgentMessage[],
+): string {
+  const entries: string[] = [];
+  let turnIndex = 0;
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") {
+      continue;
+    }
+    const text = message.text.replace(/\s+/g, " ").trim();
+    if (!text) {
+      continue;
+    }
+    if (message.role === "user") {
+      turnIndex++;
+    }
+    const label = message.role === "user" ? "User" : "Assistant";
+    const truncated = text.length > HANDOFF_MESSAGE_MAX_CHARS
+      ? `${text.slice(0, HANDOFF_MESSAGE_MAX_CHARS)}…`
+      : text;
+    entries.push(`[Turn ${turnIndex} - ${label}]\n${truncated}`);
+  }
+  return entries.join("\n\n");
+}

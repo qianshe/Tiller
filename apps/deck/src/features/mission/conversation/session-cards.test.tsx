@@ -150,6 +150,14 @@ test("session card menu no longer exposes history reimport", () => {
   assert.doesNotMatch(sessionCardsSource, /onReimportHistory/);
 });
 
+test("SessionCard can expose a Thinking toggle inside the session menu", () => {
+  assert.match(sessionCardsSource, /showThinkingToggle\?: boolean;/);
+  assert.match(sessionCardsSource, /showThinking\?: boolean;/);
+  assert.match(sessionCardsSource, /onToggleThinking\?: \(\) => void;/);
+  assert.match(sessionCardsSource, /showThinkingToggle && onToggleThinking \?/);
+  assert.match(sessionCardsSource, />\s*Thinking\s*</);
+});
+
 test("SessionCard keeps bottom breathing room when no dock is visible", () => {
   const html = renderToStaticMarkup(
     <SessionCard
@@ -317,7 +325,7 @@ test("SessionCard does not reserve dock spacer for restore previews by default",
   assert.doesNotMatch(html, /data-session-floating-dock-spacer/);
 });
 
-test("SessionCard defaults to the prompt queue dock when queue and plan are both available", () => {
+test("SessionCard defaults to the plan dock when queue and plan are both available", () => {
   const html = renderToStaticMarkup(
     <SessionCard
       session={session()}
@@ -335,11 +343,10 @@ test("SessionCard defaults to the prompt queue dock when queue and plan are both
   );
 
   assert.match(html, /data-session-dock-tabs/);
-  assert.match(html, /data-session-dock-option="prompt-queue"/);
-  assert.match(html, /aria-pressed="true"/);
-  assert.match(html, /data-prompt-queue-dock/);
+  assert.match(html, /data-session-dock-option="plan"/);
+  assert.match(html, /已完成 2 个任务（共 2 个）/);
   assert.match(html, /pb-16[^>]*data-session-card-body="session-1"/);
-  assert.doesNotMatch(html, /已完成 2 个任务（共 2 个）/);
+  assert.doesNotMatch(html, /data-prompt-queue-dock/);
 });
 
 test("SessionCard centers blocking overlays inside the session window", () => {

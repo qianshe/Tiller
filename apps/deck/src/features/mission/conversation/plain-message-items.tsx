@@ -688,6 +688,7 @@ export function PlainSubagentItem({
   const [open, setOpen] = useState(shouldAutoOpen);
   const text = item.text.trim() || formatToolInputPreview(item.input) || "暂无 Subagent 内容";
   const summary = resolveSubagentSummary(item);
+  const label = resolveSubagentLabel(item);
   const statusBadge = resolveSubagentStatusBadge(item);
 
   useEffect(() => {
@@ -705,11 +706,11 @@ export function PlainSubagentItem({
       >
         <summary
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
-          aria-label={open ? "收起 Subagent" : "展开 Subagent"}
+          aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
           <Icon name="message" size={12} className="shrink-0 text-primary" />
           <span className="shrink-0 font-medium">
-            Subagent
+            {label}
           </span>
           <span className="min-w-0 truncate text-muted-foreground/70">
             {summary}
@@ -737,19 +738,34 @@ export function PlainSubagentItem({
   );
 }
 
+function resolveSubagentLabel(item: ConversationToolCallItem) {
+  const metadata = parseSubagentMetadata(item.input);
+  if (metadata.name) {
+    return metadata.name;
+  }
+  const title = item.title.trim();
+  if (title && !/^(call[_-]|tool[_-]|Tool call\b)/iu.test(title)) {
+    return title;
+  }
+  return "Subagent";
+}
+
 function resolveSubagentSummary(item: ConversationToolCallItem) {
   const metadata = parseSubagentMetadata(item.input);
-  const fallback = metadata.name ?? metadata.description ?? item.title.trim();
   if (isBackgroundCancelSubagent(item)) {
-    return `${fallback || "background_cancel"} · 取消后台任务`;
+    return "取消后台任务";
   }
-  if (item.status === "failed" && isOpaqueSubagentTitle(fallback)) {
+  if (metadata.description) {
+    return metadata.description;
+  }
+  if (item.status === "failed") {
     return "Error";
   }
-  if (metadata.name && metadata.description) {
-    return `${metadata.name} · ${metadata.description}`;
+  const title = item.title.trim();
+  if (title && !/^(call[_-]|tool[_-]|Tool call\b)/iu.test(title)) {
+    return title;
   }
-  return fallback || "Error";
+  return "";
 }
 
 function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
@@ -803,6 +819,8 @@ function parseSubagentMetadata(input: string) {
       "agent_name",
       "agentName",
       "agent",
+      "name",
+      "label",
     ]);
     const description = firstString(record, [
       "description",

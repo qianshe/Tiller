@@ -35,7 +35,7 @@ import {
   isManagedWorktreeWorktree,
   normalizeWorktreePath,
 } from "./runtime-display";
-import { summarizeSessionContext } from "../utils/composer-options";
+import { buildHandoffConversationTranscript } from "../utils/composer-options";
 import {
   buildSelectedSessionWorktreeItems,
   formatInspectorWorktreeSummaryLabel,
@@ -137,6 +137,7 @@ export function MissionWorktree(props: any) {
     pairingState,
     activeSessionMessages,
     activePromptQueue,
+    promptQueues = {},
     expandedMessageIds,
     messageHistoryState,
     setMessageHistoryState,
@@ -247,8 +248,7 @@ export function MissionWorktree(props: any) {
       await generateAssistantHandoffDraft({
         assistantBlockText,
         session,
-        sessionSummary: summarizeSessionContext(
-          session,
+        sessionSummary: buildHandoffConversationTranscript(
           sessionMessagesForHandoff,
         ),
         promptEnhancer: deckPreferences.promptEnhancer,
@@ -319,6 +319,7 @@ export function MissionWorktree(props: any) {
     openChatSessionIds: openChatSessionIds as string[],
     focusedChatWindowId,
     draftChatWindow,
+    isMissionMobile,
   });
   const hydrateOpenSessionStreams = useOpenSessionStreams({
     pairingState,
@@ -357,6 +358,7 @@ export function MissionWorktree(props: any) {
   } = useChatWindowActions({
     activeSessionId,
     activeSession,
+    isMissionMobile,
     sessions: sessions as SessionSummary[],
     focusedChatWindowId,
     focusedRealSessionId,
@@ -691,6 +693,7 @@ export function MissionWorktree(props: any) {
         <MissionChatPane
           className={chatPaneClassName}
           style={missionChatPaneStyle}
+          isMissionMobile={isMissionMobile}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
           helmConnected={helmConnected}
@@ -702,6 +705,9 @@ export function MissionWorktree(props: any) {
           onSelectDraftWindow={(draftWindowId) => {
             setFocusedChatWindowId(draftWindowId);
             setActiveSessionId(null);
+            if (isMissionMobile) {
+              setSelectedMissionMobilePane("chat");
+            }
           }}
           onSelectDraftAgent={selectAgentForDraftWindow}
           onCloseDraftWindow={() => {
@@ -748,8 +754,9 @@ export function MissionWorktree(props: any) {
             onCloseSessionView={closeChatSession}
             onClearSession={setPendingSessionCleanup}
             onDismissCompletedSessionPlan={dismissCompletedSessionPlan}
-            onRespondToPermission={respondToPermission}
+          onRespondToPermission={respondToPermission}
           promptQueue={activePromptQueue}
+          sessionPromptQueuesById={promptQueues}
           restoreNotice={missionChatRestoreNotice}
           onUpdateQueuedPrompt={updateQueuedPrompt}
           onDeleteQueuedPrompt={deleteQueuedPrompt}

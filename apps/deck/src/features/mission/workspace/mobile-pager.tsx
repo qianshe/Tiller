@@ -8,8 +8,8 @@ type MissionMobilePagerProps = {
 const ITEMS: Array<{ id: MissionMobilePane; label: string }> = [
   { id: "project", label: "项目" },
   { id: "chat", label: "对话" },
-  { id: "display", label: "面板" },
-  { id: "inspector", label: "检视" },
+  { id: "inspector", label: "工作区" },
+  { id: "display", label: "展示" },
 ];
 
 export function MissionMobilePager({

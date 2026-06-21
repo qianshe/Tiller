@@ -95,6 +95,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     pairingState,
     activeSessionMessages,
     activePromptQueue,
+    promptQueues,
     expandedMessageIds,
     messageHistoryState,
     setMessageHistoryState,
@@ -282,6 +283,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       pairingState={pairingState}
       activeSessionMessages={activeSessionMessages}
       activePromptQueue={activePromptQueue}
+      promptQueues={promptQueues}
       expandedMessageIds={expandedMessageIds}
       messageHistoryState={messageHistoryState}
       setMessageHistoryState={setMessageHistoryState}
