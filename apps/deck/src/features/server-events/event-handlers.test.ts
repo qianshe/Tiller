@@ -59,7 +59,8 @@ function resetStore() {
     approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
-  });
+    transcriptStatusBySession: {},
+  } as any);
 }
 
 function createSessionEventContext(overrides: Record<string, unknown> = {}) {
@@ -833,6 +834,12 @@ test("session/list_messages stores unified timeline entries when provided by Hel
       sessionId: "session-1",
       messages: [loadedUser],
       timeline,
+      transcriptStatus: {
+        source: "local",
+        replayCompleteness: "compacted",
+        integrity: "local-prefix-preserved",
+        runtimeRestoreState: "history-only",
+      },
       timelineHasMore: false,
       hasMore: false,
     },
@@ -845,6 +852,15 @@ test("session/list_messages stores unified timeline entries when provided by Hel
   assert.deepEqual(
     useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.kind),
     ["user_message", "assistant_message"],
+  );
+  assert.deepEqual(
+    (useDeckStore.getState() as any).transcriptStatusBySession?.["session-1"],
+    {
+      source: "local",
+      replayCompleteness: "compacted",
+      integrity: "local-prefix-preserved",
+      runtimeRestoreState: "history-only",
+    },
   );
 });
 

@@ -218,6 +218,9 @@ export function applySessionResult(
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
         store.setSessionTimeline((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setTranscriptStatusBySession((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
@@ -341,6 +344,12 @@ export function applySessionResult(
             [payload.sessionId]: nextEntries,
           };
         });
+      }
+      if (!isTimelineOnlyPage) {
+        store.setTranscriptStatusBySession((current) => ({
+          ...current,
+          [payload.sessionId]: payload.transcriptStatus,
+        }));
       }
       store.setMessageHistoryState((current) => ({
         ...current,
@@ -480,6 +489,9 @@ export function applySessionResult(
         removeSessionRecord(current, payload.result.sessionId),
       );
       store.setSessionTimeline((current) =>
+        removeSessionRecord(current, payload.result.sessionId),
+      );
+      store.setTranscriptStatusBySession((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
       store.dropSessionApprovals(payload.result.sessionId);
@@ -842,6 +854,14 @@ function summarizeTimelineEntryForDebug(entry: SessionTimelineEntry) {
       })),
     };
   }
+  if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      seq: undefined,
+      textStart: "",
+    };
+  }
   return {
     id: entry.id,
     kind: entry.kind,
@@ -957,6 +977,9 @@ function isActiveTimelineEntry(entry: SessionTimelineEntry) {
   }
   if (entry.kind === "tool_call") {
     return entry.toolCall.status === "running";
+  }
+  if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+    return false;
   }
   return Boolean(entry.message.streaming);
 }

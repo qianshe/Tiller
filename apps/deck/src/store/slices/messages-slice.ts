@@ -4,6 +4,7 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  SessionTranscriptStatus,
   SessionTimelineEntry,
 } from "@tiller/shared";
 import type { StateCreator } from "zustand";
@@ -24,6 +25,7 @@ type Updater<T> = T | ((current: T) => T);
 export type MessagesSlice = {
   messages: Record<string, AgentMessage[]>;
   sessionTimeline: Record<string, SessionTimelineEntry[]>;
+  transcriptStatusBySession: Record<string, SessionTranscriptStatus | undefined>;
   messageHistoryState: MessageHistoryState;
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
@@ -32,6 +34,9 @@ export type MessagesSlice = {
   diffs: Record<string, FileDiffSummary[]>;
   setMessages: (updater: Updater<Record<string, AgentMessage[]>>) => void;
   setSessionTimeline: (updater: Updater<Record<string, SessionTimelineEntry[]>>) => void;
+  setTranscriptStatusBySession: (
+    updater: Updater<Record<string, SessionTranscriptStatus | undefined>>,
+  ) => void;
   setMessageHistoryState: (updater: Updater<MessageHistoryState>) => void;
   setOutputs: (updater: Updater<Record<string, CommandChunk[]>>) => void;
   setToolCalls: (updater: Updater<Record<string, AgentToolCall[]>>) => void;
@@ -45,6 +50,7 @@ export type MessagesSlice = {
 export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   messages: {},
   sessionTimeline: {},
+  transcriptStatusBySession: {},
   messageHistoryState: {},
   outputs: {},
   toolCalls: {},
@@ -59,6 +65,13 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
     set((state) => ({
       sessionTimeline:
         typeof updater === "function" ? updater(state.sessionTimeline) : updater,
+    })),
+  setTranscriptStatusBySession: (updater) =>
+    set((state) => ({
+      transcriptStatusBySession:
+        typeof updater === "function"
+          ? updater(state.transcriptStatusBySession)
+          : updater,
     })),
   setMessageHistoryState: (updater) =>
     set((state) => ({

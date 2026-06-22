@@ -139,9 +139,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         runtimeSessionId: restoreRuntimeSessionId,
         method: restoreMethod,
       });
+      const handlerContext = options.createHandlerContext();
       const restoreReplayBuffer = createRestoreReplayBuffer(
         sessionId,
-        options.createHandlerContext(),
+        handlerContext,
         {
           runtimeSessionId: restoreRuntimeSessionId,
           providerId: restoreAgent.id,
@@ -178,9 +179,23 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       await waitForRestoreReplayToSettle(() => lastRestoreReplayEventAt);
       const replaySnapshot = restoreReplayBuffer.snapshot();
       options.providerHistory.recordSessionPlan?.(sessionId, replaySnapshot.plan);
-      if (replaySnapshot.messages.length) {
-        options.sessionMessageStore.replace(sessionId, []);
-      }
+
+      // Apply replay tail patch instead of unconditional clear
+      const { classifyReplayCompleteness } = await import("./replay-completeness");
+      const { applyReplayTailPatch } = await import("./replay-tail-patch");
+
+      const replayCompleteness = classifyReplayCompleteness({
+        restoreMethod,
+        replayMessages: replaySnapshot.messages,
+        providerId: restoreAgent.id,
+      });
+
+      const localMessages = options.sessionMessageStore.list(sessionId) as import("@tiller/shared").AgentMessage[];
+      const localTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
+      const shouldApplyReplayTailPatch = restoreMethod === "session/load" &&
+        replayCompleteness === "compacted" &&
+        replaySnapshot.messages.length > 0;
+
       if (replaySnapshot.toolCalls.length || replaySnapshot.outputs.length || replaySnapshot.diffs.length) {
         options.sessionArtifactStore.remove(sessionId);
       }
@@ -190,6 +205,18 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
           sessionId,
           ...replayCounts,
         });
+      }
+      if (shouldApplyReplayTailPatch) {
+        const replayTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
+        const patchResult = applyReplayTailPatch({
+          localMessages,
+          localTimeline,
+          replayMessages: replaySnapshot.messages,
+          replayTimeline,
+          replayCompleteness,
+        });
+        options.sessionMessageStore.replace(sessionId, patchResult.nextMessages);
+        handlerContext.sessionTimelineStore?.replace?.(sessionId, patchResult.nextTimeline);
       }
       const historySnapshot = await resolveProviderHistorySnapshot([
         {

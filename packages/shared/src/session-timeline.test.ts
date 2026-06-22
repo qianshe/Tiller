@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "./types";
+import { injectTranscriptBoundaryEvents } from "./session-transcript";
 import type { SessionTimelineEntry } from "./session-timeline";
 import {
   appendToolCallToSessionTimeline,
@@ -44,6 +45,136 @@ function toolCall(
     ...overrides,
   };
 }
+
+test("session timeline keeps context compaction and resumed tail as explicit ordered events", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      kind: "user_message",
+      id: "user-1",
+      message: message({ id: "user-1", role: "user", text: "旧上下文里的最后一个问题", timelineSequence: 10 }),
+      timestamp: "2026-06-22T10:00:00.000Z",
+      updatedAt: "2026-06-22T10:00:00.000Z",
+      timelineSequence: 10,
+    },
+    {
+      kind: "context_compaction",
+      id: "compaction-1",
+      summaryMessageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      timestamp: "2026-06-22T10:01:00.000Z",
+      updatedAt: "2026-06-22T10:01:00.000Z",
+      replayCompleteness: "compacted",
+    },
+    {
+      kind: "session_resumed",
+      id: "resume-1",
+      restoreMethod: "session/load",
+      timestamp: "2026-06-22T10:01:05.000Z",
+      updatedAt: "2026-06-22T10:01:05.000Z",
+      replayCompleteness: "compacted",
+    },
+    {
+      kind: "assistant_message",
+      id: "assistant-1",
+      chunks: [{
+        kind: "content",
+        id: "assistant-1:content",
+        text: "好的，我会继续处理剩余工作。",
+        timestamp: "2026-06-22T10:01:06.000Z",
+        timelineSequence: 20,
+      }],
+      timestamp: "2026-06-22T10:01:06.000Z",
+      updatedAt: "2026-06-22T10:01:06.000Z",
+      timelineSequence: 20,
+    },
+  ] as SessionTimelineEntry[];
+
+  assert.deepEqual(entries.map((entry) => entry.kind), [
+    "user_message",
+    "context_compaction",
+    "session_resumed",
+    "assistant_message",
+  ]);
+});
+
+test("injectTranscriptBoundaryEvents inserts transcript markers before the resumed message", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      kind: "assistant_message",
+      id: "older-assistant",
+      chunks: [{
+        kind: "content",
+        id: "older-assistant:content",
+        text: "压缩前最后一条可见回复",
+        timestamp: "2026-06-22T10:00:59.000Z",
+        timelineSequence: 10,
+      }],
+      timestamp: "2026-06-22T10:00:59.000Z",
+      updatedAt: "2026-06-22T10:00:59.000Z",
+      timelineSequence: 10,
+    },
+    {
+      kind: "user_message",
+      id: "current-user",
+      message: {
+        id: "provider-current-user",
+        role: "user",
+        text: "继续处理",
+        timestamp: "2026-06-22T10:01:11.000Z",
+        timelineSequence: 11,
+      },
+      timestamp: "2026-06-22T10:01:11.000Z",
+      updatedAt: "2026-06-22T10:01:11.000Z",
+      timelineSequence: 11,
+    },
+    {
+      kind: "assistant_message",
+      id: "current-assistant",
+      chunks: [{
+        kind: "content",
+        id: "current-assistant:content",
+        text: "好的，继续。",
+        timestamp: "2026-06-22T10:01:12.000Z",
+        timelineSequence: 12,
+      }],
+      timestamp: "2026-06-22T10:01:12.000Z",
+      updatedAt: "2026-06-22T10:01:12.000Z",
+      timelineSequence: 12,
+    },
+  ];
+
+  const nextEntries = injectTranscriptBoundaryEvents(
+    entries,
+    {
+      kind: "context_compaction",
+      id: "compaction-1",
+      summaryMessageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      timestamp: "2026-06-22T10:01:11.000Z",
+      updatedAt: "2026-06-22T10:01:11.000Z",
+      replayCompleteness: "compacted",
+    },
+    {
+      kind: "session_resumed",
+      id: "resume-1",
+      restoreMethod: "session/load",
+      timestamp: "2026-06-22T10:01:11.000Z",
+      updatedAt: "2026-06-22T10:01:11.000Z",
+      replayCompleteness: "compacted",
+    },
+  );
+
+  assert.deepEqual(
+    nextEntries.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "older-assistant"],
+      ["context_compaction", "compaction-1"],
+      ["session_resumed", "resume-1"],
+      ["user_message", "current-user"],
+      ["assistant_message", "current-assistant"],
+    ],
+  );
+});
 
 test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by timestamp instead of grouping it after messages", () => {
   // Real chronology: user(seq 1) -> tool(no sequence) -> assistant(seq 3).
@@ -107,7 +238,9 @@ test("buildSessionTimelineFromLegacy splits cumulative assistant text around too
     timeline.map((entry) =>
       entry.kind === "assistant_message"
         ? entry.chunks.map((chunk) => [chunk.text, chunk.timelineSequence])
-        : [entry.id, entry.timelineSequence],
+        : entry.kind === "tool_call" || entry.kind === "user_message" || entry.kind === "system_message"
+          ? [entry.id, entry.timelineSequence]
+          : [entry.id, entry.kind],
     ),
     [
       [["先说明。", 1]],

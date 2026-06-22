@@ -258,7 +258,7 @@ test("sendPromptToSession appends prompts after restored timeline history", asyn
   assert.deepEqual(prompted, ["新的审核 prompt"]);
   assert.equal(persisted[0]?.timelineSequence, 238);
   assert.deepEqual(
-    timelineEntries.map((entry) => [entry.kind, entry.timelineSequence]),
+    timelineEntries.map((entry) => [entry.kind, (entry as any).timelineSequence]),
     [
       ["assistant_message", 237],
       ["user_message", 238],

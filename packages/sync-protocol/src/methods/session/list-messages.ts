@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentMessage, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, SessionTimelineEntry, SessionTranscriptStatus } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
@@ -14,6 +14,7 @@ export const ResultSchema = z.object({
   sessionId: z.string(),
   messages: z.array(typedUnknown<AgentMessage>()),
   timeline: z.array(typedUnknown<SessionTimelineEntry>()).optional(),
+  transcriptStatus: typedUnknown<SessionTranscriptStatus>().optional(),
   nextCursor: z.string().optional(),
   hasMore: z.boolean().optional(),
   before: z.string().optional(),

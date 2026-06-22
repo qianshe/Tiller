@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./session-timeline";
+export * from "./session-transcript";
 export * from "./session-update-record";
 export * from "./prompt-trace";
 export * from "./utils/continuation-summary";

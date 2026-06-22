@@ -4,6 +4,7 @@ import {
   appendToolCallToSessionTimeline,
   sortAssistantTimelineChunks,
   sortSessionTimelineEntries,
+  isTranscriptEventEntry,
 } from "@tiller/shared";
 import { normalizePageLimit } from "../pagination";
 import {
@@ -343,7 +344,7 @@ function replaceSessionTimelineEntries(
         entry.kind,
         entry.timestamp,
         resolveEntryUpdatedAt(entry),
-        entry.timelineSequence ?? null,
+        isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
         JSON.stringify(entry),
       );
     }
@@ -375,7 +376,7 @@ function insertSessionTimelineEntry(
     entry.kind,
     entry.timestamp,
     resolveEntryUpdatedAt(entry),
-    entry.timelineSequence ?? null,
+    isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
     JSON.stringify(entry),
   );
 }

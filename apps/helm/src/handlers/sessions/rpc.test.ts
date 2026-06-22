@@ -1392,14 +1392,28 @@ test("session/list_messages expands the first timeline page around compaction bo
         }),
       },
     } as any,
-  ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean; timelineNextCursor?: string };
+  ) as {
+    timeline: Array<{ id: string; kind: string }>;
+    timelineHasMore: boolean;
+    timelineNextCursor?: string;
+    transcriptStatus?: { replayCompleteness?: string; integrity?: string };
+  };
 
   assert.deepEqual(
-    result.timeline.map((entry) => entry.id),
-    ["older-assistant", "current-user", "tool-1", "current-assistant"],
+    result.timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "older-assistant"],
+      ["context_compaction", `compaction:${sessionId}:compaction-summary`],
+      ["session_resumed", `resume:${sessionId}:provider-current-user`],
+      ["user_message", "current-user"],
+      ["tool_call", "tool-1"],
+      ["assistant_message", "current-assistant"],
+    ],
   );
   assert.equal(result.timelineHasMore, true);
   assert.equal(result.timelineNextCursor, "order\t1\tolder-assistant");
+  assert.equal(result.transcriptStatus?.replayCompleteness, "compacted");
+  assert.equal(result.transcriptStatus?.integrity, "local-prefix-preserved");
 });
 
 test("session/list_messages caps compaction bootstrap pages while preserving the compaction anchors", async () => {
@@ -1531,11 +1545,18 @@ test("session/list_messages caps compaction bootstrap pages while preserving the
         }),
       },
     } as any,
-  ) as { timeline: Array<{ id: string }>; timelineHasMore: boolean; timelineNextCursor?: string };
+  ) as { timeline: Array<{ id: string; kind: string }>; timelineHasMore: boolean; timelineNextCursor?: string };
 
-  assert.equal(result.timeline.length, 96);
-  assert.equal(result.timeline[0]?.id, "older-assistant");
-  assert.equal(result.timeline[1]?.id, "current-user");
+  assert.equal(result.timeline.length, 98);
+  assert.deepEqual(
+    result.timeline.slice(0, 4).map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "older-assistant"],
+      ["context_compaction", `compaction:${sessionId}:compaction-summary`],
+      ["session_resumed", `resume:${sessionId}:provider-current-user`],
+      ["user_message", "current-user"],
+    ],
+  );
   assert.equal(result.timeline.at(-1)?.id, "current-assistant");
   assert.equal(result.timeline.some((entry) => entry.id === "tool-0"), false);
   assert.equal(result.timeline.some((entry) => entry.id === "tool-27"), true);

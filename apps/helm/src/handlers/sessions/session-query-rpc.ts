@@ -2,6 +2,7 @@ import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { isFallbackToolCallTitle, pageSessionTimeline } from "@tiller/persistence";
 import {
   buildSessionTimelineFromLegacy,
+  injectTranscriptBoundaryEvents,
   looksLikeContinuationSummary,
   resolveTimelineRepresentedUserMessageIds,
   splitSessionTimelineAssistantEntriesAtBoundaries,
@@ -11,6 +12,7 @@ import type {
   AgentToolCall,
   SessionSummary,
   SessionTimelineEntry,
+  SessionTranscriptStatus,
   SessionUpdateRecord,
 } from "@tiller/shared";
 import { reduceSessionUpdateRecords } from "../../runtime/session-updates/records";
@@ -100,10 +102,12 @@ export async function listMessages(
     before: params.before,
   });
   const timelinePage = listSessionTimelinePage(params, context, page.messages);
+  const transcriptStatus = resolveTranscriptStatus(page.messages, params.before, params.timelineBefore);
   return {
     sessionId: params.sessionId,
     messages: page.messages,
     timeline: timelinePage.entries,
+    transcriptStatus,
     timelineNextCursor: timelinePage.nextCursor,
     timelineHasMore: timelinePage.hasMore,
     nextCursor: page.nextCursor,
@@ -249,9 +253,14 @@ function listSessionTimelinePage(
 
   const page = resolveRawTimelinePage(params, context, visibleMessages);
   const projected = projectArtifactToolCallMetadata(params.sessionId, context, page.entries);
-  if (!projected) return page;
-  context.sessionTimelineStore.replace?.(params.sessionId, projected);
-  return { ...page, entries: projected };
+  const persistedEntries = projected ?? page.entries;
+  if (projected) {
+    context.sessionTimelineStore.replace?.(params.sessionId, projected);
+  }
+  return {
+    ...page,
+    entries: injectTranscriptBoundaryEntries(params, visibleMessages, persistedEntries),
+  };
 }
 
 function resolveRawTimelinePage(
@@ -467,6 +476,7 @@ function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
     }
     if (index > markerIndex && typeof message.timelineSequence === "number") {
       return {
+        summaryMessage: messages[markerIndex]!,
         resumedMessage: message,
         prefaceMessages,
       };
@@ -474,6 +484,43 @@ function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
     prefaceMessages.push(message);
   }
   return undefined;
+}
+
+function injectTranscriptBoundaryEntries(
+  params: { sessionId: string; before?: string; timelineBefore?: string },
+  visibleMessages: AgentMessage[],
+  entries: SessionTimelineEntry[],
+) {
+  if (params.before || params.timelineBefore) {
+    return entries;
+  }
+  const boundary = resolveContinuationSummaryBoundary(visibleMessages);
+  if (!boundary) {
+    return entries;
+  }
+  if (!entries.some((entry) => timelineEntryRepresentsMessage(entry, boundary.resumedMessage))) {
+    return entries;
+  }
+  return injectTranscriptBoundaryEvents(
+    entries,
+    {
+      kind: "context_compaction",
+      id: `compaction:${params.sessionId}:${boundary.summaryMessage.id}`,
+      summaryMessageId: boundary.summaryMessage.id,
+      summaryText: boundary.summaryMessage.text,
+      timestamp: boundary.summaryMessage.timestamp,
+      updatedAt: boundary.summaryMessage.timestamp,
+      replayCompleteness: "compacted",
+    },
+    {
+      kind: "session_resumed",
+      id: `resume:${params.sessionId}:${boundary.resumedMessage.id}`,
+      restoreMethod: "session/load",
+      timestamp: boundary.resumedMessage.timestamp,
+      updatedAt: boundary.resumedMessage.timestamp,
+      replayCompleteness: "compacted",
+    },
+  );
 }
 
 function findPreviousTimelineMessageAnchorIndex(
@@ -962,4 +1009,28 @@ function isTimelineMessageAnchor(entry: SessionTimelineEntry | undefined) {
     entry.kind === "system_message" ||
     (entry.kind === "assistant_message" && entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim()))
   );
+}
+
+function resolveTranscriptStatus(
+  visibleMessages: AgentMessage[],
+  before: string | undefined,
+  timelineBefore: string | undefined,
+): SessionTranscriptStatus {
+  const hasCompaction = visibleMessages.some((message) => looksLikeContinuationSummary(message.text));
+
+  if (!hasCompaction || before || timelineBefore) {
+    return {
+      source: "local",
+      replayCompleteness: "none",
+      integrity: "complete",
+      runtimeRestoreState: "history-only",
+    };
+  }
+
+  return {
+    source: "local",
+    replayCompleteness: "compacted",
+    integrity: "local-prefix-preserved",
+    runtimeRestoreState: "history-only",
+  };
 }

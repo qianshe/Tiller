@@ -26,6 +26,9 @@ export function resolveSessionStreamContentLength(sources: {
       }
     } else if (entry.kind === "tool_call") {
       length += (entry.toolCall.output?.length ?? 0) + (entry.toolCall.input?.length ?? 0);
+    } else if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+      // Transcript events don't contribute to character count
+      continue;
     } else {
       length += entry.message.text?.length ?? 0;
     }

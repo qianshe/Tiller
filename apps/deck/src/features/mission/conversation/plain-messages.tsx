@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
-import { looksLikeContinuationSummary, resolveTimelineRepresentedUserMessageIds } from "@tiller/shared";
+import { looksLikeContinuationSummary, resolveTimelineRepresentedUserMessageIds, isTranscriptEventEntry } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -11,6 +11,7 @@ import {
   type ConversationToolCallItem,
 } from "../../logbook";
 import { PlainMessageItem, PlainSubagentItem, PlainThinkingItem, PlainToolGroupItem } from "./plain-message-items";
+import { TranscriptEventRow } from "./transcript-event-row";
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
@@ -292,6 +293,15 @@ export function PlainMessages({
           resolvePlainConversationMessageRole(previousRenderItem),
         );
 
+        // Check for transcript events first
+        if (renderItem.kind === "transcript-event") {
+          return (
+            <div key={renderItem.renderKey} className={spacingClassName}>
+              <TranscriptEventRow entry={renderItem.entry} />
+            </div>
+          );
+        }
+
         if (renderItem.kind === "thinking") {
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
@@ -364,7 +374,8 @@ type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
   | { kind: "thinking"; sourceIndex?: number; timestamp: string; timelineSequence?: number; toolCall: AgentToolCall }
   | { kind: "subagent"; sourceIndex?: number; timestamp: string; timelineSequence?: number; toolCall: ConversationToolCallItem }
-  | { kind: "tool-group"; sourceIndex?: number; timestamp: string; timelineSequence?: number; group: ConversationToolCallItem[] };
+  | { kind: "tool-group"; sourceIndex?: number; timestamp: string; timelineSequence?: number; group: ConversationToolCallItem[] }
+  | { kind: "transcript-event"; sourceIndex?: number; timestamp: string; timelineSequence?: number; entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "session_resumed" | "history_gap" }> };
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
@@ -389,6 +400,11 @@ export type PlainMessageRenderItem =
       kind: "subagent";
       renderKey: string;
       toolCall: ConversationToolCallItem;
+    }
+  | {
+      kind: "transcript-event";
+      renderKey: string;
+      entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "session_resumed" | "history_gap" }>;
     };
 
 export type PlainConversationRenderKind = PlainMessageRenderItem["kind"];
@@ -428,6 +444,16 @@ export function resolvePlainMessageRenderItems(
     .filter((item): item is PlainConversationItem => Boolean(item));
   const seenKeys = new Map<string, number>();
   return normalizedItems.map((item, index) => {
+    if (item.kind === "transcript-event") {
+      const baseKey = `transcript-${item.entry.kind}-${item.entry.id}`;
+      const seenCount = seenKeys.get(baseKey) ?? 0;
+      seenKeys.set(baseKey, seenCount + 1);
+      return {
+        kind: "transcript-event",
+        renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
+        entry: item.entry,
+      };
+    }
     if (item.kind === "thinking") {
       const baseKey = `thinking-${item.toolCall.id}`;
       const seenCount = seenKeys.get(baseKey) ?? 0;
@@ -504,9 +530,12 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
       item.toolCall.input,
     );
   }
+  if (item.kind === "transcript-event") {
+    return [item.renderKey, item.entry.kind, item.entry.id].join(":");
+  }
   return [
     item.renderKey,
-    ...item.group.map((toolCall) => resolveToolRenderSignaturePart(
+    ...item.group.map((toolCall: any) => resolveToolRenderSignaturePart(
       toolCall.id,
       toolCall,
       toolCall.text,
@@ -825,10 +854,32 @@ function buildPlainConversationItemsFromTimeline(
   showThinking: boolean,
 ): PlainConversationItem[] {
   const items: PlainConversationItem[] = [];
+  const hasCompactionTranscriptEvent = timelineItems.some(
+    (entry) => entry.kind === "context_compaction",
+  );
   let sourceIndex = 0;
 
   for (const entry of timelineItems) {
+    // Handle transcript events (context_compaction, session_resumed, history_gap)
+    if (isTranscriptEventEntry(entry)) {
+      items.push({
+        kind: "transcript-event",
+        sourceIndex,
+        timestamp: entry.timestamp,
+        timelineSequence: undefined,
+        entry,
+      });
+      sourceIndex += 1;
+      continue;
+    }
+
     if (entry.kind === "user_message" || entry.kind === "system_message") {
+      if (
+        hasCompactionTranscriptEvent &&
+        looksLikeContinuationSummary(entry.message.text)
+      ) {
+        continue;
+      }
       const text = normalizeLocalCommandMessageText(entry.message.text);
       if (text) {
         items.push({
@@ -922,6 +973,9 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     timelineItems,
     showThinking,
   );
+  const hasCompactionTranscriptEvent = timelineItems.some(
+    (entry) => entry.kind === "context_compaction",
+  );
   const timelineMessageIds = collectTimelineMessageIds(timelineItems);
   const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
     timelineItems,
@@ -934,6 +988,12 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   );
   const timelineWindowLowerBound = resolveTimelineWindowLowerBound(timelineItems);
   const liveMessageItems = messages.flatMap((message, index) => {
+    if (
+      hasCompactionTranscriptEvent &&
+      looksLikeContinuationSummary(message.text)
+    ) {
+      return [];
+    }
     if (
       timelineMessageIds.has(message.id) ||
       representedLiveUserMessageIds.has(message.id) ||
@@ -1167,6 +1227,12 @@ function resolveTimelineWindowLowerBound(
     return {
       timestamp: first.timestamp,
       timelineSequence: first.timelineSequence ?? first.toolCall.timelineSequence,
+    };
+  }
+  if (first.kind === "context_compaction" || first.kind === "session_resumed" || first.kind === "history_gap") {
+    return {
+      timestamp: first.timestamp,
+      timelineSequence: undefined,
     };
   }
   return {

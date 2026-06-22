@@ -465,6 +465,173 @@ test("plain messages keeps local continuation records visible while paged timeli
   assert.ok(html.indexOf("完成了嘛？") < html.indexOf("结束任务"));
 });
 
+test("plain messages prefers transcript compaction events over duplicate continuation summary messages", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "resumed-1",
+        kind: "session_resumed",
+        restoreMethod: "session/resume",
+        timestamp: "2026-06-18T13:55:25.194Z",
+        updatedAt: "2026-06-18T13:55:25.194Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "结束任务",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        timestamp: "2026-06-18T14:01:49.292Z",
+        updatedAt: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+      {
+        id: "current-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "current-assistant:content",
+            kind: "content",
+            text: "好的，我来完成剩余的两处改动然后收尾。",
+            timestamp: "2026-06-18T14:02:15.534Z",
+            timelineSequence: 275,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:15.534Z",
+        updatedAt: "2026-06-18T14:02:15.534Z",
+        timelineSequence: 275,
+      },
+    ],
+    items: [
+      {
+        id: "compaction-summary",
+        role: "user",
+        text: summaryText,
+        timestamp: "2026-06-18T13:55:25.193Z",
+      },
+      {
+        id: "previous-user",
+        role: "user",
+        text: "完成了嘛？",
+        timestamp: "2026-06-18T13:55:25.197Z",
+      },
+      {
+        id: "provider-current-user",
+        role: "user",
+        text: "结束任务",
+        timestamp: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+      {
+        id: "provider-current-assistant",
+        role: "assistant",
+        text: "好的，我来完成剩余的两处改动然后收尾。",
+        timestamp: "2026-06-18T14:02:15.534Z",
+        timelineSequence: 275,
+      },
+    ],
+  });
+
+  assert.equal(
+    html.match(/This session is being continued from a previous conversation/g)?.length,
+    1,
+  );
+  assert.match(html, /上下文已压缩/);
+  assert.match(html, /展开摘要/);
+  assert.ok(html.indexOf("完成了嘛？") > html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("结束任务") > html.indexOf("完成了嘛？"));
+});
+
+test("plain messages suppresses timeline summary messages once compaction transcript events exist", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "previous-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "previous-assistant:content",
+            kind: "content",
+            text: "更早的回复",
+            timestamp: "2026-06-18T13:50:00.000Z",
+            timelineSequence: 240,
+          },
+        ],
+        timestamp: "2026-06-18T13:50:00.000Z",
+        updatedAt: "2026-06-18T13:50:00.000Z",
+        timelineSequence: 240,
+      },
+      {
+        id: "compaction-summary",
+        kind: "user_message",
+        message: {
+          id: "compaction-summary",
+          role: "user",
+          text: summaryText,
+          timestamp: "2026-06-18T13:55:25.193Z",
+        },
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "resumed-1",
+        kind: "session_resumed",
+        restoreMethod: "session/load",
+        timestamp: "2026-06-18T13:55:25.194Z",
+        updatedAt: "2026-06-18T13:55:25.194Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "结束任务",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          timelineSequence: 256,
+        },
+        timestamp: "2026-06-18T14:01:49.292Z",
+        updatedAt: "2026-06-18T14:01:49.292Z",
+        timelineSequence: 256,
+      },
+    ],
+    items: [],
+  });
+
+  assert.equal(
+    html.match(/This session is being continued from a previous conversation/g)?.length,
+    1,
+  );
+  assert.ok(html.indexOf("上下文已压缩") > html.indexOf("更早的回复"));
+  assert.ok(html.indexOf("结束任务") > html.indexOf("上下文已压缩"));
+});
+
 test("plain messages does not append live user prompts already represented by timeline", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

@@ -1,4 +1,10 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "./types";
+import type {
+  SessionTimelineContextCompactionEntry,
+  SessionTimelineHistoryGapEntry,
+  SessionTimelineResumedEntry,
+} from "./session-transcript";
+import { isTranscriptEventEntry } from "./session-transcript";
 
 export type SessionTimelineContentChunk = {
   id: string;
@@ -55,7 +61,10 @@ export type SessionTimelineToolCallEntry = {
 export type SessionTimelineEntry =
   | SessionTimelineMessageEntry
   | SessionTimelineAssistantEntry
-  | SessionTimelineToolCallEntry;
+  | SessionTimelineToolCallEntry
+  | SessionTimelineContextCompactionEntry
+  | SessionTimelineResumedEntry
+  | SessionTimelineHistoryGapEntry;
 
 export type BuildSessionTimelineInput = {
   messages: AgentMessage[];
@@ -406,12 +415,15 @@ function hasTimelineBoundaryBetween(
   }
   const start = Math.min(leftSequence, rightSequence);
   const end = Math.max(leftSequence, rightSequence);
-  return entries.some((entry) =>
-    entry.kind !== "assistant_message" &&
-    typeof entry.timelineSequence === "number" &&
-    entry.timelineSequence > start &&
-    entry.timelineSequence < end,
-  );
+  return entries.some((entry) => {
+    if (isTranscriptEventEntry(entry)) {
+      return false;
+    }
+    return entry.kind !== "assistant_message" &&
+      typeof entry.timelineSequence === "number" &&
+      entry.timelineSequence > start &&
+      entry.timelineSequence < end;
+  });
 }
 
 function splitAssistantEntriesAtTimelineBoundaries(
@@ -484,9 +496,11 @@ function sortTimelineEntriesByDefinedSequence(
   return entries
     .map((entry, index) => ({ item: entry, index }))
     .sort((left, right) => {
+      const leftSequence = isTranscriptEventEntry(left.item) ? undefined : left.item.timelineSequence;
+      const rightSequence = isTranscriptEventEntry(right.item) ? undefined : right.item.timelineSequence;
       const sequenceDelta = compareOptionalTimelineSequence(
-        left.item.timelineSequence,
-        right.item.timelineSequence,
+        leftSequence,
+        rightSequence,
       );
       return sequenceDelta ?? left.index - right.index;
     })

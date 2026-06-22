@@ -219,7 +219,9 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
     result.timeline?.flatMap((entry) =>
       entry.kind === "assistant_message"
         ? entry.chunks.map((chunk) => `${chunk.kind}:${chunk.timelineSequence}:${chunk.text}`)
-        : [`${entry.kind}:${entry.timelineSequence}`],
+        : entry.kind === "tool_call" || entry.kind === "user_message" || entry.kind === "system_message"
+          ? [`${entry.kind}:${entry.timelineSequence}`]
+          : [`${entry.kind}:transcript-event`],
     ),
     [
       "content:1:工具前说明。",

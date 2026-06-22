@@ -154,6 +154,9 @@ function collectPersistedTimelineSequences(
   const sequences: Array<number | undefined> = [];
   try {
     for (const entry of (context.sessionTimelineStore?.list?.(sessionId) ?? []) as SessionTimelineEntry[]) {
+      if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+        continue;
+      }
       sequences.push(entry.timelineSequence);
       if (entry.kind === "assistant_message") {
         sequences.push(...entry.chunks.map((chunk) => chunk.timelineSequence));

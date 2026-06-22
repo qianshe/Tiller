@@ -22,6 +22,24 @@ test("session/new requires project cwd and agent", () => {
   sessionNew.ParamsSchema.parse({ projectId: "p1", cwd: "D:/repo", agentId: "a1" });
 });
 
+test("session/list_messages accepts transcriptStatus metadata", () => {
+  const result = sessionListMessages.ResultSchema.parse({
+    sessionId: "session-1",
+    messages: [],
+    timeline: [],
+    transcriptStatus: {
+      source: "local",
+      replayCompleteness: "compacted",
+      integrity: "local-prefix-preserved",
+      runtimeRestoreState: "history-only",
+    },
+    hasMore: false,
+    timelineHasMore: false,
+  });
+
+  assert.equal(result.transcriptStatus?.integrity, "local-prefix-preserved");
+});
+
 test("session/draft returns runtime draft metadata", () => {
   assert.equal(sessionDraft.method, "session/draft");
   sessionDraft.ParamsSchema.parse({

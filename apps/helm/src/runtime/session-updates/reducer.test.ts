@@ -79,7 +79,7 @@ test("session update reducer keeps colliding user and assistant message ids dist
     ["msg-1", "user", "prompt"],
     ["msg-1:assistant", "assistant", "answer"],
   ]);
-  assert.deepEqual(finalState.entries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]), [
+  assert.deepEqual(finalState.entries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]), [
     ["user_message", "msg-1", 1],
     ["assistant_message", "msg-1:assistant", 2],
   ]);

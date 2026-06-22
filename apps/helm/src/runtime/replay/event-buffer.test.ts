@@ -228,7 +228,7 @@ test("restore replay buffer preserves user and assistant messages when replay id
     ],
   );
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, (entry as any).timelineSequence]),
     [
       ["user_message", 1],
       ["assistant_message", 2],
@@ -262,7 +262,7 @@ test("restore replay buffer gives colliding unsequenced message roles distinct t
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
     [
       ["user_message", "replay-msg", 1],
       ["assistant_message", "replay-msg:assistant", 2],
@@ -404,7 +404,7 @@ test("restore replay buffer assigns timeline order when replay timestamps are co
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
     [
       ["user_message", "user-1", 1],
       ["tool_call", "tool:tool-1", 2],
@@ -471,7 +471,7 @@ test("restore replay buffer persists ordered local timeline entries", () => {
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
     [
       ["user_message", "user-1", 1],
       ["assistant_message", "assistant-1", 2],
@@ -526,7 +526,7 @@ test("restore replay buffer splits same assistant id content around tools as sep
     ],
   );
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, entry.timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
     [
       ["assistant_message", "assistant-1", 1],
       ["tool_call", "tool:tool-read", 2],
