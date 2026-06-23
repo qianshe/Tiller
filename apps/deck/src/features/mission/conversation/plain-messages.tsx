@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import { looksLikeContinuationSummary, resolveTimelineRepresentedUserMessageIds, isTranscriptEventEntry } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
@@ -239,25 +239,19 @@ export function PlainMessages({
     return () => container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
   }, [displayItems.length, hasHiddenLoadedItems, historyState?.canLoadMore, historyState?.hasMore, historyState?.loading, onLoadOlderMessages, visibleRenderSignature]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     renderRevealRequestedRef.current = false;
     const snapshot = localScrollSnapshotRef.current;
     const scrollContainer = resolvePlainMessageScrollContainer(listRef.current);
     if (!snapshot || !scrollContainer) {
       return;
     }
-    
-    // Use requestAnimationFrame to ensure DOM is fully rendered before adjusting scroll
-    requestAnimationFrame(() => {
-      const newScrollTop = snapshot.mode === "top"
-        ? 0
-        : scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
-      scrollContainer.scrollTo({
-        top: newScrollTop,
-        behavior: 'instant'
-      });
-      localScrollSnapshotRef.current = null;
-    });
+
+    const newScrollTop = snapshot.mode === "top"
+      ? 0
+      : scrollContainer.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
+    scrollContainer.scrollTop = newScrollTop;
+    localScrollSnapshotRef.current = null;
   }, [visibleRenderMessages.length, visibleRenderSignature]);
 
   if (!displayItems.length) {
@@ -568,8 +562,10 @@ function resolveRenderablePlainMessageItems(
   if (!hideDetachedLeadingContext) {
     return items;
   }
-  const firstMessageIndex = items.findIndex((item) => item.kind === "message");
-  return firstMessageIndex >= 0 ? items.slice(firstMessageIndex) : [];
+  const firstStableIndex = items.findIndex(
+    (item) => item.kind === "message" || item.kind === "transcript-event",
+  );
+  return firstStableIndex >= 0 ? items.slice(firstStableIndex) : [];
 }
 
 export function resolveFinalAssistantActionTarget(

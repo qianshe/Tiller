@@ -1081,6 +1081,56 @@ test("plain messages marks paged windows that start inside earlier context", () 
   assert.ok(html.indexOf("上方还有上下文") < html.indexOf("后续正文"));
 });
 
+test("plain messages keeps transcript boundary rows when paged windows start before the resumed message", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "resumed-1",
+        kind: "session_resumed",
+        restoreMethod: "session/load",
+        timestamp: "2026-06-18T13:55:25.194Z",
+        updatedAt: "2026-06-18T13:55:25.194Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "后续正文",
+            timestamp: "2026-06-18T13:55:26.000Z",
+            timelineSequence: 1,
+          },
+        ],
+        timestamp: "2026-06-18T13:55:26.000Z",
+        updatedAt: "2026-06-18T13:55:26.000Z",
+        timelineSequence: 1,
+      },
+    ],
+    historyState: { hasMore: true, timelineHasMore: true, loading: false },
+  });
+
+  assert.match(html, /plain-history-boundary/);
+  assert.match(html, /上方还有上下文/);
+  assert.match(html, /上下文已压缩/);
+  assert.match(html, /会话已恢复/);
+  assert.ok(html.indexOf("上方还有上下文") < html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("会话已恢复"));
+  assert.ok(html.indexOf("会话已恢复") < html.indexOf("后续正文"));
+});
+
 test("plain messages does not mark paged windows that start at a normal message", () => {
   const html = renderPlainMessages({
     timelineItems: [

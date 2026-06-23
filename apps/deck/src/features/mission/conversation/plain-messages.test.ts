@@ -498,6 +498,21 @@ test("plain message remote history requests reset so repeated top scroll can loa
   );
 });
 
+test("plain message history restores scroll during layout instead of after paint", () => {
+  assert.match(
+    plainMessagesSource,
+    /useLayoutEffect\(\(\) => \{\s+renderRevealRequestedRef\.current = false;/,
+  );
+  assert.match(
+    plainMessagesSource,
+    /scrollContainer\.scrollTop = newScrollTop;/,
+  );
+  assert.doesNotMatch(
+    plainMessagesSource,
+    /requestAnimationFrame\(\(\) => \{\s+const newScrollTop = snapshot\.mode === "top"/,
+  );
+});
+
 test("plain message remote history preserves scroll when compact shifts the visible window without growing total items", () => {
   assert.equal(
     resolveRemoteHistoryRevealAction({
