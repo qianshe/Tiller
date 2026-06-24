@@ -1,5 +1,5 @@
 import type { AgentMessage, FileDiffSummary, SessionSummary } from "@tiller/shared";
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   canGenerateAssistantHandoff,
   generateAssistantHandoffDraft,
@@ -8,6 +8,7 @@ import { MissionChatPane } from "../conversation";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
 import { MissionInspector } from "../inspector";
+import { generateCommitDescription } from "../inspector/generate-commit-description";
 import { MissionMobilePager } from "./mobile-pager";
 import {
   MISSION_MOBILE_PANE_ORDER,
@@ -70,10 +71,7 @@ export function MissionWorktree(props: any) {
     toolCalls,
     statuses,
     copy,
-    customMissionPanelPages,
-    selectedMissionPanelPageId,
-    openedMissionDiffFilePaths,
-    closeMissionDiffFile,
+    selectedMissionDisplayTabId,
     activeSessionProjectId,
     projectFilesByScope,
     activeSessionProject,
@@ -212,21 +210,20 @@ export function MissionWorktree(props: any) {
     activityVisibleCounts,
     setActivityVisibleCounts,
     loadOlderActivities,
-    addMissionPanelPage,
-    setSelectedMissionPanelPageId,
-    setDraggedMissionPanelPageId,
-    dropMissionPanelPage,
+    setSelectedMissionDisplayTabId,
     openDiffDetail,
-    renameMissionPanelPage,
-    moveMissionPanelPage,
-    deleteMissionPanelPage,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
     toggleProjectFileDirectory,
-    defaultLogbookVisibleLimit,
     agentModelOptions = {},
+    gitStatusByWorktree = {},
+    setGitStatusByWorktree,
+    gitGraphByWorktree = {},
+    setGitGraphByWorktree,
+    openedMissionDiffFilePaths = [],
+    closeMissionDiffFile,
   } = props;
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const [assistantHandoffBusy, setAssistantHandoffBusy] = useState(false);
@@ -279,11 +276,11 @@ export function MissionWorktree(props: any) {
     activeSessionStatus,
     pendingToolActivity,
     missionActivityLoading,
-    missionDiffCount,
+    missionDiffCount: sessionMissionDiffCount,
     missionLogCount,
     missionStatusLabel,
-    missionPanelPages,
-    selectedMissionPanelPage,
+    missionDisplayTabs,
+    selectedMissionDisplayTab,
     projectFilesScope,
     projectFilesEntry,
     projectFiles,
@@ -297,6 +294,17 @@ export function MissionWorktree(props: any) {
     sessionExecutionPending,
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
+  const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
+  const activeGitCwd = activeSession?.cwd ?? selectedCwd;
+  const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
+  const diffEmptyText = currentGitStatus
+    ? copy.noDiffSummary
+    : "请先刷新 Git 获取当前文件树。";
+  const syncedMissionDiffs = reconcileMissionDiffs(
+    activeDiffs,
+    currentGitStatus?.files,
+  );
+  const missionDiffCount = syncedMissionDiffs.length;
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
   const toggleMissionThinking = () => {
     props.updateTechnicalPanelPreference?.(
@@ -416,9 +424,6 @@ export function MissionWorktree(props: any) {
     setFocusedChatWindowId(nextDraftWindowId);
   };
   const onToggleDisplay = () => {
-    if (!hasSelectedDisplayDiff) {
-      return;
-    }
     setMissionDisplayCollapsed((current: boolean) => !current);
   };
   const onToggleInspector = () => {
@@ -461,6 +466,103 @@ export function MissionWorktree(props: any) {
       agentId: null,
     });
   };
+
+  const handleCommit = useCallback(
+    async (message: string, paths: string[]) => {
+      if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
+        return;
+      }
+
+      try {
+        await dispatch(rpcClientRef.current, "project/git/commit", {
+          projectId: activeGitProjectId,
+          cwd: activeGitCwd,
+          message,
+          paths,
+        });
+        setSelectedCommitDiffPaths(new Set());
+      } catch (error) {
+        console.error("Commit failed:", error);
+      }
+    },
+    [activeGitProjectId, activeGitCwd, dispatch],
+  );
+
+  const handleGenerateDescription = useCallback(async (): Promise<string> => {
+    if (!deckPreferences.promptEnhancer.llm.enabled) {
+      throw new Error("LLM not configured in preferences");
+    }
+
+    return await generateCommitDescription({
+      selectedPaths: Array.from(selectedCommitDiffPaths),
+      projectName: draftProject?.name,
+      sessionTitle: activeSession?.title,
+      llmConfig: deckPreferences.promptEnhancer.llm,
+    });
+  }, [
+    deckPreferences.promptEnhancer.llm,
+    selectedCommitDiffPaths,
+    draftProject?.name,
+    activeSession?.title,
+  ]);
+
+  const handleRefreshGitStatus = useCallback(() => {
+    if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
+      return;
+    }
+
+    // Set loading state before dispatch to prevent duplicate requests
+    const currentStatus = gitStatusByWorktree[activeGitCwd];
+    if (currentStatus) {
+      setGitStatusByWorktree((current: any) => ({
+        ...current,
+        [activeGitCwd]: {
+          ...currentStatus,
+          loading: true,
+        },
+      }));
+    }
+
+    const currentGraph = gitGraphByWorktree[activeGitCwd];
+    if (currentGraph) {
+      setGitGraphByWorktree((current: any) => ({
+        ...current,
+        [activeGitCwd]: {
+          ...currentGraph,
+          loading: true,
+        },
+      }));
+    }
+
+    void dispatch(rpcClientRef.current, "project/git/status", {
+      projectId: activeGitProjectId,
+      cwd: activeGitCwd,
+    });
+    void dispatch(rpcClientRef.current, "project/git/graph", {
+      projectId: activeGitProjectId,
+      cwd: activeGitCwd,
+    });
+  }, [activeGitProjectId, activeGitCwd, dispatch, gitStatusByWorktree, gitGraphByWorktree]);
+  const handleOpenGraph = useCallback(() => {
+    setSelectedMissionDisplayTabId("graph");
+    setMissionDisplayCollapsed(false);
+    if (isMissionMobile) {
+      setSelectedMissionMobilePane("display");
+    }
+
+    // Fetch graph data if not already loaded
+    if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
+      return;
+    }
+
+    const currentGraph = gitGraphByWorktree[activeGitCwd];
+    if (!currentGraph || currentGraph.commits.length === 0) {
+      void dispatch(rpcClientRef.current, "project/git/graph", {
+        projectId: activeGitProjectId,
+        cwd: activeGitCwd,
+      });
+    }
+  }, [activeGitProjectId, activeGitCwd, rpcClientRef, dispatch, gitGraphByWorktree, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
   const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
   const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
     selectedSessionWorktreeItems,
@@ -501,8 +603,8 @@ export function MissionWorktree(props: any) {
   const renderInspectorDiffPanel = () => (
     <MissionDiffPanel
       selectedDiffFilePath={selectedMissionDiffFilePath}
-      diffs={activeDiffs}
-      noDiffSummary={copy.noDiffSummary}
+      diffs={syncedMissionDiffs}
+      noDiffSummary={diffEmptyText}
       collapsedDiffDirectories={collapsedMissionDiffDirectories}
       selectedCommitDiffPaths={selectedCommitDiffPaths}
       onToggleCommitDiff={toggleCommitDiffPath}
@@ -517,15 +619,64 @@ export function MissionWorktree(props: any) {
   ]);
   const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
+  useEffect(() => {
+    const visiblePaths = new Set(syncedMissionDiffs.map((diff) => diff.path));
+    setSelectedCommitDiffPaths((current) => {
+      const next = new Set(
+        Array.from(current).filter((path) => visiblePaths.has(path)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [syncedMissionDiffs]);
+  useEffect(() => {
+    if (
+      selectedMissionDisplayTabId !== "graph" ||
+      !activeGitProjectId ||
+      !activeGitCwd ||
+      !rpcClientRef.current
+    ) {
+      return;
+    }
+
+    const client = rpcClientRef.current;
+    if (client.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const currentGraph = gitGraphByWorktree[activeGitCwd];
+    if (currentGraph) {
+      return;
+    }
+
+    setGitGraphByWorktree?.((current: Record<string, any>) => ({
+      ...current,
+      [activeGitCwd]: {
+        projectId: activeGitProjectId,
+        cwd: activeGitCwd,
+        commits: [],
+        loading: true,
+        message: "正在加载提交历史...",
+      },
+    }));
+
+    void dispatch(client, "project/git/graph", {
+      projectId: activeGitProjectId,
+      cwd: activeGitCwd,
+    });
+  }, [
+    activeGitCwd,
+    activeGitProjectId,
+    dispatch,
+    gitGraphByWorktree,
+    rpcClientRef,
+    selectedMissionDisplayTabId,
+    setGitGraphByWorktree,
+  ]);
   function selectAdjacentMissionMobilePane(direction: -1 | 1) {
     setSelectedMissionMobilePane(resolveAdjacentMissionMobilePane(resolvedMissionMobilePane, direction));
   }
-  const hasSelectedDisplayDiff = activeDiffs.some(
-    (file: FileDiffSummary) =>
-      file.path === selectedMissionDiffFilePath ||
-      (openedMissionDiffFilePaths ?? []).includes(file.path),
-  );
-  const displayPaneCollapsed = effectiveDisplayCollapsed || !hasSelectedDisplayDiff;
+  const displayPaneCollapsed = effectiveDisplayCollapsed;
+  const canToggleDisplay = true;
   const missionLayoutClassName = joinClassNames([
     "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
@@ -741,7 +892,7 @@ export function MissionWorktree(props: any) {
           inspectorCollapsed={effectiveInspectorCollapsed}
           sidebarCollapsed={effectiveSidebarCollapsed}
           showThinking={technicalPanels.showMissionThinking}
-          canToggleDisplay={hasSelectedDisplayDiff}
+          canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
@@ -862,45 +1013,24 @@ export function MissionWorktree(props: any) {
           >
         <MissionDisplaySection
             style={missionDisplayPaneStyle}
-            pages={missionPanelPages}
-            selectedPage={selectedMissionPanelPage}
+            pages={missionDisplayTabs}
+            selectedPage={selectedMissionDisplayTab}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
             currentModelSummary={`当前模型：${draftModelPickerLabel} · 推理：${resolveReasoningLabel(effectiveDraftReasoningEffort)}`}
             openedDiffFilePaths={openedMissionDiffFilePaths ?? []}
             selectedDiffFilePath={selectedMissionDiffFilePath}
-            diffs={activeDiffs}
-            noDiffSummary={copy.noDiffSummary}
+            diffs={syncedMissionDiffs}
+            noDiffSummary={diffEmptyText}
             onReconnectRuntime={reconnectAcpRuntime}
-            activeSession={activeSession}
-            sessionToolCalls={activeToolCalls}
-            commandChunks={activeOutputs}
-            sessionMessages={activeSessionMessages}
-            historyState={
-              activeSession ? activityHistoryState[activeSession.id] : undefined
-            }
-            visibleCount={
-              activeSession
-                ? (activityVisibleCounts[activeSession.id] ??
-                  defaultLogbookVisibleLimit)
-                : defaultLogbookVisibleLimit
-            }
-            visibleLimit={defaultLogbookVisibleLimit}
-            copy={copy}
-            onShowMore={(targetSessionId, nextVisibleCount) =>
-              setActivityVisibleCounts((current: any) => ({
-                ...current,
-                [targetSessionId]: nextVisibleCount,
-              }))
-            }
-            onLoadOlder={loadOlderActivities}
-            onAddPage={addMissionPanelPage}
-            onSelectPage={setSelectedMissionPanelPageId}
-            onDragStart={setDraggedMissionPanelPageId}
-            onDrop={dropMissionPanelPage}
-            onRenamePage={renameMissionPanelPage}
-            onMovePage={moveMissionPanelPage}
-            onDeletePage={deleteMissionPanelPage}
+            gitGraph={activeGitCwd ? gitGraphByWorktree[activeGitCwd] : undefined}
+            onAddPage={() => {}}
+            onSelectPage={setSelectedMissionDisplayTabId}
+            onDragStart={() => {}}
+            onDrop={() => {}}
+            onRenamePage={() => {}}
+            onMovePage={() => {}}
+            onDeletePage={() => {}}
             onOpenDiffDetail={openDiffDetail}
             onCloseDiffFile={closeMissionDiffFile}
             onCollapse={onToggleDisplay}
@@ -932,8 +1062,15 @@ export function MissionWorktree(props: any) {
           worktreeList={renderWorktreeList()}
           diffCount={missionDiffCount}
           selectedDiffCount={selectedCommitDiffPaths.size}
+          selectedDiffPaths={selectedCommitDiffPaths}
           diffPanel={renderInspectorDiffPanel()}
+          gitStatus={activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined}
+          deckPreferences={deckPreferences}
+          onCommit={handleCommit}
+          onGenerateDescription={handleGenerateDescription}
+          onOpenGraph={handleOpenGraph}
           onCollapse={onToggleInspector}
+          onRefreshGitStatus={handleRefreshGitStatus}
           resizer={null}
         />{" "}
           </ResizablePanel>
@@ -964,4 +1101,56 @@ export function MissionWorktree(props: any) {
       </ResizablePanelGroup>{" "}
     </MissionPage>
   );
+}
+
+function reconcileMissionDiffs(
+  sessionDiffs: FileDiffSummary[],
+  gitStatusFiles:
+    | Array<{
+        path: string;
+        indexStatus: string;
+        worktreeStatus: string;
+      }>
+    | undefined,
+) {
+  if (!gitStatusFiles) {
+    return [];
+  }
+  if (!gitStatusFiles.length) {
+    return [];
+  }
+
+  const diffsByPath = new Map(
+    sessionDiffs.map((diff) => [normalizeMissionDiffPath(diff.path), diff] as const),
+  );
+
+  return gitStatusFiles.map((file) => {
+    const normalizedPath = normalizeMissionDiffPath(file.path);
+    const existingDiff = diffsByPath.get(normalizedPath);
+    if (existingDiff) {
+      return existingDiff;
+    }
+    return {
+      path: file.path,
+      status: mapGitStatusToDiffStatus(file.indexStatus, file.worktreeStatus),
+      additions: 0,
+      deletions: 0,
+      patch: "",
+    } satisfies FileDiffSummary;
+  });
+}
+
+function mapGitStatusToDiffStatus(indexStatus: string, worktreeStatus: string): FileDiffSummary["status"] {
+  const combinedStatus = `${indexStatus}${worktreeStatus}`;
+  if (combinedStatus.includes("A") || combinedStatus.includes("?")) {
+    return "added";
+  }
+  if (combinedStatus.includes("D")) {
+    return "deleted";
+  }
+  return "modified";
+}
+
+function normalizeMissionDiffPath(path: string) {
+  return path.replace(/\\/g, "/");
 }

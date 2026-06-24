@@ -20,7 +20,6 @@ export type DeckDensity = "compact" | "default" | "cozy";
 export type DeckTimeFormat = "relative" | "absolute";
 
 export type TechnicalPanelPreferences = {
-  logbookDefaultOpen: boolean;
   diffDefaultOpen: boolean;
   showSessionRuntimeMeta: boolean;
   showPermissionWorktree: boolean;
@@ -51,7 +50,6 @@ export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   density: "default",
   timeFormat: "relative",
   technicalPanels: {
-    logbookDefaultOpen: false,
     diffDefaultOpen: false,
     showSessionRuntimeMeta: true,
     showPermissionWorktree: true,
@@ -102,10 +100,6 @@ export function readDeckPreferences(): DeckPreferences {
         ? parsed.timeFormat
         : DEFAULT_DECK_PREFERENCES.timeFormat,
       technicalPanels: {
-        logbookDefaultOpen:
-          typeof technicalPanels.logbookDefaultOpen === "boolean"
-            ? technicalPanels.logbookDefaultOpen
-            : legacyTechnicalPanelsOpen,
         diffDefaultOpen:
           typeof technicalPanels.diffDefaultOpen === "boolean"
             ? technicalPanels.diffDefaultOpen

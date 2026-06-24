@@ -248,7 +248,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     DEFAULT_MISSION_PANE_WIDTHS,
   );
   const [missionSidebarCollapsed, setMissionSidebarCollapsed] = useState(false);
-  const [missionDisplayCollapsed, setMissionDisplayCollapsed] = useState(false);
+  const [missionDisplayCollapsed, setMissionDisplayCollapsed] = useState(true);
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(true);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =

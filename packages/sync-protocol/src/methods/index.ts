@@ -10,6 +10,9 @@ import * as projectListFiles from "./project/list-files";
 import * as projectListWorktrees from "./project/list-worktrees";
 import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
+import * as projectGitStatus from "./project/git-status";
+import * as projectGitCommit from "./project/git-commit";
+import * as projectGitGraph from "./project/git-graph";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
 import * as agentList from "./agent/list";
@@ -68,6 +71,9 @@ const METHOD_DESCRIPTORS = {
   [projectListWorktrees.method]: projectListWorktrees.descriptor,
   [projectGitListBranches.method]: projectGitListBranches.descriptor,
   [projectGitCreateWorktree.method]: projectGitCreateWorktree.descriptor,
+  [projectGitStatus.method]: projectGitStatus.descriptor,
+  [projectGitCommit.method]: projectGitCommit.descriptor,
+  [projectGitGraph.method]: projectGitGraph.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
   [agentList.method]: agentList.descriptor,
@@ -128,6 +134,9 @@ export const CLIENT_REQUEST_METHODS = [
   projectListWorktrees.method,
   projectGitListBranches.method,
   projectGitCreateWorktree.method,
+  projectGitStatus.method,
+  projectGitCommit.method,
+  projectGitGraph.method,
   projectSave.method,
   projectDelete.method,
   agentList.method,

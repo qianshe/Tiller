@@ -1,9 +1,9 @@
 import type { ProjectFileSummary } from "@tiller/shared";
 import { formatProjectSummaryForDisplay } from "../utils/project-display";
 import {
-  buildMissionPanelPages,
+  buildMissionDisplayTabs,
   resolveMissionActivityLoading,
-  selectMissionPanelPage,
+  selectMissionDisplayTab,
 } from "../utils/session-render-state";
 import {
   isSessionExecutionPending,
@@ -26,8 +26,7 @@ export function buildMissionWorktreeModel(input: any) {
     toolCalls = {},
     statuses = {},
     copy,
-    customMissionPanelPages,
-    selectedMissionPanelPageId,
+    selectedMissionDisplayTabId,
     activeSessionProjectId,
     activeSessionProject,
     draftProject,
@@ -97,14 +96,13 @@ export function buildMissionWorktreeModel(input: any) {
   const missionStatusLabel = activeSession
     ? copy.status[statuses[activeSession.id] ?? activeSession.status]
     : "待创建";
-  const missionPanelPages = buildMissionPanelPages(
+  const missionDisplayTabs = buildMissionDisplayTabs(
     missionDiffCount,
     missionLogCount,
-    customMissionPanelPages,
   );
-  const selectedMissionPanelPage = selectMissionPanelPage(
-    missionPanelPages,
-    selectedMissionPanelPageId,
+  const selectedMissionDisplayTab = selectMissionDisplayTab(
+    missionDisplayTabs,
+    selectedMissionDisplayTabId,
   );
   const projectFilesScope = {
     projectId: activeSessionProjectId ?? null,
@@ -164,8 +162,8 @@ export function buildMissionWorktreeModel(input: any) {
     missionDiffCount,
     missionLogCount,
     missionStatusLabel,
-    missionPanelPages,
-    selectedMissionPanelPage,
+    missionDisplayTabs,
+    selectedMissionDisplayTab,
     projectFilesScope,
     projectFilesEntry,
     projectFiles,

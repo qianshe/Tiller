@@ -24,7 +24,7 @@ export function resolveToolStatusLabel(
   output?: string | null,
 ) {
   if (status === "completed") {
-    return "已完成";
+    return "完成";
   }
   if (status === "failed") {
     return "失败";
@@ -36,7 +36,7 @@ export function resolveToolStatusLabel(
     return "已取消";
   }
   // pending, running
-  return "执行中";
+  return "运行中";
 }
 
 export function formatToolInputPreview(input: string) {

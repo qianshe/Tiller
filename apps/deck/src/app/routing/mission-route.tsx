@@ -1,7 +1,4 @@
-import {
-  DEFAULT_LOGBOOK_VISIBLE_LIMIT,
-  MissionWorktree,
-} from "../../features/mission";
+import { MissionWorktree } from "../../features/mission";
 import type { MissionRouteSource } from "./route-context";
 
 export function renderMissionRoute(source: MissionRouteSource) {
@@ -28,8 +25,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     toolCalls,
     statuses,
     copy,
-    customMissionPanelPages,
-    selectedMissionPanelPageId,
+    selectedMissionDisplayTabId,
     openedMissionDiffFilePaths,
     closeMissionDiffFile,
     activeSessionProjectId,
@@ -158,6 +154,10 @@ export function renderMissionRoute(source: MissionRouteSource) {
     resolveReasoningLabel,
     draftReasoningOptions,
     deckPreferences,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     enhancePromptDraft,
     promptEnhancerBusy,
     setPromptEnhancerStatus,
@@ -170,14 +170,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
     activityVisibleCounts,
     setActivityVisibleCounts,
     loadOlderActivities,
-    addMissionPanelPage,
-    setSelectedMissionPanelPageId,
-    setDraggedMissionPanelPageId,
-    dropMissionPanelPage,
+    setSelectedMissionDisplayTabId,
     openDiffDetail,
-    renameMissionPanelPage,
-    moveMissionPanelPage,
-    deleteMissionPanelPage,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
@@ -216,8 +210,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       toolCalls={toolCalls}
       statuses={statuses}
       copy={copy}
-      customMissionPanelPages={customMissionPanelPages}
-      selectedMissionPanelPageId={selectedMissionPanelPageId}
+      selectedMissionDisplayTabId={selectedMissionDisplayTabId}
       openedMissionDiffFilePaths={openedMissionDiffFilePaths}
       closeMissionDiffFile={closeMissionDiffFile}
       activeSessionProjectId={activeSessionProjectId}
@@ -346,6 +339,10 @@ export function renderMissionRoute(source: MissionRouteSource) {
       resolveReasoningLabel={resolveReasoningLabel}
       draftReasoningOptions={draftReasoningOptions}
       deckPreferences={deckPreferences}
+      gitStatusByWorktree={gitStatusByWorktree}
+      setGitStatusByWorktree={setGitStatusByWorktree}
+      gitGraphByWorktree={gitGraphByWorktree}
+      setGitGraphByWorktree={setGitGraphByWorktree}
       enhancePromptDraft={enhancePromptDraft}
       promptEnhancerBusy={promptEnhancerBusy}
       promptEnhancerStatus={promptEnhancerSettings.status}
@@ -358,20 +355,13 @@ export function renderMissionRoute(source: MissionRouteSource) {
       activityVisibleCounts={activityVisibleCounts}
       setActivityVisibleCounts={setActivityVisibleCounts}
       loadOlderActivities={loadOlderActivities}
-      addMissionPanelPage={addMissionPanelPage}
-      setSelectedMissionPanelPageId={setSelectedMissionPanelPageId}
-      setDraggedMissionPanelPageId={setDraggedMissionPanelPageId}
-      dropMissionPanelPage={dropMissionPanelPage}
+      setSelectedMissionDisplayTabId={setSelectedMissionDisplayTabId}
       openDiffDetail={openDiffDetail}
-      renameMissionPanelPage={renameMissionPanelPage}
-      moveMissionPanelPage={moveMissionPanelPage}
-      deleteMissionPanelPage={deleteMissionPanelPage}
       toggleMissionDiffDirectory={toggleMissionDiffDirectory}
       collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}
       missionInspectorPaneStyle={missionInspectorPaneStyle}
       setProjectFileFilter={setProjectFileFilter}
       toggleProjectFileDirectory={toggleProjectFileDirectory}
-      defaultLogbookVisibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
     />
   );
 }

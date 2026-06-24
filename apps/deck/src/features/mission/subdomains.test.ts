@@ -94,7 +94,6 @@ test("mission display implementation lives in the display subdomain", () => {
     "panel.tsx",
     "panel.test.tsx",
     "section.tsx",
-    "logbook-panel.tsx",
     "panels.ts",
     "session-overview-card.tsx",
     "session-overview-card.test.tsx",

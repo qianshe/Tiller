@@ -16,7 +16,15 @@ import {
   refreshProjectGitBranches,
   resolveGitRoot,
   resolveProjectRoot,
+  getProjectGitStatus,
+  commitProjectGitChanges,
+  getProjectGitGraph,
 } from "./project-git";
+
+// Request deduplication maps to prevent concurrent duplicate Git operations
+const pendingGitStatusRequests = new Map<string, Promise<any>>();
+const pendingGitCommitRequests = new Map<string, Promise<any>>();
+const pendingGitGraphRequests = new Map<string, Promise<any>>();
 
 export async function listProjects(context: HelmHandlerContext) {
   let projects = await context.loadAvailableProjectsWithSemanticSummaries();
@@ -315,4 +323,283 @@ function mergeWorktreeItems(
   const byId = new Map(configuredWorktrees.map((worktree) => [worktree.path, worktree]));
   gitWorktreeWorktrees.forEach((worktree) => byId.set(worktree.path, worktree));
   return Array.from(byId.values());
+}
+
+export async function getGitStatus(
+  params: { projectId: string; cwd?: string },
+  context: HelmHandlerContext,
+) {
+  // Deduplicate concurrent requests for the same project/cwd
+  const dedupeKey = `${params.projectId}:${params.cwd ?? ""}`;
+
+  if (pendingGitStatusRequests.has(dedupeKey)) {
+    return await pendingGitStatusRequests.get(dedupeKey)!;
+  }
+
+  const promise = executeGetGitStatus(params, context);
+  pendingGitStatusRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitStatusRequests.delete(dedupeKey);
+  }
+}
+
+async function executeGetGitStatus(
+  params: { projectId: string; cwd?: string },
+  context: HelmHandlerContext,
+) {
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  const worktrees = context.loadAvailableWorktrees();
+  const project = context.resolveProjectById(params.projectId, projects);
+
+  if (!project) {
+    return {
+      ok: false,
+      projectId: params.projectId,
+      cwd: params.cwd ?? "",
+      branch: "",
+      clean: false,
+      files: [],
+      message: "Project not found",
+    };
+  }
+
+  const cwd = params.cwd ?? resolveProjectRoot(project, worktrees);
+  if (!cwd) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd: "",
+      branch: "",
+      clean: false,
+      files: [],
+      message: "Project has no path or worktree path",
+    };
+  }
+
+  // Validate cwd belongs to this project
+  if (!isProjectWorktree(project, worktrees, cwd)) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd,
+      branch: "",
+      clean: false,
+      files: [],
+      message: "Working directory is not part of this project",
+    };
+  }
+
+  try {
+    const { branch, clean, files } = await getProjectGitStatus(cwd);
+    return {
+      ok: true,
+      projectId: project.id,
+      cwd,
+      branch,
+      clean,
+      files,
+      message: clean ? "Working tree clean" : `${files.length} file(s) changed`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd,
+      branch: "",
+      clean: false,
+      files: [],
+      message: error instanceof Error ? error.message : "Failed to get Git status",
+    };
+  }
+}
+
+export async function commitGitChanges(
+  params: { projectId: string; cwd: string; message: string; paths: string[] },
+  context: HelmHandlerContext,
+) {
+  // Deduplicate concurrent commit requests for the same project/cwd
+  const dedupeKey = `${params.projectId}:${params.cwd}`;
+
+  if (pendingGitCommitRequests.has(dedupeKey)) {
+    return await pendingGitCommitRequests.get(dedupeKey)!;
+  }
+
+  const promise = executeCommitGitChanges(params, context);
+  pendingGitCommitRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitCommitRequests.delete(dedupeKey);
+  }
+}
+
+async function executeCommitGitChanges(
+  params: { projectId: string; cwd: string; message: string; paths: string[] },
+  context: HelmHandlerContext,
+) {
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  const worktrees = context.loadAvailableWorktrees();
+  const project = context.resolveProjectById(params.projectId, projects);
+
+  if (!project) {
+    return {
+      ok: false,
+      projectId: params.projectId,
+      cwd: params.cwd,
+      commitHash: undefined,
+      status: { branch: "", clean: false, files: [] },
+      message: "Project not found",
+    };
+  }
+
+  // Validate cwd belongs to this project
+  if (!isProjectWorktree(project, worktrees, params.cwd)) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd: params.cwd,
+      commitHash: undefined,
+      status: { branch: "", clean: false, files: [] },
+      message: "Working directory is not part of this project",
+    };
+  }
+
+  try {
+    const { commitHash, status } = await commitProjectGitChanges(
+      params.cwd,
+      params.message,
+      params.paths,
+    );
+
+    return {
+      ok: true,
+      projectId: project.id,
+      cwd: params.cwd,
+      commitHash,
+      status,
+      message: `Committed ${params.paths.length} file(s)`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd: params.cwd,
+      commitHash: undefined,
+      status: { branch: "", clean: false, files: [] },
+      message: error instanceof Error ? error.message : "Failed to commit changes",
+    };
+  }
+}
+
+function isProjectWorktree(
+  project: ProjectSummary,
+  worktrees: Array<{ name: string; path: string; branch?: string }>,
+  cwd: string,
+): boolean {
+  const normalizedCwd = normalizeProjectPath(cwd);
+  const allowedPaths = new Set(
+    projectWorktreeItems(project, worktrees).map((worktree) =>
+      normalizeProjectPath(worktree.path),
+    ),
+  );
+  const projectPath = normalizeProjectPath(project.path);
+  if (projectPath) {
+    allowedPaths.add(projectPath);
+  }
+  return allowedPaths.has(normalizedCwd);
+}
+
+function normalizeProjectPath(path: string | undefined) {
+  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase() ?? "";
+}
+
+
+export async function getGitGraph(
+  params: { projectId: string; cwd?: string },
+  context: HelmHandlerContext,
+) {
+  // Deduplicate concurrent requests for the same project/cwd
+  const dedupeKey = `${params.projectId}:${params.cwd ?? ""}`;
+
+  if (pendingGitGraphRequests.has(dedupeKey)) {
+    return await pendingGitGraphRequests.get(dedupeKey)!;
+  }
+
+  const promise = executeGetGitGraph(params, context);
+  pendingGitGraphRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitGraphRequests.delete(dedupeKey);
+  }
+}
+
+async function executeGetGitGraph(
+  params: { projectId: string; cwd?: string },
+  context: HelmHandlerContext,
+) {
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  const worktrees = context.loadAvailableWorktrees();
+  const project = context.resolveProjectById(params.projectId, projects);
+
+  if (!project) {
+    return {
+      ok: false,
+      projectId: params.projectId,
+      cwd: params.cwd ?? "",
+      head: undefined,
+      commits: [],
+      message: "Project not found",
+    };
+  }
+
+  const cwd = params.cwd ?? resolveProjectRoot(project, worktrees);
+  if (!cwd) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd: "",
+      head: undefined,
+      commits: [],
+      message: "Project has no path or worktree path",
+    };
+  }
+
+  // Validate cwd belongs to this project
+  if (!isProjectWorktree(project, worktrees, cwd)) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd,
+      head: undefined,
+      commits: [],
+      message: "Working directory is not part of this project",
+    };
+  }
+
+  try {
+    const { head, commits } = await getProjectGitGraph(cwd);
+    return {
+      ok: true,
+      projectId: project.id,
+      cwd,
+      head,
+      commits,
+      message: `Fetched ${commits.length} commit(s)`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      projectId: project.id,
+      cwd,
+      head: undefined,
+      commits: [],
+      message: error instanceof Error ? error.message : "Failed to fetch Git graph",
+    };
+  }
 }

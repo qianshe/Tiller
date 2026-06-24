@@ -84,6 +84,156 @@ test("config RPC lists only the requested project's worktrees", async () => {
   assert.deepEqual(result.worktrees.map((worktree) => worktree.path), ["D:/repo-one"]);
 });
 
+test("config RPC rejects git status requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC rejects git commit requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/commit", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+    message: "fix：错误提交",
+    paths: ["README.md"],
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC rejects git graph requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC git graph binds refs only to decorated commits", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-refs-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "one\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "first"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "two\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "commit", "-am", "second"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "tag", "v1.0.0"], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    commits: Array<{ subject: string; refs: Array<{ name: string; kind: string; isCurrent: boolean }> }>;
+  };
+
+  assert.equal(result.ok, true);
+  const headCommit = result.commits.find((commit) => commit.subject === "second");
+  const olderCommit = result.commits.find((commit) => commit.subject === "first");
+
+  assert.equal(headCommit?.refs.some((ref) => ref.name === "main" && ref.isCurrent), true);
+  assert.equal(headCommit?.refs.some((ref) => ref.name === "v1.0.0" && ref.kind === "tag"), true);
+  assert.equal(olderCommit?.refs.some((ref) => ref.name === "HEAD"), false);
+});
+
 test("config RPC list worktrees discovers external git worktrees", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-discover-"));
   const repoPath = join(tempRoot, "repo");

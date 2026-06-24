@@ -17,9 +17,16 @@ type MissionInspectorProps = {
   worktreeList: ReactNode;
   diffCount: number;
   selectedDiffCount: number;
+  selectedDiffPaths?: Set<string>;
   diffPanel: ReactNode;
   resizer: ReactNode;
+  gitStatus?: any;
+  deckPreferences?: any;
+  onCommit?: (message: string, paths: string[]) => void;
+  onGenerateDescription?: () => Promise<string>;
+  onOpenGraph?: () => void;
   onCollapse: () => void;
+  onRefreshGitStatus?: () => void;
 };
 
 export function MissionInspector({
@@ -35,17 +42,59 @@ export function MissionInspector({
   worktreeList,
   diffCount,
   selectedDiffCount,
+  selectedDiffPaths = new Set(),
   diffPanel,
   resizer,
+  gitStatus,
+  deckPreferences,
+  onCommit,
+  onGenerateDescription,
+  onOpenGraph,
   onCollapse,
+  onRefreshGitStatus,
 }: MissionInspectorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [committing, setCommitting] = useState(false);
+
   const title = resolveInspectorTitle(activeSessionPresent, worktreeCount, diffCount);
   const commitScopeLabel = selectedDiffCount > 0 ? `${selectedDiffCount}/${diffCount} Diff` : `${diffCount} Diff`;
-  const generateCommitMessage = () => {
-    setCommitMessage(selectedDiffCount > 0 ? `chore：更新 ${selectedDiffCount} 个选中文件` : `chore：更新 ${diffCount} 个文件`);
+
+  const handleGenerateMessage = async () => {
+    if (!onGenerateDescription) {
+      setCommitMessage(selectedDiffCount > 0 ? `chore：更新 ${selectedDiffCount} 个选中文件` : `chore：更新 ${diffCount} 个文件`);
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const message = await onGenerateDescription();
+      setCommitMessage(message);
+    } catch (error) {
+      console.error("Failed to generate commit message:", error);
+    } finally {
+      setGenerating(false);
+    }
   };
+
+  const handleCommit = async () => {
+    if (!onCommit || !commitMessage.trim() || selectedDiffCount === 0) {
+      return;
+    }
+
+    setCommitting(true);
+    try {
+      await onCommit(commitMessage, Array.from(selectedDiffPaths));
+      setCommitMessage("");
+    } catch (error) {
+      console.error("Commit failed:", error);
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const commitDisabled = !activeSession || selectedDiffCount === 0 || !commitMessage.trim() || committing || gitStatus?.committing;
 
   const handleDebugUpdates = async () => {
     if (!activeSession || !dispatch || !rpcClient) {
@@ -139,7 +188,7 @@ export function MissionInspector({
             >
               <Icon name="branch" size={11} className="text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs tabular">
-                {activeSessionPresent ? `${worktreeSummaryLabel} · ${diffCount} Diff` : "未选择任务"}
+                {activeSessionPresent ? worktreeSummaryLabel : "未选择任务"}
               </span>
               <Icon name="chevronDown" size={10} className="text-muted-foreground" />
             </button>
@@ -166,14 +215,26 @@ export function MissionInspector({
           <div className="mission-inspector-commit border-t border-border-ghost bg-surface p-2">
             <div className="mb-1 flex items-center justify-between gap-2 text-2xs text-muted-foreground">
               <span>{commitScopeLabel}</span>
-              <button
-                type="button"
-                className="flex h-5 items-center gap-1 rounded-none bg-transparent px-1.5 hover:bg-surface-emphasis/60"
-                onClick={generateCommitMessage}
-                disabled={diffCount === 0}
-              >
-                <Icon name="activity" size={10} /> 生成描述
-              </button>
+              <div className="flex items-center gap-1">
+                {onRefreshGitStatus ? (
+                  <button
+                    type="button"
+                    className="flex h-5 items-center gap-1 rounded-none bg-transparent px-1.5 hover:bg-surface-emphasis/60"
+                    onClick={onRefreshGitStatus}
+                    title="刷新 Git 状态"
+                  >
+                    <Icon name="activity" size={10} /> 刷新 Git
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="flex h-5 items-center gap-1 rounded-none bg-transparent px-1.5 hover:bg-surface-emphasis/60"
+                  onClick={handleGenerateMessage}
+                  disabled={diffCount === 0 || generating}
+                >
+                  <Icon name="activity" size={10} /> {generating ? "生成中..." : "生成描述"}
+                </button>
+              </div>
             </div>
             <textarea
               rows={2}
@@ -182,25 +243,48 @@ export function MissionInspector({
               className="mb-2 w-full resize-none rounded-none bg-transparent p-2 text-section shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
               placeholder="提交信息(必填) · 描述本次变更"
               aria-label="提交信息"
+              disabled={committing}
             />
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="flex h-ctl-md flex-1 items-center justify-center gap-1.5 rounded-none bg-transparent px-3 text-section font-medium text-muted-foreground"
-                disabled
+                className="flex h-ctl-md flex-1 items-center justify-center gap-1.5 rounded-none bg-transparent px-3 text-section font-medium text-muted-foreground disabled:opacity-50"
+                disabled={commitDisabled}
+                onClick={handleCommit}
               >
-                <Icon name="shield" size={12} /> Commit
+                <Icon name="shield" size={12} /> {committing ? "提交中..." : `Commit${selectedDiffCount > 0 ? ` (${selectedDiffCount})` : ""}`}
               </button>
+              {onOpenGraph ? (
+                <button
+                  type="button"
+                  className="flex h-ctl-md items-center gap-1.5 rounded-none bg-transparent px-3 text-section hover:bg-surface-emphasis/60"
+                  onClick={onOpenGraph}
+                  title="查看提交历史"
+                >
+                  <Icon name="branch" size={11} /> 历史
+                </button>
+              ) : null}
               <button
                 type="button"
-                className="flex h-ctl-md items-center gap-1.5 rounded-none bg-transparent px-3 text-section hover:bg-surface-emphasis/60"
+                className="flex h-ctl-md items-center gap-1.5 rounded-none bg-transparent px-3 text-section text-muted-foreground/60"
+                disabled
+                title="Push 暂未实现"
               >
                 <Icon name="branch" size={11} /> Push
               </button>
               <button
                 type="button"
-                className="grid h-ctl-md w-7 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60"
-                title="更多操作"
+                className="flex h-ctl-md items-center gap-1.5 rounded-none bg-transparent px-3 text-section text-muted-foreground/60"
+                disabled
+                title="Pull 暂未实现"
+              >
+                <Icon name="chevronDown" size={11} /> Pull
+              </button>
+              <button
+                type="button"
+                className="grid h-ctl-md w-7 place-items-center rounded-none bg-transparent text-muted-foreground/60"
+                disabled
+                title="更多操作暂未实现"
               >
                 <Icon name="more" size={11} />
               </button>
@@ -219,9 +303,6 @@ function resolveInspectorTitle(
 ) {
   if (!activeSessionPresent) {
     return "未选择任务";
-  }
-  if (diffCount > 0) {
-    return `${diffCount} 个变更`;
   }
   return worktreeCount > 0 ? `${worktreeCount} 个 Worktree` : "暂无 Worktree";
 }

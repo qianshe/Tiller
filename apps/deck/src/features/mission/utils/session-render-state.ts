@@ -9,22 +9,21 @@ import { resolvePendingToolActivity } from "../../logbook";
 import type { MissionPanelPage } from "../display/panels";
 import { isSessionExecutionPending } from "./session-state";
 
-export function buildMissionPanelPages(
+export function buildMissionDisplayTabs(
   _diffCount: number,
   _logCount: number,
-  customPages: MissionPanelPage[],
 ): MissionPanelPage[] {
   return [
+    { id: "graph", title: "图表" },
     { id: "diff-detail", title: "Diff 详情" },
-    ...customPages,
   ];
 }
 
-export function selectMissionPanelPage(
-  pages: MissionPanelPage[],
-  selectedPageId: string,
+export function selectMissionDisplayTab(
+  tabs: MissionPanelPage[],
+  selectedTabId: string,
 ): MissionPanelPage {
-  return pages.find((page) => page.id === selectedPageId) ?? pages[0]!;
+  return tabs.find((tab) => tab.id === selectedTabId) ?? tabs[0]!;
 }
 
 export function resolveVisibleProjectFiles(

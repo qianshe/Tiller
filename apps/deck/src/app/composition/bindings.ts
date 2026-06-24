@@ -11,20 +11,13 @@ export function buildAppLayoutContext(layout: any) {
 
 export function buildMissionPanelContext(panelPages: any) {
   return {
-    customMissionPanelPages: panelPages.customPages,
-    selectedMissionPanelPageId: panelPages.selectedPageId,
-    setSelectedMissionPanelPageId: panelPages.setSelectedPageId,
+    selectedMissionDisplayTabId: panelPages.selectedDisplayTabId,
+    setSelectedMissionDisplayTabId: panelPages.setSelectedDisplayTabId,
     openedMissionDiffFilePaths: panelPages.openedDiffFilePaths,
     selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
     setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,
     collapsedMissionDiffDirectories: panelPages.collapsedDiffDirectories,
-    setDraggedMissionPanelPageId: panelPages.setDraggedPageId,
     toggleMissionDiffDirectory: panelPages.toggleDiffDirectory,
-    addMissionPanelPage: panelPages.addPage,
-    dropMissionPanelPage: panelPages.dropPage,
-    renameMissionPanelPage: panelPages.renamePage,
-    moveMissionPanelPage: panelPages.movePage,
-    deleteMissionPanelPage: panelPages.deletePage,
     openMissionDiffFile: panelPages.openDiffFile,
     closeMissionDiffFile: panelPages.closeDiffFile,
   };

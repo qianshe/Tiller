@@ -251,13 +251,6 @@ export function SettingsPage({
 
         {activeSection === "panels" ? (
           <SettingsSectionFrame id={panels.id} label={panels.label} desc={panels.desc}>
-            <SettingsRow label={settingsCopy.logbookOpen} desc="mission 进入时即可见工具调用列表">
-              <SettingsSwitch
-                label={settingsCopy.logbookOpen}
-                checked={technicalPanels.logbookDefaultOpen}
-                onCheckedChange={(checked) => updateTechnicalPanelPreference("logbookDefaultOpen", checked)}
-              />
-            </SettingsRow>
             <SettingsRow label={settingsCopy.diffOpen} desc="mission 进入时即可见 patch 列表">
               <SettingsSwitch
                 label={settingsCopy.diffOpen}

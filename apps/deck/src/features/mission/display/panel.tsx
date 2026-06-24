@@ -1,5 +1,5 @@
 import type { FileDiffSummary } from "@tiller/shared";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -7,7 +7,9 @@ import {
   renderDiffPatch,
   renderDiffStats,
 } from "./diff-tree";
+import { GitGraphPanel } from "./git-graph-panel";
 import type { MissionPanelPage } from "./panels";
+import type { GitStatusState, GitGraphState } from "../../../store/slices/projects-slice";
 
 export type RuntimeOverviewItem = {
   id: string;
@@ -44,7 +46,9 @@ type MissionDisplayPanelProps = {
   diffs: FileDiffSummary[];
   noDiffSummary: string;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
-  logbookContent: ReactNode;
+  gitStatus?: GitStatusState;
+  gitGraph?: GitGraphState;
+  onRefreshGitStatus?: () => void;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
@@ -56,6 +60,7 @@ type MissionDisplayPanelProps = {
   onCloseDiffFile: (path: string) => void;
   onCollapse: () => void;
 };
+
 export function MissionDisplayPanel({
   style,
   pages,
@@ -64,17 +69,27 @@ export function MissionDisplayPanel({
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
+  gitStatus,
+  gitGraph,
+  onRefreshGitStatus,
+  onSelectPage,
   onOpenDiffDetail,
   onCloseDiffFile,
   onCollapse,
 }: MissionDisplayPanelProps) {
-  const selectedDisplayFilePath = selectedDiffFilePath ?? openedDiffFilePaths.at(-1) ?? null;
-  const renderSelectedPage = () => {
-    return renderDiffDetailPage({ selectedDiffFilePath: selectedDisplayFilePath, diffs, noDiffSummary });
-  };
-  const selectedDisplayDiff = diffs.find((file) => file.path === selectedDisplayFilePath);
-  const displayFilePath = selectedDisplayDiff ? selectedDisplayFilePath : "未选择文件";
-  const displayTabs = resolveDisplayTabs(diffs, openedDiffFilePaths, selectedDisplayFilePath, selectedPage);
+  // Single-layer tab model: Graph is fixed, diff files are dynamic
+  const isGraphTabSelected = selectedPage.id === "graph";
+  const graphTab = pages.find((p) => p.id === "graph");
+  const displayTabs = resolveDisplayTabs(
+    diffs,
+    openedDiffFilePaths,
+    selectedDiffFilePath,
+    isGraphTabSelected ? null : selectedPage.id,
+  );
+
+  const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
+  const displayFilePath = selectedDisplayDiff ? selectedDiffFilePath : "未选择文件";
+
   return (
     <aside
       className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken shadow-none"
@@ -96,7 +111,24 @@ export function MissionDisplayPanel({
           <Icon name="x" size={11} />
         </button>
       </div>
+      
+      {/* Single-layer tab strip: fixed Graph + dynamic diff tabs */}
       <div className="mission-display-tab-strip flex items-center gap-1 overflow-x-auto border-b border-border-ghost px-1 py-1 [scrollbar-width:none]">
+        {/* Graph tab (fixed) */}
+        <button
+          type="button"
+          className={cn(
+            "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-2xs transition-colors",
+            isGraphTabSelected
+              ? "bg-surface-emphasis text-foreground"
+              : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
+          )}
+          onClick={() => onSelectPage("graph")}
+        >
+          <span className="font-medium">{graphTab?.title ?? "Graph"}</span>
+        </button>
+        
+        {/* Dynamic diff tabs */}
         {displayTabs.map((page) => {
           const selected = page.id === selectedPage.id;
           return (
@@ -133,16 +165,30 @@ export function MissionDisplayPanel({
           );
         })}
       </div>
+      
+      {/* Content area */}
       <section className="mission-panel-content min-h-0 flex-1 overflow-auto p-0">
-        {renderSelectedPage()}
+        {isGraphTabSelected ? (
+          <GitGraphPanel gitGraph={gitGraph} />
+        ) : (
+          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary })
+        )}
       </section>
-      <div className="mission-display-status-bar flex items-center gap-2 border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
-        <Icon name="fileText" size={10} />
-        <span className="min-w-0 flex-1 truncate font-mono tabular">{displayFilePath}</span>
-        {selectedDisplayDiff ? renderDiffStats(selectedDisplayDiff) : null}
-      </div>
+      
+      {/* Status bar - only show when diff tab selected */}
+      {!isGraphTabSelected ? (
+        <div className="mission-display-status-bar flex items-center gap-2 border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
+          <Icon name="fileText" size={10} />
+          <span className="min-w-0 flex-1 truncate font-mono tabular">{displayFilePath}</span>
+          {renderStatusBarInfo(selectedDisplayDiff)}
+        </div>
+      ) : null}
     </aside>
   );
+}
+
+function renderStatusBarInfo(diff: FileDiffSummary | undefined) {
+  return diff ? renderDiffStats(diff) : null;
 }
 
 type DisplayTab = MissionPanelPage & {
@@ -154,7 +200,7 @@ function resolveDisplayTabs(
   diffs: FileDiffSummary[],
   openedDiffFilePaths: string[],
   selectedDiffFilePath: string | null,
-  fallbackPage: MissionPanelPage,
+  selectedTabId: string | null,
 ): DisplayTab[] {
   const selectedPath = selectedDiffFilePath;
   const openPaths = [...openedDiffFilePaths];
@@ -168,7 +214,10 @@ function resolveDisplayTabs(
     return [];
   }
   return openFiles.map((file) => ({
-    id: file.path === selectedPath ? fallbackPage.id : `diff:${file.path}`,
+    id:
+      file.path === selectedPath && selectedTabId
+        ? selectedTabId
+        : `diff:${file.path}`,
     title: file.path.split(/[\\/]/u).at(-1) ?? file.path,
     path: file.path,
     status: file.status,

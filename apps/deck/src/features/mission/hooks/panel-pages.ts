@@ -1,20 +1,12 @@
-import { useEffect, useState } from "react";
-import type { MissionPanelPage } from "../display/panels";
-import {
-  moveMissionPanelPageInList,
-  readMissionPanelPages,
-  reorderMissionPanelPage,
-  writeMissionPanelPages,
-} from "../utils/panel-pages";
+import { useState } from "react";
 
 /**
- * Owns custom mission display pages, selected page, diff focus and tree collapse state.
+ * Owns selected display tab, diff focus and tree collapse state.
+ * Display tab state only handles "what is selected".
+ * Layout control stays in root/controller layer.
  */
 export function usePanelPages() {
-  const [customPages, setCustomPages] = useState<MissionPanelPage[]>(() =>
-    readMissionPanelPages(),
-  );
-  const [selectedPageId, setSelectedPageId] = useState("overview");
+  const [selectedDisplayTabId, setSelectedDisplayTabId] = useState("graph");
   const [openedDiffFilePaths, setOpenedDiffFilePaths] = useState<string[]>([]);
   const [selectedDiffFilePath, setSelectedDiffFilePath] = useState<
     string | null
@@ -22,11 +14,6 @@ export function usePanelPages() {
   const [collapsedDiffDirectories, setCollapsedDiffDirectories] = useState<
     Set<string>
   >(() => new Set());
-  const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
-
-  useEffect(() => {
-    writeMissionPanelPages(customPages);
-  }, [customPages]);
 
   function toggleDiffDirectory(path: string) {
     setCollapsedDiffDirectories((current) => {
@@ -40,50 +27,12 @@ export function usePanelPages() {
     });
   }
 
-  function addPage() {
-    const id = `custom-${Date.now()}`;
-    setCustomPages((current) => [
-      ...current,
-      { id, title: `展示页 ${current.length + 1}` },
-    ]);
-    setSelectedPageId(id);
-  }
-
-  function dropPage(targetPageId: string) {
-    if (!draggedPageId || draggedPageId === targetPageId) {
-      return;
-    }
-    setCustomPages((current) =>
-      reorderMissionPanelPage(current, draggedPageId, targetPageId),
-    );
-    setDraggedPageId(null);
-  }
-
-  function renamePage(pageId: string, title: string) {
-    setCustomPages((current) =>
-      current.map((page) => (page.id === pageId ? { ...page, title } : page)),
-    );
-  }
-
-  function movePage(pageId: string, direction: -1 | 1) {
-    setCustomPages((current) =>
-      moveMissionPanelPageInList(current, pageId, direction),
-    );
-  }
-
-  function deletePage(pageId: string) {
-    setCustomPages((current) => current.filter((page) => page.id !== pageId));
-    if (selectedPageId === pageId) {
-      setSelectedPageId("overview");
-    }
-  }
-
   function openDiffFile(path: string) {
     setOpenedDiffFilePaths((current) =>
       current.includes(path) ? current : [...current, path],
     );
     setSelectedDiffFilePath(path);
-    setSelectedPageId("diff-detail");
+    setSelectedDisplayTabId("diff-detail");
   }
 
   function closeDiffFile(path: string) {
@@ -97,20 +46,13 @@ export function usePanelPages() {
   }
 
   return {
-    customPages,
-    selectedPageId,
-    setSelectedPageId,
+    selectedDisplayTabId,
+    setSelectedDisplayTabId,
     openedDiffFilePaths,
     selectedDiffFilePath,
     setSelectedDiffFilePath,
     collapsedDiffDirectories,
-    setDraggedPageId,
     toggleDiffDirectory,
-    addPage,
-    dropPage,
-    renamePage,
-    movePage,
-    deletePage,
     openDiffFile,
     closeDiffFile,
   };

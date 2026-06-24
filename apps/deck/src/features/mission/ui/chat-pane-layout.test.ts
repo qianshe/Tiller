@@ -45,7 +45,6 @@ const missionRouteSource = readFileSync(
 );
 const inspectorSource = readFileSync(resolve(currentDir, "../inspector/panel.tsx"), "utf8");
 const panelHeaderSource = readFileSync(resolve(currentDir, "../inspector/panel-header.tsx"), "utf8");
-const logbookPanelSource = readFileSync(resolve(currentDir, "../display/logbook-panel.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
   resolve(currentDir, "session-cleanup-confirm-dialog.tsx"),
   "utf8",
@@ -681,11 +680,12 @@ test("mission display keeps v6 diff viewer chrome as the primary display surface
   assert.doesNotMatch(displayPanelSource, /mission-file-row mission-diff-file-summary[^\n]+border-b border-border-ghost/);
   assert.doesNotMatch(diffTreeSource, /mission-diff-patch[^\n]+rounded-b-md border-t border-border-ghost/);
   assert.doesNotMatch(displayPanelSource, /mission-logbook-page/);
-  assert.match(logbookPanelSource, /mission-logbook-layout grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\]/);
-  assert.match(logbookPanelSource, /mission-logbook-scroll min-h-0 overflow-auto/);
+  assert.match(inspectorSource, /刷新 Git/);
+  assert.match(inspectorSource, /查看提交历史/);
 });
 
 test("mission display page navigation is placed above the content", () => {
+  assert.match(displayPanelSource, /mission-display-tab-strip/);
   assert.match(displayPanelSource, /mission-display-tab-strip/);
   assert.match(displayPanelSource, /mission-panel-content min-h-0 flex-1 overflow-auto p-0/);
   assert.doesNotMatch(displayPanelSource, /MissionPanelNav/);
@@ -912,7 +912,6 @@ test("mission worktree locks outer scroll while edge zones handle mobile paging"
   assert.match(shellStylesSource, /overflow-y:\s*auto/);
   assert.doesNotMatch(shellStylesSource, /scrollbar-gutter:\s*stable/);
   assert.match(plainMessagesSource, /data-mission-swipe-lock="true"/);
-  assert.match(logbookPanelSource, /data-mission-swipe-lock="true"/);
   assert.match(diffPanelSource, /data-mission-swipe-lock="true"/);
 });
 
@@ -984,13 +983,10 @@ test("mission inspector diff rows stay compact on mobile", () => {
   assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
 });
 
-test("mission worktree uses default-closed display pane behavior", () => {
-  assert.match(worktreeSource, /const hasSelectedDisplayDiff = activeDiffs\.some/);
-  assert.match(worktreeSource, /file\.path === selectedMissionDiffFilePath/);
-  assert.match(worktreeSource, /\(openedMissionDiffFilePaths \?\? \[\]\)\.includes\(file\.path\)/);
-  assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed \|\| !hasSelectedDisplayDiff/);
+test("mission worktree keeps the display pane independently toggleable", () => {
+  assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed;/);
   assert.match(worktreeSource, /displayCollapsed=\{displayPaneCollapsed\}/);
-  assert.match(worktreeSource, /canToggleDisplay=\{hasSelectedDisplayDiff\}/);
+  assert.match(worktreeSource, /canToggleDisplay=\{canToggleDisplay\}/);
   assert.match(chatPaneComponentSource, /disabled=\{!canToggleDisplay\}/);
   assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);
 });

@@ -953,8 +953,9 @@ function buildPlainConversationItemsFromTimeline(
     }
   }
 
+  const orderedItems = [...items].sort(compareSequencedPlainConversationItems);
   return mergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(items)),
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(orderedItems)),
   );
 }
 

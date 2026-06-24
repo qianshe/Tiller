@@ -11,10 +11,8 @@ export type MissionDiffTreeNode = {
 };
 
 export function resolveMissionPanelIcon(pageId: string) {
-  if (pageId === "overview") return "⌂";
-  if (pageId === "changes") return "◇";
+  if (pageId === "graph") return "◆";
   if (pageId === "diff-detail") return "≋";
-  if (pageId === "logbook") return "▸";
   return "□";
 }
 

@@ -458,7 +458,7 @@ export async function listPromptEnhancerModels(
   return extractModelOptions(data);
 }
 
-function resolveChatCompletionsUrl(baseUrl: string) {
+export function resolveChatCompletionsUrl(baseUrl: string) {
   const normalized = resolveApiBaseUrl(baseUrl);
   return normalized.endsWith("/chat/completions")
     ? normalized

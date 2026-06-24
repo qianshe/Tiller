@@ -50,7 +50,6 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
   withStoredPreferences(
     JSON.stringify({
       technicalPanels: {
-        logbookDefaultOpen: true,
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
         showPermissionWorktree: false,
@@ -62,7 +61,6 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
       const preferences = readDeckPreferences();
 
       assert.deepEqual(preferences.technicalPanels, {
-        logbookDefaultOpen: true,
         diffDefaultOpen: true,
         showSessionRuntimeMeta: false,
         showPermissionWorktree: false,

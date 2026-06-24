@@ -169,6 +169,11 @@ export function useDeckData(missionVisualFixture: any) {
   const worktreeGitByProject = useDeckStore((state) => state.worktreeGitByProject);
   const setWorktreeGitByProject = useDeckStore((state) => state.setWorktreeGitByProject);
 
+  const gitStatusByWorktree = useDeckStore((state) => state.gitStatusByWorktree);
+  const setGitStatusByWorktree = useDeckStore((state) => state.setGitStatusByWorktree);
+  const gitGraphByWorktree = useDeckStore((state) => state.gitGraphByWorktree);
+  const setGitGraphByWorktree = useDeckStore((state) => state.setGitGraphByWorktree);
+
   const daemonProfiles = useDeckStore((state) =>
     selectDaemonProfilesForDeckData(
       state,
@@ -254,6 +259,10 @@ export function useDeckData(missionVisualFixture: any) {
     setDraftChatWindow,
     worktreeGitByProject,
     setWorktreeGitByProject,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     daemonProfiles,
     addDaemonProfile,
     removeDaemonProfileFromStore,

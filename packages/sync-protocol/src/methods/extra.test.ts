@@ -4,6 +4,9 @@ import * as projectListDirectories from "./project/list-directories";
 import * as projectListFiles from "./project/list-files";
 import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
+import * as projectGitStatus from "./project/git-status";
+import * as projectGitCommit from "./project/git-commit";
+import * as projectGitGraph from "./project/git-graph";
 import * as sessionDraft from "./session/draft";
 import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
@@ -63,6 +66,132 @@ test("project/git/create_worktree shares the list_branches result schema", () =>
     worktrees: [],
     message: "no git repo",
   });
+});
+
+test("project/git/status validates params and returns worktree status", () => {
+  assert.equal(projectGitStatus.method, "project/git/status");
+
+  // Params validation
+  assert.deepEqual(
+    projectGitStatus.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
+    { projectId: "p1", cwd: "/repo" },
+  );
+  assert.deepEqual(
+    projectGitStatus.ParamsSchema.parse({ projectId: "p1" }),
+    { projectId: "p1" },
+  );
+
+  // Result validation
+  const result = projectGitStatus.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    clean: false,
+    files: [
+      { path: "file.ts", indexStatus: "M", worktreeStatus: " " },
+      { path: "new.ts", indexStatus: "A", worktreeStatus: " " },
+    ],
+    message: "2 files changed",
+  });
+  assert.equal(result.files.length, 2);
+  assert.equal(result.clean, false);
+});
+
+test("project/git/commit requires non-empty paths and returns commit hash", () => {
+  assert.equal(projectGitCommit.method, "project/git/commit");
+
+  // Params validation
+  assert.deepEqual(
+    projectGitCommit.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      message: "feat: add feature",
+      paths: ["file.ts"],
+    }),
+    {
+      projectId: "p1",
+      cwd: "/repo",
+      message: "feat: add feature",
+      paths: ["file.ts"],
+    },
+  );
+
+  // Empty paths should fail
+  assert.throws(() =>
+    projectGitCommit.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      message: "commit",
+      paths: [],
+    }),
+  );
+
+  // Result validation
+  const result = projectGitCommit.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    commitHash: "abc1234",
+    status: {
+      branch: "main",
+      clean: true,
+      files: [],
+    },
+    message: "Committed 1 file",
+  });
+  assert.equal(result.commitHash, "abc1234");
+  assert.equal(result.status.clean, true);
+});
+
+test("project/git/graph validates params and returns commit graph", () => {
+  assert.equal(projectGitGraph.method, "project/git/graph");
+
+  // Params validation
+  assert.deepEqual(
+    projectGitGraph.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
+    { projectId: "p1", cwd: "/repo" },
+  );
+  assert.deepEqual(
+    projectGitGraph.ParamsSchema.parse({ projectId: "p1" }),
+    { projectId: "p1" },
+  );
+
+  // Result validation with commits and refs
+  const result = projectGitGraph.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    head: "abc1234567890abcdef",
+    commits: [
+      {
+        hash: "abc1234567890abcdef",
+        parents: [],
+        refs: [
+          { name: "HEAD", kind: "detached", isCurrent: true },
+          { name: "main", kind: "branch", isCurrent: true },
+        ],
+        subject: "Initial commit",
+        authorName: "Test User",
+        authoredAt: "2026-01-01T00:00:00+00:00",
+      },
+      {
+        hash: "def4567890abcdef1234",
+        parents: ["abc1234567890abcdef"],
+        refs: [
+          { name: "v1.0.0", kind: "tag", isCurrent: false },
+        ],
+        subject: "Release v1.0.0",
+        authorName: "Release Bot",
+        authoredAt: "2026-02-01T12:00:00+00:00",
+      },
+    ],
+    message: "Fetched 2 commit(s)",
+  });
+  assert.equal(result.head, "abc1234567890abcdef");
+  assert.equal(result.commits.length, 2);
+  assert.equal(result.commits[0]?.refs.length, 2);
+  assert.equal(result.commits[0]?.refs[0]?.kind, "detached");
 });
 
 test("session/draft enforces deck and selected agent scope", () => {

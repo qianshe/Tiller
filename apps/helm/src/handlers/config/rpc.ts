@@ -20,6 +20,9 @@ import {
   listProjects,
   listProjectWorktrees,
   saveProject,
+  getGitStatus,
+  commitGitChanges,
+  getGitGraph,
 } from "./project-rpc";
 
 export async function handleConfigRpcRequest(
@@ -54,6 +57,15 @@ export async function handleConfigRpcRequest(
       return listBranches(params as { projectId: string }, context);
     case "project/git/create_worktree":
       return createBranch(params as { projectId: string; branchName: string }, context);
+    case "project/git/status":
+      return getGitStatus(params as { projectId: string; cwd?: string }, context);
+    case "project/git/commit":
+      return commitGitChanges(
+        params as { projectId: string; cwd: string; message: string; paths: string[] },
+        context,
+      );
+    case "project/git/graph":
+      return getGitGraph(params as { projectId: string; cwd?: string }, context);
     case "agent/list":
       return listAgents(context);
     case "agent/save":

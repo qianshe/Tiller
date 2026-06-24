@@ -42,6 +42,8 @@ export function useMissionSelectionEffects(source: any) {
     pairingState,
     rpcClientRef,
     setWorktreeGitByProject,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
     dispatch,
     selectedAgentId,
     filteredAgents,
@@ -56,6 +58,11 @@ export function useMissionSelectionEffects(source: any) {
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   } = source;
+  const effectiveGitProjectId =
+    activeSession?.projectId ??
+    (activeSession ? resolveSessionProjectId(activeSession, projects) : null) ??
+    selectedProjectId;
+  const effectiveGitCwd = activeSession?.cwd ?? selectedCwd;
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -187,6 +194,50 @@ export function useMissionSelectionEffects(source: any) {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
+
+  useEffect(() => {
+    const client = rpcClientRef.current;
+    if (
+      pairingState !== "paired" ||
+      !client ||
+      client.socket.readyState !== WebSocket.OPEN ||
+      !effectiveGitProjectId ||
+      !effectiveGitCwd
+    ) {
+      return;
+    }
+
+    const currentStatus = gitStatusByWorktree?.[effectiveGitCwd];
+    if (currentStatus) {
+      return;
+    }
+
+    setGitStatusByWorktree?.((current: Record<string, any>) => ({
+      ...current,
+      [effectiveGitCwd]: {
+        projectId: effectiveGitProjectId,
+        cwd: effectiveGitCwd,
+        branch: "",
+        clean: false,
+        files: [],
+        loading: true,
+        message: "正在加载 Git 状态...",
+      },
+    }));
+
+    void dispatch(client, "project/git/status", {
+      projectId: effectiveGitProjectId,
+      cwd: effectiveGitCwd,
+    });
+  }, [
+    dispatch,
+    effectiveGitCwd,
+    effectiveGitProjectId,
+    gitStatusByWorktree,
+    pairingState,
+    setGitStatusByWorktree,
+  ]);
+
   useEffect(() => {
     if (!draftProject || !selectedAgentId) {
       return;

@@ -316,6 +316,57 @@ export function applyInventoryResult(
         setWorktreePickerOpen(false);
       }
       return true;
+    case "project/git/status":
+      if (payload.ok && payload.cwd) {
+        store.setGitStatusByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            branch: payload.branch,
+            clean: payload.clean,
+            files: payload.files,
+            loading: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
+      }
+      return true;
+    case "project/git/graph":
+      if (payload.ok && payload.cwd) {
+        store.setGitGraphByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            head: payload.head,
+            commits: payload.commits,
+            loading: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
+      }
+      return true;
+    case "project/git/commit":
+      if (payload.ok && payload.cwd) {
+        store.setGitStatusByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            branch: payload.status.branch,
+            clean: payload.status.clean,
+            files: payload.status.files,
+            loading: false,
+            committing: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
+      }
+      return true;
     case "agent/list":
       store.applyHelmInventory(sourceHelmKey, { agents: payload.agents });
       if (sourceIsCurrentHelm) {

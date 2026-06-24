@@ -8,8 +8,8 @@ import type {
 import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionDisplayPanel, type RuntimeOverviewItem } from "./panel";
-import { LogbookPanel } from "./logbook-panel";
 import type { MissionPanelPage } from "./panels";
+import type { GitGraphState } from "../../../store/slices/projects-slice";
 
 type MissionDisplaySectionCopy = (typeof UI_COPY)[Locale];
 
@@ -30,16 +30,7 @@ type MissionDisplaySectionProps = {
   diffs: FileDiffSummary[];
   noDiffSummary: string;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
-  activeSession: SessionSummary | null;
-  sessionToolCalls: AgentToolCall[];
-  commandChunks: CommandChunk[];
-  sessionMessages: AgentMessage[];
-  historyState?: ActivityHistoryState;
-  visibleCount: number;
-  visibleLimit: number;
-  copy: MissionDisplaySectionCopy;
-  onShowMore: (sessionId: string, nextVisibleCount: number) => void;
-  onLoadOlder: (sessionId: string) => void;
+  gitGraph?: GitGraphState;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
@@ -53,7 +44,7 @@ type MissionDisplaySectionProps = {
 };
 
 /**
- * Wires the mission display panel with its logbook page content.
+ * Wires the mission display panel.
  */
 export function MissionDisplaySection({
   style,
@@ -67,16 +58,7 @@ export function MissionDisplaySection({
   diffs,
   noDiffSummary,
   onReconnectRuntime,
-  activeSession,
-  sessionToolCalls,
-  commandChunks,
-  sessionMessages,
-  historyState,
-  visibleCount,
-  visibleLimit,
-  copy,
-  onShowMore,
-  onLoadOlder,
+  gitGraph,
   onAddPage,
   onSelectPage,
   onDragStart,
@@ -101,20 +83,7 @@ export function MissionDisplaySection({
       diffs={diffs}
       noDiffSummary={noDiffSummary}
       onReconnectRuntime={onReconnectRuntime}
-      logbookContent={
-        <LogbookPanel
-          activeSession={activeSession}
-          sessionToolCalls={sessionToolCalls}
-          commandChunks={commandChunks}
-          sessionMessages={sessionMessages}
-          historyState={historyState}
-          visibleCount={visibleCount}
-          visibleLimit={visibleLimit}
-          copy={copy}
-          onShowMore={onShowMore}
-          onLoadOlder={onLoadOlder}
-        />
-      }
+      gitGraph={gitGraph}
       onAddPage={onAddPage}
       onSelectPage={onSelectPage}
       onDragStart={onDragStart}

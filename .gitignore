@@ -44,16 +44,8 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 .serena/
-/docs/
-!/docs/
-/docs/*
-!/docs/CORE_PRO_BOUNDARY.md
-!/docs/NPM_RELEASE_AUTOMATION.md
-!/docs/GITHUB_BRANCH_PROTECTION.md
-!/docs/assets/
-!/docs/assets/readme-hero.svg
+docs/
 /apps/helm/docs/
-.worktrees
 .worktrees/
 .ace-tool/
 .sisyphus/

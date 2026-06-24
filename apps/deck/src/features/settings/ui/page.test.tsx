@@ -15,7 +15,6 @@ const promptEnhancerSource = readFileSync(resolve(currentDir, "prompt-enhancer-c
 const sectionsSource = readFileSync(resolve(currentDir, "settings-sections.ts"), "utf8");
 
 const technicalPanels: TechnicalPanelPreferences = {
-  logbookDefaultOpen: false,
   diffDefaultOpen: true,
   showSessionRuntimeMeta: true,
   showPermissionWorktree: true,
@@ -93,7 +92,7 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.doesNotMatch(html, /恢复默认模板/);
 
   assert.match(sectionsSource, /desc: "减少动效偏好"/);
-  assert.match(sectionsSource, /desc: "Logbook \/ Diff \/ 调试"/);
+  assert.match(sectionsSource, /desc: "Git \/ Diff \/ 调试"/);
   assert.match(sectionsSource, /desc: "LLM 接入 · 模型"/);
   assert.match(sectionsSource, /desc: "数据保留策略"/);
   assert.match(sectionsSource, /desc: "版本 · 许可证"/);
