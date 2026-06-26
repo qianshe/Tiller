@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-F59E0B?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@qianshe/tiller"><img alt="npm preview" src="https://img.shields.io/npm/v/%40qianshe%2Ftiller?tag=preview&amp;label=npm%20preview&amp;color=38BDF8&amp;style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@qianshe/tiller"><img alt="npm latest" src="https://img.shields.io/npm/v/%40qianshe%2Ftiller?label=npm&amp;color=38BDF8&amp;style=flat-square" /></a>
   <img alt="Node 22+" src="https://img.shields.io/badge/node-22%2B-0F172A?style=flat-square" />
   <img alt="Platform: Web, Desktop, LAN" src="https://img.shields.io/badge/platform-Web%20%7C%20Desktop%20%7C%20LAN-0F172A?style=flat-square" />
 </p>
@@ -55,10 +55,10 @@ Future managed fleet and team features belong in a separate commercial **Tiller 
 
 ## Install
 
-Tiller is published as an npm preview package.
+Tiller is published on npm.
 
 ```bash
-npm install -g @qianshe/tiller@preview
+npm install -g @qianshe/tiller@latest
 ```
 
 Requirements:
@@ -72,6 +72,18 @@ Check the CLI:
 tiller --version
 tiller --help
 ```
+
+## Run without installing
+
+For a one-off trial or temporary launch, you can run Tiller via `npx`:
+
+```bash
+npx -y @qianshe/tiller@latest start
+```
+
+`npx` is supported because the published package exposes a single `tiller` CLI binary. It is a good fit for quick evaluation, CI smoke runs, or ad-hoc local launches.
+
+For daily use, a global install is still the better default because Tiller is a long-running local runtime with a built-in update flow and persistent data under `~/.config/tiller`.
 
 ## Quick start
 
@@ -206,13 +218,13 @@ pnpm --filter @tiller/helm build
 
 ## Release channel
 
-Current npm channel:
+Current recommended npm channel:
 
 ```bash
-npm install -g @qianshe/tiller@preview
+npm install -g @qianshe/tiller@latest
 ```
 
-`preview` is intended for early testing. Expect breaking changes before a stable `latest` release.
+`latest` is the standard install target for normal use.
 
 ## Updating Tiller
 
@@ -230,7 +242,7 @@ This runs:
 npm install -g @qianshe/tiller@latest
 ```
 
-Preview releases are opt-in only. When a newer preview exists, Tiller may print:
+If you publish preview releases, they remain opt-in only. A preview install would look like:
 
 ```bash
 npm install -g @qianshe/tiller@preview
