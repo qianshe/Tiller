@@ -68,3 +68,23 @@ test("formatInspectorWorktreeSummaryLabel shows selected project and branch", ()
   );
   assert.equal(formatInspectorWorktreeSummaryLabel([], 3, null, null), "3 Worktrees");
 });
+
+test("formatInspectorWorktreeSummaryLabel falls back to the first item when no cwd matches", () => {
+  assert.equal(
+    formatInspectorWorktreeSummaryLabel(
+      [
+        {
+          projectName: "Repo",
+          branchName: "main",
+          cwd: "D:/repo",
+          sessionCount: 1,
+          sessionTitles: [],
+        },
+      ],
+      1,
+      "D:/missing",
+      null,
+    ),
+    "Repo / main",
+  );
+});

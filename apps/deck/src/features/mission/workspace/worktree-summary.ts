@@ -84,5 +84,8 @@ export function formatInspectorWorktreeSummaryLabel(
     : selectedSessionWorktreeItems[0];
 
   const primaryItem = selectedItem ?? selectedSessionWorktreeItems[0];
+  if (!primaryItem) {
+    return `${worktreeCount} Worktrees`;
+  }
   return `${primaryItem.projectName} / ${primaryItem.branchName}`;
 }
