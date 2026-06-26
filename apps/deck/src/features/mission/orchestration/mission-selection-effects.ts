@@ -13,6 +13,8 @@ function normalizeWorktreePath(path: string | undefined) {
   return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
+let previousActiveSessionSyncKey: string | null = null;
+
 export function useMissionSelectionEffects(source: any) {
   const {
     worktreePickerOpen,
@@ -58,11 +60,11 @@ export function useMissionSelectionEffects(source: any) {
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   } = source;
-  const effectiveGitProjectId =
-    activeSession?.projectId ??
-    (activeSession ? resolveSessionProjectId(activeSession, projects) : null) ??
-    selectedProjectId;
-  const effectiveGitCwd = activeSession?.cwd ?? selectedCwd;
+  const activeSessionGitProjectId = activeSession
+    ? resolveSessionProjectId(activeSession, projects)
+    : null;
+  const effectiveGitProjectId = activeSessionGitProjectId ?? selectedProjectId;
+  const effectiveGitCwd = selectedCwd ?? activeSession?.cwd;
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -173,6 +175,17 @@ export function useMissionSelectionEffects(source: any) {
       setSelectedCwd(nextWorktreeId);
     }
   }, [draftProject, filteredWorktrees, selectedCwd]);
+  useEffect(() => {
+    if (!activeSession?.cwd) {
+      return;
+    }
+    const nextSyncKey = `${activeSession.id ?? "unknown"}::${activeSession.cwd}`;
+    if (previousActiveSessionSyncKey === nextSyncKey) {
+      return;
+    }
+    previousActiveSessionSyncKey = nextSyncKey;
+    setSelectedCwd(activeSession.cwd);
+  }, [activeSession?.cwd, activeSession?.id, setSelectedCwd]);
   useEffect(() => {
     if (
       !selectedProjectId ||

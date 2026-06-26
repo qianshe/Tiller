@@ -1,10 +1,4 @@
 import { Icon } from "../../../shared/ui";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../../../shared/ui";
 import { joinClassNames } from "../utils/session-render-state";
 import { normalizeWorktreePath } from "./runtime-display";
 import type { MissionWorktreeSummaryItem } from "./worktree-summary";
@@ -12,6 +6,7 @@ import type { MissionWorktreeSummaryItem } from "./worktree-summary";
 export type MissionWorktreeOption = {
   name?: string | null;
   path: string;
+  branch?: string | null;
 };
 
 export type MissionWorktreeAgentOption = {
@@ -24,80 +19,62 @@ export function MissionWorktreeList({
   worktreeOptions,
   selectedCwd,
   activeSessionCwd,
-  agents,
   onSelectCwd,
-  onSelectDraftAgent,
+  onClose,
 }: {
   selectedSessionWorktreeItems: MissionWorktreeSummaryItem[];
   worktreeOptions: MissionWorktreeOption[];
   selectedCwd?: string | null;
   activeSessionCwd?: string | null;
-  agents: MissionWorktreeAgentOption[];
   onSelectCwd: (cwd: string) => void;
-  onSelectDraftAgent: (agentId: string) => void;
+  onClose?: () => void;
 }) {
   return (
     <div className="mission-worktree-list grid gap-1">
       {selectedSessionWorktreeItems.length ? (
         selectedSessionWorktreeItems.map((item) => (
-          <div
+          <button
             key={normalizeWorktreePath(item.cwd)}
-            className="rounded border border-border-ghost bg-surface px-3 py-2 text-sm"
+            type="button"
+            className="rounded border border-border-ghost bg-surface px-3 py-2 text-left text-sm hover:bg-surface-emphasis/50"
+            onClick={() => {
+              onSelectCwd(item.cwd);
+              onClose?.();
+            }}
           >
             <div className="flex min-w-0 items-center gap-2">
               <Icon name="branch" size={11} className="text-muted-foreground" />
-              <strong className="min-w-0 truncate text-foreground">{item.branchName}</strong>
+              <strong className="min-w-0 truncate text-foreground">{item.projectName}</strong>
             </div>
+            <p className="mt-1 truncate text-xs leading-snug text-muted-foreground">
+              {item.branchName}
+            </p>
             <p className="mt-1 break-all font-mono text-[10px] leading-snug text-muted-foreground">
               {item.cwd}
             </p>
-          </div>
+          </button>
         ))
       ) : worktreeOptions.length ? (
         worktreeOptions.map((worktree) => {
           const selected = normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSessionCwd ?? selectedCwd);
           return (
-            <div
+            <button
               key={worktree.path}
+              type="button"
               className={joinClassNames([
-                "bg-transparent px-3 py-2 text-sm",
+                "w-full bg-transparent px-3 py-2 text-left text-sm",
                 selected ? "bg-surface-emphasis/50" : "hover:bg-surface-emphasis/40",
               ])}
+              onClick={() => {
+                onSelectCwd(worktree.path);
+                onClose?.();
+              }}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <strong className="block truncate text-foreground">{worktree.name ?? worktree.path}</strong>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="rounded border border-border-ghost px-2 py-1 text-xs text-muted-foreground hover:bg-surface-emphasis"
-                    >
-                      连接
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {agents.length ? (
-                      agents.map((agent) => (
-                        <DropdownMenuItem
-                          key={agent.id}
-                          onSelect={() => {
-                            onSelectCwd(worktree.path);
-                            onSelectDraftAgent(agent.id);
-                          }}
-                        >
-                          用 {agent.name ?? agent.id} 连接 ACP
-                        </DropdownMenuItem>
-                      ))
-                    ) : (
-                      <DropdownMenuItem disabled>暂无可用 ACP Agent</DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              <div className="min-w-0">
+                <strong className="block truncate text-foreground">{worktree.name ?? worktree.path}</strong>
               </div>
               <p className="mt-1 break-all text-xs text-muted-foreground">{worktree.path}</p>
-            </div>
+            </button>
           );
         })
       ) : (

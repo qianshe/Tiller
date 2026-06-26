@@ -160,6 +160,41 @@ test("worktree model prefers matching cwd worktree over stale session worktree n
   assert.equal(model.overviewWorktreeName, "codex/acp-session-performance-optimization");
 });
 
+test("worktree model uses the active session project worktrees for inspector scope", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    selectedProjectId: "project-stale",
+    activeSession: {
+      ...baseInput().activeSession,
+      projectId: "project-1",
+      cwd: "D:/repo/.worktrees/test-worktree",
+    },
+    projects: [
+      {
+        id: "project-1",
+        name: "Tiller",
+        helmId: "local",
+        path: "D:/repo",
+        worktrees: [
+          { name: "main", path: "D:/repo" },
+          { name: "test-worktree", path: "D:/repo/.worktrees/test-worktree" },
+        ],
+      },
+      {
+        id: "project-stale",
+        name: "Other",
+        helmId: "local",
+        path: "D:/other",
+        worktrees: [{ name: "other", path: "D:/other/.worktrees/other" }],
+      },
+    ],
+  }));
+
+  assert.deepEqual(
+    model.filteredWorktrees.map((worktree: { name: string }) => worktree.name),
+    ["main", "test-worktree"],
+  );
+});
+
 test("worktree model tolerates missing session-scoped maps", () => {
   assert.doesNotThrow(() =>
     buildMissionWorktreeModel(baseInput({

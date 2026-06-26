@@ -5,17 +5,33 @@ import { buildSelectedSessionWorktreeItems, formatInspectorWorktreeSummaryLabel 
 test("buildSelectedSessionWorktreeItems groups open sessions by cwd", () => {
   const items = buildSelectedSessionWorktreeItems({
     sessions: [
-      { id: "s1", cwd: "D:/repo", worktreeName: "feature/a", projectName: "Repo" },
-      { id: "s2", cwd: "D:/repo", worktreeName: "feature/a", projectName: "Repo" },
-      { id: "s3", cwd: "D:/other", projectName: "Other" },
+      { id: "s1", cwd: "D:/repo", worktreeName: "wt-a", projectName: "Repo" },
+      { id: "s2", cwd: "D:/repo", worktreeName: "wt-a", projectName: "Repo" },
+      { id: "s3", cwd: "D:/other", worktreeName: "wt-b", projectName: "Other" },
     ],
     activeSession: { id: "s1", cwd: "D:/repo" },
     currentGitBranch: "main",
+    branchByCwd: {
+      "d:/repo": "feature/a",
+      "d:/other": "feature/b",
+    },
   });
 
   assert.deepEqual(items, [
-    { branchName: "feature/a", cwd: "D:/repo", sessionCount: 2, sessionTitles: [] },
-    { branchName: "Other", cwd: "D:/other", sessionCount: 1, sessionTitles: [] },
+    {
+      projectName: "Repo",
+      branchName: "feature/a",
+      cwd: "D:/repo",
+      sessionCount: 2,
+      sessionTitles: [],
+    },
+    {
+      projectName: "Other",
+      branchName: "feature/b",
+      cwd: "D:/other",
+      sessionCount: 1,
+      sessionTitles: [],
+    },
   ]);
 });
 
@@ -27,15 +43,28 @@ test("buildSelectedSessionWorktreeItems falls back to active session and branch"
   });
 
   assert.deepEqual(items, [
-    { branchName: "main", cwd: "D:/repo", sessionCount: 1, sessionTitles: [] },
+    {
+      projectName: "Repo",
+      branchName: "main",
+      cwd: "D:/repo",
+      sessionCount: 1,
+      sessionTitles: [],
+    },
   ]);
 });
 
-test("formatInspectorWorktreeSummaryLabel summarizes selected session branches", () => {
-  assert.equal(formatInspectorWorktreeSummaryLabel([
-    { branchName: "a", cwd: "D:/a", sessionCount: 1, sessionTitles: [] },
-    { branchName: "b", cwd: "D:/b", sessionCount: 1, sessionTitles: [] },
-    { branchName: "c", cwd: "D:/c", sessionCount: 1, sessionTitles: [] },
-  ], 5), "a / b +1");
-  assert.equal(formatInspectorWorktreeSummaryLabel([], 3), "3 Worktrees");
+test("formatInspectorWorktreeSummaryLabel shows selected project and branch", () => {
+  assert.equal(
+    formatInspectorWorktreeSummaryLabel(
+      [
+        { projectName: "Tiller", branchName: "test-worktree", cwd: "D:/wt", sessionCount: 1, sessionTitles: [] },
+        { projectName: "Tiller", branchName: "feature/0.1.6", cwd: "D:/repo", sessionCount: 1, sessionTitles: [] },
+      ],
+      2,
+      "D:/repo",
+      "D:/wt",
+    ),
+    "Tiller / feature/0.1.6",
+  );
+  assert.equal(formatInspectorWorktreeSummaryLabel([], 3, null, null), "3 Worktrees");
 });

@@ -33,7 +33,6 @@ import { buildMissionWorktreeModel } from "./model";
 import { useOpenSessionStreams } from "./open-session-streams";
 import { useRuntimeOverviewActions } from "./runtime-overview-actions";
 import {
-  isManagedWorktreeWorktree,
   normalizeWorktreePath,
 } from "./runtime-display";
 import { buildHandoffConversationTranscript } from "../utils/composer-options";
@@ -289,13 +288,14 @@ export function MissionWorktree(props: any) {
     overviewWorktreeName,
     overviewAgentName,
     currentGitBranch,
+    filteredWorktrees,
     projectOverviewItems,
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
   } = buildMissionWorktreeModel(props);
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
-  const activeGitCwd = activeSession?.cwd ?? selectedCwd;
+  const activeGitCwd = selectedCwd ?? activeSession?.cwd;
   const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
   const diffEmptyText = currentGitStatus
     ? copy.noDiffSummary
@@ -430,17 +430,30 @@ export function MissionWorktree(props: any) {
     setMissionInspectorCollapsed((current: boolean) => !current);
   };
   const rawWorktreeOptions = hasWorktreeScope
-    ? draftWorktreeOptions.length
-      ? draftWorktreeOptions
+    ? filteredWorktrees.length
+      ? filteredWorktrees
       : selectedWorktree
         ? [selectedWorktree]
         : []
     : [];
-  const worktreeOptions = rawWorktreeOptions.filter(isManagedWorktreeWorktree);
+  const worktreeOptions = rawWorktreeOptions;
+  const selectedWorktreeSummaryItem = selectedCwd
+    ? worktreeOptions.find(
+        (worktree: any) =>
+          normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
+      )
+    : null;
   const selectedSessionWorktreeItems = buildSelectedSessionWorktreeItems({
-    sessions: openSessions,
+    sessions: [],
     activeSession,
     currentGitBranch,
+    selectedCwd,
+    branchByCwd: Object.fromEntries(
+      Object.entries(gitStatusByWorktree ?? {}).map(([cwd, status]: [string, any]) => [
+        normalizeWorktreePath(cwd),
+        status?.branch ?? undefined,
+      ]),
+    ),
   });
   const activeSessionPlan = activeSession?.id ? sessionPlans?.[activeSession.id] : null;
   const dismissCompletedSessionPlan = (sessionId: string, planKey: string) => {
@@ -481,6 +494,14 @@ export function MissionWorktree(props: any) {
           paths,
         });
         setSelectedCommitDiffPaths(new Set());
+        void dispatch(rpcClientRef.current, "project/git/status", {
+          projectId: activeGitProjectId,
+          cwd: activeGitCwd,
+        });
+        void dispatch(rpcClientRef.current, "project/git/graph", {
+          projectId: activeGitProjectId,
+          cwd: activeGitCwd,
+        });
       } catch (error) {
         console.error("Commit failed:", error);
       }
@@ -494,16 +515,19 @@ export function MissionWorktree(props: any) {
     }
 
     return await generateCommitDescription({
-      selectedPaths: Array.from(selectedCommitDiffPaths),
-      projectName: draftProject?.name,
-      sessionTitle: activeSession?.title,
+      selectedChanges: syncedMissionDiffs
+        .filter((diff) => selectedCommitDiffPaths.has(diff.path))
+        .map((diff) => ({
+          path: diff.path,
+          status: diff.status,
+          patch: diff.patch,
+        })),
       llmConfig: deckPreferences.promptEnhancer.llm,
     });
   }, [
     deckPreferences.promptEnhancer.llm,
     selectedCommitDiffPaths,
-    draftProject?.name,
-    activeSession?.title,
+    syncedMissionDiffs,
   ]);
 
   const handleRefreshGitStatus = useCallback(() => {
@@ -556,27 +580,43 @@ export function MissionWorktree(props: any) {
     }
 
     const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (!currentGraph || currentGraph.commits.length === 0) {
-      void dispatch(rpcClientRef.current, "project/git/graph", {
-        projectId: activeGitProjectId,
-        cwd: activeGitCwd,
-      });
+    if (!currentGraph?.loading) {
+      setGitGraphByWorktree?.((current: Record<string, any>) => ({
+        ...current,
+        [activeGitCwd]: {
+          projectId: activeGitProjectId,
+          cwd: activeGitCwd,
+          head: currentGraph?.head,
+          commits: currentGraph?.commits ?? [],
+          loading: true,
+          message: "正在加载提交历史...",
+        },
+      }));
     }
+    void dispatch(rpcClientRef.current, "project/git/graph", {
+      projectId: activeGitProjectId,
+      cwd: activeGitCwd,
+    });
   }, [activeGitProjectId, activeGitCwd, rpcClientRef, dispatch, gitGraphByWorktree, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
-  const inspectorWorktreeCount = selectedSessionWorktreeItems.length || worktreeOptions.length;
-  const inspectorWorktreeSummaryLabel = formatInspectorWorktreeSummaryLabel(
-    selectedSessionWorktreeItems,
-    worktreeOptions.length,
-  );
+  const inspectorWorktreeCount = worktreeOptions.length || selectedSessionWorktreeItems.length;
+  const inspectorWorktreeSummaryLabel = selectedWorktreeSummaryItem
+    ? `${activeSessionProject?.name ?? draftProject?.name ?? "未命名项目"} / ${gitStatusByWorktree?.[selectedWorktreeSummaryItem.path]?.branch ?? selectedWorktreeSummaryItem.branch ?? selectedWorktreeSummaryItem.name ?? "未检测分支"}`
+    : formatInspectorWorktreeSummaryLabel(
+        selectedSessionWorktreeItems,
+        worktreeOptions.length,
+        selectedCwd,
+        activeSession?.cwd,
+      );
   const renderWorktreeList = () => (
     <MissionWorktreeList
-      selectedSessionWorktreeItems={selectedSessionWorktreeItems}
+      selectedSessionWorktreeItems={[]}
       worktreeOptions={worktreeOptions}
       selectedCwd={selectedCwd}
       activeSessionCwd={activeSession?.cwd}
-      agents={agents}
-      onSelectCwd={setSelectedCwd}
-      onSelectDraftAgent={selectDraftAgent}
+      onSelectCwd={(cwd) => {
+        setSelectedCwd(cwd);
+        setWorktreePickerOpen(false);
+      }}
     />
   );
   const toggleCommitDiffPath = (path: string) => {
@@ -598,6 +638,14 @@ export function MissionWorktree(props: any) {
         }
       });
       return next;
+    });
+  };
+  const toggleSelectAllCommitDiffs = () => {
+    setSelectedCommitDiffPaths((current) => {
+      if (current.size === syncedMissionDiffs.length && syncedMissionDiffs.length > 0) {
+        return new Set();
+      }
+      return new Set(syncedMissionDiffs.map((diff) => diff.path));
     });
   };
   const renderInspectorDiffPanel = () => (
@@ -644,7 +692,11 @@ export function MissionWorktree(props: any) {
     }
 
     const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (currentGraph) {
+    if (
+      currentGraph?.loading ||
+      currentGraph?.lastUpdated ||
+      (currentGraph && currentGraph.commits.length > 0)
+    ) {
       return;
     }
 
@@ -1055,8 +1107,6 @@ export function MissionWorktree(props: any) {
           style={missionInspectorPaneStyle}
           activeSessionPresent={Boolean(activeSession)}
           activeSession={activeSession}
-          dispatch={dispatch}
-          rpcClient={rpcClientRef.current}
           worktreeCount={inspectorWorktreeCount}
           worktreeSummaryLabel={inspectorWorktreeSummaryLabel}
           worktreeList={renderWorktreeList()}
@@ -1065,12 +1115,12 @@ export function MissionWorktree(props: any) {
           selectedDiffPaths={selectedCommitDiffPaths}
           diffPanel={renderInspectorDiffPanel()}
           gitStatus={activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined}
-          deckPreferences={deckPreferences}
           onCommit={handleCommit}
           onGenerateDescription={handleGenerateDescription}
           onOpenGraph={handleOpenGraph}
           onCollapse={onToggleInspector}
           onRefreshGitStatus={handleRefreshGitStatus}
+          onToggleSelectAllDiffs={toggleSelectAllCommitDiffs}
           resizer={null}
         />{" "}
           </ResizablePanel>

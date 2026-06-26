@@ -105,18 +105,26 @@ test("mission selection effects does not auto-select the first project", () => {
 });
 
 test("mission worktree panel only lists project-scoped worktrees", () => {
-  assert.doesNotMatch(worktreeSourceText, /const projectWorktreeOptions = \(worktrees \?\? \[\]\)\.filter/);
+  assert.doesNotMatch(worktreeSourceText, /selectedSessionWorktreeItems\.length \?/);
   assert.match(worktreeSourceText, /const hasWorktreeScope = Boolean\(activeSession \|\| selectedProjectId\)/);
-  assert.match(
-    worktreeSourceText,
-    /const worktreeOptions = rawWorktreeOptions\.filter\(isManagedWorktreeWorktree\)/,
-  );
-  assert.match(viewModelSourceText, /if \(!draftProject\) \{\s*return \[\];\s*\}/);
+  assert.match(worktreeSourceText, /const worktreeOptions = rawWorktreeOptions;/);
+  assert.doesNotMatch(worktreeSourceText, /isManagedWorktreeWorktree/);
+  assert.match(viewModelSourceText, /const worktreeScopeProject = activeSessionProject \?\? draftProject;/);
+  assert.match(viewModelSourceText, /if \(!worktreeScopeProject\) \{\s*return \[\];\s*\}/);
 });
 
 test("mission selection effects can auto-open the preferred running session", () => {
   assert.match(sourceText, /resolveDefaultMissionSessionId/);
   assert.match(sourceText, /setActiveSessionId\(nextActiveSessionId\)/);
+});
+
+test("mission selection effects syncs selected cwd only when the active session changes", () => {
+  assert.match(sourceText, /if \(!activeSession\?\.cwd\) \{/);
+  assert.match(sourceText, /previousActiveSessionSyncKey/);
+  assert.match(sourceText, /const nextSyncKey = `\$\{activeSession\.id \?\? "unknown"\}::\$\{activeSession\.cwd\}`;/);
+  assert.match(sourceText, /if \(previousActiveSessionSyncKey === nextSyncKey\) \{/);
+  assert.match(sourceText, /previousActiveSessionSyncKey = nextSyncKey;/);
+  assert.match(sourceText, /setSelectedCwd\(activeSession\.cwd\)/);
 });
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {

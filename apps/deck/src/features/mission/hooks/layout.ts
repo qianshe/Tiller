@@ -31,7 +31,6 @@ const MISSION_PANE_LIMITS: Record<
   inspector: { min: 0 },
 };
 const MISSION_RESIZER_WIDTH = 4;
-const MISSION_OUTER_GUTTER = 16;
 const MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081;
 const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
 const MISSION_MOBILE_WIDTH = 1081;
@@ -72,7 +71,6 @@ function normalizeMissionPaneWidths(
   const availableWidth = Math.max(
     0,
     viewportWidth -
-      MISSION_OUTER_GUTTER -
       visibleResizerCount * MISSION_RESIZER_WIDTH,
   );
   const totalWidth = next.sidebar + next.chat + next.display + next.inspector;
@@ -198,8 +196,7 @@ function resolveProjectedChatWidth(
       displayCollapsed,
       inspectorCollapsed,
     ) *
-      MISSION_RESIZER_WIDTH +
-    MISSION_OUTER_GUTTER;
+      MISSION_RESIZER_WIDTH;
 
   return viewportWidth - projectedFixedWidth;
 }

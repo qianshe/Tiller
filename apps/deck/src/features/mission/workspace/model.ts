@@ -119,6 +119,20 @@ export function buildMissionWorktreeModel(input: any) {
   const projectFiles = [] as ProjectFileSummary[];
   const overviewProject = activeSessionProject ?? draftProject;
   const overviewProjectName = overviewProject?.name ?? "未选项目";
+  const worktreeScopeProject = activeSessionProject ?? draftProject;
+  const filteredWorktrees =
+    worktreeScopeProject?.worktrees?.length
+      ? worktreeScopeProject.worktrees
+      : (worktrees ?? []).filter(
+          (worktree: any) =>
+            normalizeWorktreePath(worktree.path) === normalizeWorktreePath(worktreeScopeProject?.path) ||
+            Boolean(
+              worktreeScopeProject?.path &&
+                normalizeWorktreePath(worktree.path)?.startsWith(
+                  `${normalizeWorktreePath(worktreeScopeProject.path)}/`,
+                ),
+            ),
+        );
   const overviewWorktree = activeSession
     ? ((worktrees ?? []).find(
         (worktree: any) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(activeSession.cwd),
@@ -169,6 +183,7 @@ export function buildMissionWorktreeModel(input: any) {
     projectFiles,
     overviewProject,
     overviewProjectName,
+    filteredWorktrees,
     overviewWorktreeName,
     overviewAgentName,
     currentGitBranch,

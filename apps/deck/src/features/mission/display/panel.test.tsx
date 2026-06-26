@@ -174,6 +174,42 @@ test("mission display panel keeps the v6 empty diff viewer chrome", () => {
   assert.doesNotMatch(html, /新增展示页/);
 });
 
+test("mission display panel shows graph loading state instead of empty history while loading", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "graph", title: "Graph" }],
+      selectedPage: { id: "graph", title: "Graph" },
+      openedDiffFilePaths: [],
+      overviewItems: [],
+      runtimeOverviewItems: [],
+      selectedDiffFilePath: null,
+      diffs: [],
+      gitGraph: {
+        projectId: "project-1",
+        cwd: "D:/repo",
+        commits: [],
+        loading: true,
+        message: "正在加载提交历史...",
+      },
+      noDiffSummary: "还没有文件变更。",
+      onAddPage: noop,
+      onSelectPage: noop,
+      onDragStart: noop,
+      onDrop: noop,
+      onRenamePage: noop,
+      onMovePage: noop,
+      onDeletePage: noop,
+      onOpenDiffDetail: noop,
+      onCloseDiffFile: noop,
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, /正在加载提交历史/);
+  assert.doesNotMatch(html, /暂无提交记录/);
+});
+
 test("mission display panel hides stale file paths when there are no diffs", () => {
   const html = renderToStaticMarkup(
     createElement(MissionDisplayPanel, {

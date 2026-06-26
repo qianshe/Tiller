@@ -10,6 +10,7 @@ export type MissionWorktreeSummarySession = {
 };
 
 export type MissionWorktreeSummaryItem = {
+  projectName: string;
   branchName: string;
   cwd: string;
   sessionCount: number;
@@ -20,10 +21,14 @@ export function buildSelectedSessionWorktreeItems({
   sessions,
   activeSession,
   currentGitBranch,
+  branchByCwd = {},
+  selectedCwd,
 }: {
   sessions: MissionWorktreeSummarySession[];
   activeSession?: MissionWorktreeSummarySession | null;
   currentGitBranch?: string | null;
+  branchByCwd?: Record<string, string | undefined>;
+  selectedCwd?: string | null;
 }): MissionWorktreeSummaryItem[] {
   const sourceSessions = sessions.length ? sessions : activeSession ? [activeSession] : [];
   const byCwd = new Map<string, MissionWorktreeSummaryItem>();
@@ -33,11 +38,16 @@ export function buildSelectedSessionWorktreeItems({
       continue;
     }
     const cwdKey = normalizeWorktreePath(session.cwd) ?? session.cwd;
-    const activeCwd = activeSession?.cwd ? normalizeWorktreePath(activeSession.cwd) : null;
+    const activeCwd = selectedCwd
+      ? normalizeWorktreePath(selectedCwd)
+      : activeSession?.cwd
+        ? normalizeWorktreePath(activeSession.cwd)
+        : null;
+    const projectName = session.projectName?.trim() || "未命名项目";
     const branchName =
-      session.worktreeName ??
+      branchByCwd?.[cwdKey] ??
       (activeCwd && cwdKey === activeCwd ? currentGitBranch : null) ??
-      session.projectName ??
+      session.worktreeName ??
       "未检测分支";
     const existing = byCwd.get(cwdKey);
     if (existing) {
@@ -45,6 +55,7 @@ export function buildSelectedSessionWorktreeItems({
       continue;
     }
     byCwd.set(cwdKey, {
+      projectName,
       branchName,
       cwd: session.cwd,
       sessionCount: 1,
@@ -58,11 +69,20 @@ export function buildSelectedSessionWorktreeItems({
 export function formatInspectorWorktreeSummaryLabel(
   selectedSessionWorktreeItems: MissionWorktreeSummaryItem[],
   worktreeCount: number,
+  selectedCwd?: string | null,
+  activeSessionCwd?: string | null,
 ): string {
-  return selectedSessionWorktreeItems.length
-    ? `${selectedSessionWorktreeItems
-        .slice(0, 2)
-        .map((item) => item.branchName)
-        .join(" / ")}${selectedSessionWorktreeItems.length > 2 ? ` +${selectedSessionWorktreeItems.length - 2}` : ""}`
-    : `${worktreeCount} Worktrees`;
+  if (!selectedSessionWorktreeItems.length) {
+    return `${worktreeCount} Worktrees`;
+  }
+
+  const targetCwd = normalizeWorktreePath(selectedCwd) ?? normalizeWorktreePath(activeSessionCwd);
+  const selectedItem = targetCwd
+    ? selectedSessionWorktreeItems.find(
+        (item) => normalizeWorktreePath(item.cwd) === targetCwd,
+      )
+    : selectedSessionWorktreeItems[0];
+
+  const primaryItem = selectedItem ?? selectedSessionWorktreeItems[0];
+  return `${primaryItem.projectName} / ${primaryItem.branchName}`;
 }

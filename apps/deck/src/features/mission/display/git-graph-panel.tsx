@@ -43,6 +43,17 @@ export function GitGraphPanel({
   selectedCommitHash,
   onSelectCommit,
 }: GitGraphPanelProps) {
+  if (gitGraph?.loading) {
+    return (
+      <div
+        className="git-graph-panel flex min-h-0 flex-1 flex-col overflow-auto p-4 text-sm text-muted-foreground"
+        style={style}
+      >
+        <div className="empty-state">{gitGraph.message ?? "正在加载提交历史..."}</div>
+      </div>
+    );
+  }
+
   if (!gitGraph || !gitGraph.commits?.length) {
     return (
       <div

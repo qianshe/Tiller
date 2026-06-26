@@ -77,6 +77,14 @@ const draftProject = useMemo(
   () => projects.find((project) => project.id === selectedProjectId) ?? null,
   [projects, selectedProjectId],
 );
+const activeSessionProjectId = activeSession
+  ? resolveSessionProjectId(activeSession, projects)
+  : null;
+const activeSessionProject = activeSessionProjectId
+  ? (projects.find((project) => project.id === activeSessionProjectId) ??
+    null)
+  : null;
+const worktreeScopeProject = activeSessionProject ?? draftProject;
 const configuredHelms = useConfiguredHelms({
   daemonHost,
   daemonPort,
@@ -111,18 +119,18 @@ const missionProjects = useMemo(
   [effectiveMissionHelmId, projects],
 );
 const filteredWorktrees = useMemo(() => {
-  if (!draftProject) {
+  if (!worktreeScopeProject) {
     return [];
   }
-  const projectWorktrees = draftProject.worktrees ?? [];
+  const projectWorktrees = worktreeScopeProject.worktrees ?? [];
   if (projectWorktrees.length) {
     return projectWorktrees;
   }
   return worktrees.filter((worktree) =>
-    normalizeWorktreePath(worktree.path) === normalizeWorktreePath(draftProject.path) ||
-    Boolean(draftProject.path && normalizeWorktreePath(worktree.path)?.startsWith(`${normalizeWorktreePath(draftProject.path)}/`)),
+    normalizeWorktreePath(worktree.path) === normalizeWorktreePath(worktreeScopeProject.path) ||
+    Boolean(worktreeScopeProject.path && normalizeWorktreePath(worktree.path)?.startsWith(`${normalizeWorktreePath(worktreeScopeProject.path)}/`)),
   );
-}, [draftProject, worktrees]);
+}, [worktreeScopeProject, worktrees]);
 const selectedWorktree =
   filteredWorktrees.find(
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
@@ -153,17 +161,10 @@ const sessionCountsByProject = useMemo(
     }, {}),
   [projects, sessions],
 );
-const activeSessionProjectId = activeSession
-  ? resolveSessionProjectId(activeSession, projects)
-  : null;
 const missionSelectedProjectId = resolveMissionSelectedProjectId({
   activeSessionProjectId,
   selectedProjectId,
 });
-const activeSessionProject = activeSessionProjectId
-  ? (projects.find((project) => project.id === activeSessionProjectId) ??
-    null)
-  : null;
 const activeStatus = activeSession
   ? copy.status[statuses[activeSession.id] ?? activeSession.status]
   : copy.status.idle;

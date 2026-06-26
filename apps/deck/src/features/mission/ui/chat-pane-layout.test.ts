@@ -43,6 +43,7 @@ const missionRouteSource = readFileSync(
   resolve(currentDir, "../../../app/routing/mission-route.tsx"),
   "utf8",
 );
+const worktreeListSource = readFileSync(resolve(currentDir, "../workspace/worktree-list.tsx"), "utf8");
 const inspectorSource = readFileSync(resolve(currentDir, "../inspector/panel.tsx"), "utf8");
 const panelHeaderSource = readFileSync(resolve(currentDir, "../inspector/panel-header.tsx"), "utf8");
 const cleanupDialogSource = readFileSync(
@@ -309,7 +310,7 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(worktreeSource, /mission-pane-chat[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(sidebarSource, /mission-pane-sidebar[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
   assert.match(displayPanelSource, /mission-pane-display[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
-  assert.match(inspectorSource, /mission-pane-inspector[^\n]+flex h-full min-h-0 min-w-0 flex-col/);
+  assert.match(inspectorSource, /mission-pane-inspector[^\n]+flex h-full min-h-0 min-w-0 w-full flex-col/);
   assert.match(chatPaneSource, /SessionCard/);
   assert.match(
     chatPaneSource,
@@ -648,6 +649,14 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(shellStylesSource, /\.mission-inspector-diff\s*\{[^}]*scrollbar-width:\s*none;/s);
   assert.match(inspectorSource, /生成描述/);
   assert.match(inspectorSource, /selectedDiffCount/);
+  assert.match(inspectorSource, /取消全选/);
+  assert.match(inspectorSource, /全选/);
+  assert.match(inspectorSource, /absolute bottom-2\.5 right-2\.5/);
+  assert.match(inspectorSource, /mission-worktree-picker relative grid grid-cols-\[minmax\(0,1fr\)_auto_auto\] items-center gap-1/);
+  assert.match(inspectorSource, /min-h-\[96px\]/);
+  assert.match(inspectorSource, /h-7 min-w-\[108px\]/);
+  assert.match(worktreeSource, /const toggleSelectAllCommitDiffs = \(\) =>/);
+  assert.match(worktreeSource, /onToggleSelectAllDiffs=\{toggleSelectAllCommitDiffs\}/);
 });
 
 test("mission tool call rows stay compact", () => {
@@ -684,6 +693,12 @@ test("mission display keeps v6 diff viewer chrome as the primary display surface
   assert.match(inspectorSource, /查看提交历史/);
 });
 
+test("mission graph panel shows a loading state while fetching commits", () => {
+  assert.match(displayPanelSource, /gitGraph=\{gitGraph\}/);
+  assert.match(readFileSync(resolve(currentDir, "../display/git-graph-panel.tsx"), "utf8"), /if \(gitGraph\?\.loading\)/);
+  assert.match(readFileSync(resolve(currentDir, "../display/git-graph-panel.tsx"), "utf8"), /正在加载提交历史/);
+});
+
 test("mission display page navigation is placed above the content", () => {
   assert.match(displayPanelSource, /mission-display-tab-strip/);
   assert.match(displayPanelSource, /mission-display-tab-strip/);
@@ -710,9 +725,34 @@ test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /onClick=\{onCollapse\}/);
   assert.match(inspectorSource, /mission-worktree-picker/);
   assert.match(inspectorSource, /mission-inspector-commit/);
+  assert.match(inspectorSource, /cloneElement/);
+  assert.match(inspectorSource, /useEffect/);
+  assert.match(inspectorSource, /useRef<HTMLDivElement \| null>/);
+  assert.match(inspectorSource, /onClose: \(\) => setPickerOpen\(false\)/);
+  assert.match(inspectorSource, /document\.addEventListener\("pointerdown", handlePointerDown\)/);
+  assert.match(inspectorSource, /!pickerRef\.current\?\.contains\(target\)/);
+  assert.match(inspectorSource, /rows=\{4\}/);
+  assert.match(inspectorSource, /min-h-\[96px\]/);
+  assert.match(inspectorSource, /mission-inspector-commit grid gap-2/);
+  assert.doesNotMatch(inspectorSource, /DropdownMenuItem onSelect=\{onCollapse\}/);
+  assert.doesNotMatch(inspectorSource, /aria-label="调试会话更新"/);
+  assert.match(inspectorSource, /min-w-0 w-full flex-col/);
+  assert.doesNotMatch(inspectorSource, /border-l border-border-ghost/);
   assert.doesNotMatch(inspectorSource, /TabsList/);
   assert.doesNotMatch(inspectorSource, /TabsTrigger/);
   assert.doesNotMatch(inspectorSource, /<MissionPanelHeader/);
+});
+
+test("mission inspector worktree list is driven by the current project worktrees", () => {
+  assert.match(worktreeSource, /selectedSessionWorktreeItems=\{\[\]\}/);
+  assert.match(worktreeSource, /worktreeOptions=\{worktreeOptions\}/);
+  assert.doesNotMatch(worktreeSource, /selectedSessionWorktreeItems=\{selectedSessionWorktreeItems\}/);
+  assert.match(worktreeModelSource, /const worktreeScopeProject = activeSessionProject \?\? draftProject;/);
+  assert.match(worktreeModelSource, /const filteredWorktrees =/);
+  assert.match(worktreeSource, /filteredWorktrees\.length/);
+  assert.doesNotMatch(worktreeSource, /rawWorktreeOptions\.filter\(isManagedWorktreeWorktree\)/);
+  assert.match(worktreeListSource, /onClick=\{\(\) => \{\s*onSelectCwd\(worktree\.path\);\s*onClose\?\.\(\);\s*\}\}/s);
+  assert.doesNotMatch(worktreeListSource, /连接/);
 });
 
 test("mission display panel header uses compact height", () => {
@@ -763,7 +803,6 @@ test("mission responsive collapse keeps chat as the last visible pane", () => {
   assert.match(missionLayoutHookSource, /MISSION_MIN_CHAT_WIDTH = 360/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_SIDEBAR_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081/);
-  assert.match(missionLayoutHookSource, /MISSION_OUTER_GUTTER = 16/);
   assert.match(missionLayoutHookSource, /chat: \{ min: MISSION_MIN_CHAT_WIDTH/);
   assert.match(missionLayoutHookSource, /shouldCollapseInspectorForChat/);
   assert.match(missionLayoutHookSource, /shouldCollapseDisplayForChat/);
@@ -799,6 +838,7 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
   assert.match(missionLayoutHookSource, /window\.innerWidth/);
   assert.match(missionLayoutHookSource, /matchMedia\("\(max-width: 1080px\)"\)/);
   assert.match(missionLayoutHookSource, /Math\.min\(layoutWidth, documentWidth\)/);
+  assert.doesNotMatch(missionLayoutHookSource, /MISSION_OUTER_GUTTER/);
 });
 
 test("mission mobile uses explicit edge paging zones instead of draggable cards", () => {
@@ -989,4 +1029,72 @@ test("mission worktree keeps the display pane independently toggleable", () => {
   assert.match(worktreeSource, /canToggleDisplay=\{canToggleDisplay\}/);
   assert.match(chatPaneComponentSource, /disabled=\{!canToggleDisplay\}/);
   assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);
+});
+
+test("mission inspector git scope follows the explicitly selected worktree", () => {
+  assert.match(
+    worktreeSource,
+    /const activeGitCwd = selectedCwd \?\? activeSession\?\.cwd;/,
+  );
+  assert.match(
+    worktreeSource,
+    /const activeGitProjectId = activeSessionProjectId \?\? selectedProjectId;/,
+  );
+  assert.match(worktreeSource, /const selectedWorktreeSummaryItem = selectedCwd/);
+  assert.match(worktreeSource, /gitStatusByWorktree\?\.\[selectedWorktreeSummaryItem\.path\]\?\.branch/);
+  assert.match(worktreeSource, /selectedWorktreeSummaryItem\.branch/);
+  assert.match(
+    missionSelectionEffectsSource,
+    /const activeSessionGitProjectId = activeSession\s*\?\s*resolveSessionProjectId\(activeSession, projects\)\s*:\s*null;/,
+  );
+  assert.match(
+    missionSelectionEffectsSource,
+    /const effectiveGitProjectId = activeSessionGitProjectId \?\? selectedProjectId;/,
+  );
+  assert.match(
+    missionSelectionEffectsSource,
+    /const effectiveGitCwd = selectedCwd \?\? activeSession\?\.cwd;/,
+  );
+});
+
+test("mission inspector header keeps primary actions visible on one line", () => {
+  assert.match(
+    inspectorSource,
+    /className="wb-pane-head mission-inspector-section-head flex-nowrap/,
+  );
+  assert.match(
+    inspectorSource,
+    /className="wb-pane-head-eyebrow shrink-0 whitespace-nowrap"/,
+  );
+  assert.match(
+    inspectorSource,
+    /className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground"/,
+  );
+  assert.match(
+    inspectorSource,
+    /className="shrink-0 whitespace-nowrap rounded-none bg-transparent px-1\.5 py-0\.5 text-2xs text-muted-foreground/,
+  );
+  assert.match(
+    inspectorSource,
+    /className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/,
+  );
+});
+
+test("mission commit refreshes git status and graph after success", () => {
+  assert.match(worktreeSource, /await dispatch\(rpcClientRef\.current, "project\/git\/commit"/);
+  assert.match(worktreeSource, /setSelectedCommitDiffPaths\(new Set\(\)\);/);
+  assert.match(worktreeSource, /void dispatch\(rpcClientRef\.current, "project\/git\/status"/);
+  assert.match(worktreeSource, /void dispatch\(rpcClientRef\.current, "project\/git\/graph"/);
+});
+
+test("mission graph auto-load does not loop after a completed fetch", () => {
+  assert.match(
+    worktreeSource,
+    /if \(\s*currentGraph\?\.loading \|\|\s*currentGraph\?\.lastUpdated \|\|\s*\(currentGraph && currentGraph\.commits\.length > 0\)\s*\) \{/,
+  );
+});
+
+test("mission inspector avoids an extra right gutter when the viewport shrinks", () => {
+  assert.doesNotMatch(inspectorSource, /border-l border-border-ghost/);
+  assert.match(shellStylesSource, /grid-template-columns:[\s\S]*var\(--mission-inspector-resizer-width, 4px\)[\s\S]*var\(--mission-inspector-width, 280px\);/);
 });

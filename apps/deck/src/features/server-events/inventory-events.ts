@@ -317,15 +317,15 @@ export function applyInventoryResult(
       }
       return true;
     case "project/git/status":
-      if (payload.ok && payload.cwd) {
+      if (payload.cwd) {
         store.setGitStatusByWorktree((current) => ({
           ...current,
           [payload.cwd]: {
             projectId: payload.projectId,
             cwd: payload.cwd,
-            branch: payload.branch,
-            clean: payload.clean,
-            files: payload.files,
+            branch: payload.ok ? payload.branch : (current[payload.cwd]?.branch ?? ""),
+            clean: payload.ok ? payload.clean : (current[payload.cwd]?.clean ?? false),
+            files: payload.ok ? payload.files : (current[payload.cwd]?.files ?? []),
             loading: false,
             lastUpdated: new Date().toISOString(),
             message: payload.message,
@@ -334,14 +334,14 @@ export function applyInventoryResult(
       }
       return true;
     case "project/git/graph":
-      if (payload.ok && payload.cwd) {
+      if (payload.cwd) {
         store.setGitGraphByWorktree((current) => ({
           ...current,
           [payload.cwd]: {
             projectId: payload.projectId,
             cwd: payload.cwd,
-            head: payload.head,
-            commits: payload.commits,
+            head: payload.ok ? payload.head : current[payload.cwd]?.head,
+            commits: payload.ok ? payload.commits : (current[payload.cwd]?.commits ?? []),
             loading: false,
             lastUpdated: new Date().toISOString(),
             message: payload.message,
