@@ -6,42 +6,42 @@ import {
   SMOKE_COMMAND_ARGS,
 } from "./package-smoke.mjs";
 
+function createFakePathApi(separator) {
+  return {
+    resolve: (...segments) => segments.join(separator),
+  };
+}
+
 test("package smoke parses npm pack json output", () => {
   const tarballPath = parseNpmPackTarballPath(
     JSON.stringify([{ filename: "qianshe-tiller-0.1.5.tgz" }]),
     "C:/tmp/tarballs",
+    createFakePathApi("::"),
   );
 
-  assert.equal(
-    tarballPath.replace(/\\/gu, "/"),
-    "C:/tmp/tarballs/qianshe-tiller-0.1.5.tgz",
-  );
+  assert.equal(tarballPath, "C:/tmp/tarballs::qianshe-tiller-0.1.5.tgz");
 });
 
 test("package smoke resolves Windows-installed tiller shim", () => {
   const executable = resolveInstalledTillerExecutable(
     "D:/tmp/tiller-prefix",
     "win32",
-    (candidate) => candidate.endsWith("tiller.cmd"),
+    (candidate) => candidate === "D:/tmp/tiller-prefix::tiller.cmd",
+    createFakePathApi("::"),
   );
 
-  assert.equal(
-    executable.replace(/\\/gu, "/"),
-    "D:/tmp/tiller-prefix/tiller.cmd",
-  );
+  assert.equal(executable, "D:/tmp/tiller-prefix::tiller.cmd");
 });
 
 test("package smoke resolves POSIX-installed tiller binary", () => {
   const executable = resolveInstalledTillerExecutable(
     "/tmp/tiller-prefix",
     "linux",
-    (candidate) => candidate.replace(/\\/gu, "/").endsWith("/bin/tiller"),
+    (candidate) => candidate === "/tmp/tiller-prefix/bin/tiller",
+    createFakePathApi("/"),
   );
 
-  assert.match(
-    executable.replace(/\\/gu, "/"),
-    /\/tmp\/tiller-prefix\/bin\/tiller$/u,
-  );
+  assert.equal(executable, "/tmp/tiller-prefix/bin/tiller");
 });
 
 test("package smoke uses start help as the install verification command", () => {

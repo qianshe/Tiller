@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { posix, resolve, win32 } from "node:path";
 import { tmpdir } from "node:os";
 
 const helmRoot = resolve(import.meta.dirname, "..");
@@ -8,38 +8,48 @@ const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 export const SMOKE_COMMAND_ARGS = ["start", "--help"];
 
-export function parseNpmPackTarballPath(output, packDirectory) {
+export function parseNpmPackTarballPath(
+  output,
+  packDirectory,
+  pathApi = getPathApiForPlatform(process.platform),
+) {
   const parsed = JSON.parse(output);
   const filename = Array.isArray(parsed) ? parsed[0]?.filename : undefined;
   if (typeof filename !== "string" || !filename.trim()) {
     throw new Error("npm pack did not report a tarball filename.");
   }
-  return resolve(packDirectory, filename);
+  return pathApi.resolve(packDirectory, filename);
 }
 
 export function resolveInstalledTillerExecutable(
   prefix,
   platform = process.platform,
   pathExists = existsSync,
+  pathApi = getPathApiForPlatform(platform),
 ) {
+  const resolvePath = (...segments) => pathApi.resolve(...segments);
   const candidates =
     platform === "win32"
       ? [
-          resolve(prefix, "tiller.cmd"),
-          resolve(prefix, "tiller"),
-          resolve(prefix, "node_modules", ".bin", "tiller.cmd"),
-          resolve(prefix, "node_modules", ".bin", "tiller"),
+          resolvePath(prefix, "tiller.cmd"),
+          resolvePath(prefix, "tiller"),
+          resolvePath(prefix, "node_modules", ".bin", "tiller.cmd"),
+          resolvePath(prefix, "node_modules", ".bin", "tiller"),
         ]
       : [
-          resolve(prefix, "bin", "tiller"),
-          resolve(prefix, "tiller"),
-          resolve(prefix, "node_modules", ".bin", "tiller"),
+          resolvePath(prefix, "bin", "tiller"),
+          resolvePath(prefix, "tiller"),
+          resolvePath(prefix, "node_modules", ".bin", "tiller"),
         ];
   const executable = candidates.find((candidate) => pathExists(candidate));
   if (!executable) {
     throw new Error(`Unable to locate installed tiller executable under ${prefix}`);
   }
   return executable;
+}
+
+function getPathApiForPlatform(platform) {
+  return platform === "win32" ? win32 : posix;
 }
 
 export function runPackageSmoke(options = {}) {
