@@ -32,3 +32,32 @@ test("publish manifest wraps Helm as the public npm package", () => {
   assert.equal(typeof publishManifest.dependencies.yaml, "string");
   assert.match(publishManifest.dependencies.yaml, /^\^?\d/);
 });
+
+test("publish manifest strips internal workspace dependencies", () => {
+  const publishManifest = createPublishPackageManifest({
+    version: "0.1.5",
+    dependencies: {
+      yaml: "^2.9.0",
+      "@tiller/persistence": "workspace:*",
+      "@tiller/shared": "workspace:*",
+    },
+  });
+
+  assert.deepEqual(publishManifest.dependencies, {
+    yaml: "^2.9.0",
+  });
+});
+
+test("publish manifest rejects non-internal workspace protocol dependencies", () => {
+  assert.throws(
+    () =>
+      createPublishPackageManifest({
+        version: "0.1.5",
+        dependencies: {
+          yaml: "^2.9.0",
+          leftpad: "workspace:*",
+        },
+      }),
+    /Unsupported publish dependency protocol/u,
+  );
+});

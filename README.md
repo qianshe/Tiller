@@ -242,12 +242,6 @@ This runs:
 npm install -g @qianshe/tiller@latest
 ```
 
-If you publish preview releases, they remain opt-in only. A preview install would look like:
-
-```bash
-npm install -g @qianshe/tiller@preview
-```
-
 Disable startup update checks:
 
 ```bash

@@ -38,5 +38,5 @@ jobs:
       - name: Deck import boundary lint
         run: pnpm --filter @tiller/deck lint
 
-      - name: Package smoke test
+      - name: Package install smoke test
         run: pnpm --filter @tiller/helm pack:npm

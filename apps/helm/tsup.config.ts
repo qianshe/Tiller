@@ -21,10 +21,5 @@ export default defineConfig({
     __TILLER_VERSION__: JSON.stringify(packageJson.version),
   },
   external: ["node:sqlite", "@agentclientprotocol/sdk", "qrcode-terminal", "ws", "yaml"],
-  noExternal: [
-    "@tiller/shared",
-    "@tiller/sync-protocol",
-    "@tiller/agent-registry",
-    "@tiller/acp-runtime",
-  ],
+  noExternal: [/^@tiller\//u],
 });
