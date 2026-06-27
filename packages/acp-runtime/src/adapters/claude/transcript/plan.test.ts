@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
@@ -60,13 +60,20 @@ test("extractClaudePlanFromTranscriptText rebuilds TaskCreate and TaskUpdate sta
 test("readClaudeTranscriptPlanFromDisk resolves the Claude project transcript path", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-claude-transcript-"));
   try {
+    const projectCwd = join(tempDir, "workspace", "project");
     const options = {
       runtimeSessionId: "runtime-1",
-      cwd: "D:/myProject/tools/Tiller",
+      cwd: projectCwd,
       claudeConfigDir: tempDir,
     };
     const transcriptPath = resolveClaudeTranscriptPath(options);
-    assert.match(transcriptPath.replace(/\\/g, "/"), /projects\/D--myProject-tools-Tiller\/runtime-1\.jsonl$/u);
+    const expectedTranscriptPath = join(
+      tempDir,
+      "projects",
+      resolve(projectCwd).replace(/[\\/:]/gu, "-"),
+      "runtime-1.jsonl",
+    );
+    assert.equal(transcriptPath, expectedTranscriptPath);
     mkdirSync(dirname(transcriptPath), { recursive: true });
     writeFileSync(transcriptPath, "", "utf8");
 

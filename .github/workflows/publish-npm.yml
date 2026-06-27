@@ -113,6 +113,9 @@ jobs:
       - name: Package smoke test
         run: pnpm --filter @tiller/helm pack:npm
 
+      - name: Create npm tarball
+        run: pnpm --filter @tiller/helm pack:tarball
+
       - name: Upload dist package
         uses: actions/upload-artifact@v4
         with:

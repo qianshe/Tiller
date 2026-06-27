@@ -18,6 +18,7 @@
     "clean-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-port.ps1",
     "dev": "pnpm run clean-port && node scripts/dev-helm.mjs",
     "pack:npm": "pnpm run build && pnpm run smoke:package",
+    "pack:tarball": "npm pack ./dist-package",
     "publish:npm": "pnpm run build && npm publish ./dist-package --access public",
     "verify:publish-package": "node scripts/verify-publish-package.mjs",
     "smoke:package": "node scripts/package-smoke.mjs",
