@@ -143,3 +143,42 @@ test("markdown code highlighting reuses cached results for identical code", asyn
   assert.equal(first, second);
   assert.equal(getMarkdownHighlightCacheSize(), 1);
 });
+
+test("markdown paragraphs use relaxed line height without extra block margins", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["第一段内容。", "", "第二段内容。"].join("\n")} />,
+  );
+
+  assert.match(
+    html,
+    /<p class="markdown-paragraph[^"]*leading-\[1\.65\][^"]*">第一段内容。<\/p>/,
+  );
+  assert.doesNotMatch(html, /<p class="markdown-paragraph[^"]*my-/);
+});
+
+test("markdown message container owns top-level block spacing", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={["第一段内容。", "", "第二段内容。"].join("\n")} />,
+  );
+
+  assert.match(
+    html,
+    /<div class="markdown-message[^"]*space-y-2[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\][^"]*">/,
+  );
+});
+
+test("markdown lists relax internal spacing without changing outer list margins", () => {
+  const htmlUl = renderToStaticMarkup(
+    <MarkdownMessage text={["- 项目 1", "- 项目 2 with wrapped English text"].join("\n")} />,
+  );
+  const htmlOl = renderToStaticMarkup(
+    <MarkdownMessage text={["1. 项目 1", "2. 项目 2 with wrapped English text"].join("\n")} />,
+  );
+
+  assert.match(htmlUl, /<ul[^>]*class="[^"]*my-1\.5[^"]*space-y-1[^"]*"/);
+  assert.match(htmlOl, /<ol[^>]*class="[^"]*my-1\.5[^"]*space-y-1[^"]*"/);
+  assert.match(htmlUl, /<li[^>]*class="[^"]*leading-\[1\.6\][^"]*"/);
+  assert.match(htmlOl, /<li[^>]*class="[^"]*leading-\[1\.6\][^"]*"/);
+  assert.doesNotMatch(htmlUl, /my-2\.5/);
+  assert.doesNotMatch(htmlOl, /my-2\.5/);
+});

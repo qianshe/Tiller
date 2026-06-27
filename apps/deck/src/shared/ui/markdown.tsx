@@ -142,7 +142,7 @@ const markdownComponents: Components = {
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,
-      "markdown-paragraph leading-[1.5] text-foreground",
+      "markdown-paragraph leading-[1.65] text-foreground",
       isThinkingParagraph(children) ? "markdown-paragraph-thinking italic text-muted-foreground" : null,
     ]
       .filter(Boolean)
@@ -155,21 +155,21 @@ const markdownComponents: Components = {
   },
   ul({ children, node: _node, ...props }) {
     return (
-      <ul {...props} className="my-1.5 list-disc space-y-0.5 pl-4 marker:text-primary">
+      <ul {...props} className="my-1.5 list-disc space-y-1 pl-4 marker:text-primary">
         {children}
       </ul>
     );
   },
   ol({ children, node: _node, ...props }) {
     return (
-      <ol {...props} className="my-1.5 list-decimal space-y-0.5 pl-4 marker:text-primary">
+      <ol {...props} className="my-1.5 list-decimal space-y-1 pl-4 marker:text-primary">
         {children}
       </ol>
     );
   },
   li({ children, node: _node, ...props }) {
     return (
-      <li {...props} className="pl-1 leading-[1.5] text-foreground [&>p]:inline">
+      <li {...props} className="pl-1 leading-[1.6] text-foreground [&>p]:inline">
         {children}
       </li>
     );
@@ -265,7 +265,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
 
   return (
-    <div className="markdown-message space-y-1.5 text-[12.5px] leading-[1.5] text-foreground">
+    <div className="markdown-message space-y-2 text-[12.5px] leading-[1.5] text-foreground">
       <ReactMarkdown
         components={markdownComponents}
         remarkPlugins={markdownRemarkPlugins}
