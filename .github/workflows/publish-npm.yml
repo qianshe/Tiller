@@ -62,6 +62,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      tarball_filename: ${{ steps.tarball.outputs.filename }}
 
     steps:
       - name: Checkout base branch
@@ -114,7 +115,18 @@ jobs:
         run: pnpm --filter @tiller/helm pack:npm
 
       - name: Create npm tarball
-        run: pnpm --filter @tiller/helm pack:tarball
+        id: tarball
+        shell: bash
+        run: |
+          FILENAME="$(pnpm --filter @tiller/helm pack:tarball | tail -n 1 | tr -d '\r')"
+          TAR_PATH="apps/helm/${FILENAME}"
+          if [ ! -f "$TAR_PATH" ]; then
+            echo "Expected tarball not found at $TAR_PATH."
+            ls -la apps/helm
+            exit 1
+          fi
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "path=$TAR_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Upload dist package
         uses: actions/upload-artifact@v4
@@ -127,7 +139,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: npm-tarball-${{ steps.version.outputs.version }}
-          path: apps/helm/qianshe-tiller-${{ steps.version.outputs.version }}.tgz
+          path: ${{ steps.tarball.outputs.path }}
           if-no-files-found: error
 
   publish_npm:
@@ -221,7 +233,7 @@ jobs:
           VERSION="${{ needs.verify_package.outputs.version }}"
           TAG="${{ needs.verify_package.outputs.tag }}"
           DIST_TAG="${{ needs.release_plan.outputs.dist_tag }}"
-          TAR_PATH="release-assets/qianshe-tiller-${VERSION}.tgz"
+          TAR_PATH="release-assets/${{ needs.verify_package.outputs.tarball_filename }}"
           ZIP_PATH="release-assets/qianshe-tiller-${VERSION}.zip"
           NOTES_PATH="release-assets/release-notes-${VERSION}.md"
           mkdir -p release-assets
