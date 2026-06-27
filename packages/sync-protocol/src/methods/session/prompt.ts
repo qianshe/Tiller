@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { AgentPromptContent, SessionQueuedPrompt, SessionSummary } from "@tiller/shared";
+import type { SessionSummary } from "@tiller/domain-contracts";
+import type { AgentPromptContent, SessionQueuedPrompt } from "@tiller/shared";
 import { StopReasonSchema, typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 

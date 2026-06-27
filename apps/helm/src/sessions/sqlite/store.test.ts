@@ -10,7 +10,7 @@ import type {
   FileDiffSummary,
   SessionSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../facade";
+import type { StoredSessionRuntimeDescriptor } from "@tiller/persistence";
 import {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
@@ -18,7 +18,7 @@ import {
   createSqliteSessionStore,
   initializeSqliteSessionStore,
   migrateJsonSessionDataToSqlite,
-} from "./store.js";
+} from "@tiller/persistence/sqlite";
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -319,6 +319,37 @@ test("sqlite artifact store normalizes historical MCP tool calls from persisted 
   }
 });
 
+test("sqlite artifact store normalizes request-shaped MCP input from persisted tool calls", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-request-shaped-mcp-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("call-mcp-request", "2026-04-30T10:00:03.500Z", {
+          kind: "tool",
+          title: "Tool call toolu_01Mcp…",
+          input: JSON.stringify({
+            server_name: "mcp_router",
+            request: { name: "find_symbol" },
+            arguments: { relative_path: "apps/deck/src/features/server-events/session-events.ts" },
+          }),
+          status: "completed",
+        }),
+      );
+
+      const [toolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "mcp");
+      assert.equal(toolCall?.title, "Tool: mcp_router/find_symbol");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store preserves strong tool metadata when sparse updates arrive", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-sparse-tool-update-"));
   try {
@@ -353,6 +384,55 @@ test("sqlite artifact store preserves strong tool metadata when sparse updates a
       assert.equal(toolCall?.output, "ok");
       assert.equal(toolCall?.timestamp, "2026-05-17T10:00:00.000Z");
       assert.equal(toolCall?.updatedAt, "2026-05-17T10:00:01.000Z");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("sqlite artifact store replaces cumulative thinking output instead of appending duplicates", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-output-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s0:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "分析 A",
+          status: "running",
+          updatedAt: "2026-05-23T10:00:01.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s0:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "分析 A\n分析 B",
+          status: "running",
+          updatedAt: "2026-05-23T10:00:02.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s0:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "分析 A",
+          status: "running",
+          updatedAt: "2026-05-23T10:00:03.000Z",
+        }),
+      );
+
+      assert.equal(store.get("session-1").toolCalls[0]?.output, "分析 A\n分析 B");
     } finally {
       store.close();
     }

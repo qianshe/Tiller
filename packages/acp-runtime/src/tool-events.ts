@@ -14,15 +14,16 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
   const toolName = extractToolName(source, update);
-  const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command);
-  const title = resolveToolTitle(rawTitle, toolName, commandId, id);
+  const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
   const output = stringifyToolPayload(source.output ?? source.result ?? source.rawOutput ?? source.raw_output ?? source.content ?? source.text ?? source.state?.output);
   const input = stringifyToolPayload(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command ?? source.rawInput ?? source.raw_input ?? source.state?.input);
+  const kind = inferToolCallKind(type, source);
+  const title = resolveToolTitle(rawTitle, toolName, commandId, id, input, kind);
   const now = timestamp();
 
   return {
     id,
-    kind: inferToolCallKind(type, source),
+    kind,
     title,
     status: inferToolCallStatus(type, source.status ?? source.state ?? update.status ?? update.state),
     ...(commandId ? { commandId } : {}),
@@ -48,15 +49,23 @@ export function mapCommandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
   };
 }
 
-function resolveToolTitle(rawTitle: string | undefined, toolName: string | undefined, commandId: string | undefined, id: string) {
+function resolveToolTitle(rawTitle: string | undefined, toolName: string | undefined, commandId: string | undefined, id: string, input?: string, kind?: AgentToolCall["kind"]) {
   if (isInformativeToolTitle(rawTitle, id)) {
     return rawTitle!;
   }
   if (isInformativeToolTitle(toolName, id)) {
-    return toolName!.includes(":") ? toolName! : `Tool: ${toolName}`;
+    return toolName!.includes("/") ? `Tool: ${toolName}` : toolName!;
   }
   if (isInformativeToolTitle(commandId, id)) {
     return commandId!;
+  }
+  const path = extractPathFromInput(input);
+  if (path) {
+    return path;
+  }
+  const kindTitle = kindAsTitle(kind);
+  if (kindTitle) {
+    return kindTitle;
   }
   return `Tool call ${shortOpaqueToolCallId(id)}`;
 }
@@ -82,7 +91,8 @@ function extractToolName(source: any, update: any) {
         source.arguments?.name ??
         source.args?.name ??
         update.toolName ??
-        update.tool_name,
+        update.tool_name ??
+        update.name,
     )
   );
 }
@@ -111,8 +121,20 @@ function toolNameFromRawInput(rawInput: unknown) {
     return undefined;
   }
   const record = rawInput as Record<string, unknown>;
-  const server = primitiveStringFrom(record.server);
-  const tool = primitiveStringFrom(record.tool ?? record.name ?? record.toolName ?? record.tool_name);
+  const request = record.request && typeof record.request === "object"
+    ? record.request as Record<string, unknown>
+    : undefined;
+  const server = primitiveStringFrom(record.server ?? record.server_name ?? record.serverName);
+  const tool = primitiveStringFrom(
+    record.tool ??
+      record.name ??
+      record.toolName ??
+      record.tool_name ??
+      request?.name ??
+      request?.tool ??
+      request?.toolName ??
+      request?.tool_name,
+  );
   if (server && tool) {
     return `${server}/${tool}`;
   }
@@ -155,7 +177,7 @@ function stringifyToolPayload(value: unknown): string | undefined {
 
 function isInformativeToolTitle(title: string | undefined, id: string) {
   const normalized = title?.trim();
-  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+  return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized) && !/^Tool call\b/u.test(normalized));
 }
 
 function primitiveStringFrom(value: unknown): string | undefined {
@@ -171,25 +193,134 @@ function primitiveStringFrom(value: unknown): string | undefined {
 function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
   const toolInput = parseToolInput(source.rawInput ?? source.raw_input ?? source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input);
   const toolName = toolNameFromRawInput(toolInput);
-  const raw = String(source.kind ?? source.type ?? updateType).toLowerCase();
+  const explicitKind = resolveExplicitToolCallKind(source);
+  const descriptorRaw = [
+    source.name,
+    source.toolName,
+    source.tool_name,
+    source.tool,
+    toolName,
+    updateType,
+  ]
+    .map((value) => primitiveStringFrom(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const raw = [
+    explicitKind,
+    source.title,
+    source.label,
+    source.displayName,
+    source.display_name,
+    source.name,
+    source.toolName,
+    source.tool_name,
+    source.tool,
+    toolName,
+    updateType,
+  ]
+    .map((value) => primitiveStringFrom(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 
+  if (explicitKind === "subagent") return "subagent";
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
-  if (toolName) return "mcp";
-  if (/read/u.test(raw)) return "read";
+  if (toolName?.includes("/")) return "mcp";
+  if (/\b(?:read|view|list|glob)\b/u.test(raw)) return "read";
   if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
-  if (/search/u.test(raw)) return "search";
+  if (/search|grep/u.test(raw)) return "search";
   if (/execute|terminal|command|shell|bash|exec/u.test(raw)) return "shell";
   if (/fetch/u.test(raw)) return "fetch";
   if (/think/u.test(raw)) return "think";
-  if (/subagent|agent/u.test(raw)) return "subagent";
+  if (/\btodo/u.test(raw)) return "todo";
+  const structuredKind = inferKindFromStructuredInput(toolInput);
+  if (structuredKind) return structuredKind;
+  if (looksLikePathTitle(source.title)) return "read";
   if (/tool/u.test(raw)) return "tool";
   return "unknown";
+}
+
+function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undefined {
+  const candidates = [
+    primitiveStringFrom(source.kind),
+    primitiveStringFrom(source.type),
+  ]
+    .map((value) => value?.trim().toLowerCase())
+    .filter((value): value is string => Boolean(value));
+  const explicitKindMap: Record<string, AgentToolCall["kind"]> = {
+    mcp: "mcp",
+    skill: "skill",
+    read: "read",
+    write: "write",
+    search: "search",
+    shell: "shell",
+    terminal: "shell",
+    command: "shell",
+    fetch: "fetch",
+    think: "think",
+    todo: "todo",
+    subagent: "subagent",
+    tool: "tool",
+    unknown: "unknown",
+  };
+  for (const candidate of candidates) {
+    const mapped = explicitKindMap[candidate];
+    if (mapped) {
+      return mapped;
+    }
+  }
+  return undefined;
 }
 
 function isSkillToolInput(rawInput: unknown) {
   if (!rawInput || typeof rawInput !== "object") return false;
   const record = rawInput as Record<string, unknown>;
   return typeof record.skillName === "string" || typeof record.skill === "string";
+}
+
+function inferKindFromStructuredInput(toolInput: unknown): AgentToolCall["kind"] | undefined {
+  if (!toolInput || typeof toolInput !== "object") return undefined;
+  const record = toolInput as Record<string, unknown>;
+  const hasFilePath = typeof record.file_path === "string" || typeof record.relative_path === "string" || typeof record.path === "string" || typeof record.filePath === "string";
+  if (hasFilePath) {
+    if ("old_string" in record || "new_string" in record || "content" in record || "body" in record || "code_edit" in record || "repl" in record || "new_name" in record) {
+      return "write";
+    }
+    return "read";
+  }
+  if (typeof record.notebook_path === "string") return "write";
+  if (typeof record.command === "string") return "shell";
+  if ("substring_pattern" in record || "search_string" in record) return "search";
+  if (typeof record.pattern === "string") return "search";
+  if (typeof record.query === "string") return "search";
+  if (typeof record.url === "string" && typeof record.prompt === "string") return "fetch";
+  if ("todos" in record) return "todo";
+  return undefined;
+}
+
+function looksLikePathTitle(title: unknown): boolean {
+  if (typeof title !== "string") return false;
+  const normalized = title.trim();
+  if (!normalized || /^Tool call\b/u.test(normalized) || /^call_[A-Za-z0-9]+$/u.test(normalized)) return false;
+  return /[\\/]/u.test(normalized) && !/\s/u.test(normalized);
+}
+
+function extractPathFromInput(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  const parsed = parseToolInput(input);
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const record = parsed as Record<string, unknown>;
+  return primitiveStringFrom(record.file_path) ?? primitiveStringFrom(record.relative_path) ?? primitiveStringFrom(record.path) ?? primitiveStringFrom(record.filePath);
+}
+
+const KIND_TITLES: Record<string, string> = {
+  read: "Read", write: "Write", shell: "Shell", search: "Search",
+  fetch: "Fetch", skill: "Skill", think: "Thinking", todo: "Todo",
+};
+
+function kindAsTitle(kind: AgentToolCall["kind"] | undefined): string | undefined {
+  return kind ? KIND_TITLES[kind] : undefined;
 }
 
 function inferToolCallStatus(updateType: string, status: unknown): AgentToolCall["status"] {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapSdkPermissionRequest } from "./sdk-helpers.js";
+import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest } from "./sdk-helpers.js";
 
 test("mapSdkPermissionRequest exposes scoped permission options", () => {
   const mapped = mapSdkPermissionRequest(
@@ -97,4 +97,18 @@ test("mapSdkPermissionRequest deduplicates equivalent global allow options", () 
   assert.equal(mapped.optionIds.allow_always, "allow-global-1");
   assert.equal(mapped.optionIds.allow, "allow-once");
   assert.equal(mapped.optionIds.deny, "deny-once");
+});
+
+test("mapPromptContentToSdkBlocks rejects reference-only images before provider send", () => {
+  assert.throws(
+    () => mapPromptContentToSdkBlocks([
+      {
+        type: "image",
+        mimeType: "image/png",
+        uri: "/api/sessions/session-1/attachments/attachment-1",
+        attachmentId: "attachment-1",
+      },
+    ]),
+    /Cannot send reference-only image content to ACP provider/u,
+  );
 });

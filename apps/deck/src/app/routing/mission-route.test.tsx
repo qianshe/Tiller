@@ -19,11 +19,25 @@ test("renderMissionRoute forwards diff directory collapse state to the mission w
   );
 });
 
+test("renderMissionRoute forwards close diff file action", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /closeMissionDiffFile,/);
+  assert.match(source, /closeMissionDiffFile=\{closeMissionDiffFile\}/);
+});
+
 test("renderMissionRoute forwards all worktrees for scanned worktrees", () => {
   const source = readFileSync(routePath, "utf8");
 
   assert.match(source, /worktrees,/);
   assert.match(source, /worktrees=\{worktrees\}/);
+});
+
+test("renderMissionRoute forwards session plans to the mission worktree", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /sessionPlans,/);
+  assert.match(source, /sessionPlans=\{sessionPlans\}/);
 });
 
 test("renderMissionRoute forwards mobile pane state", () => {

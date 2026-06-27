@@ -16,12 +16,14 @@ export {
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
 export type DeckTheme = "system" | "light" | "dark" | "tiller";
+export type DeckDensity = "compact" | "default" | "cozy";
+export type DeckTimeFormat = "relative" | "absolute";
 
 export type TechnicalPanelPreferences = {
-  logbookDefaultOpen: boolean;
   diffDefaultOpen: boolean;
   showSessionRuntimeMeta: boolean;
   showPermissionWorktree: boolean;
+  showMissionThinking: boolean;
   showConnectionDebug: boolean;
 };
 
@@ -29,6 +31,8 @@ export type DeckPreferences = {
   language: DeckLanguage;
   theme: DeckTheme;
   reduceMotion: boolean;
+  density: DeckDensity;
+  timeFormat: DeckTimeFormat;
   technicalPanels: TechnicalPanelPreferences;
   promptEnhancer: PromptEnhancerPreferences;
 };
@@ -41,13 +45,15 @@ export const DEFAULT_PROMPT_RESPONSE_CONTRACT =
   "输出契约：先给结论，再给步骤；涉及代码改动时包含验证方式、影响面与风险；需要用户决策时给 2-3 个选项。";
 export const DEFAULT_DECK_PREFERENCES: DeckPreferences = {
   language: "zh-CN",
-  theme: "system",
+  theme: "dark",
   reduceMotion: false,
+  density: "default",
+  timeFormat: "relative",
   technicalPanels: {
-    logbookDefaultOpen: false,
     diffDefaultOpen: false,
     showSessionRuntimeMeta: true,
     showPermissionWorktree: true,
+    showMissionThinking: true,
     showConnectionDebug: false,
   },
   promptEnhancer: {
@@ -87,11 +93,13 @@ export function readDeckPreferences(): DeckPreferences {
         ? parsed.theme
         : DEFAULT_DECK_PREFERENCES.theme,
       reduceMotion: parsed.reduceMotion === true,
+      density: isDeckDensity(parsed.density)
+        ? parsed.density
+        : DEFAULT_DECK_PREFERENCES.density,
+      timeFormat: isDeckTimeFormat(parsed.timeFormat)
+        ? parsed.timeFormat
+        : DEFAULT_DECK_PREFERENCES.timeFormat,
       technicalPanels: {
-        logbookDefaultOpen:
-          typeof technicalPanels.logbookDefaultOpen === "boolean"
-            ? technicalPanels.logbookDefaultOpen
-            : legacyTechnicalPanelsOpen,
         diffDefaultOpen:
           typeof technicalPanels.diffDefaultOpen === "boolean"
             ? technicalPanels.diffDefaultOpen
@@ -104,6 +112,10 @@ export function readDeckPreferences(): DeckPreferences {
           typeof technicalPanels.showPermissionWorktree === "boolean"
             ? technicalPanels.showPermissionWorktree
             : DEFAULT_DECK_PREFERENCES.technicalPanels.showPermissionWorktree,
+        showMissionThinking:
+          typeof technicalPanels.showMissionThinking === "boolean"
+            ? technicalPanels.showMissionThinking
+            : DEFAULT_DECK_PREFERENCES.technicalPanels.showMissionThinking,
         showConnectionDebug:
           typeof technicalPanels.showConnectionDebug === "boolean"
             ? technicalPanels.showConnectionDebug
@@ -166,6 +178,14 @@ export function isDeckTheme(value: unknown): value is DeckTheme {
   return (
     value === "system" || value === "light" || value === "dark" || value === "tiller"
   );
+}
+
+export function isDeckDensity(value: unknown): value is DeckDensity {
+  return value === "compact" || value === "default" || value === "cozy";
+}
+
+export function isDeckTimeFormat(value: unknown): value is DeckTimeFormat {
+  return value === "relative" || value === "absolute";
 }
 
 export function readPreferenceText(value: unknown, fallback: string) {

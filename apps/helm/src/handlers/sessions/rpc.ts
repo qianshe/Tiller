@@ -1,14 +1,9 @@
-import { basename } from "node:path";
-import { mapSessionUpdateNotification, normalizeProviderCleanupResult } from "@tiller/acp-runtime";
+import { normalizeProviderCleanupResult } from "@tiller/acp-runtime";
 import {
   type AgentPromptContent,
-  type AgentToolCall,
   type PermissionDecision,
-  type ProjectSummary,
   type SessionConfigOptionValue,
   type SessionReasoningEffort,
-  type SessionSummary,
-  type WorktreeSummary,
 } from "@tiller/shared";
 import {
   isProjectRootBranchWorktree,
@@ -18,37 +13,25 @@ import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifica
 import {
   cancelSessionRuntime,
   configureSessionRuntime,
-  sendPromptToSession,
-} from "../../runtime/session-runtime-router";
-import {
-  resolveConfigOptionsForSelection,
-  resolveConfigReasoningEffortForOptions,
-} from "../../runtime/session-config-options";
+} from "../../runtime/session/router";
 import type { HelmHandlerContext } from "../context";
+import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
+import { createSession } from "./session-create-rpc";
+import { promptSession } from "./prompt-rpc";
+import {
+  checkResume,
+  getArtifacts,
+  listMessages,
+  listSessions,
+  reimportHistory,
+  resumeSession,
+  subscribeSession,
+  unsubscribeSession,
+} from "./session-query-rpc";
+import { listSessionUpdates } from "./session-updates-rpc";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
-import { pageSessionSummaries } from "./session-list-page";
 
-export function resolveProjectSessionWorktree(
-  project: ProjectSummary,
-  worktrees: WorktreeSummary[],
-  params: { cwd: string },
-) {
-  const requestedCwd = params.cwd.trim();
-  const normalizedCwd = normalizeWorktreePath(requestedCwd);
-  const worktree = worktrees.find(
-    (item) => normalizeWorktreePath(item.path) === normalizedCwd,
-  );
-  return {
-    name: worktree?.name ?? basename(normalizedCwd) ?? project.name,
-    path: requestedCwd,
-    summary: worktree?.summary,
-  } satisfies WorktreeSummary;
-}
-
-function normalizeWorktreePath(path: string) {
-  return path.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
-}
-
+export { resolveProjectSessionWorktree } from "./session-worktree";
 
 export async function handleSessionRpcRequest(
   method: string,
@@ -64,12 +47,26 @@ export async function handleSessionRpcRequest(
       return unsubscribeSession(params as { sessionId: string }, context);
     case "session/list_messages":
       return listMessages(
+        params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
+        context,
+      );
+    case "session/list_updates":
+      return listSessionUpdates(
         params as { sessionId: string; limit?: number; before?: string },
         context,
       );
     case "session/get_artifacts":
       return getArtifacts(
         params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
+    case "session/reimport_history":
+      throw new Error(
+        "session/reimport_history 已从公开会话 RPC 移除；仅保留 debug/reimport_history 供内部维护使用。",
+      );
+    case "debug/reimport_history":
+      return reimportHistory(
+        params as { sessionId: string; limit?: number },
         context,
       );
     case "session/check_resume":
@@ -189,516 +186,6 @@ export async function handleSessionRpcNotification(
   }
   const { sessionId } = params as { sessionId: string };
   return cancelSessionRuntime(sessionId, context);
-}
-
-function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
-  const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
-  const page = pageSessionSummaries(normalizedSessions, {
-    limit: params.limit,
-    before: params.before,
-  });
-  context.logInfo(
-    `[tiller] session.list count=${normalizedSessions.length} page=${page.sessions.length} hasMore=${page.hasMore}`,
-  );
-  return {
-    sessions: page.sessions,
-    nextCursor: page.nextCursor,
-    hasMore: page.hasMore,
-    before: params.before,
-  };
-}
-
-function subscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  if (!context.socketId) {
-    throw new Error("Session topic subscription requires an authenticated socket");
-  }
-  context.subscribeSessionTopic(context.socketId, params.sessionId);
-  return {
-    ok: true,
-    message: `Subscribed to session ${params.sessionId}.`,
-  };
-}
-
-function unsubscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  if (!context.socketId) {
-    throw new Error("Session topic unsubscription requires an authenticated socket");
-  }
-  context.unsubscribeSessionTopic(context.socketId, params.sessionId);
-  return {
-    ok: true,
-    message: `Unsubscribed from session ${params.sessionId}.`,
-  };
-}
-
-// Deck consumes old session history through paged windows only. ACP restore replay may
-// repair Helm's local cache, but it must not push a full historical transcript to Deck.
-async function listMessages(
-  params: { sessionId: string; limit?: number; before?: string },
-  context: HelmHandlerContext,
-) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
-  const page = context.sessionMessageStore.listPage(params.sessionId, {
-    limit: params.limit,
-    before: params.before,
-  });
-  return {
-    sessionId: params.sessionId,
-    messages: page.messages,
-    nextCursor: page.nextCursor,
-    hasMore: page.hasMore,
-    before: params.before,
-  };
-}
-
-async function getArtifacts(
-  params: { sessionId: string; limit?: number; before?: string },
-  context: HelmHandlerContext,
-) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
-  repairProviderToolCalls(params.sessionId, context);
-  const artifacts = context.sessionArtifactStore.getPage(params.sessionId, {
-    limit: params.limit,
-    before: params.before,
-  });
-  const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
-  return {
-    sessionId: params.sessionId,
-    outputs: artifacts.outputs,
-    diffs,
-    toolCalls: artifacts.toolCalls,
-    nextCursor: artifacts.nextCursor,
-    hasMore: artifacts.hasMore,
-  };
-}
-
-function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
-  const summary = resolveSessionSummary(sessionId, context);
-  const providerId = summary?.agentId;
-  if (!providerId) {
-    return;
-  }
-
-  const artifacts = context.sessionArtifactStore.get(sessionId);
-  const repairedToolCalls = artifacts.toolCalls.map((toolCall: AgentToolCall) =>
-    repairProviderToolCall(sessionId, providerId, toolCall),
-  );
-  if (!hasToolCallChanges(artifacts.toolCalls, repairedToolCalls)) {
-    return;
-  }
-
-  context.sessionArtifactStore.replaceToolCalls(sessionId, repairedToolCalls);
-}
-
-function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {
-  return (
-    context.sessions.get(sessionId)?.summary ??
-    context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId)
-  );
-}
-
-function repairProviderToolCall(
-  sessionId: string,
-  providerId: string,
-  toolCall: AgentToolCall,
-) {
-  const mapped = mapSessionUpdateNotification(
-    {
-      method: "session/update",
-      params: {
-        sessionId,
-        update: {
-          type: "tool_call_update",
-          toolCall,
-        },
-      },
-    },
-    { providerId },
-  );
-  return mapped?.event.type === "tool-call" ? mapped.event.toolCall : toolCall;
-}
-
-function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
-  if (left.length !== right.length) {
-    return true;
-  }
-  return left.some((item, index) => {
-    const next = right[index];
-    return !next || item.kind !== next.kind || item.title !== next.title || item.input !== next.input;
-  });
-}
-
-function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] 阶段=恢复检查 session=${params.sessionId}`);
-  const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
-  if (!summary) {
-    throw new Error("Session not found");
-  }
-  const hydrated = context.hydrateSessionSummary(summary);
-  return {
-    sessionId: params.sessionId,
-    resume:
-      hydrated.resume ??
-      context.buildResumeInfo(
-        hydrated,
-        context.resolveProviderById(hydrated.agentId, context.getAgents()),
-      ),
-  };
-}
-
-async function resumeSession(params: { sessionId: string }, context: HelmHandlerContext) {
-  context.logInfo(`[tiller] 阶段=恢复请求开始 session=${params.sessionId}`);
-  const result = await context.startSessionResume(params.sessionId);
-  context.logInfo(
-    `[tiller] 阶段=恢复请求完成 session=${params.sessionId} ok=${result.ok} method=${result.resume.restoreMethod ?? "none"} message=${result.message}`,
-  );
-  return {
-    sessionId: params.sessionId,
-    ok: result.ok,
-    resume: result.resume,
-    message: result.message,
-  };
-}
-
-async function createSessionDraft(
-  params: {
-    deckClientId: string;
-    projectId: string;
-    cwd: string;
-    agentId: string;
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  },
-  context: HelmHandlerContext,
-) {
-  const helms = context.loadAvailableHelms();
-  const worktrees = context.loadAvailableWorktrees();
-  const agents = context.loadAvailableAgents();
-  context.setHelms(helms);
-  context.setWorktrees(worktrees);
-  context.setAgents(agents);
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  context.setProjects(projects);
-
-  const project = context.resolveProjectById(params.projectId, projects);
-  const worktree = project
-    ? resolveProjectSessionWorktree(project, worktrees, params)
-    : undefined;
-  const agent = context.resolveProviderById(params.agentId, agents);
-  const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
-
-  if (!project || !worktree || !agent || !helm) {
-    throw new Error("Project, helm, worktree, or agent not found");
-  }
-
-  return context.createRuntimeDraft({
-    deckClientId: params.deckClientId,
-    project,
-    helm,
-    worktree,
-    agent,
-    sessionConfig: {
-      agentMode: params.agentMode,
-      model: params.model,
-      reasoningEffort: params.reasoningEffort,
-    },
-  });
-}
-
-async function discardSessionDraft(
-  params: {
-    deckClientId: string;
-    draftId?: string;
-    scopeKey?: string;
-    reason: "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user";
-  },
-  context: HelmHandlerContext,
-) {
-  return context.discardRuntimeDraft(params);
-}
-
-async function createSession(
-  params: {
-    projectId: string;
-    cwd: string;
-    agentId: string;
-    agentMode?: string;
-    model?: string;
-    reasoningEffort?: SessionReasoningEffort;
-  },
-  context: HelmHandlerContext,
-) {
-  const helms = context.loadAvailableHelms();
-  const worktrees = context.loadAvailableWorktrees();
-  const agents = context.loadAvailableAgents();
-  context.setHelms(helms);
-  context.setWorktrees(worktrees);
-  context.setAgents(agents);
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  context.setProjects(projects);
-
-  const project = context.resolveProjectById(params.projectId, projects);
-  const worktree = project
-    ? resolveProjectSessionWorktree(project, worktrees, params)
-    : undefined;
-  const agent = context.resolveProviderById(params.agentId, agents);
-  const helm = project ? context.resolveHelmById(project.helmId, helms) : undefined;
-
-  if (!project || !worktree || !agent || !helm) {
-    throw new Error("Project, helm, worktree, or agent not found");
-  }
-
-  const sessionId = `session-${Date.now()}`;
-  const createdAt = new Date().toISOString();
-  const initialReasoningEffort = params.reasoningEffort;
-  context.logInfo(
-    `[tiller] 阶段=新建会话请求 session=${sessionId} project=${project.id} helm=${helm.id} cwd=${worktree.path} agent=${agent.id}`,
-  );
-  const summaryBase: SessionSummary = {
-    id: sessionId,
-    projectId: project.id,
-    projectName: project.name,
-    helmId: helm.id,
-    cwd: worktree.path,
-    worktreeName: worktree.name,
-    agentId: agent.id,
-    agentName: agent.name,
-    agentMode: params.agentMode,
-    model: params.model,
-    reasoningEffort: initialReasoningEffort,
-    status: "starting",
-    createdAt,
-    updatedAt: createdAt,
-    messageCount: 0,
-  };
-  const summary = { ...summaryBase, resume: context.buildResumeInfo(summaryBase, agent) };
-  context.sessionStore.upsert(summary);
-  context.persistRuntimeDescriptor(summary, agent);
-  broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
-
-  try {
-    const sessionConfig = {
-      agentMode: summary.agentMode,
-      model: summary.model,
-      reasoningEffort: summary.reasoningEffort,
-    };
-    const runtime = await context.createRuntime({
-      sessionId,
-      worktree,
-      agent,
-      sessionConfig,
-      onEvent: (event) => context.handleRuntimeEvent(sessionId, event),
-      onConnectionLifecycleEvent: (event) => {
-        const phaseMap = {
-          "connection-open": "ACP连接新建",
-          "connection-reuse": "ACP连接复用",
-          "connection-pending": "ACP连接等待",
-          "connection-replace": "ACP连接替换",
-          "connection-reconnect": "ACP连接重连",
-        } as const;
-        context.logInfo(
-          `[tiller] 阶段=${phaseMap[event.type]} provider=${event.providerId} key=${event.key} session=${event.sessionId ?? "<none>"} cwd=${event.cwd}`,
-        );
-      },
-    });
-    const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
-    const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
-      incomingOptions: runtime.sessionConfigOptions,
-      previousOptions: summary.configOptions,
-      selectedModel: summaryRuntimeModel,
-    });
-    const summaryWithRuntimeBase = {
-      ...summary,
-      status: "idle" as const,
-      updatedAt: new Date().toISOString(),
-      agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
-      model: summaryRuntimeModel,
-      modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
-      configOptions: resolvedRuntimeConfigOptions.options,
-      reasoningEffort: resolveConfigReasoningEffortForOptions(
-        summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
-        resolvedRuntimeConfigOptions,
-      ),
-      runtimeSessionId: runtime.runtimeSessionId,
-    };
-    context.sessions.set(sessionId, { summary: summaryWithRuntimeBase, agent, worktree, runtime });
-    const summaryWithRuntime = context.hydrateSessionSummary(summaryWithRuntimeBase);
-    context.logInfo(
-      `[tiller] 阶段=新建会话ACP就绪 session=${sessionId} runtime=${runtime.runtimeSessionId} capabilities=${JSON.stringify(runtime.sessionCapabilities ?? {})}`,
-    );
-    context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
-    context.sessionStore.upsert(summaryWithRuntime);
-    context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
-    broadcastSessionUpdate(context, sessionId, {
-      kind: "session_updated",
-      session: summaryWithRuntime,
-    });
-    return { session: summaryWithRuntime };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create session runtime";
-    broadcastErrorRaised(context, { sessionId, message });
-    context.logError(
-      `[tiller] 阶段=新建会话失败 project=${project.id} agent=${agent.id} cwd=${worktree.path} message=${message}`,
-    );
-    context.updateSessionSummary(sessionId, (current) => ({
-      ...current,
-      status: "error",
-      updatedAt: new Date().toISOString(),
-      lastMessagePreview: "Session startup failed",
-    }));
-    broadcastSessionUpdate(context, sessionId, {
-      kind: "status_change",
-      status: "error",
-      message: "Session startup failed",
-    });
-    throw error;
-  }
-}
-
-async function promptSession(
-  params: {
-    sessionId?: string;
-    draftId?: string;
-    text: string;
-    content?: AgentPromptContent[];
-    clientMessageId?: string;
-  },
-  context: HelmHandlerContext,
-) {
-  if (params.sessionId) {
-    return sendPromptToSession(
-      {
-        sessionId: params.sessionId,
-        text: params.text,
-        content: params.content,
-        clientMessageId: params.clientMessageId,
-      },
-      context,
-    );
-  }
-  if (!params.draftId) {
-    throw new Error("sessionId or draftId is required");
-  }
-  return promptRuntimeDraft(params as { draftId: string; text: string; content?: AgentPromptContent[]; clientMessageId?: string }, context);
-}
-
-async function promptRuntimeDraft(
-  params: { draftId: string; text: string; content?: AgentPromptContent[]; clientMessageId?: string },
-  context: HelmHandlerContext,
-) {
-  const draft = context.takeRuntimeDraft(params.draftId);
-  if (!draft) {
-    throw new Error("Runtime draft is not available. Create a new session and retry.");
-  }
-
-  const sessionId = `session-${Date.now()}`;
-  draft.attach(sessionId);
-  const createdAt = new Date().toISOString();
-  const summaryConfigModel = draft.configState.model ?? draft.runtime.sessionConfigState?.model;
-  const resolvedSummaryConfigOptions = resolveConfigOptionsForSelection({
-    incomingOptions: draft.runtime.sessionConfigOptions,
-    previousOptions: draft.configOptions,
-    selectedModel: summaryConfigModel,
-  });
-  const summaryConfigOptions = resolvedSummaryConfigOptions.options ?? [];
-  const summaryReasoningEffort = resolveConfigReasoningEffortForOptions(
-    draft.configState.reasoningEffort ?? draft.runtime.sessionConfigState?.reasoningEffort,
-    resolvedSummaryConfigOptions,
-  );
-  const summaryBase: SessionSummary = {
-    id: sessionId,
-    projectId: draft.project.id,
-    projectName: draft.project.name,
-    helmId: draft.helm.id,
-    cwd: draft.worktree.path,
-    worktreeName: draft.worktree.name,
-    agentId: draft.agent.id,
-    agentName: draft.agent.name,
-    agentMode: draft.configState.agentMode ?? draft.runtime.sessionConfigState?.agentMode,
-    model: draft.configState.model ?? draft.runtime.sessionConfigState?.model,
-    modelOptions: draft.runtime.sessionModelState?.options ?? draft.modelState?.options,
-    configOptions: summaryConfigOptions,
-    availableCommands: draft.availableCommands,
-    reasoningEffort: summaryReasoningEffort,
-    runtimeSessionId: draft.runtime.runtimeSessionId,
-    status: "idle",
-    createdAt,
-    updatedAt: createdAt,
-    messageCount: 0,
-  };
-  context.sessions.set(sessionId, {
-    summary: summaryBase,
-    agent: draft.agent,
-    worktree: draft.worktree,
-    runtime: draft.runtime,
-  });
-  const summary = context.hydrateSessionSummary({
-    ...summaryBase,
-    resume: context.buildResumeInfo(summaryBase, draft.agent),
-  });
-  context.sessions.set(sessionId, {
-    summary,
-    agent: draft.agent,
-    worktree: draft.worktree,
-    runtime: draft.runtime,
-  });
-  context.sessionStore.upsert(summary);
-  context.persistRuntimeDescriptor(summary, draft.agent, draft.runtime.sessionCapabilities);
-  broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
-  context.logInfo(
-    `[tiller] draft.activate draft=${params.draftId} session=${sessionId} runtime=${draft.runtime.runtimeSessionId} provider=${draft.agent.id}`,
-  );
-
-  try {
-    const result = await sendPromptToSession({ ...params, sessionId }, context);
-    const currentSummary = context.sessions.get(sessionId)?.summary ?? summary;
-    const selectedModel = currentSummary.model ?? draft.configState.model ?? summaryConfigModel;
-    const resolvedCurrentConfigOptions = resolveConfigOptionsForSelection({
-      incomingOptions: currentSummary.configOptions,
-      previousOptions: summary.configOptions,
-      selectedModel,
-    });
-    const currentConfigOptions = resolvedCurrentConfigOptions.options;
-    const currentReasoningEffort = resolveConfigReasoningEffortForOptions(
-      currentSummary.reasoningEffort,
-      resolvedCurrentConfigOptions,
-    );
-    const hydratedSummary = context.hydrateSessionSummary({
-      ...currentSummary,
-      model: selectedModel,
-      configOptions: currentConfigOptions,
-      reasoningEffort: currentReasoningEffort,
-    });
-    const sanitizedSummary = {
-      ...hydratedSummary,
-      model: selectedModel,
-      configOptions: currentConfigOptions,
-      reasoningEffort: currentReasoningEffort,
-    };
-    const record = context.sessions.get(sessionId);
-    if (record) {
-      record.summary = sanitizedSummary;
-    }
-    context.sessionStore.upsert(sanitizedSummary);
-    context.persistRuntimeDescriptor(
-      sanitizedSummary,
-      draft.agent,
-      draft.runtime.sessionCapabilities,
-    );
-    broadcastSessionUpdate(context, sessionId, {
-      kind: "session_updated",
-      session: sanitizedSummary,
-    });
-    return { ...result, session: sanitizedSummary };
-  } catch (error) {
-    context.updateSessionSummary(sessionId, (current) => ({
-      ...current,
-      status: "error",
-      updatedAt: new Date().toISOString(),
-      lastMessagePreview: "Prompt failed",
-    }));
-    throw error;
-  }
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {

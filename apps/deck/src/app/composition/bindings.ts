@@ -11,19 +11,15 @@ export function buildAppLayoutContext(layout: any) {
 
 export function buildMissionPanelContext(panelPages: any) {
   return {
-    customMissionPanelPages: panelPages.customPages,
-    selectedMissionPanelPageId: panelPages.selectedPageId,
-    setSelectedMissionPanelPageId: panelPages.setSelectedPageId,
+    selectedMissionDisplayTabId: panelPages.selectedDisplayTabId,
+    setSelectedMissionDisplayTabId: panelPages.setSelectedDisplayTabId,
+    openedMissionDiffFilePaths: panelPages.openedDiffFilePaths,
     selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
     setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,
     collapsedMissionDiffDirectories: panelPages.collapsedDiffDirectories,
-    setDraggedMissionPanelPageId: panelPages.setDraggedPageId,
     toggleMissionDiffDirectory: panelPages.toggleDiffDirectory,
-    addMissionPanelPage: panelPages.addPage,
-    dropMissionPanelPage: panelPages.dropPage,
-    renameMissionPanelPage: panelPages.renamePage,
-    moveMissionPanelPage: panelPages.movePage,
-    deleteMissionPanelPage: panelPages.deletePage,
+    openMissionDiffFile: panelPages.openDiffFile,
+    closeMissionDiffFile: panelPages.closeDiffFile,
   };
 }
 
@@ -47,11 +43,13 @@ export function buildAppRouteContext(input: any) {
     promptEnhancerSettings: input.promptEnhancerSettings,
     promptEnhancerBusy: input.promptEnhancerSettings.busy,
     promptEnhancerStatus: input.promptEnhancerSettings.status,
+    setPromptEnhancerStatus: input.promptEnhancerSettings.setStatus,
     promptEnhancerModels: input.promptEnhancerSettings.models,
     promptEnhancerModelFilter: input.promptEnhancerSettings.modelFilter,
     setPromptEnhancerModelFilter: input.promptEnhancerSettings.setModelFilter,
     promptEnhancerModelPickerOpen: input.promptEnhancerSettings.modelPickerOpen,
     setPromptEnhancerModelPickerOpen: input.promptEnhancerSettings.setModelPickerOpen,
+    updatePromptEnhancerPreference: input.promptEnhancerSettings.updatePreference,
     updatePromptEnhancerLlmPreference: input.promptEnhancerSettings.updateLlmPreference,
     testPromptEnhancerSelectedModel: input.promptEnhancerSettings.testSelectedModel,
     refreshPromptEnhancerModels: input.promptEnhancerSettings.refreshModels,
@@ -72,6 +70,12 @@ export function buildAppRouteContext(input: any) {
     openDiffDetail: input.openDiffDetail,
     toggleExpandedMessage: input.toggleExpandedMessage,
     renderMissionAgentIcon: input.renderMissionAgentIcon,
+    loggingSettings: input.loggingSettings,
+    loggingStatus: input.loggingStatus,
+    loggingClientAvailable: input.loggingClientAvailable,
+    loggingConnectionKnownConnected: input.loggingConnectionKnownConnected,
+    refreshLoggingSettings: input.refreshLoggingSettings,
+    saveLoggingLevel: input.saveLoggingLevel,
   };
 }
 
@@ -79,6 +83,7 @@ export function resolveShellClassName(activeView: string, theme: string, reduceM
   return [
     "shell",
     `view-${activeView}`,
+    "v6-radial-shell",
     `theme-${theme}`,
     reduceMotion ? "motion-reduced" : "",
   ]

@@ -10,7 +10,14 @@ export const DECK_STORE_STORAGE_KEY = "tiller.deck.store";
 
 type PersistedDeckStore = Pick<
   DeckStore,
-  "preferences" | "daemonProfiles" | "selectedHelmKey"
+  | "preferences"
+  | "daemonProfiles"
+  | "selectedHelmKey"
+  | "openChatSessionIds"
+  | "focusedChatWindowId"
+  | "draftChatWindow"
+  | "sessionPlans"
+  | "dismissedCompletedSessionPlanKeys"
 >;
 
 export function createDeckStorePersistOptions(): PersistOptions<
@@ -26,7 +33,56 @@ export function createDeckStorePersistOptions(): PersistOptions<
       preferences: state.preferences,
       daemonProfiles: state.daemonProfiles,
       selectedHelmKey: state.selectedHelmKey,
+      openChatSessionIds: state.openChatSessionIds,
+      focusedChatWindowId: state.focusedChatWindowId,
+      draftChatWindow: state.draftChatWindow,
+      sessionPlans: state.sessionPlans,
+      dismissedCompletedSessionPlanKeys: state.dismissedCompletedSessionPlanKeys,
     }),
+    merge: (persistedState, currentState) => {
+      const persisted = persistedState as PersistedDeckStore | undefined;
+      if (!persisted) return currentState;
+      return {
+        ...currentState,
+        ...persisted,
+        openChatSessionIds: Array.isArray(persisted.openChatSessionIds)
+          ? persisted.openChatSessionIds.filter((id): id is string => typeof id === "string")
+          : currentState.openChatSessionIds,
+        focusedChatWindowId:
+          typeof persisted.focusedChatWindowId === "string" || persisted.focusedChatWindowId === null
+            ? persisted.focusedChatWindowId
+            : currentState.focusedChatWindowId,
+        draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
+          ? persisted.draftChatWindow
+          : currentState.draftChatWindow,
+        sessionPlans: isSessionPlanMap(persisted.sessionPlans)
+          ? persisted.sessionPlans
+          : currentState.sessionPlans,
+        dismissedCompletedSessionPlanKeys: isStringMap(
+          persisted.dismissedCompletedSessionPlanKeys,
+        )
+          ? persisted.dismissedCompletedSessionPlanKeys
+          : currentState.dismissedCompletedSessionPlanKeys,
+        preferences: persisted.preferences
+          ? {
+              ...currentState.preferences,
+              ...persisted.preferences,
+              technicalPanels: {
+                ...currentState.preferences.technicalPanels,
+                ...(persisted.preferences.technicalPanels ?? {}),
+              },
+              promptEnhancer: {
+                ...currentState.preferences.promptEnhancer,
+                ...(persisted.preferences.promptEnhancer ?? {}),
+                llm: {
+                  ...currentState.preferences.promptEnhancer.llm,
+                  ...(persisted.preferences.promptEnhancer?.llm ?? {}),
+                },
+              },
+            }
+          : currentState.preferences,
+      };
+    },
   };
 }
 
@@ -83,4 +139,38 @@ function readPersistedPromptEnhancerLlm(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isDraftChatWindow(value: unknown): value is PersistedDeckStore["draftChatWindow"] {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.projectId === "string" &&
+    (typeof value.cwd === "string" || value.cwd === null) &&
+    (typeof value.agentId === "string" || value.agentId === null)
+  );
+}
+
+function isSessionPlanMap(value: unknown): value is PersistedDeckStore["sessionPlans"] {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.values(value).every((plan) =>
+    isRecord(plan) &&
+    typeof plan.updatedAt === "string" &&
+    Array.isArray(plan.entries) &&
+    plan.entries.every((entry) =>
+      isRecord(entry) &&
+      typeof entry.content === "string" &&
+      (entry.priority === "high" || entry.priority === "medium" || entry.priority === "low") &&
+      (entry.status === "pending" || entry.status === "in_progress" || entry.status === "completed"),
+    ),
+  );
+}
+
+function isStringMap(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((item) => typeof item === "string")
+  );
 }

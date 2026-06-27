@@ -1,4 +1,4 @@
-import { createAcpConnectionManager } from "./connection/connection-manager";
+import { createAcpConnectionManager } from "./connection/manager";
 import { createRestoreReplayEventSink } from "./restore-replay";
 import type { AgentPromptContent } from "@tiller/shared";
 import type { AcpRuntimeOptions } from "./runtime-types";
@@ -11,6 +11,7 @@ export async function connectAcpConnection(options: AcpRuntimeOptions) {
     worktree: options.worktree,
     provider: options.agent,
     sessionConfig: options.sessionConfig,
+    protocolLogging: options.protocolLogging,
     onLifecycleEvent: options.onConnectionLifecycleEvent,
   });
 }
@@ -21,6 +22,7 @@ export async function reconnectAcpConnection(options: AcpRuntimeOptions) {
     worktree: options.worktree,
     provider: options.agent,
     sessionConfig: options.sessionConfig,
+    protocolLogging: options.protocolLogging,
     onLifecycleEvent: options.onConnectionLifecycleEvent,
   });
 }
@@ -49,6 +51,7 @@ export async function createAcpRuntime(options: AcpRuntimeOptions) {
       worktree: options.worktree,
       provider: options.agent,
       sessionConfig: options.sessionConfig,
+      protocolLogging: options.protocolLogging,
       restore: options.restore,
       onEvent: restoreReplaySink.onEvent,
       onRestoreReplayEvent: options.onRestoreReplayEvent,

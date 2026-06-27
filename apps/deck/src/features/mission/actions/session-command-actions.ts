@@ -167,15 +167,19 @@ export function useSessionCommandActions({
     );
   }
 
-  function submitPrompt(event: FormEvent<HTMLFormElement>) {
-    const activeSessionStatus = activeSession
-      ? (statuses[activeSession.id] ?? activeSession.status)
+  function submitPrompt(event: FormEvent<HTMLFormElement>, targetSession?: SessionSummary | null) {
+    const promptSession = targetSession === undefined ? activeSession : targetSession;
+    const promptSessionId = targetSession === undefined
+      ? promptSession?.id ?? activeSessionId
+      : promptSession?.id ?? null;
+    const promptSessionStatus = promptSession
+      ? (statuses[promptSession.id] ?? promptSession.status)
       : "idle";
-    const activeSessionRestoreGate = resolveSessionRestoreGate({
-      activeSession,
-      activeSessionStatus,
+    const promptSessionRestoreGate = resolveSessionRestoreGate({
+      activeSession: promptSession,
+      activeSessionStatus: promptSessionStatus,
       resumeStartPending: Boolean(
-        activeSession && resumeStartRequestsRef.current.has(activeSession.id),
+        promptSession && resumeStartRequestsRef.current.has(promptSession.id),
       ),
     });
     submitPromptImpl(event, {
@@ -183,12 +187,13 @@ export function useSessionCommandActions({
       promptImages,
       rpcClientRef,
       setImagePasteNotice,
-      activeSessionId,
-      activeSessionCanChat: activeSessionRestoreGate.canChat,
+      activeSessionId: promptSessionId,
+      activeSessionCanChat: promptSessionRestoreGate.canChat,
       createSession,
       setPrompt,
       setPromptImages,
       createClientUserMessageId,
+      appendUserMessage,
       dispatch,
     });
   }
@@ -212,7 +217,7 @@ export function useSessionCommandActions({
 
   function respondToPermission(approvalRequestId: string, decision: PermissionDecision) {
     const client = rpcClientRef.current;
-    if (!activeSessionId || !isClientOpen(client)) {
+    if (!isClientOpen(client)) {
       return;
     }
     const store = useDeckStore.getState();

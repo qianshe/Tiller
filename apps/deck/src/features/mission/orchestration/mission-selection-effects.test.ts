@@ -7,19 +7,23 @@ const sourceText = readFileSync(
   "utf8",
 );
 const composerSourceText = readFileSync(
-  new URL("../ui/composer-config-controls.tsx", import.meta.url),
+  new URL("../composer/config-controls.tsx", import.meta.url),
   "utf8",
 );
 const composerShellSourceText = readFileSync(
-  new URL("../ui/composer.tsx", import.meta.url),
+  new URL("../composer/form.tsx", import.meta.url),
   "utf8",
 );
 const worktreeSourceText = readFileSync(
-  new URL("../ui/workspace.tsx", import.meta.url),
+  new URL("../workspace/controller.tsx", import.meta.url),
   "utf8",
 );
 const worktreeModelSourceText = readFileSync(
-  new URL("../ui/workspace-model.ts", import.meta.url),
+  new URL("../workspace/model.ts", import.meta.url),
+  "utf8",
+);
+const runtimeOverviewSourceText = readFileSync(
+  new URL("../workspace/runtime-overview.ts", import.meta.url),
   "utf8",
 );
 const selectionSourceText = readFileSync(
@@ -27,7 +31,7 @@ const selectionSourceText = readFileSync(
   "utf8",
 );
 const sidebarSourceText = readFileSync(
-  new URL("../ui/sidebar-project-node.tsx", import.meta.url),
+  new URL("../navigation/sidebar-project-node.tsx", import.meta.url),
   "utf8",
 );
 const viewModelSourceText = readFileSync(
@@ -38,11 +42,16 @@ const rootSourceText = readFileSync(
   new URL("../../../app/shell/root.tsx", import.meta.url),
   "utf8",
 );
+const sessionDraftPreferencesSourceText = readFileSync(
+  new URL("../../../app/composition/session-draft-preferences.ts", import.meta.url),
+  "utf8",
+);
 
 test("mission draft composer waits for ACP connection before creating a session", () => {
-  assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && selectedAgentId && selectedCwd/);
-  assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(activeSession \|\| selectedDraftConnection\)/);
-  assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean\(!activeSession && selectedAgentId && !selectedDraftConnection\)/);
+  assert.match(worktreeSourceText, /const selectedDraftConnection = !activeSession && effectiveSelectedAgentId && effectiveSelectedCwd/);
+  assert.match(worktreeSourceText, /const helmConnected = pairingState === "paired"/);
+  assert.match(worktreeSourceText, /const shouldShowComposer = Boolean\(helmConnected && \(activeSession \|\| draftChatWindow\)\)/);
+  assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean\(\s*helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection/s);
   assert.match(selectionSourceText, /setSelectedAgentId\(null\)/);
   assert.doesNotMatch(selectionSourceText, /const selectedCwd = selectedWorktree/);
 });
@@ -50,43 +59,37 @@ test("mission draft composer waits for ACP connection before creating a session"
 test("mission draft agent selection resets model before creating an ACP session", () => {
   assert.match(selectionSourceText, /setSelectedModel: Dispatch<SetStateAction<string>>/);
   assert.match(selectionSourceText, /setSelectedModel\("provider-default"\)/);
-  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
   assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "agent\/connect"/);
   assert.match(sourceText, /dispatch\(rpcClientRef\.current, "session\/draft"/);
 });
 
-test("mission project plus owns the ACP picker and selected agent connects before showing composer", () => {
-  assert.match(sidebarSourceText, /mission-tree-agent-menu/);
-  assert.match(sidebarSourceText, />\s*＋\s*<\/Button>/);
+test("mission workbench header opens the draft window without a sidebar agent dropdown", () => {
+  // 新建任务入口收敛到工作台 header，Agent 选择在小窗口内完成。
+  assert.doesNotMatch(sidebarSourceText, />\s*＋\s*<\/Button>/);
+  assert.match(worktreeSourceText, /const openNewTaskFromWorkbench = \(projectId: string\) =>/);
+  assert.match(worktreeSourceText, /openDraftChatWindow\(\{/);
+  assert.doesNotMatch(sidebarSourceText, /mission-tree-agent-menu/);
+  assert.doesNotMatch(sidebarSourceText, /setAgentPickerOpen\(true\)/);
   assert.match(composerShellSourceText, /aria-label="打开任务设置"/);
   assert.match(composerShellSourceText, />\s*⋯\s*<\/Button>/);
-  assert.match(sidebarSourceText, /selectDraftAgent\(agent\.id\)/);
-  assert.doesNotMatch(sidebarSourceText, /createDraftSessionForAgent\(agent\.id\)/);
-  assert.match(sidebarSourceText, /setAgentPickerOpen\(false\)/);
   assert.match(worktreeSourceText, /const shouldShowDraftPreparing = Boolean/);
   assert.match(worktreeSourceText, /正在连接 ACP/);
 });
 
-test("mission mobile jumps to chat after selecting an ACP agent from project new task", () => {
-  assert.match(sidebarSourceText, /setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>/);
-  assert.match(sidebarSourceText, /setSelectedMissionMobilePane\("chat"\)/);
-  assert.match(worktreeSourceText, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
-});
-
 test("mission ACP overview uses connection inventory instead of inferring status from sessions", () => {
-  assert.match(worktreeSourceText, /agentConnectionInventory as any\[\]/);
-  assert.match(worktreeSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
-  assert.match(worktreeSourceText, /canReconnect: true/);
-  assert.match(worktreeSourceText, /canConnect: Boolean/);
-  assert.match(worktreeSourceText, /canReconnect: false/);
-  assert.doesNotMatch(worktreeSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
+  assert.match(runtimeOverviewSourceText, /agentConnectionInventory: any\[\]/);
+  assert.match(runtimeOverviewSourceText, /formatAcpConnectionStatus\(connection\.status\)/);
+  assert.match(runtimeOverviewSourceText, /canReconnect: true/);
+  assert.match(runtimeOverviewSourceText, /canConnect: Boolean/);
+  assert.match(runtimeOverviewSourceText, /canReconnect: false/);
+  assert.doesNotMatch(runtimeOverviewSourceText, /status: "未连接",\s*runtimeSessionId: "暂无会话"/);
 });
 
 test("mission ACP overview can connect inactive agents while a session is active", () => {
-  assert.match(worktreeSourceText, /const overviewConnectCwd = selectedCwd \?\? activeSession\?\.cwd/);
-  assert.match(worktreeSourceText, /cwd: overviewConnectCwd \?\? undefined/);
-  assert.match(worktreeSourceText, /canConnect: Boolean\(agent\.id && overviewConnectCwd\)/);
+  assert.match(runtimeOverviewSourceText, /const overviewConnectCwd = selectedCwd \?\? activeSession\?\.cwd/);
+  assert.match(runtimeOverviewSourceText, /cwd: overviewConnectCwd \?\? undefined/);
+  assert.match(runtimeOverviewSourceText, /canConnect: Boolean\(agent\.id && overviewConnectCwd\)/);
 });
 
 test("mission starting sessions disable send without showing cancel", () => {
@@ -102,18 +105,26 @@ test("mission selection effects does not auto-select the first project", () => {
 });
 
 test("mission worktree panel only lists project-scoped worktrees", () => {
-  assert.doesNotMatch(worktreeSourceText, /const projectWorktreeOptions = \(worktrees \?\? \[\]\)\.filter/);
+  assert.doesNotMatch(worktreeSourceText, /selectedSessionWorktreeItems\.length \?/);
   assert.match(worktreeSourceText, /const hasWorktreeScope = Boolean\(activeSession \|\| selectedProjectId\)/);
-  assert.match(
-    worktreeSourceText,
-    /const worktreeOptions = rawWorktreeOptions\.filter\(isManagedWorktreeWorktree\)/,
-  );
-  assert.match(viewModelSourceText, /if \(!draftProject\) \{\s*return \[\];\s*\}/);
+  assert.match(worktreeSourceText, /const worktreeOptions = rawWorktreeOptions;/);
+  assert.doesNotMatch(worktreeSourceText, /isManagedWorktreeWorktree/);
+  assert.match(viewModelSourceText, /const worktreeScopeProject = activeSessionProject \?\? draftProject;/);
+  assert.match(viewModelSourceText, /if \(!worktreeScopeProject\) \{\s*return \[\];\s*\}/);
 });
 
 test("mission selection effects can auto-open the preferred running session", () => {
   assert.match(sourceText, /resolveDefaultMissionSessionId/);
   assert.match(sourceText, /setActiveSessionId\(nextActiveSessionId\)/);
+});
+
+test("mission selection effects syncs selected cwd only when the active session changes", () => {
+  assert.match(sourceText, /if \(!activeSession\?\.cwd\) \{/);
+  assert.match(sourceText, /previousActiveSessionSyncKey/);
+  assert.match(sourceText, /const nextSyncKey = `\$\{activeSession\.id \?\? "unknown"\}::\$\{activeSession\.cwd\}`;/);
+  assert.match(sourceText, /if \(previousActiveSessionSyncKey === nextSyncKey\) \{/);
+  assert.match(sourceText, /previousActiveSessionSyncKey = nextSyncKey;/);
+  assert.match(sourceText, /setSelectedCwd\(activeSession\.cwd\)/);
 });
 
 test("mission selection effects reads setAgentModelOptions from source context", () => {
@@ -153,18 +164,19 @@ test("mission selection effects preserves available model options while probing"
 });
 
 test("mission config changes dispatch through embedded Helm clients", () => {
-  assert.match(rootSourceText, /runtimeState\.helmRpcClientRefs\.current\.get\(helmId\)/);
-  assert.match(rootSourceText, /runtimeState\.selectedMissionHelmId/);
-  assert.match(rootSourceText, /runtimeState\.primaryHelmKeyRef\.current/);
-  assert.match(rootSourceText, /function readConfigSelectionState/);
-  assert.match(rootSourceText, /function toConfigPatchState/);
-  assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.activeConfigState \}/);
-  assert.match(rootSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.draftConfigPatchState \}/);
-  assert.doesNotMatch(rootSourceText, /function omitReasoningOnModelChange/);
-  assert.doesNotMatch(rootSourceText, /function omitReasoningConfigOptionsOnModelChange/);
-  assert.doesNotMatch(rootSourceText, /modelChangedWithoutReasoning/);
-  assert.match(rootSourceText, /resolveConfigClient\(activeSession\.helmId\)/);
-  assert.match(rootSourceText, /const draftClient = resolveConfigClient\(null\)/);
+  assert.match(rootSourceText, /createSessionDraftPreferencesAction\(\{/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.helmRpcClientRefs\.current\.get\(helmId\)/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.selectedMissionHelmId/);
+  assert.match(sessionDraftPreferencesSourceText, /runtimeState\.primaryHelmKeyRef\.current/);
+  assert.match(sessionDraftPreferencesSourceText, /readConfigSelectionState\(draftConfigOptions\)/);
+  assert.match(sessionDraftPreferencesSourceText, /toConfigPatchState\(next\)/);
+  assert.match(sessionDraftPreferencesSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.activeConfigState \}/);
+  assert.match(sessionDraftPreferencesSourceText, /directConfigPatch \? \{ \.\.\.directConfigPatch, \.\.\.draftConfigPatchState \}/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /function omitReasoningOnModelChange/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /function omitReasoningConfigOptionsOnModelChange/);
+  assert.doesNotMatch(sessionDraftPreferencesSourceText, /modelChangedWithoutReasoning/);
+  assert.match(sessionDraftPreferencesSourceText, /resolveConfigClient\(activeSession\.helmId\)/);
+  assert.match(sessionDraftPreferencesSourceText, /const draftClient = resolveConfigClient\(null\)/);
 });
 
 test("mission model picker surfaces loading state without hiding cached options", () => {

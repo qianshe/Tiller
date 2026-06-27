@@ -1,5 +1,6 @@
 export { usePreferencesEffects } from "./hooks/effects";
 export { useDeckPreferenceActions } from "./actions/preference-actions";
+export { useEffectiveViewport, type Viewport, type EffectiveViewport } from "./hooks/use-viewport";
 export { type DeckLanguage, isDeckLanguage } from "../../shared/config/deck-language";
 export {
   DECK_PREFERENCES_STORAGE_KEY,
@@ -13,3 +14,4 @@ export {
   type DeckTheme,
   type TechnicalPanelPreferences,
 } from "./storage";
+

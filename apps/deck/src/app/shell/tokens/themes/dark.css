@@ -1,0 +1,65 @@
+/* tokens/themes/dark.css — Dark theme overrides for [data-theme="dark"]
+ *
+ * Only redeclare what differs from light. Brand-layer tokens (typography,
+ * radius, control sizes) are theme-independent and live in brand.css.
+ */
+
+@layer base {
+  [data-theme="dark"] {
+    --background:           #0e0e0e;
+    --canvas:               #131313;
+    --surface:              #1f1f1f;
+    --surface-elevated:     #2a2a2a;
+    --surface-sunken:       #1b1b1b;
+    --surface-emphasis:     #353535;
+    --popover-glass:        rgb(53 53 53 / 0.70);
+
+    --foreground:           #f0f0f2;
+    --muted-foreground:     #a8a8ac;
+
+    --primary:              #adc6ff;
+    --primary-strong:       #4b8eff;
+    --on-primary:           #002e69;
+    --primary-soft:         rgb(173 198 255 / 0.15);
+
+    --success:              #4ade80;
+    --success-container:    #4ade80;
+    --on-success-container: #4ade80;
+    --warning:              #facc15;
+    --on-warning:           #facc15;
+    --destructive:          #ff6b6b;
+
+    --diff-added-bg:        rgb(34 197 94 / 0.18);
+    --diff-added-text:      #86efac;
+    --diff-added-border:    #22c55e;
+    --diff-deleted-bg:      rgb(248 113 113 / 0.18);
+    --diff-deleted-text:    #fca5a5;
+    --diff-deleted-border:  #f87171;
+    --diff-hunk-bg:         rgb(96 165 250 / 0.20);
+    --diff-hunk-text:       #bfdbfe;
+    --diff-meta-bg:         #252b33;
+    --diff-meta-text:       #aab4c0;
+    --markdown-code-bg:     #0d1117;
+    --markdown-code-fg:     #e6edf3;
+    --markdown-code-head:   #1f242c;
+
+    --border-ghost:         rgb(120 130 150 / 0.18);
+    --ring:                 #adc6ff;
+
+    --terminal-bg:          #0e0e0e;
+    --terminal-fg:          #f0f0f2;
+
+    --shadow-ambient:       0 0 80px rgb(173 198 255 / 0.05);
+
+    --color-text-inverse:   #0e0e0e;
+    --color-subtle:         #94a3b8;
+    --color-surface:        rgba(31, 31, 31, 0.9);
+    --color-surface-strong: rgba(31, 31, 31, 0.96);
+    --color-secondary-text: #e6eefc;
+    --color-border-strong:  rgba(148, 163, 184, 0.24);
+    --shadow-panel:         0 20px 44px rgba(0, 0, 0, 0.28);
+    --shadow-card:          0 16px 34px rgba(0, 0, 0, 0.24);
+    --deck-color-scheme:    dark;
+    --deck-body-background: var(--background);
+  }
+}

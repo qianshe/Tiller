@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { SessionReasoningEffort, SessionSummary } from "@tiller/shared";
+import type { SessionSummary } from "@tiller/domain-contracts";
+import type { SessionReasoningEffort } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 

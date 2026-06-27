@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as helmList from "./helm/list";
 import * as helmSave from "./helm/save";
+import * as loggingGet from "./logging/get";
+import * as loggingSave from "./logging/save";
 import * as agentTest from "./agent/test";
 import * as deviceRevoke from "./device/revoke";
 
@@ -30,5 +32,25 @@ test("R3 descriptor expects single id param and ok/message result", () => {
   assert.deepEqual(
     deviceRevoke.ResultSchema.parse({ ok: true, deviceId: "d1", message: "ok" }),
     { ok: true, deviceId: "d1", message: "ok" },
+  );
+});
+
+test("logging descriptors parse current settings and patches", () => {
+  assert.equal(loggingGet.method, "logging/get");
+  assert.deepEqual(loggingGet.ParamsSchema.parse({}), {});
+  assert.deepEqual(
+    loggingGet.ResultSchema.parse({
+      logging: { level: "trace", format: "pretty", acpTrace: "summary" },
+    }),
+    { logging: { level: "trace", format: "pretty", acpTrace: "summary" } },
+  );
+  assert.equal(loggingSave.method, "logging/save");
+  assert.deepEqual(
+    loggingSave.ParamsSchema.parse({ logging: { level: "debug" } }),
+    { logging: { level: "debug" } },
+  );
+  assert.throws(
+    () => loggingSave.ParamsSchema.parse({ logging: { level: "verbose" } }),
+    /Invalid option/,
   );
 });

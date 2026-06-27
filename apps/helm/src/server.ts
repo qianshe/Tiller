@@ -1,7 +1,7 @@
 import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
+import { createServer } from "node:http";
+import { resolve } from "node:path";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
@@ -25,7 +25,6 @@ import {
   reconnectAcpConnection,
   testAcpConnection,
 } from "@tiller/acp-runtime";
-import { JsonRpcConnection, encodeMessage } from "@tiller/sync-protocol";
 import {
   isWildcardHost,
   type AcpAgentProvider,
@@ -44,38 +43,44 @@ import {
 import {
   applyAgentMessageToSummary,
   applyUserPromptToSummary,
-  createHelmSessionStores,
   resolveSessionCleanupOutcome,
-  resolveSessionStoreBackend,
 } from "./sessions/facade";
-import { createTrustedDeviceStore } from "./auth/beacon-store";
-import { createSocketAuthenticator } from "./auth/socket-auth";
-import { createWebSocketJsonRpcStream } from "./rpc/websocket-stream";
-import { handleHelmRpcNotification, handleHelmRpcRequest } from "./rpc/router";
+import { createHelmServerStores } from "./app/server/composition";
+import { createHelmServerEnvironment } from "./app/server/environment";
+import { createHelmContextState } from "./app/server/context";
+import { createHelmRuntimeComposition } from "./app/runtime-composition";
+import { attachHelmRpcConnection } from "./app/transport-composition";
+import { createStaticDeckHandler } from "./app/static-deck-handler";
+import { createHelmAuthComposition } from "./app/auth-composition";
+import { createHandlerCatalogContext } from "./app/handler-context/catalog";
+import { createHandlerNotificationContext } from "./app/handler-context/notification";
+import { createHandlerSessionContextFactory } from "./app/handler-context/session";
+import { broadcastPromptTrace } from "./rpc/notifications";
 import type { HelmHandlerContext } from "./handlers/context";
 import { assertHelmPortAvailable, resolveLanAddresses } from "./runtime/port-availability";
 import { resolveTillerRuntimeOptions } from "./runtime/options";
-import { createProjectCatalog } from "./runtime/project-catalog";
+import { createProjectCatalog } from "./runtime/project/catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
-import { createSessionServices, type SessionRecord } from "./runtime/session-services";
-import { createSessionPromptQueueManager } from "./runtime/session-prompt-queue";
-import { drainPromptQueue } from "./runtime/session-runtime-router";
-import { createSessionTopicRegistry } from "./runtime/session-topics";
-import { loadStaticAsset, resolveDeckStaticDir } from "./runtime/static-assets";
+import { createPromptTraceEmitter } from "./runtime/prompt-trace";
+import { drainPromptQueue } from "./runtime/session/router";
+import { createSessionTopicRegistry } from "./runtime/session/topics";
+import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
-import { createPairingState } from "./state/pairing";
+import { resolveLoggingOptions } from "./logging/options";
 import { createSocketState } from "./state/socket";
 import { TILLER_VERSION } from "./cli";
 import {
   buildUpdateNotice,
-  formatStartupUpdateNotice,
   loadUpdateVersions,
+  LATEST_UPDATE_COMMAND,
+  PREVIEW_UPDATE_COMMAND,
   resolveUpdateOptions,
 } from "./updates/check.js";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
+const serverEnvironment = createHelmServerEnvironment(configPath);
 ensureTillerConfigDefaults(configPath);
 const configStub = loadTillerConfigStub(configPath);
 const tillerConfig = readTillerConfig(configPath);
@@ -85,33 +90,40 @@ const {
   authMode: AUTH_MODE,
 } = resolveTillerRuntimeOptions({ config: tillerConfig });
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
-const LOGS_DIR = resolve(dirname(configPath), "logs");
+const LOGS_DIR = serverEnvironment.logsDir;
 const DECK_STATIC_DIR = resolveDeckStaticDir(import.meta.url);
+const PROMPT_TRACE_ENABLED = process.env.TILLER_PROMPT_TRACE === "1";
 
-const logger = createTillerLogger({ logsDir: LOGS_DIR });
+const loggingOptions = resolveLoggingOptions(process.env, tillerConfig.logging);
+const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
+const acpProtocolLogging = {
+  mode: loggingOptions.acpTrace,
+  logsDir: ACP_LOGS_DIR,
+};
+const logger = createTillerLogger({
+  logsDir: LOGS_DIR,
+  level: loggingOptions.level,
+  format: loggingOptions.format,
+  consoleOutput: loggingOptions.format === "pretty",
+});
 const { logInfo, logDebug, logWarn, logError } = logger;
 const TILLER_LOG_FILE = logger.logFile;
 
-const sessionHistoryPath = resolve(dirname(configPath), "sessions.json");
-const sessionMessagesPath = resolve(dirname(configPath), "session-messages");
-const sessionArtifactsPath = resolve(dirname(configPath), "session-artifacts");
-const sessionRuntimesPath = resolve(dirname(configPath), "session-runtimes.json");
-const sessionsSqlitePath = resolve(dirname(configPath), "sessions.sqlite");
-const trustedDevicesPath = resolve(dirname(configPath), "trusted-devices.json");
-const { sessionStore, sessionMessageStore, sessionArtifactStore, sessionRuntimeStore } =
-  createHelmSessionStores({
-    backend: resolveSessionStoreBackend(),
-    sqlitePath: sessionsSqlitePath,
-    jsonPaths: {
-      sessionHistoryPath,
-      sessionMessagesPath,
-      sessionArtifactsPath,
-      sessionRuntimesPath,
-    },
-    logInfo,
-    logError,
-  });
-const trustedDeviceStore = createTrustedDeviceStore(trustedDevicesPath);
+const {
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionAttachmentStore,
+  sessionRuntimeStore,
+  sessionTimelineStore,
+  sessionUpdateStore,
+  trustedDeviceStore,
+} = createHelmServerStores({
+  environment: serverEnvironment,
+  logDebug,
+  logInfo,
+  logError,
+});
 const projectCatalog = createProjectCatalog({
   configPath,
   host: HOST,
@@ -127,29 +139,47 @@ const {
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
+const handlerNotificationContext = createHandlerNotificationContext({
+  authenticatedSockets,
+  sessionTopics,
+});
+const { broadcastNotification } = handlerNotificationContext;
 const liveMessageBuffer = createLiveMessageBuffer();
-let helms = loadAvailableHelms();
-let worktrees = loadAvailableWorktrees();
-let agents = listAvailableProviders(configPath);
-let projects = loadAvailableProjects();
-const sessions = new Map<string, SessionRecord>();
-const permissionIndex = new Map<string, { sessionId: string; request: PermissionRequest }>();
-const promptQueue = createSessionPromptQueueManager();
-const sessionServices = createSessionServices({
-  sessions,
-  permissionIndex,
+const contextState = createHelmContextState({
+  helms: loadAvailableHelms(),
+  worktrees: loadAvailableWorktrees(),
+  agents: listAvailableProviders(configPath),
+  projects: loadAvailableProjects(),
+});
+const handlerCatalogContext = createHandlerCatalogContext({
+  configPath,
+  contextState,
+  loadAvailableHelms,
+  loadAvailableWorktrees,
+  listAvailableProviders,
+  loadAvailableProjectsWithSemanticSummaries,
+  readApprovalPolicy,
+  saveApprovalPolicyRule,
+});
+const runtimeComposition = createHelmRuntimeComposition({
   sessionStore,
   sessionMessageStore,
   sessionArtifactStore,
+  sessionAttachmentStore,
   sessionRuntimeStore,
-  getAgents: () => agents,
-  getProjects: () => projects,
-  getWorktrees: () => worktrees,
+  sessionTimelineStore,
+  sessionUpdateStore,
+  getAgents: contextState.getAgents,
+  getProjects: contextState.getProjects,
+  getWorktrees: contextState.getWorktrees,
   createHandlerContext,
   broadcastNotification,
   logInfo,
   logError,
+  logger,
+  protocolLogging: acpProtocolLogging,
 });
+const { sessions, permissionIndex, promptQueue, sessionServices } = runtimeComposition;
 const {
   buildResumeInfo,
   clearPermissionRequestsForSession,
@@ -165,15 +195,72 @@ const {
   persistRuntimeDescriptor,
   persistSessionMessage,
   publishDiffUpdate,
+  reimportSessionHistory,
   refreshAuthoritativeSessionHistory,
+  readSessionPlan,
   scheduleDeckClientDraftDiscard,
   startSessionResume,
   takeRuntimeDraft,
   updateSessionSummary,
 } = sessionServices;
+const handlerSessionContextFactory = createHandlerSessionContextFactory({
+  sessions,
+  permissionIndex,
+  sessionStore,
+  sessionMessageStore,
+  sessionArtifactStore,
+  sessionAttachmentStore,
+  sessionRuntimeStore,
+  sessionTimelineStore,
+  sessionUpdateStore,
+  liveMessageBuffer,
+  promptQueue,
+  createHandlerContext,
+  drainPromptQueue,
+  createRuntime: (options) => createAcpRuntime({ ...options, protocolLogging: acpProtocolLogging }),
+  connectAcpConnection: (options) => connectAcpConnection({ ...options, protocolLogging: acpProtocolLogging }),
+  reconnectAcpConnection: (options) => reconnectAcpConnection({ ...options, protocolLogging: acpProtocolLogging }),
+  listAcpConnectionInventory,
+  createRuntimeDraft,
+  discardRuntimeDraft,
+  discardRuntimeDraftsForDeckClient,
+  scheduleDeckClientDraftDiscard,
+  takeRuntimeDraft,
+  configureRuntimeDraft,
+  testAcpConnection: (agent, cwd) => testAcpConnection(agent, cwd, acpProtocolLogging),
+  resolveHelmById,
+  resolveProjectById,
+  resolveProviderById,
+  startSessionResume,
+  handleRuntimeEvent,
+  hydrateSessionSummary,
+  migrateStoredSessionSummary,
+  buildResumeInfo,
+  persistRuntimeDescriptor,
+  refreshAuthoritativeSessionHistory,
+  readSessionPlan,
+  updateSessionSummary,
+  persistSessionMessage,
+  publishDiffUpdate,
+  reimportSessionHistory,
+  hydrateDiffsFromWorktreeGit,
+  clearPermissionRequestsForSession,
+  deleteLocalSessionData,
+});
 
 // --- Device pairing state ---
-const pairingState = createPairingState();
+const authComposition = createHelmAuthComposition({
+  authMode: AUTH_MODE,
+  authenticatedSockets,
+  getSocketId,
+  trustedDeviceStore,
+  showPairingCode,
+  attachRpcConnection,
+  logInfo,
+  logDebug,
+  logError,
+});
+const { pairingState, beginAuthenticationFlow } = authComposition;
 
 function showPairingCode() {
   const code = pairingState.ensureCode();
@@ -185,15 +272,9 @@ function showPairingCode() {
   });
 }
 
-const beginAuthenticationFlow = createSocketAuthenticator({
-  authMode: AUTH_MODE,
-  authenticatedSockets,
-  getSocketId,
-  trustedDeviceStore,
-  pairingState,
-  showPairingCode,
-  attachRpcConnection,
-  logInfo,
+const handleHttpRequest = createStaticDeckHandler({
+  deckStaticDir: DECK_STATIC_DIR,
+  sessionAttachmentStore,
   logError,
 });
 
@@ -206,20 +287,32 @@ async function checkForTillerUpdatesOnStart() {
 
   try {
     const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION), options);
-    for (const line of formatStartupUpdateNotice(notice)) {
-      logWarn(line);
+    if (notice.kind === "latest-update") {
+      logger.warn("updates.latest_available", {
+        current: notice.current,
+        latest: notice.latest,
+        command: LATEST_UPDATE_COMMAND,
+      });
+    } else if (notice.kind === "preview-hint") {
+      logger.warn("updates.preview_available", {
+        current: notice.current,
+        preview: notice.preview,
+        command: PREVIEW_UPDATE_COMMAND,
+      });
     }
   } catch (error) {
-    logWarn(
-      `[tiller] update check skipped: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.warn("updates.check_skipped", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
 try {
   await assertHelmPortAvailable({ host: HOST, port: PORT });
 } catch (error) {
-  logError(`[tiller] startup blocked: ${error instanceof Error ? error.message : String(error)}`);
+  logger.error("server.startup_blocked", {
+    reason: error instanceof Error ? error.message : String(error),
+  });
   process.exit(1);
 }
 
@@ -228,11 +321,11 @@ const server = new WebSocketServer({ server: httpServer });
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 
 server.on("connection", (socket) => {
-  logInfo("[tiller] client connected");
+  logger.debug("websocket.client.connected");
 
   socket.on("close", () => {
     const socketId = getSocketId(socket);
-    logInfo("[tiller] client disconnected");
+    logger.debug("websocket.client.disconnected", { socketId });
     sessionTopics.removeSocket(socketId);
     authenticatedSockets.remove(socketId);
   });
@@ -243,25 +336,26 @@ server.on("connection", (socket) => {
 httpServer.listen(PORT, HOST);
 
 httpServer.on("listening", () => {
-  logInfo(`[tiller] listening on http://${HOST}:${PORT}`);
+  logger.info("server.listening", { host: HOST, port: PORT, url: `http://${HOST}:${PORT}` });
   for (const url of resolveDisplayUrls()) {
-    logInfo(`[tiller] Deck available at ${url}`);
+    logger.info("server.deck_available", { url });
   }
-  logInfo(`[tiller] WebSocket available on the same origin`);
-  logInfo(`[tiller] auth mode: ${AUTH_MODE}`);
-  logInfo(
-    `[tiller] config stub ${configStub.exists ? "found" : "not found"} at ${configStub.configPath}`,
-  );
-  logInfo(`[tiller] logs at ${TILLER_LOG_FILE}`);
+  logger.debug("server.websocket_available", { origin: "same-origin" });
+  logger.debug("server.auth_mode", { authMode: AUTH_MODE });
+  logger.debug("server.config_stub", {
+    exists: configStub.exists,
+    path: configStub.configPath,
+  });
+  logger.info("server.logs_file", { path: TILLER_LOG_FILE });
   void checkForTillerUpdatesOnStart();
 });
 
 httpServer.on("error", (error) => {
-  logError(`[tiller] server error: ${error.message}`);
+  logger.error("server.http_error", { message: error.message });
 });
 
 server.on("error", (error) => {
-  logError(`[tiller] websocket error: ${error.message}`);
+  logger.error("server.websocket_error", { message: error.message });
 });
 
 let shutdownStarted = false;
@@ -271,12 +365,12 @@ async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
     return;
   }
   shutdownStarted = true;
-  logInfo(`[tiller] shutdown reason=${reason}; closing ACP connections`);
+  logger.info("server.shutdown.started", { reason });
   stopWebSocketHeartbeat();
   server.close();
   httpServer.close();
   await disposeAcpConnections();
-  logInfo(`[tiller] shutdown complete reason=${reason}`);
+  logger.info("server.shutdown.completed", { reason });
   process.exit(0);
 }
 
@@ -288,35 +382,33 @@ process.once("SIGTERM", (signal) => {
   void shutdownHelm(signal);
 });
 
+process.on("warning", (warning) => {
+  logger.warn("process.warning", {
+    name: warning.name,
+    message: warning.message,
+    stack: warning.stack,
+  });
+});
+
 process.on("uncaughtException", (error) => {
-  logError(`[tiller] uncaught exception: ${error.stack ?? error.message}`);
+  logger.error("process.uncaught_exception", {
+    message: error.message,
+    stack: error.stack,
+  });
 });
 
 process.on("unhandledRejection", (reason) => {
-  logError(
-    `[tiller] unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
-  );
+  logger.error("process.unhandled_rejection", reason instanceof Error
+    ? { message: reason.message, stack: reason.stack }
+    : { reason: String(reason) });
 });
 
 function attachRpcConnection(socket: WebSocket) {
-  const stream = createWebSocketJsonRpcStream(socket, (error) => {
-    logError(
-      `[tiller] json-rpc decode failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  });
-  const connection = new JsonRpcConnection(stream, {
-    onRequest: (method, params) =>
-      handleHelmRpcRequest(method, params, createHandlerContext(getSocketId(socket))),
-    onNotification: (method, params) =>
-      handleHelmRpcNotification(method, params, createHandlerContext(getSocketId(socket))),
-    onError: (error) => {
-      logError(
-        `[tiller] json-rpc handler failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
-  });
-  socket.once("close", () => {
-    connection.close();
+  attachHelmRpcConnection({
+    socket,
+    getSocketId,
+    createHandlerContext,
+    logError,
   });
 }
 
@@ -324,92 +416,27 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
   return {
     configPath,
     socketId,
-    notify,
-    broadcastNotification,
-    broadcastSessionTopic,
-    subscribeSessionTopic: sessionTopics.subscribe,
-    unsubscribeSessionTopic: sessionTopics.unsubscribe,
-    removeSocketSessionTopics: sessionTopics.removeSocket,
-    approvalIndex: permissionIndex,
+    ...handlerNotificationContext,
+    promptTrace: createPromptTraceEmitter({
+      enabled: PROMPT_TRACE_ENABLED,
+      publish: (event) => broadcastPromptTrace({ broadcastNotification }, event),
+    }),
     logInfo,
     logDebug,
     logWarn,
     logError,
+    logger,
     requestShutdown: (reason) => {
       setTimeout(() => {
         void shutdownHelm(reason);
       }, 0);
     },
-    getHelms: () => helms,
-    setHelms: (items) => {
-      helms = items;
-    },
-    loadAvailableHelms,
-    getWorktrees: () => worktrees,
-    setWorktrees: (items) => {
-      worktrees = items;
-    },
-    loadAvailableWorktrees,
-    getAgents: () => agents,
-    setAgents: (items) => {
-      agents = items;
-    },
-    loadAvailableAgents: () => listAvailableProviders(configPath),
-    getProjects: () => projects,
-    setProjects: (items) => {
-      projects = items;
-    },
-    loadAvailableProjectsWithSemanticSummaries,
-    readApprovalPolicy: () => readApprovalPolicy(configPath),
-    saveApprovalPolicyRule: (rule) => {
-      saveApprovalPolicyRule(rule, configPath);
-    },
+    ...handlerCatalogContext,
     trustedDeviceStore,
     authenticatedSockets,
     toTrustedDeviceSummary,
-    sessions,
-    permissionIndex,
-    sessionStore,
-    sessionMessageStore,
-    sessionArtifactStore,
-    sessionRuntimeStore,
-    liveMessageBuffer,
-    promptQueue,
-    drainPromptQueue: (sessionId) => drainPromptQueue(sessionId, createHandlerContext(socketId)),
-    createRuntime: createAcpRuntime,
-    connectAcpConnection,
-    reconnectAcpConnection,
-    listAcpConnectionInventory,
-    createRuntimeDraft,
-    discardRuntimeDraft,
-    discardRuntimeDraftsForDeckClient,
-    scheduleDeckClientDraftDiscard,
-    takeRuntimeDraft,
-    configureRuntimeDraft,
-    testAcpConnection,
-    resolveHelmById,
-    resolveProjectById,
-    resolveProviderById,
-    startSessionResume,
-    handleRuntimeEvent,
-    hydrateSessionSummary,
-    migrateStoredSessionSummary,
-    buildResumeInfo,
-    persistRuntimeDescriptor,
-    refreshAuthoritativeSessionHistory,
-    updateSessionSummary,
-    persistSessionMessage,
-    publishDiffUpdate,
-    hydrateDiffsFromWorktreeGit,
-    clearPermissionRequestsForSession,
-    deleteLocalSessionData,
+    ...handlerSessionContextFactory.forSocket(socketId),
   };
-}
-function notify(socket: WebSocket, method: string, params: unknown) {
-  if (socket.readyState !== 1) {
-    return;
-  }
-  socket.send(encodeMessage({ jsonrpc: "2.0", method, params }));
 }
 
 function toTrustedDeviceSummary(
@@ -423,51 +450,6 @@ function toTrustedDeviceSummary(
     lastSeenAt: record.lastSeenAt,
     expiresAt: record.expiresAt,
   };
-}
-
-function broadcastNotification(method: string, params: unknown) {
-  for (const record of authenticatedSockets.listAll()) {
-    notify(record.socket, method, params);
-  }
-}
-
-function broadcastSessionTopic(sessionId: string, method: string, params: unknown) {
-  const subscriberIds = new Set(sessionTopics.listSubscribers(sessionId));
-  if (!subscriberIds.size) {
-    return;
-  }
-  for (const record of authenticatedSockets.listAll()) {
-    if (subscriberIds.has(record.socketId)) {
-      notify(record.socket, method, params);
-    }
-  }
-}
-
-async function handleHttpRequest(request: IncomingMessage, response: ServerResponse) {
-  const asset = await loadStaticAsset(DECK_STATIC_DIR, request.url ?? "/");
-  if (!asset.ok) {
-    response.writeHead(asset.statusCode, { "content-type": "text/plain; charset=utf-8" });
-    response.end(
-      asset.statusCode === 404
-        ? "Tiller Deck assets not found. Run pnpm --filter @tiller/helm build."
-        : "Forbidden",
-    );
-    return;
-  }
-
-  try {
-    response.writeHead(200, {
-      "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
-      "content-type": asset.contentType,
-    });
-    response.end(asset.body);
-  } catch (error) {
-    logError(
-      `[tiller] failed to serve Deck asset: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-    response.end("Failed to serve Tiller Deck asset.");
-  }
 }
 
 function resolveDisplayUrls() {

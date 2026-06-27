@@ -25,30 +25,26 @@ test("mission effects source exposes route and top-level refs", () => {
   assert.equal(source.lastFilesScopeKeyRef, lastFilesScopeKeyRef);
 });
 
-test("opening an old session requests only the latest message and activity pages", () => {
-  assert.match(
-    missionEffectsSourceText,
-    /dispatch\(rpcClientRef\.current,\s*"session\/list_messages",\s*\{\s*sessionId:\s*activeSessionId,\s*limit:\s*DEFAULT_MESSAGE_PAGE_LIMIT,\s*\}\)/s,
-  );
-  assert.doesNotMatch(
-    missionEffectsSourceText,
-    /"session\/list_messages"[\s\S]{0,160}\bbefore\s*:/,
-  );
-  assert.match(
-    missionEffectsSourceText,
-    /dispatch\(rpcClientRef\.current,\s*"session\/get_artifacts",\s*\{\s*sessionId:\s*activeSessionId,\s*limit:\s*DEFAULT_ACTIVITY_PAGE_LIMIT,\s*\}\)/s,
-  );
+test("mission effects no longer dispatches session history directly", () => {
+  assert.doesNotMatch(missionEffectsSourceText, /dispatch\(.*"session\/list_messages"/);
+  assert.doesNotMatch(missionEffectsSourceText, /dispatch\(.*"session\/get_artifacts"/);
+  assert.doesNotMatch(missionEffectsSourceText, /dispatch\(.*"session\/check_resume"/);
 });
 
-test("mission effects subscribes only to the active session topic and cleans up the previous topic", () => {
-  assert.match(missionEffectsSourceText, /subscribeToSessionTopic/);
-  assert.match(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
+test("mission effects leaves session topic subscriptions to the open session grid", () => {
+  assert.doesNotMatch(missionEffectsSourceText, /subscribeToSessionTopic/);
+  assert.doesNotMatch(missionEffectsSourceText, /unsubscribeFromSessionTopic/);
+});
+
+test("mission effects does not force chat-main bottom scrolling for parallel session cards", () => {
+  assert.match(missionEffectsSourceText, /openChatSessionIds,/);
   assert.match(
     missionEffectsSourceText,
-    /subscribeToSessionTopic\(rpcClientRef\.current,\s*activeSessionId,\s*dispatch\)/s,
+    /if \(\(openChatSessionIds\?\.length \?\? 0\) > 1\) \{\s*return;\s*\}/,
   );
-  assert.match(
-    missionEffectsSourceText,
-    /return \(\) => \{[\s\S]*unsubscribeFromSessionTopic\(client,\s*activeSessionId,\s*dispatch\)/s,
-  );
+  assert.match(missionEffectsSourceText, /openChatSessionIds\?\.length/);
+});
+
+test("mission effects still consumes pendingSessionScrollToBottomRef for explicit scroll-to-bottom", () => {
+  assert.match(missionEffectsSourceText, /pendingSessionScrollToBottomRef/);
 });

@@ -1,63 +1,92 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createHelmSessionStores, resolveSessionStoreBackend } from "./store-factory.js";
+import type { SessionTimelineEntry } from "@tiller/shared";
+import { createHelmSessionStores } from "./store-factory";
 
-function createJsonPaths(root: string) {
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
+
+function entry(index: number): SessionTimelineEntry {
+  const timestamp = new Date(Date.parse("2026-06-01T00:00:00.000Z") + index * 1000).toISOString();
   return {
-    sessionHistoryPath: join(root, "sessions.json"),
-    sessionMessagesPath: join(root, "session-messages"),
-    sessionArtifactsPath: join(root, "session-artifacts"),
-    sessionRuntimesPath: join(root, "session-runtimes.json"),
+    id: `assistant-${index}`,
+    kind: "assistant_message",
+    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp, timelineSequence: index }],
+    timestamp,
+    updatedAt: timestamp,
+    timelineSequence: index,
   };
 }
 
-test("resolveSessionStoreBackend defaults to sqlite and allows json override", () => {
-  assert.equal(resolveSessionStoreBackend({}), "sqlite");
-  assert.equal(resolveSessionStoreBackend({ TILLER_SESSION_STORE: "json" }), "json");
-  assert.equal(resolveSessionStoreBackend({ TILLER_SESSION_STORE: "sqlite" }), "sqlite");
-});
+function createOptions(tempDir: string, logs: string[] = []) {
+  return {
+    sqlitePath: join(tempDir, "sessions.sqlite"),
+    attachmentRootPath: join(tempDir, "session-attachments"),
+    timelineBlockRootPath: join(tempDir, "timeline-blocks"),
+    jsonPaths: {
+      sessionHistoryPath: join(tempDir, "sessions.json"),
+      sessionMessagesPath: join(tempDir, "session-messages"),
+      sessionArtifactsPath: join(tempDir, "session-artifacts"),
+      sessionRuntimesPath: join(tempDir, "session-runtimes.json"),
+    },
+    logDebug: (message: string) => logs.push(message),
+    logError: (message: string) => logs.push(`error:${message}`),
+  };
+}
 
-test("store factory honors explicit json backend", () => {
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-store-factory-json-"));
+function closeStores(stores: ReturnType<typeof createHelmSessionStores>) {
+  for (const store of Object.values(stores)) {
+    (store as { close?: () => void }).close?.();
+  }
+}
+
+test("createHelmSessionStores blocks_shadow writes blocks and reads sqlite rows with parity logs", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-store-factory-"));
+  const logs: string[] = [];
+  const stores = createHelmSessionStores({
+    ...createOptions(tempDir, logs),
+    timelineBlockMode: "blocks_shadow",
+  });
+
   try {
-    const logs: string[] = [];
-    const stores = createHelmSessionStores({
-      backend: "json",
-      sqlitePath: join(tempRoot, "sessions.sqlite"),
-      jsonPaths: createJsonPaths(tempRoot),
-      logInfo: (message) => logs.push(message),
-    });
+    stores.sessionTimelineStore.replace("session-1", [entry(0), entry(1), entry(2)]);
+    const page = stores.sessionTimelineStore.listPage("session-1", { limit: 2 });
 
-    assert.equal(stores.backend, "json");
-    assert.equal(
-      logs.some((message) => message.includes("backend=json")),
-      true,
-    );
+    assert.deepEqual(page.entries.map((item) => item.id), ["assistant-1", "assistant-2"]);
+    assert.equal(existsSync(join(tempDir, "timeline-blocks", encodeURIComponent("session-1"))), true);
+    assert.equal(logs.some((message) => message.includes("timeline.block.parity=ok")), true);
   } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+    closeStores(stores);
+    rmSync(tempDir, { force: true, recursive: true });
   }
 });
 
-test("store factory falls back to json when sqlite cannot open", () => {
-  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-store-factory-fallback-"));
-  try {
-    const errors: string[] = [];
-    const stores = createHelmSessionStores({
-      backend: "sqlite",
-      sqlitePath: tempRoot,
-      jsonPaths: createJsonPaths(tempRoot),
-      logError: (message) => errors.push(message),
-    });
+test("createHelmSessionStores blocks_read reads blocks while keeping sqlite rows", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-store-factory-"));
+  const stores = createHelmSessionStores({
+    ...createOptions(tempDir),
+    timelineBlockMode: "blocks_read",
+  });
 
-    assert.equal(stores.backend, "json");
-    assert.equal(
-      errors.some((message) => message.includes("sqlite-fallback")),
-      true,
-    );
+  try {
+    stores.sessionTimelineStore.replace("session-1", [entry(0), entry(1), entry(2)]);
+    const page = stores.sessionTimelineStore.listPage("session-1", { limit: 2 });
+
+    assert.deepEqual(page.entries.map((item) => item.id), ["assistant-1", "assistant-2"]);
+    const db = new DatabaseSync(join(tempDir, "sessions.sqlite"));
+    try {
+      const row = db.prepare("SELECT COUNT(*) AS count FROM session_timeline_entries WHERE session_id = ?").get("session-1") as { count: number };
+      assert.equal(row.count, 3);
+    } finally {
+      db.close();
+    }
   } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+    closeStores(stores);
+    rmSync(tempDir, { force: true, recursive: true });
   }
 });

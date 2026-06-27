@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { SessionStatus, SessionSummary } from "@tiller/domain-contracts";
 import type {
   AcpModelOption,
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   AvailableCommand,
@@ -11,8 +13,6 @@ import type {
   SessionConfigOption,
   SessionPromptQueueSnapshot,
   SessionReasoningEffort,
-  SessionStatus,
-  SessionSummary,
 } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { notificationDescriptor } from "../descriptor";
@@ -30,6 +30,7 @@ export const SessionUpdateSchema = z.discriminatedUnion("kind", [
     streaming: z.boolean().optional(),
   }),
   z.object({ kind: z.literal("tool_call"), toolCall: typedUnknown<AgentToolCall>() }),
+  z.object({ kind: z.literal("plan_update"), plan: typedUnknown<AgentPlan>() }),
   z.object({ kind: z.literal("command_output"), commandId: z.string(), chunk: typedUnknown<CommandChunk>() }),
   z.object({ kind: z.literal("diff_update"), files: z.array(typedUnknown<FileDiffSummary>()) }),
   z.object({ kind: z.literal("status_change"), status: typedUnknown<SessionStatus>(), message: z.string().optional() }),

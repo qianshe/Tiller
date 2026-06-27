@@ -1,3 +1,5 @@
+import type { SessionTimelineEntry } from "./session-timeline";
+
 export type AgentTransport = "stdio";
 export type AcpProviderKind = "native-acp" | "adapter-acp" | "custom";
 export type SessionStatus = "starting" | "running" | "waiting_for_permission" | "idle" | "error" | "cancelled";
@@ -65,9 +67,14 @@ export type AcpAgentProvider = {
   defaultAgent?: string;
   transport: AgentTransport;
   protocol: "acp";
-  installHint?: string;
   capabilities?: Partial<AgentCapabilities>;
 };
+
+/**
+ * Explicit name for the provider projection needed to launch ACP runtimes.
+ * Kept as an alias while config persistence and UI inventory still use AcpAgentProvider.
+ */
+export type AcpRuntimeProviderConfig = AcpAgentProvider;
 
 export type WorktreeSummary = {
   name: string;
@@ -137,8 +144,10 @@ export type ProjectSummary = {
   helmId: string;
   /** Project root path owned by project config. */
   path?: string;
-  /** Helm-generated lightweight summary for prompt enhancement context. */
+  /** User-authored fallback summary for prompt enhancement context. */
   summary?: string;
+  /** Project-relative document path used as the runtime summary source. */
+  summaryFile?: string;
   /** Git worktrees discovered or created for this project. */
   worktrees?: WorktreeSummary[];
   /** Last Git branches discovered by Helm for this project root. */
@@ -245,7 +254,7 @@ export function resolveSessionConfigSupport(provider?: Pick<AcpAgentProvider, "c
   return { model: "none", reasoningEffort: "none" };
 }
 
-export type SessionSummary = {
+export type SessionSummaryCore = {
   id: string;
   projectId: string;
   projectName: string;
@@ -256,13 +265,6 @@ export type SessionSummary = {
   worktreeName?: string;
   agentId: string;
   agentName: string;
-  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
-  agentMode?: string;
-  model?: string;
-  modelOptions?: AcpModelOption[];
-  /** Latest ACP session config options exposed by the active/restored runtime. */
-  configOptions?: SessionConfigOption[];
-  reasoningEffort?: SessionReasoningEffort;
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;
@@ -271,17 +273,37 @@ export type SessionSummary = {
   title?: string;
   lastMessagePreview?: string;
   resume?: SessionResumeInfo;
+};
+
+export type RuntimeSessionSummaryExtensions = {
+  /** Provider-exposed ACP mode/agent, e.g. OpenCode's primary agents. */
+  agentMode?: string;
+  model?: string;
+  modelOptions?: AcpModelOption[];
+  /** Latest ACP session config options exposed by the active/restored runtime. */
+  configOptions?: SessionConfigOption[];
+  reasoningEffort?: SessionReasoningEffort;
   /** Whether the underlying ACP agent supports image content in prompts. */
   imageInput?: boolean;
   /** Last ACP slash commands reported for this session, persisted for later Deck sync. */
   availableCommands?: AvailableCommand[];
 };
 
+export type RuntimeSessionSummary = SessionSummaryCore & RuntimeSessionSummaryExtensions;
+
+/**
+ * Compatibility alias for the current Deck/Helm session summary payload.
+ * New cross-package boundaries should prefer `SessionSummaryCore` or
+ * `RuntimeSessionSummary` to make the chosen projection explicit.
+ */
+export type SessionSummary = RuntimeSessionSummary;
+
 export type AgentMessage = {
   id: string;
   role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
+  timelineSequence?: number;
   attachments?: AgentPromptImageContent[];
   streaming?: boolean;
 };
@@ -293,10 +315,13 @@ export type AgentPromptTextContent = {
 
 export type AgentPromptImageContent = {
   type: "image";
-  data: string;
+  data?: string;
   mimeType: string;
   uri?: string;
   name?: string;
+  attachmentId?: string;
+  sha256?: string;
+  byteSize?: number;
 };
 
 export type AgentPromptContent = AgentPromptTextContent | AgentPromptImageContent;
@@ -366,6 +391,7 @@ export type CommandChunk = {
   text: string;
   stream: "stdout" | "stderr";
   timestamp: string;
+  timelineSequence?: number;
 };
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
@@ -395,6 +421,22 @@ export type AgentToolCall = {
   stream?: "stdout" | "stderr";
   timestamp: string;
   updatedAt: string;
+  timelineSequence?: number;
+};
+
+export type AgentPlanEntryStatus = "pending" | "in_progress" | "completed";
+
+export type AgentPlanEntryPriority = "high" | "medium" | "low";
+
+export type AgentPlanEntry = {
+  content: string;
+  priority: AgentPlanEntryPriority;
+  status: AgentPlanEntryStatus;
+};
+
+export type AgentPlan = {
+  entries: AgentPlanEntry[];
+  updatedAt: string;
 };
 
 export type FileDiffSummary = {
@@ -406,6 +448,21 @@ export type FileDiffSummary = {
   patch?: string;
 };
 
+export type SessionHistoryReimportResult = {
+  sessionId: string;
+  messages: AgentMessage[];
+  timeline?: SessionTimelineEntry[];
+  outputs: CommandChunk[];
+  diffs: FileDiffSummary[];
+  toolCalls: AgentToolCall[];
+  plan?: AgentPlan;
+  nextCursor?: string;
+  hasMore: boolean;
+  activityNextCursor?: string;
+  activityHasMore: boolean;
+  message: string;
+};
+
 export function isWildcardHost(host: string) {
   const normalized = host.trim().toLowerCase();
   return normalized === "0.0.0.0" || normalized === "::" || normalized === "[::]";
@@ -413,6 +470,3 @@ export function isWildcardHost(host: string) {
 
 export const ACP_IMAGE_INPUT_UNSUPPORTED_CODE = "ACP_IMAGE_INPUT_UNSUPPORTED";
 export const ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE = "当前 ACP Agent 未声明图片输入能力，无法发送图片喵~";
-
-
-

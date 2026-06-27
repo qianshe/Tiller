@@ -78,7 +78,15 @@ const replayDiffEvent: SessionRuntimeEvent = {
   files: [{ path: "src/index.ts", status: "modified", additions: 1, deletions: 0 }],
 };
 
-test("restore replay sink suppresses assistant replay until the restored session receives a new prompt", () => {
+const replayPlanEvent: SessionRuntimeEvent = {
+  type: "plan-update",
+  plan: {
+    updatedAt: "2026-06-08T01:00:00.000Z",
+    entries: [{ content: "恢复历史 plan", priority: "high", status: "in_progress" }],
+  },
+};
+
+test("restore replay sink suppresses historical message replay until the restored session receives a new prompt", () => {
   const forwarded: SessionRuntimeEvent[] = [];
   const suppressed: SessionRuntimeEvent[] = [];
   const sink = createRestoreReplayEventSink(
@@ -97,8 +105,8 @@ test("restore replay sink suppresses assistant replay until the restored session
   sink.setSuppressing(false);
   sink.onEvent(assistantReplayEvent);
 
-  assert.deepEqual(forwarded, [userReplayEvent, statusEvent, unknownAssistantEvent, assistantReplayEvent]);
-  assert.deepEqual(suppressed, [assistantReplayEvent, assistantReplayEvent]);
+  assert.deepEqual(forwarded, [statusEvent, unknownAssistantEvent, assistantReplayEvent]);
+  assert.deepEqual(suppressed, [assistantReplayEvent, userReplayEvent, assistantReplayEvent]);
 });
 
 test("restore replay sink suppresses replay artifacts until prompt boundary", () => {
@@ -114,12 +122,14 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
   sink.onEvent(replayToolCallEvent);
   sink.onEvent(replayCommandOutputEvent);
   sink.onEvent(replayDiffEvent);
+  sink.onEvent(replayPlanEvent);
 
   assert.deepEqual(forwarded, []);
   assert.deepEqual(suppressed, [
     replayToolCallEvent,
     replayCommandOutputEvent,
     replayDiffEvent,
+    replayPlanEvent,
   ]);
 
   sink.setSuppressing(false);

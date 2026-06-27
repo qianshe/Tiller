@@ -7,7 +7,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
@@ -15,6 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
 }

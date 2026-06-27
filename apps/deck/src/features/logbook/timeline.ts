@@ -6,30 +6,32 @@ import { resolveDisplayToolTitle, resolveMergedToolTitle } from "./tool-title";
 export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
   return items
     .map((message, index) => ({ message, index }))
-    .sort((left, right) => {
-      const timestampDelta =
-        Date.parse(left.message.timestamp) -
-        Date.parse(right.message.timestamp);
-      return timestampDelta === 0 ? left.index - right.index : timestampDelta;
-    })
+    .sort((left, right) => compareMessageTimelineEntries(left, right))
     .map((entry) => entry.message);
 }
 
+type MessageTimelineEntry = {
+  index: number;
+  message: AgentMessage;
+};
+
 export type ConversationTimelineItem =
-  | { kind: "message"; timestamp: string; message: AgentMessage }
+  | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
   | ConversationToolCallItem;
 
 export type ConversationToolCallItem = {
   kind: "tool";
   id: string;
+  sourceIndex?: number;
   commandId: string;
-  timestamp: string;
   title: string;
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
+  timestamp: string;
+  timelineSequence?: number;
   text: string;
   input: string;
-  streams: Array<CommandChunk["stream"]>;
+  streams: Array<"stdout" | "stderr">;
 };
 
 export function buildConversationTimeline(
@@ -44,14 +46,18 @@ export function buildConversationTimeline(
   const messageItems: ConversationTimelineItem[] = coalesceDisplayMessages(
     messages,
     toolItems.map((item) => item.timestamp),
-  ).map((message) => ({
+  ).map((message, index) => ({
     kind: "message",
+    sourceIndex: index,
     timestamp: message.timestamp,
+    timelineSequence: message.timelineSequence,
     message,
   }));
-  return [...messageItems, ...toolItems].sort(
-    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
-  );
+  const indexedToolItems = toolItems.map((item, index) => ({
+    ...item,
+    sourceIndex: messageItems.length + index,
+  }));
+  return [...messageItems, ...indexedToolItems].sort(compareTimelineItems);
 }
 
 export function resolvePendingToolActivity(calls: AgentToolCall[]) {
@@ -92,6 +98,7 @@ export function groupToolCalls(
         status: call.status,
         toolKind: call.kind,
         timestamp: call.timestamp,
+        timelineSequence: call.timelineSequence,
         text: call.output ?? "",
         input: call.input ?? "",
         streams: call.stream ? [call.stream] : [],
@@ -104,6 +111,7 @@ export function groupToolCalls(
     if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
       current.timestamp = call.timestamp;
     }
+    current.timelineSequence = minTimelineSequence(current.timelineSequence, call.timelineSequence);
     current.status = call.status;
     current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
     current.title = resolveMergedToolTitle(
@@ -129,6 +137,7 @@ export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
     stream: chunk.stream,
     timestamp: chunk.timestamp,
     updatedAt: chunk.timestamp,
+    timelineSequence: chunk.timelineSequence,
   };
 }
 
@@ -154,18 +163,31 @@ export function mergeToolCallHistory(
       ...next,
       kind: resolveToolCallKind(existing.kind, next.kind),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
-      output: `${existing.output ?? ""}${next.output ?? ""}`,
+      output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
       timestamp:
         Date.parse(next.timestamp) < Date.parse(existing.timestamp)
           ? next.timestamp
           : existing.timestamp,
+      timelineSequence: minTimelineSequence(existing.timelineSequence, next.timelineSequence),
       updatedAt: next.updatedAt,
       status: next.status,
     };
   }
-  return merged.sort(
-    (left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
+  return merged
+    .map((toolCall, index) => ({ toolCall, index }))
+    .sort(compareToolCallTimelineEntries)
+    .map((entry) => entry.toolCall);
+}
+
+export function dropActiveThinkingToolCalls(toolCalls: AgentToolCall[]) {
+  return toolCalls.filter((toolCall) => !isActiveThinkingToolCall(toolCall));
+}
+
+export function isActiveThinkingToolCall(toolCall: AgentToolCall) {
+  return (
+    toolCall.kind === "think" &&
+    (toolCall.status === "pending" || toolCall.status === "running")
   );
 }
 
@@ -174,6 +196,32 @@ function resolveToolCallKind(
   incomingKind: AgentToolCall["kind"],
 ) {
   return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+}
+
+function mergeToolCallHistoryOutput(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  if (current.status === "completed" && incoming.status === "completed" && incoming.output) {
+    return incoming.output;
+  }
+  return mergeToolCallOutput(current.output, incoming.output);
+}
+
+function mergeToolCallOutput(
+  currentOutput: string | undefined,
+  incomingOutput: string | undefined,
+) {
+  if (!incomingOutput) {
+    return currentOutput;
+  }
+  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
+    return incomingOutput;
+  }
+  if (currentOutput.startsWith(incomingOutput) || currentOutput.endsWith(incomingOutput)) {
+    return currentOutput;
+  }
+  return `${currentOutput}${incomingOutput}`;
 }
 
 function isHigherConfidenceToolKind(
@@ -197,9 +245,98 @@ function isHigherConfidenceToolKind(
   return rank[incomingKind] > rank[currentKind];
 }
 
+function minTimelineSequence(current: number | undefined, incoming: number | undefined) {
+  if (current === undefined) {
+    return incoming;
+  }
+  if (incoming === undefined) {
+    return current;
+  }
+  return Math.min(current, incoming);
+}
+
+type ToolCallTimelineEntry = {
+  index: number;
+  toolCall: AgentToolCall;
+};
+
+function compareToolCallTimelineEntries(
+  left: ToolCallTimelineEntry,
+  right: ToolCallTimelineEntry,
+) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.toolCall.timelineSequence,
+    right.toolCall.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  const timestampDelta = compareIsoTimestamps(left.toolCall.timestamp, right.toolCall.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  const updatedAtDelta = compareIsoTimestamps(left.toolCall.updatedAt, right.toolCall.updatedAt);
+  return updatedAtDelta === 0 ? left.index - right.index : updatedAtDelta;
+}
+
+function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
+  const leftTime = Date.parse(leftTimestamp);
+  const rightTime = Date.parse(rightTimestamp);
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
+    return 0;
+  }
+  return leftTime - rightTime;
+}
+
+function compareMessageTimelineEntries(left: MessageTimelineEntry, right: MessageTimelineEntry) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.message.timelineSequence,
+    right.message.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
+  return timestampDelta === 0 ? left.index - right.index : timestampDelta;
+}
+
+function compareTimelineItems(left: ConversationTimelineItem, right: ConversationTimelineItem) {
+  const timelineDelta = compareOptionalTimelineSequence(
+    left.timelineSequence,
+    right.timelineSequence,
+  );
+  if (timelineDelta !== null) {
+    return timelineDelta;
+  }
+  const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  return timelineKindRank(left) - timelineKindRank(right);
+}
+
+function compareOptionalTimelineSequence(
+  left: number | undefined,
+  right: number | undefined,
+) {
+  if (left === undefined || right === undefined) {
+    return null;
+  }
+  const sequenceDelta = left - right;
+  return sequenceDelta === 0 ? null : sequenceDelta;
+}
+
+function timelineKindRank(item: ConversationTimelineItem) {
+  if (item.kind === "message") {
+    return 2;
+  }
+  return item.toolKind === "think" ? 0 : 1;
+}
+
 export {
   coalesceDisplayMessages,
   mergeAgentMessages,
   mergeMessageHistory,
+  normalizeSystemMessageText,
   type MergeMessageHistoryOptions,
 } from "./message-history";

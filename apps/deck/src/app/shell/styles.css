@@ -27,16 +27,21 @@ body {
   min-height: 100%;
 }
 
-button,
-textarea,
-input,
-select {
-  font: inherit;
-}
+@layer base {
+  /* Wrapped in @layer base so Tailwind utility classes (e.g. text-2xs) on button
+     elements can win the cascade. Bare rules outranked all @layer rules per CSS
+     spec, which caused `<button class="text-2xs">` to render at 16px instead of 10px. */
+  button,
+  textarea,
+  input,
+  select {
+    font: inherit;
+  }
 
-button {
-  cursor: pointer;
-  border: 0;
+  button {
+    cursor: pointer;
+    border: 0;
+  }
 }
 
 h1,
@@ -60,28 +65,30 @@ h3 {
   font-size: 0.95rem;
 }
 
-.shell {
-  width: min(1400px, calc(100vw - 32px));
-  min-height: 100vh;
-  margin: 0 auto;
-  padding: 96px 0 40px;
-}
-
-.shell.view-sessions {
+.shell.v6-radial-shell {
   width: 100vw;
+  height: 100vh;
   max-width: none;
+  min-height: 0;
   margin: 0;
-  padding: 8px 12px 12px;
+  padding: 0;
+  overflow: hidden;
 }
 
-.page-content {
-  min-height: calc(100vh - 120px);
+.shell.view-sessions.v6-radial-shell {
+  padding: 8px;
 }
 
-.shell.view-sessions .page-content {
-  min-height: calc(100vh - 20px);
+.shell.v6-radial-shell .page-content {
+  height: 100%;
+  min-height: 0;
   padding: 0;
   gap: 0;
+  overflow: auto;
+}
+
+.shell.view-sessions.v6-radial-shell .page-content {
+  overflow: hidden;
 }
 
 .stack-gap,
@@ -116,9 +123,14 @@ h3 {
   scroll-padding-block: 10px;
 }
 
-.chat-main,
-.mission-responsive-mode [data-mission-mobile-pane="chat"] {
-  scrollbar-gutter: stable;
+
+body.mission-pane-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.mission-pane-resizing * {
+  cursor: col-resize !important;
 }
 
 .compact {
@@ -134,149 +146,173 @@ h3 {
   font-family: var(--font-mono);
 }
 
-.top-nav {
-  position: fixed;
-  top: 0;
-  left: 16px;
-  z-index: 20;
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center !important;
-  column-gap: 18px;
-  width: calc(100vw - 32px);
-  min-height: 76px;
-  max-height: 76px;
-  margin: 0 0 20px;
-  padding: 14px 16px;
-  overflow: visible;
-  transform: translateY(-78px);
-  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
-  background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: var(--shadow-panel);
-  transition:
-    transform 0.24s ease,
-    box-shadow 0.24s ease;
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-.top-nav::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -10px;
-  display: block;
-  width: 96px;
-  height: 10px;
-  transform: translateX(-50%);
+body[data-density="compact"] {
+  --control-h-xs: 1rem;
+  --control-h-sm: 1.125rem;
+  --control-h-md: 1.25rem;
+  --control-h-lg: 1.75rem;
 }
 
-.top-nav:hover::before,
-.top-nav:focus-within::before {
-  bottom: -360px;
-  width: 144px;
-  height: 360px;
+body[data-density="cozy"] {
+  --control-h-xs: 1.5rem;
+  --control-h-sm: 1.625rem;
+  --control-h-md: 1.75rem;
+  --control-h-lg: 2.25rem;
 }
 
-.top-nav::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -10px;
-  display: block;
-  width: 64px;
-  height: 10px;
-  transform: translateX(-50%);
-  border-radius: 0 0 999px 999px;
-  background: var(--foreground);
-  box-shadow:
-    0 12px 24px rgb(26 28 29 / 0.14),
-    0 0 0 1px var(--primary-soft);
+.h-ctl-xs {
+  height: var(--control-h-xs);
 }
 
-.top-nav:hover,
-.top-nav:focus-within {
-  transform: translateY(0);
+.h-ctl-sm {
+  height: var(--control-h-sm);
 }
 
-.top-nav-menu-trigger,
-.top-nav-mobile-menu {
-  display: none;
+.h-ctl-md {
+  height: var(--control-h-md);
 }
 
-.top-nav-brand,
-.top-nav-links {
+.h-ctl-lg {
+  height: var(--control-h-lg);
+}
+
+.w-ctl-xs {
+  width: var(--control-h-xs);
+}
+
+.w-ctl-sm {
+  width: var(--control-h-sm);
+}
+
+.w-ctl-md {
+  width: var(--control-h-md);
+}
+
+.min-h-ctl-md {
+  min-height: var(--control-h-md);
+}
+
+@keyframes wb-pulse-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.9;
+  }
+
+  50% {
+    box-shadow: 0 0 0 3px transparent;
+    opacity: 0.5;
+  }
+}
+
+.wb-pulse {
+  animation: wb-pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.wb-pane {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--border-ghost);
+}
+
+.wb-pane-sunken {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--border-ghost);
+}
+
+.wb-pane-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.5rem;
+  min-height: 28px;
+  padding: 0 0.5rem;
+  box-shadow: inset 0 -1px 0 var(--border-ghost);
+  flex-shrink: 0;
 }
 
-.top-nav-brand {
-  min-width: max-content;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease;
+.wb-pane-head-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
 }
 
-.top-nav-brand:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
+/* Section title — 13px / 600 / foreground.
+   Use for overview-style page section headers (dashboard, etc.) where
+   the title needs to compete with adjacent tab/chip clusters. */
+.wb-pane-head-title {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--foreground);
 }
 
-.top-nav-brand:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
+.wb-focus-ring:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
 }
 
-.top-nav-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.35rem;
-  height: 1.35rem;
-  font-size: 1.35rem;
-}
-
-.top-nav-logo-mark {
-  display: block;
-  width: 100%;
+.mission-grid {
+  display: grid;
   height: 100%;
+  grid-template-columns:
+    var(--mission-sidebar-width, 248px)
+    var(--mission-sidebar-resizer-width, 4px)
+    minmax(0, var(--mission-chat-width, 1fr))
+    var(--mission-display-resizer-width, 4px)
+    var(--mission-display-width, 320px)
+    var(--mission-inspector-resizer-width, 4px)
+    var(--mission-inspector-width, 280px);
+  gap: 0;
 }
 
-.top-nav-links {
+.mission-grid.sidebar-collapsed {
+  --mission-sidebar-width: 0px;
+  --mission-sidebar-resizer-width: 0px;
+}
+
+.mission-grid.display-collapsed {
+  --mission-display-width: 0px;
+  --mission-display-resizer-width: 0px;
+}
+
+.mission-grid.inspector-collapsed {
+  --mission-inspector-width: 0px;
+  --mission-inspector-resizer-width: 0px;
+}
+
+.mission-grid.display-collapsed > :nth-child(5),
+.mission-grid.display-collapsed > :nth-child(4),
+.mission-grid.inspector-collapsed > :nth-child(7),
+.mission-grid.inspector-collapsed > :nth-child(6),
+.mission-grid.sidebar-collapsed > :nth-child(2) {
+  overflow: hidden;
   min-width: 0;
-  justify-content: center;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.top-nav-links::-webkit-scrollbar {
-  display: none;
+.mission-resizer {
+  cursor: col-resize;
+  position: relative;
 }
 
-.top-nav-item {
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-muted);
-  white-space: nowrap;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
-}
-
-.top-nav-item.active,
-.top-nav-item:hover {
+.mission-resizer:hover {
   background: var(--primary-soft);
-  color: var(--primary);
 }
 
-.top-nav-item:hover {
-  transform: translateY(-1px);
+.mission-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 30% 0;
+  background: var(--border-ghost);
+  border-radius: 1px;
 }
 
 @media (max-width: 1080px) {
@@ -293,11 +329,6 @@ h3 {
     top: 0;
   }
 
-  .shell {
-    width: 100vw;
-    padding: 64px 12px 20px;
-  }
-
   .shell.view-sessions {
     height: 100dvh;
     min-height: 0;
@@ -309,69 +340,6 @@ h3 {
     height: 100%;
     min-height: 0;
     overflow: hidden;
-  }
-
-  .top-nav {
-    top: 0;
-    left: 0;
-    width: 100vw;
-    min-height: 52px;
-    max-height: none;
-    padding: 8px 12px;
-    transform: none;
-    border-radius: 0;
-  }
-
-  .top-nav::after,
-  .top-nav-links {
-    display: none;
-  }
-
-  .top-nav .top-nav-github-link {
-    display: none;
-  }
-
-  .top-nav .top-nav-github-link.top-nav-github-link-mobile-visible {
-    display: inline-grid;
-  }
-
-  .top-nav-menu-trigger {
-    display: inline-grid;
-    width: 36px;
-    height: 36px;
-    place-items: center;
-    border-radius: 999px;
-    background: var(--color-surface-strong);
-    color: var(--color-text);
-  }
-
-  .top-nav-mobile-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 12px;
-    display: grid;
-    min-width: 180px;
-    gap: 4px;
-    padding: 8px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-panel);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-panel);
-  }
-
-  .top-nav-mobile-item {
-    padding: 10px 12px;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--color-muted);
-    text-align: left;
-  }
-
-  .top-nav-mobile-item.active,
-  .top-nav-mobile-item:hover,
-  .top-nav-mobile-item:focus-visible {
-    background: var(--primary-soft);
-    color: var(--primary);
   }
 
   .mission-mobile-pager {
@@ -472,8 +440,28 @@ h3 {
     z-index: 7;
   }
 
-  .mission-responsive-mode .mission-pane-resizer {
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom] {
+    position: absolute;
+    right: 0.75rem;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="bottom"] {
+    bottom: 0.75rem;
+  }
+
+  .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-dock"] {
+    bottom: 6rem;
+  }
+
+  .mission-responsive-mode .mission-pane-resizer,
+  .mission-responsive-mode [data-separator] {
     display: none;
+  }
+
+  .mission-responsive-mode .mission-resizable-group,
+  .mission-responsive-mode [data-panel],
+  .mission-responsive-mode [data-panel] > div {
+    display: contents !important;
   }
 
   .mission-responsive-mode [data-mission-mobile-pane] {
@@ -559,14 +547,17 @@ h3 {
     bottom: 0;
     z-index: 6;
     margin: 0;
-    padding: 6px;
-    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+    border-radius: 0;
     background: var(--color-surface);
   }
 
-  .mission-responsive-mode .mission-order-editor {
-    gap: 8px;
-    padding: 8px;
+  .mission-responsive-mode .mission-composer-deck {
+    gap: 6px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .mission-responsive-mode #mission-prompt-input {
@@ -578,12 +569,6 @@ h3 {
     line-height: 1.5;
     caret-color: var(--primary);
     scroll-padding-block: 10px;
-  }
-
-  .mission-responsive-mode .mission-permission-drawer {
-    bottom: calc(var(--mission-permission-composer-offset, 190px) + 68px + env(safe-area-inset-bottom));
-    max-height: calc(100% - var(--mission-permission-composer-offset, 190px) - 92px);
-    overflow: auto;
   }
 
   .mission-mobile-mode .mission-sidebar-toggle {
@@ -613,81 +598,17 @@ h3 {
   }
 }
 
-/* Shell-owned avatar/status affordance; decorative gradients are intentionally local to the shell. */
-.admiral-avatar {
-  width: 48px;
-  height: 48px;
-  justify-self: end;
-  align-self: center;
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid rgb(148 163 184 / 0.24);
-  border-radius: 999px;
-  background: radial-gradient(
-    circle at 35% 20%,
-    rgb(125 211 252 / 0.28),
-    rgb(30 41 59 / 0.88)
-  );
-  box-shadow:
-    0 12px 28px rgb(15 23 42 / 0.24),
-    inset 0 0 0 1px rgb(255 255 255 / 0.08);
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.admiral-avatar svg {
-  width: 42px;
-  height: 42px;
-  display: block;
-}
-
-.top-nav-actions {
-  justify-self: end;
-  display: grid;
-  place-items: center;
-}
-
-.admiral-connected {
-  box-shadow:
-    0 0 0 3px rgb(34 197 94 / 0.14),
-    0 12px 28px rgb(15 23 42 / 0.24);
-}
-
-.admiral-connecting {
-  box-shadow:
-    0 0 0 3px rgb(245 158 11 / 0.16),
-    0 12px 28px rgb(15 23 42 / 0.24);
-}
-
-.admiral-disconnected {
-  box-shadow:
-    0 0 0 3px rgb(99 102 241 / 0.16),
-    0 12px 28px rgb(15 23 42 / 0.24);
-}
-
-.motion-reduced *,
-.motion-reduced *::before,
-.motion-reduced *::after,
-[data-deck-reduce-motion="true"] * {
-  animation: none !important;
-  transition: none !important;
-  scroll-behavior: auto !important;
-}
-
-[data-deck-theme="dark"],
-[data-deck-theme="system"],
-[data-deck-theme="tiller"] {
+[data-theme="dark"],
+[data-theme="system"],
+[data-theme="tiller"] {
   color-scheme: var(--deck-color-scheme);
   color: var(--color-text);
   background: var(--color-bg);
 }
 
-[data-deck-theme="dark"] body,
-[data-deck-theme="system"] body,
-[data-deck-theme="tiller"] body {
+[data-theme="dark"] body,
+[data-theme="system"] body,
+[data-theme="tiller"] body {
   background: var(--deck-body-background);
 }
 
@@ -737,8 +658,8 @@ h3 {
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 *::-webkit-scrollbar-track {
@@ -746,8 +667,8 @@ h3 {
 }
 
 *::-webkit-scrollbar-thumb {
-  min-height: 44px;
-  border: 2px solid transparent;
+  min-height: 24px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: rgb(148 163 184 / 0.38);
   background-clip: padding-box;
@@ -762,22 +683,38 @@ h3 {
   background: transparent;
 }
 
-[data-deck-theme="dark"] *,
-[data-deck-theme="system"] *,
-[data-deck-theme="tiller"] * {
+.mission-display-tab-strip {
+  scrollbar-width: none;
+}
+
+.mission-display-tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.mission-inspector-diff {
+  scrollbar-width: none;
+}
+
+.mission-inspector-diff::-webkit-scrollbar {
+  display: none;
+}
+
+[data-theme="dark"] *,
+[data-theme="system"] *,
+[data-theme="tiller"] * {
   scrollbar-color: rgb(100 116 139 / 0.62) transparent;
 }
 
-[data-deck-theme="dark"] *::-webkit-scrollbar-thumb,
-[data-deck-theme="system"] *::-webkit-scrollbar-thumb,
-[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb {
+[data-theme="dark"] *::-webkit-scrollbar-thumb,
+[data-theme="system"] *::-webkit-scrollbar-thumb,
+[data-theme="tiller"] *::-webkit-scrollbar-thumb {
   background: rgb(100 116 139 / 0.46);
   background-clip: padding-box;
 }
 
-[data-deck-theme="dark"] *::-webkit-scrollbar-thumb:hover,
-[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover,
-[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover {
+[data-theme="dark"] *::-webkit-scrollbar-thumb:hover,
+[data-theme="system"] *::-webkit-scrollbar-thumb:hover,
+[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184 / 0.68);
   background-clip: padding-box;
 }
@@ -795,4 +732,3 @@ h3 {
 .mission-status-scroll::-webkit-scrollbar {
   display: none;
 }
-

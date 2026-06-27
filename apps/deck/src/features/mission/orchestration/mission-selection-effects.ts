@@ -13,6 +13,8 @@ function normalizeWorktreePath(path: string | undefined) {
   return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
 }
 
+let previousActiveSessionSyncKey: string | null = null;
+
 export function useMissionSelectionEffects(source: any) {
   const {
     worktreePickerOpen,
@@ -42,6 +44,8 @@ export function useMissionSelectionEffects(source: any) {
     pairingState,
     rpcClientRef,
     setWorktreeGitByProject,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
     dispatch,
     selectedAgentId,
     filteredAgents,
@@ -56,6 +60,11 @@ export function useMissionSelectionEffects(source: any) {
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   } = source;
+  const activeSessionGitProjectId = activeSession
+    ? resolveSessionProjectId(activeSession, projects)
+    : null;
+  const effectiveGitProjectId = activeSessionGitProjectId ?? selectedProjectId;
+  const effectiveGitCwd = selectedCwd ?? activeSession?.cwd;
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -167,6 +176,17 @@ export function useMissionSelectionEffects(source: any) {
     }
   }, [draftProject, filteredWorktrees, selectedCwd]);
   useEffect(() => {
+    if (!activeSession?.cwd) {
+      return;
+    }
+    const nextSyncKey = `${activeSession.id ?? "unknown"}::${activeSession.cwd}`;
+    if (previousActiveSessionSyncKey === nextSyncKey) {
+      return;
+    }
+    previousActiveSessionSyncKey = nextSyncKey;
+    setSelectedCwd(activeSession.cwd);
+  }, [activeSession?.cwd, activeSession?.id, setSelectedCwd]);
+  useEffect(() => {
     if (
       !selectedProjectId ||
       pairingState !== "paired" ||
@@ -187,6 +207,50 @@ export function useMissionSelectionEffects(source: any) {
       projectId: selectedProjectId,
     });
   }, [pairingState, selectedProjectId]);
+
+  useEffect(() => {
+    const client = rpcClientRef.current;
+    if (
+      pairingState !== "paired" ||
+      !client ||
+      client.socket.readyState !== WebSocket.OPEN ||
+      !effectiveGitProjectId ||
+      !effectiveGitCwd
+    ) {
+      return;
+    }
+
+    const currentStatus = gitStatusByWorktree?.[effectiveGitCwd];
+    if (currentStatus) {
+      return;
+    }
+
+    setGitStatusByWorktree?.((current: Record<string, any>) => ({
+      ...current,
+      [effectiveGitCwd]: {
+        projectId: effectiveGitProjectId,
+        cwd: effectiveGitCwd,
+        branch: "",
+        clean: false,
+        files: [],
+        loading: true,
+        message: "正在加载 Git 状态...",
+      },
+    }));
+
+    void dispatch(client, "project/git/status", {
+      projectId: effectiveGitProjectId,
+      cwd: effectiveGitCwd,
+    });
+  }, [
+    dispatch,
+    effectiveGitCwd,
+    effectiveGitProjectId,
+    gitStatusByWorktree,
+    pairingState,
+    setGitStatusByWorktree,
+  ]);
+
   useEffect(() => {
     if (!draftProject || !selectedAgentId) {
       return;

@@ -5,6 +5,7 @@ import type {
   AcpModelOption,
   AcpModelState,
   AgentMessage,
+  AgentPlan,
   ApprovalPolicy,
   ApprovalPolicyRule,
   AgentPromptContent,
@@ -13,8 +14,10 @@ import type {
   HelmSummary,
   PermissionRequest,
   ProjectSummary,
+  PromptTraceEvent,
   SessionConfigOption,
   SessionConfigOptionValue,
+  SessionHistoryReimportResult,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
@@ -22,7 +25,8 @@ import type {
 } from "@tiller/shared";
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
-import type { SessionPromptQueueManager } from "../runtime/session-prompt-queue";
+import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
+import type { TillerLogger } from "../logging/logger";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -69,6 +73,10 @@ export type HelmHandlerContext = {
   logDebug: (message: string) => void;
   logWarn: (message: string) => void;
   logError: (message: string) => void;
+  logger: TillerLogger;
+  promptTrace?: {
+    emit(event: PromptTraceEvent): void;
+  };
   requestShutdown?: (reason: "rpc") => void;
 
   getHelms: () => HelmSummary[];
@@ -96,7 +104,10 @@ export type HelmHandlerContext = {
   sessionStore: any;
   sessionMessageStore: any;
   sessionArtifactStore: any;
+  sessionAttachmentStore: any;
   sessionRuntimeStore: any;
+  sessionTimelineStore: any;
+  sessionUpdateStore: any;
   liveMessageBuffer: LiveMessageBuffer;
   promptQueue: SessionPromptQueueManager;
   drainPromptQueue: (sessionId: string) => Promise<void>;
@@ -201,6 +212,11 @@ export type HelmHandlerContext = {
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) => void;
   refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
+  readSessionPlan?: (sessionId: string) => AgentPlan | undefined;
+  reimportSessionHistory: (
+    sessionId: string,
+    options?: { limit?: number },
+  ) => Promise<SessionHistoryReimportResult>;
   updateSessionSummary: (
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,
@@ -214,4 +230,3 @@ export type HelmHandlerContext = {
   clearPermissionRequestsForSession: (sessionId: string) => void;
   deleteLocalSessionData: (sessionId: string) => void;
 };
-

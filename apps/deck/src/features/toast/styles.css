@@ -99,7 +99,7 @@
   animation: toast-exit 180ms ease forwards;
 }
 
-[data-deck-theme="dark"] .toast-item {
+[data-theme="dark"] .toast-item {
   background: linear-gradient(
     135deg,
     var(--toast-accent-bg),
@@ -109,12 +109,12 @@
   box-shadow: 0 18px 42px rgb(0 0 0 / 0.34);
 }
 
-[data-deck-theme="dark"] .toast-close {
+[data-theme="dark"] .toast-close {
   background: rgb(248 250 252 / 0.08);
 }
 
-[data-deck-theme="dark"] .toast-close:hover,
-[data-deck-theme="dark"] .toast-close:focus-visible {
+[data-theme="dark"] .toast-close:hover,
+[data-theme="dark"] .toast-close:focus-visible {
   background: var(--toast-accent-bg);
   color: var(--color-surface);
 }

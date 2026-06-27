@@ -40,12 +40,20 @@ test("applyHelmInventory merges a partial inventory bucket", () => {
   const store = createTestStore();
 
   store.getState().applyHelmInventory("helm-1", { projects: [project("p1")] });
-  store.getState().applyHelmInventory("helm-1", { sessions: [] });
+  store.getState().applyHelmInventory("helm-1", {
+    sessions: [],
+    logging: { level: "trace", format: "pretty", acpTrace: "summary" },
+  });
 
   assert.deepEqual(store.getState().helmInventories["helm-1"]?.projects, [
     project("p1"),
   ]);
   assert.deepEqual(store.getState().helmInventories["helm-1"]?.sessions, []);
+  assert.deepEqual(store.getState().helmInventories["helm-1"]?.logging, {
+    level: "trace",
+    format: "pretty",
+    acpTrace: "summary",
+  });
 });
 
 test("setHelmConnection stores per-helm connection state", () => {

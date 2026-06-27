@@ -7,9 +7,10 @@ import type {
   ProjectFileSummary,
 } from "@tiller/shared";
 import {
-  buildMissionPanelPages,
+  buildMissionDisplayTabs,
   resolveMissionActivityLoading,
   resolveVisibleProjectFiles,
+  selectMissionDisplayTab,
 } from "./session-render-state.js";
 
 function entry(path: string, kind: ProjectFileSummary["kind"]): ProjectFileSummary {
@@ -86,15 +87,21 @@ test("project file search ignores collapsed tree state", () => {
   );
 });
 
-test("mission display pages keep the Git diff list out but preserve diff detail", () => {
+test("mission display tabs include graph and diff-detail fixed tabs", () => {
   assert.deepEqual(
-    buildMissionPanelPages(3, 2, [{ id: "custom-1", title: "自定义" }]),
+    buildMissionDisplayTabs(3, 2),
     [
-      { id: "overview", title: "概览" },
-      { id: "logbook", title: "航行日志 (2)" },
+      { id: "graph", title: "图表" },
       { id: "diff-detail", title: "Diff 详情" },
-      { id: "custom-1", title: "自定义" },
     ],
+  );
+});
+
+test("mission display tab selection keeps diff-detail when graph is not selected", () => {
+  const tabs = buildMissionDisplayTabs(3, 2);
+  assert.deepEqual(
+    selectMissionDisplayTab(tabs, "diff-detail"),
+    { id: "diff-detail", title: "Diff 详情" },
   );
 });
 

@@ -1,0 +1,45 @@
+/* tokens/brand.css — Workbench Void v3 raw foundation
+ *
+ * Brand-layer tokens describe the foundational design language: typography
+ * stacks, radii, control density, ring width, and the canonical type scale.
+ * These values are NOT theme-dependent — they look the same across light,
+ * dark, and tiller themes. See docs/local/reference/DESIGN-SYSTEM-V3-PLAN.md
+ * §C1.1 for layer rationale.
+ */
+
+@theme {
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius: 0.5rem;     /* 8px */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.5rem;  /* 8px */
+  --radius-lg: 0.75rem; /* 12px */
+  --radius-full: 9999px;
+
+  /* Workbench Void · Control density tokens · v2 IDE-first (24px default).
+     See docs/local/reference/DESIGN.md §5. Single source for all control sizing —
+     consumers must not hand-code h-7 / size-7 / px-4 type heights. */
+  --control-h-xs: 1.25rem;   /* 20px · compact   — inline actions, table rows */
+  --control-h-sm: 1.375rem;  /* 22px · toolbar   — top nav, status bar */
+  --control-h-md: 1.5rem;    /* 24px · default   — primary IDE density */
+  --control-h-lg: 2rem;      /* 32px · hero      — landing CTA, empty-state */
+  --control-px-xs: 0.375rem; /*  6px */
+  --control-px-sm: 0.5rem;   /*  8px */
+  --control-px-md: 0.5rem;   /*  8px — tighter than v1's 16px, see DESIGN.md §5.1 */
+  --control-px-lg: 1rem;     /* 16px */
+
+  /* Typography density — DESIGN.md §4.1 default body is 13px, not 14px.
+     v3 hierarchy (Workbench Void overview pages): display / section / action / meta.
+     Section / action / meta verified against the dashboard rebuild — keep these
+     four as the canonical scale and avoid arbitrary `text-[Npx]` utilities. */
+  --text-display: 1.375rem;   /* 22px · KPI primary number */
+  --text-section: 0.8125rem;  /* 13px · section title / list primary label */
+  --text-action:  0.75rem;    /* 12px · action button / counter / inline kind */
+  --text-meta:    0.6875rem;  /* 11px · meta · timestamp · helm host · link · tab */
+  --text-default: 0.8125rem;  /* 13px · body default (alias of text-section) */
+  --text-2xs:     0.625rem;   /* 10px · eyebrow / badge / count only */
+
+  /* Focus ring width unified — DESIGN.md §3.3, fixes audit F-011. */
+  --ring-width: 2px;
+}

@@ -3,6 +3,7 @@ import {
   isValidElement,
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -43,6 +44,9 @@ const MERMAID_LANGUAGE = "mermaid";
 const OPEN_MERMAID_FENCE_LINE = /^([ \t]{0,3})(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/iu;
 const OPEN_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})(?:[ \t].*)?$/u;
 const CLOSE_MARKDOWN_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/u;
+const MARKDOWN_INLINE_CODE_CLASS =
+  "markdown-inline-code box-decoration-clone break-words rounded-[5px] border border-border-ghost bg-surface-emphasis/70 px-1.5 py-[1px] text-[0.92em] font-semibold text-foreground";
+const MAX_HIGHLIGHT_CACHE_SIZE = 256;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
@@ -67,7 +71,7 @@ const markdownComponents: Components = {
     return (
       <h1
         {...props}
-        className={[className, "markdown-heading my-3 text-xl font-semibold leading-tight text-foreground"]
+        className={[className, "markdown-heading my-1.5 text-[15px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -79,7 +83,7 @@ const markdownComponents: Components = {
     return (
       <h2
         {...props}
-        className={[className, "markdown-heading my-2 text-lg font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1.5 text-[14px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -91,7 +95,7 @@ const markdownComponents: Components = {
     return (
       <h3
         {...props}
-        className={[className, "markdown-heading my-2 text-base font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[13px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -103,7 +107,7 @@ const markdownComponents: Components = {
     return (
       <h4
         {...props}
-        className={[className, "markdown-heading my-2 text-sm font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -115,7 +119,7 @@ const markdownComponents: Components = {
     return (
       <h5
         {...props}
-        className={[className, "markdown-heading my-2 text-sm font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -127,7 +131,7 @@ const markdownComponents: Components = {
     return (
       <h6
         {...props}
-        className={[className, "markdown-heading my-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"]
+        className={[className, "markdown-heading my-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -138,7 +142,7 @@ const markdownComponents: Components = {
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,
-      "markdown-paragraph leading-7 text-foreground",
+      "markdown-paragraph leading-[1.5] text-foreground",
       isThinkingParagraph(children) ? "markdown-paragraph-thinking italic text-muted-foreground" : null,
     ]
       .filter(Boolean)
@@ -151,21 +155,21 @@ const markdownComponents: Components = {
   },
   ul({ children, node: _node, ...props }) {
     return (
-      <ul {...props} className="my-2 list-disc space-y-1 pl-5 marker:text-primary">
+      <ul {...props} className="my-1.5 list-disc space-y-0.5 pl-4 marker:text-primary">
         {children}
       </ul>
     );
   },
   ol({ children, node: _node, ...props }) {
     return (
-      <ol {...props} className="my-2 list-decimal space-y-1 pl-5 marker:text-primary">
+      <ol {...props} className="my-1.5 list-decimal space-y-0.5 pl-4 marker:text-primary">
         {children}
       </ol>
     );
   },
   li({ children, node: _node, ...props }) {
     return (
-      <li {...props} className="pl-1 leading-7 text-foreground [&>p]:inline">
+      <li {...props} className="pl-1 leading-[1.5] text-foreground [&>p]:inline">
         {children}
       </li>
     );
@@ -174,7 +178,7 @@ const markdownComponents: Components = {
     return (
       <blockquote
         {...props}
-        className="border-l-2 border-primary/50 pl-3 text-muted-foreground"
+        className="my-1.5 border-l-2 border-primary/50 pl-3 text-muted-foreground"
       >
         {children}
       </blockquote>
@@ -199,12 +203,11 @@ const markdownComponents: Components = {
     return (
       <code
         {...props}
-        className={[
-          className,
-          "rounded bg-surface-sunken px-1 py-0.5 text-[0.95em] font-medium text-foreground",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={
+          className
+            ? `${className} ${MARKDOWN_INLINE_CODE_CLASS}`
+            : MARKDOWN_INLINE_CODE_CLASS
+        }
       >
         {children}
       </code>
@@ -214,7 +217,7 @@ const markdownComponents: Components = {
     return (
       <th
         {...props}
-        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-3 py-2 text-left text-xs font-semibold text-muted-foreground"
+        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-2.5 py-1.5 text-left text-[11px] font-semibold text-muted-foreground"
       >
         {children}
       </th>
@@ -224,7 +227,7 @@ const markdownComponents: Components = {
     return (
       <td
         {...props}
-        className="markdown-table-cell border-t border-border-ghost px-3 py-2 align-top text-sm text-foreground"
+        className="markdown-table-cell border-t border-border-ghost px-2.5 py-1.5 align-top text-[12.5px] text-foreground"
       >
         {children}
       </td>
@@ -233,7 +236,7 @@ const markdownComponents: Components = {
   table({ children, node: _node, ...props }) {
     return (
       <div className="markdown-table-scroll max-w-full overflow-x-auto overflow-y-hidden rounded-md border border-border-ghost">
-        <table {...props} className="w-full min-w-max border-collapse text-left text-sm">
+        <table {...props} className="w-full min-w-max border-collapse text-left text-[12.5px]">
           {children}
         </table>
       </div>
@@ -259,14 +262,16 @@ export const MarkdownMessage = memo(function MarkdownMessage({
 }: {
   text: string;
 }) {
+  const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
+
   return (
-    <div className="markdown-message space-y-3 text-sm leading-7 text-foreground">
+    <div className="markdown-message space-y-1.5 text-[12.5px] leading-[1.5] text-foreground">
       <ReactMarkdown
         components={markdownComponents}
         remarkPlugins={markdownRemarkPlugins}
         rehypePlugins={markdownRehypePlugins}
       >
-        {normalizeMarkdownMessageText(text)}
+        {normalizedText}
       </ReactMarkdown>
     </div>
   );
@@ -293,6 +298,8 @@ export async function resolveMarkdownCodeHighlight(
   const cacheKey = markdownHighlightCacheKey(code, language);
   const cached = markdownHighlightCache.get(cacheKey);
   if (cached) {
+    markdownHighlightCache.delete(cacheKey);
+    markdownHighlightCache.set(cacheKey, cached);
     return cached;
   }
 
@@ -307,6 +314,12 @@ export async function resolveMarkdownCodeHighlight(
     language: result.language ?? language,
   };
   markdownHighlightCache.set(cacheKey, highlighted);
+  if (markdownHighlightCache.size > MAX_HIGHLIGHT_CACHE_SIZE) {
+    const firstKey = markdownHighlightCache.keys().next().value;
+    if (firstKey !== undefined) {
+      markdownHighlightCache.delete(firstKey);
+    }
+  }
   return highlighted;
 }
 
@@ -443,7 +456,7 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-sm text-[var(--markdown-code-fg)] shadow-sm">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-[12.5px] text-[var(--markdown-code-fg)] shadow-sm">
       <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-[var(--markdown-code-head)] px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
@@ -461,14 +474,14 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">
+        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">
           <code
             className={`hljs !bg-transparent language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-3 text-xs leading-6 text-[var(--markdown-code-fg)]">{children}</pre>
+        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">{children}</pre>
       )}
     </div>
   );
@@ -529,7 +542,7 @@ function MarkdownMermaidBlock({ code }: { code: string }) {
   }, [code]);
 
   return (
-    <div className="markdown-mermaid-block overflow-hidden rounded-lg border border-border-ghost bg-surface text-sm text-foreground shadow-sm">
+    <div className="markdown-mermaid-block overflow-hidden rounded-lg border border-border-ghost bg-surface text-[12.5px] text-foreground shadow-sm">
       <div className="not-prose flex items-center justify-between gap-3 border-b border-border-ghost bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground">
         <span>Mermaid</span>
         <div className="flex items-center gap-2">
@@ -552,7 +565,7 @@ function MarkdownMermaidBlock({ code }: { code: string }) {
           dangerouslySetInnerHTML={{ __html: renderState.svg }}
         />
       ) : (
-        <pre className="overflow-x-auto p-3 text-xs leading-6 text-muted-foreground">
+        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-muted-foreground">
           <code>{code}</code>
         </pre>
       )}

@@ -1,15 +1,68 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const LOGS_DIR = resolve(REPO_ROOT, "logs");
-export const ACP_LOGS_DIR = resolve(LOGS_DIR, "acp");
+export type AcpProtocolTraceMode = "off" | "summary" | "raw";
 
-mkdirSync(ACP_LOGS_DIR, { recursive: true });
+export type AcpProtocolLoggingOptions = {
+  mode?: AcpProtocolTraceMode;
+  logsDir?: string;
+};
 
-export function writeProtocolLog(logFile: string, stream: "stdin" | "stdout", payload: unknown) {
-  writeLogLine(logFile, stream, JSON.stringify(sanitizeProtocolLogPayload(payload)));
+export type ProtocolLogSink = {
+  logFile?: string;
+  writeProtocol(stream: "stdin" | "stdout", payload: unknown): void;
+  writeChunk(stream: string, chunk: string): void;
+  writeLine(stream: string, message: string): void;
+};
+
+export function createProtocolLogSink(params: {
+  mode?: AcpProtocolTraceMode;
+  logsDir?: string;
+  filePrefix: string;
+  token: string;
+}): ProtocolLogSink {
+  const mode = params.mode ?? "summary";
+  if (mode === "off" || !params.logsDir) {
+    return createNoopProtocolLogSink();
+  }
+
+  const logFile = resolveProtocolLogFile(params.logsDir, params.filePrefix, params.token);
+  mkdirSync(dirname(logFile), { recursive: true });
+
+  return {
+    logFile,
+    writeProtocol(stream, payload) {
+      const loggedPayload = mode === "raw"
+        ? payload
+        : summarizeProtocolLogPayload(payload);
+      writeLogLine(logFile, stream, JSON.stringify(loggedPayload));
+    },
+    writeChunk(stream, chunk) {
+      const message = mode === "raw"
+        ? chunk.replace(/\r/g, "\\r").replace(/\n/g, "\\n")
+        : `chunk chars=${chunk.length}`;
+      writeLogLine(logFile, stream, message);
+    },
+    writeLine(stream, message) {
+      writeLogLine(logFile, stream, message);
+    },
+  };
+}
+
+export function createNoopProtocolLogSink(): ProtocolLogSink {
+  return {
+    writeProtocol: () => undefined,
+    writeChunk: () => undefined,
+    writeLine: () => undefined,
+  };
+}
+
+export function resolveProtocolLogFile(logsDir: string, filePrefix: string, token: string) {
+  return resolve(logsDir, `${filePrefix}-${sanitizeLogToken(token)}.log`);
+}
+
+export function writeProtocolLog(sink: ProtocolLogSink, stream: "stdin" | "stdout", payload: unknown) {
+  sink.writeProtocol(stream, payload);
 }
 
 export function sanitizeProtocolLogPayload(payload: unknown): unknown {
@@ -32,9 +85,31 @@ export function sanitizeProtocolLogPayload(payload: unknown): unknown {
   return sanitized;
 }
 
-export function writeChunkLog(logFile: string, stream: string, chunk: string) {
-  const trimmed = chunk.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
-  writeLogLine(logFile, stream, trimmed);
+export function summarizeProtocolLogPayload(payload: unknown): unknown {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => summarizeProtocolLogPayload(item));
+  }
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+
+  const summary: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (shouldRedactProtocolLogField(key, value)) {
+      summary[key] = redactProtocolLogValue(value);
+    } else if (key === "params" && value && typeof value === "object") {
+      summary[key] = summarizeProtocolLogPayload(value);
+    } else if (Array.isArray(value)) {
+      summary[key] = { items: value.length };
+    } else {
+      summary[key] = summarizeProtocolScalar(value);
+    }
+  }
+  return summary;
+}
+
+export function writeChunkLog(sink: ProtocolLogSink, stream: string, chunk: string) {
+  sink.writeChunk(stream, chunk);
 }
 
 export function sanitizeLogToken(value: string) {
@@ -60,13 +135,27 @@ function payloadHasRedactableField(value: unknown): boolean {
 }
 
 function shouldRedactProtocolLogField(key: string, value: unknown) {
-  return typeof value === "string" && /^(text|output|patch|content)$/iu.test(key);
+  return typeof value === "string" && /^(text|output|patch|content|prompt)$/iu.test(key);
 }
 
 function redactProtocolLogValue(value: unknown) {
   return typeof value === "string" ? `[redacted chars=${value.length}]` : "[redacted]";
 }
 
-export function writeLogLine(logFile: string, stream: string, message: string) {
+function summarizeProtocolScalar(value: unknown) {
+  if (typeof value === "string") {
+    return `[string chars=${value.length}]`;
+  }
+  if (value && typeof value === "object") {
+    return summarizeProtocolLogPayload(value);
+  }
+  return value;
+}
+
+export function writeLogLine(logFile: string | undefined, stream: string, message: string) {
+  if (!logFile) {
+    return;
+  }
+  mkdirSync(dirname(logFile), { recursive: true });
   appendFileSync(logFile, `${new Date().toISOString()} [${stream}] ${message}\n`, "utf8");
 }

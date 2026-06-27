@@ -18,7 +18,12 @@ function findButtonByText(node: ReactNode, text: string): ReactElement<{ onClick
 
   const children = element.props.children;
   const candidates = Array.isArray(children) ? children : [children];
-  for (const child of candidates) {
+  for (const child of [
+    ...candidates,
+    ...Object.entries(element.props)
+      .filter(([key]) => key !== "children")
+      .flatMap(([, value]) => Array.isArray(value) ? value : [value]),
+  ]) {
     if (isValidElement(child)) {
       try {
         return findButtonByText(child, text);
@@ -54,7 +59,7 @@ test("ProjectInventorySection shows cancel action while editing", () => {
     <ProjectInventorySection
       connected
       dispatch={dispatch}
-      draft={{ id: project.id, name: project.name, path: project.path ?? "" }}
+      draft={{ id: project.id, name: project.name, path: project.path ?? "", summaryFile: "" }}
       formOpen
       selectedHelmAgents={[]}
       selectedHelmId="helm-1"
@@ -64,6 +69,10 @@ test("ProjectInventorySection shows cancel action while editing", () => {
       setDraft={() => undefined}
       setFormOpen={() => undefined}
       setSaveMessage={() => undefined}
+      projectPathCandidates={[]}
+      requestProjectPathCandidates={() => undefined}
+      summaryFileCandidates={[]}
+      requestSummaryFileCandidates={() => undefined}
     />,
   );
 
@@ -76,7 +85,7 @@ test("ProjectInventorySection cancel closes form and discards edited draft", () 
   const tree = ProjectInventorySection({
     connected: true,
     dispatch,
-    draft: { id: project.id, name: "Unsaved Project", path: "D:/changed" },
+    draft: { id: project.id, name: "Unsaved Project", path: "D:/changed", summaryFile: "docs/context.md" },
     formOpen: true,
     selectedHelmAgents: [],
     selectedHelmId: "helm-1",
@@ -84,17 +93,21 @@ test("ProjectInventorySection cancel closes form and discards edited draft", () 
     selectedHelmRpcClient: null,
     selectedHelmWorktrees: [],
     setDraft: (value) => {
-      nextDraft = typeof value === "function" ? value({ name: "", path: "" }) : value;
+      nextDraft = typeof value === "function" ? value({ name: "", path: "", summaryFile: "" }) : value;
     },
     setFormOpen: (value) => {
       nextFormOpen = typeof value === "function" ? value(true) : value;
     },
     setSaveMessage: () => undefined,
+    projectPathCandidates: [],
+    requestProjectPathCandidates: () => undefined,
+    summaryFileCandidates: [],
+    requestSummaryFileCandidates: () => undefined,
   });
 
   findButtonByText(tree, "取消").props.onClick?.();
 
-  assert.deepEqual(nextDraft, { name: "", path: "" });
+  assert.deepEqual(nextDraft, { name: "", path: "", summaryFile: "" });
   assert.equal(nextFormOpen, false);
 });
 

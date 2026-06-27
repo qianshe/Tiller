@@ -101,6 +101,7 @@ export function mergeAgentMessages(
           ...incoming,
           id: last.id,
           text: collapseRepeatedAssistantText(nextText),
+          timelineSequence: last.timelineSequence ?? incoming.timelineSequence,
           timestamp: incoming.timestamp,
         },
       ];
@@ -110,7 +111,7 @@ export function mergeAgentMessages(
   if (
     last.role === "system" &&
     incoming.role === "system" &&
-    last.text === incoming.text
+    normalizeSystemMessageText(last.text) === normalizeSystemMessageText(incoming.text)
   ) {
     return items;
   }
@@ -182,6 +183,9 @@ export function mergeMessageHistory(
 
 function isEquivalentMessage(left: AgentMessage, right: AgentMessage) {
   if (left.role !== right.role || left.text !== right.text) {
+    return false;
+  }
+  if (left.role === "user") {
     return false;
   }
 
@@ -538,6 +542,10 @@ function collapseRepeatedAssistantText(text: string) {
       ? bridgeIndex
       : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
+}
+
+export function normalizeSystemMessageText(text: string) {
+  return text.replace(/\(request id: [^)]*\)/gu, "").replace(/\s+/gu, " ").trim();
 }
 
 function collapseExactRepeatedText(text: string) {

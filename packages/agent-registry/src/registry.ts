@@ -21,6 +21,11 @@ export type TillerConfig = {
     checkOnStart?: boolean;
     previewHint?: boolean;
   };
+  logging?: {
+    level?: string;
+    format?: string;
+    acpTrace?: string;
+  };
   approvalPolicy?: ApprovalPolicy;
 };
 
@@ -197,13 +202,90 @@ function readRawTillerConfig(configPath: string): LegacyTillerConfig {
 }
 
 function stripProjectState(config: LegacyTillerConfig): TillerConfig {
-  return {
-    helms: config.helms ?? [],
-    agents: config.agents ?? [],
-    daemon: config.daemon,
-    updates: config.updates,
-    approvalPolicy: config.approvalPolicy,
+  const next: TillerConfig = {};
+  if (config.helms?.length) {
+    next.helms = config.helms;
+  }
+  const agents = (config.agents ?? []).map(sanitizeProviderForConfig);
+  if (agents.length) {
+    next.agents = agents;
+  }
+  if (config.daemon) {
+    next.daemon = config.daemon;
+  }
+  if (config.updates) {
+    next.updates = config.updates;
+  }
+  if (config.logging) {
+    next.logging = config.logging;
+  }
+  if (config.approvalPolicy) {
+    next.approvalPolicy = config.approvalPolicy;
+  }
+  return next;
+}
+
+function sanitizeProviderForConfig(provider: AcpAgentProvider): AcpAgentProvider {
+  const normalized = normalizeLegacyProvider(provider);
+  const sanitized: AcpAgentProvider = {
+    id: normalized.id,
+    name: normalized.name,
+    ...(normalized.description ? { description: normalized.description } : {}),
+    ...(normalized.kind ? { kind: normalized.kind } : {}),
+    command: normalized.command,
+    ...(normalized.args?.length ? { args: normalized.args } : {}),
+    ...(normalized.env && Object.keys(normalized.env).length ? { env: normalized.env } : {}),
+    ...(normalized.mcpServers?.length ? { mcpServers: normalized.mcpServers } : {}),
+    ...(normalized.cwd ? { cwd: normalized.cwd } : {}),
+    ...(typeof normalized.initializeTimeoutMs === "number"
+      ? { initializeTimeoutMs: normalized.initializeTimeoutMs }
+      : {}),
+    ...(typeof normalized.promptTimeoutMs === "number"
+      ? { promptTimeoutMs: normalized.promptTimeoutMs }
+      : {}),
+    ...(normalized.defaultAgent ? { defaultAgent: normalized.defaultAgent } : {}),
+    transport: normalized.transport,
+    protocol: normalized.protocol,
   };
+  const capabilities = sanitizeProviderCapabilities(normalized);
+  if (capabilities) {
+    sanitized.capabilities = capabilities;
+  }
+  return sanitized;
+}
+
+function sanitizeProviderCapabilities(provider: AcpAgentProvider) {
+  const capabilities = provider.capabilities;
+  if (!capabilities) {
+    return undefined;
+  }
+  const next = { ...capabilities };
+  if (next.sessionConfig && isInferredSessionConfig(provider, next.sessionConfig)) {
+    delete next.sessionConfig;
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function isInferredSessionConfig(
+  provider: AcpAgentProvider,
+  sessionConfig: NonNullable<AcpAgentProvider["capabilities"]>["sessionConfig"],
+) {
+  const declared = {
+    model: sessionConfig?.model ?? "none",
+    reasoningEffort: sessionConfig?.reasoningEffort ?? "none",
+    modelFormat: sessionConfig?.modelFormat,
+  };
+  const capabilities = { ...(provider.capabilities ?? {}) };
+  delete capabilities.sessionConfig;
+  const inferred = resolveLegacySessionConfigSupport({
+    ...provider,
+    capabilities: Object.keys(capabilities).length ? capabilities : undefined,
+  });
+  return (
+    declared.model === inferred.model &&
+    declared.reasoningEffort === inferred.reasoningEffort &&
+    declared.modelFormat === inferred.modelFormat
+  );
 }
 
 export function parseTillerConfig(raw: string, configPath = "<memory>"): TillerConfig {
@@ -266,7 +348,7 @@ function normalizeLegacyProject(
     path: item.path,
     branch: item.branch ?? item.name,
     kind: normalizePath(item.path) === normalizePath(project.path) ? "root" as const : (item.kind ?? "git-worktree" as const),
-    summary: item.summary,
+    summary: sanitizeSummaryForConfig(item.summary),
   })));
   if (project.path && !worktrees.some((item) => normalizePath(item.path) === normalizePath(project.path))) {
     worktrees.unshift({
@@ -282,7 +364,8 @@ function normalizeLegacyProject(
     name: project.name,
     helmId: project.helmId,
     path: project.path,
-    summary: project.summary,
+    summary: sanitizeSummaryForConfig(project.summary, project.name),
+    summaryFile: sanitizeSummaryFileForConfig(project.summaryFile),
     gitBranches: project.gitBranches,
     gitCurrentBranch: project.gitCurrentBranch,
     worktrees,
@@ -373,14 +456,87 @@ function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
     name: String(sanitized.name),
     helmId: String(sanitized.helmId),
     path: typeof sanitized.path === "string" ? sanitized.path : undefined,
-    summary: typeof sanitized.summary === "string" ? sanitized.summary : undefined,
+    summary:
+      typeof sanitized.summary === "string"
+        ? sanitizeSummaryForConfig(sanitized.summary, String(sanitized.name))
+        : undefined,
+    summaryFile:
+      typeof sanitized.summaryFile === "string"
+        ? sanitizeSummaryFileForConfig(sanitized.summaryFile)
+        : undefined,
     gitBranches: Array.isArray(sanitized.gitBranches)
       ? sanitized.gitBranches.filter((branch): branch is string => typeof branch === "string")
       : undefined,
     gitCurrentBranch:
       typeof sanitized.gitCurrentBranch === "string" ? sanitized.gitCurrentBranch : undefined,
-    worktrees: dedupeWorktrees((sanitized.worktrees as WorktreeSummary[] | undefined) ?? []),
+    worktrees: dedupeWorktrees((sanitized.worktrees as WorktreeSummary[] | undefined) ?? []).map(
+      sanitizeWorktreeForConfig,
+    ),
   };
+}
+
+function sanitizeWorktreeForConfig(worktree: WorktreeSummary): WorktreeSummary {
+  const summary = sanitizeSummaryForConfig(worktree.summary);
+  return summary === worktree.summary ? worktree : { ...worktree, summary };
+}
+
+function sanitizeSummaryFileForConfig(path: string | undefined) {
+  const slashed = path?.replace(/\\/gu, "/").trim();
+  if (!slashed) {
+    return undefined;
+  }
+  if (slashed.startsWith("/") || /^[a-zA-Z]:\//u.test(slashed)) {
+    return undefined;
+  }
+  const normalized = slashed.replace(/^\/+/, "");
+  if (normalized.split("/").some((part) => part === "..")) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function sanitizeSummaryForConfig(summary: string | undefined, projectName?: string) {
+  const normalized = summary?.replace(/\s+/gu, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const configuredLabel = "Configured summary:";
+  const configuredIndex = normalized.indexOf(configuredLabel);
+  const configured =
+    configuredIndex >= 0
+      ? normalized.slice(configuredIndex + configuredLabel.length).trim()
+      : normalized;
+  const projectPrefix = projectName ? `Project: ${projectName} ` : "";
+  const candidate =
+    projectPrefix && configured.startsWith(projectPrefix)
+      ? configured.slice(projectPrefix.length).trim()
+      : configured;
+  const contentEnd = findGeneratedSummaryMarker(candidate);
+  const content = (contentEnd >= 0 ? candidate.slice(0, contentEnd) : candidate).trim();
+
+  if (!content || isGeneratedSummaryShell(content)) {
+    return undefined;
+  }
+  return content;
+}
+
+function findGeneratedSummaryMarker(summary: string) {
+  const markerIndexes = [
+    " Worktree:",
+    " Path:",
+    " AGENTS.md:",
+    " CLAUDE.md:",
+    " README.md:",
+    " package.json:",
+  ]
+    .map((marker) => summary.indexOf(marker))
+    .filter((index) => index >= 0);
+  return markerIndexes.length ? Math.min(...markerIndexes) : -1;
+}
+
+function isGeneratedSummaryShell(summary: string) {
+  return /^(?:Project|Worktree|Path|AGENTS\.md|CLAUDE\.md|README\.md|package\.json)\s*:/iu.test(summary);
 }
 
 function readProjectYamlFile(path: string): ProjectSummary {
@@ -475,6 +631,14 @@ export function saveHelmToConfig(helm: HelmSummary, configPath = getDefaultConfi
   const current = readTillerConfig(configPath);
   const nextHelms = [...(current.helms ?? []).filter((item) => item.id !== helm.id), helm];
   return writeGlobalConfig({ ...current, helms: nextHelms, daemon: resolveDaemonConfig(current.daemon) }, configPath, { helm });
+}
+
+export function saveLoggingToConfig(
+  logging: NonNullable<TillerConfig["logging"]>,
+  configPath = getDefaultConfigPath(),
+) {
+  const current = readTillerConfig(configPath);
+  return writeGlobalConfig({ ...current, logging }, configPath, { logging });
 }
 
 export function saveProviderToConfig(provider: AcpAgentProvider, configPath = getDefaultConfigPath()) {

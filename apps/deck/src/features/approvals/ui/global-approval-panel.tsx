@@ -10,7 +10,7 @@ import {
   resolvePermissionActionLabel,
   resolvePermissionCommandDisplay,
   type MissionPermissionDrawerCopy,
-} from "../../mission/ui/permission-drawer";
+} from "../../mission/conversation";
 
 const PANEL_COPY: MissionPermissionDrawerCopy = {
   permissionRequest: "待审核任务",
@@ -67,7 +67,7 @@ export function GlobalApprovalPanel({
               className="grid gap-2 rounded-xl border border-border-ghost bg-surface-sunken p-2"
             >
               <div className="grid gap-1">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="text-meta font-medium uppercase tracking-wider text-muted-foreground">
                   Session · {item.sessionId}
                 </span>
                 <strong className="truncate text-[0.95rem] font-semibold text-foreground">

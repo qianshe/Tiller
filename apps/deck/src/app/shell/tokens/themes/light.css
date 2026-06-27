@@ -1,0 +1,116 @@
+/* tokens/themes/light.css — Default light theme + density variants
+ *
+ * Source: docs/Light-DESIGN (2).md. Light is the canonical scope, so it lives
+ * on `:root`; other themes opt in via [data-theme="..."].
+ *
+ * Legacy `--color-*` aliases are kept here through Stage 5 of the v3 plan to
+ * avoid breaking existing call sites; remove them only once a grep confirms
+ * no consumer still references them.
+ */
+
+@layer base {
+  :root {
+    /* New semantic tokens (light, sourced from docs/Light-DESIGN (2).md) */
+    --background:           #f9f9fb;
+    --canvas:               #f3f3f5;
+    --surface:              #ffffff;
+    --surface-elevated:     #ffffff;
+    --surface-sunken:       #f3f3f5;
+    --surface-emphasis:     #e2e2e4;
+    --popover-glass:        rgb(255 255 255 / 0.70);
+
+    --foreground:           #1a1c1d;
+    --muted-foreground:     #414755;
+
+    --primary:              #0058bc;
+    --primary-strong:       #0070eb;
+    --on-primary:           #ffffff;
+    --primary-soft:         #d8e2ff;
+
+    /* Accent === primary. Defined explicitly so Tailwind's `bg-accent` utility
+       resolves to brand blue instead of the framework's default violet
+       (fixes audit F-002). DESIGN.md §3.3. */
+    --accent:               var(--primary);
+    --accent-foreground:    var(--on-primary);
+
+    --success:              #006b27;
+    --success-container:    #008733;
+    --on-success-container: #f7fff2;
+    --warning:              #ffb000;
+    --on-warning:           #8a5600;
+    --destructive:          #ba1a1a;
+
+    --diff-added-bg:        #d7f3df;
+    --diff-added-text:      #064b23;
+    --diff-added-border:    #008733;
+    --diff-deleted-bg:      #ffe0e0;
+    --diff-deleted-text:    #8e1515;
+    --diff-deleted-border:  #ba1a1a;
+    --diff-hunk-bg:         #d8e2ff;
+    --diff-hunk-text:       #003f8a;
+    --diff-meta-bg:         #e7e9ee;
+    --diff-meta-text:       #4a5568;
+    --markdown-code-bg:     #1f2933;
+    --markdown-code-fg:     #e8eef5;
+    --markdown-code-head:   #d8dee6;
+
+    --border-ghost:         rgb(193 198 215 / 0.20);
+    --ring:                 #0058bc;
+
+    --terminal-bg:          #2f3132;
+    --terminal-fg:          #f0f0f2;
+
+    --shadow-ambient:       0 0 80px rgb(0 88 188 / 0.06);
+
+    /* —— Legacy token compat shim (preserved through Stage 5) —— */
+    --color-text:           var(--foreground);
+    --color-text-inverse:   #eef4ff;
+    --color-muted:          var(--muted-foreground);
+    --color-subtle:         #64748b;
+    --color-bg:             var(--background);
+    --color-bg-elevated:    var(--surface);
+    --color-surface:        rgba(255, 255, 255, 0.78);
+    --color-surface-strong: rgba(255, 255, 255, 0.9);
+    --color-primary:        var(--primary);
+    --color-primary-soft:   var(--primary-soft);
+    --color-secondary-bg:   var(--surface);
+    --color-secondary-text: #2f3645;
+    --color-border-subtle:  var(--border-ghost);
+    --color-border-strong:  rgba(118, 125, 150, 0.18);
+    --color-danger:         var(--destructive);
+    --color-danger-soft:    rgba(239, 68, 68, 0.1);
+
+    --radius-panel:         24px;
+    --radius-card:          18px;
+    --radius-control:       14px;
+    --radius-pill:          9999px;
+
+    --shadow-panel:         0 20px 40px rgba(26, 28, 29, 0.06);
+    --shadow-card:          0 12px 28px rgba(30, 41, 59, 0.07);
+
+    --deck-color-scheme:    light;
+    --deck-body-background: var(--background);
+  }
+
+  body[data-density="compact"] {
+    --control-h-xs: 1.125rem;  /* 18px */
+    --control-h-sm: 1.25rem;   /* 20px */
+    --control-h-md: 1.375rem;  /* 22px */
+    --control-h-lg: 1.75rem;   /* 28px */
+    --control-px-xs: 0.25rem;  /* 4px */
+    --control-px-sm: 0.375rem; /* 6px */
+    --control-px-md: 0.375rem; /* 6px */
+    --control-px-lg: 0.75rem;  /* 12px */
+  }
+
+  body[data-density="cozy"] {
+    --control-h-xs: 1.375rem;  /* 22px */
+    --control-h-sm: 1.5rem;    /* 24px */
+    --control-h-md: 1.75rem;   /* 28px */
+    --control-h-lg: 2.25rem;   /* 36px */
+    --control-px-xs: 0.5rem;   /* 8px */
+    --control-px-sm: 0.625rem; /* 10px */
+    --control-px-md: 0.625rem; /* 10px */
+    --control-px-lg: 1.25rem;  /* 20px */
+  }
+}

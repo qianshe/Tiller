@@ -5,6 +5,7 @@ import {
   buildConversationTimeline,
   mergeAgentMessages,
   mergeMessageHistory,
+  mergeToolCallHistory,
 } from "./timeline.js";
 
 test("mergeAgentMessages collapses duplicate assistant text with different markdown bullet formatting", () => {
@@ -651,6 +652,32 @@ test("mergeMessageHistory preserves server order even when timestamps are out of
   );
 });
 
+test("mergeMessageHistory keeps repeated user prompts with identical text separate", () => {
+  const merged = mergeMessageHistory(
+    [
+      {
+        id: "user-first",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-29T10:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "user-second",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-29T10:00:03.000Z",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["user-first", "user-second"],
+  );
+});
+
 test("mergeMessageHistory skips assistant history composites already represented by recent messages", () => {
   const current: AgentMessage[] = [
     {
@@ -752,4 +779,35 @@ test("mergeMessageHistory updates existing messages in place", () => {
   );
   assert.equal(merged[0]?.text, "你好");
   assert.equal(merged[0]?.timestamp, "2026-04-28T10:00:01.000Z");
+});
+
+test("mergeToolCallHistory keeps the latest cumulative thinking output without duplicates", () => {
+  const merged = mergeToolCallHistory(
+    [
+      {
+        id: "session-1-msg-s0:thinking",
+        commandId: "session-1-msg-s0:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "分析 A\n分析 B",
+        timestamp: "2026-05-23T10:00:00.000Z",
+        updatedAt: "2026-05-23T10:00:02.000Z",
+      },
+    ],
+    [
+      {
+        id: "session-1-msg-s0:thinking",
+        commandId: "session-1-msg-s0:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "分析 A",
+        timestamp: "2026-05-23T10:00:00.000Z",
+        updatedAt: "2026-05-23T10:00:03.000Z",
+      },
+    ],
+  );
+
+  assert.equal(merged[0]?.output, "分析 A\n分析 B");
 });

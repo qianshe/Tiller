@@ -184,11 +184,38 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "project/list", params: {} },
     { method: "agent/list", params: {} },
     { method: "agent/connections", params: {} },
+    { method: "logging/get", params: {} },
     { method: "session/list", params: { limit: 25 } },
     { method: "approval/list_pending", params: {} },
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
+});
+
+test("requestInitialSync keeps loading inventory when logging settings fail", async () => {
+  const methods: string[] = [];
+
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method) => {
+      methods.push(method);
+      if (method === "logging/get") {
+        throw new Error("unsupported logging settings");
+      }
+    },
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.deepEqual(methods, [
+    "helm/list",
+    "project/list",
+    "agent/list",
+    "agent/connections",
+    "logging/get",
+    "session/list",
+    "approval/list_pending",
+    "device/list",
+  ]);
 });
 
 test("requestInitialSync clears session loading when session list fails", async () => {

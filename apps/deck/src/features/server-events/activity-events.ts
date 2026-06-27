@@ -1,17 +1,21 @@
 import type { MutableRefObject } from "react";
-import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
-import { commandChunkToToolCall, mergeAgentMessages } from "../logbook";
+import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
+import {
+  appendMessageToSessionTimeline,
+  appendToolCallToSessionTimeline,
+  sortSessionTimelineEntries,
+} from "@tiller/shared";
+import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
+import { stripRedundantAttachmentData } from "./helpers";
+import type { SessionUpdateParams } from "./session-update-contracts";
+
+const MAX_OUTPUTS_PER_SESSION = 2000;
 
 export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   appendSystemMessage: (sessionId: string, text: string) => void;
-};
-
-type SessionUpdateParams = {
-  sessionId: string;
-  update: { kind: string } & Record<string, unknown>;
 };
 
 type ErrorRaisedParams = {
@@ -31,11 +35,15 @@ export function applyActivityUpdate(
 
   switch (update.kind) {
     case "agent_message": {
-      const message = withStreamingState(
-        update.message as AgentMessage,
-        update.streaming,
+      const message = stripRedundantAttachmentData(
+        withStreamingState(update.message, update.streaming),
       );
-      const toolBoundaryTimes = (toolCallsRef.current[sessionId] ?? [])
+      const sessionToolCalls = clearActiveThinkingToolCalls(
+        sessionId,
+        toolCallsRef,
+        store,
+      );
+      const toolBoundaryTimes = sessionToolCalls
         .map((call) => Date.parse(call.timestamp))
         .filter(Number.isFinite);
       store.setMessages((current) => ({
@@ -46,6 +54,7 @@ export function applyActivityUpdate(
           toolBoundaryTimes,
         ),
       }));
+      appendMessageTimelineEntry(store, sessionId, message);
       if (shouldApplyMessageToSessionSummary(message)) {
         store.setSessions((current) =>
           current.map((session) =>
@@ -58,29 +67,135 @@ export function applyActivityUpdate(
       return true;
     }
     case "command_output": {
-      const chunk = update.chunk as Parameters<typeof commandChunkToToolCall>[0];
-      store.setOutputs((current) => ({
-        ...current,
-        [sessionId]: [
-          ...(current[sessionId] ?? []),
-          chunk,
-        ],
-      }));
-      mergeSessionToolCalls(sessionId, [commandChunkToToolCall(chunk)]);
+      const chunk = update.chunk;
+      store.setOutputs((current) => {
+        const existing = current[sessionId] ?? [];
+        const appended = [...existing, chunk];
+        return {
+          ...current,
+          [sessionId]: appended.length > MAX_OUTPUTS_PER_SESSION
+            ? appended.slice(-MAX_OUTPUTS_PER_SESSION)
+            : appended,
+        };
+      });
+      {
+        const toolCall = commandChunkToToolCall(chunk);
+        mergeSessionToolCalls(sessionId, [toolCall]);
+        appendToolCallTimelineEntry(store, sessionId, toolCall);
+      }
       return true;
     }
-    case "tool_call":
-      mergeSessionToolCalls(sessionId, [update.toolCall as AgentToolCall]);
+    case "tool_call": {
+      const toolCall = update.toolCall;
+      const isAlreadySettled = toolCall.status === "completed" || toolCall.status === "failed";
+      if (isAlreadySettled) {
+        const runningSnapshot = { ...toolCall, status: "running" as const };
+        mergeSessionToolCalls(sessionId, [runningSnapshot]);
+        appendToolCallTimelineEntry(store, sessionId, runningSnapshot);
+        requestAnimationFrame(() => {
+          mergeSessionToolCalls(sessionId, [toolCall]);
+          appendToolCallTimelineEntry(useDeckStore.getState(), sessionId, toolCall);
+        });
+      } else {
+        mergeSessionToolCalls(sessionId, [toolCall]);
+        appendToolCallTimelineEntry(store, sessionId, toolCall);
+      }
+      return true;
+    }
+    case "plan_update":
+      // Plan updates are session-scoped state carried over the activity update transport.
+      store.setSessionPlans((current) =>
+        mergeSessionPlanUpdate(current, sessionId, update.plan),
+      );
       return true;
     case "diff_update":
       store.setDiffs((current) => ({
         ...current,
-        [sessionId]: update.files as never,
+        [sessionId]: update.files,
       }));
       return true;
     default:
       return false;
   }
+}
+
+type DeckStore = ReturnType<typeof useDeckStore.getState>;
+
+function mergeSessionPlanUpdate(
+  current: Record<string, AgentPlan>,
+  sessionId: string,
+  incoming: AgentPlan,
+) {
+  if (incoming.entries.length === 0) {
+    if (!current[sessionId]) {
+      return current;
+    }
+    const { [sessionId]: _removed, ...rest } = current;
+    return rest;
+  }
+  return {
+    ...current,
+    [sessionId]: incoming,
+  };
+}
+
+function isAgentPlanComplete(plan: AgentPlan | undefined) {
+  if (!plan?.entries.length) {
+    return false;
+  }
+  return plan.entries.every((entry) => entry.status === "completed");
+}
+
+function appendMessageTimelineEntry(
+  store: DeckStore,
+  sessionId: string,
+  message: AgentMessage,
+) {
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    appendMessageToSessionTimeline(entries, message);
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
+
+function appendToolCallTimelineEntry(
+  store: DeckStore,
+  sessionId: string,
+  toolCall: AgentToolCall,
+) {
+  store.setSessionTimeline((current) => {
+    const entries = [...(current[sessionId] ?? [])];
+    appendToolCallToSessionTimeline(entries, toolCall);
+    return {
+      ...current,
+      [sessionId]: sortSessionTimelineEntries(entries),
+    };
+  });
+}
+
+function clearActiveThinkingToolCalls(
+  sessionId: string,
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
+  store: DeckStore,
+) {
+  const currentSessionToolCalls = toolCallsRef.current[sessionId] ?? [];
+  const nextSessionToolCalls = dropActiveThinkingToolCalls(currentSessionToolCalls);
+  if (nextSessionToolCalls.length === currentSessionToolCalls.length) {
+    return currentSessionToolCalls;
+  }
+
+  store.setToolCalls((current) => {
+    const next = {
+      ...current,
+      [sessionId]: nextSessionToolCalls,
+    };
+    toolCallsRef.current = next;
+    return next;
+  });
+  return nextSessionToolCalls;
 }
 
 function withStreamingState(

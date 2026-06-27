@@ -9,8 +9,7 @@ import type {
   MessagesSlice,
   SessionsSlice,
 } from "../../../store/facade";
-
-type ScrollSnapshot = { scrollHeight: number; scrollTop: number };
+import { buildConversationPaginationPlan } from "../history/model";
 
 type UseHistoryPaginationOptions = {
   activeSessionId: string | null;
@@ -18,7 +17,6 @@ type UseHistoryPaginationOptions = {
   chatMainRef: RefObject<HTMLDivElement | null>;
   dispatch: DispatchToHelm;
   messageHistoryState: MessagesSlice["messageHistoryState"];
-  preserveChatScrollRef: MutableRefObject<ScrollSnapshot | null>;
   sessionHistoryState: SessionsSlice["sessionHistoryState"];
   setActivityHistoryState: ActivitiesSlice["setActivityHistoryState"];
   setMessageHistoryState: MessagesSlice["setMessageHistoryState"];
@@ -42,7 +40,6 @@ export function useHistoryPagination({
   chatMainRef,
   dispatch,
   messageHistoryState,
-  preserveChatScrollRef,
   sessionHistoryState,
   setActivityHistoryState,
   setMessageHistoryState,
@@ -83,30 +80,17 @@ export function useHistoryPagination({
 
   function loadOlderMessages(sessionId: string) {
     const client = getOpenClient(rpcClientRef);
-    const messageState = messageHistoryState[sessionId];
-    const activityState = activityHistoryState[sessionId];
-    const canLoadMessages = Boolean(
-      messageState &&
-        !messageState.loading &&
-        messageState.hasMore &&
-        messageState.nextCursor,
-    );
-    const canLoadActivities = Boolean(
-      activityState &&
-        !activityState.loading &&
-        activityState.hasMore &&
-        activityState.nextCursor,
-    );
-    if (!client || (!canLoadMessages && !canLoadActivities)) {
+    const plan = buildConversationPaginationPlan({
+      sessionId,
+      messagePageLimit,
+      activityPageLimit,
+      messageState: messageHistoryState[sessionId],
+      activityState: activityHistoryState[sessionId],
+    });
+    if (!client || (!plan.listMessages && !plan.getArtifacts)) {
       return;
     }
-    if (activeSessionId === sessionId && chatMainRef.current) {
-      preserveChatScrollRef.current = {
-        scrollHeight: chatMainRef.current.scrollHeight,
-        scrollTop: chatMainRef.current.scrollTop,
-      };
-    }
-    if (canLoadMessages) {
+    if (plan.listMessages) {
       setMessageHistoryState((current) => ({
         ...current,
         [sessionId]: {
@@ -115,13 +99,9 @@ export function useHistoryPagination({
           loading: true,
         },
       }));
-      void dispatch(client, "session/list_messages", {
-        sessionId,
-        limit: messagePageLimit,
-        before: messageState?.nextCursor,
-      });
+      void dispatch(client, "session/list_messages", plan.listMessages);
     }
-    if (canLoadActivities) {
+    if (plan.getArtifacts) {
       loadOlderActivities(sessionId);
     }
   }

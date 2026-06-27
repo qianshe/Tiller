@@ -65,7 +65,10 @@ function sourceArea(path) {
 
 function isFeaturePublicImport(path) {
   const segments = normalize(path).split(sep).filter(Boolean);
-  return segments[0] === "features" && segments.length === 2;
+  return (
+    (segments[0] === "features" && segments.length === 2) ||
+    (segments[0] === "features" && segments.length === 3 && segments[2] === "facade")
+  );
 }
 
 function isFeatureStylesheetImport(path) {

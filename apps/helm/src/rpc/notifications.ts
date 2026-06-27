@@ -1,3 +1,4 @@
+import type { PromptTraceEvent } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
 export function broadcastSessionUpdate(
@@ -20,13 +21,22 @@ export function broadcastErrorRaised(
   context.broadcastNotification("error/raised", input);
 }
 
+export function broadcastPromptTrace(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  event: PromptTraceEvent,
+): void {
+  context.broadcastNotification("debug/prompt_trace", event);
+}
+
 function isSessionDetailUpdate(update: unknown): boolean {
   if (!update || typeof update !== "object" || !("kind" in update)) {
     return false;
   }
   const kind = (update as { kind?: unknown }).kind;
-  return kind === "agent_message"
+  return kind === "user_message"
+    || kind === "agent_message"
     || kind === "tool_call"
+    || kind === "plan_update"
     || kind === "command_output"
     || kind === "diff_update";
 }

@@ -1,12 +1,11 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AcpAgentSessionInfo, WorktreeSummary } from "@tiller/shared";
 import { resolveSessionCapabilities } from "./capabilities";
 import { resolveAcpLaunchConfig } from "./adapters";
-import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
-import { ACP_LOGS_DIR, sanitizeLogToken, writeChunkLog, writeLogLine } from "./protocol-logging";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcessAndWait } from "./process";
+import { createProtocolLogSink, writeChunkLog, type AcpProtocolLoggingOptions } from "./protocol-logging";
 import { SDK_PROBE_CLIENT_CAPABILITIES } from "./sdk-helpers";
 import type { AcpAgentSessionListResult } from "./runtime-types";
 
@@ -43,6 +42,7 @@ export async function listAcpAgentSessions(
   provider: AcpAgentProvider,
   worktree: WorktreeSummary,
   cursor?: string,
+  protocolLogging?: AcpProtocolLoggingOptions,
 ): Promise<AcpAgentSessionListResult> {
   const launchConfig = resolveAcpLaunchConfig(provider, { fallbackCwd: worktree.path });
   const launchSpec = resolveLaunchSpec(launchConfig.command, launchConfig.args);
@@ -51,10 +51,14 @@ export async function listAcpAgentSessions(
   delete childEnv.NODE_OPTIONS;
   delete childEnv.TSX_TSCONFIG_PATH;
   delete childEnv.TSX_DISABLE_CACHE;
-  const logFile = resolve(ACP_LOGS_DIR, `session-list-${sanitizeLogToken(provider.id)}.log`);
+  const protocolLog = createProtocolLogSink({
+    mode: protocolLogging?.mode,
+    logsDir: protocolLogging?.logsDir,
+    filePrefix: "session-list",
+    token: provider.id,
+  });
 
-  writeLogLine(
-    logFile,
+  protocolLog.writeLine(
     "meta",
     `Starting ACP SDK session list command=${launchSpec.command} args=${JSON.stringify(launchSpec.args)} cwd=${launchCwd}`,
   );
@@ -73,24 +77,24 @@ export async function listAcpAgentSessions(
     child.once("exit", (code, signal) => {
       const message = `ACP SDK session list process exited code=${code ?? "unknown"} signal=${signal ?? "unknown"}`;
       exitError = new Error(stderrBuffer.trim() ? `${message}: ${stderrBuffer.trim()}` : message);
-      writeLogLine(logFile, "exit", message);
+      protocolLog.writeLine("exit", message);
       reject(exitError);
     });
   });
   exited.catch(() => {});
 
   child.on("error", (error) => {
-    writeLogLine(logFile, "process-error", error.message);
+    protocolLog.writeLine("process-error", error.message);
     exitError = error;
   });
   child.stderr.on("data", (chunk) => {
     const text = String(chunk);
     stderrBuffer += text;
-    writeChunkLog(logFile, "stderr", text);
+    writeChunkLog(protocolLog, "stderr", text);
   });
 
   const protocolStdout = createProtocolStdoutStream(child.stdout, (line) => {
-    writeLogLine(logFile, "stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
+    protocolLog.writeLine("stdout-discarded", `Discarded non-JSON ACP stdout line (${line.length} chars)`);
   });
   const stream = acp.ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(protocolStdout));
   const agent = new acp.ClientSideConnection(() => ({
@@ -123,7 +127,7 @@ export async function listAcpAgentSessions(
       }, timeoutMs);
     });
     try {
-      writeLogLine(logFile, "sdk-request", method);
+      protocolLog.writeLine("sdk-request", method);
       return await Promise.race([operation, timeoutPromise, exited]);
     } catch (error) {
       if (stderrBuffer.trim() && error instanceof Error && /ACP connection closed/iu.test(error.message)) {
@@ -157,6 +161,6 @@ export async function listAcpAgentSessions(
     );
     return normalizeAcpAgentSessionListResult(result);
   } finally {
-    terminateChildProcess(child.pid);
+    await terminateChildProcessAndWait(child);
   }
 }

@@ -153,6 +153,32 @@ export type PromptEnhancerContext = {
   sessionSummary?: string | null;
 };
 
+export type AssistantHandoffContext = PromptEnhancerContext & {
+  assistantBlockText: string;
+};
+
+export const DEFAULT_ASSISTANT_HANDOFF_SYSTEM_PROMPT = [
+  "You are a conversation handoff specialist.",
+  "Given a full conversation history between a user and a coding agent, you generate a self-contained next-user-prompt that lets a fresh agent session continue the work without re-reading the original conversation.",
+  "",
+  "## What to preserve",
+  "- Key decisions made and their reasoning",
+  "- Technical constraints discovered during the conversation",
+  "- User requirements, preferences, and explicit instructions",
+  "- Current implementation state and what has been completed",
+  "- Unresolved next steps, open questions, and known blockers",
+  "",
+  "## What to skip",
+  "- Repetitive back-and-forth and abandoned approaches",
+  "- Tool execution details and intermediate debugging steps",
+  "- Meta-commentary about the conversation itself",
+  "",
+  "## Output rules",
+  "- Use the latest assistant block as the direction and priority anchor — it shows where work left off.",
+  "- Write in the same language as the conversation.",
+  "- Return only the editable next user prompt — no commentary, markdown fences, or preamble.",
+].join("\n");
+
 export type PromptEnhancerModelOption = {
   id: string;
   ownedBy: string;
@@ -275,6 +301,105 @@ export async function enhancePromptWithLlm(
   return enhanced;
 }
 
+export function isPromptEnhancerLlmConfigured(
+  llm: PromptEnhancerLlmConfig | null | undefined,
+) {
+  return Boolean(llm?.enabled && llm.baseUrl.trim() && llm.model.trim());
+}
+
+export async function generateAssistantHandoffPrompt(
+  context: AssistantHandoffContext,
+  preferences: PromptEnhancerPreferences,
+  fetcher: FetchLike = fetch,
+) {
+  const llm = preferences.llm;
+  if (!isPromptEnhancerLlmConfigured(llm)) {
+    throw new Error("Prompt enhancer LLM is not configured");
+  }
+
+  const response = await fetcher(resolveChatCompletionsUrl(llm.baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(llm.apiKey.trim()
+        ? { Authorization: `Bearer ${llm.apiKey.trim()}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      model: llm.model.trim(),
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: DEFAULT_ASSISTANT_HANDOFF_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: buildAssistantHandoffPromptInput(context),
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prompt enhancer LLM failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const handoffPrompt = normalizeEnhancedPrompt(
+    data.choices?.[0]?.message?.content,
+  );
+  if (!handoffPrompt) {
+    throw new Error("Prompt enhancer LLM returned empty content");
+  }
+  return handoffPrompt;
+}
+
+export function buildAssistantHandoffPromptInput(
+  context: AssistantHandoffContext,
+) {
+  const projectReference = compactPrivateReference(
+    [
+      context.projectName ? `Project: ${context.projectName}` : null,
+      context.worktreeName ? `Worktree: ${context.worktreeName}` : null,
+      context.projectSummary ? `Project summary: ${context.projectSummary}` : null,
+      context.worktreeSummary
+        ? `Worktree summary: ${context.worktreeSummary}`
+        : null,
+      context.sessionStatus ? `Session status: ${context.sessionStatus}` : null,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n"),
+  );
+  const conversationHistory = context.sessionSummary?.trim();
+
+  return [
+    "Analyze the conversation below and create a self-contained next user prompt for a fresh agent session.",
+    "",
+    "The prompt should:",
+    "1. Summarize relevant context so the new session can work without the original conversation",
+    "2. Preserve decisions, constraints, requirements, and current implementation state",
+    "3. State unresolved next steps clearly",
+    "4. Use the latest assistant direction as the priority anchor — do not merely copy or paraphrase it",
+    "",
+    "<project_context>",
+    projectReference,
+    "</project_context>",
+    "",
+    "<conversation_history>",
+    conversationHistory || "(empty)",
+    "</conversation_history>",
+    "",
+    "<latest_assistant_direction>",
+    context.assistantBlockText.trim() || "(empty)",
+    "</latest_assistant_direction>",
+    "",
+    "Output only the editable next user prompt, in the same language as the conversation.",
+  ].join("\n");
+}
+
 export async function testPromptEnhancerConnectivity(
   llm: PromptEnhancerLlmConfig,
   fetcher: FetchLike = fetch,
@@ -333,7 +458,7 @@ export async function listPromptEnhancerModels(
   return extractModelOptions(data);
 }
 
-function resolveChatCompletionsUrl(baseUrl: string) {
+export function resolveChatCompletionsUrl(baseUrl: string) {
   const normalized = resolveApiBaseUrl(baseUrl);
   return normalized.endsWith("/chat/completions")
     ? normalized

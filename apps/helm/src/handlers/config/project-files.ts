@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { sortProjectFileSummaries } from "@tiller/shared";
 import type { ProjectFileSummary, ProjectSummary, WorktreeSummary } from "@tiller/shared";
@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
 const PROJECT_FILES_MAX_BUFFER = 8 * 1024 * 1024;
 const PROJECT_FILE_FALLBACK_LIMIT = 5000;
+const PROJECT_DIRECTORY_SUGGESTION_LIMIT = 80;
 const IGNORED_PROJECT_FILE_DIRECTORIES = new Set([
   ".git",
   "node_modules",
@@ -52,6 +53,45 @@ export async function listProjectFiles(rootPath: string) {
       message: truncated ? `Loaded first ${files.length} files` : `Loaded ${files.length} files`,
     };
   }
+}
+
+export async function listProjectDirectories(inputPath: string | undefined) {
+  const query = inputPath?.trim();
+  if (!query) {
+    return {
+      path: undefined,
+      directories: [],
+      message: "Enter a path to list directories",
+    };
+  }
+
+  const search = await resolveDirectorySearch(query);
+  const entries = await readdir(search.basePath, { withFileTypes: true });
+  const directories = entries
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.name.toLowerCase().startsWith(search.filter.toLowerCase()))
+    .map((entry) => normalizeAbsoluteProjectPath(resolve(search.basePath, entry.name)))
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, PROJECT_DIRECTORY_SUGGESTION_LIMIT);
+
+  return {
+    path: normalizeAbsoluteProjectPath(search.basePath),
+    directories,
+    message: `Loaded ${directories.length} directories`,
+  };
+}
+
+async function resolveDirectorySearch(query: string) {
+  const resolved = resolve(query);
+  try {
+    const info = await stat(resolved);
+    if (info.isDirectory()) {
+      return { basePath: resolved, filter: "" };
+    }
+  } catch {
+    // Treat missing input as a partial child path under its parent.
+  }
+  return { basePath: dirname(resolved), filter: basename(resolved) };
 }
 
 async function runGitForProjectFiles(cwd: string) {
@@ -130,6 +170,14 @@ export async function resolveGitRoot(cwd: string) {
 
 function normalizeProjectFilePath(path: string) {
   return path.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function normalizeAbsoluteProjectPath(path: string) {
+  const slashed = path.replace(/\\/g, "/");
+  if (slashed === "/" || /^[a-zA-Z]:\/$/u.test(slashed)) {
+    return slashed;
+  }
+  return slashed.replace(/\/+$/g, "");
 }
 
 function isNonGitRepositoryError(error: unknown) {

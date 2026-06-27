@@ -18,6 +18,71 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
+function collectProjectWorktrees(projects: Array<{ worktrees?: WorktreeSummary[] }>) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const project of projects) {
+    for (const worktree of project.worktrees ?? []) {
+      byPath.set(normalizeWorktreePath(worktree.path), worktree);
+    }
+  }
+  return Array.from(byPath.values());
+}
+
+function replaceProjectWorktrees<TProject extends { id: string; worktrees?: WorktreeSummary[] }>(
+  projects: TProject[],
+  projectId: string,
+  worktrees: WorktreeSummary[],
+) {
+  return projects.map((project) =>
+    project.id === projectId ? { ...project, worktrees } : project,
+  );
+}
+
+function mergeProjectWorktrees(
+  current: WorktreeSummary[],
+  projects: Array<{ id: string; path?: string; worktrees?: WorktreeSummary[] }>,
+  projectId: string,
+  worktrees: WorktreeSummary[],
+) {
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) {
+    return dedupeWorktrees(worktrees);
+  }
+  return dedupeWorktrees([
+    ...current.filter((worktree) => !isProjectWorktree(project, worktree)),
+    ...worktrees,
+  ]);
+}
+
+function dedupeWorktrees(worktrees: WorktreeSummary[]) {
+  const byPath = new Map<string, WorktreeSummary>();
+  for (const worktree of worktrees) {
+    byPath.set(normalizeWorktreePath(worktree.path), worktree);
+  }
+  return Array.from(byPath.values());
+}
+
+function isProjectWorktree(
+  project: { path?: string; worktrees?: WorktreeSummary[] },
+  worktree: WorktreeSummary,
+) {
+  const worktreePath = normalizeWorktreePath(worktree.path);
+  const projectPath = normalizeWorktreePath(project.path ?? "");
+  const configuredPaths = new Set(
+    (project.worktrees ?? []).map((item) => normalizeWorktreePath(item.path)),
+  );
+  return Boolean(
+    configuredPaths.has(worktreePath) ||
+      (projectPath && worktreePath === projectPath) ||
+      (projectPath && worktreePath.startsWith(`${projectPath}/.worktrees/`)) ||
+      (projectPath && worktreePath.startsWith(`${projectPath}/.tiller/worktrees/`)),
+  );
+}
+
+function normalizeWorktreePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
+}
+
 function applyConfigStateToOptions(
   options: SessionConfigOption[],
   state: AgentModelOptionsEntry["state"],
@@ -155,12 +220,18 @@ export function applyInventoryResult(
     case "helm/list":
       store.setHelms(payload.helms);
       return true;
-    case "project/list":
-      store.applyHelmInventory(sourceHelmKey, { projects: payload.projects });
+    case "project/list": {
+      const projectWorktrees = collectProjectWorktrees(payload.projects ?? []);
+      store.applyHelmInventory(sourceHelmKey, {
+        projects: payload.projects,
+        worktrees: projectWorktrees,
+      });
       if (sourceIsCurrentHelm) {
         store.setProjects(payload.projects);
+        store.setWorktrees(projectWorktrees);
       }
       return true;
+    }
     case "project/list_files": {
       const key = projectFilesKey(payload.projectId, payload.cwd);
       setProjectFilesByScope((current) => ({
@@ -173,11 +244,46 @@ export function applyInventoryResult(
       }));
       return true;
     }
-    case "project/list_worktrees":
+    case "project/list_worktrees": {
+      const nextProjectWorktrees = payload.worktrees ?? [];
+      const currentState = useDeckStore.getState();
+      const currentHelmProjects = currentState.projects;
+      const nextCurrentHelmProjects = replaceProjectWorktrees(
+        currentHelmProjects,
+        payload.projectId,
+        nextProjectWorktrees,
+      );
+      const inventory = currentState.helmInventories[sourceHelmKey];
+      const inventoryProjects = sourceIsCurrentHelm
+        ? nextCurrentHelmProjects
+        : replaceProjectWorktrees(
+            inventory?.projects ?? [],
+            payload.projectId,
+            nextProjectWorktrees,
+          );
+      const inventoryWorktrees = mergeProjectWorktrees(
+        inventory?.worktrees ?? currentState.worktrees,
+        inventoryProjects,
+        payload.projectId,
+        nextProjectWorktrees,
+      );
+      store.applyHelmInventory(sourceHelmKey, {
+        projects: inventoryProjects,
+        worktrees: inventoryWorktrees,
+      });
       if (sourceIsCurrentHelm) {
-        store.setWorktrees(payload.worktrees);
+        store.setProjects(nextCurrentHelmProjects);
+        store.setWorktrees((current) =>
+          mergeProjectWorktrees(
+            current,
+            nextCurrentHelmProjects,
+            payload.projectId,
+            nextProjectWorktrees,
+          ),
+        );
       }
       return true;
+    }
     case "project/git/list_branches":
     case "project/git/create_worktree":
       store.setWorktreeGitByProject((current) => ({
@@ -190,19 +296,75 @@ export function applyInventoryResult(
         },
       }));
       if (sourceIsCurrentHelm && payload.worktrees.length) {
-        store.setWorktrees((current) => {
-          const nextById = new Map(
-            current.map((worktree) => [worktree.path, worktree]),
-          );
-          payload.worktrees.forEach((worktree: WorktreeSummary) =>
-            nextById.set(worktree.path, worktree),
-          );
-          return Array.from(nextById.values());
-        });
+        const nextCurrentHelmProjects = replaceProjectWorktrees(
+          useDeckStore.getState().projects,
+          payload.projectId,
+          payload.worktrees,
+        );
+        store.setProjects(nextCurrentHelmProjects);
+        store.setWorktrees((current) =>
+          mergeProjectWorktrees(
+            current,
+            nextCurrentHelmProjects,
+            payload.projectId,
+            payload.worktrees,
+          ),
+        );
       }
       if (payload.selectedCwd) {
         setSelectedCwd(payload.selectedCwd);
         setWorktreePickerOpen(false);
+      }
+      return true;
+    case "project/git/status":
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            branch: payload.ok ? payload.branch : (current[payload.cwd]?.branch ?? ""),
+            clean: payload.ok ? payload.clean : (current[payload.cwd]?.clean ?? false),
+            files: payload.ok ? payload.files : (current[payload.cwd]?.files ?? []),
+            loading: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
+      }
+      return true;
+    case "project/git/graph":
+      if (payload.cwd) {
+        store.setGitGraphByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            head: payload.ok ? payload.head : current[payload.cwd]?.head,
+            commits: payload.ok ? payload.commits : (current[payload.cwd]?.commits ?? []),
+            loading: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
+      }
+      return true;
+    case "project/git/commit":
+      if (payload.ok && payload.cwd) {
+        store.setGitStatusByWorktree((current) => ({
+          ...current,
+          [payload.cwd]: {
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            branch: payload.status.branch,
+            clean: payload.status.clean,
+            files: payload.status.files,
+            loading: false,
+            committing: false,
+            lastUpdated: new Date().toISOString(),
+            message: payload.message,
+          },
+        }));
       }
       return true;
     case "agent/list":
@@ -214,6 +376,12 @@ export function applyInventoryResult(
     case "agent/connections":
       if (sourceIsCurrentHelm) {
         store.setAgentConnectionInventory(payload.connections ?? []);
+      }
+      return true;
+    case "logging/get":
+    case "logging/save":
+      if (payload.logging) {
+        store.applyHelmInventory(sourceHelmKey, { logging: payload.logging });
       }
       return true;
     case "agent/connect":

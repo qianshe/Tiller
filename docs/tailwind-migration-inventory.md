@@ -4,27 +4,40 @@
 
 ## Summary
 
-- CSS files: 4
-- Total lines: 1823
+- CSS files: 10
+- Total lines: 1767
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 799
-- Top-level selectors: 143
+- Lines: 735
+- Top-level selectors: 150
 - Hard-coded color tokens: 1
 
 Selectors:
 
 - `:root`
-- `.admiral-avatar svg`
-- `.admiral-connected`
-- `.admiral-connecting`
-- `.admiral-disconnected`
-- `.chat-main`
 - `.compact`
 - `.device-mono`
+- `.h-ctl-lg`
+- `.h-ctl-md`
+- `.h-ctl-sm`
+- `.h-ctl-xs`
+- `.min-h-ctl-md`
+- `.mission-display-tab-strip`
+- `.mission-display-tab-strip::-webkit-scrollbar`
+- `.mission-grid`
+- `.mission-grid.display-collapsed`
+- `.mission-grid.display-collapsed > :nth-child(4)`
+- `.mission-grid.display-collapsed > :nth-child(5)`
+- `.mission-grid.inspector-collapsed`
+- `.mission-grid.inspector-collapsed > :nth-child(6)`
+- `.mission-grid.inspector-collapsed > :nth-child(7)`
+- `.mission-grid.sidebar-collapsed`
+- `.mission-grid.sidebar-collapsed > :nth-child(2)`
+- `.mission-inspector-diff`
+- `.mission-inspector-diff::-webkit-scrollbar`
 - `.mission-inspector-section-head > div`
 - `.mission-inspector-section-head h3`
 - `.mission-mobile-edge-pager`
@@ -39,14 +52,17 @@ Selectors:
 - `.mission-mobile-pager-label`
 - `.mission-panel-head > div`
 - `.mission-panel-head h3`
+- `.mission-resizer`
+- `.mission-resizer::before`
+- `.mission-resizer:hover`
 - `.mission-responsive-mode`
 - `.mission-responsive-mode .mission-composer`
+- `.mission-responsive-mode .mission-composer-deck`
 - `.mission-responsive-mode .mission-inspector-section-head`
 - `.mission-responsive-mode .mission-inspector-section-head .eyebrow`
 - `.mission-responsive-mode .mission-inspector-section-head h3`
 - `.mission-responsive-mode .mission-logbook-layout`
 - `.mission-responsive-mode .mission-mobile-pager`
-- `.mission-responsive-mode .mission-order-editor`
 - `.mission-responsive-mode .mission-pane-chat`
 - `.mission-responsive-mode .mission-pane-resizer`
 - `.mission-responsive-mode .mission-panel-content`
@@ -54,19 +70,24 @@ Selectors:
 - `.mission-responsive-mode .mission-panel-head .eyebrow`
 - `.mission-responsive-mode .mission-panel-head h3`
 - `.mission-responsive-mode .mission-panel-tree`
-- `.mission-responsive-mode .mission-permission-drawer`
+- `.mission-responsive-mode .mission-resizable-group`
 - `.mission-responsive-mode .mission-session-meta`
 - `.mission-responsive-mode .mission-session-overview`
 - `.mission-responsive-mode .mission-session-overview-content`
 - `.mission-responsive-mode .mission-session-overview-header`
 - `.mission-responsive-mode [data-mission-mobile-pane]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-dock"]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="bottom"]`
+- `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [role="button"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] a`
 - `.mission-responsive-mode [data-mission-mobile-pane] button`
 - `.mission-responsive-mode [data-mission-mobile-pane] input`
 - `.mission-responsive-mode [data-mission-mobile-pane] select`
 - `.mission-responsive-mode [data-mission-mobile-pane] textarea`
-- `.mission-responsive-mode [data-mission-mobile-pane="chat"]`
+- `.mission-responsive-mode [data-panel]`
+- `.mission-responsive-mode [data-panel] > div`
+- `.mission-responsive-mode [data-separator]`
 - `.mission-responsive-mode #mission-prompt-input`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager`
 - `.mission-responsive-mode:focus-within .mission-mobile-pager-label`
@@ -79,65 +100,50 @@ Selectors:
 - `.mission-tools-trigger:disabled`
 - `.mobile-addressbar-scroll-shell`
 - `.mobile-addressbar-scroll-shell > .shell`
-- `.motion-reduced *`
-- `.motion-reduced *::after`
-- `.motion-reduced *::before`
 - `.muted`
-- `.page-content`
-- `.shell`
+- `.shell.v6-radial-shell`
+- `.shell.v6-radial-shell .page-content`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
+- `.shell.view-sessions.v6-radial-shell`
+- `.shell.view-sessions.v6-radial-shell .page-content`
 - `.stack-gap`
 - `.subtle`
-- `.top-nav`
-- `.top-nav .top-nav-github-link`
-- `.top-nav .top-nav-github-link.top-nav-github-link-mobile-visible`
-- `.top-nav-actions`
-- `.top-nav-brand`
-- `.top-nav-brand:focus-visible`
-- `.top-nav-brand:hover`
-- `.top-nav-item`
-- `.top-nav-item:hover`
-- `.top-nav-item.active`
-- `.top-nav-links`
-- `.top-nav-links::-webkit-scrollbar`
-- `.top-nav-logo`
-- `.top-nav-logo-mark`
-- `.top-nav-menu-trigger`
-- `.top-nav-mobile-item`
-- `.top-nav-mobile-item:focus-visible`
-- `.top-nav-mobile-item:hover`
-- `.top-nav-mobile-item.active`
-- `.top-nav-mobile-menu`
-- `.top-nav::after`
-- `.top-nav::before`
-- `.top-nav:focus-within`
-- `.top-nav:focus-within::before`
-- `.top-nav:hover`
-- `.top-nav:hover::before`
+- `.tabular`
+- `.w-ctl-md`
+- `.w-ctl-sm`
+- `.w-ctl-xs`
+- `.wb-focus-ring:focus-visible`
+- `.wb-pane`
+- `.wb-pane-head`
+- `.wb-pane-head-eyebrow`
+- `.wb-pane-head-title`
+- `.wb-pane-sunken`
 - `.workspace-single`
-- `[data-deck-reduce-motion="true"] *`
-- `[data-deck-theme="dark"]`
-- `[data-deck-theme="dark"] *`
-- `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="dark"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="dark"] body`
-- `[data-deck-theme="system"]`
-- `[data-deck-theme="system"] *`
-- `[data-deck-theme="system"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="system"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="system"] body`
-- `[data-deck-theme="tiller"]`
-- `[data-deck-theme="tiller"] *`
-- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb`
-- `[data-deck-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
-- `[data-deck-theme="tiller"] body`
-- `} .admiral-avatar`
+- `[data-theme="dark"] *`
+- `[data-theme="dark"] *::-webkit-scrollbar-thumb`
+- `[data-theme="dark"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="dark"] body`
+- `[data-theme="system"]`
+- `[data-theme="system"] *`
+- `[data-theme="system"] *::-webkit-scrollbar-thumb`
+- `[data-theme="system"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="system"] body`
+- `[data-theme="tiller"]`
+- `[data-theme="tiller"] *`
+- `[data-theme="tiller"] *::-webkit-scrollbar-thumb`
+- `[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="tiller"] body`
+- `} .wb-pulse`
+- `} [data-theme="dark"]`
 - `} @keyframes mission-loading-pulse`
 - `} @keyframes mission-mobile-card-switch`
 - `} @keyframes mission-session-status-pulse`
 - `} *`
+- `} h1`
 - `@keyframes surface-fade`
+- `@keyframes wb-pulse-ring`
+- `@layer base`
 - `@media (max-width: 1080px)`
 - `*`
 - `*::-webkit-scrollbar`
@@ -150,15 +156,16 @@ Selectors:
 - `40%`
 - `50%`
 - `body`
+- `body.mission-pane-resizing`
+- `body.mission-pane-resizing *`
+- `body[data-density="compact"]`
+- `body[data-density="cozy"]`
 - `button`
 - `h1`
 - `h2`
 - `h3`
 - `html`
-- `input`
 - `p`
-- `select`
-- `textarea`
 - `to`
 
 Hard-coded colors:
@@ -167,114 +174,198 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 301
-- Top-level selectors: 5
-- Hard-coded color tokens: 88
+- Lines: 28
+- Top-level selectors: 0
+- Hard-coded color tokens: 0
+
+### apps/deck/src/app/shell/tokens/brand.css
+
+- Lines: 46
+- Top-level selectors: 1
+- Hard-coded color tokens: 0
 
 Selectors:
 
-- `[data-deck-theme="dark"]`
-- `[data-deck-theme="tiller"]`
-- `} } @theme inline`
+- `@theme`
+
+### apps/deck/src/app/shell/tokens/semantic.css
+
+- Lines: 46
+- Top-level selectors: 1
+- Hard-coded color tokens: 0
+
+Selectors:
+
+- `@theme inline`
+
+### apps/deck/src/app/shell/tokens/themes/dark.css
+
+- Lines: 66
+- Top-level selectors: 1
+- Hard-coded color tokens: 28
+
+Selectors:
+
 - `@layer base`
-- `@media (prefers-color-scheme: dark)`
 
 Hard-coded colors:
 
 - `#002e69`
+- `#0d1117`
+- `#0e0e0e`
+- `#131313`
+- `#1b1b1b`
+- `#1f1f1f`
+- `#1f242c`
+- `#22c55e`
+- `#252b33`
+- `#2a2a2a`
+- `#353535`
+- `#4ade80`
+- `#4b8eff`
+- `#86efac`
+- `#94a3b8`
+- `#a8a8ac`
+- `#aab4c0`
+- `#adc6ff`
+- `#bfdbfe`
+- `#e6edf3`
+- `#e6eefc`
+- `#f0f0f2`
+- `#f87171`
+- `#facc15`
+- `#fca5a5`
+- `#ff6b6b`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/light.css
+
+- Lines: 117
+- Top-level selectors: 3
+- Hard-coded color tokens: 32
+
+Selectors:
+
+- `@layer base`
+- `body[data-density="compact"]`
+- `body[data-density="cozy"]`
+
+Hard-coded colors:
+
 - `#003f8a`
 - `#0058bc`
 - `#006b27`
 - `#0070eb`
 - `#008733`
 - `#064b23`
-- `#0d1117`
-- `#0e0e0e`
-- `#0e5530`
-- `#10241a`
-- `#111820`
-- `#131313`
-- `#18212a`
 - `#1a1c1d`
-- `#1b1b1b`
-- `#1f1f1f`
-- `#1f242c`
 - `#1f2933`
-- `#1f5e90`
-- `#22c55e`
-- `#244563`
-- `#252b33`
-- `#26313b`
-- `#263440`
-- `#28734f`
-- `#2a2a2a`
-- `#2c3742`
 - `#2f3132`
 - `#2f3645`
-- `#314963`
-- `#33404d`
-- `#353535`
 - `#414755`
 - `#4a5568`
-- `#4ade80`
-- `#4b8eff`
-- `#52606e`
 - `#64748b`
-- `#762525`
-- `#86efac`
 - `#8a5600`
-- `#8b6419`
 - `#8e1515`
-- `#909ba6`
-- `#94a3b8`
-- `#9b3131`
-- `#a8a8ac`
-- `#a8b2bd`
-- `#aab4c0`
-- `#adc6ff`
-- `#aeb7c0`
-- `#b0bac4`
-- `#b8c1ca`
 - `#ba1a1a`
-- `#bfdbfe`
-- `#c6ced6`
-- `#c9e0d0`
-- `#ccd8e4`
-- `#d7dee5`
 - `#d7f3df`
 - `#d8dee6`
 - `#d8e2ff`
 - `#e2e2e4`
-- `#e5ebf0`
-- `#e6c7c7`
-- `#e6edf3`
-- `#e6eefc`
 - `#e7e9ee`
 - `#e8eef5`
-- `#edf3f8`
 - `#eef4ff`
 - `#f0f0f2`
-- `#f1f6fa`
 - `#f3f3f5`
-- `#f7fafc`
 - `#f7fff2`
-- `#f87171`
 - `#f9f9fb`
+- `#ffb000`
+- `#ffe0e0`
+- `#ffffff`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/system.css
+
+- Lines: 62
+- Top-level selectors: 1
+- Hard-coded color tokens: 28
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#002e69`
+- `#0d1117`
+- `#0e0e0e`
+- `#131313`
+- `#1b1b1b`
+- `#1f1f1f`
+- `#1f242c`
+- `#22c55e`
+- `#252b33`
+- `#2a2a2a`
+- `#353535`
+- `#4ade80`
+- `#4b8eff`
+- `#86efac`
+- `#94a3b8`
+- `#a8a8ac`
+- `#aab4c0`
+- `#adc6ff`
+- `#bfdbfe`
+- `#e6edf3`
+- `#e6eefc`
+- `#f0f0f2`
+- `#f87171`
 - `#facc15`
 - `#fca5a5`
 - `#ff6b6b`
-- `#ffb000`
-- `#ffe0e0`
-- `#fff6df`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/tiller.css
+
+- Lines: 66
+- Top-level selectors: 1
+- Hard-coded color tokens: 21
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#111820`
+- `#1f2933`
+- `#1f5e90`
+- `#28734f`
+- `#314963`
+- `#33404d`
+- `#4b5563`
+- `#8b6419`
+- `#909ba6`
+- `#9b3131`
+- `#aeb7c0`
+- `#b8c1ca`
+- `#c6ced6`
+- `#d7dee5`
+- `#d8dee6`
+- `#e5ebf0`
+- `#e8eef5`
+- `#f7fafc`
 - `#ffffff`
 - `rgb(`
 - `rgba(`
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 561
+- Lines: 439
 - Top-level selectors: 60
-- Hard-coded color tokens: 12
+- Hard-coded color tokens: 9
 
 Selectors:
 
@@ -282,14 +373,25 @@ Selectors:
 - `.landing-copy`
 - `.landing-eyebrow`
 - `.landing-eyebrow span`
+- `.landing-github-link`
+- `.landing-github-link-desktop`
+- `.landing-github-link-mobile`
+- `.landing-github-link:focus-visible`
+- `.landing-github-link:hover`
 - `.landing-hero`
 - `.landing-hero h1`
 - `.landing-hero-content`
-- `.landing-hero::after`
 - `.landing-hero::before`
+- `.landing-meta`
+- `.landing-meta-item`
+- `.landing-meta-item dd`
+- `.landing-meta-item dd span`
+- `.landing-meta-item dt`
 - `.landing-primary`
 - `.landing-primary span`
+- `.landing-primary:hover`
 - `.landing-secondary`
+- `.landing-secondary:hover`
 - `.landing-ship-hotspot`
 - `.landing-ship-hotspot-agents`
 - `.landing-ship-hotspot-sessions`
@@ -302,54 +404,40 @@ Selectors:
 - `.landing-ship-hotspot:hover::after`
 - `.landing-ship-hotspot:hover::before`
 - `.landing-ship-hotspots`
-- `.landing-telemetry`
-- `.landing-telemetry-grid`
-- `.landing-telemetry-head`
-- `.landing-telemetry-kicker`
-- `.landing-telemetry-line`
-- `.landing-telemetry-stream`
-- `.landing-telemetry-stream::before`
-- `.landing-telemetry-track`
-- `.shell.view-overview`
-- `.shell.view-overview .page-content`
-- `.shell.view-overview > .top-nav`
-- `.shell.view-overview > .top-nav .admiral-avatar`
-- `.shell.view-overview > .top-nav .admiral-avatar svg`
-- `.shell.view-overview > .top-nav .admiral-avatar::after`
-- `.shell.view-overview > .top-nav .landing-cd-disc`
-- `.shell.view-overview > .top-nav .landing-cd-player`
-- `.shell.view-overview > .top-nav .landing-cd-player.is-playing .landing-cd-disc`
-- `.shell.view-overview > .top-nav .top-nav-actions`
-- `.shell.view-overview > .top-nav .top-nav-brand`
-- `.shell.view-overview > .top-nav .top-nav-brand strong`
-- `.shell.view-overview > .top-nav .top-nav-item`
-- `.shell.view-overview > .top-nav .top-nav-item:hover`
-- `.shell.view-overview > .top-nav .top-nav-item.active`
-- `.shell.view-overview > .top-nav .top-nav-links`
-- `.shell.view-overview > .top-nav .top-nav-logo`
-- `.shell.view-overview > .top-nav .top-nav-logo-mark`
-- `.shell.view-overview > .top-nav::after`
-- `} @keyframes landingCdSpin`
-- `} @keyframes landingJetPulse`
-- `} @media (max-width: 1180px)`
+- `.overview-session-item-btn:active`
+- `.overview-session-item-btn:hover`
+- `} .overview-session-item-btn`
 - `} @media (max-width: 720px)`
-- `@keyframes landingTelemetryScroll`
-- `45%`
-- `button.landing-telemetry-line`
-- `button.landing-telemetry-line:hover`
-- `to`
+- `@media (max-width: 1180px)`
+- `body[data-theme="dark"] .landing-github-link`
+- `body[data-theme="dark"] .landing-github-link:hover`
+- `body[data-theme="dark"] .landing-hero`
+- `body[data-theme="dark"] .landing-hero::before`
+- `body[data-theme="dark"] .landing-secondary`
+- `body[data-theme="dark"] .landing-secondary:hover`
+- `body[data-theme="light"] .landing-copy`
+- `body[data-theme="light"] .landing-eyebrow`
+- `body[data-theme="light"] .landing-hero`
+- `body[data-theme="light"] .landing-hero h1`
+- `body[data-theme="light"] .landing-hero::before`
+- `body[data-theme="light"] .landing-meta-item dd`
+- `body[data-theme="light"] .landing-secondary`
+- `body[data-theme="light"] .landing-secondary:hover`
+- `body[data-theme="tiller"] .landing-github-link`
+- `body[data-theme="tiller"] .landing-github-link:hover`
+- `body[data-theme="tiller"] .landing-hero`
+- `body[data-theme="tiller"] .landing-hero::before`
+- `body[data-theme="tiller"] .landing-secondary`
+- `body[data-theme="tiller"] .landing-secondary:hover`
 
 Hard-coded colors:
 
-- `#000`
 - `#050914`
 - `#080d18`
-- `#0f172a`
 - `#111827`
-- `#4f5b6d`
-- `#94a3b8`
+- `#3b4658`
 - `#9bc7ff`
-- `#e2e8f0`
+- `#f5f7fb`
 - `#f8fbff`
 - `#ffffff`
 - `rgb(`
@@ -379,10 +467,10 @@ Selectors:
 - `.toast-warning`
 - `[data-deck-reduce-motion="true"] .toast-exiting`
 - `[data-deck-reduce-motion="true"] .toast-item`
-- `[data-deck-theme="dark"] .toast-close`
-- `[data-deck-theme="dark"] .toast-close:focus-visible`
-- `[data-deck-theme="dark"] .toast-close:hover`
-- `[data-deck-theme="dark"] .toast-item`
+- `[data-theme="dark"] .toast-close`
+- `[data-theme="dark"] .toast-close:focus-visible`
+- `[data-theme="dark"] .toast-close:hover`
+- `[data-theme="dark"] .toast-item`
 - `} @keyframes toast-exit`
 - `} @media (max-width: 860px)`
 - `@keyframes toast-enter`

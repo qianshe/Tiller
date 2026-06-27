@@ -9,16 +9,22 @@ test("Button renders children", () => {
   assert.match(html, /Click me/);
 });
 
-test("Button default variant uses gradient CTA classes", () => {
+test("Button default variant uses flat primary classes", () => {
   const html = renderToString(createElement(Button, null, "Confirm"));
-  assert.match(html, /from-primary/);
-  assert.match(html, /to-primary-strong/);
+
+  assert.match(html, /bg-primary/);
   assert.match(html, /text-on-primary/);
+  assert.match(html, /hover:bg-primary-strong/);
+  assert.doesNotMatch(html, /from-primary/);
+  assert.doesNotMatch(html, /to-primary-strong/);
 });
 
-test("Button outline variant has border-ghost utility", () => {
+test("Button outline variant uses ring-based boundary", () => {
   const html = renderToString(createElement(Button, { variant: "outline" }, "Cancel"));
-  assert.match(html, /border-border-ghost/);
+
+  assert.match(html, /ring-border-ghost\/40/);
+  assert.match(html, /bg-transparent/);
+  assert.doesNotMatch(html, /border-border-ghost/);
 });
 
 test("Button ghost variant has no background by default", () => {
@@ -31,3 +37,13 @@ test("Button forwards disabled attribute", () => {
   assert.match(html, /disabled=""/);
 });
 
+test("Button uses Workbench typography tokens", () => {
+  const defaultHtml = renderToString(createElement(Button, null, "Default"));
+  const smallHtml = renderToString(createElement(Button, { size: "sm" }, "Small"));
+
+  assert.match(defaultHtml, /text-section/);
+  assert.match(smallHtml, /text-meta/);
+  assert.doesNotMatch(`${defaultHtml} ${smallHtml}`, /text-\[13px\]/);
+  assert.doesNotMatch(`${defaultHtml} ${smallHtml}`, /text-xs/);
+  assert.doesNotMatch(`${defaultHtml} ${smallHtml}`, /text-sm/);
+});

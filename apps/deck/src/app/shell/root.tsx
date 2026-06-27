@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { AgentToolCall, SessionConfigOption, SessionConfigOptionValue } from "@tiller/shared";
+import type { AgentToolCall } from "@tiller/shared";
 import {
   agentModelOptionsKey,
   readAgentModelOptionsCache,
@@ -8,6 +8,7 @@ import {
 } from "../../features/agents";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
+  daemonProfileKey,
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
   type DeckRpcClient,
@@ -18,7 +19,6 @@ import {
   DEFAULT_ACTIVITY_PAGE_LIMIT,
   DEFAULT_MESSAGE_PAGE_LIMIT,
   DEFAULT_SESSION_PAGE_LIMIT,
-  normalizeModelSelection,
   resolveCombinedModelValue,
   resolveReasoningLabel,
   resolveReasoningOptionsForModel,
@@ -26,7 +26,6 @@ import {
   shouldUseMissionVisualFixture,
   MissionAgentIcon,
   SessionCleanupConfirmDialog,
-  type SessionConfigPreferencePatch,
   useHistoryPagination,
   useMissionEffects,
   useMissionLayout,
@@ -46,13 +45,14 @@ import {
   usePromptEnhanceAction,
   usePromptEnhancerSettings,
 } from "../../features/prompt-enhancer";
+import type { LoggingLevel, LoggingSettings } from "../../features/settings";
 import {
   DECK_DEVICE_NAME,
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
-import { TopNav } from "../../shared/ui/layout/top-nav";
+import { RadialMenu, type RadialMenuItem } from "../../shared/ui";
 import { UI_COPY, type Locale } from "../../shared/utils/copy";
 import { formatRelativeTime } from "../../shared/utils/format-time";
 import {
@@ -61,6 +61,7 @@ import {
   buildMissionPanelContext,
   resolveShellClassName,
 } from "../composition/bindings";
+import { createSessionDraftPreferencesAction } from "../composition/session-draft-preferences";
 import { AppRoutes } from "../routing/route-content";
 import { useRouteView } from "../routing/route-view";
 import {
@@ -71,6 +72,20 @@ import { useDeckData } from "../state/deck-data";
 import { useAppRuntimeState } from "../state/runtime-state";
 
 const MOBILE_ADDRESSBAR_SCROLL_OFFSET = 80;
+const LOGGING_LEVEL_VALUES = new Set<LoggingLevel>(["trace", "debug", "info", "warn", "error", "fatal"]);
+
+type LocalLoggingSettings = {
+  helmKey: string;
+  settings: LoggingSettings;
+};
+
+const V6_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: "overview", icon: "home", label: "首页" },
+  { id: "dashboard", icon: "board", label: "Dashboard" },
+  { id: "sessions", icon: "mission", label: "工作台" },
+  { id: "agents", icon: "fleet", label: "舰队" },
+  { id: "settings", icon: "settings", label: "设置" },
+];
 
 function tryCollapseMobileAddressBar() {
   if (!window.matchMedia("(max-width: 1080px)").matches) {
@@ -86,45 +101,44 @@ function tryCollapseMobileAddressBar() {
   window.scrollTo({ top: MOBILE_ADDRESSBAR_SCROLL_OFFSET, behavior: "smooth" });
 }
 
-function applyConfigOptionValue(
-  options: SessionConfigOption[] = [],
-  configId: string,
-  value: SessionConfigOptionValue | undefined,
-) {
-  return options.map((option) =>
-    option.id === configId ? { ...option, currentValue: value } : option,
-  );
+function isLoggingLevel(value: unknown): value is LoggingLevel {
+  return typeof value === "string" && LOGGING_LEVEL_VALUES.has(value as LoggingLevel);
 }
 
-function readConfigSelectionState(options: SessionConfigOption[]) {
-  return options.reduce<Pick<SessionConfigPreferencePatch, "agentMode" | "model" | "reasoningEffort">>(
-    (state, option) => {
-      const category = option.category?.toLowerCase() ?? option.id.toLowerCase();
-      const currentValue = option.currentValue ?? option.selectedValue ?? option.value;
-      if (category === "mode" && typeof currentValue === "string") {
-        state.agentMode = currentValue;
-      } else if (category === "model" && typeof currentValue === "string") {
-        state.model = currentValue;
-      } else if (
-        (category === "reasoning" ||
-          category === "reasoning_effort" ||
-          category === "thought_level") &&
-        typeof currentValue === "string"
-      ) {
-        state.reasoningEffort = currentValue as SessionConfigPreferencePatch["reasoningEffort"];
-      }
-      return state;
-    },
-    {},
-  );
-}
-
-function toConfigPatchState(next: SessionConfigPreferencePatch) {
+function normalizeLoggingSettings(result: unknown): LoggingSettings | null {
+  const logging = (result as { logging?: Partial<LoggingSettings> } | null)?.logging;
+  if (!logging || !isLoggingLevel(logging.level)) {
+    return null;
+  }
   return {
-    ...(next.agentMode ? { agentMode: next.agentMode } : {}),
-    ...(next.model ? { model: normalizeModelSelection(next.model) } : {}),
-    ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
-  } satisfies Pick<SessionConfigPreferencePatch, "agentMode" | "model" | "reasoningEffort">;
+    level: logging.level,
+    format: typeof logging.format === "string" ? logging.format : "pretty",
+    acpTrace: typeof logging.acpTrace === "string" ? logging.acpTrace : "summary",
+  };
+}
+
+function formatRpcError(error: unknown) {
+  if (error instanceof Error) {
+    if (error.message.includes("Unknown method: logging/")) {
+      return "当前 Helm 需重启后才支持日志设置";
+    }
+    return error.message;
+  }
+  if (typeof error === "object" && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      if (maybeMessage.includes("Unknown method: logging/")) {
+        return "当前 Helm 需重启后才支持日志设置";
+      }
+      return maybeMessage;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
 }
 
 export function App() {
@@ -219,6 +233,8 @@ export function App() {
   });
   const panelPages = usePanelPages();
   const route = useRouteView();
+  const [localLoggingSettings, setLocalLoggingSettings] = useState<LocalLoggingSettings | null>(null);
+  const [loggingStatus, setLoggingStatus] = useState("");
 
   usePreferencesEffects();
   useEffect(() => {
@@ -239,6 +255,121 @@ export function App() {
     runtimeState.pendingSessionScrollToBottomRef.current = sessionId;
     runtimeState.stickChatToBottomRef.current = true;
     runtimeState.setSessionOpenScrollTick((current: number) => current + 1);
+  }
+
+  async function refreshLoggingSettings() {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      setLoggingStatus("Helm 未连接");
+      return;
+    }
+    setLoggingStatus("正在读取日志级别...");
+    try {
+      const result = await target.client.request("logging/get", {});
+      const next = normalizeLoggingSettings(result);
+      if (!next) {
+        setLoggingStatus("读取失败：响应格式不正确");
+        return;
+      }
+      setLocalLoggingSettings({ helmKey: target.helmKey, settings: next });
+      deckData.applyHelmInventory(target.helmKey, { logging: next });
+      setLoggingStatus("");
+    } catch (error) {
+      setLoggingStatus(`读取失败：${formatRpcError(error)}`);
+    }
+  }
+
+  async function saveLoggingLevel(level: LoggingLevel) {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      setLoggingStatus("Helm 未连接");
+      return;
+    }
+    setLoggingStatus(`正在保存日志级别：${level}...`);
+    try {
+      const result = await target.client.request("logging/save", {
+        logging: { level },
+      });
+      const next = normalizeLoggingSettings(result);
+      if (!next) {
+        setLoggingStatus("保存失败：响应格式不正确");
+        return;
+      }
+      setLocalLoggingSettings({ helmKey: target.helmKey, settings: next });
+      deckData.applyHelmInventory(target.helmKey, { logging: next });
+      setLoggingStatus(`已保存并生效：${next.level}`);
+    } catch (error) {
+      setLoggingStatus(`保存失败：${formatRpcError(error)}`);
+    }
+  }
+
+  function resolveCurrentHelmKey() {
+    return daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    );
+  }
+
+  function resolveCandidateHelmIds() {
+    return Array.from(new Set([
+      deckData.selectedHelmKey,
+      runtimeState.selectedMissionHelmId,
+      runtimeState.primaryHelmKeyRef.current,
+      resolveCurrentHelmKey(),
+    ].filter((helmId): helmId is string => Boolean(helmId))));
+  }
+
+  function resolveLoggingTarget() {
+    const candidateHelmIds = resolveCandidateHelmIds();
+    for (const helmId of candidateHelmIds) {
+      const helmClient = runtimeState.helmRpcClientRefs.current.get(helmId);
+      if (helmClient?.socket.readyState === WebSocket.OPEN) {
+        return { client: helmClient, helmKey: helmId };
+      }
+    }
+    const directClient = runtimeState.rpcClientRef.current;
+    if (directClient?.socket.readyState === WebSocket.OPEN) {
+      return {
+        client: directClient,
+        helmKey: runtimeState.primaryHelmKeyRef.current ?? resolveCurrentHelmKey(),
+      };
+    }
+    for (const [helmKey, client] of runtimeState.helmRpcClientRefs.current) {
+      if (client.socket.readyState === WebSocket.OPEN) {
+        return { client, helmKey };
+      }
+    }
+    return null;
+  }
+
+  function resolveLoggingClient() {
+    return resolveLoggingTarget()?.client ?? null;
+  }
+
+  function resolveSyncedLoggingSettings() {
+    for (const helmId of resolveCandidateHelmIds()) {
+      const logging = deckData.helmInventories[helmId]?.logging;
+      const normalized = normalizeLoggingSettings({ logging });
+      if (normalized) {
+        return normalized;
+      }
+    }
+    for (const inventory of Object.values(deckData.helmInventories)) {
+      const normalized = normalizeLoggingSettings({ logging: inventory.logging });
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  function resolveLocalLoggingSettings() {
+    if (!localLoggingSettings) {
+      return null;
+    }
+    return resolveCandidateHelmIds().includes(localLoggingSettings.helmKey)
+      ? localLoggingSettings.settings
+      : null;
   }
 
   const selection = useSelection({
@@ -273,117 +404,12 @@ export function App() {
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
 
-  function updateSessionDraftPreferences(next: SessionConfigPreferencePatch) {
-    const activeSession = missionView.activeSession;
-    const resolveConfigClient = (sessionHelmId?: string | null) => {
-      const candidateHelmIds = [
-        sessionHelmId,
-        runtimeState.selectedMissionHelmId,
-        runtimeState.primaryHelmKeyRef.current,
-      ];
-      for (const helmId of candidateHelmIds) {
-        if (!helmId) continue;
-        const helmClient = runtimeState.helmRpcClientRefs.current.get(helmId);
-        if (helmClient?.socket.readyState === WebSocket.OPEN) {
-          return helmClient;
-        }
-      }
-      const directClient = runtimeState.rpcClientRef.current;
-      return directClient?.socket.readyState === WebSocket.OPEN ? directClient : null;
-    };
-    const directConfigPatch = typeof next.configId === "string"
-      ? { configId: next.configId, value: next.value }
-      : null;
-    if (activeSession) {
-      const client = resolveConfigClient(activeSession.helmId);
-      const activeConfigOptions = directConfigPatch
-        ? applyConfigOptionValue(
-            deckData.sessionConfigOptions[activeSession.id] ?? [],
-            directConfigPatch.configId,
-            directConfigPatch.value,
-          )
-        : [];
-      const activeConfigState = directConfigPatch ? toConfigPatchState(next) : null;
-      if (directConfigPatch) {
-        deckData.setSessionConfigOptions((current) => ({
-          ...current,
-          [activeSession.id]: activeConfigOptions,
-        }));
-      }
-      if (client) {
-        void dispatch(client, "session/configure", {
-          sessionId: activeSession.id,
-          ...(directConfigPatch ? { ...directConfigPatch, ...activeConfigState } : {
-            agentMode:
-              next.agentMode ??
-              activeSession.agentMode ??
-              missionView.effectiveDraftAgentMode,
-            model: normalizeModelSelection(
-              next.model ?? activeSession.model ?? missionView.draftModel,
-            ),
-            reasoningEffort:
-              next.reasoningEffort ??
-              activeSession.reasoningEffort ??
-              runtimeState.selectedReasoningEffort,
-          }),
-        });
-      }
-      return;
-    }
-    const draftKey =
-      runtimeState.selectedAgentId && runtimeState.selectedCwd
-        ? agentModelOptionsKey(
-            runtimeState.selectedAgentId,
-            runtimeState.selectedCwd,
-            runtimeState.selectedProjectId,
-          )
-        : null;
-    const draftEntry = draftKey ? deckData.agentModelOptions[draftKey] : undefined;
-    const draftClient = resolveConfigClient(null);
-    const draftConfigOptions = draftEntry && directConfigPatch
-      ? applyConfigOptionValue(
-          draftEntry.configOptions,
-          directConfigPatch.configId,
-          directConfigPatch.value,
-        )
-      : [];
-    const draftConfigPatchState = draftEntry && directConfigPatch
-      ? toConfigPatchState(next)
-      : null;
-    const draftConfigState = draftEntry && directConfigPatch
-      ? {
-          ...draftEntry.state,
-          ...readConfigSelectionState(draftConfigOptions),
-          ...draftConfigPatchState,
-        }
-      : null;
-    if (draftKey && draftEntry && directConfigPatch) {
-      deckData.setAgentModelOptions((current) => ({
-        ...current,
-        [draftKey]: {
-          ...draftEntry,
-          configOptions: draftConfigOptions,
-          state: draftConfigState ?? draftEntry.state,
-        },
-      }));
-    }
-    if (draftEntry?.draftId && draftClient) {
-      void dispatch(draftClient, "session/configure", {
-        draftId: draftEntry.draftId,
-        ...(directConfigPatch ? { ...directConfigPatch, ...draftConfigPatchState } : {
-          agentMode: next.agentMode ?? missionView.effectiveDraftAgentMode,
-          model: normalizeModelSelection(next.model ?? missionView.draftModel),
-          reasoningEffort: next.reasoningEffort ?? runtimeState.selectedReasoningEffort,
-        }),
-      });
-    }
-    if (typeof next.agentMode === "string")
-      runtimeState.setSelectedAgentMode(next.agentMode);
-    if (typeof next.model === "string")
-      runtimeState.setSelectedModel(next.model);
-    if (next.reasoningEffort)
-      runtimeState.setSelectedReasoningEffort(next.reasoningEffort);
-  }
+  const updateSessionDraftPreferences = createSessionDraftPreferencesAction({
+    runtimeState,
+    deckData,
+    missionView,
+    dispatch,
+  });
 
   const agentLocked = Boolean(
     missionView.activeSession?.runtimeSessionId ??
@@ -410,7 +436,6 @@ export function App() {
     chatMainRef: runtimeState.chatMainRef,
     dispatch,
     messageHistoryState: deckData.messageHistoryState,
-    preserveChatScrollRef: runtimeState.preserveChatScrollRef,
     sessionHistoryState: deckData.sessionHistoryState,
     setActivityHistoryState: deckData.setActivityHistoryState,
     setMessageHistoryState: deckData.setMessageHistoryState,
@@ -493,8 +518,8 @@ export function App() {
     });
   }
   function openDiffDetail(path: string) {
-    panelPages.setSelectedDiffFilePath(path);
-    panelPages.setSelectedPageId("diff-detail");
+    panelPages.openDiffFile(path);
+    layout.setMissionDisplayCollapsed(false);
     layout.setSelectedMissionMobilePane("display");
   }
   function toggleExpandedMessage(messageId: string) {
@@ -509,94 +534,114 @@ export function App() {
   }
 
   const activeProfileId = `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  const currentLoggingSettings = resolveLocalLoggingSettings();
+  const syncedLoggingSettings = resolveSyncedLoggingSettings();
+  const effectiveLoggingSettings = currentLoggingSettings ?? syncedLoggingSettings;
+  const loggingClientAvailable = Boolean(resolveLoggingClient());
+  const loggingConnectionKnownConnected =
+    helmConnection.connection === "connected" ||
+    Object.values(deckData.helmConnectionStates).includes("connected");
   const shellClassName = resolveShellClassName(
     route.activeView,
     deckData.deckPreferences.theme,
     deckData.deckPreferences.reduceMotion,
   );
+  const deckTheme = deckData.deckPreferences.theme;
 
   useEffect(() => {
-    let collapsed = false;
-    const collapseOnce = () => {
-      if (collapsed) {
-        return;
-      }
-      collapsed = true;
-      tryCollapseMobileAddressBar();
-    };
+    document.body.dataset.theme = deckTheme;
+  }, [deckTheme]);
 
-    window.addEventListener("pointerdown", collapseOnce, {
-      once: true,
-      passive: true,
-    });
-    window.addEventListener("touchstart", collapseOnce, {
-      once: true,
-      passive: true,
-    });
+  useEffect(() => {
+    if (route.activeView !== "settings") {
+      return;
+    }
+    void refreshLoggingSettings();
+  }, [
+    route.activeView,
+    helmConnection.connection,
+    helmConnection.daemonHost,
+    helmConnection.daemonPort,
+    deckData.selectedHelmKey,
+    deckData.helmConnectionStates,
+  ]);
 
-    return () => {
-      window.removeEventListener("pointerdown", collapseOnce);
-      window.removeEventListener("touchstart", collapseOnce);
-    };
-  }, []);
+  // 离开设置页面时清空 promptEnhancer 状态消息
+  useEffect(() => {
+    if (route.activeView === "settings") {
+      return;
+    }
+    // 当从设置页面切换到其他页面时，清空状态消息
+    promptEnhancerSettings.setStatus("");
+  }, [route.activeView, promptEnhancerSettings]);
+
+  const appShell = (
+    <main className={shellClassName}>
+      <AppRoutes
+        ctx={buildAppRouteContext({
+          runtimeState,
+          deckData,
+          missionView,
+          titleActions,
+          formatRelativeTime,
+          resolveCombinedModelValue,
+          resolveReasoningOptionsForModel,
+          resolveReasoningLabel,
+          appActions,
+          controllers,
+          panelPages: panelContext,
+          selection,
+          layout: layoutContext,
+          history,
+          preferenceActions,
+          promptEnhancerSettings,
+          slash,
+          codeActions,
+          helmConnection,
+          route,
+          activeProfileId,
+          copy,
+          agentLocked,
+          enhancePromptDraft,
+          updateSessionDraftPreferences,
+          toggleProjectFileDirectory,
+          openDiffDetail,
+          toggleExpandedMessage,
+          renderMissionAgentIcon,
+          loggingSettings: effectiveLoggingSettings,
+          loggingStatus,
+          loggingClientAvailable,
+          loggingConnectionKnownConnected,
+          refreshLoggingSettings,
+          saveLoggingLevel,
+        })}
+      />
+      <SessionCleanupConfirmDialog
+        session={runtimeState.pendingSessionCleanup}
+        resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
+        onCancel={() => runtimeState.setPendingSessionCleanup(null)}
+        onConfirm={(sessionId) => {
+          controllers.cleanupSession(sessionId);
+          runtimeState.setPendingSessionCleanup(null);
+        }}
+      />
+      <ApprovalToastStackContainer
+        onRespond={(approvalRequestId, decision) =>
+          controllers.respondToPermission(approvalRequestId, decision)
+        }
+      />
+      <RadialMenu
+        activeView={route.activeView}
+        items={V6_RADIAL_ITEMS}
+        onNavigate={route.navigateToView}
+        enabled={true}
+      />
+    </main>
+  );
 
   return (
     <div className="mobile-addressbar-scroll-shell">
-      <main className={shellClassName}>
-        <TopNav
-          activeView={route.activeView}
-          onNavigate={route.navigateToView}
-          connection={helmConnection.connection}
-          language={deckData.deckPreferences.language}
-        />
-        <AppRoutes
-          ctx={buildAppRouteContext({
-            runtimeState,
-            deckData,
-            missionView,
-            titleActions,
-            formatRelativeTime,
-            resolveCombinedModelValue,
-            resolveReasoningOptionsForModel,
-            resolveReasoningLabel,
-            appActions,
-            controllers,
-            panelPages: panelContext,
-            selection,
-            layout: layoutContext,
-            history,
-            preferenceActions,
-            promptEnhancerSettings,
-            slash,
-            codeActions,
-            helmConnection,
-            route,
-            activeProfileId,
-            copy,
-            agentLocked,
-            enhancePromptDraft,
-            updateSessionDraftPreferences,
-            toggleProjectFileDirectory,
-            openDiffDetail,
-            toggleExpandedMessage,
-            renderMissionAgentIcon,
-          })}
-        />
-        <SessionCleanupConfirmDialog
-          session={runtimeState.pendingSessionCleanup}
-          resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
-          onCancel={() => runtimeState.setPendingSessionCleanup(null)}
-          onConfirm={(sessionId) => {
-            controllers.cleanupSession(sessionId);
-            runtimeState.setPendingSessionCleanup(null);
-          }}
-        />
-        <ApprovalToastStackContainer
-          onRespond={(approvalRequestId, decision) =>
-            controllers.respondToPermission(approvalRequestId, decision)
-          }
-        />
-      </main>
+      {appShell}
     </div>
   );
 }

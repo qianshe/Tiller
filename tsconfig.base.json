@@ -11,7 +11,11 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "paths": {
+      "@tiller/domain-contracts": ["./packages/domain-contracts/src/index.ts"],
+      "@tiller/core": ["./packages/core/src/index.ts"],
       "@tiller/shared": ["./packages/shared/src/index.ts"],
+      "@tiller/persistence": ["./packages/persistence/src/index.ts"],
+      "@tiller/persistence/sqlite": ["./packages/persistence/src/sqlite/index.ts"],
       "@tiller/sync-protocol": ["./packages/sync-protocol/src/index.ts"],
       "@tiller/agent-registry": ["./packages/agent-registry/src/index.ts"],
       "@tiller/acp-runtime": ["./packages/acp-runtime/src/index.ts"]

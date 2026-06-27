@@ -50,6 +50,53 @@ export function createProjectId(projects: ProjectSummary[], projectName?: string
   return candidate;
 }
 
+type ProjectSaveDraft = {
+  id?: string;
+  name: string;
+  path: string;
+  summaryFile: string;
+};
+
+export function buildProjectSavePayload(input: {
+  draft: ProjectSaveDraft;
+  selectedHelmId: string;
+  selectedHelmProjects: ProjectSummary[];
+}): { projectName: string; project: ProjectSummary } {
+  const projectPath = input.draft.path.trim().replace(/\\/g, "/");
+  const fallbackProjectName =
+    projectPath.split("/").filter(Boolean).at(-1) ?? projectPath;
+  const projectName = input.draft.name.trim() || fallbackProjectName;
+  const existingProject = input.draft.id
+    ? input.selectedHelmProjects.find((project) => project.id === input.draft.id)
+    : undefined;
+  const { summary: _runtimeSummary, ...existingProjectConfig } = existingProject ?? {};
+  const projectId = existingProject?.id ?? createProjectId(input.selectedHelmProjects, projectName);
+  const existingWorktrees = existingProject?.worktrees ?? [];
+  const worktrees = existingWorktrees.length
+    ? existingWorktrees
+    : [
+        {
+          name: projectName,
+          path: projectPath,
+          branch: existingProject?.gitCurrentBranch,
+          kind: "root" as const,
+        },
+      ];
+
+  return {
+    projectName,
+    project: {
+      ...existingProjectConfig,
+      id: projectId,
+      name: projectName,
+      helmId: existingProject?.helmId ?? input.selectedHelmId,
+      path: projectPath,
+      summaryFile: input.draft.summaryFile.trim() || undefined,
+      worktrees,
+    },
+  };
+}
+
 function createUniqueProjectId(baseId: string, ids: Set<string>) {
   if (!ids.has(baseId)) {
     return baseId;

@@ -1,8 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Button, Input } from "@/shared/ui";
+import { AgentIcon, Button, Input } from "@/shared/ui";
 import type { AcpAgentProvider } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
 import { slugify } from "../utils/fleet-helpers";
+import { InventoryTable } from "./inventory-table";
 
 export type FleetAgentDraft = { id?: string; name: string; command: string; args: string[] };
 
@@ -35,9 +36,9 @@ export function AgentInventorySection({
   }
 
   return (
-    <section className="grid content-start gap-3">
-      <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <h3 className="m-0 text-base font-semibold text-foreground">ACP 舰员</h3>
+    <InventoryTable
+      title="ACP 舰员"
+      action={(
         <Button
           variant="outline"
           size="icon"
@@ -49,8 +50,8 @@ export function AgentInventorySection({
         >
           +
         </Button>
-      </div>
-      {formOpen ? (
+      )}
+      form={formOpen ? (
         <form
           className="grid w-full gap-3 rounded-md bg-surface-sunken p-3"
           onSubmit={(event) => {
@@ -77,7 +78,6 @@ export function AgentInventorySection({
                 cwd: existingAgent?.cwd,
                 initializeTimeoutMs: existingAgent?.initializeTimeoutMs,
                 defaultAgent: existingAgent?.defaultAgent,
-                installHint: `请确认命令 \`${[draft.command.trim(), ...agentArgs].join(" ")}\` 可以在终端运行。`,
               },
             });
             setDraft({ name: "", command: "", args: [""] });
@@ -134,7 +134,7 @@ export function AgentInventorySection({
                 className="grid grid-cols-[76px_minmax(0,1fr)_40px] items-center gap-2 max-md:grid-cols-1"
                 key={`fleet-agent-arg-${index}`}
               >
-                <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-border-ghost bg-surface-sunken px-2 font-mono text-xs font-semibold text-muted-foreground max-md:justify-start">
+                <span className="inline-flex min-h-[var(--control-h-md)] items-center justify-center rounded-md border border-border-ghost bg-surface-sunken px-2 font-mono text-xs font-semibold text-muted-foreground max-md:justify-start">
                   args[{index}]
                 </span>
                 <Input
@@ -175,89 +175,76 @@ export function AgentInventorySection({
           </div>
         </form>
       ) : null}
-      {selectedHelmAgents.length ? (
-        <ul className="m-0 grid list-none divide-y divide-border-ghost border-t border-border-ghost p-0">
-          {selectedHelmAgents.map((agent) => (
-            <li key={agent.id} className="py-3">
-              <details className="group grid gap-2">
-                <summary className="grid cursor-pointer list-none grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-baseline gap-3 marker:hidden max-md:grid-cols-1 max-md:gap-1 [&::-webkit-details-marker]:hidden">
-                  <strong className="text-sm font-semibold text-foreground group-open:text-primary group-hover:text-primary">
-                    {agent.name}
-                  </strong>
-                  <span className="[overflow-wrap:anywhere] text-sm text-muted-foreground">
-                    {`${agent.command} ${(agent.args ?? []).join(" ")}`.trim()}
-                  </span>
-                </summary>
-                <dl className="m-0 grid gap-2 rounded-md bg-surface-sunken p-3 text-sm">
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Agent ID</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.id}</dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Command</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.command}</dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Arguments</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
-                      {(agent.args ?? []).join(" ") || "-"}
-                    </dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Transport</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.transport}</dd>
-                  </div>
-                  <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
-                    <dt className="font-semibold text-muted-foreground">Protocol</dt>
-                    <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.protocol}</dd>
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      disabled={!connected}
-                      aria-label={`编辑 ACP ${agent.name}`}
-                      onClick={() => {
-                        setDraft({
-                          id: agent.id,
-                          name: agent.name,
-                          command: agent.command,
-                          args: agent.args?.length ? agent.args : [""],
-                        });
-                        setFormOpen(true);
-                      }}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      disabled={!connected || !selectedHelmRpcClient}
-                      aria-label={`删除 ACP ${agent.name}`}
-                      onClick={() => {
-                        if (!selectedHelmRpcClient) {
-                          return;
-                        }
-                        void dispatch(selectedHelmRpcClient, "agent/delete", {
-                          providerId: agent.id,
-                        });
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </dl>
-              </details>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="grid min-h-16 place-items-center rounded-md bg-surface-sunken px-4 text-sm text-muted-foreground">
-          {connected ? emptyLabel : "请先连接该 Helm 后加载舰员"}
-        </div>
-      )}
-    </section>
+      rows={selectedHelmAgents.map((agent) => ({
+        key: agent.id,
+        icon: <AgentIcon name={agent.name} size={20} />,
+        title: agent.name,
+        subtitle: `${agent.command} ${(agent.args ?? []).join(" ")}`.trim(),
+        details: (
+          <dl className="m-0 grid gap-2 text-sm">
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Agent ID</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.id}</dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Command</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.command}</dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Arguments</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">
+                {(agent.args ?? []).join(" ") || "-"}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Transport</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.transport}</dd>
+            </div>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 max-md:grid-cols-1 max-md:gap-1">
+              <dt className="font-semibold text-muted-foreground">Protocol</dt>
+              <dd className="m-0 [overflow-wrap:anywhere] text-foreground">{agent.protocol}</dd>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border-ghost pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!connected}
+                aria-label={`编辑 ACP ${agent.name}`}
+                onClick={() => {
+                  setDraft({
+                    id: agent.id,
+                    name: agent.name,
+                    command: agent.command,
+                    args: agent.args?.length ? agent.args : [""],
+                  });
+                  setFormOpen(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!connected || !selectedHelmRpcClient}
+                aria-label={`删除 ACP ${agent.name}`}
+                onClick={() => {
+                  if (!selectedHelmRpcClient) {
+                    return;
+                  }
+                  void dispatch(selectedHelmRpcClient, "agent/delete", {
+                    providerId: agent.id,
+                  });
+                }}
+              >
+                删除
+              </Button>
+            </div>
+          </dl>
+        ),
+      }))}
+      emptyLabel={connected ? emptyLabel : "请先连接该 Helm 后加载舰员"}
+    />
   );
 }

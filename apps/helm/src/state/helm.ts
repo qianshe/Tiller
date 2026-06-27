@@ -22,7 +22,6 @@ import type {
 import { resolveTillerRuntimeOptions, type TillerRuntimeOptions } from "../runtime/options";
 import {
   createHelmSessionStores,
-  resolveSessionStoreBackend,
   type HelmSessionStores,
   type StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
@@ -62,6 +61,7 @@ export type HelmStatePaths = {
   sessions: string;
   sessionMessages: string;
   sessionArtifacts: string;
+  sessionAttachments: string;
   sessionRuntimes: string;
   sessionsSqlite: string;
   trustedDevices: string;
@@ -98,7 +98,7 @@ export type HelmState = HelmSessionStores & {
 export type CreateHelmStateOptions = {
   configPath: string;
   defaultWorktreeRoot: string;
-  logger: Pick<TillerLogger, "logInfo" | "logError">;
+  logger: Pick<TillerLogger, "logDebug" | "logInfo" | "logError">;
   argv?: string[];
   env?: NodeJS.ProcessEnv;
 };
@@ -111,6 +111,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     sessions: resolve(configDir, "sessions.json"),
     sessionMessages: resolve(configDir, "session-messages"),
     sessionArtifacts: resolve(configDir, "session-artifacts"),
+    sessionAttachments: resolve(configDir, "session-attachments"),
     sessionRuntimes: resolve(configDir, "session-runtimes.json"),
     sessionsSqlite: resolve(configDir, "sessions.sqlite"),
     trustedDevices: resolve(configDir, "trusted-devices.json"),
@@ -127,14 +128,15 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
   });
 
   const sessionStores = createHelmSessionStores({
-    backend: resolveSessionStoreBackend(),
     sqlitePath: paths.sessionsSqlite,
+    attachmentRootPath: paths.sessionAttachments,
     jsonPaths: {
       sessionHistoryPath: paths.sessions,
       sessionMessagesPath: paths.sessionMessages,
       sessionArtifactsPath: paths.sessionArtifacts,
       sessionRuntimesPath: paths.sessionRuntimes,
     },
+    logDebug: logger.logDebug,
     logInfo: logger.logInfo,
     logError: logger.logError,
   });

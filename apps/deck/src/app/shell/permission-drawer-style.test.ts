@@ -7,21 +7,24 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const deckRoot = resolve(currentDir, "../../..");
 const permissionDrawerSource = readFileSync(
-  resolve(deckRoot, "src/features/mission/ui/permission-drawer.tsx"),
+  resolve(deckRoot, "src/features/mission/conversation/permission-drawer.tsx"),
   "utf8",
 );
 const shellStylesSource = readFileSync(resolve(currentDir, "styles.css"), "utf8");
 
 test("mission permission drawer uses an in-pane solid elevated review card", () => {
   assert.match(permissionDrawerSource, /grid-rows-\[auto_auto\]/);
-  assert.match(permissionDrawerSource, /absolute/);
-  assert.match(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
-  assert.match(permissionDrawerSource, /left-3/);
-  assert.match(permissionDrawerSource, /right-3/);
-  assert.match(permissionDrawerSource, /sm:right-auto/);
-  assert.match(permissionDrawerSource, /sm:w-\[min\(560px,calc\(100%-1\.5rem\)\)\]/);
-  assert.match(permissionDrawerSource, /z-40/);
+  assert.doesNotMatch(permissionDrawerSource, /sticky/);
+  assert.doesNotMatch(permissionDrawerSource, /top-2/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-2/);
+  assert.doesNotMatch(permissionDrawerSource, /z-30/);
+  assert.doesNotMatch(permissionDrawerSource, /absolute/);
+  assert.doesNotMatch(permissionDrawerSource, /bottom-\[calc\(var\(--mission-permission-composer-offset,190px\)\+24px\)\]/);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \.mission-permission-drawer/);
+  assert.doesNotMatch(permissionDrawerSource, /left-3/);
+  assert.doesNotMatch(permissionDrawerSource, /right-3/);
+  assert.doesNotMatch(permissionDrawerSource, /sm:right-auto/);
+  assert.doesNotMatch(permissionDrawerSource, /sm:w-\[min\(560px,calc\(100%-1\.5rem\)\)\]/);
   assert.match(permissionDrawerSource, /border-warning\/40/);
   assert.match(permissionDrawerSource, /bg-surface-elevated/);
   assert.match(permissionDrawerSource, /shadow-ambient/);
@@ -53,12 +56,12 @@ test("permission drawer detail block keeps raw approval payload readable", () =>
 
 test("mission light theme critical surfaces use semantic Tailwind tokens", () => {
   const files = [
-    "src/features/mission/ui/workspace.tsx",
-    "src/features/mission/ui/chat-pane.tsx",
-    "src/features/mission/ui/inspector.tsx",
-    "src/features/mission/ui/composer.tsx",
-    "src/features/mission/ui/display-panel.tsx",
-    "src/features/mission/ui/session-overview-card.tsx",
+    "src/features/mission/workspace/controller.tsx",
+    "src/features/mission/conversation/chat-pane.tsx",
+    "src/features/mission/inspector/panel.tsx",
+    "src/features/mission/composer/form.tsx",
+    "src/features/mission/display/panel.tsx",
+    "src/features/mission/display/session-overview-card.tsx",
     "src/features/logbook/ui/activity-log-panel.tsx",
   ].map((relativePath) => readFileSync(resolve(deckRoot, relativePath), "utf8"));
   const combined = files.join("\n");

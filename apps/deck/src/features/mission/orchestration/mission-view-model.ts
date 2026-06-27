@@ -18,7 +18,7 @@ import {
   resolveSessionConfigHint,
   splitModelReasoning,
 } from "../utils/composer-options";
-import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId } from "../utils/session-derivations";
+import { resolveMissionHelms, resolveMissionSelectedProjectId, resolvePromptPlaceholder, resolveSessionProjectId, resolveSessionTitlePlaceholder } from "../utils/session-derivations";
 import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT, IS_EMBEDDED_HELM_DECK } from "../../../shared/config/deck-runtime";
 
 export function useMissionViewModel(ctx: any) {
@@ -51,7 +51,9 @@ export function useMissionViewModel(ctx: any) {
     sessionConfigOptions,
     promptQueues,
     deckPreferences,
+    toolCalls,
   } = source;
+const activeSessionToolCalls = activeSessionId ? (toolCalls?.[activeSessionId] ?? []) : [];
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,
   [activeSessionId, sessions],
@@ -69,11 +71,20 @@ const {
 const activeConversationUpdateKey = useActiveConversationUpdateKey(
   activeSessionId,
   activeSessionMessages,
+  activeSessionToolCalls,
 );
 const draftProject = useMemo(
   () => projects.find((project) => project.id === selectedProjectId) ?? null,
   [projects, selectedProjectId],
 );
+const activeSessionProjectId = activeSession
+  ? resolveSessionProjectId(activeSession, projects)
+  : null;
+const activeSessionProject = activeSessionProjectId
+  ? (projects.find((project) => project.id === activeSessionProjectId) ??
+    null)
+  : null;
+const worktreeScopeProject = activeSessionProject ?? draftProject;
 const configuredHelms = useConfiguredHelms({
   daemonHost,
   daemonPort,
@@ -108,18 +119,18 @@ const missionProjects = useMemo(
   [effectiveMissionHelmId, projects],
 );
 const filteredWorktrees = useMemo(() => {
-  if (!draftProject) {
+  if (!worktreeScopeProject) {
     return [];
   }
-  const projectWorktrees = draftProject.worktrees ?? [];
+  const projectWorktrees = worktreeScopeProject.worktrees ?? [];
   if (projectWorktrees.length) {
     return projectWorktrees;
   }
   return worktrees.filter((worktree) =>
-    normalizeWorktreePath(worktree.path) === normalizeWorktreePath(draftProject.path) ||
-    Boolean(draftProject.path && normalizeWorktreePath(worktree.path)?.startsWith(`${normalizeWorktreePath(draftProject.path)}/`)),
+    normalizeWorktreePath(worktree.path) === normalizeWorktreePath(worktreeScopeProject.path) ||
+    Boolean(worktreeScopeProject.path && normalizeWorktreePath(worktree.path)?.startsWith(`${normalizeWorktreePath(worktreeScopeProject.path)}/`)),
   );
-}, [draftProject, worktrees]);
+}, [worktreeScopeProject, worktrees]);
 const selectedWorktree =
   filteredWorktrees.find(
     (worktree) => normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
@@ -150,17 +161,10 @@ const sessionCountsByProject = useMemo(
     }, {}),
   [projects, sessions],
 );
-const activeSessionProjectId = activeSession
-  ? resolveSessionProjectId(activeSession, projects)
-  : null;
 const missionSelectedProjectId = resolveMissionSelectedProjectId({
   activeSessionProjectId,
   selectedProjectId,
 });
-const activeSessionProject = activeSessionProjectId
-  ? (projects.find((project) => project.id === activeSessionProjectId) ??
-    null)
-  : null;
 const activeStatus = activeSession
   ? copy.status[statuses[activeSession.id] ?? activeSession.status]
   : copy.status.idle;
@@ -170,13 +174,17 @@ const pendingPermission = activeSession
   ? (permissionRequests[activeSession.id] ?? null)
   : null;
 const pendingApprovals = useMemo(() => {
-  if (!activeSession) return [];
-  const ids = pendingApprovalIdsBySession[activeSession.id] ?? [];
-  return ids
-    .map((id) => approvalItemsById[id])
-    .filter((item) => Boolean(item))
-    .map((item) => ({ request: item.request, resolving: item.resolving }));
-}, [activeSession, approvalItemsById, pendingApprovalIdsBySession]);
+  return Object.entries(pendingApprovalIdsBySession ?? {}).flatMap(
+    ([sessionId, ids]) => (Array.isArray(ids) ? ids : [])
+      .map((id) => approvalItemsById[id])
+      .filter((item) => Boolean(item))
+      .map((item) => ({
+        sessionId,
+        request: item.request,
+        resolving: item.resolving,
+      })),
+  );
+}, [approvalItemsById, pendingApprovalIdsBySession]);
 const selectedDraftAgent =
   filteredAgents.find((agent) => agent.id === selectedAgentId) ?? null;
 const draftAgent =
@@ -193,6 +201,7 @@ const draftReasoningEffort = activeSession
   ? (activeSession.reasoningEffort ?? "medium")
   : selectedReasoningEffort;
 const draftPromptPlaceholder = resolvePromptPlaceholder(draftAgent);
+const draftSessionTitlePlaceholder = resolveSessionTitlePlaceholder(draftAgent);
 const draftConfigHint = resolveSessionConfigHint(
   activeSession,
   agents,
@@ -321,6 +330,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   return {
     activeSession,
     activePromptQueue,
+    promptQueues,
     promptImages,
     setPromptImages,
     imagePasteNotice,
@@ -357,6 +367,7 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     draftModel,
     draftReasoningEffort,
     draftPromptPlaceholder,
+    draftSessionTitlePlaceholder,
     draftConfigHint,
     draftModelPlaceholder,
     draftAgentModelOptionsKey,

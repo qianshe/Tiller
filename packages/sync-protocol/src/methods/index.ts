@@ -2,11 +2,17 @@ import { z } from "zod";
 import type { NotificationDescriptor, RequestDescriptor } from "./descriptor";
 import * as helmList from "./helm/list";
 import * as helmSave from "./helm/save";
+import * as loggingGet from "./logging/get";
+import * as loggingSave from "./logging/save";
 import * as projectList from "./project/list";
+import * as projectListDirectories from "./project/list-directories";
 import * as projectListFiles from "./project/list-files";
 import * as projectListWorktrees from "./project/list-worktrees";
 import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
+import * as projectGitStatus from "./project/git-status";
+import * as projectGitCommit from "./project/git-commit";
+import * as projectGitGraph from "./project/git-graph";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
 import * as agentList from "./agent/list";
@@ -21,6 +27,7 @@ import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
 import * as sessionListMessages from "./session/list-messages";
+import * as sessionListUpdates from "./session/list-updates";
 import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
@@ -32,6 +39,7 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
+import * as debugReimportHistory from "./debug/reimport-history";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
@@ -55,11 +63,17 @@ type AnyDescriptor =
 const METHOD_DESCRIPTORS = {
   [helmList.method]: helmList.descriptor,
   [helmSave.method]: helmSave.descriptor,
+  [loggingGet.method]: loggingGet.descriptor,
+  [loggingSave.method]: loggingSave.descriptor,
   [projectList.method]: projectList.descriptor,
+  [projectListDirectories.method]: projectListDirectories.descriptor,
   [projectListFiles.method]: projectListFiles.descriptor,
   [projectListWorktrees.method]: projectListWorktrees.descriptor,
   [projectGitListBranches.method]: projectGitListBranches.descriptor,
   [projectGitCreateWorktree.method]: projectGitCreateWorktree.descriptor,
+  [projectGitStatus.method]: projectGitStatus.descriptor,
+  [projectGitCommit.method]: projectGitCommit.descriptor,
+  [projectGitGraph.method]: projectGitGraph.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
   [agentList.method]: agentList.descriptor,
@@ -74,6 +88,7 @@ const METHOD_DESCRIPTORS = {
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
   [sessionListMessages.method]: sessionListMessages.descriptor,
+  [sessionListUpdates.method]: sessionListUpdates.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
@@ -86,6 +101,7 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
+  [debugReimportHistory.method]: debugReimportHistory.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
@@ -110,11 +126,17 @@ export type MethodName = keyof typeof METHOD_DESCRIPTORS;
 export const CLIENT_REQUEST_METHODS = [
   helmList.method,
   helmSave.method,
+  loggingGet.method,
+  loggingSave.method,
   projectList.method,
+  projectListDirectories.method,
   projectListFiles.method,
   projectListWorktrees.method,
   projectGitListBranches.method,
   projectGitCreateWorktree.method,
+  projectGitStatus.method,
+  projectGitCommit.method,
+  projectGitGraph.method,
   projectSave.method,
   projectDelete.method,
   agentList.method,
@@ -129,6 +151,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDiscardDraft.method,
   sessionList.method,
   sessionListMessages.method,
+  sessionListUpdates.method,
   sessionGetArtifacts.method,
   sessionCheckResume.method,
   sessionResume.method,
@@ -141,6 +164,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
+  debugReimportHistory.method,
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,

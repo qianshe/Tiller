@@ -1,9 +1,7 @@
-import {
-  DEFAULT_LOGBOOK_VISIBLE_LIMIT,
-  MissionWorktree,
-} from "../../features/mission";
+import { MissionWorktree } from "../../features/mission";
+import type { MissionRouteSource } from "./route-context";
 
-export function renderMissionRoute(source: any) {
+export function renderMissionRoute(source: MissionRouteSource) {
   const {
     prompt,
     promptImages,
@@ -11,17 +9,25 @@ export function renderMissionRoute(source: any) {
     dispatch,
     socketRef,
     activeSessionId,
+    draftChatWindow,
+    setDraftChatWindow,
     selectedProjectId,
     selectedCwd,
     selectedAgentId,
     activeSession,
     diffs,
     outputs,
+    messages,
+    sessionTimeline,
+    sessionPlans,
+    dismissedCompletedSessionPlanKeys,
+    setDismissedCompletedSessionPlanKeys,
     toolCalls,
     statuses,
     copy,
-    customMissionPanelPages,
-    selectedMissionPanelPageId,
+    selectedMissionDisplayTabId,
+    openedMissionDiffFilePaths,
+    closeMissionDiffFile,
     activeSessionProjectId,
     projectFilesByScope,
     activeSessionProject,
@@ -43,6 +49,8 @@ export function renderMissionRoute(source: any) {
     missionSidebarPaneStyle,
     handleMissionTreeScroll,
     setMissionSidebarCollapsed,
+    setMissionDisplayCollapsed,
+    setMissionInspectorCollapsed,
     missionHelms,
     effectiveMissionHelmId,
     activeHelm,
@@ -53,6 +61,7 @@ export function renderMissionRoute(source: any) {
     activeProfileId,
     connection,
     toggleMissionHelmNode,
+    selectProject,
     missionSelectedProjectId,
     expandedMissionProjectIds,
     sessions,
@@ -82,13 +91,16 @@ export function renderMissionRoute(source: any) {
     pairingState,
     activeSessionMessages,
     activePromptQueue,
+    promptQueues,
     expandedMessageIds,
     messageHistoryState,
+    setMessageHistoryState,
     loadOlderMessages,
     toggleExpandedMessage,
     pendingPermission,
     pendingApprovals,
     technicalPanels,
+    updateTechnicalPanelPreference,
     respondToPermission,
     updateQueuedPrompt,
     deleteQueuedPrompt,
@@ -142,28 +154,33 @@ export function renderMissionRoute(source: any) {
     resolveReasoningLabel,
     draftReasoningOptions,
     deckPreferences,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     enhancePromptDraft,
     promptEnhancerBusy,
+    setPromptEnhancerStatus,
+    promptEnhancerSettings,
     cancelSession,
     missionDisplayPaneStyle,
     selectedMissionDiffFilePath,
     activityHistoryState,
+    setActivityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
     loadOlderActivities,
-    addMissionPanelPage,
-    setSelectedMissionPanelPageId,
-    setDraggedMissionPanelPageId,
-    dropMissionPanelPage,
+    setSelectedMissionDisplayTabId,
     openDiffDetail,
-    renameMissionPanelPage,
-    moveMissionPanelPage,
-    deleteMissionPanelPage,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
     missionInspectorPaneStyle,
     setProjectFileFilter,
     toggleProjectFileDirectory,
+    openChatSessionIds,
+    setOpenChatSessionIds,
+    focusedChatWindowId,
+    setFocusedChatWindowId,
   } = source;
   return (
     <MissionWorktree
@@ -173,17 +190,29 @@ export function renderMissionRoute(source: any) {
       dispatch={dispatch}
       socketRef={socketRef}
       activeSessionId={activeSessionId}
+      draftChatWindow={draftChatWindow}
+      setDraftChatWindow={setDraftChatWindow}
+      openChatSessionIds={openChatSessionIds}
+      setOpenChatSessionIds={setOpenChatSessionIds}
+      focusedChatWindowId={focusedChatWindowId}
+      setFocusedChatWindowId={setFocusedChatWindowId}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}
       activeSession={activeSession}
       diffs={diffs}
       outputs={outputs}
+      messages={messages}
+      sessionTimeline={sessionTimeline}
+      sessionPlans={sessionPlans}
+      dismissedCompletedSessionPlanKeys={dismissedCompletedSessionPlanKeys}
+      setDismissedCompletedSessionPlanKeys={setDismissedCompletedSessionPlanKeys}
       toolCalls={toolCalls}
       statuses={statuses}
       copy={copy}
-      customMissionPanelPages={customMissionPanelPages}
-      selectedMissionPanelPageId={selectedMissionPanelPageId}
+      selectedMissionDisplayTabId={selectedMissionDisplayTabId}
+      openedMissionDiffFilePaths={openedMissionDiffFilePaths}
+      closeMissionDiffFile={closeMissionDiffFile}
       activeSessionProjectId={activeSessionProjectId}
       projectFilesByScope={projectFilesByScope}
       activeSessionProject={activeSessionProject}
@@ -205,6 +234,8 @@ export function renderMissionRoute(source: any) {
       missionSidebarPaneStyle={missionSidebarPaneStyle}
       handleMissionTreeScroll={handleMissionTreeScroll}
       setMissionSidebarCollapsed={setMissionSidebarCollapsed}
+      setMissionDisplayCollapsed={setMissionDisplayCollapsed}
+      setMissionInspectorCollapsed={setMissionInspectorCollapsed}
       missionHelms={missionHelms}
       effectiveMissionHelmId={effectiveMissionHelmId}
       activeHelm={activeHelm}
@@ -215,6 +246,7 @@ export function renderMissionRoute(source: any) {
       activeProfileId={activeProfileId}
       connection={connection}
       toggleMissionHelmNode={toggleMissionHelmNode}
+      selectProject={selectProject}
       missionSelectedProjectId={missionSelectedProjectId}
       expandedMissionProjectIds={expandedMissionProjectIds}
       sessions={sessions}
@@ -244,13 +276,16 @@ export function renderMissionRoute(source: any) {
       pairingState={pairingState}
       activeSessionMessages={activeSessionMessages}
       activePromptQueue={activePromptQueue}
+      promptQueues={promptQueues}
       expandedMessageIds={expandedMessageIds}
       messageHistoryState={messageHistoryState}
+      setMessageHistoryState={setMessageHistoryState}
       loadOlderMessages={loadOlderMessages}
       toggleExpandedMessage={toggleExpandedMessage}
       pendingPermission={pendingPermission}
       pendingApprovals={pendingApprovals}
       technicalPanels={technicalPanels}
+      updateTechnicalPanelPreference={updateTechnicalPanelPreference}
       respondToPermission={respondToPermission}
       updateQueuedPrompt={updateQueuedPrompt}
       deleteQueuedPrompt={deleteQueuedPrompt}
@@ -304,29 +339,29 @@ export function renderMissionRoute(source: any) {
       resolveReasoningLabel={resolveReasoningLabel}
       draftReasoningOptions={draftReasoningOptions}
       deckPreferences={deckPreferences}
+      gitStatusByWorktree={gitStatusByWorktree}
+      setGitStatusByWorktree={setGitStatusByWorktree}
+      gitGraphByWorktree={gitGraphByWorktree}
+      setGitGraphByWorktree={setGitGraphByWorktree}
       enhancePromptDraft={enhancePromptDraft}
       promptEnhancerBusy={promptEnhancerBusy}
+      promptEnhancerStatus={promptEnhancerSettings.status}
+      setPromptEnhancerStatus={setPromptEnhancerStatus}
       cancelSession={cancelSession}
       missionDisplayPaneStyle={missionDisplayPaneStyle}
       selectedMissionDiffFilePath={selectedMissionDiffFilePath}
       activityHistoryState={activityHistoryState}
+      setActivityHistoryState={setActivityHistoryState}
       activityVisibleCounts={activityVisibleCounts}
       setActivityVisibleCounts={setActivityVisibleCounts}
       loadOlderActivities={loadOlderActivities}
-      addMissionPanelPage={addMissionPanelPage}
-      setSelectedMissionPanelPageId={setSelectedMissionPanelPageId}
-      setDraggedMissionPanelPageId={setDraggedMissionPanelPageId}
-      dropMissionPanelPage={dropMissionPanelPage}
+      setSelectedMissionDisplayTabId={setSelectedMissionDisplayTabId}
       openDiffDetail={openDiffDetail}
-      renameMissionPanelPage={renameMissionPanelPage}
-      moveMissionPanelPage={moveMissionPanelPage}
-      deleteMissionPanelPage={deleteMissionPanelPage}
       toggleMissionDiffDirectory={toggleMissionDiffDirectory}
       collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}
       missionInspectorPaneStyle={missionInspectorPaneStyle}
       setProjectFileFilter={setProjectFileFilter}
       toggleProjectFileDirectory={toggleProjectFileDirectory}
-      defaultLogbookVisibleLimit={DEFAULT_LOGBOOK_VISIBLE_LIMIT}
     />
   );
 }

@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { useDeckStore } from "../../store";
 import type {
   AcpAgentProvider,
+  AgentMessage,
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -9,9 +11,14 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
+  SessionTimelineEntry,
   SessionPromptQueueSnapshot,
   WorktreeSummary,
 } from "@tiller/shared";
+
+type DeckApprovalItem = {
+  request: PermissionRequest;
+};
 
 type DaemonProfilesState<TProfile> = {
   daemonProfiles: TProfile[];
@@ -62,13 +69,23 @@ export function useDeckData(missionVisualFixture: any) {
   const setStatuses = useDeckStore((state) => state.setStatuses);
 
   const setMessages = useDeckStore((state) => state.setMessages);
+  const storedMessages = useDeckStore((state) => state.messages);
+  const messages = (missionVisualFixture?.messages ?? storedMessages) as Record<string, AgentMessage[]>;
+  const storedSessionTimeline = useDeckStore((state) => state.sessionTimeline);
+  const sessionTimeline = (missionVisualFixture?.sessionTimeline ?? storedSessionTimeline) as Record<string, SessionTimelineEntry[]>;
   const messageHistoryState = useDeckStore((state) => state.messageHistoryState);
   const setMessageHistoryState = useDeckStore((state) => state.setMessageHistoryState);
 
-  const approvalItemsById = useDeckStore((state) => state.approvalItemsById);
-  const pendingApprovalIdsBySession = useDeckStore(
+  const storedApprovalItemsById = useDeckStore((state) => state.approvalItemsById);
+  const approvalItemsById = (missionVisualFixture?.approvalItemsById ?? storedApprovalItemsById) as Record<
+    string,
+    DeckApprovalItem
+  >;
+  const storedPendingApprovalIdsBySession = useDeckStore(
     (state) => state.pendingApprovalIdsBySession,
   );
+  const pendingApprovalIdsBySession = (missionVisualFixture?.pendingApprovalIdsBySession ??
+    storedPendingApprovalIdsBySession) as Record<string, string[]>;
   const derivedPermissionRequests = useMemo<Record<string, PermissionRequest | null>>(() => {
     const result: Record<string, PermissionRequest | null> = {};
     for (const [sessionId, ids] of Object.entries(pendingApprovalIdsBySession)) {
@@ -90,6 +107,15 @@ export function useDeckData(missionVisualFixture: any) {
   const storedToolCalls = useDeckStore((state) => state.toolCalls);
   const toolCalls = (missionVisualFixture?.toolCalls ?? storedToolCalls) as Record<string, AgentToolCall[]>;
   const setToolCalls = useDeckStore((state) => state.setToolCalls);
+  const storedSessionPlans = useDeckStore((state) => state.sessionPlans);
+  const sessionPlans = (missionVisualFixture?.sessionPlans ?? storedSessionPlans) as Record<string, AgentPlan>;
+  const setSessionPlans = useDeckStore((state) => state.setSessionPlans);
+  const dismissedCompletedSessionPlanKeys = useDeckStore(
+    (state) => state.dismissedCompletedSessionPlanKeys,
+  );
+  const setDismissedCompletedSessionPlanKeys = useDeckStore(
+    (state) => state.setDismissedCompletedSessionPlanKeys,
+  );
 
   const activityHistoryState = useDeckStore((state) => state.activityHistoryState);
   const setActivityHistoryState = useDeckStore((state) => state.setActivityHistoryState);
@@ -107,7 +133,11 @@ export function useDeckData(missionVisualFixture: any) {
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
   const sessionAvailableCommands = useDeckStore((state) => state.sessionAvailableCommands);
   const setSessionAvailableCommands = useDeckStore((state) => state.setSessionAvailableCommands);
-  const promptQueues = useDeckStore((state) => state.promptQueues) as Record<
+  const storedPromptQueues = useDeckStore((state) => state.promptQueues) as Record<
+    string,
+    SessionPromptQueueSnapshot
+  >;
+  const promptQueues = (missionVisualFixture?.promptQueues ?? storedPromptQueues) as Record<
     string,
     SessionPromptQueueSnapshot
   >;
@@ -127,9 +157,22 @@ export function useDeckData(missionVisualFixture: any) {
   const storedActiveSessionId = useDeckStore((state) => state.activeSessionId);
   const activeSessionId = missionVisualFixture?.activeSessionId ?? storedActiveSessionId;
   const setActiveSessionId = useDeckStore((state) => state.setActiveSessionId);
+  const storedOpenChatSessionIds = useDeckStore((state) => state.openChatSessionIds);
+  const openChatSessionIds = missionVisualFixture?.openChatSessionIds ?? storedOpenChatSessionIds;
+  const setOpenChatSessionIds = useDeckStore((state) => state.setOpenChatSessionIds);
+  const storedFocusedChatWindowId = useDeckStore((state) => state.focusedChatWindowId);
+  const focusedChatWindowId = missionVisualFixture?.focusedChatWindowId ?? storedFocusedChatWindowId;
+  const setFocusedChatWindowId = useDeckStore((state) => state.setFocusedChatWindowId);
+  const draftChatWindow = useDeckStore((state) => state.draftChatWindow);
+  const setDraftChatWindow = useDeckStore((state) => state.setDraftChatWindow);
 
   const worktreeGitByProject = useDeckStore((state) => state.worktreeGitByProject);
   const setWorktreeGitByProject = useDeckStore((state) => state.setWorktreeGitByProject);
+
+  const gitStatusByWorktree = useDeckStore((state) => state.gitStatusByWorktree);
+  const setGitStatusByWorktree = useDeckStore((state) => state.setGitStatusByWorktree);
+  const gitGraphByWorktree = useDeckStore((state) => state.gitGraphByWorktree);
+  const setGitGraphByWorktree = useDeckStore((state) => state.setGitGraphByWorktree);
 
   const daemonProfiles = useDeckStore((state) =>
     selectDaemonProfilesForDeckData(
@@ -167,6 +210,8 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionHistoryState,
     statuses,
     setStatuses,
+    messages,
+    sessionTimeline,
     setMessages,
     messageHistoryState,
     setMessageHistoryState,
@@ -177,6 +222,10 @@ export function useDeckData(missionVisualFixture: any) {
     setOutputs,
     toolCalls,
     setToolCalls,
+    sessionPlans,
+    setSessionPlans,
+    dismissedCompletedSessionPlanKeys,
+    setDismissedCompletedSessionPlanKeys,
     activityHistoryState,
     setActivityHistoryState,
     activityVisibleCounts,
@@ -202,8 +251,18 @@ export function useDeckData(missionVisualFixture: any) {
     updatePreferences,
     activeSessionId,
     setActiveSessionId,
+    openChatSessionIds,
+    setOpenChatSessionIds,
+    focusedChatWindowId,
+    setFocusedChatWindowId,
+    draftChatWindow,
+    setDraftChatWindow,
     worktreeGitByProject,
     setWorktreeGitByProject,
+    gitStatusByWorktree,
+    setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     daemonProfiles,
     addDaemonProfile,
     removeDaemonProfileFromStore,

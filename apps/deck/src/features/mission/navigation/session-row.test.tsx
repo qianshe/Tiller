@@ -1,0 +1,104 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import type { ProjectSummary, SessionSummary } from "@tiller/shared";
+import { SessionRow } from "./session-row.js";
+
+function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return {
+    id: "project-1",
+    helmId: "helm-1",
+    name: "repo",
+    path: "D:/repo",
+    worktrees: [
+      { name: "main", path: "D:/repo" },
+      { name: "feature", path: "D:/repo/.worktrees/feature" },
+    ],
+    ...overrides,
+  } as ProjectSummary;
+}
+
+function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: "session-1",
+    title: "检查 worktree",
+    agentId: "codex",
+    agentName: "Codex",
+    projectId: "project-1",
+    projectName: "Tiller",
+    cwd: "D:/repo/.worktrees/feature",
+    worktreeName: "feature",
+    status: "idle",
+    createdAt: "2026-06-05T00:00:00.000Z",
+    updatedAt: "2026-06-05T00:01:00.000Z",
+    ...overrides,
+  } as SessionSummary;
+}
+
+function renderSessionRow(
+  overrides: Partial<SessionSummary> = {},
+  projectOverrides: Partial<ProjectSummary> = {},
+) {
+  return renderToStaticMarkup(
+    <SessionRow
+      activeSessionId="session-1"
+      highlightedSessionId={null}
+      openSessionIds={new Set()}
+      copy={{ status: { starting: "启动中", running: "运行中", waiting_for_permission: "待审批", idle: "空闲", cancelled: "取消", error: "错误" } }}
+      formatRelativeTime={() => "4m"}
+      openSession={() => undefined}
+      renderAgentIcon={() => <span>AI</span>}
+      resolveDisplayTitle={(item) => item.title ?? item.id}
+      regenerateSessionTitle={() => undefined}
+      isRegenerating={false}
+      project={project(projectOverrides)}
+      session={session(overrides)}
+      sessionStatus="idle"
+      setPendingSessionCleanup={() => undefined}
+    />,
+  );
+}
+
+test("SessionRow keeps the action trigger inside the active row frame", () => {
+  const html = renderSessionRow();
+  const rowClass = html.match(/<div class="([^"]*mission-tree-session-row[^"]*)"/u)?.[1] ?? "";
+
+  assert.match(rowClass, /active/u);
+  assert.match(rowClass, /bg-surface-emphasis/u);
+  assert.match(html, /mission-tree-actions-trigger/u);
+  assert.match(html, /title="最后更新：4m"/u);
+});
+
+test("SessionRow marks managed worktree sessions with a branch tooltip", () => {
+  const html = renderSessionRow();
+
+  assert.match(html, /title="Worktree：feature"/u);
+  assert.match(html, /mission-tree-worktree-icon/u);
+});
+
+test("SessionRow marks named worktrees when cwd matches a secondary worktree path", () => {
+  const html = renderSessionRow({
+    cwd: "D:/repo/.worktrees/test-worktree",
+    projectName: "repo",
+    worktreeName: "test-worktree",
+  }, {
+    worktrees: [
+      { name: "main", path: "D:/repo" },
+      { name: "test-worktree", path: "D:/repo/.worktrees/test-worktree" },
+    ],
+  });
+
+  assert.match(html, /title="Worktree：test-worktree"/u);
+  assert.match(html, /mission-tree-worktree-icon/u);
+});
+
+test("SessionRow does not mark the project root worktree as a branch session", () => {
+  const html = renderSessionRow({
+    cwd: "D:/repo",
+    projectName: "repo",
+    worktreeName: "main",
+  });
+
+  assert.doesNotMatch(html, /mission-tree-worktree-icon/u);
+  assert.doesNotMatch(html, /title="Worktree：main"/u);
+});

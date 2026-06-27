@@ -1,13 +1,22 @@
 import { lazy, Suspense } from "react";
+import { useDeckStore } from "../../store";
+import { buildDashboardViewModel } from "../../features/dashboard";
+import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
+import { useEffectiveViewport } from "../../features/preferences";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
     default: module.OverviewPage,
+  })),
+);
+const DashboardPage = lazy(() =>
+  import("../../features/dashboard/ui/page").then((module) => ({
+    default: module.DashboardPage,
   })),
 );
 const AgentsPage = lazy(() =>
@@ -22,17 +31,21 @@ const SettingsPage = lazy(() =>
 );
 const MissionRoute = lazy(() =>
   import("./mission-route").then((module) => ({
-    default: ({ source }: { source: any }) => module.renderMissionRoute(source),
+    default: ({ source }: { source: MissionRouteSource }) => module.renderMissionRoute(source),
   })),
 );
-export function AppRoutes({ ctx }: { ctx: any }) {
+export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
+  const viewport = useEffectiveViewport();
+  const isMobile = viewport === "mobile";
+  const helmHealthStatus = useDeckStore((state) => state.helmHealthStatus);
+
   const source = {
     ...ctx.runtimeState, ...ctx.deckData, ...ctx.missionView, ...ctx.titleActions,
     ...ctx.appActions,
     ...ctx.controllers, ...ctx.panelPages, ...ctx.selection, ...ctx.layout,
     ...ctx.history, ...ctx.preferenceActions, ...ctx.promptEnhancerSettings,
-    ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx,
-  };
+    ...ctx.slash, ...ctx.codeActions, ...ctx.helmConnection, ...ctx, ...ctx.route,
+  } as MissionRouteSource;
   const {
     activeView,
     copy,
@@ -42,9 +55,19 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     daemonPort,
     projects,
     worktrees,
+    projectFilesByScope,
     agents,
     sessions,
+    statuses,
+    activeSessionId,
+    openChatSessionIds,
+    focusedChatWindowId,
+    sessionPlans,
+    helms,
+    approvalItemsById,
+    toolCalls,
     navigateToView,
+    respondToPermission,
     openSession,
     resolveDisplaySessionTitle,
     formatRelativeTime,
@@ -111,6 +134,7 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     resetDeckPreferences,
     updateDeckPreference,
     updateTechnicalPanelPreference,
+    updatePromptEnhancerPreference,
     updatePromptEnhancerLlmPreference,
     updatePromptEnhancerModelInput,
     setPromptEnhancerModelPickerOpen,
@@ -118,12 +142,20 @@ export function AppRoutes({ ctx }: { ctx: any }) {
     setPromptEnhancerModelFilter,
     selectPromptEnhancerModel,
     testPromptEnhancerSelectedModel,
+    loggingSettings,
+    loggingStatus,
+    loggingClientAvailable,
+    loggingConnectionKnownConnected,
+    refreshLoggingSettings,
+    saveLoggingLevel,
   } = source;
 function renderOverview() {
   return (
     <OverviewPage
+      isMobile={isMobile}
       copy={copy}
       connection={connection}
+      helmHealthStatus={helmHealthStatus}
       activeHelm={activeHelm}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
@@ -141,9 +173,48 @@ function renderOverview() {
   );
 }
 
+function renderDashboard() {
+  const dashboard = buildDashboardViewModel({
+    connection,
+    daemonHost,
+    daemonPort,
+    defaultDaemonHost: DEFAULT_DAEMON_HOST,
+    defaultDaemonPort: DEFAULT_DAEMON_PORT,
+    activeHelm,
+    helms,
+    agents,
+    projects,
+    sessions,
+    statuses,
+    activeSessionId,
+    openChatSessionIds,
+    focusedChatWindowId,
+    sessionPlans,
+    toolCalls,
+    approvalItemsById,
+    resolveDisplaySessionTitle,
+  });
+
+  return (
+    <DashboardPage
+      isMobile={isMobile}
+      {...dashboard}
+      onNavigateAgents={() => navigateToView("agents")}
+      onOpenSession={(sessionId) => {
+        openSession(sessionId);
+        navigateToView("sessions");
+      }}
+      onRespondApproval={(approvalRequestId, decision) =>
+        respondToPermission(approvalRequestId, decision)
+      }
+    />
+  );
+}
+
 function renderAgents() {
   return (
     <AgentsPage
+      isMobile={isMobile}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
       defaultDaemonHost={DEFAULT_DAEMON_HOST}
@@ -158,6 +229,7 @@ function renderAgents() {
       projects={projects}
       agents={agents}
       worktrees={worktrees}
+      projectFilesByScope={projectFilesByScope}
       socketRef={socketRef}
       rpcClientRef={rpcClientRef}
       helmSocketRefs={helmSocketRefs}
@@ -212,6 +284,7 @@ function renderAgents() {
 function renderSettings() {
   return (
     <SettingsPage
+      isMobile={isMobile}
       deckPreferences={deckPreferences}
       technicalPanels={technicalPanels}
       promptModelPickerRef={promptModelPickerRef}
@@ -223,6 +296,7 @@ function renderSettings() {
       resetDeckPreferences={resetDeckPreferences}
       updateDeckPreference={updateDeckPreference}
       updateTechnicalPanelPreference={updateTechnicalPanelPreference}
+      updatePromptEnhancerPreference={updatePromptEnhancerPreference}
       updatePromptEnhancerLlmPreference={updatePromptEnhancerLlmPreference}
       updatePromptEnhancerModelInput={updatePromptEnhancerModelInput}
       setPromptEnhancerModelPickerOpen={setPromptEnhancerModelPickerOpen}
@@ -230,13 +304,20 @@ function renderSettings() {
       setPromptEnhancerModelFilter={setPromptEnhancerModelFilter}
       selectPromptEnhancerModel={selectPromptEnhancerModel}
       testPromptEnhancerSelectedModel={testPromptEnhancerSelectedModel}
+      loggingSettings={loggingSettings}
+      loggingStatus={loggingStatus}
+      loggingClientAvailable={loggingClientAvailable}
+      loggingConnectionKnownConnected={loggingConnectionKnownConnected}
+      onRefreshLoggingSettings={refreshLoggingSettings}
+      onSaveLoggingLevel={saveLoggingLevel}
     />
   );
 }
   return (
-    <div className="page-content stack-gap">
+    <div className="page-content">
       <Suspense fallback={null}>
         {activeView === "overview" && renderOverview()}
+        {activeView === "dashboard" && renderDashboard()}
         {activeView === "sessions" && <MissionRoute source={source} />}
         {activeView === "agents" && renderAgents()}
         {activeView === "settings" && renderSettings()}

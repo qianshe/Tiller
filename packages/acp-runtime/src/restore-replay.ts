@@ -29,14 +29,25 @@ export function createRestoreReplayEventSink(
 }
 
 function isRestoreReplayEvent(event: SessionRuntimeEvent, assistantBaseline: AgentMessage[]) {
-  if (isReplayAssistantMessage(event, assistantBaseline)) {
+  if (isReplayMessage(event, assistantBaseline)) {
     return true;
   }
   return (
     event.type === "tool-call" ||
     event.type === "command-output" ||
-    event.type === "diff-update"
+    event.type === "diff-update" ||
+    event.type === "plan-update"
   );
+}
+
+function isReplayMessage(event: SessionRuntimeEvent, assistantBaseline: AgentMessage[]) {
+  if (event.type !== "message") {
+    return false;
+  }
+  if (event.message.role !== "assistant") {
+    return true;
+  }
+  return isReplayAssistantMessage(event, assistantBaseline);
 }
 
 function isReplayAssistantMessage(

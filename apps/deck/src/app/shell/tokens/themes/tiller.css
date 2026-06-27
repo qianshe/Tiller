@@ -1,0 +1,65 @@
+/* tokens/themes/tiller.css — Tiller brand theme for [data-theme="tiller"]
+ *
+ * Cool-grey workshop palette with Tiller deep-blue primary. See
+ * docs/Tiller-Brand.md (if/when extracted) for palette rationale.
+ */
+
+@layer base {
+  [data-theme="tiller"] {
+    --background:           #b8c1ca;
+    --canvas:               #c6ced6;
+    --surface:              #d7dee5;
+    --surface-sunken:       #aeb7c0;
+    --surface-elevated:     #e5ebf0;
+    --surface-emphasis:     #909ba6;
+    --popover-glass:        rgb(229 235 240 / 0.82);
+
+    --foreground:           #111820;
+    --muted-foreground:     #33404d;
+
+    --primary:              #314963;
+    --primary-strong:       #1f5e90;
+    --on-primary:           #f7fafc;
+    --primary-soft:         rgb(49 73 99 / 0.14);
+
+    --success:              #28734f;
+    --success-container:    #28734f;
+    --on-success-container: #f7fafc;
+    --warning:              #8b6419;
+    --on-warning:           #8b6419;
+    --destructive:          #9b3131;
+
+    --diff-added-bg:        rgb(40 115 79 / 0.16);
+    --diff-added-text:      #28734f;
+    --diff-added-border:    #28734f;
+    --diff-deleted-bg:      rgb(155 49 49 / 0.16);
+    --diff-deleted-text:    #9b3131;
+    --diff-deleted-border:  #9b3131;
+    --diff-hunk-bg:         rgb(49 73 99 / 0.20);
+    --diff-hunk-text:       #314963;
+    --diff-meta-bg:         #c6ced6;
+    --diff-meta-text:       #33404d;
+    --markdown-code-bg:     #1f2933;
+    --markdown-code-fg:     #e8eef5;
+    --markdown-code-head:   #d8dee6;
+
+    --border-ghost:         rgb(26 36 46 / 0.18);
+    --ring:                 #314963;
+
+    --terminal-bg:          #1f2933;
+    --terminal-fg:          #e8eef5;
+
+    --shadow-ambient:       0 0 84px rgb(49 73 99 / 0.12);
+
+    --color-text-inverse:   #ffffff;
+    --color-subtle:         #4b5563;
+    --color-surface:        rgba(215, 222, 229, 0.9);
+    --color-surface-strong: rgba(215, 222, 229, 0.96);
+    --color-secondary-text: #111820;
+    --color-border-strong:  rgba(26, 36, 46, 0.24);
+    --shadow-panel:         0 20px 44px rgba(0, 0, 0, 0.1);
+    --shadow-card:          0 16px 34px rgba(0, 0, 0, 0.08);
+    --deck-color-scheme:    light;
+    --deck-body-background: var(--background);
+  }
+}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   AgentToolCall,
+  AgentPlan,
   CommandChunk,
   FileDiffSummary,
 } from "@tiller/shared";
@@ -18,6 +19,7 @@ export const ResultSchema = z.object({
   outputs: z.array(typedUnknown<CommandChunk>()),
   diffs: z.array(typedUnknown<FileDiffSummary>()),
   toolCalls: z.array(typedUnknown<AgentToolCall>()),
+  plan: typedUnknown<AgentPlan>().optional(),
   nextCursor: z.string().optional(),
   hasMore: z.boolean().optional(),
 });

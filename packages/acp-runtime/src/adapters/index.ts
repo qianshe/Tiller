@@ -1,10 +1,10 @@
-import type { AcpAgentProvider, AgentCapabilities } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentCapabilities } from "@tiller/shared";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpLaunchContext } from "./types";
+import type { AcpAgentAdapter, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -14,38 +14,45 @@ const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createGenericAcpAdapter(),
 ];
 
-export function resolveAcpAgentAdapter(provider: AcpAgentProvider) {
+export function resolveAcpAgentAdapter(provider: AcpRuntimeProviderConfig) {
   return ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ?? ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!;
 }
 
-export function resolveAcpLaunchConfig(provider: AcpAgentProvider, context: AcpLaunchContext) {
+export function resolveAcpLaunchConfig(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext) {
   return resolveAcpAgentAdapter(provider).resolveLaunch(provider, context);
 }
 
-export function resolveAdapterCapabilities(provider: AcpAgentProvider, initializeResult: unknown, detected: AgentCapabilities) {
+export function resolveAdapterCapabilities(
+  provider: AcpRuntimeProviderConfig,
+  initializeResult: unknown,
+  detected: AgentCapabilities,
+) {
   return resolveAcpAgentAdapter(provider).resolveCapabilities(provider, initializeResult, detected);
 }
 
-export function resolveAdapterCleanupPlan(provider: AcpAgentProvider, runtimeSessionId: string) {
+export function resolveAdapterCleanupPlan(provider: AcpRuntimeProviderConfig, runtimeSessionId: string) {
   return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
 }
 
-export function resolveAdapterRequestTimeout(provider: AcpAgentProvider, method: string) {
+export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig, method: string) {
   return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
 }
 
-export function loadAdapterAuthoritativeHistory(
-  provider: AcpAgentProvider,
-  runtimeSessionId: string,
-  cwd: string,
+export function mapAdapterSessionUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
 ) {
-  return (
-    resolveAcpAgentAdapter(provider).loadAuthoritativeHistory?.({
-      provider,
-      runtimeSessionId,
-      cwd,
-    }) ?? Promise.resolve(null)
-  );
+  return provider
+    ? resolveAcpAgentAdapter(provider).mapSessionUpdate?.(context) ?? null
+    : null;
+}
+
+export function readAdapterTranscriptPlan(context: AcpHistoryContext) {
+  return resolveAcpAgentAdapter(context.provider).readTranscriptPlan?.(context) ?? null;
+}
+
+export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
+  return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
 }
 
 export { createClaudeAcpAdapter } from "./claude/index";
@@ -55,4 +62,5 @@ export { createOpenClawAcpAdapter } from "./openclaw/index";
 export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export { SUPPRESS_SESSION_UPDATE } from "./types";
+export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";

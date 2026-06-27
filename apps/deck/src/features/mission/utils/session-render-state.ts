@@ -6,27 +6,24 @@ import type {
   SessionStatus,
 } from "@tiller/shared";
 import { resolvePendingToolActivity } from "../../logbook";
-import type { MissionPanelPage } from "../ui/panels";
+import type { MissionPanelPage } from "../display/panels";
 import { isSessionExecutionPending } from "./session-state";
 
-export function buildMissionPanelPages(
-  diffCount: number,
-  logCount: number,
-  customPages: MissionPanelPage[],
+export function buildMissionDisplayTabs(
+  _diffCount: number,
+  _logCount: number,
 ): MissionPanelPage[] {
   return [
-    { id: "overview", title: "概览" },
-    { id: "logbook", title: `航行日志 (${logCount})` },
-    ...(diffCount > 0 ? [{ id: "diff-detail", title: "Diff 详情" }] : []),
-    ...customPages,
+    { id: "graph", title: "图表" },
+    { id: "diff-detail", title: "Diff 详情" },
   ];
 }
 
-export function selectMissionPanelPage(
-  pages: MissionPanelPage[],
-  selectedPageId: string,
+export function selectMissionDisplayTab(
+  tabs: MissionPanelPage[],
+  selectedTabId: string,
 ): MissionPanelPage {
-  return pages.find((page) => page.id === selectedPageId) ?? pages[0]!;
+  return tabs.find((tab) => tab.id === selectedTabId) ?? tabs[0]!;
 }
 
 export function resolveVisibleProjectFiles(

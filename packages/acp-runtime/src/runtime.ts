@@ -1,11 +1,11 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
 export { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection } from "./runtime-session";
-export { AcpConnection } from "./connection/acp-connection";
-export { createAcpConnectionManager } from "./connection/connection-manager";
-export type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
-export { resolveAcpConnectionKey } from "./connection/connection-key";
-export type { AcpConnectionInventoryItem } from "./connection/connection-types";
+export { AcpConnection } from "./connection/lifecycle";
+export { createAcpConnectionManager } from "./connection/manager";
+export type { AcpConnectionLifecycleEvent } from "./connection/manager";
+export { resolveAcpConnectionKey } from "./connection/key";
+export type { AcpConnectionInventoryItem } from "./connection/types";
 export { testAcpConnection } from "./connection-test";
 export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./session-list";
 export {
@@ -67,7 +67,11 @@ export type {
 } from "./runtime-types";
 
 export { mapSessionUpdateNotification, normalizeProviderCleanupResult, summarizeSessionUpdateNotification } from "./events";
-export { sanitizeProtocolLogPayload } from "./protocol-logging";
+export {
+  sanitizeProtocolLogPayload,
+  type AcpProtocolLoggingOptions,
+  type AcpProtocolTraceMode,
+} from "./protocol-logging";
 
 export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {
@@ -76,11 +80,12 @@ export {
   createGenericAcpAdapter,
   createOpenClawAcpAdapter,
   createOpenCodeAcpAdapter,
-  loadAdapterAuthoritativeHistory,
   OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  readAdapterTranscriptMessages,
+  readAdapterTranscriptPlan,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
   type AcpAgentAdapter,

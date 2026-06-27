@@ -306,13 +306,13 @@ test("resolveMissionSelectedProjectId highlights the draft project before a sess
   );
 });
 
-test("resolvePromptPlaceholder uses a concise ACP command hint", () => {
+test("resolvePromptPlaceholder advertises composer shortcuts", () => {
   assert.equal(
     resolvePromptPlaceholder({ command: "F:\\devData\\npm-global\\codex-acp.cmd" }),
-    "向 codex-acp 下达指令；/ 调用命令",
+    "Enter 发送消息 · Shift+Enter 换行 · / 命令 · Esc 取消",
   );
   assert.equal(
     resolvePromptPlaceholder({ command: "opencode", args: ["acp", "--pure"] }),
-    "向 opencode 下达指令；/ 调用命令",
+    "Enter 发送消息 · Shift+Enter 换行 · / 命令 · Esc 取消",
   );
 });

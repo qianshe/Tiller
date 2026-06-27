@@ -9,6 +9,10 @@ import type {
 } from "@tiller/shared";
 import { agentModelOptionsKey, type AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import { traceDeckPromptSubmit } from "../../server-events";
+import {
+  submitPromptRequest,
+} from "../orchestration/prompt-submission";
 import { resolveNewSessionIdentity } from "../utils/session-identity";
 
 type RpcClientRef = MutableRefObject<DeckRpcClient | null>;
@@ -57,6 +61,12 @@ type SubmitPromptContext = {
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
   createClientUserMessageId: (sessionId: string) => string;
+  appendUserMessage: (
+    sessionId: string,
+    text: string,
+    id: string,
+    attachments: AgentPromptImageContent[],
+  ) => void;
   dispatch: DispatchToHelm;
 };
 
@@ -64,15 +74,7 @@ function isClientOpen(client: DeckRpcClient | null): client is DeckRpcClient {
   return Boolean(client && client.socket.readyState === WebSocket.OPEN);
 }
 
-export function buildPromptContent(
-  text: string,
-  images: AgentPromptImageContent[],
-): AgentPromptContent[] | undefined {
-  if (!images.length) {
-    return undefined;
-  }
-  return [...(text ? [{ type: "text" as const, text }] : []), ...images];
-}
+export { buildPromptContent } from "../orchestration/prompt-submission";
 
 export function createSession(
   initialPrompt: string | undefined,
@@ -173,47 +175,45 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     prompt,
     promptImages,
     rpcClientRef,
-    setImagePasteNotice,
     activeSessionId,
     activeSessionCanChat = true,
     createSession,
+    setImagePasteNotice,
     setPrompt,
     setPromptImages,
     createClientUserMessageId,
+    appendUserMessage,
     dispatch,
   } = context;
 
   event.preventDefault();
-  const nextPrompt = prompt.trim();
   const client = rpcClientRef.current;
-  if ((!nextPrompt && !promptImages.length) || !isClientOpen(client)) {
-    return;
-  }
-  const messageText = nextPrompt || `图片 ${promptImages.length} 张`;
-  const content = buildPromptContent(nextPrompt, promptImages);
-  setImagePasteNotice("");
-
-  if (!activeSessionId) {
-    if (createSession(messageText, content)) {
-      setPrompt("");
-      setPromptImages([]);
-    }
+  if (!isClientOpen(client)) {
     return;
   }
 
-  if (!activeSessionCanChat) {
-    return;
-  }
-
-  const clientMessageId = createClientUserMessageId(activeSessionId);
-  setPrompt("");
-  setPromptImages([]);
-  void dispatch(client, "session/prompt", {
-    sessionId: activeSessionId,
-    text: messageText,
-    content,
-    clientMessageId,
-  });
+  submitPromptRequest(
+    {
+      prompt,
+      promptImages,
+      activeSessionId,
+      activeSessionCanChat,
+    },
+    {
+      client,
+      createSession,
+      setImagePasteNotice,
+      setPrompt,
+      setPromptImages,
+      createClientUserMessageId,
+      appendExistingSessionPrompt: appendUserMessage,
+      dispatch,
+      tracePromptSubmit: traceDeckPromptSubmit,
+      prepareExistingSessionPrompt: async (sessionId) => {
+        await dispatch(client, "session/subscribe", { sessionId });
+      },
+    },
+  );
 }
 
 export function startResume(context: StartResumeContext) {

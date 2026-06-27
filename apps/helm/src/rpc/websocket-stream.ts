@@ -8,6 +8,8 @@ import {
   type Stream,
 } from "@tiller/sync-protocol";
 
+const MAX_SEND_BUFFER_BYTES = 16 * 1024 * 1024;
+
 export function createWebSocketJsonRpcStream(
   socket: WebSocket,
   onDecodeError: (error: unknown) => void,
@@ -35,9 +37,14 @@ export function createWebSocketJsonRpcStream(
 
   return {
     send(message) {
-      if (socket.readyState === 1) {
-        socket.send(encodeMessage(message));
+      if (socket.readyState !== 1) {
+        return;
       }
+      if (socket.bufferedAmount > MAX_SEND_BUFFER_BYTES) {
+        socket.close(4001, "Send buffer overflow");
+        return;
+      }
+      socket.send(encodeMessage(message));
     },
     onMessage(handler) {
       handlers.add(handler);

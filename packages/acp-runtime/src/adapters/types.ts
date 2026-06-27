@@ -1,4 +1,12 @@
-import type { AcpAgentProvider, AgentCapabilities, AgentMessage, AgentToolCall, SessionReasoningEffort } from "@tiller/shared";
+import type {
+  AcpRuntimeProviderConfig,
+  AgentCapabilities,
+  AgentMessage,
+  AgentPlan,
+  AgentToolCall,
+  SessionReasoningEffort,
+} from "@tiller/shared";
+import type { SessionRuntimeEvent } from "../runtime-types";
 
 export type AcpLaunchContext = {
   fallbackCwd: string;
@@ -18,10 +26,11 @@ export type AcpLaunchSpec = {
 export type AcpAuthoritativeHistory = {
   messages: AgentMessage[];
   toolCalls: AgentToolCall[];
+  plan?: AgentPlan;
 };
 
 export type AcpHistoryContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   runtimeSessionId: string;
   cwd: string;
 };
@@ -31,14 +40,25 @@ export type ProviderCleanupPlan =
   | { kind: "unsupported"; providerId: string; message: string };
 
 export type AcpCleanupContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   runtimeSessionId: string;
 };
 
 export type AcpRequestTimeoutContext = {
-  provider: AcpAgentProvider;
+  provider: AcpRuntimeProviderConfig;
   method: string;
 };
+
+export type AcpSessionUpdateProjectionContext = {
+  sessionId: string;
+  updateType: string | undefined;
+  update: unknown;
+  now?: string;
+};
+
+export const SUPPRESS_SESSION_UPDATE = { kind: "suppress-session-update" } as const;
+
+export type AcpSessionUpdateProjection = SessionRuntimeEvent | typeof SUPPRESS_SESSION_UPDATE;
 
 export type ProviderAdapterPluginManifest = {
   kind: "provider-adapter-plugin-placeholder";
@@ -48,10 +68,16 @@ export type ProviderAdapterPluginManifest = {
 
 export type AcpAgentAdapter = {
   id: string;
-  isMatch(provider: AcpAgentProvider): boolean;
-  resolveLaunch(provider: AcpAgentProvider, context: AcpLaunchContext): AcpLaunchSpec;
-  resolveCapabilities(provider: AcpAgentProvider, initializeResult: unknown, detected: AgentCapabilities): AgentCapabilities;
+  isMatch(provider: AcpRuntimeProviderConfig): boolean;
+  resolveLaunch(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext): AcpLaunchSpec;
+  resolveCapabilities(
+    provider: AcpRuntimeProviderConfig,
+    initializeResult: unknown,
+    detected: AgentCapabilities,
+  ): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
-  loadAuthoritativeHistory?(context: AcpHistoryContext): Promise<AcpAuthoritativeHistory | null>;
+  mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
+  readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
 };

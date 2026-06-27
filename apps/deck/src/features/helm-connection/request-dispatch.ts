@@ -6,7 +6,7 @@ export type DispatchToHelm = (
   method: string,
   params: unknown,
   options?: { onResult?: (method: string, result: unknown) => void },
-) => Promise<void>;
+) => Promise<unknown>;
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
   "session/new": 180_000,
@@ -34,6 +34,7 @@ export async function dispatchWithTrace(
     timeoutMs: REQUEST_TIMEOUT_OVERRIDES_MS[method],
   });
   onResult?.(method, result);
+  return result;
 }
 
 export async function requestInitialSync(
@@ -53,6 +54,11 @@ export async function requestInitialSync(
   await dispatch(client, "project/list", {});
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
+  try {
+    await dispatch(client, "logging/get", {});
+  } catch {
+    // Logging settings are optional during reconnect; inventory must still load.
+  }
   setSessionHistoryState({ hasMore: false, loading: true });
   try {
     await dispatch(client, "session/list", { limit: sessionPageLimit });

@@ -16,6 +16,7 @@ import {
   resolveAdapterCleanupPlan,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
+  readAdapterTranscriptMessages,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
@@ -132,6 +133,56 @@ test("resolveAcpAgentAdapter chooses provider-specific adapters before generic f
   assert.equal(resolveAcpAgentAdapter({ id: "claude-acp", name: "Claude Agent", command: "claude-acp", transport: "stdio", protocol: "acp" }).id, "claude");
   assert.equal(resolveAcpAgentAdapter({ id: "openclaw", name: "OpenClaw", command: "openclaw", transport: "stdio", protocol: "acp" }).id, "openclaw");
   assert.equal(resolveAcpAgentAdapter({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }).id, "generic");
+});
+
+test("Claude transcript plan repair stays behind the Claude adapter", () => {
+  assert.equal(
+    typeof resolveAcpAgentAdapter({
+      id: "claude-acp",
+      name: "Claude Agent",
+      command: "claude-agent-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptPlan,
+    "function",
+  );
+  assert.equal(
+    resolveAcpAgentAdapter({
+      id: "custom",
+      name: "Custom",
+      command: "custom-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptPlan,
+    undefined,
+  );
+});
+
+test("Claude transcript message repair stays behind the Claude adapter", () => {
+  assert.equal(
+    typeof resolveAcpAgentAdapter({
+      id: "claude-acp",
+      name: "Claude Agent",
+      command: "claude-agent-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptMessages,
+    "function",
+  );
+  assert.deepEqual(
+    readAdapterTranscriptMessages({
+      provider: {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      runtimeSessionId: "runtime-1",
+      cwd: "D:/repo",
+    }),
+    [],
+  );
 });
 
 test("resolveAdapterPluginManifest exposes a disabled placeholder without loading plugins", () => {

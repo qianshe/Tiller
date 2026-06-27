@@ -1,14 +1,10 @@
 // @ts-nocheck
 import { useEffect } from "react";
+import { useDeckStore } from "../../../store";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
-import {
-  subscribeToSessionTopic,
-  unsubscribeFromSessionTopic,
-} from "../../helm-connection/facade";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
 import { useSnapshotCache } from "../hooks/snapshot-cache";
-import { DEFAULT_ACTIVITY_PAGE_LIMIT, DEFAULT_MESSAGE_PAGE_LIMIT } from "../config";
 import {
   DEFAULT_DAEMON_HOST,
   DEFAULT_DAEMON_PORT,
@@ -19,6 +15,7 @@ import { buildMissionEffectsSource } from "./mission-effects-source";
 
 export function useMissionEffects(ctx: any) {
   const source = buildMissionEffectsSource(ctx);
+  const setHelmHealthStatus = useDeckStore((state) => state.setHelmHealthStatus);
   const {
     projects,
     pairingState,
@@ -26,7 +23,6 @@ export function useMissionEffects(ctx: any) {
     dispatch,
     activeView,
     chatMainRef,
-    preserveChatScrollRef,
     activeSessionId,
     stickChatToBottomRef,
     pendingSessionScrollToBottomRef,
@@ -40,6 +36,7 @@ export function useMissionEffects(ctx: any) {
     missionPromptRef,
     imagePasteNotice,
     prompt,
+    openChatSessionIds,
     promptImages,
     fleetAddHelmModalOpen,
     fleetAddHelmStage,
@@ -77,18 +74,14 @@ useEffect(() => {
   if (activeView !== "sessions") {
     return;
   }
+  if ((openChatSessionIds?.length ?? 0) > 1) {
+    return;
+  }
   const chatMain = chatMainRef.current;
   if (!chatMain) {
     return;
   }
   requestAnimationFrame(() => {
-    const preserve = preserveChatScrollRef.current;
-    if (preserve) {
-      chatMain.scrollTop =
-        chatMain.scrollHeight - preserve.scrollHeight + preserve.scrollTop;
-      preserveChatScrollRef.current = null;
-      return;
-    }
     const sessionChanged =
       lastAutoScrollSessionIdRef.current !== activeSessionId;
     const shouldForceSessionBottom = Boolean(
@@ -121,60 +114,10 @@ useEffect(() => {
   activeView,
   activeSessionId,
   activeSessionMessages.length,
+  openChatSessionIds?.length,
   messageHistoryState,
   sessionOpenScrollTick,
 ]);
-useEffect(() => {
-  if (
-    !activeSessionId ||
-    pairingState !== "paired" ||
-    !rpcClientRef.current ||
-    rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-  const client = rpcClientRef.current;
-  void subscribeToSessionTopic(rpcClientRef.current, activeSessionId, dispatch);
-  return () => {
-    if (client.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    void unsubscribeFromSessionTopic(client, activeSessionId, dispatch);
-  };
-}, [activeSessionId, pairingState]);
-// Opening an old session is windowed: Deck asks Helm for the latest message/artifact
-// page, then starts ACP resume separately. Restore replay is handled inside Helm and
-// must not be treated as a replacement for these paged history requests.
-useEffect(() => {
-  if (
-    !activeSessionId ||
-    pairingState !== "paired" ||
-    !rpcClientRef.current ||
-    rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-  setMessageHistoryState((current) => ({
-    ...current,
-    [activeSessionId]: { hasMore: false, loading: true },
-  }));
-  setActivityHistoryState((current) => ({
-    ...current,
-    [activeSessionId]: { hasMore: false, loading: true },
-  }));
-  void dispatch(rpcClientRef.current, "session/list_messages", {
-    sessionId: activeSessionId,
-    limit: DEFAULT_MESSAGE_PAGE_LIMIT,
-  });
-  void dispatch(rpcClientRef.current, "session/get_artifacts", {
-    sessionId: activeSessionId,
-    limit: DEFAULT_ACTIVITY_PAGE_LIMIT,
-  });
-  setResumeFeedback("正在检查 ACP 会话恢复能力...");
-  void dispatch(rpcClientRef.current, "session/check_resume", {
-    sessionId: activeSessionId,
-  });
-}, [activeSessionId, pairingState]);
 usePromptAutosize({
   activeView,
   activeSessionId,
@@ -244,5 +187,6 @@ useReconnectEffects({
   autoConnectAttemptRef,
   manualDisconnectRef,
   connectToDaemon,
+  setHelmHealthStatus,
 });
 }

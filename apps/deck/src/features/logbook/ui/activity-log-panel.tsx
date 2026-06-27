@@ -193,7 +193,7 @@ function ToolActivityCard({
         </pre>
       ) : inputText ? (
         <div className="grid gap-0.5 pl-6">
-          <span className="text-[11px] font-semibold text-muted-foreground">无输出，仅有调用参数</span>
+          <span className="text-meta font-semibold text-muted-foreground">无输出，仅有调用参数</span>
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground">
             {inputText}
           </pre>
@@ -245,14 +245,14 @@ function ActivityDetails({
       <summary className="grid min-h-8 cursor-pointer list-none grid-cols-[16px_minmax(44px,auto)_minmax(0,1fr)_auto] items-center gap-1.5 px-2 py-1 [&::-webkit-details-marker]:hidden">
         <span
           className={cn(
-            "grid size-4 place-items-center rounded-sm font-mono text-[10px] font-bold",
+            "grid size-4 place-items-center rounded-sm font-mono text-2xs font-bold",
             tone.icon,
           )}
           aria-hidden="true"
         >
           {icon}
         </span>
-        <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="whitespace-nowrap text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
           {kind}
         </span>
         <strong className="min-w-0 truncate text-xs font-medium text-foreground">
@@ -260,7 +260,7 @@ function ActivityDetails({
         </strong>
         <span
           className={cn(
-            "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
+            "text-2xs font-semibold uppercase tracking-wide text-muted-foreground",
             streamTone === "danger" && "text-destructive",
           )}
         >

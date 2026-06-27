@@ -5,6 +5,7 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import { summarizeSessionContext } from "../../mission/facade";
+import { toast } from "../../toast";
 import {
   enhancePromptWithLlm,
   type PromptEnhancerPreferences,
@@ -65,11 +66,14 @@ export function usePromptEnhanceAction({
       });
 
       setPrompt(enhanced);
-      setPromptEnhancerStatus("已增强并回填输入框，请确认后再发送。");
+      setPromptEnhancerStatus("");
+      // 使用 Toast 通知成功
+      toast.success("提示词已增强，请确认后发送");
     } catch (error) {
-      setPromptEnhancerStatus(
-        error instanceof Error ? error.message : "提示词增强失败",
-      );
+      const errorMessage = error instanceof Error ? error.message : "提示词增强失败";
+      setPromptEnhancerStatus("");
+      // 使用 Toast 通知错误，错误类型的 toast 会显示更久
+      toast.error(errorMessage, { duration: 5000 });
     } finally {
       setPromptEnhancerBusy(false);
     }

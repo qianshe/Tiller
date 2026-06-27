@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  PromptTraceEvent,
+  SessionSummary,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import { handleRuntimeEvent } from "./events.js";
+import type { LogLevel, TillerLogger } from "../logging/logger";
+import {
+  handleRuntimeEvent,
+  flushRuntimeUserEchoLogSummaryForTest,
+  nextLiveEventSequenceForTest,
+  seedLiveEventSequenceForSession,
+} from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
 
 type TestContextCapture = {
@@ -11,7 +25,58 @@ type TestContextCapture = {
   detailBroadcasts: unknown[];
   persisted: AgentMessage[];
   summaryUpdates?: SessionSummary[];
+  timelineEntries?: SessionTimelineEntry[];
+  sessionUpdates?: SessionUpdateRecord[];
+  traceEvents?: PromptTraceEvent[];
+  structuredLogs?: CapturedLog[];
 };
+
+type CapturedLog = {
+  level: "fatal" | "trace" | "info" | "debug" | "warn" | "error";
+  event: string;
+  fields?: Record<string, unknown>;
+};
+
+function createCapturedLogger(capture: TestContextCapture, legacyLogs: string[]): TillerLogger {
+  capture.structuredLogs ??= [];
+  const write = (
+    level: CapturedLog["level"],
+    event: string,
+    fields?: Record<string, unknown>,
+  ) => {
+    capture.structuredLogs?.push({ level, event, fields });
+  };
+  const writeLegacy = (level: CapturedLog["level"], message: string) => {
+    legacyLogs.push(message);
+    write(level, "legacy.log", { message });
+  };
+
+  return {
+    fatal: (event, fields) => write("fatal", event, fields),
+    trace: (event, fields) => write("trace", event, fields),
+    info: (event, fields) => write("info", event, fields),
+    debug: (event, fields) => write("debug", event, fields),
+    warn: (event, fields) => write("warn", event, fields),
+    error: (event, fields) => write("error", event, fields),
+    logInfo: (message) => writeLegacy("info", message),
+    logDebug: (message) => writeLegacy("debug", message),
+    logWarn: (message) => writeLegacy("warn", message),
+    logError: (message) => writeLegacy("error", message),
+    writeLogLine: (level: LogLevel, message: string) => writeLegacy(level.toLowerCase() as CapturedLog["level"], message),
+    getLevel: () => "debug",
+    setLevel: () => undefined,
+    logFile: "captured.log",
+    close: () => undefined,
+  };
+}
+
+function structuredLogs(capture: TestContextCapture) {
+  return capture.structuredLogs?.filter((log) => log.event !== "legacy.log") ?? [];
+}
+
+function findStructuredLog(capture: TestContextCapture, event: string) {
+  return structuredLogs(capture).find((log) => log.event === event);
+}
 
 function createTestContext(
   logs: string[],
@@ -34,6 +99,7 @@ function createTestContext(
     messageCount: 0,
     ...summaryPatch,
   };
+  const logger = createCapturedLogger(capture, logs);
 
   return {
     sessions: new Map([
@@ -42,15 +108,19 @@ function createTestContext(
         {
           agent: { id: "opencode" },
           worktree: { id: "worktree-1" },
-          summary,
+          summary: { ...summary, runtimeSessionId: "runtime-1" },
         },
       ],
     ]),
     sessionStore: { list: () => [summary] },
-    logInfo: (message: string) => logs.push(message),
-    logDebug: () => undefined,
-    logWarn: (message: string) => logs.push(message),
-    logError: (message: string) => logs.push(message),
+    logInfo: logger.logInfo,
+    logDebug: logger.logDebug,
+    logWarn: logger.logWarn,
+    logError: logger.logError,
+    logger,
+    promptTrace: capture.traceEvents
+      ? { emit: (event: PromptTraceEvent) => capture.traceEvents?.push(event) }
+      : undefined,
     persistSessionMessage: (_sessionId: string, message: AgentMessage) => {
       capture.persisted.push(message);
     },
@@ -77,12 +147,117 @@ function createTestContext(
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
     },
+    sessionTimelineStore: {
+      append: (_sessionId: string, entry: SessionTimelineEntry) => {
+        capture.timelineEntries = [
+          ...(capture.timelineEntries ?? []).filter((candidate) => candidate.id !== entry.id),
+          entry,
+        ];
+        return capture.timelineEntries;
+      },
+      replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+        capture.timelineEntries = entries;
+        return entries;
+      },
+      list: () => capture.timelineEntries ?? [],
+      listPage: () => ({
+        entries: capture.timelineEntries ?? [],
+        hasMore: false,
+      }),
+      remove: () => {
+        capture.timelineEntries = [];
+      },
+    },
+    sessionUpdateStore: {
+      append: (update: SessionUpdateRecord) => {
+        capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
+      },
+    },
     publishDiffUpdate: async () => undefined,
     hydrateSessionSummary: (item: SessionSummary) => item,
   } as unknown as HelmHandlerContext;
 }
 
-test("runtime session.message persists and broadcasts streaming chunks with debug text", () => {
+test("live event sequence resumes above persisted timeline sequences", () => {
+  seedLiveEventSequenceForSession("session-seed", [3, 12, undefined, 7]);
+
+  assert.equal(nextLiveEventSequenceForTest("session-seed"), 13);
+  assert.equal(nextLiveEventSequenceForTest("session-seed"), 14);
+});
+
+test("live event sequence ignores invalid persisted values", () => {
+  seedLiveEventSequenceForSession("session-invalid", [undefined, Number.NaN, -1, 0, 2]);
+
+  assert.equal(nextLiveEventSequenceForTest("session-invalid"), 3);
+});
+
+test("runtime message events persist source-neutral session update records", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "record-session");
+
+  handleRuntimeEvent(
+    "record-session",
+    {
+      type: "message",
+      message: {
+        id: "assistant-record",
+        role: "assistant",
+        text: "hello",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(capture.sessionUpdates?.length, 1);
+  assert.equal(capture.sessionUpdates?.[0]?.source, "acp_live");
+  assert.equal(capture.sessionUpdates?.[0]?.providerId, "opencode");
+  assert.equal(capture.sessionUpdates?.[0]?.runtimeSessionId, "runtime-1");
+  assert.equal(capture.sessionUpdates?.[0]?.updateType, "message");
+  assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").message.text, "hello");
+});
+
+test("runtime events emit first runtime and broadcast prompt trace markers", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    traceEvents: [],
+  };
+  const context = createTestContext(logs, capture, "trace-session");
+
+  handleRuntimeEvent(
+    "trace-session",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "hello",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(
+    capture.traceEvents?.some((event) => event.phase === "helm.runtime.first_message"),
+    true,
+  );
+  assert.equal(
+    capture.traceEvents?.some((event) => event.phase === "helm.session_update.broadcast"),
+    true,
+  );
+});
+
+test("runtime session.message persists and broadcasts streaming chunks without stdout text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
@@ -135,11 +310,13 @@ test("runtime session.message persists and broadcasts streaming chunks with debu
     process.stdout.write = originalWrite;
   }
 
-  assert.equal(logs.length, 2);
-  assert.match(logs[0], /阶段=直播消息流开始 seq=\d+ .*role=assistant .*id=session-1-msg-\d{6}-\d{6}-pmessage1/);
-  assert.match(logs[1], /阶段=运行状态流/);
-  assert.doesNotMatch(logs[0], /preview=|text=|chars=/);
-  assert.deepEqual(writes, ["你", "好\n主人", "\n"]);
+  assert.deepEqual(
+    structuredLogs(capture).map((log) => log.event),
+    ["runtime.status.changed"],
+  );
+  assert.equal(findStructuredLog(capture, "runtime.status.changed")?.fields?.status, "idle");
+  assert.doesNotMatch(JSON.stringify(structuredLogs(capture)), /preview|text|你|好|主人/u);
+  assert.deepEqual(writes, []);
   assert.equal(capture.persisted.length, 1);
   assert.deepEqual(
     capture.persisted.map((message) => message.text),
@@ -297,7 +474,8 @@ test("repeated running status does not advance turn without an active assistant 
 
 test("runtime assistant stream closes before the next stage log", () => {
   const logs: string[] = [];
-  const context = createTestContext(logs);
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
   const writes: string[] = [];
   const originalWrite = process.stdout.write;
   process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -332,10 +510,11 @@ test("runtime assistant stream closes before the next stage log", () => {
     process.stdout.write = originalWrite;
   }
 
-  assert.equal(logs.length, 2);
-  assert.match(logs[0], /阶段=直播消息流开始/);
-  assert.match(logs[1], /阶段=运行状态流/);
-  assert.deepEqual(writes, ["连续输出", "\n"]);
+  assert.deepEqual(
+    structuredLogs(capture).map((log) => log.event),
+    ["runtime.status.changed"],
+  );
+  assert.deepEqual(writes, []);
 });
 
 test("runtime user echo messages are ignored because prompts are already persisted before sending", () => {
@@ -343,6 +522,16 @@ test("runtime user echo messages are ignored because prompts are already persist
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [
+      {
+        id: "client-user-1",
+        role: "user",
+        text: "你好",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    ],
+  } as HelmHandlerContext["sessionMessageStore"];
   context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
     appendedToolCalls.push(toolCall);
   };
@@ -371,13 +560,139 @@ test("runtime user echo messages are ignored because prompts are already persist
     process.stdout.write = originalWrite;
   }
 
-  assert.equal(logs.length, 1);
-  assert.match(logs[0], /阶段=用户回显忽略/);
-  assert.match(logs[0], /text=你好/);
+  flushRuntimeUserEchoLogSummaryForTest("session-1", context);
+
+  const userEchoLog = findStructuredLog(capture, "runtime.message.user_echo.ignored_summary");
+  assert.equal(userEchoLog?.level, "debug");
+  assert.equal(userEchoLog?.fields?.count, 1);
+  assert.equal(userEchoLog?.fields?.firstMessageId, "runtime-user-echo-1");
+  assert.equal(userEchoLog?.fields?.lastMessageId, "runtime-user-echo-1");
+  assert.equal(userEchoLog?.fields?.totalChars, 2);
+  assert.doesNotMatch(JSON.stringify(userEchoLog), /你好|text/u);
   assert.deepEqual(writes, []);
   assert.deepEqual(capture.persisted, []);
   assert.equal(appendedToolCalls.length, 0);
   assert.equal(capture.broadcasts.length, 0);
+});
+
+test("runtime user messages are persisted when no local prompt matches the provider message", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [],
+  } as HelmHandlerContext["sessionMessageStore"];
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "runtime-user-opencode-1",
+        role: "user",
+        text: "[build-mode]\nOpenCode processed prompt",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.persisted.map((message) => [message.id, message.role, message.text]),
+    [["runtime-user-opencode-1", "user", "[build-mode]\nOpenCode processed prompt"]],
+  );
+  assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["user_message"]);
+  assert.equal(capture.summaryUpdates?.[0]?.lastMessagePreview, "[build-mode]\nOpenCode processed prompt");
+  assert.deepEqual(capture.detailBroadcasts, [
+    {
+      sessionId: "session-1",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          kind: "user_message",
+          message: capture.persisted[0],
+        },
+      },
+    },
+  ]);
+});
+
+test("runtime user echo debug logs are summarized across a replay burst", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  context.sessionMessageStore = {
+    list: () => [
+      {
+        id: "client-user-1",
+        role: "user",
+        text: "first prompt",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+      {
+        id: "client-user-2",
+        role: "user",
+        text: "ok",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+      {
+        id: "client-user-3",
+        role: "user",
+        text: "third prompt",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    ],
+  } as HelmHandlerContext["sessionMessageStore"];
+
+  for (const [index, text] of ["first prompt", "ok", "third prompt"].entries()) {
+    handleRuntimeEvent(
+      "session-1",
+      {
+        type: "message",
+        message: {
+          id: `runtime-user-echo-${index + 1}`,
+          role: "user",
+          text,
+          timestamp: "2026-04-30T00:00:03.000Z",
+        },
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
+  }
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "status",
+      status: "idle",
+      message: "done",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const userEchoLogs = structuredLogs(capture).filter((log) => (
+    log.event === "runtime.message.user_echo.ignored"
+  ));
+  const userEchoSummary = findStructuredLog(capture, "runtime.message.user_echo.ignored_summary");
+  assert.equal(userEchoLogs.length, 0);
+  assert.equal(userEchoSummary?.level, "debug");
+  assert.equal(userEchoSummary?.fields?.count, 3);
+  assert.equal(userEchoSummary?.fields?.uniqueMessages, 3);
+  assert.equal(userEchoSummary?.fields?.totalChars, "first prompt".length + "ok".length + "third prompt".length);
+  assert.equal(
+    Number(userEchoSummary?.fields?.lastSeq) - Number(userEchoSummary?.fields?.firstSeq) + 1,
+    3,
+  );
+  assert.equal(userEchoSummary?.fields?.firstMessageId, "runtime-user-echo-1");
+  assert.equal(userEchoSummary?.fields?.lastMessageId, "runtime-user-echo-3");
+  assert.doesNotMatch(JSON.stringify(userEchoSummary), /first prompt|third prompt|text/u);
+  assert.deepEqual(capture.persisted, []);
 });
 
 test("fatal ACP connection errors mark the active runtime stale", () => {
@@ -398,7 +713,7 @@ test("fatal ACP connection errors mark the active runtime stale", () => {
   assert.equal(context.sessions.has("session-1"), false);
   assert.equal(capture.persisted[0]?.role, "system");
   assert.equal(capture.persisted[0]?.text, "ACP process exited with code=1 signal=none");
-  assert.match(logs.join("\n"), /阶段=运行时已标记为可恢复/);
+  assert.equal(findStructuredLog(capture, "runtime.recoverable.marked")?.fields?.code, "ACP_CONNECTION_EXITED");
 });
 
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
@@ -415,6 +730,7 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
       },
     ],
   } as HelmHandlerContext["sessionMessageStore"];
+  const wrappedEchoText = "[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\n你深度检查一下前端还有什么缺陷？";
 
   handleRuntimeEvent(
     "session-1",
@@ -423,16 +739,21 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
       message: {
         id: "runtime-user-wrapper-1",
         role: "user",
-        text: "[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\n你深度检查一下前端还有什么缺陷？",
+        text: wrappedEchoText,
         timestamp: "2026-04-30T00:00:03.000Z",
       },
     } satisfies SessionRuntimeEvent,
     context,
   );
 
-  assert.equal(logs.length, 1);
-  assert.match(logs[0], /阶段=用户回显忽略/);
-  assert.match(logs[0], /MAXIMIZE SEARCH EFFORT/);
+  flushRuntimeUserEchoLogSummaryForTest("session-1", context);
+
+  const wrappedEchoLog = findStructuredLog(capture, "runtime.message.user_echo.ignored_summary");
+  assert.equal(wrappedEchoLog?.fields?.count, 1);
+  assert.equal(wrappedEchoLog?.fields?.firstMessageId, "runtime-user-wrapper-1");
+  assert.equal(wrappedEchoLog?.fields?.lastMessageId, "runtime-user-wrapper-1");
+  assert.equal(wrappedEchoLog?.fields?.totalChars, wrappedEchoText.length);
+  assert.doesNotMatch(JSON.stringify(wrappedEchoLog), /MAXIMIZE SEARCH EFFORT|text/u);
   assert.deepEqual(capture.persisted, []);
   assert.deepEqual(capture.broadcasts, []);
 });
@@ -931,6 +1252,9 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   assert.deepEqual(logs, []);
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, []);
+  const toolCallBroadcast = capture.detailBroadcasts[0] as any;
+  assert.equal(typeof toolCallBroadcast.params.update.toolCall.timelineSequence, "number");
+  delete toolCallBroadcast.params.update.toolCall.timelineSequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1061,6 +1385,136 @@ test("runtime thinking broadcasts deltas instead of persisted cumulative output"
   assert.deepEqual([...storedById.values()].map((toolCall) => toolCall.output), ["AB"]);
 });
 
+test("runtime status completion finalizes active thinking stream", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-thinking-complete");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current
+      ? {
+          ...current,
+          ...toolCall,
+          output: `${current.output ?? ""}${toolCall.output ?? ""}`,
+          timestamp: current.timestamp,
+        }
+      : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  handleRuntimeEvent(
+    "session-thinking-complete",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-thinking-complete-msg-a:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "A",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thinking-complete",
+    {
+      type: "status",
+      status: "idle",
+      message: "ACP prompt completed",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const stored = [...storedById.values()];
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0]?.status, "completed");
+  assert.equal(stored[0]?.output, "A");
+  const finalBroadcast = capture.detailBroadcasts.at(-1) as any;
+  assert.equal(finalBroadcast.method, "session/update");
+  assert.equal(finalBroadcast.params.update.toolCall.status, "completed");
+});
+
+test("runtime timeline store nests thinking and assistant content under one assistant entry", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-timeline-nested");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current
+      ? {
+          ...current,
+          ...toolCall,
+          output: `${current.output ?? ""}${toolCall.output ?? ""}`,
+          timestamp: current.timestamp,
+        }
+      : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "reply-1:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Plan",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "Done",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-nested",
+    {
+      type: "status",
+      status: "idle",
+      message: "done",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["assistant_message"],
+  );
+  const assistantEntry = capture.timelineEntries?.[0];
+  assert.deepEqual(
+    assistantEntry?.kind === "assistant_message"
+      ? assistantEntry.chunks.map((chunk) => chunk.kind)
+      : [],
+    ["thinking", "content"],
+  );
+});
+
 test("runtime tool-call broadcasts keep stronger persisted classifications", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
@@ -1093,6 +1547,9 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
     context,
   );
 
+  const classifiedToolCallBroadcast = capture.detailBroadcasts[0] as any;
+  assert.equal(typeof classifiedToolCallBroadcast.params.update.toolCall.timelineSequence, "number");
+  delete classifiedToolCallBroadcast.params.update.toolCall.timelineSequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1113,11 +1570,174 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
       },
     },
   ]);
+  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
+    type?: string;
+    toolCall?: AgentToolCall;
+  };
+  assert.equal(persistedUpdatePayload.type, "tool-call");
+  assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
+  assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: node_repl/js");
 });
 
-test("runtime non-streaming event logs keep existing tiller prefix", () => {
+test("handleRuntimeEvent broadcasts plan updates without storing a tool call", () => {
   const logs: string[] = [];
-  const context = createTestContext(logs);
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const appendedToolCalls: AgentToolCall[] = [];
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+    return { toolCalls: appendedToolCalls };
+  };
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "plan-update",
+      plan: {
+        entries: [{ content: "Broadcast plan", priority: "medium", status: "in_progress" }],
+        updatedAt: "2026-06-02T00:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const planBroadcast = capture.detailBroadcasts.find(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
+  ) as any;
+  assert.deepEqual(planBroadcast?.params.update.plan.entries, [
+    { content: "Broadcast plan", priority: "medium", status: "in_progress" },
+  ]);
+  assert.equal(findStructuredLog(capture, "runtime.plan.updated")?.fields?.entries, 1);
+  assert.deepEqual(appendedToolCalls, []);
+});
+
+test("empty plan updates are broadcast without debug log noise", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const emptyPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [],
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+
+  const planBroadcasts = capture.detailBroadcasts.filter(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
+  );
+  assert.equal(planBroadcasts.length, 2);
+  assert.equal(findStructuredLog(capture, "runtime.plan.updated"), undefined);
+});
+
+test("plan clear logs once after a non-empty plan", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
+  const filledPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [{ content: "Investigate logs", priority: "medium", status: "in_progress" }],
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+  const emptyPlanUpdate = {
+    type: "plan-update",
+    plan: {
+      entries: [],
+      updatedAt: "2026-06-02T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent;
+
+  handleRuntimeEvent("session-1", filledPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+  handleRuntimeEvent("session-1", emptyPlanUpdate, context);
+
+  const planLogs = structuredLogs(capture).filter((log) => log.event.startsWith("runtime.plan."));
+  assert.deepEqual(
+    planLogs.map((log) => log.event),
+    ["runtime.plan.updated", "runtime.plan.cleared"],
+  );
+  assert.equal(planLogs[0]?.fields?.entries, 1);
+  assert.equal(planLogs[1]?.fields?.previousEntries, 1);
+});
+
+test("runtime timeline events carry arrival order when timestamps collide", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const storedById = new Map<string, AgentToolCall>();
+  const context = createTestContext(logs, capture, "session-timeline-order");
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    const current = storedById.get(toolCall.id);
+    const next = current ? { ...current, ...toolCall } : toolCall;
+    storedById.set(toolCall.id, next);
+    return { outputs: [], diffs: [], toolCalls: [...storedById.values()] };
+  };
+
+  const timestamp = "2026-04-30T00:00:01.000Z";
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "session-timeline-order-msg-a:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "先思考",
+        timestamp,
+        updatedAt: timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-shell",
+        kind: "shell",
+        title: "pnpm test",
+        status: "completed",
+        timestamp,
+        updatedAt: timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-timeline-order",
+    {
+      type: "message",
+      message: {
+        id: "message-final",
+        role: "assistant",
+        text: "最后回复",
+        timestamp,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineUpdates = capture.detailBroadcasts
+    .map((item: any) => item.params.update)
+    .filter((update: any) => update.kind === "tool_call" || update.kind === "agent_message");
+  assert.deepEqual(
+    timelineUpdates.map((update: any) =>
+      update.kind === "tool_call" ? update.toolCall.timelineSequence : update.message.timelineSequence,
+    ),
+    [1, 2, 3],
+  );
+});
+
+test("runtime non-streaming event logs use structured status metadata", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
+  const context = createTestContext(logs, capture);
 
   handleRuntimeEvent(
     "session-1",
@@ -1129,24 +1749,27 @@ test("runtime non-streaming event logs keep existing tiller prefix", () => {
     context,
   );
 
-  assert.equal(logs.length, 1);
-  assert.match(
-    logs[0],
-    /^\[tiller\] 阶段=运行状态流 seq=\d+ session=session-1 agent=opencode cwd=<stored> status=running message=still working$/,
-  );
+  const statusLog = findStructuredLog(capture, "runtime.status.changed");
+  assert.equal(statusLog?.level, "info");
+  assert.equal(statusLog?.fields?.sessionId, "session-1");
+  assert.equal(statusLog?.fields?.agentId, "opencode");
+  assert.equal(statusLog?.fields?.cwd, "<stored>");
+  assert.equal(statusLog?.fields?.status, "running");
+  assert.equal(statusLog?.fields?.messageChars, "still working".length);
+  assert.doesNotMatch(JSON.stringify(statusLog), /still working/u);
 });
 
-test("runtime command-output logs debug stream text", () => {
+test("runtime command-output logs summary metadata without stream text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedOutputs: unknown[] = [];
-  const context = createTestContext(logs, capture);
+  const context = createTestContext(logs, capture, "session-command-output-summary");
   context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
     appendedOutputs.push(chunk);
   };
 
   handleRuntimeEvent(
-    "session-1",
+    "session-command-output-summary",
     {
       type: "command-output",
       chunk: {
@@ -1159,17 +1782,42 @@ test("runtime command-output logs debug stream text", () => {
     } satisfies SessionRuntimeEvent,
     context,
   );
+  handleRuntimeEvent(
+    "session-command-output-summary",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-2",
+        commandId: "cmd-1",
+        stream: "stdout",
+        text: "\nmore secret output",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-command-output-summary",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
 
-  assert.equal(logs.length, 1);
-  assert.match(logs[0], /阶段=命令输出流/);
-  assert.match(logs[0], /command=cmd-1/);
-  assert.match(logs[0], /stream=stdout/);
-  assert.match(logs[0], /chars=31/);
-  assert.match(logs[0], /text=SECRET_STREAM_TEXT with details/);
-  assert.doesNotMatch(logs[0], /preview=/);
-  assert.equal(appendedOutputs.length, 1);
-  assert.equal(capture.broadcasts.length, 0);
-  assert.equal(capture.detailBroadcasts.length, 1);
+  const commandLog = findStructuredLog(capture, "runtime.command_output.summary");
+  assert.equal(commandLog?.level, "debug");
+  assert.equal(commandLog?.fields?.commandId, "cmd-1");
+  assert.equal(commandLog?.fields?.stream, "stdout");
+  assert.equal(commandLog?.fields?.chunks, 2);
+  assert.equal(commandLog?.fields?.chars, 31 + "\nmore secret output".length);
+  assert.equal(commandLog?.fields?.firstSeq, 1);
+  assert.equal(commandLog?.fields?.lastSeq, 2);
+  assert.equal(findStructuredLog(capture, "runtime.command_output.chunk"), undefined);
+  assert.doesNotMatch(JSON.stringify(commandLog), /SECRET_STREAM_TEXT|with details|more secret output|text|preview/u);
+  assert.equal(appendedOutputs.length, 2);
+  assert.equal(capture.broadcasts.length, 1);
+  assert.equal(capture.detailBroadcasts.length, 2);
 });
 
 test("runtime available-commands events persist commands on the session summary", () => {

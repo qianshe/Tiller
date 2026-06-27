@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -38,6 +38,311 @@ test("config RPC lists projects and updates context cache", async () => {
 
   assert.deepEqual(result, { projects });
   assert.equal(cached, projects);
+});
+
+test("config RPC lists local directory candidates", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tiller-config-directories-"));
+  const repoPath = join(root, "repo");
+  mkdirSync(repoPath);
+
+  const result = await handleConfigRpcRequest("project/list_directories", { path: root }, {} as any) as {
+    ok: boolean;
+    directories: string[];
+  };
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.directories, [repoPath.replace(/\\/g, "/")]);
+});
+
+test("config RPC lists only the requested project's worktrees", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/list_worktrees", { projectId: "p1" }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    setProjects: () => undefined,
+    setWorktrees: () => undefined,
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { worktrees: Array<{ path: string }> };
+
+  assert.deepEqual(result.worktrees.map((worktree) => worktree.path), ["D:/repo-one"]);
+});
+
+test("config RPC rejects git status requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC rejects git commit requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/commit", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+    message: "fix：错误提交",
+    paths: ["README.md"],
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC rejects git graph requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC git graph binds refs only to decorated commits", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-refs-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "one\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "first"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "two\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "commit", "-am", "second"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "tag", "v1.0.0"], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    commits: Array<{ subject: string; refs: Array<{ name: string; kind: string; isCurrent: boolean }> }>;
+  };
+
+  assert.equal(result.ok, true);
+  const headCommit = result.commits.find((commit) => commit.subject === "second");
+  const olderCommit = result.commits.find((commit) => commit.subject === "first");
+
+  assert.equal(headCommit?.refs.some((ref) => ref.name === "main" && ref.isCurrent), true);
+  assert.equal(headCommit?.refs.some((ref) => ref.name === "v1.0.0" && ref.kind === "tag"), true);
+  assert.equal(olderCommit?.refs.some((ref) => ref.name === "HEAD"), false);
+});
+
+test("config RPC list worktrees discovers external git worktrees", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-worktree-discover-"));
+  const repoPath = join(tempRoot, "repo");
+  const worktreePath = join(repoPath, ".worktrees", "test-worktree");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "test-worktree", worktreePath], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  let cachedProjects: any[] = [];
+  let cachedWorktrees: any[] = [];
+  const context = {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    setWorktrees: (items: any[]) => {
+      cachedWorktrees = items;
+    },
+    getProjects: () => cachedProjects,
+    resolveProjectById: (id: string, projects: any[]) => projects.find((project) => project.id === id),
+  } as any;
+
+  const result = await handleConfigRpcRequest(
+    "project/list_worktrees",
+    { projectId: "p1" },
+    context,
+  ) as { worktrees: Array<{ path: string }> };
+
+  const discoveredPath = worktreePath.replace(/\\/g, "/");
+  const savedProject = readProjectYaml("p1", configPath);
+  assert.equal(result.worktrees.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(savedProject.worktrees?.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(cachedWorktrees.some((worktree) => worktree.path === discoveredPath), true);
+});
+
+test("config RPC list projects discovers external git worktrees", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-project-worktree-discover-"));
+  const repoPath = join(tempRoot, "repo");
+  const worktreePath = join(repoPath, ".worktrees", "test-worktree");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "test\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "test-worktree", worktreePath], { stdio: "ignore" });
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  let cachedProjects: any[] = [];
+  let cachedWorktrees: any[] = [];
+  const result = await handleConfigRpcRequest("project/list", {}, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    setProjects: (items: any[]) => {
+      cachedProjects = items;
+    },
+    setWorktrees: (items: any[]) => {
+      cachedWorktrees = items;
+    },
+    logError: () => undefined,
+  } as any) as { projects: Array<{ worktrees?: Array<{ path: string }> }> };
+
+  const discoveredPath = worktreePath.replace(/\\/g, "/");
+  assert.equal(result.projects[0]?.worktrees?.some((worktree) => worktree.path === discoveredPath), true);
+  assert.equal(
+    cachedProjects[0]?.worktrees?.some((worktree: { path: string }) => worktree.path === discoveredPath),
+    true,
+  );
+  assert.equal(cachedWorktrees.some((worktree: { path: string }) => worktree.path === discoveredPath), true);
+  assert.equal(
+    readProjectYaml("p1", configPath).worktrees?.some((worktree: { path: string }) => worktree.path === discoveredPath),
+    true,
+  );
 });
 
 test("config RPC list projects refreshes the root worktree branch", async () => {
@@ -199,8 +504,6 @@ test("ensureTillerConfigDefaults creates daemon auth config when file is missing
 
   assert.equal(result.updated, true);
   assert.deepEqual(saved, {
-    helms: [],
-    agents: [],
     daemon: {
       host: "127.0.0.1",
       port: 47631,
@@ -255,6 +558,73 @@ test("config RPC save helm creates daemon auth config field", async () => {
     host: "127.0.0.1",
     port: 47631,
     auth: "none",
+  });
+});
+
+test("config RPC gets and saves logging level with live logger update", async () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({ logging: { level: "warn", format: "pretty", acpTrace: "summary" } }),
+    "utf8",
+  );
+  const appliedLevels: string[] = [];
+
+  const getResult = await handleConfigRpcRequest("logging/get", {}, {
+    configPath,
+    logger: {
+      getLevel: () => "warn",
+    },
+  } as any) as { logging: { level: string; format: string; acpTrace: string } };
+
+  assert.deepEqual(getResult.logging, {
+    level: "warn",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+
+  const saveResult = await handleConfigRpcRequest("logging/save", {
+    logging: { level: "debug" },
+  }, {
+    configPath,
+    logger: {
+      getLevel: () => "warn",
+      setLevel(level: string) {
+        appliedLevels.push(level);
+      },
+    },
+  } as any) as { ok: boolean; logging: { level: string; format: string; acpTrace: string } };
+
+  const saved = JSON.parse(readFileSync(configPath, "utf8"));
+  assert.equal(saveResult.ok, true);
+  assert.deepEqual(saveResult.logging, {
+    level: "debug",
+    format: "pretty",
+    acpTrace: "summary",
+  });
+  assert.equal(saved.logging.level, "debug");
+  assert.deepEqual(appliedLevels, ["debug"]);
+});
+
+test("config RPC reports live logger level after runtime logging changes", async () => {
+  const configPath = join(mkdtempSync(join(tmpdir(), "tiller-config-")), "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({ logging: { level: "trace", format: "pretty", acpTrace: "summary" } }),
+    "utf8",
+  );
+
+  const getResult = await handleConfigRpcRequest("logging/get", {}, {
+    configPath,
+    logger: {
+      getLevel: () => "debug",
+    },
+  } as any) as { logging: { level: string; format: string; acpTrace: string } };
+
+  assert.deepEqual(getResult.logging, {
+    level: "debug",
+    format: "pretty",
+    acpTrace: "summary",
   });
 });
 

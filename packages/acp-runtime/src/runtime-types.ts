@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   AcpAgentSessionInfo,
   AcpModelState,
+  AgentPlan,
   AgentMessage,
   AgentPromptContent,
   AgentToolCall,
@@ -13,7 +14,8 @@ import type {
   SessionStatus,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { AcpConnectionLifecycleEvent } from "./connection/connection-manager";
+import type { AcpConnectionLifecycleEvent } from "./connection/manager";
+import type { AcpProtocolLoggingOptions } from "./protocol-logging";
 
 export type ProviderCleanupResult =
   | { kind: "unsupported"; providerId: string; message: string }
@@ -39,6 +41,10 @@ export type SessionRuntimeEvent =
   | {
       type: "tool-call";
       toolCall: AgentToolCall;
+    }
+  | {
+      type: "plan-update";
+      plan: AgentPlan;
     }
   | {
       type: "command-output";
@@ -87,6 +93,7 @@ export type AcpRuntimeOptions = {
   onEvent: (event: SessionRuntimeEvent) => void;
   onRestoreReplayEvent?: (event: SessionRuntimeEvent) => void;
   onConnectionLifecycleEvent?: (event: AcpConnectionLifecycleEvent) => void;
+  protocolLogging?: AcpProtocolLoggingOptions;
 };
 
 export type AcpAgentSessionListResult = {
