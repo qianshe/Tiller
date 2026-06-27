@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createPublishPackageManifest } from "./package-manifest.mjs";
+import { verifyPublishPackage } from "./verify-publish-package.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
 const helmRoot = resolve(import.meta.dirname, "..");
@@ -31,6 +32,7 @@ rmSync(packagedDeck, { recursive: true, force: true });
 cpSync(deckDist, packagedDeck, { recursive: true });
 
 writePublishPackage();
+verifyPublishPackage({ publishRoot });
 
 function writePublishPackage() {
   const worktreeManifest = JSON.parse(readFileSync(packageJsonPath, "utf8"));
