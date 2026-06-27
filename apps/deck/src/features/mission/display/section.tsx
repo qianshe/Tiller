@@ -9,7 +9,7 @@ import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionDisplayPanel, type RuntimeOverviewItem } from "./panel";
 import type { MissionPanelPage } from "./panels";
-import type { GitGraphState } from "../../../store/slices/projects-slice";
+import type { GitGraphState } from "../../../store/facade";
 
 type MissionDisplaySectionCopy = (typeof UI_COPY)[Locale];
 

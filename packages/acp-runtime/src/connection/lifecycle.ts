@@ -7,7 +7,7 @@ import { resolveAcpLaunchConfig } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { createProtocolLogSink, writeChunkLog, writeLogLine, type AcpProtocolLoggingOptions, type ProtocolLogSink } from "../protocol-logging";
-import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "../process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess, terminateChildProcessAndWait } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
@@ -188,7 +188,7 @@ export class AcpConnection {
         options.provider,
       );
     } catch (error) {
-      terminateChildProcess(child.pid);
+      await terminateChildProcessAndWait(child);
       throw error;
     }
 
@@ -726,7 +726,7 @@ export class AcpConnection {
     this.status = "closed";
     this.suppressExitError = true;
     if (this.state.child.pid) {
-      terminateChildProcess(this.state.child.pid);
+      await terminateChildProcessAndWait(this.state.child);
     }
   }
 }

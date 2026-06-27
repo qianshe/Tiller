@@ -7,7 +7,7 @@ import {
 } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { cn } from "../../../shared/utils/cn";
-import type { GitCommit, GitGraphState } from "../../../store/slices/projects-slice";
+import type { GitCommit, GitGraphState } from "../../../store/facade";
 
 type GitGraphPanelProps = {
   style?: CSSProperties;

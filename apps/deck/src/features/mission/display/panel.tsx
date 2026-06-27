@@ -9,7 +9,7 @@ import {
 } from "./diff-tree";
 import { GitGraphPanel } from "./git-graph-panel";
 import type { MissionPanelPage } from "./panels";
-import type { GitStatusState, GitGraphState } from "../../../store/slices/projects-slice";
+import type { GitStatusState, GitGraphState } from "../../../store/facade";
 
 export type RuntimeOverviewItem = {
   id: string;

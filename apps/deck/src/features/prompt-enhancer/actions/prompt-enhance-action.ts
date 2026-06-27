@@ -5,7 +5,7 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import { summarizeSessionContext } from "../../mission/facade";
-import { toast } from "../../toast/store";
+import { toast } from "../../toast";
 import {
   enhancePromptWithLlm,
   type PromptEnhancerPreferences,

@@ -14,4 +14,4 @@ export {
 } from "./request-dispatch";
 export { DeckRpcClient } from "./rpc-client";
 export { shouldCheckHelmHealth } from "./reconnect-policy";
-export type { HelmHealthStatus } from "../../store/slices/connection-slice";
+export type { HelmHealthStatus } from "../../store/facade";

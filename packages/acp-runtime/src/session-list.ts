@@ -4,7 +4,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AcpAgentSessionInfo, WorktreeSummary } from "@tiller/shared";
 import { resolveSessionCapabilities } from "./capabilities";
 import { resolveAcpLaunchConfig } from "./adapters";
-import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcessAndWait } from "./process";
 import { createProtocolLogSink, writeChunkLog, type AcpProtocolLoggingOptions } from "./protocol-logging";
 import { SDK_PROBE_CLIENT_CAPABILITIES } from "./sdk-helpers";
 import type { AcpAgentSessionListResult } from "./runtime-types";
@@ -161,6 +161,6 @@ export async function listAcpAgentSessions(
     );
     return normalizeAcpAgentSessionListResult(result);
   } finally {
-    terminateChildProcess(child.pid);
+    await terminateChildProcessAndWait(child);
   }
 }

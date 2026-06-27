@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { GitGraphPanel } from "./git-graph-panel.js";
-import type { GitGraphState } from "../../../store/slices/projects-slice";
+import type { GitGraphState } from "../../../store/facade";
 
 const noop = () => undefined;
 

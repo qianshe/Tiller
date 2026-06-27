@@ -3,7 +3,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider } from "@tiller/shared";
 import { resolveAcpLaunchConfig } from "./adapters";
-import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess } from "./process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcessAndWait } from "./process";
 import { createProtocolLogSink, writeChunkLog, type AcpProtocolLoggingOptions } from "./protocol-logging";
 import { SDK_PROBE_CLIENT_CAPABILITIES } from "./sdk-helpers";
 
@@ -110,6 +110,6 @@ export async function testAcpConnection(
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
-    terminateChildProcess(child.pid);
+    await terminateChildProcessAndWait(child);
   }
 }

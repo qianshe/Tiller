@@ -161,6 +161,16 @@ test("worktree model prefers matching cwd worktree over stale session worktree n
 });
 
 test("worktree model uses the active session project worktrees for inspector scope", () => {
+  const activeSessionProject = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local",
+    path: "D:/repo",
+    worktrees: [
+      { name: "main", path: "D:/repo" },
+      { name: "test-worktree", path: "D:/repo/.worktrees/test-worktree" },
+    ],
+  };
   const model = buildMissionWorktreeModel(baseInput({
     selectedProjectId: "project-stale",
     activeSession: {
@@ -168,17 +178,10 @@ test("worktree model uses the active session project worktrees for inspector sco
       projectId: "project-1",
       cwd: "D:/repo/.worktrees/test-worktree",
     },
-    projects: [
-      {
-        id: "project-1",
-        name: "Tiller",
-        helmId: "local",
-        path: "D:/repo",
-        worktrees: [
-          { name: "main", path: "D:/repo" },
-          { name: "test-worktree", path: "D:/repo/.worktrees/test-worktree" },
-        ],
-      },
+    activeSessionProjectId: "project-1",
+    activeSessionProject,
+    missionProjects: [
+      activeSessionProject,
       {
         id: "project-stale",
         name: "Other",

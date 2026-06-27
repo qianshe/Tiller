@@ -1,5 +1,5 @@
 import { resolveChatCompletionsUrl } from "../../prompt-enhancer/facade";
-import type { DeckPreferences } from "../../preferences/storage";
+import type { DeckPreferences } from "../../preferences/facade";
 
 export type GenerateCommitDescriptionInput = {
   selectedChanges: Array<{

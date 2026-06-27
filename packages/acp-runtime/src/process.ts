@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Transform } from "node:stream";
@@ -63,6 +64,43 @@ export function terminateChildProcess(pid: number | undefined) {
   } catch {
     // ignore: process already exited
   }
+}
+
+export async function terminateChildProcessAndWait(
+  child: ChildProcess | undefined,
+  timeoutMs = 5_000,
+): Promise<void> {
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      child.removeListener("close", finish);
+      child.removeListener("exit", finish);
+      child.removeListener("error", finish);
+      resolve();
+    };
+
+    child.once("close", finish);
+    child.once("exit", finish);
+    child.once("error", finish);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      finish();
+      return;
+    }
+    timeout = setTimeout(finish, timeoutMs);
+    terminateChildProcess(child.pid);
+  });
 }
 
 export function createProtocolStdoutStream(
