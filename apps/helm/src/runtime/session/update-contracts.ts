@@ -9,18 +9,25 @@ import type {
   RuntimeSessionSummary,
   SessionConfigOption,
   SessionPromptQueueSnapshot,
+  SessionTimelineBatch,
+  SessionTimelineEntry,
+  SessionTimelineTranscriptEventEntry,
 } from "@tiller/shared";
 import type {
   SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
   SessionCommandOutputUpdate as DomainSessionCommandOutputUpdate,
   SessionCommandsAvailableUpdate as DomainSessionCommandsAvailableUpdate,
+  SessionCompactionStateUpdate as DomainSessionCompactionStateUpdate,
   SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
   SessionDiffUpdate as DomainSessionDiffUpdate,
+  SessionLiveStateUpdate as DomainSessionLiveStateUpdate,
   SessionModelOptionsUpdate as DomainSessionModelOptionsUpdate,
   SessionPlanUpdate as DomainSessionPlanUpdate,
   SessionPromptQueueUpdate as DomainSessionPromptQueueUpdate,
   SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
   SessionStatusUpdate,
+  SessionTimelineBatchUpdate as DomainSessionTimelineBatchUpdate,
+  SessionTranscriptEventUpdate as DomainSessionTranscriptEventUpdate,
   SessionToolCallUpdate as DomainSessionToolCallUpdate,
   SessionUpdatedUpdate as DomainSessionUpdatedUpdate,
   SessionUserMessageUpdate as DomainSessionUserMessageUpdate,
@@ -59,6 +66,16 @@ export type SessionUpdatedUpdate = DomainSessionUpdatedUpdate<RuntimeSessionSumm
 
 export type SessionPromptQueueUpdate = DomainSessionPromptQueueUpdate<SessionPromptQueueSnapshot>;
 
+export type SessionCompactionStateUpdate = DomainSessionCompactionStateUpdate;
+
+export type SessionTranscriptEventUpdate = DomainSessionTranscriptEventUpdate<
+  SessionTimelineTranscriptEventEntry
+>;
+
+export type SessionTimelineBatchUpdate = DomainSessionTimelineBatchUpdate<SessionTimelineEntry>;
+
+export type SessionLiveStateUpdate = DomainSessionLiveStateUpdate<import("../../runtime/session-timeline/live-state-store").SessionLiveStateSnapshot>;
+
 export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AgentMessage,
   AgentToolCall,
@@ -70,5 +87,8 @@ export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AvailableCommand,
   RuntimeSessionSummary,
   SessionPromptQueueSnapshot,
-  AgentPlan
+  AgentPlan,
+  SessionTimelineTranscriptEventEntry,
+  SessionTimelineEntry,
+  import("../../runtime/session-timeline/live-state-store").SessionLiveStateSnapshot
 >;
