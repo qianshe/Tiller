@@ -23,6 +23,7 @@ import {
   getArtifacts,
   listMessages,
   listSessions,
+  listTimeline,
   reimportHistory,
   resumeSession,
   subscribeSession,
@@ -48,6 +49,11 @@ export async function handleSessionRpcRequest(
     case "session/list_messages":
       return listMessages(
         params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
+        context,
+      );
+    case "session/list_timeline":
+      return listTimeline(
+        params as { sessionId: string; limit?: number; before?: string },
         context,
       );
     case "session/list_updates":

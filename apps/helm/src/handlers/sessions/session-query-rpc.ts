@@ -150,6 +150,23 @@ export async function reimportHistory(
   return context.reimportSessionHistory(params.sessionId, { limit: params.limit });
 }
 
+export function listTimeline(
+  params: { sessionId: string; limit?: number; before?: string },
+  context: HelmHandlerContext,
+) {
+  const page = context.sessionTimelineStore.listPage(params.sessionId, {
+    limit: params.limit ?? TIMELINE_ENTRY_PAGE_LIMIT,
+    before: params.before,
+    window: "message",
+  });
+  return {
+    sessionId: params.sessionId,
+    entries: page.entries,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  };
+}
+
 export function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
   logSessionDebug(context, "session.resume.check", { sessionId: params.sessionId });
   const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
