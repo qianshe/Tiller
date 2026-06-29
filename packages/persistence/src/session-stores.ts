@@ -3,6 +3,7 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  SessionTimelineBatch,
   SessionTimelineEntry,
   SessionUpdateRecord,
   SessionUpdateRecordPage,
@@ -59,6 +60,7 @@ export type SessionTimelineStore = {
   replace: (sessionId: string, entries: SessionTimelineEntry[]) => SessionTimelineEntry[];
   list: (sessionId: string) => SessionTimelineEntry[];
   listPage: (sessionId: string, options?: SessionTimelinePageOptions) => SessionTimelinePage;
+  applyBatch: (sessionId: string, batch: SessionTimelineBatch) => SessionTimelineEntry[];
   remove: (sessionId: string) => void;
 };
 

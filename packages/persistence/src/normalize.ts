@@ -1,4 +1,5 @@
 import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk } from "@tiller/shared";
+import { findEquivalentReplayDuplicateMessageIndex } from "@tiller/shared";
 
 export function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
   return normalizeSessionMessages([...messages, message]);
@@ -9,6 +10,10 @@ export function normalizeSessionMessages(messages: AgentMessage[]) {
     const existingIndex = merged.findIndex((item) => item.id === message.id);
     if (existingIndex !== -1) {
       merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
+      return merged;
+    }
+
+    if (findEquivalentReplayDuplicateMessageIndex(merged, message) !== -1) {
       return merged;
     }
 
@@ -31,7 +36,7 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
     output: mergeToolCallOutput(current.output, incoming.output),
     input: incoming.input ?? current.input,
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
     updatedAt: incoming.updatedAt,
   };
 }
@@ -64,8 +69,8 @@ export function sortToolCalls(items: AgentToolCall[]) {
 
 function compareToolCallPosition(left: AgentToolCall, right: AgentToolCall) {
   const sequenceDelta = compareOptionalTimelineSequence(
-    left.timelineSequence,
-    right.timelineSequence,
+    left.sequence,
+    right.sequence,
   );
   if (sequenceDelta !== 0) {
     return sequenceDelta;
@@ -184,7 +189,7 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
     : isCumulativeSnapshot
       ? incoming.text
       : `${current.text}${incoming.text}`;
-  const timelineSequence = current.timelineSequence ?? incoming.timelineSequence;
+  const sequence = current.sequence ?? incoming.sequence;
   const merged: AgentMessage = {
     ...current,
     ...incoming,
@@ -195,10 +200,10 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
         ? incoming.timestamp
         : current.timestamp,
   };
-  if (timelineSequence === undefined) {
-    delete merged.timelineSequence;
+  if (sequence === undefined) {
+    delete merged.sequence;
   } else {
-    merged.timelineSequence = timelineSequence;
+    merged.sequence = sequence;
   }
   return merged;
 }

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionUpdateRecord } from "@tiller/shared";
 import {
+  applySessionUpdateRecordToState,
   applySessionRuntimeEventToState,
   createEmptySessionUpdateReducerState,
 } from "./reducer";
@@ -12,30 +13,30 @@ function at(sequence: number) {
   return new Date(BASE_TIME + sequence * 1000).toISOString();
 }
 
-function assistant(id: string, text: string, timelineSequence: number): AgentMessage {
+function assistant(id: string, text: string, sequence: number): AgentMessage {
   return {
     id,
     role: "assistant",
     text,
-    timestamp: at(timelineSequence),
-    timelineSequence,
+    timestamp: at(sequence),
+    sequence,
   };
 }
 
-function user(id: string, text: string, timelineSequence: number): AgentMessage {
+function user(id: string, text: string, sequence: number): AgentMessage {
   return {
     id,
     role: "user",
     text,
-    timestamp: at(timelineSequence),
-    timelineSequence,
+    timestamp: at(sequence),
+    sequence,
   };
 }
 
 function toolCall(
   id: string,
   status: AgentToolCall["status"],
-  timelineSequence: number,
+  sequence: number,
   output?: string,
 ): AgentToolCall {
   return {
@@ -44,9 +45,9 @@ function toolCall(
     title: "Shell",
     status,
     output,
-    timestamp: at(timelineSequence),
-    updatedAt: at(timelineSequence + (status === "completed" ? 10 : 0)),
-    timelineSequence,
+    timestamp: at(sequence),
+    updatedAt: at(sequence + (status === "completed" ? 10 : 0)),
+    sequence,
   };
 }
 
@@ -79,7 +80,7 @@ test("session update reducer keeps colliding user and assistant message ids dist
     ["msg-1", "user", "prompt"],
     ["msg-1:assistant", "assistant", "answer"],
   ]);
-  assert.deepEqual(finalState.entries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]), [
+  assert.deepEqual(finalState.entries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]), [
     ["user_message", "msg-1", 1],
     ["assistant_message", "msg-1:assistant", 2],
   ]);
@@ -101,7 +102,7 @@ test("session update reducer keeps stronger tool classification when sparse patc
         }),
         timestamp: at(1),
         updatedAt: at(1),
-        timelineSequence: 1,
+        sequence: 1,
       },
     },
     {
@@ -114,7 +115,7 @@ test("session update reducer keeps stronger tool classification when sparse patc
         output: "ok",
         timestamp: at(1),
         updatedAt: at(2),
-        timelineSequence: 1,
+        sequence: 1,
       },
     },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
@@ -123,4 +124,55 @@ test("session update reducer keeps stronger tool classification when sparse patc
   assert.equal(finalState.toolCalls[0]?.title, "Tool: mcp_router/find_symbol");
   assert.equal(finalState.toolCalls[0]?.status, "completed");
   assert.equal(finalState.toolCalls[0]?.output, "ok");
+});
+
+test("session update reducer rebuilds one merged compaction row from explicit completion plus summary enrichment", () => {
+  const records: SessionUpdateRecord[] = [
+    {
+      sessionId: "session-compaction",
+      runtimeSessionId: "runtime-1",
+      providerId: "claude",
+      sequence: 1,
+      source: "acp_live",
+      updateType: "compaction",
+      receivedAt: at(1),
+      payloadJson: JSON.stringify({
+        type: "compaction",
+        phase: "completed",
+        source: "provider",
+        timestamp: at(1),
+        messageId: "compaction-completed",
+      }),
+    },
+    {
+      sessionId: "session-compaction",
+      runtimeSessionId: "runtime-1",
+      providerId: "claude",
+      sequence: 2,
+      source: "acp_live",
+      updateType: "compaction",
+      receivedAt: at(2),
+      payloadJson: JSON.stringify({
+        type: "compaction",
+        phase: "completed",
+        source: "heuristic",
+        timestamp: at(2),
+        messageId: "compaction-summary",
+        summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      }),
+    },
+  ];
+  const finalState = records.reduce(applySessionUpdateRecordToState, createEmptySessionUpdateReducerState());
+
+  const compactionEntries = finalState.entries.filter((entry) => entry.kind === "context_compaction");
+  assert.equal(compactionEntries.length, 1);
+  assert.equal(compactionEntries[0]?.id, "compaction:session-compaction:compaction-completed");
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    "This session is being continued from a previous conversation that ran out of context.",
+  );
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].detailsVisibility : undefined,
+    "expandable",
+  );
 });

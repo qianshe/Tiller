@@ -248,6 +248,48 @@ test("session message normalize collapses repeated replayed assistant text witho
   assert.equal(store.list("session-1")[0]?.text, replayedText);
 });
 
+test("session message normalize drops later replay duplicates with reset-or-equal sequences", () => {
+  const store = createInMemoryMessageStore();
+  store.replace("session-1", [
+    {
+      id: "session-1-user-1",
+      role: "user",
+      text: "我需要验证下面内容的实际效果",
+      timestamp: "2026-06-28T12:42:37.488Z",
+      sequence: 1,
+    },
+    {
+      id: "session-1-msg-000001",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:42:44.452Z",
+      sequence: 40,
+    },
+    {
+      id: "provider-user-1",
+      role: "user",
+      text: "我需要验证下面内容的实际效果",
+      timestamp: "2026-06-28T12:44:23.969Z",
+      sequence: 1,
+    },
+    {
+      id: "provider-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:44:23.973Z",
+      sequence: 3,
+    },
+  ]);
+
+  assert.deepEqual(
+    store.list("session-1").map((message) => [message.id, message.role, message.text]),
+    [
+      ["session-1-user-1", "user", "我需要验证下面内容的实际效果"],
+      ["session-1-msg-000001", "assistant", "我来看看项目结构和相关代码。"],
+    ],
+  );
+});
+
 test("session message normalize keeps normalized assistant stream segments separate", () => {
   const store = createInMemoryMessageStore();
   store.append("session-1", {

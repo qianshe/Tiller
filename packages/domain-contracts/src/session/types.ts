@@ -1,3 +1,5 @@
+import type { SessionCompactionPhase, SessionCompactionSource } from "@tiller/shared";
+
 export type SessionStatus = "starting" | "running" | "waiting_for_permission" | "idle" | "error" | "cancelled";
 
 export type RuntimeResumeMode = "none" | "same-process" | "reconnect";
@@ -102,6 +104,34 @@ export type SessionPromptQueueUpdate<Queue = unknown> = {
   queue: Queue;
 };
 
+export type SessionTranscriptEventUpdate<Entry = unknown> = {
+  kind: "transcript_event";
+  entry: Entry;
+};
+
+export type SessionCompactionStateUpdate = {
+  kind: "compaction_state";
+  phase: SessionCompactionPhase;
+  source: SessionCompactionSource;
+  timestamp: string;
+  summaryText?: string;
+};
+
+export type SessionTimelineBatchUpdate<TimelineEntry = unknown> = {
+  kind: "timeline_batch";
+  batch: {
+    replace: boolean;
+    deliverySequence: number;
+    lastSequence: number;
+    entries: TimelineEntry[];
+  };
+};
+
+export type SessionLiveStateUpdate<Snapshot = unknown> = {
+  kind: "live_state";
+  snapshot: Snapshot;
+};
+
 export type SessionRealtimeUpdate<
   Message = unknown,
   ToolCall = unknown,
@@ -114,6 +144,9 @@ export type SessionRealtimeUpdate<
   Summary = SessionSummary,
   Queue = unknown,
   Plan = unknown,
+  TranscriptEvent = unknown,
+  TimelineEntry = unknown,
+  LiveStateSnapshot = unknown,
 > =
   | SessionStatusUpdate
   | SessionUserMessageUpdate<Message>
@@ -126,4 +159,8 @@ export type SessionRealtimeUpdate<
   | SessionModelOptionsUpdate<ModelOption>
   | SessionCommandsAvailableUpdate<Command>
   | SessionUpdatedUpdate<Summary>
-  | SessionPromptQueueUpdate<Queue>;
+  | SessionPromptQueueUpdate<Queue>
+  | SessionCompactionStateUpdate
+  | SessionTranscriptEventUpdate<TranscriptEvent>
+  | SessionTimelineBatchUpdate<TimelineEntry>
+  | SessionLiveStateUpdate<LiveStateSnapshot>;

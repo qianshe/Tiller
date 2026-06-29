@@ -14,6 +14,7 @@ const files = [
   "methods/approval/created.ts",
   "methods/session/check-resume.ts",
   "methods/session/list.ts",
+  "methods/session/list-timeline.ts",
   "methods/session/new.ts",
   "methods/session/prompt.ts",
   "methods/session/resume.ts",

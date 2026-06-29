@@ -43,6 +43,8 @@ export const SessionUpdateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("permission_request"), permissionRequest: typedUnknown<PermissionRequest>() }),
   z.object({ kind: z.literal("permission_resolved"), permissionRequestId: z.string(), decision: typedUnknown<PermissionDecision>() }),
   z.object({ kind: z.literal("restore_replay_cached"), count: z.number() }),
+  z.object({ kind: z.literal("timeline_batch"), batch: typedUnknown<import("@tiller/shared").SessionTimelineBatch>() }),
+  z.object({ kind: z.literal("live_state"), snapshot: z.unknown() }),
 ]);
 
 export const method = "session/update" as const;

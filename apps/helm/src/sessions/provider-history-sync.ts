@@ -45,7 +45,7 @@ function mergeRepresentedUserMessage(local: AgentMessage, provider: AgentMessage
     ...provider,
     id: local.id,
     timestamp: local.timestamp,
-    timelineSequence: local.timelineSequence ?? provider.timelineSequence,
+    sequence: local.sequence ?? provider.sequence,
     ...(local.attachments?.length ? { attachments: local.attachments } : {}),
   };
 }

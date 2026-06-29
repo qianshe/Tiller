@@ -84,9 +84,9 @@ function collectOrderedRuntimeEvents(input: SessionUpdateContentInput): OrderedR
     .sort((left, right) => left.order - right.order || left.index - right.index);
 }
 
-function resolveOrder(item: { timelineSequence?: number; timestamp?: string }) {
-  if (typeof item.timelineSequence === "number" && Number.isFinite(item.timelineSequence)) {
-    return item.timelineSequence;
+function resolveOrder(item: { sequence?: number; timestamp?: string }) {
+  if (typeof item.sequence === "number" && Number.isFinite(item.sequence)) {
+    return item.sequence;
   }
   const timestamp = item.timestamp ? Date.parse(item.timestamp) : Number.NaN;
   return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;

@@ -70,6 +70,7 @@ function createSessionTimelineStore(): SessionServicesOptions["sessionTimelineSt
     replace: () => [],
     list: () => [],
     listPage: () => ({ entries: [], hasMore: false }),
+    applyBatch: () => [],
     remove: () => undefined,
   };
 }

@@ -16,10 +16,10 @@ function entry(index: number): SessionTimelineEntry {
   return {
     id: `assistant-${index}`,
     kind: "assistant_message",
-    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp, timelineSequence: index }],
+    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp, sequence: index }],
     timestamp,
     updatedAt: timestamp,
-    timelineSequence: index,
+    sequence: index,
   };
 }
 

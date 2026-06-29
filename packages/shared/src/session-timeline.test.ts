@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "./types";
 import { injectTranscriptBoundaryEvents } from "./session-transcript";
-import type { SessionTimelineEntry } from "./session-timeline";
+import type { SessionTimelineBatch, SessionTimelineEntry } from "./session-timeline";
 import {
   appendToolCallToSessionTimeline,
   buildSessionTimelineFromLegacy,
@@ -29,19 +29,19 @@ function at(seconds: number) {
   return new Date(Date.parse(BASE_TIME) + seconds * 1000).toISOString();
 }
 
-function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "timelineSequence">): AgentMessage {
+function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "sequence">): AgentMessage {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
 
 function toolCall(
-  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "timelineSequence">,
+  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "sequence">,
 ): AgentToolCall {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
-    updatedAt: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
+    updatedAt: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
@@ -51,10 +51,10 @@ test("session timeline keeps context compaction and resumed tail as explicit ord
     {
       kind: "user_message",
       id: "user-1",
-      message: message({ id: "user-1", role: "user", text: "旧上下文里的最后一个问题", timelineSequence: 10 }),
+      message: message({ id: "user-1", role: "user", text: "旧上下文里的最后一个问题", sequence: 10 }),
       timestamp: "2026-06-22T10:00:00.000Z",
       updatedAt: "2026-06-22T10:00:00.000Z",
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       kind: "context_compaction",
@@ -81,11 +81,11 @@ test("session timeline keeps context compaction and resumed tail as explicit ord
         id: "assistant-1:content",
         text: "好的，我会继续处理剩余工作。",
         timestamp: "2026-06-22T10:01:06.000Z",
-        timelineSequence: 20,
+        sequence: 20,
       }],
       timestamp: "2026-06-22T10:01:06.000Z",
       updatedAt: "2026-06-22T10:01:06.000Z",
-      timelineSequence: 20,
+      sequence: 20,
     },
   ] as SessionTimelineEntry[];
 
@@ -107,11 +107,11 @@ test("injectTranscriptBoundaryEvents inserts transcript markers before the resum
         id: "older-assistant:content",
         text: "压缩前最后一条可见回复",
         timestamp: "2026-06-22T10:00:59.000Z",
-        timelineSequence: 10,
+        sequence: 10,
       }],
       timestamp: "2026-06-22T10:00:59.000Z",
       updatedAt: "2026-06-22T10:00:59.000Z",
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       kind: "user_message",
@@ -121,11 +121,11 @@ test("injectTranscriptBoundaryEvents inserts transcript markers before the resum
         role: "user",
         text: "继续处理",
         timestamp: "2026-06-22T10:01:11.000Z",
-        timelineSequence: 11,
+        sequence: 11,
       },
       timestamp: "2026-06-22T10:01:11.000Z",
       updatedAt: "2026-06-22T10:01:11.000Z",
-      timelineSequence: 11,
+      sequence: 11,
     },
     {
       kind: "assistant_message",
@@ -135,11 +135,11 @@ test("injectTranscriptBoundaryEvents inserts transcript markers before the resum
         id: "current-assistant:content",
         text: "好的，继续。",
         timestamp: "2026-06-22T10:01:12.000Z",
-        timelineSequence: 12,
+        sequence: 12,
       }],
       timestamp: "2026-06-22T10:01:12.000Z",
       updatedAt: "2026-06-22T10:01:12.000Z",
-      timelineSequence: 12,
+      sequence: 12,
     },
   ];
 
@@ -178,12 +178,12 @@ test("injectTranscriptBoundaryEvents inserts transcript markers before the resum
 
 test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by timestamp instead of grouping it after messages", () => {
   // Real chronology: user(seq 1) -> tool(no sequence) -> assistant(seq 3).
-  // Legacy history can carry tool calls without a timelineSequence (e.g. pre-migration
+  // Legacy history can carry tool calls without a sequence (e.g. pre-migration
   // records), and they must still land between the two messages by timestamp.
   const timeline = buildSessionTimelineFromLegacy({
     messages: [
-      message({ id: "user-1", role: "user", text: "Start", timelineSequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "Answer", timelineSequence: 3 }),
+      message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
+      message({ id: "assistant-1", role: "assistant", text: "Answer", sequence: 3 }),
     ],
     toolCalls: [
       {
@@ -209,8 +209,8 @@ test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by ti
 test("buildSessionTimelineFromLegacy splits cumulative assistant text around tool boundaries", () => {
   const timeline = buildSessionTimelineFromLegacy({
     messages: [
-      message({ id: "assistant-1", role: "assistant", text: "先说明。", timelineSequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "先说明。工具后继续。", timelineSequence: 3 }),
+      message({ id: "assistant-1", role: "assistant", text: "先说明。", sequence: 1 }),
+      message({ id: "assistant-1", role: "assistant", text: "先说明。工具后继续。", sequence: 3 }),
     ],
     toolCalls: [
       toolCall({
@@ -220,7 +220,7 @@ test("buildSessionTimelineFromLegacy splits cumulative assistant text around too
         output: "result",
         status: "completed",
         title: "Search",
-        timelineSequence: 2,
+        sequence: 2,
       }),
     ],
     outputs: [],
@@ -237,9 +237,9 @@ test("buildSessionTimelineFromLegacy splits cumulative assistant text around too
   assert.deepEqual(
     timeline.map((entry) =>
       entry.kind === "assistant_message"
-        ? entry.chunks.map((chunk) => [chunk.text, chunk.timelineSequence])
+        ? entry.chunks.map((chunk) => [chunk.text, chunk.sequence])
         : entry.kind === "tool_call" || entry.kind === "user_message" || entry.kind === "system_message"
-          ? [entry.id, entry.timelineSequence]
+          ? [entry.id, entry.sequence]
           : [entry.id, entry.kind],
     ),
     [
@@ -289,8 +289,8 @@ test("resolveTimelineRepresentedUserMessageIds consumes repeated user prompt anc
 test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks in sequence order while keeping tool calls independent", () => {
   const timeline = buildSessionTimelineFromLegacy({
     messages: [
-      message({ id: "user-1", role: "user", text: "Start", timelineSequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "Final answer", timelineSequence: 3 }),
+      message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
+      message({ id: "assistant-1", role: "assistant", text: "Final answer", sequence: 3 }),
     ],
     toolCalls: [
       toolCall({
@@ -300,7 +300,7 @@ test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks
         output: "Plan first",
         status: "completed",
         title: "Thinking",
-        timelineSequence: 2,
+        sequence: 2,
       }),
       toolCall({
         id: "tool-1",
@@ -309,7 +309,7 @@ test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks
         output: "Search result",
         status: "completed",
         title: "Search",
-        timelineSequence: 4,
+        sequence: 4,
       }),
     ],
     outputs: [],
@@ -332,7 +332,7 @@ test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks
   );
 });
 
-test("buildSessionTimelineFromLegacy keeps compacted chronology when timelineSequence resets", () => {
+test("buildSessionTimelineFromLegacy keeps compacted chronology when sequence resets", () => {
   const timeline = buildSessionTimelineFromLegacy({
     messages: [
       {
@@ -340,21 +340,21 @@ test("buildSessionTimelineFromLegacy keeps compacted chronology when timelineSeq
         role: "assistant",
         text: "旧回复结尾",
         timestamp: "2026-06-10T09:28:50.000Z",
-        timelineSequence: 87,
+        sequence: 87,
       },
       {
         id: "new-user",
         role: "user",
         text: "新的 prompt",
         timestamp: "2026-06-10T10:19:22.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
       {
         id: "new-assistant",
         role: "assistant",
         text: "新回复开始",
         timestamp: "2026-06-10T10:19:40.000Z",
-        timelineSequence: 4,
+        sequence: 4,
       },
     ],
     toolCalls: [],
@@ -382,12 +382,12 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
           kind: "content",
           text: "旧回复结尾",
           timestamp: "2026-06-10T09:28:50.000Z",
-          timelineSequence: 87,
+          sequence: 87,
         },
       ],
       timestamp: "2026-06-10T09:28:50.000Z",
       updatedAt: "2026-06-10T09:28:50.000Z",
-      timelineSequence: 87,
+      sequence: 87,
     },
     {
       id: "new-user",
@@ -397,11 +397,11 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
         role: "user",
         text: "新的 prompt",
         timestamp: "2026-06-10T10:19:22.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
       timestamp: "2026-06-10T10:19:22.000Z",
       updatedAt: "2026-06-10T10:19:22.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "new-assistant",
@@ -412,12 +412,12 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
           kind: "content",
           text: "新回复开始",
           timestamp: "2026-06-10T10:19:40.000Z",
-          timelineSequence: 4,
+          sequence: 4,
         },
       ],
       timestamp: "2026-06-10T10:19:40.000Z",
       updatedAt: "2026-06-10T10:19:40.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
     {
       id: "live-tool",
@@ -431,11 +431,11 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
         output: "result",
         timestamp: "2026-06-10T10:19:45.000Z",
         updatedAt: "2026-06-10T10:19:45.000Z",
-        timelineSequence: 5,
+        sequence: 5,
       },
       timestamp: "2026-06-10T10:19:45.000Z",
       updatedAt: "2026-06-10T10:19:45.000Z",
-      timelineSequence: 5,
+      sequence: 5,
     },
   ]);
 
@@ -458,7 +458,7 @@ test("appendToolCallToSessionTimeline merges tool output updates by command id",
     kind: "shell",
     status: "running",
     title: "Shell",
-    timelineSequence: 1,
+    sequence: 1,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
     id: "tool-command-1",
@@ -467,7 +467,7 @@ test("appendToolCallToSessionTimeline merges tool output updates by command id",
     output: "stdout",
     status: "running",
     title: "command-1",
-    timelineSequence: 1,
+    sequence: 1,
   }));
 
   assert.equal(entries.length, 1);
@@ -486,7 +486,7 @@ test("appendToolCallToSessionTimeline lets richer running updates reopen a termi
     kind: "tool",
     title: "Tool call call-1",
     status: "completed",
-    timelineSequence: 1,
+    sequence: 1,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
     id: "call-1",
@@ -497,7 +497,7 @@ test("appendToolCallToSessionTimeline lets richer running updates reopen a termi
     input: JSON.stringify({
       file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
     }),
-    timelineSequence: 1,
+    sequence: 1,
   }));
 
   assert.equal(entries[0]?.kind, "tool_call");
@@ -527,7 +527,7 @@ test("appendToolCallToSessionTimeline keeps terminal status for weak running fal
     title: "Shell",
     status: "completed",
     output: "done",
-    timelineSequence: 1,
+    sequence: 1,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
     id: "tool-command-1",
@@ -536,7 +536,7 @@ test("appendToolCallToSessionTimeline keeps terminal status for weak running fal
     title: "command-1",
     status: "running",
     output: "done\nstdout chunk",
-    timelineSequence: 1,
+    sequence: 1,
   }));
 
   assert.equal(entries[0]?.kind, "tool_call");
@@ -544,4 +544,71 @@ test("appendToolCallToSessionTimeline keeps terminal status for weak running fal
     entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
     "completed",
   );
+});
+
+test("SessionTimelineBatch is the only canonical write envelope", () => {
+  const batch: SessionTimelineBatch = {
+    replace: false,
+    deliverySequence: 7,
+    lastSequence: 3,
+    entries: [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [],
+        timestamp: "2026-06-29T10:00:01.000Z",
+        updatedAt: "2026-06-29T10:00:01.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool:tool-1",
+        kind: "tool_call",
+        toolCall: {
+          id: "tool-1",
+          kind: "read",
+          title: "Read",
+          status: "completed",
+          timestamp: "2026-06-29T10:00:02.000Z",
+          updatedAt: "2026-06-29T10:00:02.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-06-29T10:00:02.000Z",
+        updatedAt: "2026-06-29T10:00:02.000Z",
+        sequence: 2,
+      },
+      {
+        id: "assistant-1#p1",
+        kind: "assistant_message",
+        chunks: [],
+        timestamp: "2026-06-29T10:00:03.000Z",
+        updatedAt: "2026-06-29T10:00:03.000Z",
+        sequence: 3,
+      },
+    ] satisfies SessionTimelineEntry[],
+  };
+
+  assert.equal(batch.entries[1]?.kind, "tool_call");
+  assert.equal(batch.replace, false);
+  assert.equal(batch.deliverySequence, 7);
+  assert.equal(batch.lastSequence, 3);
+});
+
+test("SessionTimelineEntry uses sequence field (not sequence) as canonical sequence", () => {
+  const entry: SessionTimelineEntry = {
+    id: "assistant-1",
+    kind: "assistant_message",
+    chunks: [{
+      id: "assistant-1:content",
+      kind: "content",
+      text: "hello",
+      timestamp: "2026-06-29T10:00:01.000Z",
+      sequence: 1,
+    }],
+    timestamp: "2026-06-29T10:00:01.000Z",
+    updatedAt: "2026-06-29T10:00:01.000Z",
+    sequence: 1,
+  };
+
+  assert.equal(entry.sequence, 1);
+  assert.equal(entry.kind, "assistant_message");
 });

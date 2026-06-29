@@ -127,12 +127,12 @@ test("restore replay buffer coalesces replay artifacts before flushing", () => {
         input: undefined,
         output: undefined,
         status: "completed",
-        timelineSequence: 1,
+        sequence: 1,
         updatedAt: "2026-05-08T08:00:01.000Z",
       },
-      { ...output.toolCall, input: undefined, output: undefined, timelineSequence: 2 },
+      { ...output.toolCall, input: undefined, output: undefined, sequence: 2 },
     ],
-    outputs: [{ ...output.chunk, timelineSequence: 2 }],
+    outputs: [{ ...output.chunk, sequence: 2 }],
     diffs: diff.files,
   });
   assert.equal(stores.toolCalls.length, 0);
@@ -203,7 +203,7 @@ test("restore replay buffer preserves user and assistant messages when replay id
       role: "user",
       text: "我想做个你的进度状态测试",
       timestamp: "2026-05-08T08:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
   });
   buffer.add({
@@ -213,7 +213,7 @@ test("restore replay buffer preserves user and assistant messages when replay id
       role: "assistant",
       text: "已模拟一个未全部完成的进度 plan",
       timestamp: "2026-05-08T08:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   });
 
@@ -228,7 +228,7 @@ test("restore replay buffer preserves user and assistant messages when replay id
     ],
   );
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, (entry as any).timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, (entry as any).sequence]),
     [
       ["user_message", 1],
       ["assistant_message", 2],
@@ -262,7 +262,7 @@ test("restore replay buffer gives colliding unsequenced message roles distinct t
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
     [
       ["user_message", "replay-msg", 1],
       ["assistant_message", "replay-msg:assistant", 2],
@@ -362,7 +362,7 @@ test("restore replay buffer keeps stronger tool-call classification across updat
       updatedAt: "2026-05-08T08:00:01.000Z",
       input: JSON.stringify({ code: "nodeRepl.write('ok')", timeout_ms: 10000 }),
       output: undefined,
-      timelineSequence: 1,
+      sequence: 1,
     },
   ]);
 });
@@ -404,7 +404,7 @@ test("restore replay buffer assigns timeline order when replay timestamps are co
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
     [
       ["user_message", "user-1", 1],
       ["tool_call", "tool:tool-1", 2],
@@ -432,7 +432,7 @@ test("restore replay buffer persists ordered local timeline entries", () => {
       role: "user",
       text: "恢复历史",
       timestamp: "2026-05-08T08:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
   });
   buffer.add({
@@ -442,7 +442,7 @@ test("restore replay buffer persists ordered local timeline entries", () => {
       role: "assistant",
       text: "第一段",
       timestamp: "2026-05-08T08:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   });
   buffer.add({
@@ -454,7 +454,7 @@ test("restore replay buffer persists ordered local timeline entries", () => {
       status: "completed",
       timestamp: "2026-05-08T08:00:02.000Z",
       updatedAt: "2026-05-08T08:00:02.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
   });
   buffer.add({
@@ -464,14 +464,14 @@ test("restore replay buffer persists ordered local timeline entries", () => {
       role: "assistant",
       text: "最终段",
       timestamp: "2026-05-08T08:00:03.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
   });
 
   buffer.flush();
 
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
     [
       ["user_message", "user-1", 1],
       ["assistant_message", "assistant-1", 2],
@@ -526,7 +526,7 @@ test("restore replay buffer splits same assistant id content around tools as sep
     ],
   );
   assert.deepEqual(
-    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
+    stores.timelineEntries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
     [
       ["assistant_message", "assistant-1", 1],
       ["tool_call", "tool:tool-read", 2],
@@ -537,7 +537,7 @@ test("restore replay buffer splits same assistant id content around tools as sep
   const secondAssistantEntry = stores.timelineEntries.find((entry) => entry.id === "assistant-1#p1");
   assert.deepEqual(
     assistantEntry?.kind === "assistant_message"
-      ? assistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.timelineSequence])
+      ? assistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.sequence])
       : [],
     [
       ["content", "工具前说明。", 1],
@@ -545,7 +545,7 @@ test("restore replay buffer splits same assistant id content around tools as sep
   );
   assert.deepEqual(
     secondAssistantEntry?.kind === "assistant_message"
-      ? secondAssistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.timelineSequence])
+      ? secondAssistantEntry.chunks.map((chunk) => [chunk.kind, chunk.text, chunk.sequence])
       : [],
     [
       ["content", "工具后继续。", 3],

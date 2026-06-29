@@ -251,18 +251,18 @@ function message(
   id: string,
   role: AgentMessage["role"],
   text: string,
-  timelineSequence: number,
+  sequence: number,
 ): AgentMessage {
   return {
     id,
     role,
     text,
-    timestamp: `2026-06-05T14:08:${String(timelineSequence).padStart(2, "0")}.000Z`,
-    timelineSequence,
+    timestamp: `2026-06-05T14:08:${String(sequence).padStart(2, "0")}.000Z`,
+    sequence,
   };
 }
 
-function thinkingCall(id: string, timelineSequence: number): AgentToolCall {
+function thinkingCall(id: string, sequence: number): AgentToolCall {
   return {
     id,
     commandId: id,
@@ -272,6 +272,6 @@ function thinkingCall(id: string, timelineSequence: number): AgentToolCall {
     output: "思考内容",
     timestamp: "2026-06-05T14:08:03.500Z",
     updatedAt: "2026-06-05T14:08:03.500Z",
-    timelineSequence,
+    sequence,
   };
 }

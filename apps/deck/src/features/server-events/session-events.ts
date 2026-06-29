@@ -6,11 +6,14 @@ import type {
   AgentPromptImageContent,
   AgentToolCall,
   SessionConfigOption,
+  SessionLiveCompactionState,
   SessionSummary,
   SessionTimelineEntry,
+  SessionTimelineTranscriptEventEntry,
 } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
+  isTranscriptEventEntry,
   appendToolCallToSessionTimeline,
   looksLikeContinuationSummary,
   sortSessionTimelineEntries,
@@ -218,6 +221,9 @@ export function applySessionResult(
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
         store.setSessionTimeline((current) => pruneSessionScopedMap(current, nextSessions));
+        store.setSessionCompactionStates((current) =>
+          pruneSessionScopedMap(current, nextSessions),
+        );
         store.setTranscriptStatusBySession((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
@@ -309,11 +315,14 @@ export function applySessionResult(
       }
       if (Array.isArray(payload.timeline)) {
         const shouldReplaceTimeline = !payload.before && !payload.timelineBefore;
+        const incomingEntries = payload.timeline as SessionTimelineEntry[];
         const shouldForceIncomingTimeline = shouldReplaceTimeline &&
-          payload.messages.some((message: AgentMessage) => looksLikeContinuationSummary(message.text));
+          (
+            payload.messages.some((message: AgentMessage) => looksLikeContinuationSummary(message.text)) ||
+            incomingEntries.some(isTranscriptEventEntry)
+          );
         store.setSessionTimeline((current) => {
           const currentEntries = current[payload.sessionId] ?? [];
-          const incomingEntries = payload.timeline as SessionTimelineEntry[];
           const nextEntries = shouldReplaceTimeline
             ? replaceInitialTimelineHistory(
                 currentEntries,
@@ -491,6 +500,9 @@ export function applySessionResult(
       store.setSessionTimeline((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
+      store.setSessionCompactionStates((current) =>
+        removeSessionRecord(current, payload.result.sessionId),
+      );
       store.setTranscriptStatusBySession((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
@@ -552,7 +564,7 @@ function appendToolCallsToSessionTimeline(
         toolCall,
         timestamp: toolCall.timestamp,
         updatedAt: toolCall.updatedAt,
-        timelineSequence: toolCall.timelineSequence,
+        sequence: toolCall.sequence,
       })),
       nextEntries,
       { toolCallCount: toolCalls.length },
@@ -699,6 +711,10 @@ function shouldKeepRicherCurrentTimeline(
       collectTimelineToolIdentityKeys(current),
       collectTimelineToolIdentityKeys(incoming),
     ) &&
+    sameStringMultiset(
+      collectTimelineTranscriptEventKeys(current),
+      collectTimelineTranscriptEventKeys(incoming),
+    ) &&
     (
       sameStringMultiset(
         collectTimelineAssistantChunkKeys(current),
@@ -711,7 +727,7 @@ function shouldKeepRicherCurrentTimeline(
 function collectTimelineMessageKeys(entries: SessionTimelineEntry[]) {
   return entries.flatMap((entry) =>
     entry.kind === "user_message" || entry.kind === "system_message"
-      ? [`${entry.kind}:${entry.message.id}:${entry.message.timelineSequence ?? ""}:${entry.message.text}`]
+      ? [`${entry.kind}:${entry.message.id}:${entry.message.sequence ?? ""}:${entry.message.text}`]
       : []
   );
 }
@@ -731,9 +747,9 @@ function collectTimelineAssistantChunkKeys(entries: SessionTimelineEntry[]) {
     }
     return entry.chunks.map((chunk) => {
       if (chunk.kind === "content") {
-        return `content:${chunk.id}:${chunk.timelineSequence ?? ""}:${chunk.text}`;
+        return `content:${chunk.id}:${chunk.sequence ?? ""}:${chunk.text}`;
       }
-      return `thinking:${chunk.id}:${chunk.timelineSequence ?? ""}:${chunk.status}:${chunk.text}`;
+      return `thinking:${chunk.id}:${chunk.sequence ?? ""}:${chunk.status}:${chunk.text}`;
     });
   });
 }
@@ -835,7 +851,7 @@ function summarizeTimelineEntryForDebug(entry: SessionTimelineEntry) {
     return {
       id: entry.id,
       kind: entry.kind,
-      seq: entry.timelineSequence ?? entry.toolCall.timelineSequence,
+      seq: entry.sequence ?? entry.toolCall.sequence,
       title: entry.toolCall.title,
       toolKind: entry.toolCall.kind,
     };
@@ -844,11 +860,11 @@ function summarizeTimelineEntryForDebug(entry: SessionTimelineEntry) {
     return {
       id: entry.id,
       kind: entry.kind,
-      seq: entry.timelineSequence,
+      seq: entry.sequence,
       chunks: entry.chunks.map((chunk) => ({
         id: chunk.id,
         kind: chunk.kind,
-        seq: chunk.timelineSequence,
+        seq: chunk.sequence,
         textLength: chunk.text.length,
         textStart: chunk.text.slice(0, 32),
       })),
@@ -865,7 +881,7 @@ function summarizeTimelineEntryForDebug(entry: SessionTimelineEntry) {
   return {
     id: entry.id,
     kind: entry.kind,
-    seq: entry.timelineSequence ?? entry.message.timelineSequence,
+    seq: entry.sequence ?? entry.message.sequence,
     textStart: entry.message.text.slice(0, 32),
   };
 }
@@ -999,6 +1015,148 @@ function appendTimelineMessage(
   });
 }
 
+function collectTimelineTranscriptEventKeys(entries: SessionTimelineEntry[]) {
+  return entries.flatMap((entry) => {
+    if (entry.kind === "context_compaction") {
+      return [
+        `context_compaction:${entry.id}:${entry.summaryMessageId ?? ""}:${entry.summaryText ?? ""}:${entry.timestamp}`,
+      ];
+    }
+    if (entry.kind === "session_resumed") {
+      return [`session_resumed:${entry.id}:${entry.restoreMethod}:${entry.timestamp}`];
+    }
+    if (entry.kind === "history_gap") {
+      return [`history_gap:${entry.id}:${entry.message}:${entry.timestamp}`];
+    }
+    return [];
+  });
+}
+
+function upsertTimelineTranscriptEvent(
+  store: DeckStore,
+  sessionId: string,
+  entry: SessionTimelineTranscriptEventEntry,
+) {
+  store.setSessionTimeline((current) => {
+    const currentEntries = current[sessionId] ?? [];
+    const nextEntries = entry.kind === "context_compaction"
+      ? mergeCompactionTranscriptEvent(currentEntries, entry)
+      : sortSessionTimelineEntries(
+          mergeTimelineEntries([entry], currentEntries),
+        );
+    return {
+      ...current,
+      [sessionId]: nextEntries,
+    };
+  });
+}
+
+function mergeCompactionTranscriptEvent(
+  currentEntries: SessionTimelineEntry[],
+  incoming: Extract<SessionTimelineTranscriptEventEntry, { kind: "context_compaction" }>,
+) {
+  const next = [...currentEntries];
+  const exactIndex = next.findIndex((entry) => entry.id === incoming.id);
+  if (exactIndex !== -1) {
+    const current = next[exactIndex];
+    if (current?.kind === "context_compaction") {
+      next[exactIndex] = mergeCompactionTimelineEntry(current, incoming);
+      return sortSessionTimelineEntries(next);
+    }
+  }
+
+  const summaryMessageMatchIndex = next.findIndex((entry) =>
+    entry.kind === "context_compaction" &&
+    Boolean(incoming.summaryMessageId) &&
+    entry.summaryMessageId === incoming.summaryMessageId
+  );
+  if (summaryMessageMatchIndex !== -1) {
+    const current = next[summaryMessageMatchIndex];
+    if (current?.kind === "context_compaction") {
+      next[summaryMessageMatchIndex] = mergeCompactionTimelineEntry(current, incoming);
+      return sortSessionTimelineEntries(next);
+    }
+  }
+
+  const placeholderIndex = findCompactionPlaceholderMergeIndex(next, incoming);
+  if (placeholderIndex !== -1) {
+    const current = next[placeholderIndex];
+    if (current?.kind === "context_compaction") {
+      next[placeholderIndex] = mergeCompactionTimelineEntry(current, incoming);
+      return sortSessionTimelineEntries(next);
+    }
+  }
+
+  next.push(incoming);
+  return sortSessionTimelineEntries(next);
+}
+
+function findCompactionPlaceholderMergeIndex(
+  entries: SessionTimelineEntry[],
+  incoming: Extract<SessionTimelineTranscriptEventEntry, { kind: "context_compaction" }>,
+) {
+  if (!incoming.summaryText?.trim()) {
+    return -1;
+  }
+  const incomingTime = Date.parse(incoming.timestamp);
+  let bestIndex = -1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry?.kind !== "context_compaction" || entry.summaryText?.trim()) {
+      continue;
+    }
+    if (!isCompactionPlaceholderAnchored(entries, index)) {
+      continue;
+    }
+    const entryTime = Date.parse(entry.timestamp);
+    const delta = Number.isFinite(entryTime) && Number.isFinite(incomingTime)
+      ? Math.abs(incomingTime - entryTime)
+      : 0;
+    if (Number.isFinite(delta) && delta > 5 * 60 * 1000) {
+      continue;
+    }
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
+function isCompactionPlaceholderAnchored(entries: SessionTimelineEntry[], index: number) {
+  for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
+    const entry = entries[cursor];
+    if (!entry) {
+      continue;
+    }
+    if (entry.kind === "session_resumed") {
+      return true;
+    }
+    if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+function mergeCompactionTimelineEntry(
+  current: Extract<SessionTimelineEntry, { kind: "context_compaction" }>,
+  incoming: Extract<SessionTimelineTranscriptEventEntry, { kind: "context_compaction" }>,
+): Extract<SessionTimelineEntry, { kind: "context_compaction" }> {
+  return {
+    ...current,
+    ...incoming,
+    id: incoming.id,
+    timestamp: current.timestamp,
+    updatedAt: incoming.updatedAt ?? incoming.timestamp ?? current.updatedAt,
+    summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
+    summaryText: incoming.summaryText ?? current.summaryText,
+    detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,
+  };
+}
+
 function pruneActiveThinkingToolCalls(
   sessionId: string,
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
@@ -1126,6 +1284,22 @@ export function applySessionUpdate(
     case "prompt_queue":
       store.setPromptQueue(sessionId, update.queue);
       return true;
+    case "compaction_state":
+      store.setSessionCompactionStates((current) => {
+        if (update.phase === "started") {
+          const nextState: SessionLiveCompactionState = {
+            phase: "started",
+            source: update.source,
+            timestamp: update.timestamp,
+          };
+          return { ...current, [sessionId]: nextState };
+        }
+        return {
+          ...current,
+          [sessionId]: undefined,
+        };
+      });
+      return true;
     case "user_message":
       store.setMessages((current) => ({
         ...current,
@@ -1137,8 +1311,21 @@ export function applySessionUpdate(
       }));
       appendTimelineMessage(store, sessionId, update.message);
       return true;
+    case "transcript_event":
+      store.setSessionCompactionStates((current) => ({
+        ...current,
+        [sessionId]: undefined,
+      }));
+      upsertTimelineTranscriptEvent(store, sessionId, update.entry);
+      return true;
     case "status_change":
       requestAgentConnectionsRefresh(context);
+      if (update.status !== "running") {
+        store.setSessionCompactionStates((current) => ({
+          ...current,
+          [sessionId]: undefined,
+        }));
+      }
       store.setStatuses((current) => ({
         ...current,
         [sessionId]: update.status,

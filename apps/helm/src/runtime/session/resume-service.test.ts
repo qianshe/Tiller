@@ -654,17 +654,17 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
   await service.startSessionResume(sessionId);
 
   assert.deepEqual(
-    storedMessages.map((message) => [message.role, message.text, message.timelineSequence]),
+    storedMessages.map((message) => [message.role, message.text, message.sequence]),
     [
       ["user", "重新导入", 1],
       ["assistant", "工具后继续输出", 3],
     ],
   );
-  assert.deepEqual(storedToolCalls.map((toolCall) => [toolCall.title, toolCall.timelineSequence]), [
+  assert.deepEqual(storedToolCalls.map((toolCall) => [toolCall.title, toolCall.sequence]), [
     ["git status --short", 2],
   ]);
   assert.deepEqual(
-    storedTimeline.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
+    storedTimeline.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
     [
       ["user_message", "user-1", 1],
       ["tool_call", "tool:tool-1", 2],
@@ -704,14 +704,14 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       role: "user",
       text: "压缩前问题",
       timestamp: "2026-06-18T14:01:20.000Z",
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       id: "anchor-user",
       role: "user",
       text: "锚点消息",
       timestamp: "2026-06-18T14:01:49.292Z",
-      timelineSequence: 20,
+      sequence: 20,
     },
   ];
   let persistedTimeline: SessionTimelineEntry[] = [
@@ -721,7 +721,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       message: persistedMessages[0]!,
       timestamp: persistedMessages[0]!.timestamp,
       updatedAt: persistedMessages[0]!.timestamp,
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       id: "anchor-user",
@@ -729,7 +729,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       message: persistedMessages[1]!,
       timestamp: persistedMessages[1]!.timestamp,
       updatedAt: persistedMessages[1]!.timestamp,
-      timelineSequence: 20,
+      sequence: 20,
     },
   ];
 
@@ -776,7 +776,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
             role: "user",
             text: "锚点消息",
             timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 20,
+            sequence: 20,
           },
         });
         input.onRestoreReplayEvent?.({
@@ -786,7 +786,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
             role: "assistant",
             text: "新的回复",
             timestamp: "2026-06-18T14:02:16.000Z",
-            timelineSequence: 21,
+            sequence: 21,
           },
         });
         return {

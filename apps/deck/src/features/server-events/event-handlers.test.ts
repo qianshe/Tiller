@@ -47,6 +47,7 @@ function resetStore() {
     statuses: {},
     messages: {},
     sessionTimeline: {},
+    sessionCompactionStates: {},
     messageHistoryState: {},
     outputs: {},
     toolCalls: {},
@@ -212,6 +213,181 @@ test("session/list_messages replaces initial timeline instead of mixing stale en
   );
 });
 
+test("session transcript_event updates upsert compaction timeline entries by id", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "compaction-session-1",
+          kind: "context_compaction",
+          summaryText: "Earlier compact summary",
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "expandable",
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "transcript_event",
+        entry: {
+          id: "compaction-session-1",
+          kind: "context_compaction",
+          summaryText: "Updated compact summary",
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:01.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "hidden",
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  assert.equal(handled, true);
+  assert.equal(entry?.kind, "context_compaction");
+  assert.equal(entry?.kind === "context_compaction" ? entry.summaryText : undefined, "Updated compact summary");
+  assert.equal(entry?.kind === "context_compaction" ? entry.detailsVisibility : undefined, "hidden");
+});
+
+test("session transcript_event merges an authoritative compaction summary into the anchored placeholder row", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "user-1",
+          kind: "user_message",
+          message: {
+            id: "user-1",
+            role: "user",
+            text: "继续",
+            timestamp: "2026-06-28T00:00:00.000Z",
+            sequence: 1,
+          },
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "synthetic-compaction",
+          kind: "context_compaction",
+          summaryMessageId: "compaction-completed-message",
+          timestamp: "2026-06-28T00:00:01.000Z",
+          updatedAt: "2026-06-28T00:00:01.000Z",
+          replayCompleteness: "compacted",
+        },
+        {
+          id: "resume:session-1:assistant-1",
+          kind: "session_resumed",
+          restoreMethod: "session/load",
+          timestamp: "2026-06-28T00:00:02.000Z",
+          updatedAt: "2026-06-28T00:00:02.000Z",
+          replayCompleteness: "compacted",
+        },
+        {
+          id: "assistant-1",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-1:content",
+              kind: "content",
+              text: "压缩后继续处理。",
+              timestamp: "2026-06-28T00:00:02.000Z",
+              sequence: 2,
+            },
+          ],
+          timestamp: "2026-06-28T00:00:02.000Z",
+          updatedAt: "2026-06-28T00:00:02.000Z",
+          sequence: 2,
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "transcript_event",
+        entry: {
+          id: "authoritative-compaction",
+          kind: "context_compaction",
+          summaryMessageId: "compaction-summary-message",
+          summaryText: "This session is being continued from a previous conversation that ran out of context.",
+          timestamp: "2026-06-28T00:00:05.000Z",
+          updatedAt: "2026-06-28T00:00:05.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "expandable",
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  const compactionEntries = timeline.filter((entry) => entry.kind === "context_compaction");
+  assert.equal(handled, true);
+  assert.equal(compactionEntries.length, 1);
+  assert.deepEqual(timeline.map((entry) => entry.id), [
+    "user-1",
+    "authoritative-compaction",
+    "resume:session-1:assistant-1",
+    "assistant-1",
+  ]);
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    "This session is being continued from a previous conversation that ran out of context.",
+  );
+});
+
+test("session compaction_state updates keep only live started markers", () => {
+  resetStore();
+
+  const started = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "compaction_state",
+        phase: "started",
+        source: "provider",
+        timestamp: "2026-06-28T00:00:00.000Z",
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(started, true);
+  assert.deepEqual(useDeckStore.getState().sessionCompactionStates["session-1"], {
+    phase: "started",
+    source: "provider",
+    timestamp: "2026-06-28T00:00:00.000Z",
+  });
+
+  const completed = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "compaction_state",
+        phase: "completed",
+        source: "heuristic",
+        timestamp: "2026-06-28T00:00:05.000Z",
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(completed, true);
+  assert.equal(useDeckStore.getState().sessionCompactionStates["session-1"], undefined);
+});
+
 test("session/list_messages keeps artifact tool calls when initial history returns late", () => {
   resetStore();
   const loadedEntry: SessionTimelineEntry = {
@@ -223,12 +399,12 @@ test("session/list_messages keeps artifact tool calls when initial history retur
         kind: "content",
         text: "服务端历史回复",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     timestamp: "2026-05-17T10:00:00.000Z",
     updatedAt: "2026-05-17T10:00:00.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   const artifactToolCall: SessionTimelineEntry = {
     id: "tool:call-1",
@@ -240,11 +416,11 @@ test("session/list_messages keeps artifact tool calls when initial history retur
       status: "completed",
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   useDeckStore.setState({
     sessionTimeline: { "session-1": [loadedEntry, artifactToolCall] },
@@ -281,7 +457,7 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     output: "stdout",
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   const existingTimeline: SessionTimelineEntry[] = [{
     id: "tool:call-1",
@@ -289,7 +465,7 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     toolCall,
     timestamp: toolCall.timestamp,
     updatedAt: toolCall.updatedAt,
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   }];
   useDeckStore.setState({
     sessionTimeline: { "session-1": existingTimeline },
@@ -323,7 +499,7 @@ test("session/get_artifacts waits for initial history before projecting tool cal
     output: "stdout",
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   useDeckStore.setState({
     messageHistoryState: {
@@ -359,7 +535,7 @@ test("session/list_messages preserves richer cached tool metadata", () => {
     output: "stdout",
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   const rawToolCall: AgentToolCall = {
     ...richToolCall,
@@ -374,7 +550,7 @@ test("session/list_messages preserves richer cached tool metadata", () => {
         toolCall: richToolCall,
         timestamp: richToolCall.timestamp,
         updatedAt: richToolCall.updatedAt,
-        timelineSequence: richToolCall.timelineSequence,
+        sequence: richToolCall.sequence,
       }],
     },
   });
@@ -390,7 +566,7 @@ test("session/list_messages preserves richer cached tool metadata", () => {
         toolCall: rawToolCall,
         timestamp: rawToolCall.timestamp,
         updatedAt: rawToolCall.updatedAt,
-        timelineSequence: rawToolCall.timelineSequence,
+        sequence: rawToolCall.sequence,
       }],
       timelineHasMore: false,
       hasMore: false,
@@ -417,7 +593,7 @@ test("session/list_messages lets richer running tool metadata reopen a stale com
     status: "completed",
     timestamp: "2026-06-20T10:00:01.000Z",
     updatedAt: "2026-06-20T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   const incomingToolCall: AgentToolCall = {
     ...currentToolCall,
@@ -438,7 +614,7 @@ test("session/list_messages lets richer running tool metadata reopen a stale com
         toolCall: currentToolCall,
         timestamp: currentToolCall.timestamp,
         updatedAt: currentToolCall.updatedAt,
-        timelineSequence: currentToolCall.timelineSequence,
+        sequence: currentToolCall.sequence,
       }],
     },
   });
@@ -454,7 +630,7 @@ test("session/list_messages lets richer running tool metadata reopen a stale com
         toolCall: incomingToolCall,
         timestamp: incomingToolCall.timestamp,
         updatedAt: incomingToolCall.updatedAt,
-        timelineSequence: incomingToolCall.timelineSequence,
+        sequence: incomingToolCall.sequence,
       }],
       timelineHasMore: false,
       hasMore: false,
@@ -487,7 +663,7 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
     status: "completed",
     timestamp: "2026-05-17T10:00:02.000Z",
     updatedAt: "2026-05-17T10:00:02.000Z",
-    timelineSequence: 3,
+    sequence: 3,
   };
   const splitTimeline: SessionTimelineEntry[] = [
     {
@@ -498,11 +674,11 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
         role: "user",
         text: "开始",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
@@ -512,11 +688,11 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
         kind: "content",
         text: "先检查。",
         timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       }],
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "tool:call-1",
@@ -524,7 +700,7 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
       toolCall,
       timestamp: "2026-05-17T10:00:02.000Z",
       updatedAt: "2026-05-17T10:00:02.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
     {
       id: "assistant-1#p1",
@@ -534,11 +710,11 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
         kind: "content",
         text: "再总结。",
         timestamp: "2026-05-17T10:00:03.000Z",
-        timelineSequence: 4,
+        sequence: 4,
       }],
       timestamp: "2026-05-17T10:00:03.000Z",
       updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
   ];
   const coarseTimeline: SessionTimelineEntry[] = [
@@ -552,7 +728,7 @@ test("session/list_messages keeps richer split timeline when equivalent coarse h
       ],
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     splitTimeline[2]!,
   ];
@@ -587,7 +763,7 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
     status: "completed",
     timestamp: "2026-05-17T10:00:02.000Z",
     updatedAt: "2026-05-17T10:00:02.000Z",
-    timelineSequence: 3,
+    sequence: 3,
   };
   const secondTool: AgentToolCall = {
     id: "call-2",
@@ -596,7 +772,7 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
     status: "completed",
     timestamp: "2026-05-17T10:00:04.000Z",
     updatedAt: "2026-05-17T10:00:04.000Z",
-    timelineSequence: 5,
+    sequence: 5,
   };
   const splitTimeline: SessionTimelineEntry[] = [
     {
@@ -607,11 +783,11 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
         role: "user",
         text: "开始",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-turn",
@@ -621,11 +797,11 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
         kind: "content",
         text: "先检查。",
         timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       }],
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "tool:call-1",
@@ -633,7 +809,7 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
       toolCall: firstTool,
       timestamp: firstTool.timestamp,
       updatedAt: firstTool.updatedAt,
-      timelineSequence: firstTool.timelineSequence,
+      sequence: firstTool.sequence,
     },
     {
       id: "assistant-turn#p1",
@@ -643,11 +819,11 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
         kind: "content",
         text: "再读取。",
         timestamp: "2026-05-17T10:00:03.000Z",
-        timelineSequence: 4,
+        sequence: 4,
       }],
       timestamp: "2026-05-17T10:00:03.000Z",
       updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
     {
       id: "tool:call-2",
@@ -655,7 +831,7 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
       toolCall: secondTool,
       timestamp: secondTool.timestamp,
       updatedAt: secondTool.updatedAt,
-      timelineSequence: secondTool.timelineSequence,
+      sequence: secondTool.sequence,
     },
     {
       id: "assistant-turn#p2",
@@ -665,11 +841,11 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
         kind: "content",
         text: "最后总结。",
         timestamp: "2026-05-17T10:00:05.000Z",
-        timelineSequence: 6,
+        sequence: 6,
       }],
       timestamp: "2026-05-17T10:00:05.000Z",
       updatedAt: "2026-05-17T10:00:05.000Z",
-      timelineSequence: 6,
+      sequence: 6,
     },
   ];
   const coarseTimeline: SessionTimelineEntry[] = [
@@ -682,23 +858,23 @@ test("session/list_messages keeps split timeline when coarse history coalesces a
         kind: "content",
         text: "先检查。再读取。最后总结。",
         timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       }],
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:05.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "tool:call-1",
       kind: "tool_call",
-      toolCall: { ...firstTool, timelineSequence: undefined },
+      toolCall: { ...firstTool, sequence: undefined },
       timestamp: firstTool.timestamp,
       updatedAt: firstTool.updatedAt,
     },
     {
       id: "tool:call-2",
       kind: "tool_call",
-      toolCall: { ...secondTool, timelineSequence: undefined },
+      toolCall: { ...secondTool, sequence: undefined },
       timestamp: secondTool.timestamp,
       updatedAt: secondTool.updatedAt,
     },
@@ -789,7 +965,7 @@ test("session/list_messages stores unified timeline entries when provided by Hel
     role: "user",
     text: "开始",
     timestamp: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   const timeline: SessionTimelineEntry[] = [
     {
@@ -798,7 +974,7 @@ test("session/list_messages stores unified timeline entries when provided by Hel
       message: loadedUser,
       timestamp: loadedUser.timestamp,
       updatedAt: loadedUser.timestamp,
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
@@ -812,19 +988,19 @@ test("session/list_messages stores unified timeline entries when provided by Hel
           status: "completed",
           timestamp: "2026-05-24T10:00:01.000Z",
           updatedAt: "2026-05-24T10:00:01.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
         {
           id: "assistant-1:content",
           kind: "content",
           text: "完成",
           timestamp: "2026-05-24T10:00:02.000Z",
-          timelineSequence: 3,
+          sequence: 3,
         },
       ],
       timestamp: "2026-05-24T10:00:01.000Z",
       updatedAt: "2026-05-24T10:00:02.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
@@ -871,7 +1047,7 @@ test("session/list_messages preserves provided timeline order with partial seque
     role: "user",
     text: "开始",
     timestamp: "2026-05-24T10:00:30.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   const timeline: SessionTimelineEntry[] = [
     {
@@ -880,7 +1056,7 @@ test("session/list_messages preserves provided timeline order with partial seque
       message: loadedUser,
       timestamp: loadedUser.timestamp,
       updatedAt: loadedUser.timestamp,
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
@@ -919,11 +1095,11 @@ test("session/list_messages preserves provided timeline order with partial seque
         kind: "content",
         text: "完成",
         timestamp: "2026-05-24T10:00:40.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       }],
       timestamp: "2026-05-24T10:00:40.000Z",
       updatedAt: "2026-05-24T10:00:40.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
@@ -972,12 +1148,12 @@ test("session/list_messages applies timeline-only pages without replacing legacy
           kind: "content",
           text: "更早的时间线正文",
           timestamp: "2026-05-24T09:59:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
       ],
       timestamp: "2026-05-24T09:59:00.000Z",
       updatedAt: "2026-05-24T09:59:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
   ];
   useDeckStore.setState({
@@ -1076,11 +1252,11 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
             role: "user",
             text: "结束任务",
             timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 256,
+            sequence: 256,
           },
           timestamp: "2026-06-18T14:01:49.292Z",
           updatedAt: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         {
           id: "assistant-part-1",
@@ -1091,12 +1267,12 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
               kind: "content",
               text: "好的，我来完成剩余的",
               timestamp: "2026-06-18T14:02:15.000Z",
-              timelineSequence: 275,
+              sequence: 275,
             },
           ],
           timestamp: "2026-06-18T14:02:15.000Z",
           updatedAt: "2026-06-18T14:02:15.000Z",
-          timelineSequence: 275,
+          sequence: 275,
         },
         {
           id: "assistant-part-2",
@@ -1107,12 +1283,12 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
               kind: "content",
               text: "两处改动然后收尾。",
               timestamp: "2026-06-18T14:02:16.000Z",
-              timelineSequence: 276,
+              sequence: 276,
             },
           ],
           timestamp: "2026-06-18T14:02:16.000Z",
           updatedAt: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
+          sequence: 276,
         },
       ],
     },
@@ -1140,14 +1316,14 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
           role: "user",
           text: "结束任务",
           timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         {
           id: "provider-current-assistant",
           role: "assistant",
           text: "好的，我来完成剩余的两处改动然后收尾。",
           timestamp: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
+          sequence: 276,
         },
       ],
       timeline: [
@@ -1159,11 +1335,11 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
             role: "user",
             text: "结束任务",
             timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 256,
+            sequence: 256,
           },
           timestamp: "2026-06-18T14:01:49.292Z",
           updatedAt: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         {
           id: "provider-current-assistant",
@@ -1174,12 +1350,12 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
               kind: "content",
               text: "好的，我来完成剩余的两处改动然后收尾。",
               timestamp: "2026-06-18T14:02:16.000Z",
-              timelineSequence: 276,
+              sequence: 276,
             },
           ],
           timestamp: "2026-06-18T14:02:16.000Z",
           updatedAt: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
+          sequence: 276,
         },
       ],
       hasMore: false,
@@ -1197,6 +1373,159 @@ test("session/list_messages prefers the authoritative compacted timeline over a 
   ]);
 });
 
+test("session/list_messages replaces stale local compaction placement with authoritative transcript entries", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "current-user",
+          kind: "user_message",
+          message: {
+            id: "current-user",
+            role: "user",
+            text: "结束任务",
+            timestamp: "2026-06-28T00:00:00.000Z",
+            sequence: 1,
+          },
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "assistant-part-1",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-part-1:content",
+              kind: "content",
+              text: "好的，我来",
+              timestamp: "2026-06-28T00:00:02.000Z",
+              sequence: 2,
+            },
+          ],
+          timestamp: "2026-06-28T00:00:02.000Z",
+          updatedAt: "2026-06-28T00:00:02.000Z",
+          sequence: 2,
+        },
+        {
+          id: "assistant-part-2",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-part-2:content",
+              kind: "content",
+              text: "继续处理。",
+              timestamp: "2026-06-28T00:00:03.000Z",
+              sequence: 3,
+            },
+          ],
+          timestamp: "2026-06-28T00:00:03.000Z",
+          updatedAt: "2026-06-28T00:00:03.000Z",
+          sequence: 3,
+        },
+        {
+          id: "stale-compaction-end",
+          kind: "context_compaction",
+          summaryText: "This session is being continued from a previous conversation that ran out of context.",
+          detailsVisibility: "expandable",
+          timestamp: "2026-06-28T00:00:10.000Z",
+          updatedAt: "2026-06-28T00:00:10.000Z",
+          replayCompleteness: "compacted",
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_messages",
+    {
+      sessionId: "session-1",
+      messages: [
+        {
+          id: "provider-current-user",
+          role: "user",
+          text: "结束任务",
+          timestamp: "2026-06-28T00:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "provider-current-assistant",
+          role: "assistant",
+          text: "好的，我来继续处理。",
+          timestamp: "2026-06-28T00:00:03.000Z",
+          sequence: 3,
+        },
+      ],
+      timeline: [
+        {
+          id: "current-user",
+          kind: "user_message",
+          message: {
+            id: "current-user",
+            role: "user",
+            text: "结束任务",
+            timestamp: "2026-06-28T00:00:00.000Z",
+            sequence: 1,
+          },
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "authoritative-compaction",
+          kind: "context_compaction",
+          summaryText: "This session is being continued from a previous conversation that ran out of context.",
+          detailsVisibility: "expandable",
+          timestamp: "2026-06-28T00:00:01.000Z",
+          updatedAt: "2026-06-28T00:00:01.000Z",
+          replayCompleteness: "compacted",
+        },
+        {
+          id: "resume:session-1:provider-current-assistant",
+          kind: "session_resumed",
+          restoreMethod: "session/load",
+          timestamp: "2026-06-28T00:00:03.000Z",
+          updatedAt: "2026-06-28T00:00:03.000Z",
+          replayCompleteness: "compacted",
+        },
+        {
+          id: "provider-current-assistant",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "provider-current-assistant:content",
+              kind: "content",
+              text: "好的，我来继续处理。",
+              timestamp: "2026-06-28T00:00:03.000Z",
+              sequence: 3,
+            },
+          ],
+          timestamp: "2026-06-28T00:00:03.000Z",
+          updatedAt: "2026-06-28T00:00:03.000Z",
+          sequence: 3,
+        },
+      ],
+      timelineHasMore: false,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    [
+      "current-user",
+      "authoritative-compaction",
+      "resume:session-1:provider-current-assistant",
+      "provider-current-assistant",
+    ],
+  );
+});
+
 test("session/list_messages preserves local user attachments represented by provider history", () => {
   resetStore();
   const localUser: AgentMessage = {
@@ -1204,7 +1533,7 @@ test("session/list_messages preserves local user attachments represented by prov
     role: "user",
     text: "请看这张图",
     timestamp: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
+    sequence: 1,
     attachments: [
       {
         type: "image",
@@ -1219,7 +1548,7 @@ test("session/list_messages preserves local user attachments represented by prov
     role: "user",
     text: "请看这张图",
     timestamp: "2026-05-24T10:00:01.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   useDeckStore.setState({
     messages: { "session-1": [localUser] },
@@ -1259,12 +1588,12 @@ test("session/get_artifacts projects active tool calls into the unified timeline
         kind: "content",
         text: "我先检查文件。",
         timestamp: "2026-05-24T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     timestamp: "2026-05-24T10:00:00.000Z",
     updatedAt: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   useDeckStore.setState({
     sessionTimeline: { "session-1": [existingAssistant] },
@@ -1281,7 +1610,7 @@ test("session/get_artifacts projects active tool calls into the unified timeline
           text: "stdout",
           stream: "stdout",
           timestamp: "2026-05-24T10:00:02.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       toolCalls: [
@@ -1293,7 +1622,7 @@ test("session/get_artifacts projects active tool calls into the unified timeline
           status: "running",
           timestamp: "2026-05-24T10:00:01.000Z",
           updatedAt: "2026-05-24T10:00:01.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       diffs: [],

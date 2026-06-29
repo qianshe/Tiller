@@ -100,13 +100,14 @@ function createTestContext(
     ...summaryPatch,
   };
   const logger = createCapturedLogger(capture, logs);
+  const agentId = summaryPatch.agentId ?? "opencode";
 
   return {
     sessions: new Map([
       [
         sessionId,
         {
-          agent: { id: "opencode" },
+          agent: { id: agentId },
           worktree: { id: "worktree-1" },
           summary: { ...summary, runtimeSessionId: "runtime-1" },
         },
@@ -221,6 +222,243 @@ test("runtime message events persist source-neutral session update records", () 
   assert.equal(capture.sessionUpdates?.[0]?.runtimeSessionId, "runtime-1");
   assert.equal(capture.sessionUpdates?.[0]?.updateType, "message");
   assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").message.text, "hello");
+});
+
+test("runtime compaction started only broadcasts transient compaction state", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-live");
+
+  handleRuntimeEvent(
+    "session-compaction-live",
+    {
+      type: "compaction",
+      phase: "started",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:00.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionStateUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "compaction_state"
+  ) as { params?: { update?: { phase?: string; source?: string } } } | undefined;
+  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
+  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
+
+  assert.equal(compactionStateUpdate?.params?.update?.phase, "started");
+  assert.equal(compactionStateUpdate?.params?.update?.source, "provider");
+  assert.equal(transcriptUpdate, undefined);
+  assert.equal(capture.timelineEntries?.length ?? 0, 0);
+});
+
+test("runtime compaction completed clears live state and persists a transcript compaction event", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-live");
+
+  handleRuntimeEvent(
+    "session-compaction-live",
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      timestamp: "2026-06-28T00:00:01.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionStateUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "compaction_state"
+  ) as { params?: { update?: { phase?: string; source?: string } } } | undefined;
+  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
+  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
+
+  assert.equal(compactionStateUpdate?.params?.update?.phase, "completed");
+  assert.equal(transcriptUpdate?.params?.update?.entry?.kind, "context_compaction");
+  assert.equal(
+    transcriptUpdate?.params?.update?.entry?.id,
+    "compaction:session-compaction-live:compaction:2026-06-28T00:00:01.000Z",
+  );
+  assert.equal(
+    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
+      ? transcriptUpdate.params.update.entry.summaryText
+      : undefined,
+    "This session is being continued from a previous conversation that ran out of context.",
+  );
+  assert.equal(
+    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
+      ? transcriptUpdate.params.update.entry.detailsVisibility
+      : undefined,
+    "expandable",
+  );
+  assert.equal(capture.timelineEntries?.some((entry) => entry.id === "compaction:session-compaction-live:compaction:2026-06-28T00:00:01.000Z"), true);
+});
+
+test("runtime compaction completed hides summary details for codex providers", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-codex", {
+    agentId: "codex",
+    agentName: "Codex",
+  });
+
+  handleRuntimeEvent(
+    "session-compaction-codex",
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      timestamp: "2026-06-28T00:00:02.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
+  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
+
+  assert.equal(
+    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
+      ? transcriptUpdate.params.update.entry.detailsVisibility
+      : undefined,
+    "hidden",
+  );
+});
+
+test("runtime compaction summary enrichment updates the existing compaction row instead of appending a second one", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-merge", {
+    agentId: "claude",
+    agentName: "Claude",
+  });
+
+  handleRuntimeEvent(
+    "session-compaction-merge",
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:01.000Z",
+      messageId: "compaction-completed",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-merge",
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "heuristic",
+      timestamp: "2026-06-28T00:00:02.000Z",
+      messageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionEntries = capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
+  assert.equal(compactionEntries.length, 1);
+  assert.equal(compactionEntries[0]?.id, "compaction:session-compaction-merge:compaction-completed");
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    "This session is being continued from a previous conversation that ran out of context.",
+  );
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].detailsVisibility : undefined,
+    "expandable",
+  );
+});
+
+test("runtime compaction starts a fresh assistant segment after the divider", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-boundary");
+
+  handleRuntimeEvent(
+    "session-compaction-boundary",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "压缩前说明。",
+        timestamp: "2026-06-28T00:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-boundary",
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:01.000Z",
+      messageId: "compaction-completed",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-boundary",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "压缩后继续。",
+        timestamp: "2026-06-28T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-boundary",
+    {
+      type: "status",
+      status: "idle",
+      message: "done",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["assistant_message", "context_compaction", "assistant_message"],
+  );
+  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  assert.equal(assistantEntries.length, 2);
+  assert.notEqual(assistantEntries[0]?.id, assistantEntries[1]?.id);
 });
 
 test("runtime events emit first runtime and broadcast prompt trace markers", () => {
@@ -1253,8 +1491,8 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   assert.equal(appendedToolCalls.length, 1);
   assert.deepEqual(capture.broadcasts, []);
   const toolCallBroadcast = capture.detailBroadcasts[0] as any;
-  assert.equal(typeof toolCallBroadcast.params.update.toolCall.timelineSequence, "number");
-  delete toolCallBroadcast.params.update.toolCall.timelineSequence;
+  assert.equal(typeof toolCallBroadcast.params.update.toolCall.sequence, "number");
+  delete toolCallBroadcast.params.update.toolCall.sequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1548,8 +1786,8 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
   );
 
   const classifiedToolCallBroadcast = capture.detailBroadcasts[0] as any;
-  assert.equal(typeof classifiedToolCallBroadcast.params.update.toolCall.timelineSequence, "number");
-  delete classifiedToolCallBroadcast.params.update.toolCall.timelineSequence;
+  assert.equal(typeof classifiedToolCallBroadcast.params.update.toolCall.sequence, "number");
+  delete classifiedToolCallBroadcast.params.update.toolCall.sequence;
   assert.deepEqual(capture.detailBroadcasts, [
     {
       sessionId: "session-1",
@@ -1728,7 +1966,7 @@ test("runtime timeline events carry arrival order when timestamps collide", () =
     .filter((update: any) => update.kind === "tool_call" || update.kind === "agent_message");
   assert.deepEqual(
     timelineUpdates.map((update: any) =>
-      update.kind === "tool_call" ? update.toolCall.timelineSequence : update.message.timelineSequence,
+      update.kind === "tool_call" ? update.toolCall.sequence : update.message.sequence,
     ),
     [1, 2, 3],
   );

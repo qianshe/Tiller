@@ -11,7 +11,7 @@ export type SessionTimelineContentChunk = {
   kind: "content";
   text: string;
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
   streaming?: boolean;
 };
 
@@ -23,7 +23,7 @@ export type SessionTimelineThinkingChunk = {
   status: AgentToolCall["status"];
   timestamp: string;
   updatedAt: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export type SessionAssistantTimelineChunk =
@@ -36,7 +36,7 @@ export type SessionTimelineMessageEntry = {
   message: AgentMessage;
   timestamp: string;
   updatedAt: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export type SessionTimelineAssistantEntry = {
@@ -45,7 +45,7 @@ export type SessionTimelineAssistantEntry = {
   chunks: SessionAssistantTimelineChunk[];
   timestamp: string;
   updatedAt: string;
-  timelineSequence?: number;
+  sequence?: number;
   streaming?: boolean;
 };
 
@@ -55,7 +55,7 @@ export type SessionTimelineToolCallEntry = {
   toolCall: AgentToolCall;
   timestamp: string;
   updatedAt: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export type SessionTimelineEntry =
@@ -65,6 +65,19 @@ export type SessionTimelineEntry =
   | SessionTimelineContextCompactionEntry
   | SessionTimelineResumedEntry
   | SessionTimelineHistoryGapEntry;
+
+export type SessionTimelineBatch = {
+  replace: boolean;
+  deliverySequence: number;
+  lastSequence: number;
+  entries: SessionTimelineEntry[];
+};
+
+export type SessionTimelineStorePage = {
+  entries: SessionTimelineEntry[];
+  nextCursor?: string;
+  hasMore: boolean;
+};
 
 export type BuildSessionTimelineInput = {
   messages: AgentMessage[];
@@ -76,16 +89,16 @@ const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
 const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
 
 type LegacyTimelineSource =
-  | { kind: "message"; message: AgentMessage; timestamp: string; timelineSequence?: number }
-  | { kind: "tool_call"; toolCall: AgentToolCall; timestamp: string; timelineSequence?: number }
-  | { kind: "output"; output: CommandChunk; timestamp: string; timelineSequence?: number };
+  | { kind: "message"; message: AgentMessage; timestamp: string; sequence?: number }
+  | { kind: "tool_call"; toolCall: AgentToolCall; timestamp: string; sequence?: number }
+  | { kind: "output"; output: CommandChunk; timestamp: string; sequence?: number };
 
 type TimelineUserMessageAnchor = {
   id: string;
   entryId: string;
   text: string;
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export function buildSessionTimelineFromLegacy({
@@ -119,13 +132,13 @@ function buildLegacyTimelineSources({
       kind: "message",
       message,
       timestamp: message.timestamp,
-      timelineSequence: message.timelineSequence,
+      sequence: message.sequence,
     })),
     ...toolCalls.map((toolCall): LegacyTimelineSource => ({
       kind: "tool_call",
       toolCall,
       timestamp: toolCall.timestamp,
-      timelineSequence: toolCall.timelineSequence,
+      sequence: toolCall.sequence,
     })),
     ...outputs
       .filter((output) => !toolCalls.some((toolCall) => matchesCommandOutput(toolCall, output)))
@@ -133,7 +146,7 @@ function buildLegacyTimelineSources({
         kind: "output",
         output,
         timestamp: output.timestamp,
-        timelineSequence: output.timelineSequence,
+        sequence: output.sequence,
       })),
   ]
     .map((item, index) => ({ item, index }))
@@ -192,7 +205,7 @@ function collectTimelineUserMessageAnchors(
       entryId: entry.id,
       text: entry.message.text.trim(),
       timestamp: entry.message.timestamp,
-      timelineSequence: entry.message.timelineSequence ?? entry.timelineSequence,
+      sequence: entry.message.sequence ?? entry.sequence,
     }];
   });
 }
@@ -240,9 +253,9 @@ function findRepresentedUserMessageIndex(
 }
 
 function hasSameUserPromptSequence(anchor: TimelineUserMessageAnchor, message: AgentMessage) {
-  return typeof anchor.timelineSequence === "number" &&
-    typeof message.timelineSequence === "number" &&
-    anchor.timelineSequence === message.timelineSequence;
+  return typeof anchor.sequence === "number" &&
+    typeof message.sequence === "number" &&
+    anchor.sequence === message.sequence;
 }
 
 export function sortSessionTimelineEntries(
@@ -291,7 +304,7 @@ function upsertMessageEntry(
     message,
     timestamp: message.timestamp,
     updatedAt: message.timestamp,
-    timelineSequence: message.timelineSequence,
+    sequence: message.sequence,
   };
   if (existingIndex === -1) {
     entries.push(entry);
@@ -310,15 +323,15 @@ function upsertAssistantContent(
     assistantEntryId: message.id,
     baseChunkId: `${message.id}:content`,
     kind: "content",
-    timelineSequence: message.timelineSequence,
+    sequence: message.sequence,
   });
-  const entry = findOrCreateAssistantEntry(entries, message.id, message.timestamp, message.timelineSequence);
+  const entry = findOrCreateAssistantEntry(entries, message.id, message.timestamp, message.sequence);
   const chunk: SessionTimelineContentChunk = {
     id: chunkId,
     kind: "content",
     text: resolveContentChunkText(entry, `${message.id}:content`, chunkId, message.text),
     timestamp: message.timestamp,
-    timelineSequence: message.timelineSequence,
+    sequence: message.sequence,
     streaming: message.streaming,
   };
   entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
@@ -358,7 +371,7 @@ function upsertThinkingChunk(
     assistantEntryId,
     baseChunkId: toolCall.id,
     kind: "thinking",
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   });
   const chunk: SessionTimelineThinkingChunk = {
     id: chunkId,
@@ -368,9 +381,9 @@ function upsertThinkingChunk(
     status: toolCall.status,
     timestamp: toolCall.timestamp,
     updatedAt: toolCall.updatedAt,
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   };
-  const entry = findOrCreateAssistantEntry(entries, assistantEntryId, chunk.timestamp, chunk.timelineSequence);
+  const entry = findOrCreateAssistantEntry(entries, assistantEntryId, chunk.timestamp, chunk.sequence);
   entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
   applyAssistantEntryBounds(entry);
   return entries;
@@ -381,7 +394,7 @@ function resolveAssistantChunkId(input: {
   assistantEntryId: string;
   baseChunkId: string;
   kind: SessionAssistantTimelineChunk["kind"];
-  timelineSequence?: number;
+  sequence?: number;
 }) {
   const entry = input.entries.find((candidate): candidate is SessionTimelineAssistantEntry =>
     candidate.kind === "assistant_message" && candidate.id === input.assistantEntryId,
@@ -393,12 +406,12 @@ function resolveAssistantChunkId(input: {
     return input.baseChunkId;
   }
   const reusable = [...matchingChunks].reverse().find((chunk) =>
-    !hasTimelineBoundaryBetween(input.entries, chunk.timelineSequence, input.timelineSequence),
+    !hasTimelineBoundaryBetween(input.entries, chunk.sequence, input.sequence),
   );
   if (reusable) {
     return reusable.id;
   }
-  return `${input.baseChunkId}:${input.timelineSequence ?? matchingChunks.length + 1}`;
+  return `${input.baseChunkId}:${input.sequence ?? matchingChunks.length + 1}`;
 }
 
 function isSameAssistantChunkIdentity(chunkId: string, baseChunkId: string) {
@@ -420,9 +433,9 @@ function hasTimelineBoundaryBetween(
       return false;
     }
     return entry.kind !== "assistant_message" &&
-      typeof entry.timelineSequence === "number" &&
-      entry.timelineSequence > start &&
-      entry.timelineSequence < end;
+      typeof entry.sequence === "number" &&
+      entry.sequence > start &&
+      entry.sequence < end;
   });
 }
 
@@ -478,9 +491,9 @@ function hasTimelineEntryBoundaryBetweenChunks(
 }
 
 function isTimelineItemBetween(
-  item: { timelineSequence?: number; timestamp: string },
-  left: { timelineSequence?: number; timestamp: string },
-  right: { timelineSequence?: number; timestamp: string },
+  item: { sequence?: number; timestamp: string },
+  left: { sequence?: number; timestamp: string },
+  right: { sequence?: number; timestamp: string },
 ) {
   return compareTimelineItems({ item, index: 0 }, { item: left, index: -1 }) > 0 &&
     compareTimelineItems({ item, index: 0 }, { item: right, index: 1 }) < 0;
@@ -496,8 +509,8 @@ function sortTimelineEntriesByDefinedSequence(
   return entries
     .map((entry, index) => ({ item: entry, index }))
     .sort((left, right) => {
-      const leftSequence = isTranscriptEventEntry(left.item) ? undefined : left.item.timelineSequence;
-      const rightSequence = isTranscriptEventEntry(right.item) ? undefined : right.item.timelineSequence;
+      const leftSequence = isTranscriptEventEntry(left.item) ? undefined : left.item.sequence;
+      const rightSequence = isTranscriptEventEntry(right.item) ? undefined : right.item.sequence;
       const sequenceDelta = compareOptionalTimelineSequence(
         leftSequence,
         rightSequence,
@@ -522,7 +535,7 @@ function upsertToolCallEntry(
     toolCall,
     timestamp: toolCall.timestamp,
     updatedAt: toolCall.updatedAt,
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   };
   if (existingIndex === -1) {
     entries.push(entry);
@@ -536,7 +549,7 @@ function findOrCreateAssistantEntry(
   entries: SessionTimelineEntry[],
   id: string,
   timestamp: string,
-  timelineSequence: number | undefined,
+  sequence: number | undefined,
 ): SessionTimelineAssistantEntry {
   const existing = entries.find((entry): entry is SessionTimelineAssistantEntry => (
     entry.kind === "assistant_message" && entry.id === id
@@ -550,7 +563,7 @@ function findOrCreateAssistantEntry(
     chunks: [],
     timestamp,
     updatedAt: timestamp,
-    timelineSequence,
+    sequence,
   };
   entries.push(entry);
   return entry;
@@ -585,7 +598,7 @@ function mergeMessageEntry(
     message: incoming.message,
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
 }
 
@@ -598,7 +611,7 @@ function mergeContentChunk(
     id: current.id,
     text: mergeOptionalText(current.text, incoming.text) ?? "",
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
 }
 
@@ -612,7 +625,7 @@ function mergeThinkingChunk(
     text: mergeOptionalText(current.text, incoming.text) ?? "",
     title: /^thinking$/iu.test(current.title.trim()) ? incoming.title : current.title,
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
 }
 
@@ -632,10 +645,10 @@ function mergeToolCallEntry(
       input: mergeOptionalText(current.toolCall.input, incoming.toolCall.input),
       output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
       timestamp: current.toolCall.timestamp,
-      timelineSequence: current.toolCall.timelineSequence ?? incoming.toolCall.timelineSequence,
+      sequence: current.toolCall.sequence ?? incoming.toolCall.sequence,
     },
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
 }
 
@@ -719,7 +732,7 @@ function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {
   entry.chunks = sortedChunks;
   entry.timestamp = firstChunk?.timestamp ?? entry.timestamp;
   entry.updatedAt = lastChunk && "updatedAt" in lastChunk ? lastChunk.updatedAt : lastChunk?.timestamp ?? entry.updatedAt;
-  entry.timelineSequence = minDefined(sortedChunks.map((chunk) => chunk.timelineSequence));
+  entry.sequence = minDefined(sortedChunks.map((chunk) => chunk.sequence));
   entry.streaming = sortedChunks.some((chunk) => chunk.kind === "content" && chunk.streaming);
 }
 
@@ -747,18 +760,18 @@ function commandOutputToToolCall(output: CommandChunk): AgentToolCall {
     stream: output.stream,
     timestamp: output.timestamp,
     updatedAt: output.timestamp,
-    timelineSequence: output.timelineSequence,
+    sequence: output.sequence,
   };
 }
 
-function compareTimelineItems<T extends { timelineSequence?: number; timestamp: string }>(
+function compareTimelineItems<T extends { sequence?: number; timestamp: string }>(
   left: { item: T; index: number },
   right: { item: T; index: number },
 ) {
   const leftItem = left.item;
   const rightItem = right.item;
   const timestampDelta = compareIsoTimestamps(leftItem.timestamp, rightItem.timestamp);
-  const timelineDelta = compareOptionalTimelineSequence(leftItem.timelineSequence, rightItem.timelineSequence);
+  const timelineDelta = compareOptionalTimelineSequence(leftItem.sequence, rightItem.sequence);
   if (timelineDelta !== null) {
     const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
       timelineDelta,
@@ -769,7 +782,7 @@ function compareTimelineItems<T extends { timelineSequence?: number; timestamp: 
     }
     return timelineDelta;
   }
-  // When timelineSequence is absent or present on only one side, fall back to
+  // When sequence is absent or present on only one side, fall back to
   // chronological timestamp (then insertion index) rather than index alone, so
   // legacy history with partial sequences keeps real message/tool interleaving
   // instead of collapsing into the kind-segregated rebuild order.

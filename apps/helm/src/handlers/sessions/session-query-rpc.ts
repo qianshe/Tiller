@@ -3,6 +3,8 @@ import { isFallbackToolCallTitle, pageSessionTimeline } from "@tiller/persistenc
 import {
   buildSessionTimelineFromLegacy,
   injectTranscriptBoundaryEvents,
+  looksLikeCompactionCompletedMessage,
+  looksLikeCompactionLifecycleMessage,
   looksLikeContinuationSummary,
   resolveTimelineRepresentedUserMessageIds,
   splitSessionTimelineAssistantEntriesAtBoundaries,
@@ -17,6 +19,7 @@ import type {
 } from "@tiller/shared";
 import { reduceSessionUpdateRecords } from "../../runtime/session-updates/records";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
+import { buildSessionCompactionEntry } from "../../sessions/compaction-entry";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -259,7 +262,7 @@ function listSessionTimelinePage(
   }
   return {
     ...page,
-    entries: injectTranscriptBoundaryEntries(params, visibleMessages, persistedEntries),
+    entries: injectTranscriptBoundaryEntries(params, visibleMessages, persistedEntries, context),
   };
 }
 
@@ -275,7 +278,7 @@ function resolveRawTimelinePage(
     window: "message" as const,
   };
   const shouldResolveCompactionBootstrap = !options.before &&
-    visibleMessages.some((message) => looksLikeContinuationSummary(message.text));
+    Boolean(resolveCompactionBoundary(visibleMessages));
   let listedTimeline: SessionTimelineEntry[] | undefined;
   const getListedTimeline = () =>
     listedTimeline ??= splitSessionTimelineAssistantEntriesAtBoundaries(
@@ -288,20 +291,15 @@ function resolveRawTimelinePage(
         entries: splitSessionTimelineAssistantEntriesAtBoundaries(persistedPage.entries),
       }
     : undefined;
+  const persistedCompactionBootstrapPage = !options.before && normalizedPersistedPage
+    ? resolvePersistedCompactionTranscriptBootstrapPage(getListedTimeline(), options)
+    : undefined;
   const repairedPersistedTimeline = !options.before && normalizedPersistedPage
     ? repairTimelineFromSessionUpdates(params.sessionId, context, normalizedPersistedPage.entries)
     : undefined;
   if (repairedPersistedTimeline) {
     const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedPersistedTimeline);
     return pageTimelineEntries(stored, visibleMessages, options);
-  }
-  if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
-    if (
-      options.before ||
-      !isTimelineMissingVisibleHistoryAnchors(normalizedPersistedPage.entries, visibleMessages)
-    ) {
-      return normalizedPersistedPage;
-    }
   }
   if (persistedPage && shouldResolveCompactionBootstrap) {
     const compactionBootstrapPage = resolveCompactionBootstrapTimelinePage(
@@ -311,6 +309,20 @@ function resolveRawTimelinePage(
     );
     if (compactionBootstrapPage) {
       return compactionBootstrapPage;
+    }
+  }
+  if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
+    if (shouldPreferPersistedCompactionBootstrapPage(
+      persistedCompactionBootstrapPage,
+      normalizedPersistedPage,
+    )) {
+      return persistedCompactionBootstrapPage;
+    }
+    if (
+      options.before ||
+      !isTimelineMissingVisibleHistoryAnchors(normalizedPersistedPage.entries, visibleMessages)
+    ) {
+      return normalizedPersistedPage;
     }
   }
 
@@ -349,6 +361,7 @@ function pageTimelineEntries(
   options: { entryLimit?: number; limit?: number; before?: string; window?: "entry" | "message" },
 ) {
   return resolveCompactionBootstrapTimelinePage(entries, visibleMessages, options) ??
+    resolvePersistedCompactionTranscriptBootstrapPage(entries, options) ??
     pageSessionTimeline(entries, options);
 }
 
@@ -360,12 +373,12 @@ function resolveCompactionBootstrapTimelinePage(
   if (options.before) {
     return undefined;
   }
-  const continuationBoundary = resolveContinuationSummaryBoundary(visibleMessages);
-  if (!continuationBoundary) {
+  const compactionBoundary = resolveCompactionBoundary(visibleMessages);
+  if (!compactionBoundary) {
     return undefined;
   }
   const resumedAnchorIndex = entries.findIndex((entry) =>
-    timelineEntryRepresentsMessage(entry, continuationBoundary.resumedMessage)
+    timelineEntryRepresentsMessage(entry, compactionBoundary.resumedMessage)
   );
   if (resumedAnchorIndex === -1) {
     return undefined;
@@ -381,7 +394,7 @@ function resolveCompactionBootstrapTimelinePage(
   const startIndex = findPreviousTimelineMessageAnchorIndex(
     entries,
     resumedAnchorIndex,
-    continuationBoundary.prefaceMessages,
+    compactionBoundary.prefaceMessages,
   );
   if (startIndex === -1) {
     return undefined;
@@ -404,11 +417,98 @@ function resolveCompactionBootstrapTimelinePage(
   };
 }
 
+function resolvePersistedCompactionTranscriptBootstrapPage(
+  entries: SessionTimelineEntry[],
+  options: { entryLimit?: number; before?: string },
+) {
+  if (options.before) {
+    return undefined;
+  }
+  const compactionIndex = findLatestCompactionEntryIndex(entries);
+  if (compactionIndex === -1) {
+    return undefined;
+  }
+  const resumedAnchorIndex = findResumedAnchorIndexAfterCompaction(entries, compactionIndex);
+  if (resumedAnchorIndex === -1) {
+    return undefined;
+  }
+  const endIndex = findLastTimelineMessageAnchorIndex(entries, [], resumedAnchorIndex);
+  if (endIndex === -1 || endIndex <= resumedAnchorIndex) {
+    return undefined;
+  }
+  const page = buildCompactionBootstrapPage(entries, {
+    startIndex: compactionIndex,
+    resumedAnchorIndex,
+    endIndex,
+    entryLimit: Math.max(options.entryLimit ?? TIMELINE_ENTRY_PAGE_LIMIT, 1),
+  });
+  if (!page) {
+    return undefined;
+  }
+  return {
+    entries: page.entries,
+    nextCursor: page.hasMore
+      ? encodeTimelineOrderCursor(page.cursorPosition, entries[page.cursorPosition]?.id)
+      : undefined,
+    hasMore: page.hasMore,
+  };
+}
+
+function shouldPreferPersistedCompactionBootstrapPage(
+  bootstrapPage: { entries: SessionTimelineEntry[] } | undefined,
+  persistedPage: { entries: SessionTimelineEntry[] },
+) {
+  if (!bootstrapPage) {
+    return false;
+  }
+  const latestCompactionEntry = bootstrapPage.entries.find((entry) => entry.kind === "context_compaction");
+  if (!latestCompactionEntry) {
+    return false;
+  }
+  return !persistedPage.entries.some((entry) => entry.id === latestCompactionEntry.id);
+}
+
+function findLatestCompactionEntryIndex(entries: SessionTimelineEntry[]) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]?.kind === "context_compaction") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function findResumedAnchorIndexAfterCompaction(
+  entries: SessionTimelineEntry[],
+  compactionIndex: number,
+) {
+  for (let index = compactionIndex + 1; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    if (entry.kind === "session_resumed") {
+      return index;
+    }
+    if (isTimelineMessageAnchor(entry)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function findLastTimelineMessageAnchorIndex(
   entries: SessionTimelineEntry[],
   visibleMessages: AgentMessage[],
   minimumIndex: number,
 ) {
+  if (!visibleMessages.length) {
+    for (let entryIndex = entries.length - 1; entryIndex >= minimumIndex; entryIndex -= 1) {
+      if (isTimelineMessageAnchor(entries[entryIndex]!)) {
+        return entryIndex;
+      }
+    }
+    return -1;
+  }
   for (let messageIndex = visibleMessages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = visibleMessages[messageIndex];
     if (!message) {
@@ -463,8 +563,24 @@ function buildCompactionBootstrapPage(
   };
 }
 
+type CompactionBoundary = {
+  summaryMessage: AgentMessage;
+  summaryText?: string;
+  resumedMessage: AgentMessage;
+  prefaceMessages: AgentMessage[];
+};
+
 function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
-  const markerIndex = messages.findIndex((message) => looksLikeContinuationSummary(message.text));
+  return resolveContinuationSummaryBoundaryFromIndex(messages, 0)?.boundary;
+}
+
+function resolveContinuationSummaryBoundaryFromIndex(
+  messages: AgentMessage[],
+  startIndex: number,
+): { boundary: CompactionBoundary; nextIndex: number } | undefined {
+  const markerIndex = messages.findIndex((message, index) =>
+    index >= startIndex && looksLikeContinuationSummary(message.text)
+  );
   if (markerIndex === -1) {
     return undefined;
   }
@@ -474,11 +590,87 @@ function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
     if (!message) {
       continue;
     }
-    if (index > markerIndex && typeof message.timelineSequence === "number") {
+    if (index > markerIndex && typeof message.sequence === "number") {
       return {
-        summaryMessage: messages[markerIndex]!,
-        resumedMessage: message,
-        prefaceMessages,
+        boundary: {
+          summaryMessage: messages[markerIndex]!,
+          summaryText: messages[markerIndex]!.text,
+          resumedMessage: message,
+          prefaceMessages,
+        },
+        nextIndex: index,
+      };
+    }
+    prefaceMessages.push(message);
+  }
+  return undefined;
+}
+
+function resolveCompactionBoundary(messages: AgentMessage[]) {
+  return resolveCompactionBoundaries(messages)[0];
+}
+
+function resolveCompactionBoundaries(messages: AgentMessage[]) {
+  const boundaries: CompactionBoundary[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const continuationBoundary = resolveContinuationSummaryBoundaryFromIndex(messages, index);
+    if (continuationBoundary && continuationBoundary.nextIndex >= index) {
+      boundaries.push(continuationBoundary.boundary);
+      index = continuationBoundary.nextIndex - 1;
+      continue;
+    }
+    const explicitBoundary = resolveExplicitCompactionLifecycleBoundaryFromIndex(messages, index);
+    if (explicitBoundary && explicitBoundary.nextIndex >= index) {
+      boundaries.push(explicitBoundary.boundary);
+      index = explicitBoundary.nextIndex - 1;
+    }
+  }
+  return boundaries;
+}
+
+function resolveExplicitCompactionLifecycleBoundary(messages: AgentMessage[]) {
+  return resolveExplicitCompactionLifecycleBoundaryFromIndex(messages, 0)?.boundary;
+}
+
+function resolveExplicitCompactionLifecycleBoundaryFromIndex(
+  messages: AgentMessage[],
+  startIndex: number,
+): { boundary: CompactionBoundary; nextIndex: number } | undefined {
+  const completedIndex = messages.findIndex((message, index) =>
+    index >= startIndex && looksLikeCompactionCompletedMessage(message.text)
+  );
+  if (completedIndex === -1) {
+    return undefined;
+  }
+  let boundaryStartIndex = completedIndex;
+  while (boundaryStartIndex > startIndex) {
+    const previousMessage = messages[boundaryStartIndex - 1];
+    if (!previousMessage || !looksLikeCompactionLifecycleMessage(previousMessage.text)) {
+      break;
+    }
+    boundaryStartIndex -= 1;
+  }
+  const prefaceMessages: AgentMessage[] = [];
+  let resolvedSummaryText: string | undefined;
+  for (let index = boundaryStartIndex; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    if (index > completedIndex && looksLikeContinuationSummary(message.text)) {
+      resolvedSummaryText ??= message.text;
+      prefaceMessages.push(message);
+      continue;
+    }
+    if (index > completedIndex && !looksLikeCompactionLifecycleMessage(message.text)) {
+      return {
+        boundary: {
+          summaryMessage: messages[completedIndex]!,
+          summaryText: resolvedSummaryText,
+          resumedMessage: message,
+          prefaceMessages,
+        },
+        nextIndex: index,
       };
     }
     prefaceMessages.push(message);
@@ -490,37 +682,167 @@ function injectTranscriptBoundaryEntries(
   params: { sessionId: string; before?: string; timelineBefore?: string },
   visibleMessages: AgentMessage[],
   entries: SessionTimelineEntry[],
+  context: HelmHandlerContext,
 ) {
   if (params.before || params.timelineBefore) {
     return entries;
   }
-  const boundary = resolveContinuationSummaryBoundary(visibleMessages);
-  if (!boundary) {
+  const boundaries = resolveCompactionBoundaries(visibleMessages);
+  if (!boundaries.length) {
     return entries;
   }
-  if (!entries.some((entry) => timelineEntryRepresentsMessage(entry, boundary.resumedMessage))) {
-    return entries;
+  let nextEntries = [...entries];
+  for (const boundary of boundaries) {
+    nextEntries = reconcileTranscriptBoundaryEntries(
+      nextEntries,
+      boundary,
+      params.sessionId,
+      context,
+    );
   }
-  return injectTranscriptBoundaryEvents(
-    entries,
-    {
-      kind: "context_compaction",
-      id: `compaction:${params.sessionId}:${boundary.summaryMessage.id}`,
-      summaryMessageId: boundary.summaryMessage.id,
-      summaryText: boundary.summaryMessage.text,
-      timestamp: boundary.summaryMessage.timestamp,
-      updatedAt: boundary.summaryMessage.timestamp,
-      replayCompleteness: "compacted",
-    },
-    {
-      kind: "session_resumed",
-      id: `resume:${params.sessionId}:${boundary.resumedMessage.id}`,
-      restoreMethod: "session/load",
-      timestamp: boundary.resumedMessage.timestamp,
-      updatedAt: boundary.resumedMessage.timestamp,
-      replayCompleteness: "compacted",
-    },
+  return nextEntries;
+}
+
+function reconcileTranscriptBoundaryEntries(
+  entries: SessionTimelineEntry[],
+  boundary: CompactionBoundary,
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const resumedAnchorIndex = entries.findIndex((entry) =>
+    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
   );
+  if (resumedAnchorIndex === -1) {
+    return entries;
+  }
+  const syntheticCompactionEntry = buildSessionCompactionEntry({
+    sessionId,
+    context,
+    summaryMessageId: boundary.summaryMessage.id,
+    summaryText: boundary.summaryText,
+    timestamp: boundary.summaryMessage.timestamp,
+  });
+  const resumedEntry = {
+    kind: "session_resumed" as const,
+    id: `resume:${sessionId}:${boundary.resumedMessage.id}`,
+    restoreMethod: "session/load" as const,
+    timestamp: boundary.resumedMessage.timestamp,
+    updatedAt: boundary.resumedMessage.timestamp,
+    replayCompleteness: "compacted" as const,
+  };
+  const nextEntries = [...entries];
+  const existingCompactionIndex = findMatchingCompactionBoundaryIndex(
+    nextEntries,
+    boundary,
+    resumedAnchorIndex,
+  );
+  const detachedCompactionEntry = existingCompactionIndex === -1
+    ? findDetachedCompactionBoundaryEntry(sessionId, context, boundary)
+    : undefined;
+  const anchoredCompactionEntry = existingCompactionIndex === -1
+    ? detachedCompactionEntry
+      ? mergeBoundaryCompactionEntry(detachedCompactionEntry, syntheticCompactionEntry)
+      : syntheticCompactionEntry
+    : mergeBoundaryCompactionEntry(
+        nextEntries.splice(existingCompactionIndex, 1)[0] as Extract<SessionTimelineEntry, { kind: "context_compaction" }>,
+        syntheticCompactionEntry,
+      );
+  const existingResumeIndex = nextEntries.findIndex((entry) => entry.id === resumedEntry.id);
+  if (existingResumeIndex !== -1) {
+    nextEntries.splice(existingResumeIndex, 1);
+  }
+  const insertIndex = nextEntries.findIndex((entry) =>
+    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
+  );
+  if (insertIndex === -1) {
+    return entries;
+  }
+  nextEntries.splice(insertIndex, 0, anchoredCompactionEntry, resumedEntry);
+  return nextEntries;
+}
+
+function findDetachedCompactionBoundaryEntry(
+  sessionId: string,
+  context: HelmHandlerContext,
+  boundary: CompactionBoundary,
+) {
+  const persistedEntries = context.sessionTimelineStore?.list?.(sessionId) ?? [];
+  if (!persistedEntries.length) {
+    return undefined;
+  }
+  const resumedAnchorIndex = persistedEntries.findIndex((entry: SessionTimelineEntry) =>
+    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
+  );
+  const matchIndex = findMatchingCompactionBoundaryIndex(
+    persistedEntries,
+    boundary,
+    resumedAnchorIndex === -1 ? persistedEntries.length : resumedAnchorIndex,
+  );
+  const entry = matchIndex === -1 ? undefined : persistedEntries[matchIndex];
+  return entry?.kind === "context_compaction" ? entry : undefined;
+}
+
+function findMatchingCompactionBoundaryIndex(
+  entries: SessionTimelineEntry[],
+  boundary: CompactionBoundary,
+  resumedAnchorIndex: number,
+) {
+  const compactionIndexes = entries.flatMap((entry, index) =>
+    entry.kind === "context_compaction" ? [index] : []
+  );
+  const exactSummaryIdIndex = entries.findIndex((entry) =>
+    entry.kind === "context_compaction" &&
+    entry.summaryMessageId === boundary.summaryMessage.id
+  );
+  if (exactSummaryIdIndex !== -1) {
+    return exactSummaryIdIndex;
+  }
+  for (let index = resumedAnchorIndex - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.kind === "context_compaction") {
+      return index;
+    }
+    if (entry && isTimelineMessageAnchor(entry)) {
+      break;
+    }
+  }
+  if (compactionIndexes.length === 1) {
+    return compactionIndexes[0] ?? -1;
+  }
+  const boundaryTime = Date.parse(boundary.summaryMessage.timestamp);
+  let bestIndex = -1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry?.kind !== "context_compaction") {
+      continue;
+    }
+    const entryTime = Date.parse(entry.timestamp);
+    const delta = Number.isFinite(entryTime) && Number.isFinite(boundaryTime)
+      ? Math.abs(boundaryTime - entryTime)
+      : 0;
+    if (Number.isFinite(delta) && delta <= 5 * 60 * 1000 && delta < bestDelta) {
+      bestDelta = delta;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
+function mergeBoundaryCompactionEntry(
+  current: Extract<SessionTimelineEntry, { kind: "context_compaction" }>,
+  incoming: ReturnType<typeof buildSessionCompactionEntry>,
+) {
+  return {
+    ...current,
+    ...incoming,
+    id: current.id,
+    timestamp: current.timestamp,
+    updatedAt: incoming.updatedAt ?? incoming.timestamp ?? current.updatedAt,
+    summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
+    summaryText: incoming.summaryText ?? current.summaryText,
+    detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,
+  };
 }
 
 function findPreviousTimelineMessageAnchorIndex(
@@ -553,9 +875,9 @@ function timelineEntryRepresentsMessage(entry: SessionTimelineEntry, message: Ag
   if (entry.message.text.trim() !== message.text.trim()) {
     return false;
   }
-  const entrySequence = entry.message.timelineSequence ?? entry.timelineSequence;
-  if (typeof entrySequence === "number" && typeof message.timelineSequence === "number") {
-    return entrySequence === message.timelineSequence;
+  const entrySequence = entry.message.sequence ?? entry.sequence;
+  if (typeof entrySequence === "number" && typeof message.sequence === "number") {
+    return entrySequence === message.sequence;
   }
   return entry.message.timestamp === message.timestamp || entry.timestamp === message.timestamp;
 }
@@ -576,7 +898,7 @@ function assistantEntryRepresentsMessage(
     if (representsAssistantMessage({
       text: cumulativeText.trim(),
       timestamp: chunk.timestamp,
-      timelineSequence: chunk.timelineSequence,
+      sequence: chunk.sequence,
     }, message)) {
       return true;
     }
@@ -601,10 +923,18 @@ function repairTimelineFromSessionUpdates(
 }
 
 function shouldInspectSessionUpdateRepair(entries: SessionTimelineEntry[]) {
-  return entries.some((entry) => entry.kind === "tool_call") &&
-    entries.some((entry) =>
-      entry.kind === "assistant_message" &&
-      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim())
+  const hasAssistantContent = entries.some((entry) =>
+    entry.kind === "assistant_message" &&
+    entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim())
+  );
+  if (!hasAssistantContent) {
+    return false;
+  }
+  return entries.some((entry) => entry.kind === "tool_call") ||
+    !entries.some((entry) =>
+      entry.kind === "context_compaction" ||
+      entry.kind === "session_resumed" ||
+      entry.kind === "history_gap"
     );
 }
 
@@ -644,7 +974,12 @@ function shouldReplaceTimelineWithUpdateReplay(
   current: SessionTimelineEntry[],
   replayed: SessionTimelineEntry[],
 ) {
-  if (!replayed.length || !shouldInspectSessionUpdateRepair(replayed)) {
+  const replayedHasTranscriptEvents = replayed.some((entry) =>
+    entry.kind === "context_compaction" ||
+    entry.kind === "session_resumed" ||
+    entry.kind === "history_gap"
+  );
+  if (!replayed.length || (!shouldInspectSessionUpdateRepair(replayed) && !replayedHasTranscriptEvents)) {
     return false;
   }
   const currentSequences = collectAssistantContentSequences(current);
@@ -654,7 +989,33 @@ function shouldReplaceTimelineWithUpdateReplay(
   ) {
     return true;
   }
+  if (replayedHasTranscriptEventsMissingFromCurrent(current, replayed)) {
+    return true;
+  }
   return replayedHasStrongerToolMetadata(current, replayed);
+}
+
+function replayedHasTranscriptEventsMissingFromCurrent(
+  current: SessionTimelineEntry[],
+  replayed: SessionTimelineEntry[],
+) {
+  const currentTranscriptIds = new Set(
+    current
+      .filter((entry) =>
+        entry.kind === "context_compaction" ||
+        entry.kind === "session_resumed" ||
+        entry.kind === "history_gap"
+      )
+      .map((entry) => entry.id),
+  );
+  return replayed.some((entry) =>
+    (
+      entry.kind === "context_compaction" ||
+      entry.kind === "session_resumed" ||
+      entry.kind === "history_gap"
+    ) &&
+    !currentTranscriptIds.has(entry.id)
+  );
 }
 
 function replayedHasStrongerToolMetadata(
@@ -732,8 +1093,8 @@ function collectAssistantContentSequences(entries: SessionTimelineEntry[]) {
       continue;
     }
     for (const chunk of entry.chunks) {
-      if (chunk.kind === "content" && typeof chunk.timelineSequence === "number") {
-        sequences.add(chunk.timelineSequence);
+      if (chunk.kind === "content" && typeof chunk.sequence === "number") {
+        sequences.add(chunk.sequence);
       }
     }
   }
@@ -798,7 +1159,7 @@ function isVisibleAssistantMessage(message: AgentMessage) {
 type AssistantContentSnapshot = {
   text: string;
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 function collectTimelineAssistantContentSnapshots(
@@ -820,7 +1181,7 @@ function collectTimelineAssistantContentSnapshots(
       snapshots.push({
         text: cumulativeText.trim(),
         timestamp: chunk.timestamp,
-        timelineSequence: chunk.timelineSequence,
+        sequence: chunk.sequence,
       });
     }
     cumulativeTextByEntryKey.set(entryKey, cumulativeText);
@@ -840,10 +1201,10 @@ function representsAssistantMessage(
     return false;
   }
   if (
-    typeof snapshot.timelineSequence === "number" &&
-    typeof message.timelineSequence === "number"
+    typeof snapshot.sequence === "number" &&
+    typeof message.sequence === "number"
   ) {
-    return snapshot.timelineSequence === message.timelineSequence;
+    return snapshot.sequence === message.sequence;
   }
   return snapshot.timestamp === message.timestamp;
 }
@@ -1016,7 +1377,10 @@ function resolveTranscriptStatus(
   before: string | undefined,
   timelineBefore: string | undefined,
 ): SessionTranscriptStatus {
-  const hasCompaction = visibleMessages.some((message) => looksLikeContinuationSummary(message.text));
+  const hasCompaction = visibleMessages.some((message) =>
+    looksLikeContinuationSummary(message.text) ||
+    looksLikeCompactionLifecycleMessage(message.text)
+  );
 
   if (!hasCompaction || before || timelineBefore) {
     return {

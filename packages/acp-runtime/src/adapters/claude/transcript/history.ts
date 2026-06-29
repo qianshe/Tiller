@@ -38,7 +38,7 @@ export function extractClaudeVisibleMessagesFromTranscriptText(raw: string): Age
       role,
       text,
       timestamp: firstString(record.timestamp) || new Date(0).toISOString(),
-      timelineSequence: visibleSequence,
+      sequence: visibleSequence,
     });
   }
 

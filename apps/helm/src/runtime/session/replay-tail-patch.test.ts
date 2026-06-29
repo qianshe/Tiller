@@ -9,7 +9,7 @@ function message(id: string, text: string, sequence: number, role: "user" | "ass
     role,
     text,
     timestamp: new Date(Date.now() + sequence * 1000).toISOString(),
-    timelineSequence: sequence,
+    sequence: sequence,
   };
 }
 
@@ -20,7 +20,7 @@ function userEntry(id: string, text: string, sequence: number): SessionTimelineE
     message: message(id, text, sequence),
     timestamp: new Date(Date.now() + sequence * 1000).toISOString(),
     updatedAt: new Date(Date.now() + sequence * 1000).toISOString(),
-    timelineSequence: sequence,
+    sequence: sequence,
   };
 }
 

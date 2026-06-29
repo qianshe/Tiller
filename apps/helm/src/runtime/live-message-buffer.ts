@@ -16,7 +16,7 @@ export function createLiveMessageBuffer() {
       ...message,
       text: mergeLiveMessageText(current.text, message.text),
       timestamp: message.timestamp,
-      timelineSequence: current.timelineSequence ?? message.timelineSequence,
+      sequence: current.sequence ?? message.sequence,
     };
     messages.set(sessionId, next);
     return next;

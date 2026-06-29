@@ -5,6 +5,7 @@ import * as sessionDiscardDraft from "./discard-draft";
 import * as sessionNew from "./new";
 import * as sessionList from "./list";
 import * as sessionListMessages from "./list-messages";
+import * as sessionListTimeline from "./list-timeline";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
@@ -116,6 +117,30 @@ test("session/list_messages requires sessionId", () => {
   });
   assert.equal(result.timeline?.[0]?.id, "timeline-1");
   assert.equal(result.timelineHasMore, true);
+});
+
+test("session/list_timeline returns paginated canonical timeline entries", () => {
+  assert.equal(sessionListTimeline.method, "session/list_timeline");
+  assert.throws(() => sessionListTimeline.ParamsSchema.parse({}));
+  sessionListTimeline.ParamsSchema.parse({ sessionId: "s1" });
+  sessionListTimeline.ParamsSchema.parse({ sessionId: "s1", limit: 20, before: "order\t5\tentry-5" });
+  const result = sessionListTimeline.ResultSchema.parse({
+    sessionId: "s1",
+    entries: [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [],
+        timestamp: "2026-06-29T10:00:01.000Z",
+        updatedAt: "2026-06-29T10:00:01.000Z",
+        sequence: 1,
+      },
+    ],
+    nextCursor: "order\t1\tassistant-1",
+    hasMore: true,
+  });
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.hasMore, true);
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {

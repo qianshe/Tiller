@@ -60,7 +60,7 @@ test("sortAgentMessagesByTimeline orders mixed timeline sequences by timestamp",
       id: "provider-assistant",
       text: "Provider 回复",
       timestamp: "2026-04-28T10:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
@@ -96,7 +96,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     id: "msg-seq-3",
     text: "具体回复",
     timestamp,
-    timelineSequence: 3,
+    sequence: 3,
   } as AgentMessage;
   const thinking = {
     id: "think-seq-1",
@@ -106,7 +106,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     output: "先思考",
     timestamp,
     updatedAt: timestamp,
-    timelineSequence: 1,
+    sequence: 1,
   } as AgentToolCall;
   const toolCall = {
     id: "tool-seq-2",
@@ -116,7 +116,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     output: "PASS",
     timestamp,
     updatedAt: timestamp,
-    timelineSequence: 2,
+    sequence: 2,
   } as AgentToolCall;
 
   const timeline = buildConversationTimeline([message], [], [toolCall, thinking]);
@@ -144,7 +144,7 @@ test("buildConversationTimeline orders mixed sequence legacy prompts by timestam
     stream: "stdout",
     timestamp: "2026-04-28T10:00:02.000Z",
     updatedAt: "2026-04-28T10:00:02.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
 
   const timeline = buildConversationTimeline([userMessage], [], [toolCall]);

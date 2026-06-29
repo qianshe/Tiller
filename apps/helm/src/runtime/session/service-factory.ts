@@ -112,8 +112,8 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     }
 
     const sanitizedMessages = messages.map((message) =>
-      sanitized.clearedMessageIds.has(message.id) && typeof message.timelineSequence === "number"
-        ? { ...message, timelineSequence: undefined }
+      sanitized.clearedMessageIds.has(message.id) && typeof message.sequence === "number"
+        ? { ...message, sequence: undefined }
         : message
     );
     const sanitizedArtifacts = clearRecoveredArtifactTimelineSequences({

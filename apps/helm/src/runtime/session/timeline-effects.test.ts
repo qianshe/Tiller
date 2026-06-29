@@ -10,19 +10,19 @@ function at(seconds: number) {
   return new Date(Date.parse(BASE_TIME) + seconds * 1000).toISOString();
 }
 
-function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "timelineSequence">): AgentMessage {
+function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "sequence">): AgentMessage {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
 
 function toolCall(
-  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "timelineSequence">,
+  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "sequence">,
 ): AgentToolCall {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
-    updatedAt: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
+    updatedAt: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
@@ -36,10 +36,10 @@ test("persistTimelineMessage uses bounded timeline message upsert when available
   const storedEntry: SessionTimelineEntry = {
     id: "assistant-1",
     kind: "assistant_message",
-    chunks: [{ id: "assistant-1:content", kind: "content", text: "done", timestamp: at(1), timelineSequence: 1 }],
+    chunks: [{ id: "assistant-1:content", kind: "content", text: "done", timestamp: at(1), sequence: 1 }],
     timestamp: at(1),
     updatedAt: at(1),
-    timelineSequence: 1,
+    sequence: 1,
   };
   const context = contextWithTimelineStore({
     upsertMessage(sessionId: string, item: AgentMessage) {
@@ -59,7 +59,7 @@ test("persistTimelineMessage uses bounded timeline message upsert when available
   const result = persistTimelineMessage(
     context,
     "session-1",
-    message({ id: "assistant-1", role: "assistant", text: "done", timelineSequence: 1 }),
+    message({ id: "assistant-1", role: "assistant", text: "done", sequence: 1 }),
   );
 
   assert.equal(result, storedEntry);
@@ -71,10 +71,10 @@ test("persistTimelineToolCall uses bounded timeline tool-call upsert when availa
   const storedEntry: SessionTimelineEntry = {
     id: "tool:read-1",
     kind: "tool_call",
-    toolCall: toolCall({ id: "read-1", kind: "read", status: "completed", title: "Read", timelineSequence: 2 }),
+    toolCall: toolCall({ id: "read-1", kind: "read", status: "completed", title: "Read", sequence: 2 }),
     timestamp: at(2),
     updatedAt: at(2),
-    timelineSequence: 2,
+    sequence: 2,
   };
   const context = contextWithTimelineStore({
     upsertToolCall(sessionId: string, item: AgentToolCall) {
@@ -94,7 +94,7 @@ test("persistTimelineToolCall uses bounded timeline tool-call upsert when availa
   const result = persistTimelineToolCall(
     context,
     "session-1",
-    toolCall({ id: "read-1", kind: "read", status: "completed", title: "Read", timelineSequence: 2 }),
+    toolCall({ id: "read-1", kind: "read", status: "completed", title: "Read", sequence: 2 }),
   );
 
   assert.equal(result, storedEntry);

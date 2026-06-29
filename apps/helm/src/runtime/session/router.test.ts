@@ -181,9 +181,9 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   assert.equal(result.accepted, "sent");
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0]?.id, "client-1");
-  assert.equal(typeof persisted[0]?.timelineSequence, "number");
+  assert.equal(typeof persisted[0]?.sequence, "number");
   assert.deepEqual(sessionUpdates.map((update) => [update.source, update.updateType, update.sequence]), [
-    ["acp_live", "message", persisted[0]?.timelineSequence],
+    ["acp_live", "message", persisted[0]?.sequence],
   ]);
   assert.deepEqual(traceEvents.map((event) => event.phase).filter((phase) => phase.startsWith("helm.prompt.")), [
     "helm.prompt.ack",
@@ -237,12 +237,12 @@ test("sendPromptToSession appends prompts after restored timeline history", asyn
         kind: "content",
         text: "旧回复结尾",
         timestamp: "2026-06-10T09:00:00.000Z",
-        timelineSequence: 237,
+        sequence: 237,
       },
     ],
     timestamp: "2026-06-10T09:00:00.000Z",
     updatedAt: "2026-06-10T09:00:00.000Z",
-    timelineSequence: 237,
+    sequence: 237,
   });
 
   await sendPromptToSession(
@@ -256,9 +256,9 @@ test("sendPromptToSession appends prompts after restored timeline history", asyn
   await flushPromises();
 
   assert.deepEqual(prompted, ["新的审核 prompt"]);
-  assert.equal(persisted[0]?.timelineSequence, 238);
+  assert.equal(persisted[0]?.sequence, 238);
   assert.deepEqual(
-    timelineEntries.map((entry) => [entry.kind, (entry as any).timelineSequence]),
+    timelineEntries.map((entry) => [entry.kind, (entry as any).sequence]),
     [
       ["assistant_message", 237],
       ["user_message", 238],

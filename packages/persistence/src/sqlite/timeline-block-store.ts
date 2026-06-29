@@ -369,6 +369,17 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
       return replaceBlocksForSession(sessionId, entries);
     },
+    applyBatch(sessionId: string, batch: import("@tiller/shared").SessionTimelineBatch) {
+      if (batch.replace) {
+        return replaceBlocksForSession(sessionId, batch.entries);
+      }
+      const current = this.list(sessionId);
+      const byId = new Map(current.map((entry) => [entry.id, entry]));
+      for (const entry of batch.entries) {
+        byId.set(entry.id, entry);
+      }
+      return replaceBlocksForSession(sessionId, [...byId.values()]);
+    },
     list(sessionId: string) {
       return readNewestPositionedEntries(sessionId, undefined, Number.MAX_SAFE_INTEGER)
         .reverse()

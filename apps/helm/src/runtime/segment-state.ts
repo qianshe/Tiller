@@ -13,7 +13,7 @@ const activeAssistantRuntimeMessageBySession = new Map<
 >();
 const activeAssistantRuntimeThinkingBySession = new Map<
   string,
-  { sourceId: string; segmentId: string; text: string; timestamp: string; timelineSequence?: number }
+  { sourceId: string; segmentId: string; text: string; timestamp: string; sequence?: number }
 >();
 
 export function bumpAssistantStreamSegment(sessionId: string) {
@@ -79,7 +79,7 @@ export function normalizeRuntimeThinkingToolCall(
       ...toolCall,
       id: active.segmentId,
       commandId: active.segmentId,
-      timelineSequence: active.timelineSequence ?? toolCall.timelineSequence,
+      sequence: active.sequence ?? toolCall.sequence,
     };
   }
 
@@ -96,7 +96,7 @@ export function normalizeRuntimeThinkingToolCall(
     segmentId,
     text,
     timestamp: toolCall.timestamp,
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   });
   return {
     ...toolCall,
@@ -124,6 +124,6 @@ export function finalizeActiveRuntimeThinking(sessionId: string): AgentToolCall 
     status: "completed",
     timestamp: active.timestamp,
     updatedAt: now,
-    timelineSequence: active.timelineSequence,
+    sequence: active.sequence,
   };
 }

@@ -13,6 +13,10 @@ import {
   appendToolCallToSessionTimeline,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
+import {
+  buildSessionCompactionEntryFromProvider,
+  upsertSessionCompactionEntry,
+} from "../../sessions/compaction-entry";
 
 export type SessionUpdateReducerState = {
   entries: SessionTimelineEntry[];
@@ -38,16 +42,26 @@ export function applySessionUpdateRecordToState(
   record: SessionUpdateRecord,
 ): SessionUpdateReducerState {
   const event = parseSessionRuntimeEvent(record.payloadJson);
-  return event ? applySessionRuntimeEventToState(state, event) : state;
+  return event ? applySessionRuntimeEventToStateWithMeta(state, event, record) : state;
 }
 
 export function applySessionRuntimeEventToState(
   state: SessionUpdateReducerState,
   event: SessionRuntimeEvent,
 ): SessionUpdateReducerState {
+  return applySessionRuntimeEventToStateWithMeta(state, event);
+}
+
+function applySessionRuntimeEventToStateWithMeta(
+  state: SessionUpdateReducerState,
+  event: SessionRuntimeEvent,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
+): SessionUpdateReducerState {
   switch (event.type) {
     case "message":
       return applyMessage(state, event.message);
+    case "compaction":
+      return applyCompaction(state, event, meta);
     case "tool-call":
       return applyToolCall(state, event.toolCall);
     case "command-output":
@@ -59,6 +73,30 @@ export function applySessionRuntimeEventToState(
     default:
       return state;
   }
+}
+
+function applyCompaction(
+  state: SessionUpdateReducerState,
+  event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
+): SessionUpdateReducerState {
+  if (event.phase !== "completed" || !meta?.sessionId) {
+    return state;
+  }
+  const entry = buildSessionCompactionEntryFromProvider({
+    sessionId: meta.sessionId,
+    providerId: meta.providerId,
+    timestamp: event.timestamp,
+    summaryText: event.summaryText,
+    summaryMessageId: event.messageId,
+    idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
+  });
+  const entries = [...state.entries];
+  upsertSessionCompactionEntry(entries, entry);
+  return {
+    ...state,
+    entries: sortSessionTimelineEntries(entries),
+  };
 }
 
 export function createSessionUpdateRecord(input: {
@@ -160,7 +198,7 @@ function upsertMessage(messages: AgentMessage[], incoming: AgentMessage) {
     ...incoming,
     text: mergeText(current.text, incoming.text),
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
   return next;
 }
@@ -179,7 +217,7 @@ function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
     input: mergeText(current.input, incoming.input),
     output: mergeText(current.output, incoming.output),
   };

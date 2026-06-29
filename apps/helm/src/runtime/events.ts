@@ -2,10 +2,14 @@ import { applyAgentMessageToSummary, applyUserPromptToSummary } from "../session
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+import { buildSessionCompactionEntry } from "../sessions/compaction-entry";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session/event/publisher";
 import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session/event/effects";
-import { persistTimelineMessage } from "./session/timeline-effects";
+import {
+  persistTimelineMessage,
+  persistTimelineTranscriptEvent,
+} from "./session/timeline-effects";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import {
   resolveConfigOptionsForSelection,
@@ -165,11 +169,11 @@ export function persistRuntimeSessionUpdate(
 function sequenceFromRuntimeEvent(event: SessionRuntimeEvent) {
   switch (event.type) {
     case "message":
-      return event.message.timelineSequence;
+      return event.message.sequence;
     case "tool-call":
-      return event.toolCall.timelineSequence;
+      return event.toolCall.sequence;
     case "command-output":
-      return event.chunk.timelineSequence;
+      return event.chunk.sequence;
     default:
       return undefined;
   }
@@ -204,7 +208,7 @@ function logRuntimePlanUpdate(
 function recordCommandOutputSummary(
   sessionId: string,
   chunk: Extract<SessionRuntimeEvent, { type: "command-output" }>["chunk"],
-  timelineSequence: number,
+  sequence: number,
 ) {
   const summaries = commandOutputSummaryBySession.get(sessionId) ?? new Map<string, CommandOutputSummary>();
   commandOutputSummaryBySession.set(sessionId, summaries);
@@ -215,15 +219,15 @@ function recordCommandOutputSummary(
       chars: chunk.text.length,
       chunks: 1,
       commandId: chunk.commandId,
-      firstSeq: timelineSequence,
-      lastSeq: timelineSequence,
+      firstSeq: sequence,
+      lastSeq: sequence,
       stream: chunk.stream,
     });
     return;
   }
   current.chars += chunk.text.length;
   current.chunks += 1;
-  current.lastSeq = timelineSequence;
+  current.lastSeq = sequence;
 }
 
 function flushCommandOutputSummaries(sessionId: string, context: HelmHandlerContext) {
@@ -337,9 +341,9 @@ export function handleRuntimeEvent(
       const message = {
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
-        timelineSequence: nextLiveEventSequence(sessionId),
+        sequence: nextLiveEventSequence(sessionId),
       };
-      persistRuntimeSessionUpdate(sessionId, { ...event, message }, context, message.timelineSequence);
+      persistRuntimeSessionUpdate(sessionId, { ...event, message }, context, message.sequence);
       emitFirstHelmPromptTrace(context, {
         sessionId,
         phase: "helm.runtime.first_message",
@@ -355,6 +359,34 @@ export function handleRuntimeEvent(
         message: bufferedMessage,
         streaming: true,
       });
+      return;
+    case "compaction":
+      flushLiveAssistantMessage(sessionId, context);
+      startNextAssistantResponseSegment(sessionId);
+      persistRuntimeSessionUpdate(sessionId, event, context);
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
+        kind: "compaction_state",
+        phase: event.phase,
+        source: event.source,
+        timestamp: event.timestamp,
+        summaryText: event.summaryText,
+      });
+      if (event.phase === "completed") {
+        const compactionEntry = buildSessionCompactionEntry({
+          sessionId,
+          context,
+          summaryText: event.summaryText,
+          summaryMessageId: event.messageId,
+          timestamp: event.timestamp,
+          idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
+        });
+        const storedCompactionEntry =
+          persistTimelineTranscriptEvent(context, sessionId, compactionEntry) ?? compactionEntry;
+        createSessionEventPublisher(context).sessionUpdate(sessionId, {
+          kind: "transcript_event",
+          entry: storedCompactionEntry,
+        });
+      }
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
@@ -390,9 +422,9 @@ export function handleRuntimeEvent(
       if (event.toolCall.kind === "think") {
         const toolCall = normalizeRuntimeThinkingToolCall(sessionId, {
           ...event.toolCall,
-          timelineSequence: nextLiveEventSequence(sessionId),
+          sequence: nextLiveEventSequence(sessionId),
         });
-        persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context, toolCall.timelineSequence);
+        persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context, toolCall.sequence);
         publishRuntimeToolCall(context, sessionId, toolCall);
         return;
       }
@@ -400,14 +432,14 @@ export function handleRuntimeEvent(
       bumpAssistantStreamSegment(sessionId);
       const orderedToolCall = {
         ...event.toolCall,
-        timelineSequence: nextLiveEventSequence(sessionId),
+        sequence: nextLiveEventSequence(sessionId),
       };
       const mergedToolCall = publishRuntimeToolCall(context, sessionId, orderedToolCall);
       persistRuntimeSessionUpdate(
         sessionId,
         { ...event, toolCall: mergedToolCall },
         context,
-        orderedToolCall.timelineSequence,
+        orderedToolCall.sequence,
       );
       return;
     case "command-output":
@@ -420,7 +452,7 @@ export function handleRuntimeEvent(
       bumpAssistantStreamSegment(sessionId);
       const orderedChunk = {
         ...event.chunk,
-        timelineSequence: nextLiveEventSequence(sessionId),
+        sequence: nextLiveEventSequence(sessionId),
       };
       persistRuntimeSessionUpdate(
         sessionId,
@@ -430,14 +462,14 @@ export function handleRuntimeEvent(
           toolCall: event.toolCall
             ? {
                 ...event.toolCall,
-                timelineSequence: orderedChunk.timelineSequence,
+                sequence: orderedChunk.sequence,
               }
             : undefined,
         },
         context,
-        orderedChunk.timelineSequence,
+        orderedChunk.sequence,
       );
-      recordCommandOutputSummary(sessionId, event.chunk, orderedChunk.timelineSequence);
+      recordCommandOutputSummary(sessionId, event.chunk, orderedChunk.sequence);
       publishRuntimeCommandOutput(
         context,
         sessionId,
@@ -445,7 +477,7 @@ export function handleRuntimeEvent(
         event.toolCall
           ? {
               ...event.toolCall,
-              timelineSequence: orderedChunk.timelineSequence,
+              sequence: orderedChunk.sequence,
             }
           : undefined,
       );
@@ -660,9 +692,9 @@ function publishRuntimeUserMessage(
 ) {
   const userMessage = {
     ...message,
-    timelineSequence: nextLiveEventSequence(sessionId),
+    sequence: nextLiveEventSequence(sessionId),
   };
-  persistRuntimeSessionUpdate(sessionId, { type: "message", message: userMessage }, context, userMessage.timelineSequence);
+  persistRuntimeSessionUpdate(sessionId, { type: "message", message: userMessage }, context, userMessage.sequence);
   context.persistSessionMessage(sessionId, userMessage);
   persistTimelineMessage(context, sessionId, userMessage);
   context.updateSessionSummary(sessionId, (current) =>
@@ -704,5 +736,10 @@ function shouldIgnoreLateRuntimeEvent(
   if (current?.status !== "error" && current?.status !== "cancelled") {
     return false;
   }
-  return event.type === "status" || event.type === "message" || event.type === "permission-request" || event.type === "tool-call" || event.type === "command-output";
+  return event.type === "status" ||
+    event.type === "message" ||
+    event.type === "compaction" ||
+    event.type === "permission-request" ||
+    event.type === "tool-call" ||
+    event.type === "command-output";
 }

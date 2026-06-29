@@ -188,7 +188,7 @@ export function sanitizeRecoveredHistorySequenceResets(
     if (!staleEntryIds.has(entry.id)) {
       return entry;
     }
-    // Transcript events don't have timelineSequence to clear
+    // Transcript events don't have sequence to clear
     if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
       return entry;
     }
@@ -196,10 +196,10 @@ export function sanitizeRecoveredHistorySequenceResets(
       clearedToolCallIds.add(entry.toolCall.id);
       return {
         ...entry,
-        timelineSequence: undefined,
+        sequence: undefined,
         toolCall: {
           ...entry.toolCall,
-          timelineSequence: undefined,
+          sequence: undefined,
         },
       };
     }
@@ -207,20 +207,20 @@ export function sanitizeRecoveredHistorySequenceResets(
       clearedMessageIds.add(entry.id);
       return {
         ...entry,
-        timelineSequence: undefined,
+        sequence: undefined,
         chunks: entry.chunks.map((chunk) => ({
           ...chunk,
-          timelineSequence: undefined,
+          sequence: undefined,
         })),
       };
     }
     clearedMessageIds.add(entry.message.id);
     return {
       ...entry,
-      timelineSequence: undefined,
+      sequence: undefined,
       message: {
         ...entry.message,
-        timelineSequence: undefined,
+        sequence: undefined,
       },
     };
   });
@@ -238,12 +238,12 @@ export function clearRecoveredArtifactTimelineSequences(input: {
   }
   const outputs = input.outputs.map((output) =>
     input.clearedToolCallIds.has(output.commandId) || input.clearedToolCallIds.has(output.id)
-      ? { ...output, timelineSequence: undefined }
+      ? { ...output, sequence: undefined }
       : output
   );
   const toolCalls = input.toolCalls.map((toolCall) =>
-    input.clearedToolCallIds.has(toolCall.id) && typeof toolCall.timelineSequence === "number"
-      ? { ...toolCall, timelineSequence: undefined }
+    input.clearedToolCallIds.has(toolCall.id) && typeof toolCall.sequence === "number"
+      ? { ...toolCall, sequence: undefined }
       : toolCall
   );
   return { outputs, toolCalls };
@@ -254,12 +254,12 @@ function resolveEntryTimelineSequence(entry: SessionTimelineEntry) {
     return undefined;
   }
   if (entry.kind === "tool_call") {
-    return entry.timelineSequence ?? entry.toolCall.timelineSequence;
+    return entry.sequence ?? entry.toolCall.sequence;
   }
   if (entry.kind === "assistant_message") {
-    return entry.timelineSequence ?? entry.chunks[0]?.timelineSequence;
+    return entry.sequence ?? entry.chunks[0]?.sequence;
   }
-  return entry.timelineSequence ?? entry.message.timelineSequence;
+  return entry.sequence ?? entry.message.sequence;
 }
 
 export function findAcpReplayCoverageGap(input: {

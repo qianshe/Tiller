@@ -157,13 +157,13 @@ function collectPersistedTimelineSequences(
       if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
         continue;
       }
-      sequences.push(entry.timelineSequence);
+      sequences.push(entry.sequence);
       if (entry.kind === "assistant_message") {
-        sequences.push(...entry.chunks.map((chunk) => chunk.timelineSequence));
+        sequences.push(...entry.chunks.map((chunk) => chunk.sequence));
       } else if (entry.kind === "tool_call") {
-        sequences.push(entry.toolCall.timelineSequence);
+        sequences.push(entry.toolCall.sequence);
       } else {
-        sequences.push(entry.message.timelineSequence);
+        sequences.push(entry.message.sequence);
       }
     }
   } catch {
@@ -171,14 +171,14 @@ function collectPersistedTimelineSequences(
     // message/artifact stores below and let normal prompt dispatch continue.
   }
   try {
-    sequences.push(...(context.sessionMessageStore?.list?.(sessionId) ?? []).map((message: AgentMessage) => message.timelineSequence));
+    sequences.push(...(context.sessionMessageStore?.list?.(sessionId) ?? []).map((message: AgentMessage) => message.sequence));
   } catch {
     // Ignore unavailable legacy message storage.
   }
   try {
     const artifacts = context.sessionArtifactStore?.get?.(sessionId);
-    sequences.push(...(artifacts?.toolCalls ?? []).map((toolCall: AgentToolCall) => toolCall.timelineSequence));
-    sequences.push(...(artifacts?.outputs ?? []).map((output: CommandChunk) => output.timelineSequence));
+    sequences.push(...(artifacts?.toolCalls ?? []).map((toolCall: AgentToolCall) => toolCall.sequence));
+    sequences.push(...(artifacts?.outputs ?? []).map((output: CommandChunk) => output.sequence));
   } catch {
     // Ignore unavailable artifact storage.
   }
@@ -251,7 +251,7 @@ async function appendUserPromptMessage(
     sessionId,
     { type: "message", message: storedUserMessage },
     context,
-    storedUserMessage.timelineSequence,
+    storedUserMessage.sequence,
   );
   persistTimelineMessage(context, sessionId, storedUserMessage);
   createSessionEventPublisher(context).sessionUpdate(sessionId, {

@@ -35,6 +35,7 @@ const expectedRequests = [
   "session/discard_draft",
   "session/list",
   "session/list_messages",
+  "session/list_timeline",
   "session/list_updates",
   "session/get_artifacts",
   "session/check_resume",

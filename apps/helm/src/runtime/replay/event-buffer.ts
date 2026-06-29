@@ -77,38 +77,38 @@ export function createRestoreReplayBuffer(
               ...event,
               message,
             },
-            message.timelineSequence,
+            message.sequence,
           );
           return true;
         }
         case "tool-call": {
-          const toolCall = withReplayTimelineSequence(event.toolCall, toolCalls.get(event.toolCall.id)?.timelineSequence);
+          const toolCall = withReplayTimelineSequence(event.toolCall, toolCalls.get(event.toolCall.id)?.sequence);
           upsertToolCall(toolCalls, toolCall);
           recordReplayUpdate(
             {
               ...event,
               toolCall,
             },
-            toolCall.timelineSequence,
+            toolCall.sequence,
           );
           return true;
         }
         case "command-output":
           const chunk = withReplayTimelineSequence(
             event.chunk,
-            outputs.get(event.chunk.id)?.timelineSequence,
+            outputs.get(event.chunk.id)?.sequence,
           );
           outputs.set(chunk.id, chunk);
           let toolCall = event.toolCall
             ? withReplayTimelineSequence(
                 event.toolCall,
-                toolCalls.get(event.toolCall.id)?.timelineSequence ?? chunk.timelineSequence,
+                toolCalls.get(event.toolCall.id)?.sequence ?? chunk.sequence,
               )
             : undefined;
           if (event.toolCall) {
             upsertToolCall(toolCalls, toolCall!);
           }
-          recordReplayUpdate({ ...event, chunk, toolCall }, chunk.timelineSequence);
+          recordReplayUpdate({ ...event, chunk, toolCall }, chunk.sequence);
           return true;
         case "diff-update":
           diffs = event.files;
@@ -169,19 +169,19 @@ export function createRestoreReplayBuffer(
     }
   }
 
-  function withReplayTimelineSequence<T extends { timelineSequence?: number }>(
+  function withReplayTimelineSequence<T extends { sequence?: number }>(
     item: T,
     preferredSequence?: number,
   ): T {
-    if (isFiniteTimelineSequence(item.timelineSequence)) {
-      replayTimelineSequence = Math.max(replayTimelineSequence, item.timelineSequence);
+    if (isFiniteTimelineSequence(item.sequence)) {
+      replayTimelineSequence = Math.max(replayTimelineSequence, item.sequence);
       return item;
     }
     if (isFiniteTimelineSequence(preferredSequence)) {
-      return { ...item, timelineSequence: preferredSequence };
+      return { ...item, sequence: preferredSequence };
     }
     replayTimelineSequence += 1;
-    return { ...item, timelineSequence: replayTimelineSequence };
+    return { ...item, sequence: replayTimelineSequence };
   }
 
   function recordReplayUpdate(event: SessionRuntimeEvent, sequence?: number) {
@@ -234,7 +234,7 @@ function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCa
     kind: resolveToolCallKind(current?.kind, next.kind),
     title: resolveToolCallTitle(current?.title, next.title, next.id),
     timestamp: current?.timestamp ?? next.timestamp,
-    timelineSequence: current?.timelineSequence ?? next.timelineSequence,
+    sequence: current?.sequence ?? next.sequence,
     input: next.input ?? current?.input,
     output: `${current?.output ?? ""}${next.output ?? ""}` || undefined,
   });

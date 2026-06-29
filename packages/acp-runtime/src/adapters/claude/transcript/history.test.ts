@@ -23,27 +23,27 @@ test("extractClaudeVisibleMessagesFromTranscriptText keeps visible user and assi
     id: message.id,
     role: message.role,
     text: message.text,
-    timelineSequence: message.timelineSequence,
+    sequence: message.sequence,
   })), [
-    { id: "user-1", role: "user", text: "你好", timelineSequence: 1 },
-    { id: "assistant-1", role: "assistant", text: "你好喵~ 主人！", timelineSequence: 2 },
+    { id: "user-1", role: "user", text: "你好", sequence: 1 },
+    { id: "assistant-1", role: "assistant", text: "你好喵~ 主人！", sequence: 2 },
     {
       id: "user-2",
       role: "user",
       text: "做个todolist我用来测试效果，不要全部完成",
-      timelineSequence: 3,
+      sequence: 3,
     },
     {
       id: "assistant-2",
       role: "assistant",
       text: "好嘞主人喵~ 我先创建几个任务:",
-      timelineSequence: 4,
+      sequence: 4,
     },
     {
       id: "assistant-3",
       role: "assistant",
       text: "任务都建好了喵~ 现在保留一部分待办。",
-      timelineSequence: 5,
+      sequence: 5,
     },
   ]);
 });

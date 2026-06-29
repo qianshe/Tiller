@@ -303,7 +303,7 @@ export type AgentMessage = {
   role: "assistant" | "system" | "user";
   text: string;
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
   attachments?: AgentPromptImageContent[];
   streaming?: boolean;
 };
@@ -391,7 +391,7 @@ export type CommandChunk = {
   text: string;
   stream: "stdout" | "stderr";
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";
@@ -421,7 +421,7 @@ export type AgentToolCall = {
   stream?: "stdout" | "stderr";
   timestamp: string;
   updatedAt: string;
-  timelineSequence?: number;
+  sequence?: number;
 };
 
 export type AgentPlanEntryStatus = "pending" | "in_progress" | "completed";

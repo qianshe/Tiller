@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
@@ -33,6 +33,21 @@ export function createSqliteSessionTimelineStore(dbPath: string) {
     },
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
       const next = sortSessionTimelineEntries(entries);
+      replaceSessionTimelineEntries(db, sessionId, next);
+      return next;
+    },
+    applyBatch(sessionId: string, batch: SessionTimelineBatch) {
+      if (batch.replace) {
+        const next = sortSessionTimelineEntries(batch.entries);
+        replaceSessionTimelineEntries(db, sessionId, next);
+        return next;
+      }
+      const current = listSessionTimelineEntries(db, sessionId);
+      const byId = new Map(current.map((entry) => [entry.id, entry]));
+      for (const entry of batch.entries) {
+        byId.set(entry.id, entry);
+      }
+      const next = sortSessionTimelineEntries([...byId.values()]);
       replaceSessionTimelineEntries(db, sessionId, next);
       return next;
     },
@@ -206,11 +221,11 @@ function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: Agen
     return entries.find((entry) => entry.kind === kind && entry.id === message.id);
   }
 
-  if (typeof message.timelineSequence === "number") {
+  if (typeof message.sequence === "number") {
     const sequenced = entries.find((entry) =>
       entry.kind === "assistant_message" &&
       entry.chunks.some((chunk) =>
-        chunk.kind === "content" && chunk.timelineSequence === message.timelineSequence
+        chunk.kind === "content" && chunk.sequence === message.sequence
       )
     );
     if (sequenced) {
@@ -273,24 +288,24 @@ function hasToolCallBoundaryBeforeAssistantUpdate(
   existing: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
   message: AgentMessage,
 ) {
-  if (typeof message.timelineSequence !== "number") {
+  if (typeof message.sequence !== "number") {
     return false;
   }
-  const messageSequence = message.timelineSequence;
+  const messageSequence = message.sequence;
   const contentChunkId = `${message.id}:content`;
   return existing.chunks.some((chunk) => {
     if (
       chunk.kind !== "content" ||
       !matchesTimelineChunkId(chunk.id, contentChunkId) ||
-      typeof chunk.timelineSequence !== "number"
+      typeof chunk.sequence !== "number"
     ) {
       return false;
     }
-    const chunkSequence = chunk.timelineSequence;
+    const chunkSequence = chunk.sequence;
     return entries.some((entry) =>
       entry.kind === "tool_call" &&
-      typeof entry.timelineSequence === "number" &&
-      isSequenceBetween(entry.timelineSequence, chunkSequence, messageSequence)
+      typeof entry.sequence === "number" &&
+      isSequenceBetween(entry.sequence, chunkSequence, messageSequence)
     );
   });
 }
@@ -344,7 +359,7 @@ function replaceSessionTimelineEntries(
         entry.kind,
         entry.timestamp,
         resolveEntryUpdatedAt(entry),
-        isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
+        isTranscriptEventEntry(entry) ? null : (entry.sequence ?? null),
         JSON.stringify(entry),
       );
     }
@@ -376,7 +391,7 @@ function insertSessionTimelineEntry(
     entry.kind,
     entry.timestamp,
     resolveEntryUpdatedAt(entry),
-    isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
+    isTranscriptEventEntry(entry) ? null : (entry.sequence ?? null),
     JSON.stringify(entry),
   );
 }

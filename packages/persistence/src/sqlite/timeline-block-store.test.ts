@@ -21,26 +21,26 @@ function assistantEntry(index: number): SessionTimelineEntry {
   return {
     id: `assistant-${index}`,
     kind: "assistant_message",
-    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp: at(index), timelineSequence: index }],
+    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp: at(index), sequence: index }],
     timestamp: at(index),
     updatedAt: at(index),
-    timelineSequence: index,
+    sequence: index,
   };
 }
 
-function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "timelineSequence">): AgentMessage {
+function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "sequence">): AgentMessage {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
 
 function toolCall(
-  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "timelineSequence">,
+  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "sequence">,
 ): AgentToolCall {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
-    updatedAt: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
+    updatedAt: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
@@ -126,10 +126,10 @@ test("timeline block store updates an existing entry without duplicating or movi
     const updated: SessionTimelineEntry = {
       id: "assistant-0",
       kind: "assistant_message",
-      chunks: [{ id: "assistant-0:content", kind: "content", text: "updated", timestamp: at(99), timelineSequence: 99 }],
+      chunks: [{ id: "assistant-0:content", kind: "content", text: "updated", timestamp: at(99), sequence: 99 }],
       timestamp: at(99),
       updatedAt: at(99),
-      timelineSequence: 99,
+      sequence: 99,
     };
     store.append("session-1", updated);
 
@@ -190,7 +190,7 @@ test("timeline block store paginates older entries within the same block", () =>
 
 test("timeline block store upsertToolCall merges thinking into an assistant entry", () => {
   withStore(({ store }) => {
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", timelineSequence: 2 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
     store.upsertToolCall("session-1", toolCall({
       id: "assistant-1:thinking",
       commandId: "assistant-1:thinking",
@@ -198,7 +198,7 @@ test("timeline block store upsertToolCall merges thinking into an assistant entr
       output: "reasoning",
       status: "completed",
       title: "Thinking",
-      timelineSequence: 1,
+      sequence: 1,
     }));
 
     const entries = store.list("session-1");
@@ -235,7 +235,7 @@ test("timeline block store recovers when an indexed block file is missing", () =
   });
 
   try {
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", timelineSequence: 1 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", sequence: 1 }));
     const db = new DatabaseSync(dbPath);
     try {
       const row = db.prepare("SELECT storage_key FROM session_timeline_blocks WHERE session_id = ? LIMIT 1").get("session-1") as { storage_key: string };
@@ -244,7 +244,7 @@ test("timeline block store recovers when an indexed block file is missing", () =
       db.close();
     }
 
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "recovered", timelineSequence: 2 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "recovered", sequence: 2 }));
 
     const entries = store.list("session-1");
     assert.deepEqual(entries.map((entry) => entry.id), ["assistant-1"]);

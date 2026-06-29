@@ -77,14 +77,14 @@ test("readReimportedHistoryPage returns and persists rebuilt timeline", () => {
       role: "user",
       text: "重新导入",
       timestamp: "2026-05-28T00:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
       role: "assistant",
       text: "导入完成",
       timestamp: "2026-05-28T00:00:02.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
   ];
   const outputs: CommandChunk[] = [];
@@ -97,7 +97,7 @@ test("readReimportedHistoryPage returns and persists rebuilt timeline", () => {
       status: "completed",
       timestamp: "2026-05-28T00:00:01.000Z",
       updatedAt: "2026-05-28T00:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
   let storedTimeline: SessionTimelineEntry[] = [];
@@ -141,7 +141,7 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
       role: "assistant",
       text: "工具前说明。工具后继续。",
       timestamp: "2026-05-28T00:00:01.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
   ];
   const outputs: CommandChunk[] = [];
@@ -154,7 +154,7 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
       status: "completed",
       timestamp: "2026-05-28T00:00:02.000Z",
       updatedAt: "2026-05-28T00:00:02.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
   const replayTimeline: SessionTimelineEntry[] = [
@@ -167,19 +167,19 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
           kind: "content",
           text: "工具前说明。",
           timestamp: "2026-05-28T00:00:01.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         {
           id: "assistant-1:content:3",
           kind: "content",
           text: "工具后继续。",
           timestamp: "2026-05-28T00:00:03.000Z",
-          timelineSequence: 3,
+          sequence: 3,
         },
       ],
       timestamp: "2026-05-28T00:00:01.000Z",
       updatedAt: "2026-05-28T00:00:03.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "tool:tool-1",
@@ -187,7 +187,7 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
       toolCall: toolCalls[0]!,
       timestamp: "2026-05-28T00:00:02.000Z",
       updatedAt: "2026-05-28T00:00:02.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
   let replaceCalled = false;
@@ -218,9 +218,9 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
   assert.deepEqual(
     result.timeline?.flatMap((entry) =>
       entry.kind === "assistant_message"
-        ? entry.chunks.map((chunk) => `${chunk.kind}:${chunk.timelineSequence}:${chunk.text}`)
+        ? entry.chunks.map((chunk) => `${chunk.kind}:${chunk.sequence}:${chunk.text}`)
         : entry.kind === "tool_call" || entry.kind === "user_message" || entry.kind === "system_message"
-          ? [`${entry.kind}:${entry.timelineSequence}`]
+          ? [`${entry.kind}:${entry.sequence}`]
           : [`${entry.kind}:transcript-event`],
     ),
     [
@@ -242,12 +242,12 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
           kind: "content",
           text: "authoritative history",
           timestamp: "2026-05-28T10:00:00.000Z",
-          timelineSequence: 200,
+          sequence: 200,
         },
       ],
       timestamp: "2026-05-28T10:00:00.000Z",
       updatedAt: "2026-05-28T10:00:00.000Z",
-      timelineSequence: 200,
+      sequence: 200,
     },
     {
       id: "late-user",
@@ -257,11 +257,11 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
         role: "user",
         text: "post-compact prompt",
         timestamp: "2026-05-28T10:10:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-28T10:10:00.000Z",
       updatedAt: "2026-05-28T10:10:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "late-assistant",
@@ -272,12 +272,12 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
           kind: "content",
           text: "post-compact reply",
           timestamp: "2026-05-28T10:11:00.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       timestamp: "2026-05-28T10:11:00.000Z",
       updatedAt: "2026-05-28T10:11:00.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "assistant-300",
@@ -288,12 +288,12 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
           kind: "content",
           text: "new authoritative replay",
           timestamp: "2026-05-28T10:12:00.000Z",
-          timelineSequence: 300,
+          sequence: 300,
         },
       ],
       timestamp: "2026-05-28T10:12:00.000Z",
       updatedAt: "2026-05-28T10:12:00.000Z",
-      timelineSequence: 300,
+      sequence: 300,
     },
     {
       id: "tool:late-tool",
@@ -305,11 +305,11 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
         status: "completed",
         timestamp: "2026-05-28T10:20:00.000Z",
         updatedAt: "2026-05-28T10:20:00.000Z",
-        timelineSequence: 3,
+        sequence: 3,
       },
       timestamp: "2026-05-28T10:20:00.000Z",
       updatedAt: "2026-05-28T10:20:00.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
   ];
 
@@ -322,19 +322,19 @@ test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a 
   assert.deepEqual(Array.from(sanitized.clearedMessageIds), ["late-user", "late-assistant"]);
   assert.deepEqual(Array.from(sanitized.clearedToolCallIds), ["late-tool"]);
   assert.equal(lateUser?.kind, "user_message");
-  assert.equal(lateUser?.timelineSequence, undefined);
-  assert.equal(lateUser?.kind === "user_message" ? lateUser.message.timelineSequence : undefined, undefined);
+  assert.equal(lateUser?.sequence, undefined);
+  assert.equal(lateUser?.kind === "user_message" ? lateUser.message.sequence : undefined, undefined);
   assert.equal(lateAssistant?.kind, "assistant_message");
-  assert.equal(lateAssistant?.timelineSequence, undefined);
+  assert.equal(lateAssistant?.sequence, undefined);
   assert.equal(
-    lateAssistant?.kind === "assistant_message" ? lateAssistant.chunks[0]?.timelineSequence : undefined,
+    lateAssistant?.kind === "assistant_message" ? lateAssistant.chunks[0]?.sequence : undefined,
     undefined,
   );
   assert.equal(authoritative?.kind, "assistant_message");
-  assert.equal(authoritative?.timelineSequence, 300);
+  assert.equal(authoritative?.sequence, 300);
   assert.equal(lateTool?.kind, "tool_call");
-  assert.equal(lateTool?.timelineSequence, undefined);
-  assert.equal(lateTool?.kind === "tool_call" ? lateTool.toolCall.timelineSequence : undefined, undefined);
+  assert.equal(lateTool?.sequence, undefined);
+  assert.equal(lateTool?.kind === "tool_call" ? lateTool.toolCall.sequence : undefined, undefined);
 });
 
 test("clearRecoveredArtifactTimelineSequences clears output chunks that would rebuild stale tool ordering", () => {
@@ -345,7 +345,7 @@ test("clearRecoveredArtifactTimelineSequences clears output chunks that would re
       text: "stdout",
       stream: "stdout",
       timestamp: "2026-05-28T10:20:00.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
     {
       id: "chunk-2",
@@ -353,7 +353,7 @@ test("clearRecoveredArtifactTimelineSequences clears output chunks that would re
       text: "stderr",
       stream: "stderr",
       timestamp: "2026-05-28T10:21:00.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
   ];
   const toolCalls: AgentToolCall[] = [
@@ -364,7 +364,7 @@ test("clearRecoveredArtifactTimelineSequences clears output chunks that would re
       status: "completed",
       timestamp: "2026-05-28T10:20:00.000Z",
       updatedAt: "2026-05-28T10:20:00.000Z",
-      timelineSequence: 3,
+      sequence: 3,
     },
     {
       id: "other-tool",
@@ -373,7 +373,7 @@ test("clearRecoveredArtifactTimelineSequences clears output chunks that would re
       status: "completed",
       timestamp: "2026-05-28T10:21:00.000Z",
       updatedAt: "2026-05-28T10:21:00.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
   ];
 
@@ -383,10 +383,10 @@ test("clearRecoveredArtifactTimelineSequences clears output chunks that would re
     clearedToolCallIds: new Set(["late-tool"]),
   });
 
-  assert.equal(sanitized.outputs[0]?.timelineSequence, undefined);
-  assert.equal(sanitized.outputs[1]?.timelineSequence, 4);
-  assert.equal(sanitized.toolCalls[0]?.timelineSequence, undefined);
-  assert.equal(sanitized.toolCalls[1]?.timelineSequence, 4);
+  assert.equal(sanitized.outputs[0]?.sequence, undefined);
+  assert.equal(sanitized.outputs[1]?.sequence, 4);
+  assert.equal(sanitized.toolCalls[0]?.sequence, undefined);
+  assert.equal(sanitized.toolCalls[1]?.sequence, 4);
 });
 
 test("findAcpReplayCoverageGap detects omitted assistant messages", () => {

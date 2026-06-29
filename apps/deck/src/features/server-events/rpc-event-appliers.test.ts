@@ -180,7 +180,7 @@ test("applySessionUpdate projects agent_message notifications into the unified t
     role: "assistant",
     text: "hello from rpc",
     timestamp: "2026-05-04T01:00:00.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
 
   const handled = applySessionUpdate(

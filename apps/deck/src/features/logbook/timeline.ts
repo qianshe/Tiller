@@ -16,7 +16,7 @@ type MessageTimelineEntry = {
 };
 
 export type ConversationTimelineItem =
-  | { kind: "message"; sourceIndex?: number; timestamp: string; timelineSequence?: number; message: AgentMessage }
+  | { kind: "message"; sourceIndex?: number; timestamp: string; sequence?: number; message: AgentMessage }
   | ConversationToolCallItem;
 
 export type ConversationToolCallItem = {
@@ -28,7 +28,7 @@ export type ConversationToolCallItem = {
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
   timestamp: string;
-  timelineSequence?: number;
+  sequence?: number;
   text: string;
   input: string;
   streams: Array<"stdout" | "stderr">;
@@ -50,7 +50,7 @@ export function buildConversationTimeline(
     kind: "message",
     sourceIndex: index,
     timestamp: message.timestamp,
-    timelineSequence: message.timelineSequence,
+    sequence: message.sequence,
     message,
   }));
   const indexedToolItems = toolItems.map((item, index) => ({
@@ -98,7 +98,7 @@ export function groupToolCalls(
         status: call.status,
         toolKind: call.kind,
         timestamp: call.timestamp,
-        timelineSequence: call.timelineSequence,
+        sequence: call.sequence,
         text: call.output ?? "",
         input: call.input ?? "",
         streams: call.stream ? [call.stream] : [],
@@ -111,7 +111,7 @@ export function groupToolCalls(
     if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
       current.timestamp = call.timestamp;
     }
-    current.timelineSequence = minTimelineSequence(current.timelineSequence, call.timelineSequence);
+    current.sequence = minTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
     current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
     current.title = resolveMergedToolTitle(
@@ -137,7 +137,7 @@ export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
     stream: chunk.stream,
     timestamp: chunk.timestamp,
     updatedAt: chunk.timestamp,
-    timelineSequence: chunk.timelineSequence,
+    sequence: chunk.sequence,
   };
 }
 
@@ -169,7 +169,7 @@ export function mergeToolCallHistory(
         Date.parse(next.timestamp) < Date.parse(existing.timestamp)
           ? next.timestamp
           : existing.timestamp,
-      timelineSequence: minTimelineSequence(existing.timelineSequence, next.timelineSequence),
+      sequence: minTimelineSequence(existing.sequence, next.sequence),
       updatedAt: next.updatedAt,
       status: next.status,
     };
@@ -265,8 +265,8 @@ function compareToolCallTimelineEntries(
   right: ToolCallTimelineEntry,
 ) {
   const timelineDelta = compareOptionalTimelineSequence(
-    left.toolCall.timelineSequence,
-    right.toolCall.timelineSequence,
+    left.toolCall.sequence,
+    right.toolCall.sequence,
   );
   if (timelineDelta !== null) {
     return timelineDelta;
@@ -290,8 +290,8 @@ function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
 
 function compareMessageTimelineEntries(left: MessageTimelineEntry, right: MessageTimelineEntry) {
   const timelineDelta = compareOptionalTimelineSequence(
-    left.message.timelineSequence,
-    right.message.timelineSequence,
+    left.message.sequence,
+    right.message.sequence,
   );
   if (timelineDelta !== null) {
     return timelineDelta;
@@ -302,8 +302,8 @@ function compareMessageTimelineEntries(left: MessageTimelineEntry, right: Messag
 
 function compareTimelineItems(left: ConversationTimelineItem, right: ConversationTimelineItem) {
   const timelineDelta = compareOptionalTimelineSequence(
-    left.timelineSequence,
-    right.timelineSequence,
+    left.sequence,
+    right.sequence,
   );
   if (timelineDelta !== null) {
     return timelineDelta;
